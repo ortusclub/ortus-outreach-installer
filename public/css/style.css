@@ -1,0 +1,329 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0f1117;
+  color: #e1e4e8;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+h1 {
+  font-size: 1.6rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+h1 span {
+  color: #58a6ff;
+}
+
+.subtitle {
+  color: #8b949e;
+  font-size: 0.9rem;
+  margin-bottom: 32px;
+}
+
+/* ── Sections ── */
+.section {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.section h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #c9d1d9;
+}
+
+/* ── Form elements ── */
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #8b949e;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+input[type="text"],
+input[type="number"],
+textarea,
+select {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #e1e4e8;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+  transition: border-color 0.2s;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+select {
+  cursor: pointer;
+}
+
+/* ── Profile checkboxes ── */
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.profile-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.profile-item:hover {
+  border-color: #58a6ff;
+}
+
+.profile-item input[type="checkbox"] {
+  accent-color: #58a6ff;
+  width: 16px;
+  height: 16px;
+}
+
+.profile-item .name {
+  font-size: 0.85rem;
+  color: #c9d1d9;
+}
+
+.profile-item .id {
+  font-size: 0.7rem;
+  color: #484f58;
+  font-family: monospace;
+}
+
+/* ── Buttons ── */
+.btn-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 24px 0;
+}
+
+.btn {
+  padding: 12px 32px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-start {
+  background: #238636;
+  color: #fff;
+}
+
+.btn-stop {
+  background: #da3633;
+  color: #fff;
+}
+
+.btn-secondary {
+  background: #30363d;
+  color: #c9d1d9;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Status panel ── */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.stat-card .label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8b949e;
+  margin-bottom: 6px;
+}
+
+.stat-card .value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #e1e4e8;
+  font-family: monospace;
+}
+
+.stat-card .value.running {
+  color: #3fb950;
+}
+
+.stat-card .value.stopped {
+  color: #8b949e;
+}
+
+/* ── Log panel ── */
+.log-panel {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.log-panel .entry {
+  padding: 2px 0;
+  color: #8b949e;
+}
+
+.log-panel .entry.success {
+  color: #3fb950;
+}
+
+.log-panel .entry.error {
+  color: #f85149;
+}
+
+.log-panel .entry.warn {
+  color: #d29922;
+}
+
+.log-panel .entry.info {
+  color: #58a6ff;
+}
+
+/* ── Progress bar ── */
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #21262d;
+  border-radius: 3px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.progress-bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, #238636, #3fb950);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+/* ── Sheet preview ── */
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin-top: 8px;
+}
+
+.preview-table th,
+.preview-table td {
+  padding: 8px 12px;
+  border: 1px solid #30363d;
+  text-align: left;
+}
+
+.preview-table th {
+  background: #161b22;
+  color: #8b949e;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.3px;
+}
+
+.preview-table td {
+  color: #c9d1d9;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hidden { display: none; }
+
+/* ── Placeholder tags ── */
+.placeholder-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: -10px 0 16px 0;
+}
+
+.placeholder-tags .tag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 14px;
+  font-size: 0.75rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #58a6ff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.placeholder-tags .tag:hover {
+  background: #1a2233;
+  border-color: #58a6ff;
+}
