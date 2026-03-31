@@ -44,7 +44,7 @@ Plans:
   5. If no voice is selected, the batch payload omits the conversation_config_override entirely (agent default voice is used)
 **Plans:** 2 plans
 Plans:
-- [ ] 02-01-PLAN.md — Add server-side voice functions (getVoiceList, persistence, cache) and voice override injection in submitBatchCall (VOICE-01, VOICE-03, VOICE-04, VOICE-08)
+- [x] 02-01-PLAN.md — Add server-side voice functions (getVoiceList, persistence, cache) and voice override injection in submitBatchCall (VOICE-01, VOICE-03, VOICE-04, VOICE-08)
 - [ ] 02-02-PLAN.md — Add voice dropdown HTML and async loading JS to sidebar, wire to server-side functions, human verify (VOICE-01, VOICE-02, VOICE-03, VOICE-04, VOICE-08)
 
 ### Phase 3: UX Polish
