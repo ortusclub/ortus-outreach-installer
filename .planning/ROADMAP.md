@@ -42,8 +42,10 @@ Plans:
   3. Operator selects a voice, submits a batch, and all calls in that batch use the selected voice
   4. Operator closes and reopens the sidebar and sees the last-used voice pre-selected
   5. If no voice is selected, the batch payload omits the conversation_config_override entirely (agent default voice is used)
-**Plans**: TBD
-**UI hint**: yes
+**Plans:** 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — Add server-side voice functions (getVoiceList, persistence, cache) and voice override injection in submitBatchCall (VOICE-01, VOICE-03, VOICE-04, VOICE-08)
+- [ ] 02-02-PLAN.md — Add voice dropdown HTML and async loading JS to sidebar, wire to server-side functions, human verify (VOICE-01, VOICE-02, VOICE-03, VOICE-04, VOICE-08)
 
 ### Phase 3: UX Polish
 **Goal**: Operators can preview voices, see voice metadata, bookmark favorites, and get validation feedback on required fields
@@ -64,6 +66,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Fix | 0/2 | Planned | - |
-| 2. Voice Selection Core | 0/TBD | Not started | - |
+| 1. Foundation Fix | 1/2 | In Progress | - |
+| 2. Voice Selection Core | 0/2 | Planned | - |
 | 3. UX Polish | 0/TBD | Not started | - |
