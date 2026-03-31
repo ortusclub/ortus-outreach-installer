@@ -835,6 +835,15 @@ function getSidebarHtml() {
   .badge-completed { background: #e8f5e9; color: #2e7d32; }\
   .badge-in_progress { background: #e3f2fd; color: #1565c0; }\
   .badge-failed { background: #fce4ec; color: #c62828; }\
+  .voice-row { display: flex; align-items: center; gap: 6px; }\
+  .voice-row select { flex: 1; }\
+  .btn-icon { width: 32px; height: 32px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }\
+  .btn-icon:hover { border-color: #C5A255; background: #faf6eb; }\
+  .btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }\
+  .field-error input, .field-error select, .field-error textarea { border-color: #c62828; }\
+  .validation-msg { color: #c62828; font-size: 11px; margin-top: 6px; }\
+  .bookmark-star { color: #ccc; cursor: pointer; font-size: 16px; }\
+  .bookmark-star.active { color: #C5A255; }\
 </style>\
 </head>\
 <body>\
@@ -844,9 +853,14 @@ function getSidebarHtml() {
 <h3>Event Details</h3>\
 <div class="field"><label>Caller Name</label><input id="caller_name" value="Sarah" /></div>\
 <div class="field"><label>Voice</label>\
-  <select id="voice_id">\
-    <option value="">Loading voices...</option>\
-  </select>\
+  <div class="voice-row">\
+    <select id="voice_id">\
+      <option value="">Loading voices...</option>\
+    </select>\
+    <button class="btn-icon" id="previewBtn" onclick="previewVoice()" title="Preview voice" disabled>\
+      &#9654;\
+    </button>\
+  </div>\
 </div>\
 <div class="row">\
   <div class="field"><label>Host Name</label><input id="host_name" placeholder="Full name" /></div>\
@@ -952,30 +966,81 @@ function submit() {\
 function refreshStatus() {\
   google.script.run\
     .withSuccessHandler(function(batches) {\
-      var html = "";\
+      var container = document.getElementById("historyList");\
+      container.innerHTML = "";\
       if (!batches || batches.length === 0) {\
-        html = "<em>No batches found.</em>";\
-      } else {\
-        batches.slice(0, 10).forEach(function(b) {\
-          html += \'<div class="history-item">\' +\
-            \'<div class="name">\' + (b.name || b.id) + \'</div>\' +\
-            \'<div class="meta">\' +\
-              \'<span class="badge badge-\' + b.status + \'">\' + b.status + \'</span> \' +\
-              b.finished + \'/\' + b.total + \' calls\' +\
-            \'</div></div>\';\
-        });\
+        var emEl = document.createElement("em");\
+        emEl.textContent = "No batches found.";\
+        container.appendChild(emEl);\
+        return;\
       }\
-      document.getElementById("historyList").innerHTML = html;\
+      batches.slice(0, 10).forEach(function(b) {\
+        var item = document.createElement("div");\
+        item.className = "history-item";\
+        var nameDiv = document.createElement("div");\
+        nameDiv.className = "name";\
+        nameDiv.textContent = b.name || b.id;\
+        item.appendChild(nameDiv);\
+        var metaDiv = document.createElement("div");\
+        metaDiv.className = "meta";\
+        var badge = document.createElement("span");\
+        badge.className = "badge badge-" + b.status;\
+        badge.textContent = b.status;\
+        metaDiv.appendChild(badge);\
+        metaDiv.appendChild(document.createTextNode(" " + b.finished + "/" + b.total + " calls"));\
+        item.appendChild(metaDiv);\
+        container.appendChild(item);\
+      });\
     })\
     .withFailureHandler(function(err) {\
-      document.getElementById("historyList").innerHTML = "<em>Error: " + err.message + "</em>";\
+      var container = document.getElementById("historyList");\
+      container.innerHTML = "";\
+      var emEl = document.createElement("em");\
+      emEl.textContent = "Error: " + err.message;\
+      container.appendChild(emEl);\
     })\
     .listBatchCalls();\
+}\
+\
+var _previewAudio = null;\
+\
+function previewVoice() {\
+  var sel = document.getElementById("voice_id");\
+  var btn = document.getElementById("previewBtn");\
+  if (_previewAudio && !_previewAudio.paused) {\
+    _previewAudio.pause();\
+    _previewAudio.currentTime = 0;\
+    btn.innerHTML = "&#9654;";\
+    _previewAudio = null;\
+    return;\
+  }\
+  var voiceId = sel.value;\
+  if (!voiceId) return;\
+  btn.disabled = true;\
+  btn.innerHTML = "...";\
+  google.script.run\
+    .withSuccessHandler(function(base64) {\
+      _previewAudio = new Audio("data:audio/mpeg;base64," + base64);\
+      _previewAudio.onended = function() {\
+        btn.innerHTML = "&#9654;";\
+        _previewAudio = null;\
+      };\
+      _previewAudio.play();\
+      btn.disabled = false;\
+      btn.innerHTML = "&#9632;";\
+    })\
+    .withFailureHandler(function(err) {\
+      btn.disabled = false;\
+      btn.innerHTML = "&#9654;";\
+      showStatus("Preview error: " + err.message, "err");\
+    })\
+    .getVoicePreview(voiceId);\
 }\
 \
 google.script.run\
   .withSuccessHandler(function(voices) {\
     var sel = document.getElementById("voice_id");\
+    var previewBtn = document.getElementById("previewBtn");\
     sel.innerHTML = "";\
     var def = document.createElement("option");\
     def.value = "";\
@@ -984,9 +1049,24 @@ google.script.run\
     (voices || []).forEach(function(v) {\
       var opt = document.createElement("option");\
       opt.value = v.voice_id;\
-      opt.textContent = v.name + (v.description ? " - " + v.description : "");\
+      var star = v.bookmarked ? "\u2605 " : "";\
+      opt.textContent = star + v.name + (v.description ? " - " + v.description : "");\
       sel.appendChild(opt);\
     });\
+    google.script.run\
+      .withSuccessHandler(function(lastId) {\
+        if (lastId) { sel.value = lastId; previewBtn.disabled = !sel.value; }\
+      })\
+      .withFailureHandler(function() {})\
+      .getLastUsedVoiceId();\
+    sel.onchange = function() {\
+      previewBtn.disabled = !sel.value;\
+      if (_previewAudio && !_previewAudio.paused) {\
+        _previewAudio.pause();\
+        _previewAudio = null;\
+        previewBtn.innerHTML = "&#9654;";\
+      }\
+    };\
   })\
   .withFailureHandler(function(err) {\
     var sel = document.getElementById("voice_id");\
