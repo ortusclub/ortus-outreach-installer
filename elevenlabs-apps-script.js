@@ -932,8 +932,8 @@ google.script.run\
     if (_lastVoiceLoaded) _populateVoiceDropdown();\
   })\
   .withFailureHandler(function(err) {\
-    var sel = document.getElementById('voice_id');\
-    sel.innerHTML = '<option value="">Error loading voices</option>';\
+    var sel = document.getElementById("voice_id");\
+    sel.innerHTML = "<option value=\\"\\">" + "Error loading voices</option>";\
   })\
   .getVoiceList();\
 \
@@ -950,10 +950,10 @@ google.script.run\
   .getLastUsedVoiceId();\
 \
 function _populateVoiceDropdown() {\
-  var sel = document.getElementById('voice_id');\
-  sel.innerHTML = '<option value="">Agent default voice</option>';\
+  var sel = document.getElementById("voice_id");\
+  sel.innerHTML = "<option value=\\"\\">" + "Agent default voice</option>";\
   _voiceList.forEach(function(v) {\
-    var opt = document.createElement('option');\
+    var opt = document.createElement("option");\
     opt.value = v.voice_id;\
     opt.textContent = v.name + (v.description ? " \\u2014 " + v.description : "");\
     if (v.voice_id === _lastVoiceId) opt.selected = true;\
