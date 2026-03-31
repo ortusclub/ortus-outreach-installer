@@ -201,6 +201,13 @@ function submitBatchCall(eventVars, selectedOnly) {
       }
     };
 
+    // Conditionally inject voice override (per D-09 / VOICE-08 / D-11)
+    if (eventVars.voice_id) {
+      recipient.conversation_initiation_client_data.conversation_config_override = {
+        tts: { voice_id: eventVars.voice_id }
+      };
+    }
+
     recipients.push(recipient);
     rowIndices.push(i + 2); // 1-indexed sheet row
   }
@@ -229,6 +236,8 @@ function submitBatchCall(eventVars, selectedOnly) {
     payload.scheduled_time_unix = Math.floor(new Date(eventVars.scheduled_time).getTime() / 1000);
   }
 
+  Logger.log('[submitBatchCall] First recipient payload: ' + JSON.stringify(recipients[0]).substring(0, 500));
+
   // Submit to ElevenLabs
   var response = elevenlabsPost('/convai/batch-calling/submit', payload, apiKey);
 
@@ -237,6 +246,12 @@ function submitBatchCall(eventVars, selectedOnly) {
   }
 
   var batchId = response.id || 'unknown';
+
+  // Persist last-used voice for pre-selection on next sidebar open (per D-10 / VOICE-04)
+  if (eventVars.voice_id) {
+    saveLastUsedVoiceId(eventVars.voice_id);
+  }
+
   var now = Utilities.formatDate(new Date(), 'Europe/London', 'yyyy-MM-dd HH:mm:ss');
 
   // Mark rows as scheduled in the sheet
