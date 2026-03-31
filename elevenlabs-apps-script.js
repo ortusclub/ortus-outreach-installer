@@ -924,14 +924,27 @@ var _voicesLoaded = false;\
 var _lastVoiceLoaded = false;\
 var _voiceList = [];\
 var _lastVoiceId = "";\
+var _loadDots = 0;\
+var _loadTimer = setInterval(function() {\
+  _loadDots = (_loadDots + 1) % 4;\
+  var dots = "." .repeat(_loadDots + 1);\
+  var elapsed = Math.round((Date.now() - _loadStart) / 1000);\
+  var sel = document.getElementById("voice_id");\
+  if (sel && !_voicesLoaded) {\
+    sel.innerHTML = "<option value=\\"\\">" + "Loading voices" + dots + " (" + elapsed + "s)</option>";\
+  }\
+}, 500);\
+var _loadStart = Date.now();\
 \
 google.script.run\
   .withSuccessHandler(function(voices) {\
+    clearInterval(_loadTimer);\
     _voiceList = voices || [];\
     _voicesLoaded = true;\
     if (_lastVoiceLoaded) _populateVoiceDropdown();\
   })\
   .withFailureHandler(function(err) {\
+    clearInterval(_loadTimer);\
     var sel = document.getElementById("voice_id");\
     sel.innerHTML = "<option value=\\"\\">" + "Error loading voices</option>";\
   })\
