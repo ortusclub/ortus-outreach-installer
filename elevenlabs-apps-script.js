@@ -860,6 +860,9 @@ function getSidebarHtml() {
     <button class="btn-icon" id="previewBtn" onclick="previewVoice()" title="Preview voice" disabled>\
       &#9654;\
     </button>\
+    <button class="btn-icon" id="bookmarkBtn" onclick="toggleBookmark()" title="Bookmark voice" disabled>\
+      &#9734;\
+    </button>\
   </div>\
 </div>\
 <div class="row">\
@@ -921,7 +924,31 @@ function showStatus(msg, type) {\
   box.innerHTML = msg;\
 }\
 \
+function validateFields() {\
+  var requiredIds = ["caller_name", "host_name", "host_first_name", "event_name",\
+    "event_date", "event_time", "event_city", "event_area",\
+    "event_venue", "event_format", "event_context", "target_audience"];\
+  var missing = [];\
+  requiredIds.forEach(function(id) {\
+    var el = document.getElementById(id);\
+    var field = el.closest(".field");\
+    var label = field ? field.querySelector("label") : null;\
+    if (!el.value || !el.value.trim()) {\
+      missing.push(label ? label.textContent : id);\
+      if (field) field.classList.add("field-error");\
+    } else {\
+      if (field) field.classList.remove("field-error");\
+    }\
+  });\
+  return missing;\
+}\
+\
 function submit() {\
+  var missing = validateFields();\
+  if (missing.length > 0) {\
+    showStatus("Please fill required fields: " + missing.join(", "), "err");\
+    return;\
+  }\
   var btn = document.getElementById("submitBtn");\
   btn.disabled = true;\
   btn.textContent = "Submitting...";\
@@ -1002,6 +1029,34 @@ function refreshStatus() {\
     .listBatchCalls();\
 }\
 \
+function toggleBookmark() {\
+  var sel = document.getElementById("voice_id");\
+  var voiceId = sel.value;\
+  if (!voiceId) return;\
+  var btn = document.getElementById("bookmarkBtn");\
+  btn.disabled = true;\
+  google.script.run\
+    .withSuccessHandler(function(bookmarks) {\
+      var isNowBookmarked = bookmarks.indexOf(voiceId) !== -1;\
+      btn.innerHTML = isNowBookmarked ? "&#9733;" : "&#9734;";\
+      btn.disabled = false;\
+      var opt = sel.options[sel.selectedIndex];\
+      if (opt && opt.value) {\
+        var txt = opt.textContent;\
+        if (isNowBookmarked && txt.charAt(0) !== "\u2605") {\
+          opt.textContent = "\u2605 " + txt;\
+        } else if (!isNowBookmarked && txt.charAt(0) === "\u2605") {\
+          opt.textContent = txt.substring(2);\
+        }\
+      }\
+    })\
+    .withFailureHandler(function(err) {\
+      btn.disabled = false;\
+      showStatus("Bookmark error: " + err.message, "err");\
+    })\
+    .toggleVoiceBookmark(voiceId);\
+}\
+\
 var _previewAudio = null;\
 \
 function previewVoice() {\
@@ -1065,6 +1120,13 @@ google.script.run\
         _previewAudio.pause();\
         _previewAudio = null;\
         previewBtn.innerHTML = "&#9654;";\
+      }\
+      var bBtn = document.getElementById("bookmarkBtn");\
+      bBtn.disabled = !sel.value;\
+      if (sel.value && sel.options[sel.selectedIndex]) {\
+        bBtn.innerHTML = sel.options[sel.selectedIndex].textContent.charAt(0) === "\u2605" ? "&#9733;" : "&#9734;";\
+      } else {\
+        bBtn.innerHTML = "&#9734;";\
       }\
     };\
   })\
