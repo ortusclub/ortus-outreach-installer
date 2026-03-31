@@ -703,7 +703,8 @@ function getVoiceList() {
       voice_id: v.voice_id,
       name: v.name,
       description: labelParts.join(', '),
-      category: v.category || ''
+      category: v.category || '',
+      preview_url: v.preview_url || ''
     };
   });
 
@@ -718,6 +719,41 @@ function getLastUsedVoiceId() {
 function saveLastUsedVoiceId(voiceId) {
   if (voiceId) {
     PropertiesService.getUserProperties().setProperty('LAST_VOICE_ID', voiceId);
+  }
+}
+
+/**
+ * Proxy for voice preview audio — fetches the MP3 from the preview URL
+ * and returns it as a base64-encoded string.
+ * Required because preview URLs (storage.googleapis.com) are CORS-blocked
+ * in the GAS sandboxed iframe.
+ */
+function getVoicePreview(voiceId) {
+  try {
+    var voices = getVoiceList();
+    var match = null;
+    for (var i = 0; i < voices.length; i++) {
+      if (voices[i].voice_id === voiceId) {
+        match = voices[i];
+        break;
+      }
+    }
+
+    if (!match || !match.preview_url) {
+      throw new Error('No preview available for this voice');
+    }
+
+    Logger.log('[getVoicePreview] Fetching preview for voice: ' + voiceId);
+    var response = UrlFetchApp.fetch(match.preview_url, { muteHttpExceptions: true });
+
+    if (response.getResponseCode() !== 200) {
+      throw new Error('Failed to fetch preview audio: ' + response.getResponseCode());
+    }
+
+    return Utilities.base64Encode(response.getBlob().getBytes());
+  } catch (e) {
+    Logger.log('[getVoicePreview] Error: ' + e.message);
+    throw e;
   }
 }
 
