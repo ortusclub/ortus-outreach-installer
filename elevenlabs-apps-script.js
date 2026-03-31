@@ -676,14 +676,7 @@ function listBatchCalls() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function getVoiceList() {
-  var cache = CacheService.getScriptCache();
-  var cached = cache.get('VOICE_LIST');
-  if (cached) {
-    Logger.log('[getVoiceList] Cache HIT — returning cached voices');
-    return JSON.parse(cached);
-  }
-
-  Logger.log('[getVoiceList] Cache MISS — fetching from /v1/voices');
+  Logger.log('[getVoiceList] Fetching from /v1/voices');
   var apiKey = getApiKey();
   var options = {
     method: 'get',
@@ -715,7 +708,6 @@ function getVoiceList() {
   });
 
   Logger.log('[getVoiceList] Fetched ' + voices.length + ' voices');
-  cache.put('VOICE_LIST', JSON.stringify(voices), 3600);
   return voices;
 }
 
@@ -907,47 +899,31 @@ function refreshStatus() {\
     .listBatchCalls();\
 }\
 \
-// Voice dropdown async loading\
-var _voicesLoaded = false;\
-var _lastVoiceLoaded = false;\
-var _voiceList = [];\
-var _lastVoiceId = "";\
-\
+// Voice dropdown loading\
 google.script.run\
   .withSuccessHandler(function(voices) {\
-    _voiceList = voices || [];\
-    _voicesLoaded = true;\
-    if (_lastVoiceLoaded) _populateVoiceDropdown();\
+    var sel = document.getElementById("voice_id");\
+    sel.innerHTML = "";\
+    var def = document.createElement("option");\
+    def.value = "";\
+    def.textContent = "Agent default voice";\
+    sel.appendChild(def);\
+    (voices || []).forEach(function(v) {\
+      var opt = document.createElement("option");\
+      opt.value = v.voice_id;\
+      opt.textContent = v.name + (v.description ? " - " + v.description : "");\
+      sel.appendChild(opt);\
+    });\
   })\
   .withFailureHandler(function(err) {\
     var sel = document.getElementById("voice_id");\
-    sel.innerHTML = "<option value=\\"\\">" + "Error loading voices</option>";\
+    sel.innerHTML = "";\
+    var opt = document.createElement("option");\
+    opt.value = "";\
+    opt.textContent = "Error loading voices";\
+    sel.appendChild(opt);\
   })\
   .getVoiceList();\
-\
-google.script.run\
-  .withSuccessHandler(function(id) {\
-    _lastVoiceId = id || "";\
-    _lastVoiceLoaded = true;\
-    if (_voicesLoaded) _populateVoiceDropdown();\
-  })\
-  .withFailureHandler(function() {\
-    _lastVoiceLoaded = true;\
-    if (_voicesLoaded) _populateVoiceDropdown();\
-  })\
-  .getLastUsedVoiceId();\
-\
-function _populateVoiceDropdown() {\
-  var sel = document.getElementById("voice_id");\
-  sel.innerHTML = "<option value=\\"\\">" + "Agent default voice</option>";\
-  _voiceList.forEach(function(v) {\
-    var opt = document.createElement("option");\
-    opt.value = v.voice_id;\
-    opt.textContent = v.name + (v.description ? " \\u2014 " + v.description : "");\
-    if (v.voice_id === _lastVoiceId) opt.selected = true;\
-    sel.appendChild(opt);\
-  });\
-}\
 </script>\
 </body>\
 </html>';
