@@ -708,7 +708,12 @@ function getVoiceList() {
     };
   });
 
-  Logger.log('[getVoiceList] Fetched ' + voices.length + ' voices');
+  /* Sort bookmarked voices to the top */
+  var bookmarks = getBookmarkedVoiceIds();
+  voices.forEach(function(v) { v.bookmarked = bookmarks.indexOf(v.voice_id) !== -1; });
+  voices.sort(function(a, b) { return (b.bookmarked ? 1 : 0) - (a.bookmarked ? 1 : 0); });
+
+  Logger.log('[getVoiceList] Fetched ' + voices.length + ' voices (' + bookmarks.length + ' bookmarked)');
   return voices;
 }
 
@@ -720,6 +725,39 @@ function saveLastUsedVoiceId(voiceId) {
   if (voiceId) {
     PropertiesService.getUserProperties().setProperty('LAST_VOICE_ID', voiceId);
   }
+}
+
+/**
+ * Returns the array of bookmarked voice IDs from UserProperties.
+ * Uses local persistence because the ElevenLabs API is_bookmarked field
+ * is unreliable (was null in testing).
+ */
+function getBookmarkedVoiceIds() {
+  try {
+    var raw = PropertiesService.getUserProperties().getProperty('BOOKMARKED_VOICES');
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    Logger.log('[getBookmarkedVoiceIds] Error parsing bookmarks: ' + e.message);
+    return [];
+  }
+}
+
+/**
+ * Toggles a voice ID in/out of the bookmarked list and persists the result.
+ * Returns the updated bookmarks array.
+ */
+function toggleVoiceBookmark(voiceId) {
+  var bookmarks = getBookmarkedVoiceIds();
+  var idx = bookmarks.indexOf(voiceId);
+  if (idx !== -1) {
+    bookmarks.splice(idx, 1);
+  } else {
+    bookmarks.push(voiceId);
+  }
+  PropertiesService.getUserProperties().setProperty('BOOKMARKED_VOICES', JSON.stringify(bookmarks));
+  Logger.log('[toggleVoiceBookmark] Updated bookmarks: ' + JSON.stringify(bookmarks));
+  return bookmarks;
 }
 
 /**
