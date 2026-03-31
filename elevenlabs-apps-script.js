@@ -923,7 +923,7 @@ function refreshStatus() {\
 var _voicesLoaded = false;\
 var _lastVoiceLoaded = false;\
 var _voiceList = [];\
-var _lastVoiceId = '';\
+var _lastVoiceId = "";\
 \
 google.script.run\
   .withSuccessHandler(function(voices) {\
@@ -939,7 +939,7 @@ google.script.run\
 \
 google.script.run\
   .withSuccessHandler(function(id) {\
-    _lastVoiceId = id || '';\
+    _lastVoiceId = id || "";\
     _lastVoiceLoaded = true;\
     if (_voicesLoaded) _populateVoiceDropdown();\
   })\
@@ -955,7 +955,7 @@ function _populateVoiceDropdown() {\
   _voiceList.forEach(function(v) {\
     var opt = document.createElement('option');\
     opt.value = v.voice_id;\
-    opt.textContent = v.name + (v.description ? ' \\u2014 ' + v.description : '');\
+    opt.textContent = v.name + (v.description ? " \\u2014 " + v.description : "");\
     if (v.voice_id === _lastVoiceId) opt.selected = true;\
     sel.appendChild(opt);\
   });\
