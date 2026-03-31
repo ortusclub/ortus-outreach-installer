@@ -683,25 +683,21 @@ function getVoiceList() {
     return JSON.parse(cached);
   }
 
-  Logger.log('[getVoiceList] Cache MISS — fetching from API');
+  Logger.log('[getVoiceList] Cache MISS — fetching from /v1/voices');
   var apiKey = getApiKey();
-  var url = 'https://api.elevenlabs.io/v2/voices?page_size=30&sort=name&sort_direction=asc&show_legacy=false';
   var options = {
     method: 'get',
     headers: { 'xi-api-key': apiKey },
     muteHttpExceptions: true
   };
 
-  var response = UrlFetchApp.fetch(url, options);
+  var response = UrlFetchApp.fetch(CONFIG.API_BASE + '/voices', options);
   if (response.getResponseCode() !== 200) {
     Logger.log('[getVoiceList] API error: ' + response.getResponseCode());
     throw new Error('Failed to fetch voices: ' + response.getResponseCode());
   }
 
   var data = JSON.parse(response.getContentText());
-  if (data.has_more) {
-    Logger.log('[getVoiceList] WARNING: More than 100 voices exist. Pagination not implemented.');
-  }
 
   var voices = (data.voices || []).map(function(v) {
     var labelParts = [];
@@ -714,16 +710,8 @@ function getVoiceList() {
       voice_id: v.voice_id,
       name: v.name,
       description: labelParts.join(', '),
-      category: v.category || '',
-      is_bookmarked: v.favorited_at_unix ? true : false
+      category: v.category || ''
     };
-  });
-
-  // Sort: bookmarked first (per D-04, data ready for Phase 3 VOICE-07)
-  voices.sort(function(a, b) {
-    if (a.is_bookmarked && !b.is_bookmarked) return -1;
-    if (!a.is_bookmarked && b.is_bookmarked) return 1;
-    return 0;
   });
 
   Logger.log('[getVoiceList] Fetched ' + voices.length + ' voices');
@@ -924,27 +912,14 @@ var _voicesLoaded = false;\
 var _lastVoiceLoaded = false;\
 var _voiceList = [];\
 var _lastVoiceId = "";\
-var _loadDots = 0;\
-var _loadTimer = setInterval(function() {\
-  _loadDots = (_loadDots + 1) % 4;\
-  var dots = "." .repeat(_loadDots + 1);\
-  var elapsed = Math.round((Date.now() - _loadStart) / 1000);\
-  var sel = document.getElementById("voice_id");\
-  if (sel && !_voicesLoaded) {\
-    sel.innerHTML = "<option value=\\"\\">" + "Loading voices" + dots + " (" + elapsed + "s)</option>";\
-  }\
-}, 500);\
-var _loadStart = Date.now();\
 \
 google.script.run\
   .withSuccessHandler(function(voices) {\
-    clearInterval(_loadTimer);\
     _voiceList = voices || [];\
     _voicesLoaded = true;\
     if (_lastVoiceLoaded) _populateVoiceDropdown();\
   })\
   .withFailureHandler(function(err) {\
-    clearInterval(_loadTimer);\
     var sel = document.getElementById("voice_id");\
     sel.innerHTML = "<option value=\\"\\">" + "Error loading voices</option>";\
   })\
