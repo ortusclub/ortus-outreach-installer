@@ -789,6 +789,11 @@ function getSidebarHtml() {
 \
 <h3>Event Details</h3>\
 <div class="field"><label>Caller Name</label><input id="caller_name" value="Sarah" /></div>\
+<div class="field"><label>Voice</label>\
+  <select id="voice_id">\
+    <option value="">Loading voices...</option>\
+  </select>\
+</div>\
 <div class="row">\
   <div class="field"><label>Host Name</label><input id="host_name" placeholder="Full name" /></div>\
   <div class="field"><label>Host First Name</label><input id="host_first_name" placeholder="First name" /></div>\
@@ -867,6 +872,7 @@ function submit() {\
     event_format: document.getElementById("event_format").value,\
     event_context: document.getElementById("event_context").value,\
     target_audience: document.getElementById("target_audience").value,\
+    voice_id: document.getElementById("voice_id").value,\
     timezone: "Europe/London",\
   };\
 \
@@ -911,6 +917,48 @@ function refreshStatus() {\
       document.getElementById("historyList").innerHTML = "<em>Error: " + err.message + "</em>";\
     })\
     .listBatchCalls();\
+}\
+\
+// Voice dropdown async loading\
+var _voicesLoaded = false;\
+var _lastVoiceLoaded = false;\
+var _voiceList = [];\
+var _lastVoiceId = '';\
+\
+google.script.run\
+  .withSuccessHandler(function(voices) {\
+    _voiceList = voices || [];\
+    _voicesLoaded = true;\
+    if (_lastVoiceLoaded) _populateVoiceDropdown();\
+  })\
+  .withFailureHandler(function(err) {\
+    var sel = document.getElementById('voice_id');\
+    sel.innerHTML = '<option value="">Error loading voices</option>';\
+  })\
+  .getVoiceList();\
+\
+google.script.run\
+  .withSuccessHandler(function(id) {\
+    _lastVoiceId = id || '';\
+    _lastVoiceLoaded = true;\
+    if (_voicesLoaded) _populateVoiceDropdown();\
+  })\
+  .withFailureHandler(function() {\
+    _lastVoiceLoaded = true;\
+    if (_voicesLoaded) _populateVoiceDropdown();\
+  })\
+  .getLastUsedVoiceId();\
+\
+function _populateVoiceDropdown() {\
+  var sel = document.getElementById('voice_id');\
+  sel.innerHTML = '<option value="">Agent default voice</option>';\
+  _voiceList.forEach(function(v) {\
+    var opt = document.createElement('option');\
+    opt.value = v.voice_id;\
+    opt.textContent = v.name + (v.description ? ' \\u2014 ' + v.description : '');\
+    if (v.voice_id === _lastVoiceId) opt.selected = true;\
+    sel.appendChild(opt);\
+  });\
 }\
 </script>\
 </body>\
