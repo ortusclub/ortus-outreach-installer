@@ -23,9 +23,9 @@
 - [ ] **VOICE-02**: Voice dropdown shows loading state while fetching voices from the API
 - [x] **VOICE-03**: Selected voice is applied to all recipients in the batch via `conversation_initiation_client_data.conversation_config_override.tts.voice_id`
 - [x] **VOICE-04**: Last-used voice is persisted and pre-selected on next sidebar open
-- [ ] **VOICE-05**: Voice labels (accent, gender, tone) are displayed next to each voice name in the dropdown or below it
-- [ ] **VOICE-06**: Play button next to dropdown lets operator preview the voice audio before submitting
-- [ ] **VOICE-07**: Bookmarked/favorited voices appear at the top of the dropdown list
+- [x] **VOICE-05**: Voice labels (accent, gender, tone) are displayed next to each voice name in the dropdown or below it
+- [x] **VOICE-06**: Play button next to dropdown lets operator preview the voice audio before submitting
+- [x] **VOICE-07**: Bookmarked/favorited voices appear at the top of the dropdown list
 - [x] **VOICE-08**: If no voice is selected, `conversation_config_override` is omitted entirely from the payload (not sent as empty/null)
 
 ## v2 Requirements
@@ -60,9 +60,9 @@
 | VOICE-02 | Phase 2 | Pending |
 | VOICE-03 | Phase 2 | Complete |
 | VOICE-04 | Phase 2 | Complete |
-| VOICE-05 | Phase 3 | Pending |
-| VOICE-06 | Phase 3 | Pending |
-| VOICE-07 | Phase 3 | Pending |
+| VOICE-05 | Phase 3 | Complete |
+| VOICE-06 | Phase 3 | Complete |
+| VOICE-07 | Phase 3 | Complete |
 | VOICE-08 | Phase 2 | Complete |
 
 **Coverage:**

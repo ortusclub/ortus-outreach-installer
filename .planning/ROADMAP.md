@@ -56,9 +56,9 @@ Plans:
   2. Each voice in the dropdown displays accent, gender, and tone labels
   3. Bookmarked/favorited voices appear at the top of the dropdown list
   4. Empty required sidebar fields are highlighted with red borders and batch submission is blocked until filled
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
-- [ ] 03-01-PLAN.md — Add preview_url to voice list, getVoicePreview proxy, bookmark persistence functions (VOICE-05, VOICE-06, VOICE-07)
+- [x] 03-01-PLAN.md — Add preview_url to voice list, getVoicePreview proxy, bookmark persistence functions (VOICE-05, VOICE-06, VOICE-07)
 - [ ] 03-02-PLAN.md — Add play button, bookmark star UI, input validation to sidebar (VARS-04, VOICE-05, VOICE-06, VOICE-07)
 
 ## Progress
@@ -70,7 +70,7 @@ Phases execute in numeric order: 1 -> 2 -> 3
 |-------|----------------|--------|-----------|
 | 1. Foundation Fix | 1/2 | In Progress | - |
 | 2. Voice Selection Core | 0/2 | Planned | - |
-| 3. UX Polish | 0/2 | Planned | - |
+| 3. UX Polish | 1/2 | In Progress|  |
 
 ### Phase 4: Agent Intelligence — Enable voicemail detection, end call tool, faster TTS, port Vapi prompt, configure data collection
 
