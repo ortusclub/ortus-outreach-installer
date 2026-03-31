@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. The fixed Apps Script code is live in the Google Apps Script editor
 **Plans:** 2 plans
 Plans:
-- [ ] 01-01-PLAN.md — Audit agent prompt for all 14 dynamic variable references, PATCH if missing (DASH-02)
+- [x] 01-01-PLAN.md — Audit agent prompt for all 14 dynamic variable references, PATCH if missing (DASH-02)
 - [ ] 01-02-PLAN.md — Deploy fixed code to Apps Script editor, enable TTS override, verify with test call (DASH-01, VARS-01, VARS-02, VARS-03)
 
 ### Phase 2: Voice Selection Core
