@@ -23,10 +23,11 @@ The sidebar must reliably pass all user-entered event details (host name, event 
 - ✓ Dynamic variable mapping — all 14 sidebar inputs correctly nested under `conversation_initiation_client_data.dynamic_variables` — Validated in Phase 1
 - ✓ TTS override enabled in agent Security settings — Validated in Phase 1
 - ✓ Agent prompt references all 14 dynamic variables — Validated in Phase 1
+- ✓ Voice selection dropdown in sidebar — operator picks voice, applied via per-recipient override — Validated in Phase 2
 
 ### Active
 
-- [ ] Voice selection dropdown in sidebar — fetch available voices from ElevenLabs API and let operator pick before submitting
+(None remaining from original scope — Phase 3 UX Polish pending)
 
 ### Out of Scope
 
@@ -79,4 +80,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after Phase 1 completion*
+*Last updated: 2026-03-31 after Phase 2 completion*
