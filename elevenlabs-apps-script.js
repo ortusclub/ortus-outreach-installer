@@ -899,7 +899,6 @@ function refreshStatus() {\
     .listBatchCalls();\
 }\
 \
-// Voice dropdown loading\
 google.script.run\
   .withSuccessHandler(function(voices) {\
     var sel = document.getElementById("voice_id");\
