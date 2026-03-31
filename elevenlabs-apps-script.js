@@ -685,7 +685,7 @@ function getVoiceList() {
 
   Logger.log('[getVoiceList] Cache MISS — fetching from API');
   var apiKey = getApiKey();
-  var url = 'https://api.elevenlabs.io/v2/voices?page_size=100&sort=name&sort_direction=asc';
+  var url = 'https://api.elevenlabs.io/v2/voices?page_size=30&sort=name&sort_direction=asc&show_legacy=false';
   var options = {
     method: 'get',
     headers: { 'xi-api-key': apiKey },
