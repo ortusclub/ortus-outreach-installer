@@ -27,7 +27,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. TTS override is enabled in the ElevenLabs agent Security settings (confirmed via dashboard)
   3. All 14 dynamic variables are referenced in the agent prompt template (confirmed via audit)
   4. The fixed Apps Script code is live in the Google Apps Script editor
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — Audit agent prompt for all 14 dynamic variable references, PATCH if missing (DASH-02)
+- [ ] 01-02-PLAN.md — Deploy fixed code to Apps Script editor, enable TTS override, verify with test call (DASH-01, VARS-01, VARS-02, VARS-03)
 
 ### Phase 2: Voice Selection Core
 **Goal**: Operators can select a calling voice from a dropdown in the sidebar and that voice is used for all calls in the batch
@@ -61,6 +64,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation Fix | 0/TBD | Not started | - |
+| 1. Foundation Fix | 0/2 | Planned | - |
 | 2. Voice Selection Core | 0/TBD | Not started | - |
 | 3. UX Polish | 0/TBD | Not started | - |
