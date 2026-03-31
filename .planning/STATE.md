@@ -70,6 +70,12 @@ Recent decisions affecting current work:
 - [Phase 02]: getUserProperties for per-user voice preference isolation
 - [Phase 02]: Conditional voice override: omit conversation_config_override entirely when no voice selected
 
+### Roadmap Evolution
+
+- Phase 4 added: Agent Intelligence — voicemail detection, end_call tool, faster TTS, port Vapi prompt, data collection
+- Phase 5 added: Reporting & Sheet Integration — transcripts, recordings, summaries, success/failure in sheet
+- Phase 6 added: SMS Follow-Up & Scheduling — Twilio SMS fallback, retry logic, callback scheduling
+
 ### Pending Todos
 
 None yet.

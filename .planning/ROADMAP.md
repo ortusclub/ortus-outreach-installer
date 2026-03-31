@@ -69,3 +69,33 @@ Phases execute in numeric order: 1 -> 2 -> 3
 | 1. Foundation Fix | 1/2 | In Progress | - |
 | 2. Voice Selection Core | 0/2 | Planned | - |
 | 3. UX Polish | 0/TBD | Not started | - |
+
+### Phase 4: Agent Intelligence — Enable voicemail detection, end call tool, faster TTS, port Vapi prompt, configure data collection
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 3
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 4 to break down)
+
+### Phase 5: Reporting and Sheet Integration — Fetch transcripts, recordings, summaries, success/failure status per call, clean UI in sheet
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 4
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 5 to break down)
+
+### Phase 6: SMS Follow-Up and Scheduling — Twilio SMS on voicemail/no-answer/gatekeeper, customizable templates, retry logic, callback scheduling
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 5
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 6 to break down)
