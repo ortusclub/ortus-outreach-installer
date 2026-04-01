@@ -85,13 +85,14 @@ Plans:
 
 ### Phase 5: Reporting and Sheet Integration — Fetch transcripts, recordings, summaries, success/failure status per call, clean UI in sheet
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Automatically fetch full post-call data (transcripts, summaries, recordings, data collection results) from ElevenLabs and write it to the Google Sheet with color-coded outcomes and emoji icons, so operators can review all call results without leaving the sheet.
+**Requirements**: RPT-01, RPT-02, RPT-03, RPT-04, RPT-05, RPT-06, RPT-07, RPT-08
 **Depends on:** Phase 4
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 5 to break down)
+- [ ] 05-01-PLAN.md — Extend tracking columns and enhance updateSheetWithCallResults to fetch full conversation detail (RPT-01, RPT-02, RPT-03, RPT-04, RPT-05, RPT-06)
+- [ ] 05-02-PLAN.md — Add color-coded backgrounds and emoji icons to Outcome and Call Type columns, human verify (RPT-07, RPT-08)
 
 ### Phase 6: SMS Follow-Up and Scheduling — Twilio SMS on voicemail/no-answer/gatekeeper, customizable templates, retry logic, callback scheduling
 
