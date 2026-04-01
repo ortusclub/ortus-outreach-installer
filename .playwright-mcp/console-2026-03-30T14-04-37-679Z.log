@@ -1,0 +1,1 @@
+[    1734ms] [WARNING] Image with src "https://www.ortusclub.com/wp-content/uploads/2021/04/image-1.png" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio. @ http://localhost:4000/_next/static/chunks/0jmr_next_dist_0defp.-._.js:2431

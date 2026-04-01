@@ -14,8 +14,8 @@
     <!-- ── GoLogin Profiles ── -->
     <div class="section">
       <h2>1. Select GoLogin Accounts</h2>
-      <input type="text" id="profile-search" placeholder="Search accounts by name or email…" oninput="filterProfiles()" style="margin-bottom:8px" />
-      <div style="margin-bottom:8px; display:flex; gap:8px">
+      <input type="text" id="profile-search" placeholder="Search accounts by name or email…" oninput="filterProfiles()" />
+      <div style="margin:8px 0; display:flex; gap:8px">
         <button class="btn btn-secondary" onclick="selectAllVisible()">Select All Visible</button>
         <button class="btn btn-secondary" onclick="deselectAll()">Deselect All</button>
         <button class="btn btn-secondary" onclick="loadProfiles()">Refresh</button>
@@ -23,6 +23,11 @@
       <div id="profiles-loading">Loading profiles…</div>
       <div id="profiles-grid" class="profile-grid hidden"></div>
       <div id="profiles-count" style="color:#8b949e; font-size:0.8rem; margin-top:4px"></div>
+
+      <div id="selected-panel" class="selected-panel hidden">
+        <h3>Selected accounts (execution order)</h3>
+        <div id="selected-list"></div>
+      </div>
     </div>
 
     <!-- ── Google Sheet ── -->
@@ -34,11 +39,33 @@
       <div id="sheet-preview" class="hidden" style="margin-top:12px"></div>
     </div>
 
-    <!-- ── Templates ── -->
+    <!-- ── Settings ── -->
     <div class="section">
-      <h2>3. Message Templates</h2>
+      <h2>3. Campaign Settings</h2>
+      <label for="campaign-mode">Campaign Mode</label>
+      <select id="campaign-mode" onchange="onModeChange()">
+        <option value="connect_only">Connect Only</option>
+        <option value="check_status">Check Status (verify acceptances)</option>
+        <option value="message_only">Message Only (follow-ups)</option>
+        <option value="connect_and_message">Connect + Message</option>
+        <option value="auto">Auto (everything)</option>
+        <option value="inmail_only">InMail Only</option>
+      </select>
+      <label for="daily-limit">Campaign Limit (per account)</label>
+      <input type="number" id="daily-limit" value="40" min="1" max="100" />
 
-      <label for="tpl-note">Connection Note <small>(max 300 chars)</small></label>
+      <div id="open-profile-toggle" style="display:none; margin-top:8px">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
+          <input type="checkbox" id="open-profile-msg" style="width:16px; height:16px; accent-color:#58a6ff" />
+          <span style="font-size:0.9rem; color:#c9d1d9">Message Open Profiles directly</span>
+        </label>
+        <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 0 24px">If "Open Profile" = Yes in the sheet, send a message instead of connecting</p>
+      </div>
+    </div>
+
+    <!-- ── Connection Note (connect_only, connect_and_message, auto) ── -->
+    <div class="section tpl-section" id="tpl-connect-section">
+      <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
       <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
       <div class="placeholder-tags" data-target="tpl-note">
         <span class="tag" data-val="{firstName}">{firstName}</span>
@@ -46,28 +73,13 @@
         <span class="tag" data-val="{company}">{company}</span>
         <span class="tag" data-val="{title}">{title}</span>
       </div>
+    </div>
 
-      <label for="tpl-followup">Follow-up Message <small>(for already-connected)</small></label>
-      <textarea id="tpl-followup" rows="2" placeholder="Thanks for connecting, {firstName}!"></textarea>
+    <!-- ── Follow-up Message (message_only, connect_and_message, auto) ── -->
+    <div class="section tpl-section" id="tpl-message-section" style="display:none">
+      <h2>Follow-up Message</h2>
+      <textarea id="tpl-followup" rows="3" placeholder="Thanks for connecting, {firstName}! I wanted to reach out because…"></textarea>
       <div class="placeholder-tags" data-target="tpl-followup">
-        <span class="tag" data-val="{firstName}">{firstName}</span>
-        <span class="tag" data-val="{lastName}">{lastName}</span>
-        <span class="tag" data-val="{company}">{company}</span>
-        <span class="tag" data-val="{title}">{title}</span>
-      </div>
-
-      <label for="tpl-inmail-subject">InMail Subject</label>
-      <input type="text" id="tpl-inmail-subject" placeholder="Quick question about {company}" />
-      <div class="placeholder-tags" data-target="tpl-inmail-subject">
-        <span class="tag" data-val="{firstName}">{firstName}</span>
-        <span class="tag" data-val="{lastName}">{lastName}</span>
-        <span class="tag" data-val="{company}">{company}</span>
-        <span class="tag" data-val="{title}">{title}</span>
-      </div>
-
-      <label for="tpl-inmail-body">InMail Body</label>
-      <textarea id="tpl-inmail-body" rows="2" placeholder="Hi {firstName}, I came across your profile…"></textarea>
-      <div class="placeholder-tags" data-target="tpl-inmail-body">
         <span class="tag" data-val="{firstName}">{firstName}</span>
         <span class="tag" data-val="{lastName}">{lastName}</span>
         <span class="tag" data-val="{company}">{company}</span>
@@ -75,21 +87,18 @@
       </div>
     </div>
 
-    <!-- ── Settings ── -->
-    <div class="section">
-      <h2>4. Settings</h2>
-
-      <label for="campaign-mode">Campaign Mode</label>
-      <select id="campaign-mode">
-        <option value="auto">Auto (detect &amp; do everything)</option>
-        <option value="connect_only">Connect Only (send connection requests)</option>
-        <option value="connect_and_message">Connect + Message (connect first, message on next run)</option>
-        <option value="message_only">Message Only (message already-connected contacts)</option>
-        <option value="inmail_only">InMail Only (send InMails to non-connectable)</option>
-      </select>
-
-      <label for="daily-limit">Campaign Limit (per account)</label>
-      <input type="number" id="daily-limit" value="40" min="1" max="100" />
+    <!-- ── InMail (inmail_only, auto) ── -->
+    <div class="section tpl-section" id="tpl-inmail-section" style="display:none">
+      <h2>InMail Template</h2>
+      <label for="tpl-inmail-subject">Subject</label>
+      <input type="text" id="tpl-inmail-subject" placeholder="Quick question about {company}" />
+      <label for="tpl-inmail-body">Body</label>
+      <textarea id="tpl-inmail-body" rows="3" placeholder="Hi {firstName}, I came across your profile…"></textarea>
+      <div class="placeholder-tags" data-target="tpl-inmail-body">
+        <span class="tag" data-val="{firstName}">{firstName}</span>
+        <span class="tag" data-val="{lastName}">{lastName}</span>
+        <span class="tag" data-val="{company}">{company}</span>
+      </div>
     </div>
 
     <!-- ── Controls ── -->
@@ -101,52 +110,21 @@
     <!-- ── Live Status ── -->
     <div class="section">
       <h2>Live Status</h2>
-
+      <div id="account-queue" class="account-queue hidden"></div>
       <div class="status-grid">
-        <div class="stat-card">
-          <div class="label">Status</div>
-          <div class="value" id="st-running">Idle</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Mode</div>
-          <div class="value" id="st-mode" style="font-size:0.85rem">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Current Account</div>
-          <div class="value" id="st-profile">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Today's Progress</div>
-          <div class="value" id="st-today">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Total Processed</div>
-          <div class="value" id="st-total">0 / 0</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Skipped (mode)</div>
-          <div class="value" id="st-skipped">0</div>
-        </div>
-        <div class="stat-card">
-          <div class="label">Errors</div>
-          <div class="value" id="st-errors">0</div>
-        </div>
+        <div class="stat-card"><div class="label">Status</div><div class="value" id="st-running">Idle</div></div>
+        <div class="stat-card"><div class="label">Mode</div><div class="value" id="st-mode" style="font-size:0.85rem">—</div></div>
+        <div class="stat-card"><div class="label">Current Account</div><div class="value" id="st-profile" style="font-size:0.75rem">—</div></div>
+        <div class="stat-card"><div class="label">Progress</div><div class="value" id="st-today">0</div></div>
+        <div class="stat-card"><div class="label">Total</div><div class="value" id="st-total">0</div></div>
+        <div class="stat-card"><div class="label">Errors</div><div class="value" id="st-errors">0</div></div>
       </div>
-
-      <div class="progress-bar">
-        <div class="fill" id="st-bar" style="width:0%"></div>
-      </div>
-
-      <div class="log-panel" id="log-panel">
-        <div class="entry info">Waiting to start…</div>
-      </div>
+      <div class="progress-bar"><div class="fill" id="st-bar" style="width:0%"></div></div>
+      <div class="log-panel" id="log-panel"><div class="entry info">Waiting to start…</div></div>
     </div>
 
-    <p style="text-align:center; color:#484f58; margin-top:32px; font-size:0.8rem">
-      Ortus Club &copy; 2026
-    </p>
+    <p style="text-align:center; color:#484f58; margin-top:32px; font-size:0.8rem">Ortus Club &copy; 2026</p>
   </div>
-
   <script src="/js/app.js"></script>
 </body>
 </html>

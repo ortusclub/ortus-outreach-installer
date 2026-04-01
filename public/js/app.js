@@ -1,7 +1,8 @@
 /* global fetch */
 
-let selectedProfileIds = new Set();
-let allProfilesData = []; // Store for filtering
+let selectedProfileIds = [];
+let selectedProfileNames = {};
+let allProfilesData = [];
 let pollInterval = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -10,7 +11,6 @@ let pollInterval = null;
 async function loadProfiles() {
   const loading = document.getElementById('profiles-loading');
   const grid = document.getElementById('profiles-grid');
-
   loading.textContent = 'Loading profiles…';
   loading.classList.remove('hidden');
   grid.classList.add('hidden');
@@ -18,86 +18,152 @@ async function loadProfiles() {
   try {
     const res = await fetch('/api/profiles');
     const profiles = await res.json();
-
-    if (profiles.error) {
-      loading.textContent = `Error: ${profiles.error}`;
-      return;
-    }
-
+    if (profiles.error) { loading.textContent = `Error: ${profiles.error}`; return; }
     allProfilesData = profiles;
     loading.classList.add('hidden');
     grid.classList.remove('hidden');
-
     renderProfiles(profiles);
   } catch (err) {
-    loading.textContent = `Failed to load profiles: ${err.message}`;
+    loading.textContent = `Failed: ${err.message}`;
   }
 }
 
 function renderProfiles(profiles) {
   const grid = document.getElementById('profiles-grid');
   grid.innerHTML = '';
-
   profiles.forEach((p) => {
     const item = document.createElement('label');
-    item.className = 'profile-item';
+    item.className = 'profile-item' + (selectedProfileIds.includes(p.id) ? ' selected' : '');
     item.dataset.profileId = p.id;
     item.innerHTML = `
-      <input type="checkbox" value="${p.id}" ${selectedProfileIds.has(p.id) ? 'checked' : ''} />
+      <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} />
       <div>
         <div class="name">${escHtml(p.name)}</div>
-        <div class="id">${p.id}</div>
+        <div class="id">${p.id.substring(0, 12)}…</div>
       </div>
     `;
-
     const cb = item.querySelector('input');
     cb.addEventListener('change', () => {
-      if (cb.checked) selectedProfileIds.add(p.id);
-      else selectedProfileIds.delete(p.id);
-      updateProfileCount();
+      if (cb.checked) {
+        if (!selectedProfileIds.includes(p.id)) {
+          selectedProfileIds.push(p.id);
+          selectedProfileNames[p.id] = p.name;
+        }
+        item.classList.add('selected');
+      } else {
+        selectedProfileIds = selectedProfileIds.filter(id => id !== p.id);
+        delete selectedProfileNames[p.id];
+        item.classList.remove('selected');
+      }
+      renderSelectedPanel();
     });
-
     grid.appendChild(item);
   });
+  renderSelectedPanel();
+}
 
-  updateProfileCount();
+function renderSelectedPanel() {
+  const panel = document.getElementById('selected-panel');
+  const list = document.getElementById('selected-list');
+  const count = document.getElementById('profiles-count');
+
+  if (selectedProfileIds.length === 0) {
+    panel.classList.add('hidden');
+    if (count) count.textContent = `0 selected / ${allProfilesData.length} total`;
+    return;
+  }
+
+  panel.classList.remove('hidden');
+  if (count) count.textContent = `${selectedProfileIds.length} selected / ${allProfilesData.length} total`;
+
+  list.innerHTML = selectedProfileIds.map((id, i) => {
+    const name = selectedProfileNames[id] || id;
+    return `<div class="selected-item">
+      <span class="order">${i + 1}</span>
+      <span class="name">${escHtml(name)}</span>
+      <button class="btn-remove" onclick="removeProfile('${id}')" title="Remove">&times;</button>
+    </div>`;
+  }).join('');
+}
+
+function removeProfile(id) {
+  selectedProfileIds = selectedProfileIds.filter(pid => pid !== id);
+  delete selectedProfileNames[id];
+  const cb = document.querySelector(`#profiles-grid input[value="${id}"]`);
+  if (cb) { cb.checked = false; cb.closest('.profile-item')?.classList.remove('selected'); }
+  renderSelectedPanel();
 }
 
 function filterProfiles() {
   const query = (document.getElementById('profile-search').value || '').toLowerCase().trim();
-  if (!query) {
-    renderProfiles(allProfilesData);
-    return;
-  }
-
-  const filtered = allProfilesData.filter((p) =>
-    p.name.toLowerCase().includes(query) ||
-    p.id.toLowerCase().includes(query) ||
-    (p.notes || '').toLowerCase().includes(query)
-  );
+  const filtered = query
+    ? allProfilesData.filter(p => p.name.toLowerCase().includes(query) || p.id.includes(query))
+    : allProfilesData;
   renderProfiles(filtered);
 }
 
 function selectAllVisible() {
-  const checkboxes = document.querySelectorAll('#profiles-grid input[type="checkbox"]');
-  checkboxes.forEach((cb) => {
-    cb.checked = true;
-    selectedProfileIds.add(cb.value);
+  document.querySelectorAll('#profiles-grid input[type="checkbox"]').forEach(cb => {
+    if (!cb.checked) {
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change'));
+    }
   });
-  updateProfileCount();
 }
 
 function deselectAll() {
-  selectedProfileIds.clear();
-  const checkboxes = document.querySelectorAll('#profiles-grid input[type="checkbox"]');
-  checkboxes.forEach((cb) => { cb.checked = false; });
-  updateProfileCount();
+  selectedProfileIds = [];
+  selectedProfileNames = {};
+  document.querySelectorAll('#profiles-grid input[type="checkbox"]').forEach(cb => {
+    cb.checked = false;
+    cb.closest('.profile-item')?.classList.remove('selected');
+  });
+  renderSelectedPanel();
 }
 
-function updateProfileCount() {
-  const el = document.getElementById('profiles-count');
-  if (el) {
-    el.textContent = `${selectedProfileIds.size} selected / ${allProfilesData.length} total`;
+// ─────────────────────────────────────────────────────────────────────────────
+// Mode-based template visibility
+// ─────────────────────────────────────────────────────────────────────────────
+function onModeChange() {
+  const mode = document.getElementById('campaign-mode').value;
+  const connect = document.getElementById('tpl-connect-section');
+  const message = document.getElementById('tpl-message-section');
+  const inmail = document.getElementById('tpl-inmail-section');
+  const openToggle = document.getElementById('open-profile-toggle');
+
+  connect.style.display = 'none';
+  message.style.display = 'none';
+  inmail.style.display = 'none';
+  openToggle.style.display = 'none';
+
+  if (mode === 'connect_only') {
+    connect.style.display = '';
+    openToggle.style.display = '';
+  } else if (mode === 'message_only') {
+    message.style.display = '';
+  } else if (mode === 'connect_and_message') {
+    connect.style.display = '';
+    message.style.display = '';
+    openToggle.style.display = '';
+  } else if (mode === 'inmail_only') {
+    inmail.style.display = '';
+  } else if (mode === 'auto') {
+    connect.style.display = '';
+    message.style.display = '';
+    inmail.style.display = '';
+    openToggle.style.display = '';
+  }
+
+  // Show message template when open profile toggle is checked
+  updateOpenProfileVisibility();
+}
+
+function updateOpenProfileVisibility() {
+  const cb = document.getElementById('open-profile-msg');
+  const message = document.getElementById('tpl-message-section');
+  const mode = document.getElementById('campaign-mode').value;
+  if (cb && cb.checked && (mode === 'connect_only' || mode === 'auto' || mode === 'connect_and_message')) {
+    message.style.display = '';
   }
 }
 
@@ -107,37 +173,25 @@ function updateProfileCount() {
 async function previewSheet() {
   const url = document.getElementById('sheet-url').value.trim();
   const preview = document.getElementById('sheet-preview');
-
   if (!url) { alert('Enter a Google Sheet URL first.'); return; }
-
   preview.classList.remove('hidden');
   preview.innerHTML = 'Loading…';
-
   try {
     const res = await fetch(`/api/sheet/preview?url=${encodeURIComponent(url)}`);
     const data = await res.json();
-
-    if (data.error) {
-      preview.innerHTML = `<p style="color:#f85149">Error: ${escHtml(data.error)}</p>`;
-      return;
-    }
-
-    let html = `<p style="color:#8b949e; font-size:0.8rem; margin-bottom:8px">${data.totalRows} row(s) found</p>`;
-
+    if (data.error) { preview.innerHTML = `<p style="color:#f85149">Error: ${escHtml(data.error)}</p>`; return; }
+    let html = `<p style="color:#8b949e; font-size:0.8rem; margin-bottom:8px">${data.totalRows} row(s)</p>`;
     if (data.preview.length > 0) {
       html += '<table class="preview-table"><thead><tr>';
-      data.columns.forEach((col) => { html += `<th>${escHtml(col)}</th>`; });
+      data.columns.forEach(col => { html += `<th>${escHtml(col)}</th>`; });
       html += '</tr></thead><tbody>';
-
-      data.preview.forEach((row) => {
+      data.preview.forEach(row => {
         html += '<tr>';
-        data.columns.forEach((col) => { html += `<td>${escHtml(row[col] || '')}</td>`; });
+        data.columns.forEach(col => { html += `<td>${escHtml(row[col] || '')}</td>`; });
         html += '</tr>';
       });
-
       html += '</tbody></table>';
     }
-
     preview.innerHTML = html;
   } catch (err) {
     preview.innerHTML = `<p style="color:#f85149">${escHtml(err.message)}</p>`;
@@ -148,14 +202,11 @@ async function previewSheet() {
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
 async function startCampaign() {
-  const profileIds = Array.from(selectedProfileIds);
-  if (profileIds.length === 0) { alert('Select at least one GoLogin profile.'); return; }
-
+  if (selectedProfileIds.length === 0) { alert('Select at least one GoLogin profile.'); return; }
   const sheetUrl = document.getElementById('sheet-url').value.trim();
   if (!sheetUrl) { alert('Enter a Google Sheet URL.'); return; }
-
   const dailyLimit = parseInt(document.getElementById('daily-limit').value, 10);
-  if (!dailyLimit || dailyLimit < 1) { alert('Daily limit must be at least 1.'); return; }
+  if (!dailyLimit || dailyLimit < 1) { alert('Limit must be at least 1.'); return; }
 
   const templates = {
     connectionNote: document.getElementById('tpl-note').value,
@@ -163,20 +214,20 @@ async function startCampaign() {
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
   };
-
   const mode = document.getElementById('campaign-mode').value;
+
+  // Show account queue
+  renderAccountQueue(selectedProfileIds.map(id => selectedProfileNames[id] || id), null);
 
   try {
     const res = await fetch('/api/campaign/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileIds, sheetUrl, templates, dailyLimit, mode }),
+      body: JSON.stringify({ profileIds: selectedProfileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked }),
     });
-
     const data = await res.json();
     if (data.error) { alert(`Error: ${data.error}`); return; }
     if (!data.ok) { alert(data.message || 'Could not start campaign.'); return; }
-
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').disabled = false;
     startPolling();
@@ -186,9 +237,22 @@ async function startCampaign() {
 }
 
 async function stopCampaign() {
-  try {
-    await fetch('/api/campaign/stop', { method: 'POST' });
-  } catch { /* */ }
+  try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Account queue display
+// ─────────────────────────────────────────────────────────────────────────────
+function renderAccountQueue(names, currentName) {
+  const el = document.getElementById('account-queue');
+  if (!names || names.length === 0) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.innerHTML = names.map((name, i) => {
+    let cls = 'queue-item';
+    if (currentName && name === currentName) cls += ' active';
+    else if (currentName && names.indexOf(currentName) > i) cls += ' done';
+    return `<div class="${cls}"><span class="num">${i + 1}</span><span class="name">${escHtml(name)}</span></div>`;
+  }).join('');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,7 +274,6 @@ async function pollStatus() {
     const res = await fetch('/api/campaign/status');
     const s = await res.json();
 
-    // Status
     const runEl = document.getElementById('st-running');
     if (s.running) {
       runEl.textContent = 'Running';
@@ -220,45 +283,42 @@ async function pollStatus() {
       runEl.className = 'value stopped';
       document.getElementById('btn-start').disabled = false;
       document.getElementById('btn-stop').disabled = true;
-      if (s.logs?.length > 0) stopPolling(); // campaign ended
+      if (s.logs?.length > 0 && !s.running) stopPolling();
     }
 
-    // Profile
-    const profEl = document.getElementById('st-profile');
-    profEl.textContent = s.currentProfile || '—';
-    profEl.style.fontSize = s.currentProfile ? '0.75rem' : '';
+    document.getElementById('st-profile').textContent = s.currentProfile || '—';
 
-    // Mode
     const modeLabels = {
       auto: 'Auto', connect_only: 'Connect Only', connect_and_message: 'Connect + Msg',
-      message_only: 'Message Only', inmail_only: 'InMail Only',
+      message_only: 'Message Only', inmail_only: 'InMail Only', check_status: 'Check Status',
     };
     document.getElementById('st-mode').textContent = modeLabels[s.mode] || s.mode || '—';
 
-    // Counts
     document.getElementById('st-today').textContent = s.processedToday;
-    document.getElementById('st-total').textContent = `${s.totalProcessed} / ${s.totalTargets}`;
-    document.getElementById('st-skipped').textContent = s.skippedByMode || 0;
-    document.getElementById('st-errors').textContent = s.errors.length;
+    document.getElementById('st-total').textContent = s.totalProcessed;
+    document.getElementById('st-errors').textContent = (s.errors || []).length;
 
-    // Progress bar
     const pct = s.totalTargets > 0 ? Math.round((s.totalProcessed / s.totalTargets) * 100) : 0;
     document.getElementById('st-bar').style.width = pct + '%';
 
-    // Logs
+    // Update account queue if we have profile names
+    if (s.profileNames && s.profileNames.length > 0) {
+      renderAccountQueue(s.profileNames, s.currentProfile);
+    }
+
     if (s.logs?.length > 0) {
       const panel = document.getElementById('log-panel');
-      panel.innerHTML = s.logs.map((line) => {
+      panel.innerHTML = s.logs.map(line => {
         let cls = '';
-        if (line.includes('✓') || line.includes('connection_sent') || line.includes('message_sent')) cls = 'success';
-        else if (line.includes('✗') || line.includes('Error') || line.includes('error')) cls = 'error';
-        else if (line.includes('⚠') || line.includes('Warning') || line.includes('warn')) cls = 'warn';
-        else if (line.includes('===') || line.includes('▶')) cls = 'info';
+        if (line.includes('✓') || line.includes('connection_sent') || line.includes('message_sent') || line.includes('status_accepted')) cls = 'success';
+        else if (line.includes('✗') || line.includes('Error') || line.includes('FAILED')) cls = 'error';
+        else if (line.includes('⚠') || line.includes('SKIPPED')) cls = 'warn';
+        else if (line.includes('===') || line.includes('▶') || line.includes('■')) cls = 'info';
         return `<div class="entry ${cls}">${escHtml(line)}</div>`;
       }).join('');
       panel.scrollTop = panel.scrollHeight;
     }
-  } catch { /* ignore polling errors */ }
+  } catch { /* */ }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,36 +334,28 @@ function escHtml(str) {
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 loadProfiles();
-
-// Check if a campaign is already running (e.g. page refresh)
+onModeChange();
 pollStatus();
 
-// Placeholder tag click → insert into the associated input/textarea
+// Open Profile toggle listener
+document.getElementById('open-profile-msg')?.addEventListener('change', () => {
+  onModeChange();
+});
+
 document.addEventListener('click', (e) => {
   const tag = e.target.closest('.placeholder-tags .tag');
   if (!tag) return;
-
-  const container = tag.closest('.placeholder-tags');
-  const targetId = container?.dataset.target;
+  const targetId = tag.closest('.placeholder-tags')?.dataset.target;
   if (!targetId) return;
-
   const field = document.getElementById(targetId);
   if (!field) return;
-
   const val = tag.dataset.val;
-
-  // Insert at cursor position (or append)
   if (typeof field.selectionStart === 'number') {
     const start = field.selectionStart;
-    const end = field.selectionEnd;
-    const before = field.value.substring(0, start);
-    const after = field.value.substring(end);
-    field.value = before + val + after;
-    // Move cursor after inserted text
+    field.value = field.value.substring(0, start) + val + field.value.substring(field.selectionEnd);
     field.selectionStart = field.selectionEnd = start + val.length;
   } else {
     field.value += val;
   }
-
   field.focus();
 });

@@ -4,12 +4,38 @@
  * NEVER page.mouse.click(). No coordinates. No viewport dependencies.
  */
 
+/**
+ * Human-like delay using a skewed (log-normal-ish) distribution.
+ * Clusters near the minimum, occasionally produces longer pauses —
+ * mimics how humans actually behave (quick actions with occasional longer gaps).
+ */
 export function randomDelay(min = 500, max = 2000) {
-  return new Promise((r) => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
+  const u = Math.random();
+  const skewed = Math.pow(u, 0.5); // sqrt gives right-skew: most values near min
+  const ms = Math.floor(min + skewed * (max - min));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 /**
- * Click a button by aria-label — searches BOTH regular DOM and Shadow DOM.
+ * Collect all Shadow DOM roots on the page — not just interop-outlet.
+ * LinkedIn may use multiple Shadow DOM containers.
+ */
+function getAllShadowRootsScript() {
+  return `
+    function __getAllShadowRoots() {
+      const roots = [];
+      const outlet = document.getElementById('interop-outlet');
+      if (outlet?.shadowRoot) roots.push(outlet.shadowRoot);
+      document.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot && el.id !== 'interop-outlet') roots.push(el.shadowRoot);
+      });
+      return roots;
+    }
+  `;
+}
+
+/**
+ * Click a button by aria-label — searches regular DOM AND all Shadow DOM roots.
  * Uses element.click() which works regardless of visibility or viewport.
  */
 export async function clickByAria(page, ariaLabel) {
@@ -18,10 +44,15 @@ export async function clickByAria(page, ariaLabel) {
     const btn = document.querySelector(`button[aria-label="${label}"]`);
     if (btn) { btn.click(); return 'dom'; }
 
-    // Shadow DOM
+    // All Shadow DOM roots
+    const roots = [];
     const outlet = document.getElementById('interop-outlet');
-    if (outlet?.shadowRoot) {
-      const sBtn = outlet.shadowRoot.querySelector(`button[aria-label="${label}"]`);
+    if (outlet?.shadowRoot) roots.push(outlet.shadowRoot);
+    document.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot && el.id !== 'interop-outlet') roots.push(el.shadowRoot);
+    });
+    for (const root of roots) {
+      const sBtn = root.querySelector(`button[aria-label="${label}"]`);
       if (sBtn) { sBtn.click(); return 'shadow'; }
     }
 
@@ -30,7 +61,7 @@ export async function clickByAria(page, ariaLabel) {
 }
 
 /**
- * Click a button by its exact text content — searches BOTH DOMs.
+ * Click a button by its exact text content — searches regular DOM + all Shadow DOMs.
  */
 export async function clickByText(page, text) {
   return page.evaluate((t) => {
@@ -39,10 +70,15 @@ export async function clickByText(page, text) {
     const btn = btns.find(b => b.textContent?.trim() === t);
     if (btn) { btn.click(); return 'dom'; }
 
-    // Shadow DOM
+    // All Shadow DOM roots
+    const roots = [];
     const outlet = document.getElementById('interop-outlet');
-    if (outlet?.shadowRoot) {
-      const sBtns = Array.from(outlet.shadowRoot.querySelectorAll('button'));
+    if (outlet?.shadowRoot) roots.push(outlet.shadowRoot);
+    document.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot && el.id !== 'interop-outlet') roots.push(el.shadowRoot);
+    });
+    for (const root of roots) {
+      const sBtns = Array.from(root.querySelectorAll('button'));
       const sBtn = sBtns.find(b => b.textContent?.trim() === t);
       if (sBtn) { sBtn.click(); return 'shadow'; }
     }
@@ -71,72 +107,97 @@ export async function findButtonByText(page, text) {
 export async function getConnectionStatus(page) {
   try {
     const result = await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('button'));
-
-      // Profile name from h1 or title
+      // Profile name
       let profileName = '';
       const h1 = document.querySelector('h1');
       if (h1) profileName = h1.textContent.trim().split('\n')[0].trim();
       if (!profileName) {
-        const title = document.title || '';
-        const m = title.match(/^(.+?)(?:\s*[\|–-]\s*LinkedIn)?$/);
+        const m = (document.title || '').match(/^(.+?)(?:\s*[\|–-]\s*LinkedIn)?$/);
         if (m) profileName = m[1].trim();
       }
-      const firstName = profileName ? profileName.split(' ')[0].toLowerCase() : '';
 
-      const debug = buttons.slice(0, 12).map(b => ({
-        text: (b.textContent || '').trim().substring(0, 35),
-        aria: (b.getAttribute('aria-label') || '').substring(0, 50),
-      }));
+      // Collect ALL clickable elements from everywhere
+      const els = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+
+      // Search ALL Shadow DOM roots (not just interop-outlet)
+      document.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot) {
+          els.push(...Array.from(el.shadowRoot.querySelectorAll('button, a, [role="button"]')));
+        }
+      });
+
+      // Build a list of action-relevant elements for debugging
+      const actionEls = [];
+      for (const el of els) {
+        const aria = el.getAttribute('aria-label') || '';
+        const text = (el.textContent || '').trim();
+        const tag = el.tagName;
+
+        // Skip nav bar "Messaging" and "My Network" links
+        if (aria === 'Messaging' || text === 'Messaging') continue;
+        if (aria.includes('My Network')) continue;
+
+        // Check if this element is relevant
+        const ariaLow = aria.toLowerCase();
+        const textLow = text.toLowerCase();
+
+        if (ariaLow.includes('message') || textLow === 'message' ||
+            ariaLow.includes('connect') || ariaLow.includes('invite') || textLow === 'connect' ||
+            ariaLow.includes('follow') || textLow === 'follow' ||
+            ariaLow.includes('pending') || textLow === 'pending') {
+          actionEls.push({ tag, text: text.substring(0, 40), aria: aria.substring(0, 60) });
+        }
+      }
 
       // 1. Pending
-      for (const btn of buttons) {
-        const a = (btn.getAttribute('aria-label') || '').toLowerCase();
-        const t = (btn.textContent || '').trim().toLowerCase();
+      for (const el of els) {
+        const a = (el.getAttribute('aria-label') || '').toLowerCase();
+        const t = (el.textContent || '').trim().toLowerCase();
         if (t === 'pending' || a.includes('pending')) {
-          return { status: 'pending', debug, profileName };
+          return { status: 'pending', debug: actionEls, profileName };
         }
       }
 
-      // 2. Message
-      for (const btn of buttons) {
-        const a = (btn.getAttribute('aria-label') || '').toLowerCase();
-        const t = (btn.textContent || '').trim().toLowerCase();
-        if (t === 'message' && a.includes('message')) {
-          if (firstName && a.includes(firstName)) return { status: 'message', debug, profileName };
-          if (buttons.indexOf(btn) < 15) return { status: 'message', debug, profileName };
+      // 2. Message — aria starts with "Message " (space after, to exclude "Messaging")
+      for (const el of els) {
+        const aria = el.getAttribute('aria-label') || '';
+        if (aria.startsWith('Message ') || aria === 'Message') {
+          return { status: 'message', debug: actionEls, profileName };
+        }
+      }
+      // Fallback: text is exactly "Message" and not the nav bar
+      for (const el of els) {
+        const t = (el.textContent || '').trim();
+        const aria = (el.getAttribute('aria-label') || '');
+        if (t === 'Message' && aria !== 'Messaging' && !aria.includes('new notification')) {
+          return { status: 'message', debug: actionEls, profileName };
         }
       }
 
-      // 3. Connect
-      for (const btn of buttons) {
-        const a = (btn.getAttribute('aria-label') || '').toLowerCase();
-        const t = (btn.textContent || '').trim().toLowerCase();
+      // 3. Connect — "Invite X to connect" or text "Connect"
+      for (const el of els) {
+        const a = (el.getAttribute('aria-label') || '').toLowerCase();
         if (a.includes('invite') && a.includes('to connect')) {
-          if (firstName && a.includes(firstName)) return { status: 'connect', debug, profileName };
-          if (buttons.indexOf(btn) < 15) return { status: 'connect', debug, profileName };
-        }
-        if (t === 'connect' && buttons.indexOf(btn) < 10) {
-          return { status: 'connect', debug, profileName };
+          return { status: 'connect', debug: actionEls, profileName };
         }
       }
 
-      // 4. Follow
-      for (const btn of buttons) {
-        const a = (btn.getAttribute('aria-label') || '').toLowerCase();
-        const t = (btn.textContent || '').trim().toLowerCase();
-        if (t === 'follow' && a.includes('follow')) {
-          if (firstName && a.includes(firstName)) return { status: 'follow', debug, profileName };
-          if (buttons.indexOf(btn) < 15) return { status: 'follow', debug, profileName };
+      // 4. Follow — aria starts with "Follow "
+      for (const el of els) {
+        const aria = el.getAttribute('aria-label') || '';
+        if (aria.startsWith('Follow ')) {
+          return { status: 'follow', debug: actionEls, profileName };
         }
       }
 
-      return { status: 'unknown', debug, profileName };
+      return { status: 'unknown', debug: actionEls, profileName };
     });
 
     console.log(`[helpers] Status: ${result.status} (name: "${result.profileName || '?'}")`);
-    if (result.status === 'unknown') {
-      console.log('[helpers] Buttons:', JSON.stringify(result.debug));
+    if (result.debug.length > 0) {
+      console.log('[helpers] Action elements:', JSON.stringify(result.debug));
+    } else {
+      console.log('[helpers] WARNING: No action elements found on page at all');
     }
     return result.status;
   } catch (err) {

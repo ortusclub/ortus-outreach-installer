@@ -73,7 +73,7 @@ app.get('/api/sheet/preview', async (req, res) => {
 // ---------------------------------------------------------------------------
 app.post('/api/campaign/start', (req, res) => {
   try {
-    const { profileIds, sheetUrl, templates, dailyLimit, mode } = req.body;
+    const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles } = req.body;
 
     if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
@@ -86,6 +86,7 @@ app.post('/api/campaign/start', (req, res) => {
       templates: templates || {},
       dailyLimit: Number(dailyLimit),
       mode: mode || 'auto',
+      messageOpenProfiles: !!messageOpenProfiles,
     }).catch(err => console.error('Campaign error:', err.message));
 
     res.json({ ok: true, message: 'Campaign started' });

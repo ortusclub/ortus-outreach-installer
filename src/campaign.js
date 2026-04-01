@@ -26,7 +26,7 @@ import { updateSheetRow } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 
 const STATE_FILE = './data/state.json';
-const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'already_processed']);
+const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined']);
 
 if (!existsSync('./data')) mkdirSync('./data');
 
@@ -57,6 +57,7 @@ function extractLinkedInUrl(row) {
 function getModeHint(mode, prevAction) {
   if (mode === 'connect_only') return 'force_connect';
   if (mode === 'message_only') return 'force_message';
+  if (mode === 'check_status') return 'check_only';
   if (mode === 'inmail_only') return 'force_inmail';
   if (mode === 'connect_and_message') {
     return prevAction === 'connection_sent' ? 'force_message' : 'force_connect';
@@ -108,13 +109,16 @@ function getToken() {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 5, mode = 'connect_only' }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 5, mode = 'connect_only', messageOpenProfiles = false }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
   campaign._abort = false;
   campaign.currentProfile = null;
   campaign.processedToday = 0;
+  campaign.totalTargets = 0;
+  campaign.mode = mode;
+  campaign.profileNames = [];
   campaign.errors = [];
 
   // Reset campaign counts — allows reusing same accounts immediately
@@ -136,6 +140,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Profiles: ${profileIds.length} selected`);
     log(`Daily limit: ${dailyLimit}`);
     log(`Templates: note=${tpl.connectionNote ? '✓' : '—'} followUp=${tpl.followUpMessage ? '✓' : '—'} inmail=${tpl.inmail.subject ? '✓' : '—'}`);
+    if (messageOpenProfiles) log('Open Profile messaging: ON');
 
     // ── Fetch leads from Google Sheet ──
     log('Fetching sheet…');
@@ -154,15 +159,39 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const targets = rows.filter(row => {
       const url = extractLinkedInUrl(row);
       if (!url) return false;
-      const prev = state.processed[url];
-      if (mode === 'connect_only' && prev) return false;
-      if (mode === 'auto' && prev) return false;
-      // Skip if sheet already shows as sent/processed
+
       const sheetStatus = (row['Connection Status'] || row['connectionStatus'] || '').toLowerCase();
-      if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected')) return false;
+      const msgStatus = (row['First Message Status'] || row['firstMessageStatus'] || '').toLowerCase();
+
+      if (mode === 'check_status') {
+        // Only check leads where we sent a connection request
+        return sheetStatus.includes('sent') && !sheetStatus.includes('accepted') && !sheetStatus.includes('declined');
+      }
+
+      if (mode === 'message_only') {
+        // Only message leads that accepted and haven't been messaged
+        return (sheetStatus.includes('accepted') || sheetStatus.includes('connected')) && !msgStatus.includes('sent');
+      }
+
+      if (mode === 'connect_only' || mode === 'auto') {
+        const prev = state.processed[url];
+        if (prev) return false;
+        if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected') || sheetStatus.includes('accepted')) return false;
+        return true;
+      }
+
+      if (mode === 'connect_and_message') {
+        if (!sheetStatus && !state.processed[url]) return true;
+        if ((sheetStatus.includes('accepted') || sheetStatus.includes('connected')) && !msgStatus.includes('sent')) return true;
+        return false;
+      }
+
+      const prev = state.processed[url];
+      if (prev) return false;
       return true;
     });
     log(`Pre-filter → ${targets.length} to process, ${rows.length - targets.length} skipped (mode: ${mode})`);
+    campaign.totalTargets = targets.length;
 
     // Load profile names
     log('Loading profile names…');
@@ -170,6 +199,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     for (const pid of profileIds) {
       await getProfileName(pid, token);
     }
+    campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
 
     // ── Process each GoLogin profile sequentially ──
@@ -251,13 +281,31 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           const url = extractLinkedInUrl(row);
           if (!url) continue;
 
-          // Re-check in case another profile processed this
-          if (state.processed[url]) continue;
+          // Re-check in case another profile processed this (or is currently processing it)
+          if (mode !== 'check_status' && mode !== 'message_only' && state.processed[url]) continue;
 
-          // Skip if sheet already shows this lead as sent/processed
+          // Mark as in-progress to prevent concurrent profiles from picking the same lead
+          state.processed[url] = { profileId, profileName: pName, action: '_in_progress', date: new Date().toISOString() };
+          saveState(state);
+
+          // Mode-aware skip logic
           const sheetStatus = (row['Connection Status'] || row['connectionStatus'] || '').toLowerCase();
-          if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected')) {
-            continue;
+          const msgStatus = (row['First Message Status'] || row['firstMessageStatus'] || '').toLowerCase();
+
+          if (mode === 'connect_only' || mode === 'auto') {
+            if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected') || sheetStatus.includes('accepted')) continue;
+          } else if (mode === 'message_only') {
+            if (msgStatus.includes('sent')) continue; // already messaged
+            if (!sheetStatus.includes('accepted') && !sheetStatus.includes('connected')) continue; // not yet accepted
+            // Sender attribution: only the account that connected can message
+            // Compare normalized names — strip spaces, punctuation, lowercase
+            const connectedBy = (row['Connection By'] || row['connectionBy'] || '').toLowerCase().replace(/[\s._@-]+/g, '');
+            const normalizedPName = pName.toLowerCase().replace(/[\s._@-]+/g, '');
+            if (connectedBy && !connectedBy.includes(normalizedPName) && !normalizedPName.includes(connectedBy)) {
+              continue; // This lead was connected by a different account
+            }
+          } else if (mode === 'check_status') {
+            if (sheetStatus.includes('accepted') || sheetStatus.includes('declined')) continue; // already checked
           }
 
           const data = {
@@ -267,7 +315,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             title: row['Title'] || row['title'] || row['Job Title'] || '',
           };
 
-          const hint = getModeHint(mode, state.processed[url]?.action);
+          let hint = getModeHint(mode, state.processed[url]?.action);
+
+          // Open Profile: if toggle is on and sheet says "Yes", message directly instead of connecting
+          const isOpenProfile = (row['Open Profile'] || row['openProfile'] || row['open_profile'] || '').toLowerCase().trim();
+          if (messageOpenProfiles && isOpenProfile === 'yes' && hint === 'force_connect') {
+            hint = 'force_message';
+            log(`  ↳ Open Profile detected — will message directly`);
+          }
 
           try {
             // Re-acquire page before each lead (prevents stale frame)
@@ -278,8 +333,35 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
             log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
 
-            // performOutreach handles: navigate, 30s wait, 67% zoom, action
-            const result = await performOutreach(page, url, { ...tpl, data }, {}, hint);
+            // performOutreach with retry: up to 3 attempts for transient failures
+            let result;
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              result = await performOutreach(page, url, { ...tpl, data }, {}, hint);
+
+              // Don't retry terminal outcomes (success, weekly limit, email required, already processed)
+              const isTransient = result.action === 'skipped' && result.error &&
+                !result.error.includes('WEEKLY_LIMIT') &&
+                !result.error.includes('EMAIL_REQUIRED') &&
+                !result.error.includes('Login page') &&
+                !result.error.includes('Already connected') &&
+                !result.error.includes('Not yet connected') &&
+                !result.error.includes('Still pending') &&
+                !result.error.includes('Can connect directly') &&
+                !result.error.includes('No message template');
+
+              if (!isTransient || attempt === MAX_RETRIES) break;
+
+              const backoff = attempt * 5000; // 5s, 10s
+              log(`  ⟳ Retry ${attempt}/${MAX_RETRIES} in ${backoff / 1000}s — ${result.error}`);
+              await new Promise(r => setTimeout(r, backoff));
+
+              // Re-acquire page before retry
+              try {
+                const pages = await browser.pages();
+                if (pages.length > 0) page = pages[pages.length - 1];
+              } catch { /* keep current */ }
+            }
             log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
 
             const now = new Date().toISOString();
@@ -299,12 +381,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 sheetData.connectionDate = now;
                 sheetData.connectionBy = pName;
               } else if (result.action === 'message_sent') {
-                sheetData.firstMessageStatus = 'Sent';
+                sheetData.firstMessageStatus = (messageOpenProfiles && isOpenProfile === 'yes') ? 'Sent (Open Profile)' : 'Sent';
                 sheetData.firstMessageDate = now;
               } else if (result.action === 'inmail_sent') {
                 sheetData.connectionStatus = 'InMail Sent';
                 sheetData.connectionDate = now;
                 sheetData.connectionBy = pName;
+              } else if (result.action === 'status_accepted') {
+                sheetData.connectionStatus = 'Accepted';
+                sheetData.connectionDate = now;
+              } else if (result.action === 'status_pending') {
+                sheetData.connectionStatus = 'Still Pending';
+              } else if (result.action === 'status_declined') {
+                sheetData.connectionStatus = 'Declined';
+                sheetData.connectionDate = now;
               }
               await updateSheetRow(sheetUrl, url, sheetData).catch(() => {});
 
@@ -337,6 +427,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               } else {
                 log('  ✗ Retry next run.');
                 pushError(new Error(`${url}: ${errorMsg}`));
+                // Clear in-progress marker so lead can be retried next run
+                delete state.processed[url];
                 await saveState(state);
 
                 // Write error to Google Sheet
@@ -411,6 +503,9 @@ export function getCampaignStatus() {
     currentProfile: campaign.currentProfile,
     processedToday: campaign.processedToday,
     totalProcessed: campaign.totalProcessed,
+    totalTargets: campaign.totalTargets || 0,
+    mode: campaign.mode || '',
+    profileNames: campaign.profileNames || [],
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
   };

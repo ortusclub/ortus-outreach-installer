@@ -22,12 +22,11 @@ import { randomDelay, clickByAria, clickByText } from './helpers.js';
 
 async function detectModal(page) {
   return page.evaluate(() => {
-    // Collect buttons from BOTH DOMs
+    // Collect buttons from regular DOM + ALL Shadow DOM roots
     const buttons = Array.from(document.querySelectorAll('button'));
-    const outlet = document.getElementById('interop-outlet');
-    if (outlet?.shadowRoot) {
-      buttons.push(...Array.from(outlet.shadowRoot.querySelectorAll('button')));
-    }
+    document.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot) buttons.push(...Array.from(el.shadowRoot.querySelectorAll('button')));
+    });
 
     const findByAria = (label) => buttons.find(b =>
       (b.getAttribute('aria-label') || '').toLowerCase() === label.toLowerCase()
@@ -41,11 +40,11 @@ async function detectModal(page) {
     const send = findByAria('Send') || findByText('send') || findByText('send invitation');
     const withdraw = findByText('withdraw');
 
-    // Gather all visible text (regular + shadow DOM)
+    // Gather all visible text (regular + all shadow DOMs)
     let pageText = (document.body?.innerText || '').substring(0, 5000).toLowerCase();
-    if (outlet?.shadowRoot) {
-      pageText += (outlet.shadowRoot.textContent || '').substring(0, 5000).toLowerCase();
-    }
+    document.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot) pageText += (el.shadowRoot.textContent || '').substring(0, 3000).toLowerCase();
+    });
 
     const hasHowDoYouKnow = pageText.includes('how do you know');
 
@@ -82,10 +81,9 @@ async function detectModal(page) {
 async function isPending(page) {
   return page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll('button'));
-    const outlet = document.getElementById('interop-outlet');
-    if (outlet?.shadowRoot) {
-      buttons.push(...Array.from(outlet.shadowRoot.querySelectorAll('button')));
-    }
+    document.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot) buttons.push(...Array.from(el.shadowRoot.querySelectorAll('button')));
+    });
     return buttons.some(b => {
       const t = (b.textContent || '').trim().toLowerCase();
       const a = (b.getAttribute('aria-label') || '').toLowerCase();
@@ -111,12 +109,12 @@ async function typeIntoField(page, text) {
       if (el) { el.focus(); el.click(); return true; }
     }
 
-    // Shadow DOM
-    const outlet = document.getElementById('interop-outlet');
-    if (outlet?.shadowRoot) {
+    // All Shadow DOM roots
+    const shadowHosts = Array.from(document.querySelectorAll('*')).filter(el => el.shadowRoot);
+    for (const host of shadowHosts) {
       for (const sel of selectors) {
-        const el = outlet.shadowRoot.querySelector(sel);
-        if (el) { el.focus(); el.click(); return true; }
+        const found = host.shadowRoot.querySelector(sel);
+        if (found) { found.focus(); found.click(); return true; }
       }
     }
     return false;
@@ -266,8 +264,8 @@ export async function sendConnectionRequest(page, note, { tryMoreFirst = false }
 
   if (!connectClicked) throw new Error('Connect button not found');
 
-  // ── Wait for modal or Pending ──
-  for (let attempt = 1; attempt <= 5; attempt++) {
+  // ── Wait for modal or Pending (8 attempts = ~24s max, up from 5/15s) ──
+  for (let attempt = 1; attempt <= 8; attempt++) {
     if (await isPending(page)) {
       console.log('[actions] ✓ Connection sent directly.');
       return;
@@ -387,8 +385,8 @@ export async function sendConnectionRequest(page, note, { tryMoreFirst = false }
       return;
     }
 
-    if (attempt < 5) {
-      console.log(`[actions] No modal yet (${attempt}/5), waiting 3s…`);
+    if (attempt < 8) {
+      console.log(`[actions] No modal yet (${attempt}/8), waiting 3s…`);
       await new Promise(r => setTimeout(r, 3000));
     }
   }
@@ -396,15 +394,26 @@ export async function sendConnectionRequest(page, note, { tryMoreFirst = false }
   // Debug dump
   const btns = await page.evaluate(() => {
     const all = Array.from(document.querySelectorAll('button'));
-    const outlet = document.getElementById('interop-outlet');
-    if (outlet?.shadowRoot) all.push(...Array.from(outlet.shadowRoot.querySelectorAll('button')));
+    for (const root of getAllShadowRoots()) {
+      all.push(...Array.from(root.querySelectorAll('button')));
+    }
+    function getAllShadowRoots() {
+      const roots = [];
+      const outlet = document.getElementById('interop-outlet');
+      if (outlet?.shadowRoot) roots.push(outlet.shadowRoot);
+      // Search all elements with shadow roots
+      document.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot && el.id !== 'interop-outlet') roots.push(el.shadowRoot);
+      });
+      return roots;
+    }
     return all.filter(b => b.offsetWidth > 0).slice(0, 12).map(b => ({
       text: b.textContent?.trim().substring(0, 25),
       aria: (b.getAttribute('aria-label') || '').substring(0, 35),
       src: b.getRootNode() === document ? 'dom' : 'shadow',
     }));
   });
-  console.error('[actions] No modal after 5 attempts. Buttons:', JSON.stringify(btns));
+  console.error('[actions] No modal after 8 attempts. Buttons:', JSON.stringify(btns));
   throw new Error('No modal appeared and connection not sent');
 }
 
@@ -414,7 +423,7 @@ export async function sendConnectionRequest(page, note, { tryMoreFirst = false }
 
 export async function sendMessage(page, message) {
   const clicked = await page.evaluate(() => {
-    const btn = Array.from(document.querySelectorAll('button')).find(b =>
+    const btn = Array.from(document.querySelectorAll('button, a')).find(b =>
       b.textContent?.trim().toLowerCase() === 'message' &&
       (b.getAttribute('aria-label') || '').toLowerCase().includes('message')
     );

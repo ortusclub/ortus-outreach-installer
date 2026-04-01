@@ -1,9 +1,9 @@
 /**
- * Per-target outreach — v18.
+ * Per-target outreach — v19.
  *
  * For each lead:
  *   1. Open lead's LinkedIn profile
- *   2. Wait 30 seconds for page to fully load
+ *   2. Smart wait: networkidle + MutationObserver settling (5-15s vs old 30s)
  *   3. No zoom, no viewport change — keep 1366x900 (matches physical window)
  *   4. Execute action via JS click (works regardless of element visibility)
  */
@@ -11,22 +11,51 @@
 import { randomDelay, getConnectionStatus, personalizeTemplate } from './helpers.js';
 import { sendConnectionRequest, sendMessage, sendInMail } from './actions.js';
 
+/**
+ * Smart wait: resolves when the DOM stops changing for 1.5s OR after maxWait ms.
+ * Much faster than a fixed 30s wait — typically resolves in 5-10s.
+ */
+async function waitForDomSettle(page, { settleMs = 1500, maxWait = 15000 } = {}) {
+  await page.evaluate(({ settleMs, maxWait }) => new Promise((resolve) => {
+    const target = document.querySelector('main') || document.body;
+    let timer;
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { observer.disconnect(); resolve(); }, settleMs);
+    });
+    observer.observe(target, { childList: true, subtree: true, characterData: true });
+    // Kick off the settle timer immediately (in case DOM is already done)
+    timer = setTimeout(() => { observer.disconnect(); resolve(); }, settleMs);
+    // Hard ceiling
+    setTimeout(() => { observer.disconnect(); resolve(); }, maxWait);
+  }), { settleMs, maxWait });
+}
+
 export async function performOutreach(page, targetUrl, templates, state = {}, modeHint = null) {
   try {
     let url = targetUrl.trim();
     if (!url.startsWith('http')) url = 'https://' + url;
 
     // ── Step 1: Navigate to lead's profile ──
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // Use networkidle0 — waits until no network requests for 500ms
+    try {
+      await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+    } catch (e) {
+      // Fallback: if networkidle0 times out, the page is still usable
+      console.log(`[outreach] networkidle0 timed out, continuing: ${e.message}`);
+    }
 
-    // ── Step 2: Wait 30 seconds for page to fully load ──
-    console.log('[outreach] Waiting 30s for page to load…');
-    await new Promise(r => setTimeout(r, 30000));
+    // ── Step 2: Smart wait — DOM settles when mutations stop for 1.5s ──
+    console.log('[outreach] Waiting for DOM to settle…');
+    await waitForDomSettle(page, { settleMs: 1500, maxWait: 15000 });
+    // Small buffer for late-loading elements (LinkedIn lazy renders some cards)
+    await new Promise(r => setTimeout(r, 2000));
+    console.log('[outreach] DOM settled.');
 
     // Scroll to top
     await page.evaluate(() => window.scrollTo(0, 0));
 
-    // Check for login/404
+    // Check for login/404/rate-limit
     const currentUrl = page.url();
     if (currentUrl.includes('/login') || currentUrl.includes('/authwall')) {
       return { action: 'skipped', error: 'Login page detected' };
@@ -35,11 +64,34 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       return { action: 'skipped', error: 'Profile not found' };
     }
 
+    // Detect rate-limit or error pages
+    const pageError = await page.evaluate(() => {
+      const text = (document.body?.innerText || '').toLowerCase().substring(0, 3000);
+      if (text.includes('please try again later') || text.includes('too many requests'))
+        return 'rate_limited';
+      if (text.includes('this page doesn') && text.includes('exist'))
+        return 'page_not_found';
+      if (text.includes('something went wrong'))
+        return 'linkedin_error';
+      return null;
+    });
+    if (pageError) {
+      return { action: 'skipped', error: `Page error: ${pageError}` };
+    }
+
     // ── Step 3: Detect status and execute action ──
     let status;
     let connectViaMore = false;
 
-    if (modeHint === 'force_connect') {
+    if (modeHint === 'check_only') {
+      // Just read the status — don't click anything
+      status = await getConnectionStatus(page);
+      console.log(`[outreach] Check status: ${status}`);
+      if (status === 'message') return { action: 'status_accepted' };
+      if (status === 'pending') return { action: 'status_pending' };
+      if (status === 'connect' || status === 'follow') return { action: 'status_declined' };
+      return { action: 'status_unknown', error: `Status: ${status}` };
+    } else if (modeHint === 'force_connect') {
       status = await getConnectionStatus(page);
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
       if (status === 'pending') return { action: 'already_processed' };
