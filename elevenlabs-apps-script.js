@@ -692,21 +692,31 @@ function getVoiceList() {
 
   var data = JSON.parse(response.getContentText());
 
-  var voices = (data.voices || []).map(function(v) {
+  var CONVERSATIONAL_USE_CASES = ['conversational', 'social_media', 'advertisement'];
+  var allVoices = data.voices || [];
+
+  var voices = [];
+  for (var i = 0; i < allVoices.length; i++) {
+    var v = allVoices[i];
+    var useCase = (v.labels && v.labels.use_case) ? v.labels.use_case : '';
+    var isConversational = CONVERSATIONAL_USE_CASES.indexOf(useCase) !== -1;
+    var isOwned = v.category === 'cloned' || v.category === 'professional';
+    if (!isConversational && !isOwned) continue;
+
     var labelParts = [];
     if (v.labels) {
       if (v.labels.accent) labelParts.push(v.labels.accent);
       if (v.labels.gender) labelParts.push(v.labels.gender);
-      if (v.labels.description) labelParts.push(v.labels.description);
+      if (v.labels.descriptive) labelParts.push(v.labels.descriptive);
     }
-    return {
+    voices.push({
       voice_id: v.voice_id,
       name: v.name,
       description: labelParts.join(', '),
       category: v.category || '',
       preview_url: v.preview_url || ''
-    };
-  });
+    });
+  }
 
   /* Sort bookmarked voices to the top */
   var bookmarks = getBookmarkedVoiceIds();
