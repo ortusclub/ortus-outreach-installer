@@ -42,7 +42,16 @@ var CALL_TRACKING_COLUMNS = [
   'Call Date',
   'Call Duration',
   'Call Batch ID',
-  'Call Notes'
+  'Call Notes',
+  'Outcome',
+  'Call Type',
+  'Summary',
+  'Transcript',
+  'Recording',
+  'Follow Up',
+  'Callback',
+  'Email Confirmed',
+  'Seen Invite'
 ];
 
 // ── Column name detection ──
@@ -388,6 +397,95 @@ function mapCallStatus(status) {
   if (status === 'in_progress' || status === 'ringing') return 'In Progress';
   if (status === 'cancelled') return 'Cancelled';
   return status || 'Unknown';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Conversation Detail Helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Fetches full conversation detail from ElevenLabs API.
+ * Returns the full response object (transcript, analysis, metadata, has_audio).
+ * Returns null on failure.
+ */
+function getConversationDetail(conversationId, apiKey) {
+  try {
+    var detail = elevenlabsGet('/convai/conversations/' + conversationId, apiKey);
+    if (detail && !detail.error) {
+      return detail;
+    }
+    Logger.log('getConversationDetail: API returned error for ' + conversationId + ': ' + JSON.stringify(detail));
+    return null;
+  } catch (e) {
+    Logger.log('getConversationDetail: Exception for ' + conversationId + ': ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Formats a transcript array into a multi-line string.
+ * Each turn: "Agent: message" or "User: message", separated by newlines.
+ */
+function formatTranscript(transcriptArray) {
+  if (!transcriptArray || !Array.isArray(transcriptArray) || transcriptArray.length === 0) {
+    return '';
+  }
+  var lines = [];
+  for (var i = 0; i < transcriptArray.length; i++) {
+    var turn = transcriptArray[i];
+    var role = (turn.role || '').toString();
+    // Capitalize first letter
+    var roleName = role.charAt(0).toUpperCase() + role.slice(1);
+    lines.push(roleName + ': ' + (turn.message || ''));
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Builds the recording audio URL for a conversation.
+ * Note: This URL requires the xi-api-key header to access.
+ */
+function buildRecordingUrl(conversationId) {
+  return CONFIG.API_BASE + '/convai/conversations/' + conversationId + '/audio';
+}
+
+/**
+ * Extracts data collection results from the analysis object.
+ * Returns an object with outcome, callType, followUp, callback, emailConfirmed, hasSeenInvite.
+ * All fields default to empty string if missing.
+ */
+function extractDataCollection(analysis) {
+  var empty = {
+    outcome: '',
+    callType: '',
+    followUp: '',
+    callback: '',
+    emailConfirmed: '',
+    hasSeenInvite: ''
+  };
+
+  if (!analysis || !analysis.data_collection_results) {
+    return empty;
+  }
+
+  var dc = analysis.data_collection_results;
+
+  var getValue = function(key) {
+    return (dc[key] && dc[key].value) ? dc[key].value : '';
+  };
+
+  var callbackRequested = getValue('callback_requested');
+  var callbackWhen = getValue('callback_when');
+  var callbackStr = (callbackRequested === 'true') ? 'Yes - ' + callbackWhen : 'No';
+
+  return {
+    outcome: getValue('outcome'),
+    callType: getValue('call_type'),
+    followUp: getValue('follow_up_action'),
+    callback: callbackStr,
+    emailConfirmed: getValue('prospect_email_confirmed'),
+    hasSeenInvite: getValue('has_seen_invite')
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
