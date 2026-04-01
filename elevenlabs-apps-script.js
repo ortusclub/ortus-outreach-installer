@@ -54,6 +54,45 @@ var CALL_TRACKING_COLUMNS = [
   'Seen Invite'
 ];
 
+// ── Outcome and Call Type visual formatting (D-07 / D-08) ──
+var OUTCOME_FORMAT = {
+  'Interested':    { emoji: '✅', bg: '#e8f5e9' },
+  'Callback':      { emoji: '🗣', bg: '#fff3e0' },
+  'Busy':          { emoji: '⏳', bg: '#fff3e0' },
+  'Declined':      { emoji: '❌', bg: '#fce4ec' },
+  'Gatekeeper':    { emoji: '🤖', bg: '#e3f2fd' }
+};
+
+var CALL_TYPE_FORMAT = {
+  'Spoke to Human': { emoji: '🗣', bg: '#e8f5e9' },
+  'Voicemail':      { emoji: '📧', bg: '#f5f5f5' },
+  'No Answer':      { emoji: '☎️', bg: '#f5f5f5' },
+  'Number Failed':  { emoji: '⚠️', bg: '#fce4ec' },
+  'AI Gatekeeper':  { emoji: '🤖', bg: '#e3f2fd' },
+  'Hung Up':        { emoji: '❌', bg: '#fce4ec' }
+};
+
+/**
+ * Apply emoji prefix and color-coded background to Outcome and Call Type cells.
+ * Uses setBackground() per D-08 (not conditional formatting).
+ */
+function applyOutcomeFormatting(sheet, row, outcomeIdx, callTypeIdx, outcomeValue, callTypeValue) {
+  if (outcomeIdx !== -1 && outcomeValue) {
+    var oFmt = OUTCOME_FORMAT[outcomeValue];
+    if (oFmt) {
+      sheet.getRange(row, outcomeIdx + 1).setValue(oFmt.emoji + ' ' + outcomeValue);
+      sheet.getRange(row, outcomeIdx + 1).setBackground(oFmt.bg);
+    }
+  }
+  if (callTypeIdx !== -1 && callTypeValue) {
+    var cFmt = CALL_TYPE_FORMAT[callTypeValue];
+    if (cFmt) {
+      sheet.getRange(row, callTypeIdx + 1).setValue(cFmt.emoji + ' ' + callTypeValue);
+      sheet.getRange(row, callTypeIdx + 1).setBackground(cFmt.bg);
+    }
+  }
+}
+
 // ── Column name detection ──
 var PHONE_COLUMN_NAMES = [
   'Phone Number', 'phone_number', 'Phone', 'phone', 'Mobile',
@@ -439,6 +478,9 @@ function updateSheetWithCallResults(batchId, apiKey) {
         if (callbackIdx !== -1) sheet.getRange(sheetRow, callbackIdx + 1).setValue(dc.callback);
         if (emailConfIdx !== -1) sheet.getRange(sheetRow, emailConfIdx + 1).setValue(dc.emailConfirmed);
         if (seenInviteIdx !== -1) sheet.getRange(sheetRow, seenInviteIdx + 1).setValue(dc.hasSeenInvite);
+
+        // Apply color-coded formatting to Outcome and Call Type cells
+        applyOutcomeFormatting(sheet, sheetRow, outcomeIdx, callTypeIdx, dc.outcome, dc.callType);
       } catch (detailErr) {
         Logger.log('Error fetching detail for conversation ' + conversationId + ': ' + detailErr.message);
       }
@@ -648,6 +690,9 @@ function handleCallWebhook(data) {
         if (callbackIdx !== -1) sheet.getRange(row, callbackIdx + 1).setValue(dc.callback);
         if (emailConfIdx !== -1) sheet.getRange(row, emailConfIdx + 1).setValue(dc.emailConfirmed);
         if (seenInviteIdx !== -1) sheet.getRange(row, seenInviteIdx + 1).setValue(dc.hasSeenInvite);
+
+        // Apply color-coded formatting to Outcome and Call Type cells
+        applyOutcomeFormatting(sheet, row, outcomeIdx, callTypeIdx, dc.outcome, dc.callType);
       }
     } catch (detailErr) {
       Logger.log('Webhook: Error fetching detail for ' + conversationId + ': ' + detailErr.message);
