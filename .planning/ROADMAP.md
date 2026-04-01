@@ -99,8 +99,8 @@ Plans:
 **Goal:** Automatically send follow-up SMS via Twilio when calls hit voicemail/no-answer/AI gatekeeper, with configurable sidebar templates and opt-in auto-callback scheduling (max 1 retry per prospect).
 **Requirements**: D-01, D-02, D-03, D-04, D-05, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13, D-14, D-15, D-16, D-17, D-18
 **Depends on:** Phase 5
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] 06-01-PLAN.md — Add Twilio SMS infrastructure, sendFollowUpSms function, SMS trigger in fetchLatestResults, auto-callback scheduling (D-01, D-02, D-03, D-07, D-08, D-09, D-10, D-12, D-13, D-14, D-15, D-16, D-17)
+- [x] 06-01-PLAN.md — Add Twilio SMS infrastructure, sendFollowUpSms function, SMS trigger in fetchLatestResults, auto-callback scheduling (D-01, D-02, D-03, D-07, D-08, D-09, D-10, D-12, D-13, D-14, D-15, D-16, D-17)
 - [ ] 06-02-PLAN.md — Add SMS template textarea, auto-callback toggle to sidebar, wire to server-side persistence, human verify (D-04, D-05, D-06, D-11, D-18)
