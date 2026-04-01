@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-03-31T17:32:25.269Z"
-last_activity: 2026-03-31
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-04-01T07:04:58.833Z"
+last_activity: 2026-04-01
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 7
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-31)
 
 **Core value:** Reliably pass all sidebar inputs to the ElevenLabs agent and let operators switch voice without leaving the sheet.
-**Current focus:** Phase 03 — ux-polish
+**Current focus:** Phase 04 — agent-intelligence
 
 ## Current Position
 
-Phase: 04
-Plan: Not started
+Phase: 04 (agent-intelligence) — EXECUTING
+Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-03-31
+Last activity: 2026-04-01
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 2min | 1 tasks | 1 files |
 | Phase 02 P01 | 2min | 2 tasks | 1 files |
 | Phase 03 P01 | 1min | 2 tasks | 1 files |
+| Phase 04 P01 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Conditional voice override: omit conversation_config_override entirely when no voice selected
 - [Phase 03]: UserProperties for bookmarks instead of unreliable ElevenLabs API is_bookmarked
 - [Phase 03]: Server-side audio proxy via UrlFetchApp + base64Encode for CORS-blocked preview URLs
+- [Phase 04]: Single PATCH for prompt+TTS+tools under conversation_config deep merge
+- [Phase 04]: Voicemail detection removed from prompt; built-in tool handles audio-based detection
 
 ### Roadmap Evolution
 
@@ -90,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-31T17:32:25.267Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-agent-intelligence-enable-voicemail-detection-end-call-tool-faster-tts-port-vapi-prompt-configure-data-collection/04-CONTEXT.md
+Last session: 2026-04-01T07:04:58.830Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None

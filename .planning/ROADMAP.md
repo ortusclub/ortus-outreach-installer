@@ -80,7 +80,7 @@ Phases execute in numeric order: 1 -> 2 -> 3
 **Plans:** 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Port Vapi prompt to ElevenLabs, enable voicemail_detection + end_call tools, set TTS speed 1.1 (D-01, D-02, D-03, D-04, D-05, D-06, D-09)
+- [x] 04-01-PLAN.md — Port Vapi prompt to ElevenLabs, enable voicemail_detection + end_call tools, set TTS speed 1.1 (D-01, D-02, D-03, D-04, D-05, D-06, D-09)
 - [ ] 04-02-PLAN.md — Configure 7 data collection fields, human-verify with test call (D-07, D-08, D-13)
 
 ### Phase 5: Reporting and Sheet Integration — Fetch transcripts, recordings, summaries, success/failure status per call, clean UI in sheet
