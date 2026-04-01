@@ -1,6 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  * ORTUS CLUB — ElevenLabs Calling Integration (Google Apps Script)
+ * VERSION: 13
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Replaces VAPI with ElevenLabs Conversational AI for outbound calling.
@@ -332,11 +333,107 @@ function submitBatchCall(eventVars, selectedOnly) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function fetchLatestResults() {
-  var batchId = PropertiesService.getScriptProperties().getProperty('LATEST_BATCH_ID');
-  if (!batchId) throw new Error('No batch call has been submitted yet.');
   var apiKey = getApiKey();
-  var updated = updateSheetWithCallResults(batchId, apiKey);
-  return { success: true, updated: updated || 0, batchId: batchId };
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var headers = getHeaders(sheet);
+  var phoneColIdx = findColumnIndex(headers, PHONE_COLUMN_NAMES);
+  var outcomeIdx = headers.indexOf('Outcome');
+  var callTypeIdx = headers.indexOf('Call Type');
+  var summaryIdx = headers.indexOf('Summary');
+  var transcriptIdx = headers.indexOf('Transcript');
+  var recordingIdx = headers.indexOf('Recording');
+  var followUpIdx = headers.indexOf('Follow Up');
+  var callbackIdx = headers.indexOf('Callback');
+  var emailConfIdx = headers.indexOf('Email Confirmed');
+  var seenInviteIdx = headers.indexOf('Seen Invite');
+  var callStatusIdx = headers.indexOf('Call Status');
+  var callDurationIdx = headers.indexOf('Call Duration');
+  var callNotesIdx = headers.indexOf('Call Notes');
+
+  Logger.log('[fetch] outcomeIdx=' + outcomeIdx + ' phoneColIdx=' + phoneColIdx);
+
+  if (phoneColIdx === -1) throw new Error('No phone column found');
+  if (outcomeIdx === -1) throw new Error('No Outcome column found — run ensureCallColumns first');
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('No data rows');
+
+  var allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var updatedCount = 0;
+
+  // Build phone -> row map (ALL rows, not filtered by batch)
+  var phoneRowMap = {};
+  for (var i = 0; i < allData.length; i++) {
+    var phone = normalizePhone(allData[i][phoneColIdx]);
+    if (phone) phoneRowMap[phone] = i + 2;
+  }
+  Logger.log('[fetch] phones in sheet: ' + Object.keys(phoneRowMap).join(', '));
+
+  // Get recent conversations
+  var conversations = elevenlabsGet('/convai/conversations?agent_id=' + CONFIG.AGENT_ID + '&page_size=20', apiKey);
+  var convList = conversations.conversations || [];
+  Logger.log('[fetch] found ' + convList.length + ' conversations');
+
+  for (var c = 0; c < convList.length; c++) {
+    var conv = convList[c];
+    if (conv.status !== 'done') continue;
+
+    var conversationId = conv.conversation_id;
+    var detail = getConversationDetail(conversationId, apiKey);
+    if (!detail) continue;
+
+    // Get phone from detail
+    var convPhone = '';
+    if (detail.metadata && detail.metadata.phone_call) {
+      convPhone = normalizePhone(detail.metadata.phone_call.external_number || '');
+    }
+    if (!convPhone) convPhone = normalizePhone(detail.user_id || '');
+
+    var sheetRow = phoneRowMap[convPhone];
+    if (!sheetRow) {
+      Logger.log('[fetch] no row for phone ' + convPhone);
+      continue;
+    }
+
+    // Check if outcome already filled
+    var existingOutcome = sheet.getRange(sheetRow, outcomeIdx + 1).getValue();
+    if (existingOutcome) {
+      Logger.log('[fetch] row ' + sheetRow + ' already has outcome: ' + existingOutcome);
+      continue;
+    }
+
+    Logger.log('[fetch] WRITING row ' + sheetRow + ' for ' + convPhone);
+
+    // Extract data collection
+    var dc = extractDataCollection(detail.analysis);
+
+    // Write OUTCOME first (most important)
+    sheet.getRange(sheetRow, outcomeIdx + 1).setValue(dc.outcome || 'Unknown');
+    Logger.log('[fetch] wrote outcome: ' + dc.outcome);
+
+    // Write everything else
+    if (callTypeIdx !== -1) sheet.getRange(sheetRow, callTypeIdx + 1).setValue(dc.callType);
+    if (callStatusIdx !== -1) sheet.getRange(sheetRow, callStatusIdx + 1).setValue('Completed');
+    var duration = (detail.metadata && detail.metadata.call_duration_secs) ? detail.metadata.call_duration_secs + 's' : '';
+    if (callDurationIdx !== -1 && duration) sheet.getRange(sheetRow, callDurationIdx + 1).setValue(duration);
+    if (summaryIdx !== -1) sheet.getRange(sheetRow, summaryIdx + 1).setValue((detail.analysis && detail.analysis.transcript_summary) || '');
+    if (callNotesIdx !== -1) sheet.getRange(sheetRow, callNotesIdx + 1).setValue((detail.analysis && detail.analysis.call_summary_title) || '');
+    if (transcriptIdx !== -1) sheet.getRange(sheetRow, transcriptIdx + 1).setValue(formatTranscript(detail.transcript));
+    if (recordingIdx !== -1 && detail.has_audio) sheet.getRange(sheetRow, recordingIdx + 1).setFormula('=HYPERLINK("' + buildRecordingUrl(conversationId) + '", "Play Recording")');
+    if (followUpIdx !== -1) sheet.getRange(sheetRow, followUpIdx + 1).setValue(dc.followUp);
+    var callbackRequested = dc.callback;
+    if (callbackIdx !== -1) sheet.getRange(sheetRow, callbackIdx + 1).setValue(callbackRequested);
+    if (emailConfIdx !== -1) sheet.getRange(sheetRow, emailConfIdx + 1).setValue(dc.emailConfirmed);
+    if (seenInviteIdx !== -1) sheet.getRange(sheetRow, seenInviteIdx + 1).setValue(dc.hasSeenInvite);
+
+    // Apply formatting
+    applyOutcomeFormatting(sheet, sheetRow, outcomeIdx, callTypeIdx, dc.outcome, dc.callType);
+
+    updatedCount++;
+  }
+
+  Logger.log('[fetch] DONE — updated ' + updatedCount + ' rows');
+  return { success: true, updated: updatedCount };
 }
 
 function checkLatestBatchStatus() {
@@ -401,10 +498,11 @@ function updateSheetWithCallResults(batchId, apiKey) {
   var emailConfIdx = headers.indexOf('Email Confirmed');
   var seenInviteIdx = headers.indexOf('Seen Invite');
 
-  if (phoneColIdx === -1 || callStatusIdx === -1) return 0;
+  Logger.log('[updateSheet] phoneColIdx=' + phoneColIdx + ' callStatusIdx=' + callStatusIdx + ' outcomeIdx=' + outcomeIdx);
+  if (phoneColIdx === -1 || callStatusIdx === -1) { Logger.log('[updateSheet] EARLY EXIT: missing phone or status column'); return 0; }
 
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return 0;
+  if (lastRow < 2) { Logger.log('[updateSheet] EARLY EXIT: no data rows'); return 0; }
   var updatedCount = 0;
 
   // Read all phone numbers and batch IDs to match
@@ -419,6 +517,9 @@ function updateSheetWithCallResults(batchId, apiKey) {
     var phone = normalizePhone(allData[i][phoneColIdx]);
     if (phone) phoneRowMap[phone] = i + 2;
   }
+
+  Logger.log('[updateSheet] phoneRowMap keys: ' + Object.keys(phoneRowMap).join(', '));
+  Logger.log('[updateSheet] batchId filter: ' + batchId);
 
   // Fetch recent conversations for this agent and match by phone number
   try {
