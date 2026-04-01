@@ -74,13 +74,14 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 ### Phase 4: Agent Intelligence — Enable voicemail detection, end call tool, faster TTS, port Vapi prompt, configure data collection
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Configure the ElevenLabs agent for production-quality outbound B2B calling: port the Vapi conversational prompt, enable voicemail_detection and end_call built-in tools, increase TTS speed to 1.1, and configure 7 structured data collection fields for post-call extraction.
+**Requirements**: D-01, D-02, D-03, D-04, D-05, D-06, D-07, D-08, D-09, D-10, D-11, D-12, D-13
 **Depends on:** Phase 3
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 4 to break down)
+- [ ] 04-01-PLAN.md — Port Vapi prompt to ElevenLabs, enable voicemail_detection + end_call tools, set TTS speed 1.1 (D-01, D-02, D-03, D-04, D-05, D-06, D-09)
+- [ ] 04-02-PLAN.md — Configure 7 data collection fields, human-verify with test call (D-07, D-08, D-13)
 
 ### Phase 5: Reporting and Sheet Integration — Fetch transcripts, recordings, summaries, success/failure status per call, clean UI in sheet
 
