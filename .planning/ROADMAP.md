@@ -91,7 +91,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Extend tracking columns and enhance updateSheetWithCallResults to fetch full conversation detail (RPT-01, RPT-02, RPT-03, RPT-04, RPT-05, RPT-06)
+- [x] 05-01-PLAN.md — Extend tracking columns and enhance updateSheetWithCallResults to fetch full conversation detail (RPT-01, RPT-02, RPT-03, RPT-04, RPT-05, RPT-06)
 - [ ] 05-02-PLAN.md — Add color-coded backgrounds and emoji icons to Outcome and Call Type columns, human verify (RPT-07, RPT-08)
 
 ### Phase 6: SMS Follow-Up and Scheduling — Twilio SMS on voicemail/no-answer/gatekeeper, customizable templates, retry logic, callback scheduling
