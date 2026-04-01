@@ -453,10 +453,10 @@ function updateSheetWithCallResults(batchId, apiKey) {
         var sheetRow = phoneRowMap[convPhone];
         if (!sheetRow) continue;
 
-        // Check if already processed for THIS batch (skip if transcript exists AND batch ID matches)
-        var existingTranscript = transcriptIdx !== -1 ? sheet.getRange(sheetRow, transcriptIdx + 1).getValue() : '';
+        // Check if fully processed for THIS batch (skip only if Outcome is filled AND batch matches)
+        var existingOutcome = outcomeIdx !== -1 ? sheet.getRange(sheetRow, outcomeIdx + 1).getValue() : '';
         var rowBatchId = callBatchIdx !== -1 ? sheet.getRange(sheetRow, callBatchIdx + 1).getValue().toString() : '';
-        if (existingTranscript && rowBatchId === batchId) continue;
+        if (existingOutcome && rowBatchId === batchId) continue;
 
         // Update basic fields
         var duration = (detail.metadata && detail.metadata.call_duration_secs) ? detail.metadata.call_duration_secs : '';
