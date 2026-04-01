@@ -314,8 +314,9 @@ function submitBatchCall(eventVars, selectedOnly) {
     if (callBatchColIdx !== -1) sheet.getRange(sheetRow, callBatchColIdx + 1).setValue(batchId);
   }
 
-  // Store batch ID for status checking
+  // Store batch ID for status checking and auto-start polling
   PropertiesService.getScriptProperties().setProperty('LATEST_BATCH_ID', batchId);
+  startStatusPolling();
 
   return {
     success: true,
@@ -419,48 +420,60 @@ function updateSheetWithCallResults(batchId, apiKey) {
     if (phone) phoneRowMap[phone] = i + 2;
   }
 
-  // Fetch conversation history for this batch
+  // Fetch recent conversations for this agent and match by phone number
   try {
-    var conversations = elevenlabsGet('/convai/batch-calling/' + batchId + '/conversations', apiKey);
-    var convList = conversations.conversations || conversations || [];
+    var conversations = elevenlabsGet('/convai/conversations?agent_id=' + CONFIG.AGENT_ID + '&page_size=50', apiKey);
+    var convList = conversations.conversations || [];
 
-    if (!Array.isArray(convList)) return;
+    Logger.log('[updateSheetWithCallResults] Found ' + convList.length + ' recent conversations');
 
     for (var c = 0; c < convList.length; c++) {
       var conv = convList[c];
-      var convPhone = normalizePhone(conv.phone_number || conv.recipient_phone_number || '');
-      var sheetRow = phoneRowMap[convPhone];
+      if (conv.status !== 'done') continue;
 
-      if (!sheetRow) continue;
-
-      // Always update status and duration
-      var callStatus = mapCallStatus(conv.status || conv.call_status || '');
-      var duration = conv.duration_secs || conv.call_duration || '';
-
-      if (callStatusIdx !== -1) sheet.getRange(sheetRow, callStatusIdx + 1).setValue(callStatus);
-      if (callDurationIdx !== -1 && duration) sheet.getRange(sheetRow, callDurationIdx + 1).setValue(duration + 's');
-      if (callNotesIdx !== -1 && conv.summary) sheet.getRange(sheetRow, callNotesIdx + 1).setValue(conv.summary);
-
-      // Check if detail already fetched (transcript cell non-empty)
-      var existingTranscript = transcriptIdx !== -1 ? sheet.getRange(sheetRow, transcriptIdx + 1).getValue() : '';
-      if (existingTranscript) continue;
-
-      // Only fetch detail for completed conversations
-      var rawStatus = (conv.status || conv.call_status || '').toLowerCase();
-      if (rawStatus !== 'done' && rawStatus !== 'completed' && rawStatus !== 'success') continue;
-
-      // Fetch full conversation detail
-      var conversationId = conv.conversation_id || conv.id || '';
+      // Get full detail to find the phone number and batch ID
+      var conversationId = conv.conversation_id;
       if (!conversationId) continue;
 
       try {
         var detail = getConversationDetail(conversationId, apiKey);
         if (!detail) continue;
 
+        // Check if this conversation belongs to this batch
+        var convBatchId = (detail.metadata && detail.metadata.batch_call) ? detail.metadata.batch_call.batch_call_id : '';
+        if (convBatchId && convBatchId !== batchId) continue;
+
+        // Match by phone number
+        var convPhone = '';
+        if (detail.metadata && detail.metadata.phone_call) {
+          convPhone = normalizePhone(detail.metadata.phone_call.external_number || '');
+        }
+        if (!convPhone) convPhone = normalizePhone(detail.user_id || '');
+
+        var sheetRow = phoneRowMap[convPhone];
+        if (!sheetRow) continue;
+
+        // Check if already processed
+        var existingTranscript = transcriptIdx !== -1 ? sheet.getRange(sheetRow, transcriptIdx + 1).getValue() : '';
+        if (existingTranscript) continue;
+
+        // Update basic fields
+        var duration = (detail.metadata && detail.metadata.call_duration_secs) ? detail.metadata.call_duration_secs : '';
+        var callSuccessful = (detail.analysis && detail.analysis.call_successful) ? detail.analysis.call_successful : '';
+
+        if (callStatusIdx !== -1) sheet.getRange(sheetRow, callStatusIdx + 1).setValue(callSuccessful === 'success' ? 'Completed' : 'Failed');
+        if (callDurationIdx !== -1 && duration) sheet.getRange(sheetRow, callDurationIdx + 1).setValue(duration + 's');
+
         // Summary
         if (summaryIdx !== -1) {
           var summary = (detail.analysis && detail.analysis.transcript_summary) ? detail.analysis.transcript_summary : '';
           sheet.getRange(sheetRow, summaryIdx + 1).setValue(summary);
+        }
+
+        // Notes (summary title)
+        if (callNotesIdx !== -1) {
+          var title = (detail.analysis && detail.analysis.call_summary_title) ? detail.analysis.call_summary_title : '';
+          sheet.getRange(sheetRow, callNotesIdx + 1).setValue(title);
         }
 
         // Transcript
@@ -470,13 +483,9 @@ function updateSheetWithCallResults(batchId, apiKey) {
         }
 
         // Recording
-        if (recordingIdx !== -1) {
-          if (detail.has_audio) {
-            var audioUrl = buildRecordingUrl(conversationId);
-            sheet.getRange(sheetRow, recordingIdx + 1).setFormula('=HYPERLINK("' + audioUrl + '", "Play Recording")');
-          } else {
-            sheet.getRange(sheetRow, recordingIdx + 1).setValue('');
-          }
+        if (recordingIdx !== -1 && detail.has_audio) {
+          var audioUrl = buildRecordingUrl(conversationId);
+          sheet.getRange(sheetRow, recordingIdx + 1).setFormula('=HYPERLINK("' + audioUrl + '", "Play Recording")');
         }
 
         // Data collection fields
@@ -488,9 +497,10 @@ function updateSheetWithCallResults(batchId, apiKey) {
         if (emailConfIdx !== -1) sheet.getRange(sheetRow, emailConfIdx + 1).setValue(dc.emailConfirmed);
         if (seenInviteIdx !== -1) sheet.getRange(sheetRow, seenInviteIdx + 1).setValue(dc.hasSeenInvite);
 
-        // Apply color-coded formatting to Outcome and Call Type cells
+        // Apply color-coded formatting
         applyOutcomeFormatting(sheet, sheetRow, outcomeIdx, callTypeIdx, dc.outcome, dc.callType);
         updatedCount++;
+        Logger.log('[updateSheetWithCallResults] Updated row ' + sheetRow + ' for ' + convPhone);
       } catch (detailErr) {
         Logger.log('Error fetching detail for conversation ' + conversationId + ': ' + detailErr.message);
       }
@@ -727,7 +737,7 @@ function startStatusPolling() {
 
   ScriptApp.newTrigger('pollBatchStatus')
     .timeBased()
-    .everyMinutes(5)
+    .everyMinutes(1)
     .create();
 
   Logger.log('Status polling started (every 5 min).');
