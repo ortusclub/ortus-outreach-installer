@@ -770,6 +770,23 @@ function toggleVoiceBookmark(voiceId) {
   return bookmarks;
 }
 
+function saveFormDefaults(formData) {
+  PropertiesService.getUserProperties().setProperty('FORM_DEFAULTS', JSON.stringify(formData));
+  Logger.log('[saveFormDefaults] Saved ' + Object.keys(formData).length + ' fields');
+  return { success: true };
+}
+
+function loadFormDefaults() {
+  try {
+    var raw = PropertiesService.getUserProperties().getProperty('FORM_DEFAULTS');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    Logger.log('[loadFormDefaults] Error: ' + e.message);
+    return null;
+  }
+}
+
 /**
  * Proxy for voice preview audio — fetches the MP3 from the preview URL
  * and returns it as a base64-encoded string.
@@ -913,6 +930,11 @@ function getSidebarHtml() {
 <div class="field" id="scheduleField" style="display:none">\
   <label>Scheduled Time</label>\
   <input id="scheduled_time" type="datetime-local" />\
+</div>\
+\
+<div class="row">\
+  <button class="btn btn-secondary" style="flex:1" onclick="saveDefaults()">Save Defaults</button>\
+  <button class="btn btn-secondary" style="flex:1" onclick="loadDefaults()">Load Defaults</button>\
 </div>\
 \
 <button class="btn btn-primary" id="submitBtn" onclick="submit()">Submit Batch Call</button>\
@@ -1149,6 +1171,37 @@ google.script.run\
     sel.appendChild(opt);\
   })\
   .getVoiceList();\
+\
+function saveDefaults() {\
+  var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience"];\
+  var data = {};\
+  fields.forEach(function(id) { data[id] = document.getElementById(id).value; });\
+  google.script.run\
+    .withSuccessHandler(function() { showStatus("Defaults saved", "ok"); })\
+    .withFailureHandler(function(err) { showStatus("Error saving: " + err.message, "err"); })\
+    .saveFormDefaults(data);\
+}\
+\
+function loadDefaults() {\
+  google.script.run\
+    .withSuccessHandler(function(data) {\
+      if (!data) { showStatus("No saved defaults found", "info"); return; }\
+      var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience"];\
+      fields.forEach(function(id) { if (data[id]) document.getElementById(id).value = data[id]; });\
+      showStatus("Defaults loaded", "ok");\
+    })\
+    .withFailureHandler(function(err) { showStatus("Error loading: " + err.message, "err"); })\
+    .loadFormDefaults();\
+}\
+\
+google.script.run\
+  .withSuccessHandler(function(data) {\
+    if (!data) return;\
+    var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience"];\
+    fields.forEach(function(id) { if (data[id]) document.getElementById(id).value = data[id]; });\
+  })\
+  .withFailureHandler(function() {})\
+  .loadFormDefaults();\
 </script>\
 </body>\
 </html>';
