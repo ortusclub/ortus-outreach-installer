@@ -600,7 +600,7 @@ function extractDataCollection(analysis) {
 
   var callbackRequested = getValue('callback_requested');
   var callbackWhen = getValue('callback_when');
-  var callbackStr = (callbackRequested === 'true') ? 'Yes - ' + callbackWhen : 'No';
+  var callbackStr = (callbackRequested && callbackRequested.toLowerCase() === 'true') ? 'Yes - ' + callbackWhen : 'No';
 
   return {
     outcome: getValue('outcome'),
