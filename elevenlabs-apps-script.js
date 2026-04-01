@@ -415,6 +415,11 @@ function submitBatchCall(eventVars, selectedOnly) {
   // Store batch ID for status checking and auto-start polling
   PropertiesService.getScriptProperties().setProperty('LATEST_BATCH_ID', batchId);
   PropertiesService.getScriptProperties().setProperty('LAST_EVENT_VARS', JSON.stringify(eventVars));
+  if (eventVars.sms_template) {
+    PropertiesService.getScriptProperties().setProperty('SMS_TEMPLATE', eventVars.sms_template);
+  }
+  PropertiesService.getScriptProperties().setProperty('AUTO_SMS', eventVars.auto_sms === true || eventVars.auto_sms === 'true' ? 'true' : 'false');
+  PropertiesService.getScriptProperties().setProperty('AUTO_CALLBACK', eventVars.auto_callback === true || eventVars.auto_callback === 'true' ? 'true' : 'false');
   startStatusPolling();
 
   return {
@@ -532,10 +537,11 @@ function fetchLatestResults() {
     applyOutcomeFormatting(sheet, sheetRow, outcomeIdx, callTypeIdx, dc.outcome, dc.callType);
 
     /* SMS follow-up: auto-send on Voicemail, No Answer, AI Gatekeeper (D-01, D-02, D-03) */
+    var autoSmsEnabled = PropertiesService.getScriptProperties().getProperty('AUTO_SMS') !== 'false';
     var smsOutcomes = ['Voicemail', 'No Answer', 'AI Gatekeeper'];
     var smsTriggerCallTypes = ['Voicemail', 'No Answer', 'AI Gatekeeper'];
     var shouldSms = (smsOutcomes.indexOf(dc.outcome) !== -1 || smsTriggerCallTypes.indexOf(dc.callType) !== -1);
-    if (shouldSms && smsSentIdx !== -1) {
+    if (autoSmsEnabled && shouldSms && smsSentIdx !== -1) {
       var alreadySent = sheet.getRange(sheetRow, smsSentIdx + 1).getValue();
       if (!alreadySent) {
         var smsTemplate = PropertiesService.getScriptProperties().getProperty('SMS_TEMPLATE') || DEFAULT_SMS_TEMPLATE;
@@ -1441,6 +1447,14 @@ function getSidebarHtml() {
   .btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }\
   .field-error input, .field-error select, .field-error textarea { border-color: #c62828; }\
   .validation-msg { color: #c62828; font-size: 11px; margin-top: 6px; }\
+  .toggle-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }\
+  .toggle-label { font-size: 12px; color: #555; flex: 1; }\
+  .toggle-switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }\
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }\
+  .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #ccc; border-radius: 22px; transition: .3s; }\
+  .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .3s; }\
+  .toggle-switch input:checked + .toggle-slider { background: #C5A255; }\
+  .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }\
   .bookmark-star { color: #ccc; cursor: pointer; font-size: 16px; }\
   .bookmark-star.active { color: #C5A255; }\
 </style>\
@@ -1502,6 +1516,23 @@ function getSidebarHtml() {
 <div class="field" id="scheduleField" style="display:none">\
   <label>Scheduled Time</label>\
   <input id="scheduled_time" type="datetime-local" />\
+</div>\
+\
+<hr class="divider" />\
+\
+<h3>SMS Follow-Up</h3>\
+<div class="field"><label>SMS Template</label>\
+  <textarea id="sms_template" rows="4">Hi {{prospect_name}}, {{host_first_name}} from The Ortus Club tried to reach you about {{event_name}} on {{event_date}}. Please check your email for the invite details or reply to this text.</textarea>\
+</div>\
+<div class="toggle-row">\
+  <span class="toggle-label">Auto-send SMS on voicemail / no answer</span>\
+  <label class="toggle-switch"><input type="checkbox" id="auto_sms" checked /><span class="toggle-slider"></span></label>\
+</div>\
+\
+<h3>Callbacks</h3>\
+<div class="toggle-row">\
+  <span class="toggle-label">Auto-schedule callbacks (max 1 per prospect)</span>\
+  <label class="toggle-switch"><input type="checkbox" id="auto_callback" /><span class="toggle-slider"></span></label>\
 </div>\
 \
 <div class="row">\
@@ -1572,6 +1603,9 @@ function submit() {\
     event_format: document.getElementById("event_format").value,\
     event_context: document.getElementById("event_context").value,\
     target_audience: document.getElementById("target_audience").value,\
+    sms_template: document.getElementById("sms_template").value,\
+    auto_sms: document.getElementById("auto_sms").checked,\
+    auto_callback: document.getElementById("auto_callback").checked,\
     voice_id: document.getElementById("voice_id").value,\
     timezone: "Europe/London",\
   };\
@@ -1746,9 +1780,11 @@ google.script.run\
   .getVoiceList();\
 \
 function saveDefaults() {\
-  var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience"];\
+  var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience","sms_template"];\
   var data = {};\
   fields.forEach(function(id) { data[id] = document.getElementById(id).value; });\
+  data.auto_sms = document.getElementById("auto_sms").checked ? "true" : "false";\
+  data.auto_callback = document.getElementById("auto_callback").checked ? "true" : "false";\
   google.script.run\
     .withSuccessHandler(function() { showStatus("Defaults saved", "ok"); })\
     .withFailureHandler(function(err) { showStatus("Error saving: " + err.message, "err"); })\
@@ -1759,8 +1795,10 @@ function loadDefaults() {\
   google.script.run\
     .withSuccessHandler(function(data) {\
       if (!data) { showStatus("No saved defaults found", "info"); return; }\
-      var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience"];\
+      var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience","sms_template"];\
       fields.forEach(function(id) { if (data[id]) document.getElementById(id).value = data[id]; });\
+      if (data.auto_sms) document.getElementById("auto_sms").checked = data.auto_sms === "true";\
+      if (data.auto_callback) document.getElementById("auto_callback").checked = data.auto_callback === "true";\
       showStatus("Defaults loaded", "ok");\
     })\
     .withFailureHandler(function(err) { showStatus("Error loading: " + err.message, "err"); })\
@@ -1770,8 +1808,10 @@ function loadDefaults() {\
 google.script.run\
   .withSuccessHandler(function(data) {\
     if (!data) return;\
-    var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience"];\
+    var fields = ["caller_name","host_name","host_first_name","event_name","event_date","event_time","event_city","event_area","event_venue","event_format","event_context","target_audience","sms_template"];\
     fields.forEach(function(id) { if (data[id]) document.getElementById(id).value = data[id]; });\
+    if (data.auto_sms) document.getElementById("auto_sms").checked = data.auto_sms === "true";\
+    if (data.auto_callback) document.getElementById("auto_callback").checked = data.auto_callback === "true";\
   })\
   .withFailureHandler(function() {})\
   .loadFormDefaults();\
