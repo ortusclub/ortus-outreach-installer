@@ -342,6 +342,17 @@ function updateSheetWithCallResults(batchId, apiKey) {
   var callNotesIdx = headers.indexOf('Call Notes');
   var callBatchIdx = headers.indexOf('Call Batch ID');
 
+  // New column indices for conversation detail
+  var outcomeIdx = headers.indexOf('Outcome');
+  var callTypeIdx = headers.indexOf('Call Type');
+  var summaryIdx = headers.indexOf('Summary');
+  var transcriptIdx = headers.indexOf('Transcript');
+  var recordingIdx = headers.indexOf('Recording');
+  var followUpIdx = headers.indexOf('Follow Up');
+  var callbackIdx = headers.indexOf('Callback');
+  var emailConfIdx = headers.indexOf('Email Confirmed');
+  var seenInviteIdx = headers.indexOf('Seen Invite');
+
   if (phoneColIdx === -1 || callStatusIdx === -1) return;
 
   var lastRow = sheet.getLastRow();
@@ -350,7 +361,7 @@ function updateSheetWithCallResults(batchId, apiKey) {
   // Read all phone numbers and batch IDs to match
   var allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
 
-  // Build phone → row map for this batch
+  // Build phone -> row map for this batch
   var phoneRowMap = {};
   for (var i = 0; i < allData.length; i++) {
     var batchCell = callBatchIdx !== -1 ? (allData[i][callBatchIdx] || '').toString() : '';
@@ -361,7 +372,6 @@ function updateSheetWithCallResults(batchId, apiKey) {
   }
 
   // Fetch conversation history for this batch
-  // ElevenLabs conversations endpoint filtered by batch
   try {
     var conversations = elevenlabsGet('/convai/batch-calling/' + batchId + '/conversations', apiKey);
     var convList = conversations.conversations || conversations || [];
@@ -375,12 +385,63 @@ function updateSheetWithCallResults(batchId, apiKey) {
 
       if (!sheetRow) continue;
 
+      // Always update status and duration
       var callStatus = mapCallStatus(conv.status || conv.call_status || '');
       var duration = conv.duration_secs || conv.call_duration || '';
 
       if (callStatusIdx !== -1) sheet.getRange(sheetRow, callStatusIdx + 1).setValue(callStatus);
       if (callDurationIdx !== -1 && duration) sheet.getRange(sheetRow, callDurationIdx + 1).setValue(duration + 's');
       if (callNotesIdx !== -1 && conv.summary) sheet.getRange(sheetRow, callNotesIdx + 1).setValue(conv.summary);
+
+      // Check if detail already fetched (transcript cell non-empty)
+      var existingTranscript = transcriptIdx !== -1 ? sheet.getRange(sheetRow, transcriptIdx + 1).getValue() : '';
+      if (existingTranscript) continue;
+
+      // Only fetch detail for completed conversations
+      var rawStatus = (conv.status || conv.call_status || '').toLowerCase();
+      if (rawStatus !== 'done' && rawStatus !== 'completed' && rawStatus !== 'success') continue;
+
+      // Fetch full conversation detail
+      var conversationId = conv.conversation_id || conv.id || '';
+      if (!conversationId) continue;
+
+      try {
+        var detail = getConversationDetail(conversationId, apiKey);
+        if (!detail) continue;
+
+        // Summary
+        if (summaryIdx !== -1) {
+          var summary = (detail.analysis && detail.analysis.transcript_summary) ? detail.analysis.transcript_summary : '';
+          sheet.getRange(sheetRow, summaryIdx + 1).setValue(summary);
+        }
+
+        // Transcript
+        if (transcriptIdx !== -1) {
+          var transcriptText = formatTranscript(detail.transcript);
+          sheet.getRange(sheetRow, transcriptIdx + 1).setValue(transcriptText);
+        }
+
+        // Recording
+        if (recordingIdx !== -1) {
+          if (detail.has_audio) {
+            var audioUrl = buildRecordingUrl(conversationId);
+            sheet.getRange(sheetRow, recordingIdx + 1).setFormula('=HYPERLINK("' + audioUrl + '", "Play Recording")');
+          } else {
+            sheet.getRange(sheetRow, recordingIdx + 1).setValue('');
+          }
+        }
+
+        // Data collection fields
+        var dc = extractDataCollection(detail.analysis);
+        if (outcomeIdx !== -1) sheet.getRange(sheetRow, outcomeIdx + 1).setValue(dc.outcome);
+        if (callTypeIdx !== -1) sheet.getRange(sheetRow, callTypeIdx + 1).setValue(dc.callType);
+        if (followUpIdx !== -1) sheet.getRange(sheetRow, followUpIdx + 1).setValue(dc.followUp);
+        if (callbackIdx !== -1) sheet.getRange(sheetRow, callbackIdx + 1).setValue(dc.callback);
+        if (emailConfIdx !== -1) sheet.getRange(sheetRow, emailConfIdx + 1).setValue(dc.emailConfirmed);
+        if (seenInviteIdx !== -1) sheet.getRange(sheetRow, seenInviteIdx + 1).setValue(dc.hasSeenInvite);
+      } catch (detailErr) {
+        Logger.log('Error fetching detail for conversation ' + conversationId + ': ' + detailErr.message);
+      }
     }
   } catch (e) {
     Logger.log('Error fetching conversation results: ' + e.message);
@@ -537,6 +598,17 @@ function handleCallWebhook(data) {
   var callDurationIdx = headers.indexOf('Call Duration');
   var callNotesIdx = headers.indexOf('Call Notes');
 
+  // New column indices for conversation detail
+  var outcomeIdx = headers.indexOf('Outcome');
+  var callTypeIdx = headers.indexOf('Call Type');
+  var summaryIdx = headers.indexOf('Summary');
+  var transcriptIdx = headers.indexOf('Transcript');
+  var recordingIdx = headers.indexOf('Recording');
+  var followUpIdx = headers.indexOf('Follow Up');
+  var callbackIdx = headers.indexOf('Callback');
+  var emailConfIdx = headers.indexOf('Email Confirmed');
+  var seenInviteIdx = headers.indexOf('Seen Invite');
+
   if (phoneColIdx === -1) return jsonResponse({ error: 'No phone column' });
 
   var phone = normalizePhone(data.phone_number || data.recipient || '');
@@ -550,6 +622,37 @@ function handleCallWebhook(data) {
   if (callStatusIdx !== -1) sheet.getRange(row, callStatusIdx + 1).setValue(status);
   if (callDurationIdx !== -1 && data.duration) sheet.getRange(row, callDurationIdx + 1).setValue(data.duration + 's');
   if (callNotesIdx !== -1 && data.summary) sheet.getRange(row, callNotesIdx + 1).setValue(data.summary);
+
+  // Opportunistically fetch conversation detail if conversation_id is present
+  var conversationId = data.conversation_id || '';
+  if (conversationId) {
+    try {
+      var apiKey = getApiKey();
+      var detail = getConversationDetail(conversationId, apiKey);
+      if (detail) {
+        if (summaryIdx !== -1) {
+          var detailSummary = (detail.analysis && detail.analysis.transcript_summary) ? detail.analysis.transcript_summary : '';
+          sheet.getRange(row, summaryIdx + 1).setValue(detailSummary);
+        }
+        if (transcriptIdx !== -1) {
+          sheet.getRange(row, transcriptIdx + 1).setValue(formatTranscript(detail.transcript));
+        }
+        if (recordingIdx !== -1 && detail.has_audio) {
+          var audioUrl = buildRecordingUrl(conversationId);
+          sheet.getRange(row, recordingIdx + 1).setFormula('=HYPERLINK("' + audioUrl + '", "Play Recording")');
+        }
+        var dc = extractDataCollection(detail.analysis);
+        if (outcomeIdx !== -1) sheet.getRange(row, outcomeIdx + 1).setValue(dc.outcome);
+        if (callTypeIdx !== -1) sheet.getRange(row, callTypeIdx + 1).setValue(dc.callType);
+        if (followUpIdx !== -1) sheet.getRange(row, followUpIdx + 1).setValue(dc.followUp);
+        if (callbackIdx !== -1) sheet.getRange(row, callbackIdx + 1).setValue(dc.callback);
+        if (emailConfIdx !== -1) sheet.getRange(row, emailConfIdx + 1).setValue(dc.emailConfirmed);
+        if (seenInviteIdx !== -1) sheet.getRange(row, seenInviteIdx + 1).setValue(dc.hasSeenInvite);
+      }
+    } catch (detailErr) {
+      Logger.log('Webhook: Error fetching detail for ' + conversationId + ': ' + detailErr.message);
+    }
+  }
 
   return jsonResponse({ success: true, row: row, status: status });
 }
