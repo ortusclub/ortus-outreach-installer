@@ -36,7 +36,7 @@ Add automatic SMS follow-up via Twilio when calls hit voicemail/no-answer/AI gat
 - **D-14:** The auto-scheduled call uses the same event variables from the original batch.
 
 ### Implementation Approach
-- **D-15:** SMS sending function: `sendFollowUpSms(phoneNumber, message)` using Twilio REST API.
+- **D-15:** SMS sending function: `sendFollowUpSms(phoneNumber, templateText, templateVars)` using Twilio REST API. Takes the phone number, the template string with {{placeholders}}, and an object of variable replacements.
 - **D-16:** SMS template variable replacement happens server-side before sending — replace {{prospect_name}}, {{host_first_name}}, etc. with actual values from the batch call eventVars.
 - **D-17:** Add "SMS Sent" column to track which leads received an SMS (prevent duplicate sends).
 - **D-18:** Add SMS-related fields to sidebar: SMS template textarea, auto-callback toggle.
