@@ -330,6 +330,14 @@ function submitBatchCall(eventVars, selectedOnly) {
 // CORE: Check Batch Status & Update Sheet
 // ═══════════════════════════════════════════════════════════════════════════
 
+function fetchLatestResults() {
+  var batchId = PropertiesService.getScriptProperties().getProperty('LATEST_BATCH_ID');
+  if (!batchId) throw new Error('No batch call has been submitted yet.');
+  var apiKey = getApiKey();
+  var updated = updateSheetWithCallResults(batchId, apiKey);
+  return { success: true, updated: updated || 0, batchId: batchId };
+}
+
 function checkLatestBatchStatus() {
   var batchId = PropertiesService.getScriptProperties().getProperty('LATEST_BATCH_ID');
   if (!batchId) {
@@ -392,10 +400,11 @@ function updateSheetWithCallResults(batchId, apiKey) {
   var emailConfIdx = headers.indexOf('Email Confirmed');
   var seenInviteIdx = headers.indexOf('Seen Invite');
 
-  if (phoneColIdx === -1 || callStatusIdx === -1) return;
+  if (phoneColIdx === -1 || callStatusIdx === -1) return 0;
 
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
+  if (lastRow < 2) return 0;
+  var updatedCount = 0;
 
   // Read all phone numbers and batch IDs to match
   var allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
@@ -481,6 +490,7 @@ function updateSheetWithCallResults(batchId, apiKey) {
 
         // Apply color-coded formatting to Outcome and Call Type cells
         applyOutcomeFormatting(sheet, sheetRow, outcomeIdx, callTypeIdx, dc.outcome, dc.callType);
+        updatedCount++;
       } catch (detailErr) {
         Logger.log('Error fetching detail for conversation ' + conversationId + ': ' + detailErr.message);
       }
@@ -488,6 +498,7 @@ function updateSheetWithCallResults(batchId, apiKey) {
   } catch (e) {
     Logger.log('Error fetching conversation results: ' + e.message);
   }
+  return updatedCount;
 }
 
 function mapCallStatus(status) {
@@ -1184,6 +1195,7 @@ function getSidebarHtml() {
 </div>\
 \
 <button class="btn btn-primary" id="submitBtn" onclick="submit()">Submit Batch Call</button>\
+<button class="btn btn-secondary" onclick="fetchResults()">Fetch Call Results</button>\
 <button class="btn btn-secondary" onclick="refreshStatus()">Check Latest Batch Status</button>\
 \
 <hr class="divider" />\
@@ -1448,6 +1460,19 @@ google.script.run\
   })\
   .withFailureHandler(function() {})\
   .loadFormDefaults();\
+\
+function fetchResults() {\
+  showStatus("Fetching call results...", "info");\
+  google.script.run\
+    .withSuccessHandler(function(result) {\
+      showStatus("Results updated: " + (result.updated || 0) + " calls processed", "ok");\
+      refreshStatus();\
+    })\
+    .withFailureHandler(function(err) {\
+      showStatus("Error fetching results: " + err.message, "err");\
+    })\
+    .fetchLatestResults();\
+}\
 </script>\
 </body>\
 </html>';
