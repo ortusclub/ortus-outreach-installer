@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  * ORTUS CLUB — ElevenLabs Calling Integration (Google Apps Script)
- * VERSION: 14
+ * VERSION: 15
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Replaces VAPI with ElevenLabs Conversational AI for outbound calling.
@@ -34,6 +34,9 @@ var CONFIG = {
   AGENT_ID: 'agent_5601kmzey4mve8pswpwvmhckcgnr',
   BRANCH_ID: 'agtbrch_0801kmzey97dfhwbwgctcmkv4ez4',
   PHONE_NUMBER_ID: 'phnum_8701kn1e7q5rfbgsrwp8xzfk1dad',
+  TWILIO_ACCOUNT_SID: 'PLACEHOLDER_SID',
+  TWILIO_AUTH_TOKEN: 'PLACEHOLDER_TOKEN',
+  TWILIO_FROM_NUMBER: '+16176000320',
   API_BASE: 'https://api.elevenlabs.io/v1',
 };
 
@@ -52,7 +55,9 @@ var CALL_TRACKING_COLUMNS = [
   'Follow Up',
   'Callback',
   'Email Confirmed',
-  'Seen Invite'
+  'Seen Invite',
+  'SMS Sent',
+  'Callback Sent'
 ];
 
 // ── Outcome and Call Type visual formatting (D-07 / D-08) ──
@@ -73,6 +78,8 @@ var CALL_TYPE_FORMAT = {
   'Hung Up':        { emoji: '❌', bg: '#fce4ec' }
 };
 
+var DEFAULT_SMS_TEMPLATE = 'Hi {{prospect_name}}, {{host_first_name}} from The Ortus Club tried to reach you about {{event_name}} on {{event_date}}. Please check your email for the invite details or reply to this text.';
+
 /**
  * Apply emoji prefix and color-coded background to Outcome and Call Type cells.
  * Uses setBackground() per D-08 (not conditional formatting).
@@ -92,6 +99,96 @@ function applyOutcomeFormatting(sheet, row, outcomeIdx, callTypeIdx, outcomeValu
       sheet.getRange(row, callTypeIdx + 1).setBackground(cFmt.bg);
     }
   }
+}
+
+/**
+ * Send a follow-up SMS via the Twilio REST API.
+ * Replaces template variables {{prospect_name}}, {{host_first_name}}, {{event_name}}, {{event_date}}
+ * with actual values from templateVars.
+ *
+ * @param {string} phoneNumber  E.164 phone number
+ * @param {string} templateText SMS template with {{variable}} placeholders
+ * @param {Object} templateVars Key/value pairs for template replacement
+ * @returns {boolean} true on success, false on failure
+ */
+function sendFollowUpSms(phoneNumber, templateText, templateVars) {
+  try {
+    var smsBody = templateText
+      .replace(/\{\{prospect_name\}\}/g, templateVars.prospect_name || 'there')
+      .replace(/\{\{host_first_name\}\}/g, templateVars.host_first_name || '')
+      .replace(/\{\{event_name\}\}/g, templateVars.event_name || '')
+      .replace(/\{\{event_date\}\}/g, templateVars.event_date || '');
+
+    var base64Creds = Utilities.base64Encode(CONFIG.TWILIO_ACCOUNT_SID + ':' + CONFIG.TWILIO_AUTH_TOKEN);
+    var url = 'https://api.twilio.com/2010-04-01/Accounts/' + CONFIG.TWILIO_ACCOUNT_SID + '/Messages.json';
+    var payload = 'To=' + encodeURIComponent(phoneNumber) +
+      '&From=' + encodeURIComponent(CONFIG.TWILIO_FROM_NUMBER) +
+      '&Body=' + encodeURIComponent(smsBody);
+
+    var options = {
+      method: 'post',
+      contentType: 'application/x-www-form-urlencoded',
+      headers: { 'Authorization': 'Basic ' + base64Creds },
+      payload: payload,
+      muteHttpExceptions: true
+    };
+
+    var response = UrlFetchApp.fetch(url, options);
+    var code = response.getResponseCode();
+    Logger.log('[sms] Twilio response code: ' + code);
+
+    if (code === 200 || code === 201) {
+      return true;
+    }
+    Logger.log('[sms] Twilio error body: ' + response.getContentText());
+    return false;
+  } catch (e) {
+    Logger.log('[sms] sendFollowUpSms error: ' + e);
+    return false;
+  }
+}
+
+/**
+ * Parse a natural-language callback time string into a Unix timestamp.
+ * Handles patterns like "in 10 minutes", "in like twenty minutes", "tomorrow".
+ * Defaults to 30 minutes from now if unparseable.
+ *
+ * @param {string} callbackWhen  Natural language callback time
+ * @returns {number} Unix timestamp (seconds)
+ */
+function parseCallbackTime(callbackWhen) {
+  var minutes = 30; /* default */
+  var str = String(callbackWhen || '').toLowerCase().trim();
+
+  /* Try numeric minutes first: "in 10 minutes", "10 min" */
+  var numMatch = str.match(/(\d+)\s*min/i);
+  if (numMatch) {
+    minutes = parseInt(numMatch[1], 10);
+  } else {
+    /* Try word numbers */
+    var wordMap = {
+      'five': 5, 'ten': 10, 'fifteen': 15, 'twenty': 20,
+      'thirty': 30, 'forty': 40, 'forty-five': 45, 'sixty': 60
+    };
+    var keys = Object.keys(wordMap);
+    for (var w = 0; w < keys.length; w++) {
+      if (str.indexOf(keys[w]) !== -1) {
+        minutes = wordMap[keys[w]];
+        break;
+      }
+    }
+    /* "tomorrow" -> ~24 hours */
+    if (str.indexOf('tomorrow') !== -1) {
+      minutes = 1440;
+    }
+    /* "hour" -> 60 min */
+    if (str.indexOf('hour') !== -1 && !numMatch) {
+      var hourMatch = str.match(/(\d+)\s*hour/i);
+      minutes = hourMatch ? parseInt(hourMatch[1], 10) * 60 : 60;
+    }
+  }
+
+  return Math.floor((Date.now() + minutes * 60 * 1000) / 1000);
 }
 
 // ── Column name detection ──
