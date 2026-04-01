@@ -414,6 +414,7 @@ function submitBatchCall(eventVars, selectedOnly) {
 
   // Store batch ID for status checking and auto-start polling
   PropertiesService.getScriptProperties().setProperty('LATEST_BATCH_ID', batchId);
+  PropertiesService.getScriptProperties().setProperty('LAST_EVENT_VARS', JSON.stringify(eventVars));
   startStatusPolling();
 
   return {
@@ -446,6 +447,10 @@ function fetchLatestResults() {
   var callStatusIdx = headers.indexOf('Call Status');
   var callDurationIdx = headers.indexOf('Call Duration');
   var callNotesIdx = headers.indexOf('Call Notes');
+  var smsSentIdx = headers.indexOf('SMS Sent');
+  var callbackSentIdx = headers.indexOf('Callback Sent');
+  var firstNameIdx = findColumnIndex(headers, FIRST_NAME_COLUMNS);
+  var emailIdx = findColumnIndex(headers, EMAIL_COLUMN_NAMES);
 
   Logger.log('[fetch] outcomeIdx=' + outcomeIdx + ' phoneColIdx=' + phoneColIdx);
 
@@ -525,6 +530,107 @@ function fetchLatestResults() {
 
     // Apply formatting
     applyOutcomeFormatting(sheet, sheetRow, outcomeIdx, callTypeIdx, dc.outcome, dc.callType);
+
+    /* SMS follow-up: auto-send on Voicemail, No Answer, AI Gatekeeper (D-01, D-02, D-03) */
+    var smsOutcomes = ['Voicemail', 'No Answer', 'AI Gatekeeper'];
+    var smsTriggerCallTypes = ['Voicemail', 'No Answer', 'AI Gatekeeper'];
+    var shouldSms = (smsOutcomes.indexOf(dc.outcome) !== -1 || smsTriggerCallTypes.indexOf(dc.callType) !== -1);
+    if (shouldSms && smsSentIdx !== -1) {
+      var alreadySent = sheet.getRange(sheetRow, smsSentIdx + 1).getValue();
+      if (!alreadySent) {
+        var smsTemplate = PropertiesService.getScriptProperties().getProperty('SMS_TEMPLATE') || DEFAULT_SMS_TEMPLATE;
+        var smsVars = {
+          prospect_name: 'there',
+          host_first_name: '',
+          event_name: '',
+          event_date: ''
+        };
+        /* Try to read eventVars from script properties */
+        var storedVars = PropertiesService.getScriptProperties().getProperty('LAST_EVENT_VARS');
+        if (storedVars) {
+          try {
+            var parsed = JSON.parse(storedVars);
+            smsVars.host_first_name = parsed.host_first_name || '';
+            smsVars.event_name = parsed.event_name || '';
+            smsVars.event_date = parsed.event_date || '';
+          } catch(e) { Logger.log('[sms] failed to parse stored vars: ' + e); }
+        }
+        /* Read prospect_name from First Name column */
+        if (firstNameIdx !== -1) {
+          var pName = allData[sheetRow - 2][firstNameIdx];
+          if (pName) smsVars.prospect_name = String(pName).trim();
+        }
+        var sent = sendFollowUpSms(convPhone, smsTemplate, smsVars);
+        sheet.getRange(sheetRow, smsSentIdx + 1).setValue(sent ? 'Yes' : 'Failed');
+        Logger.log('[fetch] SMS ' + (sent ? 'sent' : 'failed') + ' for ' + convPhone);
+      }
+    }
+
+    /* Auto-callback scheduling (D-12, D-13, D-14) */
+    var autoCallbackEnabled = PropertiesService.getScriptProperties().getProperty('AUTO_CALLBACK') === 'true';
+    if (autoCallbackEnabled && dc.outcome === 'Callback' && callbackSentIdx !== -1) {
+      var alreadyCallbacked = sheet.getRange(sheetRow, callbackSentIdx + 1).getValue();
+      if (!alreadyCallbacked) {
+        var callbackWhen = '';
+        if (detail.analysis && detail.analysis.data_collection_results && detail.analysis.data_collection_results.callback_when) {
+          callbackWhen = detail.analysis.data_collection_results.callback_when.value || '';
+        }
+        if (callbackWhen) {
+          var scheduledUnix = parseCallbackTime(callbackWhen);
+          var storedEventVars = PropertiesService.getScriptProperties().getProperty('LAST_EVENT_VARS');
+          if (storedEventVars) {
+            try {
+              var cbVars = JSON.parse(storedEventVars);
+              cbVars.scheduled_time_unix = scheduledUnix;
+              /* Submit single-person callback batch */
+              var cbPayload = {
+                call_name: 'Callback — ' + convPhone,
+                agent_id: CONFIG.AGENT_ID,
+                agent_phone_number_id: CONFIG.PHONE_NUMBER_ID,
+                branch_id: CONFIG.BRANCH_ID,
+                environment: 'production',
+                recipients: [{
+                  phone_number: convPhone,
+                  conversation_initiation_client_data: {
+                    dynamic_variables: {
+                      prospect_name: (firstNameIdx !== -1 && allData[sheetRow - 2][firstNameIdx]) ? String(allData[sheetRow - 2][firstNameIdx]).trim() : 'there',
+                      prospect_email: (emailIdx !== -1 && allData[sheetRow - 2][emailIdx]) ? String(allData[sheetRow - 2][emailIdx]).trim() : '',
+                      caller_name: cbVars.caller_name || 'Sarah',
+                      host_name: cbVars.host_name || '',
+                      host_first_name: cbVars.host_first_name || '',
+                      event_name: cbVars.event_name || '',
+                      event_date: cbVars.event_date || '',
+                      event_time: cbVars.event_time || '',
+                      event_city: cbVars.event_city || '',
+                      event_area: cbVars.event_area || '',
+                      event_venue: cbVars.event_venue || '',
+                      event_format: cbVars.event_format || 'roundtable',
+                      event_context: cbVars.event_context || '',
+                      target_audience: cbVars.target_audience || ''
+                    }
+                  }
+                }],
+                timezone: cbVars.timezone || 'Europe/London',
+                scheduled_time_unix: scheduledUnix,
+                target_concurrency_limit: 1
+              };
+              if (cbVars.voice_id) {
+                cbPayload.recipients[0].conversation_initiation_client_data.conversation_config_override = {
+                  tts: { voice_id: cbVars.voice_id }
+                };
+              }
+              var cbResponse = elevenlabsPost('/convai/batch-calling/submit', cbPayload, apiKey);
+              var cbSuccess = !cbResponse.error;
+              sheet.getRange(sheetRow, callbackSentIdx + 1).setValue(cbSuccess ? 'Scheduled' : 'Failed');
+              Logger.log('[fetch] Callback ' + (cbSuccess ? 'scheduled' : 'failed') + ' for ' + convPhone + ' at ' + callbackWhen);
+            } catch(e) {
+              Logger.log('[fetch] Callback scheduling error: ' + e);
+              sheet.getRange(sheetRow, callbackSentIdx + 1).setValue('Error');
+            }
+          }
+        }
+      }
+    }
 
     updatedCount++;
   }
