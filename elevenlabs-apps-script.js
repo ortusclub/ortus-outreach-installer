@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  * ORTUS CLUB — ElevenLabs Calling Integration (Google Apps Script)
- * VERSION: 13
+ * VERSION: 14
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Replaces VAPI with ElevenLabs Conversational AI for outbound calling.
@@ -702,7 +702,7 @@ function extractDataCollection(analysis) {
 
   var callbackRequested = getValue('callback_requested');
   var callbackWhen = getValue('callback_when');
-  var callbackStr = (callbackRequested && callbackRequested.toLowerCase() === 'true') ? 'Yes - ' + callbackWhen : 'No';
+  var callbackStr = (callbackRequested && String(callbackRequested).toLowerCase() === 'true') ? 'Yes - ' + callbackWhen : 'No';
 
   return {
     outcome: getValue('outcome'),
