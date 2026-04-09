@@ -75,8 +75,8 @@ Plans:
 Plans:
 - [x] 09-01-PLAN.md — Rate-limit delay randomization and cron-based campaign scheduling
 - [x] 09-02-PLAN.md — Campaign history persistence and CSV export
-- [ ] 09-03-PLAN.md — Fix campaignStartTime bug and add delay config UI (gap closure)
-- [ ] 09-04-PLAN.md — Scheduling UI panel for dashboard (gap closure)
+- [x] 09-03-PLAN.md — Fix campaignStartTime bug and add delay config UI (gap closure)
+- [x] 09-04-PLAN.md — Scheduling UI panel for dashboard (gap closure)
 
 ### Phase 10: Dashboard UX
 **Goal**: Operators can save/load message templates, see accurate per-campaign progress, and browse past campaign summaries from the dashboard
