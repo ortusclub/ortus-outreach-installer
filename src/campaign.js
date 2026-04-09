@@ -107,6 +107,55 @@ function getToken() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Profile health check (REL-04) — verifies LinkedIn session before leads
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function checkProfileHealth(page, profileName) {
+  const issues = [];
+
+  // Check 1: URL-based login detection
+  try {
+    const url = page.url();
+    if (url.includes('/login') || url.includes('/authwall')) {
+      issues.push('not logged in (redirected to login/authwall)');
+      return { healthy: false, issues };
+    }
+  } catch (e) {
+    issues.push(`URL check failed: ${e.message}`);
+    return { healthy: false, issues };
+  }
+
+  // Check 2: Scroll the feed briefly to verify interactivity
+  try {
+    await page.evaluate(() => {
+      window.scrollTo(0, 300);
+      return new Promise(r => setTimeout(r, 1000));
+    });
+    await page.evaluate(() => window.scrollTo(0, 0));
+  } catch (e) {
+    issues.push(`feed scroll failed: ${e.message}`);
+  }
+
+  // Check 3: Check for rate-limit banners
+  try {
+    const rateLimited = await page.evaluate(() => {
+      const text = document.body.innerText.toLowerCase();
+      return text.includes('too many requests') ||
+             text.includes('please try again later') ||
+             text.includes('you\'ve reached the limit');
+    });
+    if (rateLimited) {
+      issues.push('rate-limit banner detected');
+      return { healthy: false, issues };
+    }
+  } catch (e) {
+    issues.push(`rate-limit check failed: ${e.message}`);
+  }
+
+  return { healthy: issues.length === 0, issues };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -246,23 +295,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         log('⏳ Waiting 20s on home page…');
         await new Promise(r => setTimeout(r, 20000));
 
-        // Check session
-        try {
-          const u = page.url();
-          if (u.includes('/login') || u.includes('/authwall')) {
-            log(`⚠ ${pName}: not logged in. Skip.`);
-            continue;
-          }
-        } catch (e) {
-          log(`⚠ Session check failed: ${e.message}`);
-          continue;
+        // ════════════════════════════════════════════════════
+        // STEP 3b: Profile health check (D-10 through D-13)
+        // ════════════════════════════════════════════════════
+        log(`Checking ${pName} health...`);
+        const health = await checkProfileHealth(page, pName);
+        if (!health.healthy) {
+          log(`WARNING: ${pName} failed health check: ${health.issues.join(', ')}. Skipping.`);
+          continue;  // Skip to next profile
         }
-
-        // ════════════════════════════════════════════════════
-        // STEP 4: Ready to process leads
-        // ════════════════════════════════════════════════════
-        await page.evaluate(() => window.scrollTo(0, 0));
-        log('✓ Session active. Starting leads…');
+        log(`${pName} health check passed. Starting leads...`);
 
         // ════════════════════════════════════════════════════
         // STEP 5: Lead processing loop
