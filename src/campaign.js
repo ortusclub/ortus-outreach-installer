@@ -19,7 +19,8 @@
  *    g. Open next GoLogin profile, repeat
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { launchProfile, closeProfile, getProfiles } from './gologin-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow } from './sheets-writer.js';
@@ -30,11 +31,11 @@ const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent
 
 if (!existsSync('./data')) mkdirSync('./data');
 
-function loadState() {
-  try { return JSON.parse(readFileSync(STATE_FILE, 'utf8')); }
+async function loadState() {
+  try { return JSON.parse(await readFile(STATE_FILE, 'utf8')); }
   catch { return { processed: {}, dailyCounts: {} }; }
 }
-function saveState(s) { writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
+async function saveState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
 
 // Campaign-scoped counters — reset every time a campaign starts
 const campaignCounts = {};
@@ -153,7 +154,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       await updateSheetRow(sheetUrl, '__ensure_columns__', {}).catch(() => {});
     }
 
-    const state = loadState();
+    const state = await loadState();
 
     // Pre-filter targets
     const targets = rows.filter(row => {
@@ -286,7 +287,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
           // Mark as in-progress to prevent concurrent profiles from picking the same lead
           state.processed[url] = { profileId, profileName: pName, action: '_in_progress', date: new Date().toISOString() };
-          saveState(state);
+          await saveState(state);
 
           // Mode-aware skip logic
           const sheetStatus = (row['Connection Status'] || row['connectionStatus'] || '').toLowerCase();
