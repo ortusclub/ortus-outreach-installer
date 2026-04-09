@@ -42,7 +42,10 @@
   1. Grep of the entire codebase for API tokens, passwords, or secrets returns zero hardcoded values — all secrets load from .env
   2. Opening the dashboard URL in a browser without credentials shows a login prompt, not the dashboard
   3. .env file is listed in .gitignore and `git status` confirms it is not tracked
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 07-01-PLAN.md — Remove hardcoded secrets, add startup env validation, verify .gitignore
+- [ ] 07-02-PLAN.md — Add HTTP Basic Auth middleware protecting all routes
 
 ### Phase 8: Reliability Hardening
 **Goal**: The system handles I/O without blocking, avoids code duplication, shuts down cleanly, and verifies profiles before starting campaigns
@@ -86,7 +89,7 @@ Phases execute in numeric order: 7 -> 8 -> 9 -> 10
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Security Lockdown | v2.0 | 0/0 | Not started | - |
+| 7. Security Lockdown | v2.0 | 0/2 | Planning | - |
 | 8. Reliability Hardening | v2.0 | 0/0 | Not started | - |
 | 9. Operational Features | v2.0 | 0/0 | Not started | - |
 | 10. Dashboard UX | v2.0 | 0/0 | Not started | - |
