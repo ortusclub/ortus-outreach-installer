@@ -516,6 +516,115 @@ function downloadCsv() {
 let wasRunning = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Campaign Schedules
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleScheduleForm() {
+  document.getElementById('schedule-form').classList.toggle('hidden');
+}
+
+async function fetchSchedules() {
+  const panel = document.getElementById('schedule-list');
+  if (!panel) return;
+  try {
+    const res = await fetch('/api/schedules');
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) {
+      panel.innerHTML = '<p class="empty-state">No schedules yet. Click "+ New Schedule" to create one.</p>';
+      return;
+    }
+    panel.innerHTML = data.map(s => {
+      const lastRun = s.lastRun ? new Date(s.lastRun).toISOString().replace('T', ' ').substring(0, 16) : 'Never';
+      const modeLabels = { auto: 'Auto', connect_only: 'Connect', connect_and_message: 'Connect+Msg', message_only: 'Message', inmail_only: 'InMail', check_status: 'Check' };
+      const modeLabel = modeLabels[s.mode] || s.mode;
+      return '<div class="schedule-item">' +
+        '<div class="sched-info">' +
+          '<div class="sched-name">' + escHtml(s.name) + '</div>' +
+          '<div class="sched-meta">' + escHtml(s.cron) + ' &middot; ' + modeLabel + ' &middot; limit ' + (s.dailyLimit || 5) + ' &middot; last: ' + escHtml(lastRun) + '</div>' +
+        '</div>' +
+        '<div class="sched-actions">' +
+          '<button class="schedule-toggle ' + (s.enabled ? 'on' : 'off') + '" onclick="toggleScheduleEnabled(\'' + s.id + '\', ' + !s.enabled + ')" title="' + (s.enabled ? 'Disable' : 'Enable') + '"></button>' +
+          '<button class="btn-remove" onclick="deleteSchedule(\'' + s.id + '\')" title="Delete">&times;</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (err) {
+    panel.innerHTML = '<p class="empty-state">Failed to load schedules.</p>';
+  }
+}
+
+async function createSchedule() {
+  const name = document.getElementById('sched-name').value.trim();
+  const cronExpr = document.getElementById('sched-cron').value.trim();
+  const sheetUrl = document.getElementById('sched-sheet').value.trim();
+  const mode = document.getElementById('sched-mode').value;
+  const dailyLimit = parseInt(document.getElementById('sched-limit').value, 10) || 5;
+  const delayMin = parseInt(document.getElementById('sched-delay-min').value, 10) || 8;
+  const delayMax = parseInt(document.getElementById('sched-delay-max').value, 10) || 15;
+
+  if (!name) { alert('Schedule name is required.'); return; }
+  if (!cronExpr) { alert('Cron expression is required.'); return; }
+  if (!sheetUrl) { alert('Google Sheet URL is required.'); return; }
+  if (selectedProfileIds.length === 0) { alert('Select at least one GoLogin profile above first.'); return; }
+
+  try {
+    const res = await fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name, cron: cronExpr, profileIds: selectedProfileIds,
+        sheetUrl, mode, dailyLimit, delayMin, delayMax, enabled: true
+      }),
+    });
+    const data = await res.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+    if (data.saved) {
+      document.getElementById('schedule-form').classList.add('hidden');
+      // Clear form
+      document.getElementById('sched-name').value = '';
+      document.getElementById('sched-cron').value = '';
+      document.getElementById('sched-sheet').value = '';
+      document.getElementById('sched-limit').value = '5';
+      document.getElementById('sched-delay-min').value = '8';
+      document.getElementById('sched-delay-max').value = '15';
+      await fetchSchedules();
+    }
+  } catch (err) {
+    alert('Failed to save schedule: ' + err.message);
+  }
+}
+
+async function toggleScheduleEnabled(id, enabled) {
+  try {
+    // Fetch current schedule data first, then update
+    const listRes = await fetch('/api/schedules');
+    const schedules = await listRes.json();
+    const sched = schedules.find(s => s.id === id);
+    if (!sched) { alert('Schedule not found.'); return; }
+    sched.enabled = enabled;
+    const res = await fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...sched, id }),
+    });
+    const data = await res.json();
+    if (data.saved) await fetchSchedules();
+  } catch (err) {
+    alert('Failed to update schedule: ' + err.message);
+  }
+}
+
+async function deleteSchedule(id) {
+  if (!confirm('Delete this schedule?')) return;
+  try {
+    const res = await fetch('/api/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
+    const data = await res.json();
+    if (data.deleted) await fetchSchedules();
+  } catch (err) {
+    alert('Failed to delete schedule: ' + err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 loadProfiles();
@@ -523,6 +632,7 @@ onModeChange();
 pollStatus();
 fetchTemplateList();
 fetchHistory();
+fetchSchedules();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {
