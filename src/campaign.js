@@ -27,7 +27,15 @@ import { updateSheetRow } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 
 const STATE_FILE = './data/state.json';
+const HISTORY_PATH = './data/history.json';
 const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined']);
+
+async function appendHistory(entry) {
+  let history = [];
+  try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf8')); } catch { /* first run */ }
+  history.push(entry);
+  await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2));
+}
 
 if (!existsSync('./data')) mkdirSync('./data');
 
@@ -186,6 +194,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
   try {
     log('=== Campaign starting ===');
+    const campaignStartTime = Date.now();
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
     log(`Daily limit: ${dailyLimit}`);
@@ -530,6 +539,22 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Fatal: ${err.message}`);
     pushError(err);
   } finally {
+    // Save campaign history (D-10)
+    try {
+      await appendHistory({
+        date: new Date().toISOString(),
+        mode: campaign.mode,
+        profiles: campaign.profileNames,
+        dailyLimit: dailyLimit,
+        totalProcessed: campaign.totalProcessed,
+        successCount: campaign.processedToday,
+        errorCount: campaign.errors.length,
+        duration: Math.round((Date.now() - campaignStartTime) / 1000),
+        templateNames: Object.entries(tpl).filter(([_, v]) => v && (typeof v === 'string' ? v : v.subject)).map(([k]) => k),
+      });
+    } catch (histErr) {
+      console.error('Failed to save campaign history:', histErr.message);
+    }
     campaign.running = false;
     campaign.currentProfile = null;
     log('=== Campaign ended ===');

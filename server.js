@@ -270,6 +270,20 @@ app.delete('/api/schedules/:id', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Campaign history (D-11)
+// ---------------------------------------------------------------------------
+const HISTORY_PATH = resolve(__dirname, 'data', 'history.json');
+
+app.get('/api/history', async (_req, res) => {
+  try {
+    const raw = await readFile(HISTORY_PATH, 'utf-8');
+    res.json(JSON.parse(raw));
+  } catch {
+    res.json([]);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 app.listen(PORT, () => {
