@@ -71,7 +71,10 @@ Plans:
   3. Completed campaign logs are persisted to disk as JSON and survive server restarts
   4. Operator can click a CSV export button in the dashboard and download campaign results as a .csv file
   5. Randomized delays between actions fall within operator-configured min/max ranges
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 09-01-PLAN.md — Rate-limit delay randomization and cron-based campaign scheduling
+- [ ] 09-02-PLAN.md — Campaign history persistence and CSV export
 
 ### Phase 10: Dashboard UX
 **Goal**: Operators can save/load message templates, see accurate per-campaign progress, and browse past campaign summaries from the dashboard
@@ -94,5 +97,5 @@ Phases execute in numeric order: 7 -> 8 -> 9 -> 10
 |-------|-----------|----------------|--------|-----------|
 | 7. Security Lockdown | v2.0 | 2/2 | Complete | - |
 | 8. Reliability Hardening | v2.0 | 0/2 | Planning | - |
-| 9. Operational Features | v2.0 | 0/0 | Not started | - |
+| 9. Operational Features | v2.0 | 0/2 | Planning | - |
 | 10. Dashboard UX | v2.0 | 0/0 | Not started | - |
