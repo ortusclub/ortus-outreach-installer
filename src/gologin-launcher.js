@@ -99,3 +99,11 @@ export async function closeProfile(profileId) {
 
   activeProfiles.delete(profileId);
 }
+
+export async function closeAllProfiles() {
+  const ids = [...activeProfiles.keys()];
+  for (const id of ids) {
+    await closeProfile(id);
+  }
+  return ids.length;
+}

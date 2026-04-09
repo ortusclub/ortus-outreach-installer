@@ -13,9 +13,9 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startCampaign, stopCampaign, getCampaignStatus } from './src/campaign.js';
+import { startCampaign, stopCampaign, getCampaignStatus, campaign } from './src/campaign.js';
 import { fetchSheet } from './src/sheets.js';
-import { getProfiles } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles } from './src/gologin-launcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -175,3 +175,25 @@ app.listen(PORT, () => {
   console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
   console.log(`  ✦ Sheet tracking: ${process.env.SHEETS_WEBAPP_URL ? '✓ configured' : '✗ not configured (set SHEETS_WEBAPP_URL)'}\n`);
 });
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown — close GoLogin profiles on SIGINT/SIGTERM (REL-03)
+// ---------------------------------------------------------------------------
+async function gracefulShutdown(signal) {
+  console.log(`\n[shutdown] ${signal} received. Shutting down... waiting for current lead`);
+  stopCampaign();
+
+  // Wait for current lead to finish (campaign loop checks _abort between leads)
+  const deadline = Date.now() + 30000;
+  while (campaign.running && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  const count = await closeAllProfiles();
+  console.log(`[shutdown] Closing ${count} profiles...`);
+  console.log('[shutdown] Done.');
+  process.exit(0);
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
