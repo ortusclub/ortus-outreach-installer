@@ -172,3 +172,23 @@ select { cursor: pointer; }
   cursor: pointer; transition: background 0.15s; user-select: none;
 }
 .placeholder-tags .tag:hover { background: #1a2233; border-color: #58a6ff; }
+
+/* ── Template controls ── */
+.template-controls .template-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.template-controls .template-bar select {
+  flex: 1;
+  margin-bottom: 0;
+}
+.template-controls .template-bar .btn {
+  padding: 10px 18px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.btn-save-tpl {
+  background: #238636 !important;
+  color: #fff !important;
+}

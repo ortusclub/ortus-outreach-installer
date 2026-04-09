@@ -63,6 +63,19 @@
       </div>
     </div>
 
+    <!-- ── Template Management ── -->
+    <div class="section template-controls">
+      <h2>Message Templates</h2>
+      <div class="template-bar">
+        <select id="tpl-select">
+          <option value="">-- Select a template --</option>
+        </select>
+        <button class="btn btn-secondary" onclick="loadSelectedTemplate()">Load</button>
+        <button class="btn btn-secondary" onclick="deleteSelectedTemplate()">Delete</button>
+        <button class="btn btn-secondary btn-save-tpl" onclick="saveCurrentTemplate()">Save As&#8230;</button>
+      </div>
+    </div>
+
     <!-- ── Connection Note (connect_only, connect_and_message, auto) ── -->
     <div class="section tpl-section" id="tpl-connect-section">
       <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
