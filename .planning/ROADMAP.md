@@ -56,7 +56,10 @@ Plans:
   2. Only one extractSheetId() function exists in the codebase (shared utility), and all callers import from the same location
   3. Pressing Ctrl+C during a running campaign closes all active GoLogin profiles before the process exits (no orphaned browser sessions)
   4. Before a campaign starts, each selected profile is verified to have an active LinkedIn session — profiles that fail the check are skipped with a warning in the dashboard
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 08-01-PLAN.md — Async I/O conversion and extractSheetId deduplication
+- [ ] 08-02-PLAN.md — Graceful shutdown handler and profile health checks
 
 ### Phase 9: Operational Features
 **Goal**: Operators can schedule campaigns, configure safety limits, review past campaigns, and export results
@@ -89,7 +92,7 @@ Phases execute in numeric order: 7 -> 8 -> 9 -> 10
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Security Lockdown | v2.0 | 0/2 | Planning | - |
-| 8. Reliability Hardening | v2.0 | 0/0 | Not started | - |
+| 7. Security Lockdown | v2.0 | 2/2 | Complete | - |
+| 8. Reliability Hardening | v2.0 | 0/2 | Planning | - |
 | 9. Operational Features | v2.0 | 0/0 | Not started | - |
 | 10. Dashboard UX | v2.0 | 0/0 | Not started | - |
