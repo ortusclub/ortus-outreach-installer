@@ -174,6 +174,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign._abort = false;
   campaign.currentProfile = null;
   campaign.processedToday = 0;
+  campaign.totalProcessed = 0;
   campaign.totalTargets = 0;
   campaign.mode = mode;
   campaign.profileNames = [];
@@ -423,7 +424,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               bumpCampaignCount(profileId);
               done++;
               campaign.processedToday++;
-              campaign.totalProcessed = Object.keys(state.processed).length;
+              campaign.totalProcessed = campaign.processedToday;
               await saveState(state);
 
               // Write success to Google Sheet

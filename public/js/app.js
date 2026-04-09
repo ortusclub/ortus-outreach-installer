@@ -295,10 +295,10 @@ async function pollStatus() {
     document.getElementById('st-mode').textContent = modeLabels[s.mode] || s.mode || '—';
 
     document.getElementById('st-today').textContent = s.processedToday;
-    document.getElementById('st-total').textContent = s.totalProcessed;
+    document.getElementById('st-total').textContent = s.totalTargets;
     document.getElementById('st-errors').textContent = (s.errors || []).length;
 
-    const pct = s.totalTargets > 0 ? Math.round((s.totalProcessed / s.totalTargets) * 100) : 0;
+    const pct = s.totalTargets > 0 ? Math.min(100, Math.round((s.processedToday / s.totalTargets) * 100)) : 0;
     document.getElementById('st-bar').style.width = pct + '%';
 
     // Update account queue if we have profile names
