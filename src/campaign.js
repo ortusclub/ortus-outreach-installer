@@ -102,7 +102,7 @@ async function getProfileName(profileId, token) {
 }
 
 function getToken() {
-  return process.env.GOLOGIN_TOKEN || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODY1NTFmNGQwMDM4NzI3ZGRhMTQ1YTYiLCJ0eXBlIjoiZGV2Iiwiand0aWQiOiI2ODY1NTI5MjU4NDMxMjY2YzY4MWRiNTIifQ.39y1T2hJsvQUMgcETGJlvwVTZ9anhvbwo-hGDqVsZGg';
+  return process.env.GOLOGIN_API_TOKEN;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

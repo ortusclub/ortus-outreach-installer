@@ -1,15 +1,11 @@
 import 'dotenv/config';
 
-// Hardcoded GoLogin API token (fallback if .env is missing)
-if (!process.env.GOLOGIN_API_TOKEN) {
-  process.env.GOLOGIN_API_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ODY1NTFmNGQwMDM4NzI3ZGRhMTQ1YTYiLCJ0eXBlIjoiZGV2Iiwiand0aWQiOiI2ODY1NTI5MjU4NDMxMjY2YzY4MWRiNTIifQ.39y1T2hJsvQUMgcETGJlvwVTZ9anhvbwo-hGDqVsZGg';
-}
-
-// Google Sheets write-back URL (Apps Script web app)
-// Set this after deploying the Apps Script from google-apps-script.js
-// Example: process.env.SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/YOUR_ID/exec';
-if (!process.env.SHEETS_WEBAPP_URL) {
-  process.env.SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwZu0ormMlS2IfC7yarIZDBz0XJj_FbOcp5omJTWQPCGsQ8YO3_npqGUQojNc1fmHyXCg/exec';
+// ── Startup env validation (D-06) ──────────────────────────────────
+const REQUIRED_ENV = ['GOLOGIN_API_TOKEN', 'SHEETS_WEBAPP_URL', 'DASHBOARD_USER', 'DASHBOARD_PASS'];
+const missing = REQUIRED_ENV.filter(k => !process.env[k]);
+if (missing.length) {
+  console.error(`\n  FATAL: Missing required environment variables:\n${missing.map(k => '    - ' + k).join('\n')}\n\n  Copy .env.example to .env and fill in all values.\n`);
+  process.exit(1);
 }
 
 import express from 'express';
