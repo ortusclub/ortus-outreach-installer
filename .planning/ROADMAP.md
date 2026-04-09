@@ -73,8 +73,8 @@ Plans:
   5. Randomized delays between actions fall within operator-configured min/max ranges
 **Plans:** 2 plans
 Plans:
-- [ ] 09-01-PLAN.md — Rate-limit delay randomization and cron-based campaign scheduling
-- [ ] 09-02-PLAN.md — Campaign history persistence and CSV export
+- [x] 09-01-PLAN.md — Rate-limit delay randomization and cron-based campaign scheduling
+- [x] 09-02-PLAN.md — Campaign history persistence and CSV export
 
 ### Phase 10: Dashboard UX
 **Goal**: Operators can save/load message templates, see accurate per-campaign progress, and browse past campaign summaries from the dashboard
