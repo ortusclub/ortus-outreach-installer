@@ -159,7 +159,7 @@ async function checkProfileHealth(page, profileName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 5, mode = 'connect_only', messageOpenProfiles = false }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 5, mode = 'connect_only', messageOpenProfiles = false, delayMin = 8, delayMax = 15 }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -487,8 +487,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // STEP 5e: Wait 10 seconds, then next lead
             // ════════════════════════════════════════════════
             if (!campaign._abort) {
-              log('  ⏳ 10s');
-              await new Promise(r => setTimeout(r, 10000));
+              const delay = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
+              log(`  ⏳ ${(delay / 1000).toFixed(0)}s`);
+              await new Promise(r => setTimeout(r, delay));
             }
           } catch (err) {
             log(`  ✗ ${err.message}`);
