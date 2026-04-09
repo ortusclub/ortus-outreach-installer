@@ -331,11 +331,96 @@ function escHtml(str) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Templates
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchTemplateList() {
+  try {
+    const res = await fetch('/api/templates');
+    const data = await res.json();
+    const sel = document.getElementById('tpl-select');
+    // Preserve the default option, clear the rest
+    sel.innerHTML = '<option value="">-- Select a template --</option>';
+    Object.keys(data).forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name; // textContent is XSS-safe
+      sel.appendChild(opt);
+    });
+  } catch (err) {
+    console.error('Failed to fetch templates:', err);
+  }
+}
+
+async function loadSelectedTemplate() {
+  const sel = document.getElementById('tpl-select');
+  const name = sel.value;
+  if (!name) { alert('Select a template first.'); return; }
+  try {
+    const res = await fetch('/api/templates');
+    const data = await res.json();
+    const tpl = data[name];
+    if (!tpl) { alert('Template not found.'); return; }
+    document.getElementById('tpl-note').value = tpl.connectionNote || '';
+    document.getElementById('tpl-followup').value = tpl.followUp1 || '';
+    document.getElementById('tpl-inmail-subject').value = tpl.inmailSubject || '';
+    document.getElementById('tpl-inmail-body').value = tpl.inmailBody || '';
+  } catch (err) {
+    alert('Failed to load template: ' + err.message);
+  }
+}
+
+async function saveCurrentTemplate() {
+  const name = prompt('Template name:');
+  if (!name || !name.trim()) return;
+  const templates = {
+    connectionNote: document.getElementById('tpl-note').value,
+    followUp1: document.getElementById('tpl-followup').value,
+    inmailSubject: document.getElementById('tpl-inmail-subject').value,
+    inmailBody: document.getElementById('tpl-inmail-body').value,
+  };
+  try {
+    const res = await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), templates }),
+    });
+    const data = await res.json();
+    if (data.saved) {
+      await fetchTemplateList();
+      document.getElementById('tpl-select').value = name.trim();
+    } else {
+      alert('Failed to save template.');
+    }
+  } catch (err) {
+    alert('Failed to save template: ' + err.message);
+  }
+}
+
+async function deleteSelectedTemplate() {
+  const sel = document.getElementById('tpl-select');
+  const name = sel.value;
+  if (!name) { alert('Select a template first.'); return; }
+  if (!confirm('Delete template "' + name + '"?')) return;
+  try {
+    const res = await fetch('/api/templates/' + encodeURIComponent(name), { method: 'DELETE' });
+    const data = await res.json();
+    if (data.deleted) {
+      await fetchTemplateList();
+    } else {
+      alert('Failed to delete template.');
+    }
+  } catch (err) {
+    alert('Failed to delete template: ' + err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 loadProfiles();
 onModeChange();
 pollStatus();
+fetchTemplateList();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {
