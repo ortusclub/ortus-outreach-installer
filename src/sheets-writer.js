@@ -8,17 +8,9 @@
  * The sheetId is extracted from whatever Google Sheet URL the campaign uses.
  */
 
-const getWebAppUrl = () => process.env.SHEETS_WEBAPP_URL || '';
+import { extractSheetId } from './utils.js';
 
-/**
- * Extract Google Sheet ID from a URL.
- */
-function extractSheetId(url) {
-  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  if (match) return match[1];
-  if (/^[a-zA-Z0-9_-]+$/.test(url.trim())) return url.trim();
-  throw new Error(`Cannot extract Sheet ID from: ${url}`);
-}
+const getWebAppUrl = () => process.env.SHEETS_WEBAPP_URL || '';
 
 /**
  * POST to the Apps Script web app.

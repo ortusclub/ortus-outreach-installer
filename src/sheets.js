@@ -3,21 +3,7 @@
  * The sheet must be set to "Anyone with the link can view".
  */
 
-/**
- * Extracts a Google Sheet ID from various URL formats.
- * @param {string} url
- * @returns {string}
- */
-function extractSheetId(url) {
-  // Match /d/SHEET_ID/ in the URL
-  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  if (match) return match[1];
-
-  // Maybe it's just the ID itself
-  if (/^[a-zA-Z0-9_-]+$/.test(url.trim())) return url.trim();
-
-  throw new Error(`Cannot extract Google Sheet ID from URL: ${url}`);
-}
+import { extractSheetId } from './utils.js';
 
 /**
  * Parses a CSV string into an array of objects using the first row as headers.
