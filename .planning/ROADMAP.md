@@ -58,8 +58,8 @@ Plans:
   4. Before a campaign starts, each selected profile is verified to have an active LinkedIn session — profiles that fail the check are skipped with a warning in the dashboard
 **Plans:** 2 plans
 Plans:
-- [ ] 08-01-PLAN.md — Async I/O conversion and extractSheetId deduplication
-- [ ] 08-02-PLAN.md — Graceful shutdown handler and profile health checks
+- [x] 08-01-PLAN.md — Async I/O conversion and extractSheetId deduplication
+- [x] 08-02-PLAN.md — Graceful shutdown handler and profile health checks
 
 ### Phase 9: Operational Features
 **Goal**: Operators can schedule campaigns, configure safety limits, review past campaigns, and export results
