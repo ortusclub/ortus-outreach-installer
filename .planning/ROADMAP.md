@@ -44,8 +44,8 @@
   3. .env file is listed in .gitignore and `git status` confirms it is not tracked
 **Plans:** 2 plans
 Plans:
-- [ ] 07-01-PLAN.md — Remove hardcoded secrets, add startup env validation, verify .gitignore
-- [ ] 07-02-PLAN.md — Add HTTP Basic Auth middleware protecting all routes
+- [x] 07-01-PLAN.md — Remove hardcoded secrets, add startup env validation, verify .gitignore
+- [x] 07-02-PLAN.md — Add HTTP Basic Auth middleware protecting all routes
 
 ### Phase 8: Reliability Hardening
 **Goal**: The system handles I/O without blocking, avoids code duplication, shuts down cleanly, and verifies profiles before starting campaigns
