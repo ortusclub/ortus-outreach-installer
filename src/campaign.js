@@ -193,9 +193,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     },
   };
 
+  const campaignStartTime = Date.now();
+
   try {
     log('=== Campaign starting ===');
-    const campaignStartTime = Date.now();
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
     log(`Daily limit: ${dailyLimit}`);

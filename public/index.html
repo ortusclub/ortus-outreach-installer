@@ -54,6 +54,18 @@
       <label for="daily-limit">Campaign Limit (per account)</label>
       <input type="number" id="daily-limit" value="40" min="1" max="100" />
 
+      <div style="display:flex; gap:12px; margin-top:4px">
+        <div style="flex:1">
+          <label for="delay-min">Min Delay (seconds)</label>
+          <input type="number" id="delay-min" value="8" min="1" max="60" />
+        </div>
+        <div style="flex:1">
+          <label for="delay-max">Max Delay (seconds)</label>
+          <input type="number" id="delay-max" value="15" min="1" max="120" />
+        </div>
+      </div>
+      <p style="font-size:0.75rem; color:#8b949e; margin:-12px 0 8px 0">Random delay between lead actions. Default: 8-15 seconds.</p>
+
       <div id="open-profile-toggle" style="display:none; margin-top:8px">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
           <input type="checkbox" id="open-profile-msg" style="width:16px; height:16px; accent-color:#58a6ff" />
