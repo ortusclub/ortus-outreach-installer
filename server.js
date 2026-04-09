@@ -22,6 +22,22 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+
+// ── Basic Auth (D-01, D-02) ────────────────────────────────────────
+app.use((req, res, next) => {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.set('WWW-Authenticate', 'Basic realm="Ortus Dashboard"');
+    return res.status(401).send('Authentication required');
+  }
+  const [user, pass] = Buffer.from(auth.split(' ')[1], 'base64').toString().split(':');
+  if (user === process.env.DASHBOARD_USER && pass === process.env.DASHBOARD_PASS) {
+    return next();
+  }
+  res.set('WWW-Authenticate', 'Basic realm="Ortus Dashboard"');
+  return res.status(401).send('Invalid credentials');
+});
+
 app.use(express.static('public'));
 
 // ---------------------------------------------------------------------------
