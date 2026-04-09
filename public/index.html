@@ -159,6 +159,67 @@
       </div>
     </div>
 
+    <!-- ── Campaign Schedules ── -->
+    <div class="section" id="schedules-section">
+      <div class="history-header">
+        <h2>Campaign Schedules</h2>
+        <button class="btn btn-secondary btn-sm" onclick="toggleScheduleForm()">+ New Schedule</button>
+      </div>
+
+      <!-- New schedule form (hidden by default) -->
+      <div id="schedule-form" class="schedule-form hidden">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+          <div>
+            <label for="sched-name">Schedule Name</label>
+            <input type="text" id="sched-name" placeholder="Daily outreach 9am" />
+          </div>
+          <div>
+            <label for="sched-cron">Cron Expression</label>
+            <input type="text" id="sched-cron" placeholder="0 9 * * 1-5" />
+            <p style="font-size:0.7rem; color:#8b949e; margin:-12px 0 8px 0">e.g. "0 9 * * 1-5" = weekdays at 9am</p>
+          </div>
+        </div>
+        <div>
+          <label for="sched-sheet">Google Sheet URL</label>
+          <input type="text" id="sched-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." />
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px">
+          <div>
+            <label for="sched-mode">Mode</label>
+            <select id="sched-mode">
+              <option value="connect_only">Connect Only</option>
+              <option value="check_status">Check Status</option>
+              <option value="message_only">Message Only</option>
+              <option value="connect_and_message">Connect + Message</option>
+              <option value="auto">Auto</option>
+              <option value="inmail_only">InMail Only</option>
+            </select>
+          </div>
+          <div>
+            <label for="sched-limit">Daily Limit</label>
+            <input type="number" id="sched-limit" value="5" min="1" max="100" />
+          </div>
+          <div>
+            <label for="sched-delay">Delay (min-max sec)</label>
+            <div style="display:flex; gap:6px">
+              <input type="number" id="sched-delay-min" value="8" min="1" max="60" style="flex:1" />
+              <input type="number" id="sched-delay-max" value="15" min="1" max="120" style="flex:1" />
+            </div>
+          </div>
+        </div>
+        <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 12px 0">Schedule uses the currently selected GoLogin profiles above.</p>
+        <div style="display:flex; gap:8px">
+          <button class="btn btn-start btn-sm" onclick="createSchedule()">Save Schedule</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleScheduleForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Schedule list -->
+      <div id="schedule-list">
+        <p class="empty-state">Loading schedules...</p>
+      </div>
+    </div>
+
     <p style="text-align:center; color:#484f58; margin-top:32px; font-size:0.8rem">Ortus Club &copy; 2026</p>
   </div>
   <script src="/js/app.js"></script>
