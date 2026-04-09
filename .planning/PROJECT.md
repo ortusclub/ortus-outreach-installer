@@ -1,83 +1,106 @@
-# ElevenLabs Calling Integration — Sidebar Enhancements
+# Ortus GoLogin Clone — LinkedIn Outreach Automation
 
 ## What This Is
 
-Enhancements to the Ortus Club's ElevenLabs batch calling integration, which lives as a Google Apps Script attached to a Google Sheet. The system reads leads from the sheet, submits batch outbound calls via ElevenLabs Conversational AI + Twilio, and tracks results. Two specific improvements are needed: voice selection from the sidebar and fixing dynamic variable mapping.
+A LinkedIn outreach automation tool for The Ortus Club, comparable to PhantomBuster and Linked Helper. Uses multiple GoLogin browser profiles to run connection campaigns, follow-up messaging, InMail, and connection status checks against lead lists from Google Sheets. Includes a web dashboard for campaign control and live monitoring.
 
 ## Core Value
 
-The sidebar must reliably pass all user-entered event details (host name, event name, etc.) to the ElevenLabs agent so every call is personalized — and let operators switch the calling voice without leaving the sheet.
+Operators can run multi-account LinkedIn outreach campaigns reliably and safely — selecting GoLogin profiles, feeding lead lists, and tracking results — without manual browser work.
+
+## Current Milestone: v2.0 Delivery Hardening
+
+**Goal:** Harden the working automation tool for team delivery — fix security issues, improve reliability, add operational features, and polish the dashboard UX without touching core automation logic.
+
+**Target features:**
+- Remove hardcoded secrets, use .env exclusively
+- Add basic auth to the Express server
+- Convert sync file I/O to async in campaign orchestrator
+- Wire template save/load into the dashboard UI
+- Fix progress bar and add campaign history persistence
+- Deduplicate shared utilities
+- Add graceful shutdown with profile cleanup
+- Campaign scheduling (cron-style)
+- CSV export of campaign results
+- Profile health check before campaign start
+- Configurable rate-limit safety (daily/hourly caps, randomized delays)
 
 ## Requirements
 
 ### Validated
 
-- ✓ Batch call submission from Google Sheets sidebar — existing
-- ✓ Lead reading from sheet with phone/name/email column detection — existing
-- ✓ Call tracking columns (Status, Date, Duration, Batch ID, Notes) — existing
-- ✓ Batch status checking and sheet update — existing
-- ✓ ElevenLabs API integration (POST/GET helpers) — existing
-- ✓ Webhook handler for call completion callbacks — existing
-- ✓ Auto-poll trigger for batch status — existing
-- ✓ Scheduling (immediate or deferred) — existing
-- ✓ Dynamic variable mapping — all 14 sidebar inputs correctly nested under `conversation_initiation_client_data.dynamic_variables` — Validated in Phase 1
-- ✓ TTS override enabled in agent Security settings — Validated in Phase 1
-- ✓ Agent prompt references all 14 dynamic variables — Validated in Phase 1
-- ✓ Voice selection dropdown in sidebar — operator picks voice, applied via per-recipient override — Validated in Phase 2
+- ✓ GoLogin profile cycling — launch, connect via Puppeteer, close sequentially — v1.0
+- ✓ LinkedIn action detection — connect/message/InMail/status via DOM + Shadow DOM — v1.0
+- ✓ Campaign orchestrator — mode-based routing (connect_only, message_only, check_status, connect_and_message, inmail_only, auto) — v1.0
+- ✓ Google Sheet read (CSV export) and write-back (Apps Script web app) — v1.0
+- ✓ Web dashboard with live polling, profile selection, template editing — v1.0
+- ✓ State persistence (processed leads tracking) — v1.0
+- ✓ Weekly limit detection, email-required handling, retry logic (3 attempts) — v1.0
+- ✓ Open Profile messaging toggle — v1.0
+- ✓ Smart DOM settling (MutationObserver) instead of fixed waits — v1.0
+- ✓ Connection note personalization with {firstName}, {lastName}, {company}, {title} — v1.0
 
 ### Active
 
-(None remaining from original scope — Phase 3 UX Polish pending)
+(Defined in REQUIREMENTS.md — v2.0 Delivery Hardening scope)
 
 ### Out of Scope
 
-- Agent switching (different agent personas/scripts) — not needed now, voice switching covers the use case
-- Call recording/transcription management — separate concern
-- Multi-sheet support — single sheet workflow is sufficient
-- New deployment of the Apps Script — sidebar uses HEAD deployment, no redeploy needed
+- Sales Navigator URL support — different DOM selectors, deferred to v3.0
+- Agent switching (different LinkedIn personas) — out of scope
+- Multi-sheet column mapping UI — nice-to-have, deferred
+- LinkedIn group messaging — different product surface
+- Proxy management — GoLogin handles this internally
+- Mobile/responsive dashboard — internal tool, desktop only
 
 ## Context
 
-- **Platform**: Google Apps Script (server-side JS) + HTML sidebar
-- **APIs**: ElevenLabs Conversational AI (`/v1/convai/*`), Twilio (via ElevenLabs phone number import)
-- **Agent**: `agent_5601kmzey4mve8pswpwvmhckcgnr` / branch `agtbrch_0801kmzey97dfhwbwgctcmkv4ez4`
-- **Phone**: +1 617 600 0320 (`phnum_8701kn1e7q5rfbgsrwp8xzfk1dad`)
-- **Sheet**: `1qBjityRlSsRfRLXJN7yv_J_yoNElkdzL1fOE0jh_OoU`
-- **Current voice**: Alice (British, Clear) — voice_id `Xb7hH8MSUJpSbSDYk0k2`
-- **Known bug**: Variable mapping fix exists in local file `elevenlabs-apps-script.js` (correct `conversation_initiation_client_data.dynamic_variables` nesting) but has NOT been deployed to Apps Script editor yet
-- **All code lives in a single file**: `elevenlabs-apps-script.js` — this is the Apps Script source that gets pasted into the editor
+- **Platform**: Node.js (ES modules) + Express + Puppeteer-core + GoLogin SDK
+- **GoLogin SDK**: v2.2.8 — manages anti-detect browser profiles
+- **Dashboard**: Vanilla JS + CSS, served via Express static
+- **State**: JSON file (`data/state.json`) — processed leads, daily counts
+- **Sheet integration**: Read via CSV export (public sheets), write via Apps Script web app POST
+- **LinkedIn selectors**: Regular DOM + Shadow DOM (interop-outlet) — fragile, needs periodic updates
+- **Campaign modes**: connect_only, message_only, check_status, connect_and_message, inmail_only, auto
+- **Known working**: All core automation has been tested and is functional
 
 ## Constraints
 
-- **Runtime**: Google Apps Script (V8 engine, no ES modules, no npm)
-- **Deployment**: Code is pasted into Apps Script editor; sidebar uses HEAD deployment (no redeploy needed after code changes)
-- **API limits**: ElevenLabs API rate limits apply; batch concurrency capped at 5
-- **Voice API**: Need to verify the correct ElevenLabs endpoint for listing voices and updating agent voice settings
+- **Preserve core logic**: Campaign orchestrator, LinkedIn actions, GoLogin launcher, sheet read/write must NOT be modified
+- **Runtime**: Node.js with ES modules
+- **GoLogin dependency**: SDK v2.2.8, API token required
+- **LinkedIn fragility**: DOM selectors break with LinkedIn UI updates — accepted risk
+- **No npm additions without justification**: Keep dependencies minimal
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Voice switching, not agent switching | User confirmed — same agent, different voices | — Pending |
-| Single-file Apps Script | Simplicity; paste-and-go workflow | ✓ Good |
-| HEAD deployment for sidebar | No redeploy needed after code edits | ✓ Good |
+| GoLogin SDK for browser profiles | Anti-detect browsers needed for multi-account LinkedIn | ✓ Good |
+| Puppeteer-core (not full Puppeteer) | GoLogin provides the browser, only need the protocol layer | ✓ Good |
+| element.click() via page.evaluate() | No coordinate/viewport dependencies — works in any zoom/position | ✓ Good |
+| CSV export for sheet reading | No Google API auth needed — just public sheet access | ✓ Good |
+| Apps Script web app for write-back | Avoids Google Sheets API auth complexity | ✓ Good |
+| State in JSON file (not DB) | Simple, sufficient for single-operator use | ⚠️ Revisit if multi-user |
+| No framework for dashboard | Vanilla JS keeps it simple, paste-and-go | ✓ Good |
+| Preserve core logic in v2.0 | Working automation is the product — don't break it | — Pending |
 
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
 
-**After each phase transition** (via `/gsd:transition`):
+**After each phase transition** (via `/gsd-transition`):
 1. Requirements invalidated? → Move to Out of Scope with reason
 2. Requirements validated? → Move to Validated with phase reference
 3. New requirements emerged? → Add to Active
 4. Decisions to log? → Add to Key Decisions
 5. "What This Is" still accurate? → Update if drifted
 
-**After each milestone** (via `/gsd:complete-milestone`):
+**After each milestone** (via `/gsd-complete-milestone`):
 1. Full review of all sections
 2. Core Value check — still the right priority?
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after Phase 2 completion*
+*Last updated: 2026-04-09 after milestone v2.0 started*
