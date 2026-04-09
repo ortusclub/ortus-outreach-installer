@@ -85,8 +85,10 @@ Plans:
   2. Operator can delete a saved template from the template list
   3. Progress bar resets to 0% when a new campaign starts and accurately reflects that campaign's lead processing (not cumulative)
   4. Campaign history panel shows past campaigns with date, mode, profiles used, and success/error counts
-**Plans**: TBD
-**UI hint**: yes
+**Plans:** 2 plans
+Plans:
+- [ ] 10-01-PLAN.md — Template save/load/delete UI wired to existing API
+- [ ] 10-02-PLAN.md — Progress bar fix and campaign history panel with CSV download
 
 ## Progress
 
@@ -98,4 +100,4 @@ Phases execute in numeric order: 7 -> 8 -> 9 -> 10
 | 7. Security Lockdown | v2.0 | 2/2 | Complete | - |
 | 8. Reliability Hardening | v2.0 | 0/2 | Planning | - |
 | 9. Operational Features | v2.0 | 0/2 | Planning | - |
-| 10. Dashboard UX | v2.0 | 0/0 | Not started | - |
+| 10. Dashboard UX | v2.0 | 0/2 | Planning | - |
