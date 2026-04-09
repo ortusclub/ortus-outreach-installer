@@ -13,6 +13,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "gologin": "2.2.8",
+    "node-cron": "^4.2.1",
     "puppeteer-core": "^22.15.0"
   }
 }

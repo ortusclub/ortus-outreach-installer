@@ -9,6 +9,7 @@ if (missing.length) {
 }
 
 import express from 'express';
+import cron from 'node-cron';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -169,6 +170,106 @@ app.delete('/api/templates/:name', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Schedules (node-cron persistence + CRUD)
+// ---------------------------------------------------------------------------
+const SCHEDULES_PATH = resolve(__dirname, 'data', 'schedules.json');
+const activeJobs = new Map(); // id -> cron job instance
+
+async function loadSchedules() {
+  try {
+    const raw = await readFile(SCHEDULES_PATH, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+async function saveSchedules(data) {
+  await mkdir(dirname(SCHEDULES_PATH), { recursive: true });
+  await writeFile(SCHEDULES_PATH, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function registerSchedule(schedule) {
+  if (activeJobs.has(schedule.id)) {
+    activeJobs.get(schedule.id).stop();
+  }
+  if (!schedule.enabled) return;
+  if (!cron.validate(schedule.cron)) {
+    console.error(`[scheduler] Invalid cron for schedule "${schedule.name}": ${schedule.cron}`);
+    return;
+  }
+  const job = cron.schedule(schedule.cron, async () => {
+    console.log(`[scheduler] Firing schedule "${schedule.name}"`);
+    try {
+      await startCampaign({
+        profileIds: schedule.profileIds,
+        sheetUrl: schedule.sheetUrl,
+        templates: schedule.templates || {},
+        dailyLimit: schedule.dailyLimit || 5,
+        mode: schedule.mode || 'connect_only',
+        delayMin: schedule.delayMin,
+        delayMax: schedule.delayMax,
+      });
+      // Update lastRun
+      const all = await loadSchedules();
+      const s = all.find(x => x.id === schedule.id);
+      if (s) { s.lastRun = new Date().toISOString(); await saveSchedules(all); }
+    } catch (err) {
+      console.error(`[scheduler] Schedule "${schedule.name}" failed:`, err.message);
+    }
+  });
+  activeJobs.set(schedule.id, job);
+}
+
+// Schedule CRUD (D-03)
+app.get('/api/schedules', async (_req, res) => {
+  const schedules = await loadSchedules();
+  res.json(schedules);
+});
+
+app.post('/api/schedules', async (req, res) => {
+  try {
+    const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, delayMin, delayMax, enabled } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    if (!cronExpr || !cron.validate(cronExpr)) return res.status(400).json({ error: 'valid cron expression required' });
+    if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    const all = await loadSchedules();
+    const id = req.body.id || `sched_${Date.now()}`;
+    const existing = all.findIndex(s => s.id === id);
+    const schedule = {
+      id, name, cron: cronExpr, profileIds, sheetUrl,
+      mode: mode || 'connect_only', templates: templates || {},
+      dailyLimit: dailyLimit || 5, delayMin, delayMax,
+      enabled: enabled !== false, lastRun: null,
+    };
+    if (existing >= 0) { all[existing] = { ...all[existing], ...schedule }; }
+    else { all.push(schedule); }
+    await saveSchedules(all);
+    registerSchedule(schedule);
+    res.json({ saved: true, schedule });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/schedules/:id', async (req, res) => {
+  try {
+    const all = await loadSchedules();
+    const filtered = all.filter(s => s.id !== req.params.id);
+    if (activeJobs.has(req.params.id)) {
+      activeJobs.get(req.params.id).stop();
+      activeJobs.delete(req.params.id);
+    }
+    await saveSchedules(filtered);
+    res.json({ deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 app.listen(PORT, () => {
@@ -176,6 +277,12 @@ app.listen(PORT, () => {
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
   console.log(`  ✦ Sheet tracking: ${process.env.SHEETS_WEBAPP_URL ? '✓ configured' : '✗ not configured (set SHEETS_WEBAPP_URL)'}\n`);
+
+  // Load and register saved schedules (D-05)
+  loadSchedules().then(schedules => {
+    for (const s of schedules) registerSchedule(s);
+    if (schedules.length) console.log(`  ✦ Schedules: ${schedules.filter(s => s.enabled).length} active of ${schedules.length} total`);
+  }).catch(err => console.error('Failed to load schedules:', err.message));
 });
 
 // ---------------------------------------------------------------------------
