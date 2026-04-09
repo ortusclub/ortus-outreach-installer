@@ -274,6 +274,12 @@ async function pollStatus() {
     const res = await fetch('/api/campaign/status');
     const s = await res.json();
 
+    // Detect campaign completion and refresh history
+    if (wasRunning && !s.running) {
+      fetchHistory();
+    }
+    wasRunning = s.running;
+
     const runEl = document.getElementById('st-running');
     if (s.running) {
       runEl.textContent = 'Running';
@@ -415,12 +421,105 @@ async function deleteSelectedTemplate() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Campaign History
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchHistory() {
+  const panel = document.getElementById('history-panel');
+  if (!panel) return;
+  try {
+    const res = await fetch('/api/history');
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) {
+      panel.innerHTML = '<p class="empty-state">No campaigns yet.</p>';
+      return;
+    }
+
+    const modeLabels = {
+      auto: 'Auto', connect_only: 'Connect Only', connect_and_message: 'Connect + Msg',
+      message_only: 'Message Only', inmail_only: 'InMail Only', check_status: 'Check Status',
+    };
+
+    // Sort newest first
+    data.sort((a, b) => new Date(b.startedAt || b.date) - new Date(a.startedAt || a.date));
+
+    let html = '<table class="history-table"><thead><tr>';
+    html += '<th>Date</th><th>Mode</th><th>Profiles</th><th>Success</th><th>Errors</th><th>Duration</th>';
+    html += '</tr></thead><tbody>';
+
+    data.forEach((c, idx) => {
+      const dt = c.startedAt || c.date || '';
+      const dateStr = dt ? new Date(dt).toISOString().replace('T', ' ').substring(0, 16) : '--';
+      const modeLabel = modeLabels[c.mode] || escHtml(c.mode || '--');
+      const profiles = (c.profileNames || c.profiles || []).join(', ');
+      const profileDisplay = profiles.length > 30 ? escHtml(profiles.substring(0, 27)) + '...' : escHtml(profiles);
+      const success = c.successCount != null ? c.successCount : (c.totalProcessed || 0);
+      const errors = c.errorCount != null ? c.errorCount : 0;
+
+      // Duration calculation
+      let durationStr = '--';
+      if (c.duration != null) {
+        durationStr = c.duration >= 60 ? Math.round(c.duration / 60) + 'm' : c.duration + 's';
+      } else if (c.startedAt && c.endedAt) {
+        const mins = Math.round((new Date(c.endedAt) - new Date(c.startedAt)) / 60000);
+        durationStr = mins + 'm';
+      }
+
+      // Summary row
+      html += '<tr data-idx="' + idx + '">';
+      html += '<td>' + escHtml(dateStr) + '</td>';
+      html += '<td>' + modeLabel + '</td>';
+      html += '<td>' + profileDisplay + '</td>';
+      html += '<td class="success-count">' + success + '</td>';
+      html += '<td class="error-count">' + errors + '</td>';
+      html += '<td>' + escHtml(durationStr) + '</td>';
+      html += '</tr>';
+
+      // Detail row (hidden by default)
+      const tplNote = (c.templates && c.templates.connectionNote) || '';
+      const tplDisplay = tplNote.length > 50 ? escHtml(tplNote.substring(0, 47)) + '...' : escHtml(tplNote);
+      html += '<tr class="history-detail" data-detail-idx="' + idx + '">';
+      html += '<td colspan="6"><dl>';
+      html += '<dt>Templates</dt><dd>' + (tplDisplay || 'None') + '</dd>';
+      html += '<dt>Daily Limit</dt><dd>' + escHtml(String(c.dailyLimit || '--')) + '</dd>';
+      html += '<dt>Total Processed</dt><dd>' + escHtml(String(c.totalProcessed || 0)) + '</dd>';
+      html += '</dl></td></tr>';
+    });
+
+    html += '</tbody></table>';
+    panel.innerHTML = html;
+
+    // Add click handlers for expanding detail rows
+    panel.querySelectorAll('tr[data-idx]').forEach(tr => {
+      tr.onclick = function() {
+        const idx = this.getAttribute('data-idx');
+        const detail = panel.querySelector('tr[data-detail-idx="' + idx + '"]');
+        if (detail) detail.classList.toggle('expanded');
+      };
+    });
+  } catch (err) {
+    panel.innerHTML = '<p class="empty-state">Failed to load history.</p>';
+  }
+}
+
+function downloadCsv() {
+  const a = document.createElement('a');
+  a.href = '/api/export/csv';
+  a.download = 'campaign-export.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+let wasRunning = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 loadProfiles();
 onModeChange();
 pollStatus();
 fetchTemplateList();
+fetchHistory();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {
