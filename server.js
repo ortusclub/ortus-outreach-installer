@@ -284,6 +284,51 @@ app.get('/api/history', async (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// CSV export (D-13, D-14, D-15)
+// ---------------------------------------------------------------------------
+const STATE_PATH = resolve(__dirname, 'data', 'state.json');
+
+app.get('/api/export/csv', async (_req, res) => {
+  try {
+    let state;
+    try {
+      state = JSON.parse(await readFile(STATE_PATH, 'utf-8'));
+    } catch {
+      return res.status(404).json({ error: 'No campaign data found' });
+    }
+
+    const processed = state.processed || {};
+    const entries = Object.entries(processed);
+    if (!entries.length) {
+      return res.status(404).json({ error: 'No processed leads to export' });
+    }
+
+    // CSV header
+    const columns = ['LinkedIn URL', 'Profile Used', 'Action', 'Date'];
+    const rows = [columns.join(',')];
+
+    for (const [url, data] of entries) {
+      const row = [
+        `"${url}"`,
+        `"${(data.profileName || data.profileId || '').replace(/"/g, '""')}"`,
+        `"${(data.action || '').replace(/"/g, '""')}"`,
+        `"${data.date || ''}"`,
+      ];
+      rows.push(row.join(','));
+    }
+
+    const csv = rows.join('\n');
+    const filename = `campaign-export-${new Date().toISOString().slice(0, 10)}.csv`;
+
+    res.set('Content-Type', 'text/csv');
+    res.set('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 app.listen(PORT, () => {
