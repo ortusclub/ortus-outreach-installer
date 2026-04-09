@@ -207,6 +207,9 @@ async function startCampaign() {
   if (!sheetUrl) { alert('Enter a Google Sheet URL.'); return; }
   const dailyLimit = parseInt(document.getElementById('daily-limit').value, 10);
   if (!dailyLimit || dailyLimit < 1) { alert('Limit must be at least 1.'); return; }
+  const delayMin = parseInt(document.getElementById('delay-min').value, 10) || 8;
+  const delayMax = parseInt(document.getElementById('delay-max').value, 10) || 15;
+  if (delayMin < 1 || delayMax < delayMin) { alert('Delay min must be >= 1 and max must be >= min.'); return; }
 
   const templates = {
     connectionNote: document.getElementById('tpl-note').value,
@@ -223,7 +226,7 @@ async function startCampaign() {
     const res = await fetch('/api/campaign/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileIds: selectedProfileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked }),
+      body: JSON.stringify({ profileIds: selectedProfileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked, delayMin, delayMax }),
     });
     const data = await res.json();
     if (data.error) { alert(`Error: ${data.error}`); return; }
