@@ -5,6 +5,9 @@ let selectedProfileNames = {};
 let allProfilesData = [];
 let pollInterval = null;
 
+// Dynamic placeholder tags from sheet columns
+let sheetColumns = ['firstName', 'lastName', 'company', 'title'];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Profiles
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +171,17 @@ function updateOpenProfileVisibility() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Placeholder tags
+// ─────────────────────────────────────────────────────────────────────────────
+function updatePlaceholderTags() {
+  document.querySelectorAll('.placeholder-tags').forEach(container => {
+    container.innerHTML = sheetColumns.map(col =>
+      `<span class="tag" data-val="{${col}}">{${col}}</span>`
+    ).join('');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Sheet preview
 // ─────────────────────────────────────────────────────────────────────────────
 async function previewSheet() {
@@ -193,6 +207,8 @@ async function previewSheet() {
       html += '</tbody></table>';
     }
     preview.innerHTML = html;
+    sheetColumns = data.columns;
+    updatePlaceholderTags();
   } catch (err) {
     preview.innerHTML = `<p style="color:#f85149">${escHtml(err.message)}</p>`;
   }
@@ -633,6 +649,7 @@ pollStatus();
 fetchTemplateList();
 fetchHistory();
 fetchSchedules();
+updatePlaceholderTags();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {

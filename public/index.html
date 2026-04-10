@@ -92,24 +92,14 @@
     <div class="section tpl-section" id="tpl-connect-section">
       <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
       <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
-      <div class="placeholder-tags" data-target="tpl-note">
-        <span class="tag" data-val="{firstName}">{firstName}</span>
-        <span class="tag" data-val="{lastName}">{lastName}</span>
-        <span class="tag" data-val="{company}">{company}</span>
-        <span class="tag" data-val="{title}">{title}</span>
-      </div>
+      <div class="placeholder-tags" data-target="tpl-note"></div>
     </div>
 
     <!-- ── Follow-up Message (message_only, connect_and_message, auto) ── -->
     <div class="section tpl-section" id="tpl-message-section" style="display:none">
       <h2>Follow-up Message</h2>
       <textarea id="tpl-followup" rows="3" placeholder="Thanks for connecting, {firstName}! I wanted to reach out because…"></textarea>
-      <div class="placeholder-tags" data-target="tpl-followup">
-        <span class="tag" data-val="{firstName}">{firstName}</span>
-        <span class="tag" data-val="{lastName}">{lastName}</span>
-        <span class="tag" data-val="{company}">{company}</span>
-        <span class="tag" data-val="{title}">{title}</span>
-      </div>
+      <div class="placeholder-tags" data-target="tpl-followup"></div>
     </div>
 
     <!-- ── InMail (inmail_only, auto) ── -->
@@ -119,11 +109,7 @@
       <input type="text" id="tpl-inmail-subject" placeholder="Quick question about {company}" />
       <label for="tpl-inmail-body">Body</label>
       <textarea id="tpl-inmail-body" rows="3" placeholder="Hi {firstName}, I came across your profile…"></textarea>
-      <div class="placeholder-tags" data-target="tpl-inmail-body">
-        <span class="tag" data-val="{firstName}">{firstName}</span>
-        <span class="tag" data-val="{lastName}">{lastName}</span>
-        <span class="tag" data-val="{company}">{company}</span>
-      </div>
+      <div class="placeholder-tags" data-target="tpl-inmail-body"></div>
     </div>
 
     <!-- ── Controls ── -->
