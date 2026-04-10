@@ -1,153 +1,91 @@
 import puppeteer from 'puppeteer-core';
-import { existsSync, mkdirSync, copyFileSync } from 'fs';
-import { resolve, join } from 'path';
+import { existsSync } from 'fs';
 
 let activeBrowser = null;
+let campaignPage = null; // Track the page WE opened
 
-// Separate profile dir — never touches the user's real Chrome
-const LOCAL_DATA_DIR = resolve('./data/local-chrome');
+const REMOTE_DEBUG_PORT = 9222;
 
 /**
- * Find Chrome executable path based on OS.
+ * Check if Chrome is running with remote debugging on port 9222.
  */
-function findChromePath() {
-  const candidates = [
-    // macOS
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    // Linux
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',
-    // Windows
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  ];
-
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
+async function getDebugEndpoint() {
+  try {
+    const res = await fetch(`http://127.0.0.1:${REMOTE_DEBUG_PORT}/json/version`);
+    const data = await res.json();
+    return data.webSocketDebuggerUrl;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /**
- * Get the user's real Chrome Default profile directory.
- */
-function getRealChromeProfileDir() {
-  const platform = process.platform;
-  let base;
-  if (platform === 'darwin') {
-    base = join(process.env.HOME, 'Library', 'Application Support', 'Google', 'Chrome');
-  } else if (platform === 'win32') {
-    base = join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data');
-  } else {
-    base = join(process.env.HOME, '.config', 'google-chrome');
-  }
-  return join(base, 'Default');
-}
-
-/**
- * Copy essential cookie/session files from the user's Chrome profile
- * into our local campaign profile so LinkedIn session is available.
- * NEVER modifies the source files.
- */
-function syncCookiesFromChrome() {
-  const src = getRealChromeProfileDir();
-  const dest = join(LOCAL_DATA_DIR, 'Default');
-
-  if (!existsSync(src)) {
-    console.warn(`[local] Chrome profile not found at ${src} — launching without cookies`);
-    return;
-  }
-
-  if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
-
-  // Files that hold the LinkedIn session
-  const sessionFiles = ['Cookies', 'Login Data', 'Web Data', 'Preferences', 'Secure Preferences'];
-
-  for (const file of sessionFiles) {
-    const srcFile = join(src, file);
-    const destFile = join(dest, file);
-    if (existsSync(srcFile)) {
-      try {
-        copyFileSync(srcFile, destFile);
-      } catch (e) {
-        // File may be locked by running Chrome — that's OK, skip it
-        console.log(`[local] Could not copy ${file}: ${e.message} (non-fatal)`);
-      }
-    }
-  }
-
-  console.log('[local] Synced session cookies from Chrome default profile.');
-}
-
-/**
- * Launch a separate Chrome instance with copied cookies from the user's profile.
- * Does NOT touch the user's running Chrome in any way.
+ * Connect to the user's already-running Chrome via remote debugging.
+ * Opens a new tab for the campaign — does not touch existing tabs.
+ *
+ * PREREQUISITE: Chrome must be running with --remote-debugging-port=9222.
+ * One-time setup — see /api/local-browser/setup for the launch command.
+ *
  * Returns { browser, page } — same interface as GoLogin launcher.
  */
 export async function launchLocalBrowser() {
-  console.log('[local] Starting local browser...');
+  console.log('[local] Connecting to your Chrome...');
 
-  const chromePath = process.env.CHROME_PATH || findChromePath();
-  if (!chromePath) {
+  const wsUrl = await getDebugEndpoint();
+
+  if (!wsUrl) {
     throw new Error(
-      'No Chrome/Chromium found. Set CHROME_PATH in .env or install Chrome.'
+      'Cannot connect to Chrome. You need to start Chrome with remote debugging enabled.\n\n' +
+      'Run this command ONCE (close Chrome first, then run it):\n\n' +
+      '  macOS:\n' +
+      '  open -a "Google Chrome" --args --remote-debugging-port=9222\n\n' +
+      '  Linux:\n' +
+      '  google-chrome --remote-debugging-port=9222 &\n\n' +
+      '  Windows:\n' +
+      '  start chrome --remote-debugging-port=9222\n\n' +
+      'After that, Local Browser campaigns will connect to it automatically.\n' +
+      'Your Chrome works normally — the flag just allows Puppeteer to connect.'
     );
   }
 
-  // Ensure our isolated profile dir exists
-  if (!existsSync(LOCAL_DATA_DIR)) mkdirSync(LOCAL_DATA_DIR, { recursive: true });
+  console.log('[local] Found Chrome with remote debugging on port 9222.');
 
-  // Copy cookies from the user's real Chrome profile
-  syncCookiesFromChrome();
-
-  // Launch a completely separate Chrome instance
-  console.log(`[local] Launching separate Chrome: ${chromePath}`);
-  console.log(`[local] Campaign profile dir: ${LOCAL_DATA_DIR}`);
-
-  const browser = await puppeteer.launch({
-    executablePath: chromePath,
-    headless: false,
-    userDataDir: LOCAL_DATA_DIR,
-    args: [
-      // Off-screen like GoLogin — doesn't steal focus
-      '--window-position=-2400,-2400',
-      '--window-size=1366,900',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-extensions',
-    ],
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: wsUrl,
     ignoreHTTPSErrors: true,
     protocolTimeout: 60000,
   });
 
   activeBrowser = browser;
 
-  const pages = await browser.pages();
-  const page = pages.length > 0 ? pages[0] : await browser.newPage();
+  // Open a NEW tab for the campaign — never hijacks existing tabs
+  const page = await browser.newPage();
+  campaignPage = page;
 
   await page.setViewport({ width: 1366, height: 900 });
   page.setDefaultNavigationTimeout(30000);
   page.setDefaultTimeout(15000);
 
-  console.log('[local] ✓ Chrome launched with copied session cookies.');
+  console.log('[local] ✓ Connected. New tab opened for campaign.');
   return { browser, page };
 }
 
 /**
- * Close the local browser instance completely.
+ * Close only the campaign tab. Chrome stays running with all other tabs.
  */
 export async function closeLocalBrowser() {
   if (!activeBrowser) return;
 
   try {
-    const pages = await activeBrowser.pages();
-    for (const p of pages) {
-      try { await p.close(); } catch { /* ignore */ }
+    // Only close the tab WE opened
+    if (campaignPage) {
+      try { await campaignPage.close(); } catch { /* */ }
+      campaignPage = null;
     }
-    await activeBrowser.close();
-    console.log('[local] Campaign browser closed.');
+
+    // Disconnect Puppeteer — Chrome keeps running
+    activeBrowser.disconnect();
+    console.log('[local] Campaign tab closed. Chrome stays running.');
   } catch (err) {
     console.warn(`[local] Close warning: ${err.message}`);
   }

@@ -53,6 +53,22 @@ function copyServerLog() {
   });
 }
 
+function showLocalSetup() {
+  const msg = `LOCAL BROWSER SETUP (one-time)
+
+1. Close all Chrome windows
+2. Open Terminal and run:
+
+   open -a "Google Chrome" --args --remote-debugging-port=9222
+
+3. Chrome opens normally — log into LinkedIn if needed
+4. Come back here and refresh — the status will show "Connected"
+
+From now on, always start Chrome with that command (or create a shortcut).
+Your Chrome works completely normally — the flag just lets the app connect to it.`;
+  alert(msg);
+}
+
 function copyCampaignLog() {
   const el = document.getElementById('log-panel');
   if (!el) return;
@@ -106,9 +122,20 @@ function renderProfiles(profiles) {
     <input type="checkbox" value="local-browser" ${selectedProfileIds.includes('local-browser') ? 'checked' : ''} />
     <div>
       <div class="name">Local Browser</div>
-      <div class="id">Uses your system Chrome -- no GoLogin needed</div>
+      <div class="id local-status">Checking Chrome...</div>
     </div>
   `;
+  // Check if Chrome is ready with remote debugging
+  fetch('/api/local-browser/status').then(r => r.json()).then(data => {
+    const statusEl = localItem.querySelector('.local-status');
+    if (data.ready) {
+      statusEl.textContent = '\u2713 Chrome connected — ready to use';
+      statusEl.style.color = '#3fb950';
+    } else {
+      statusEl.innerHTML = '\u2717 Chrome not ready — <a href="#" onclick="showLocalSetup(); return false;" style="color:#58a6ff">Setup instructions</a>';
+      statusEl.style.color = '#f85149';
+    }
+  }).catch(() => {});
   const localCb = localItem.querySelector('input');
   localCb.addEventListener('change', () => {
     if (localCb.checked) {
