@@ -561,20 +561,25 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             }
           }
 
-          // Delay between leads + session breaks
+          // Delay between leads + session breaks (interruptible by abort)
           if (!campaign._abort) {
             const SESSION_BREAK_EVERY = 15;
+            let waitMs;
             if (totalDone > 0 && totalDone % SESSION_BREAK_EVERY === 0) {
               const breakMin = 10 * 60 * 1000;
               const breakMax = 20 * 60 * 1000;
-              const breakTime = Math.floor(Math.random() * (breakMax - breakMin + 1) + breakMin);
-              log(`  ☕ Session break: ${(breakTime / 60000).toFixed(0)} min (${totalDone} leads processed across all accounts)`);
-              await new Promise(r => setTimeout(r, breakTime));
+              waitMs = Math.floor(Math.random() * (breakMax - breakMin + 1) + breakMin);
+              log(`  ☕ Session break: ${(waitMs / 60000).toFixed(0)} min (${totalDone} leads processed across all accounts)`);
             } else {
-              const delay = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
-              log(`  ⏳ ${(delay / 1000).toFixed(0)}s`);
-              await new Promise(r => setTimeout(r, delay));
+              waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
+              log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s`);
             }
+            // Sleep in 2s chunks so abort is checked frequently
+            const sleepEnd = Date.now() + waitMs;
+            while (Date.now() < sleepEnd && !campaign._abort) {
+              await new Promise(r => setTimeout(r, 2000));
+            }
+            if (campaign._abort) log('  ■ Abort detected during delay.');
           }
         } catch (err) {
           log(`  ✗ ${err.message}`);

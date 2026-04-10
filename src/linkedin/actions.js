@@ -229,10 +229,10 @@ export async function sendConnectionRequest(page, note) {
 
   let connectClicked = false;
 
-  // Retry loop: keep looking for Connect button for up to 60 seconds
+  // Retry loop: keep looking for Connect button for up to 30 seconds
   // Accounts for slow page loads and lazy-rendered elements
-  const MAX_WAIT_MS = 60000;
-  const POLL_INTERVAL_MS = 5000;
+  const MAX_WAIT_MS = 30000;
+  const POLL_INTERVAL_MS = 3000;
   const startTime = Date.now();
 
   while (!connectClicked && (Date.now() - startTime) < MAX_WAIT_MS) {
