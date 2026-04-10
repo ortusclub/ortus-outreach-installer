@@ -61,6 +61,12 @@ None yet.
 
 None yet.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260410-djm | Add dynamic template variables from Google Sheet columns | 2026-04-10 | 470e644 | [260410-djm-add-dynamic-template-variables-from-goog](./quick/260410-djm-add-dynamic-template-variables-from-goog/) |
+
 ## Session Continuity
 
 Last session: 2026-04-09T15:04:09.527Z
