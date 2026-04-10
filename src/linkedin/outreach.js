@@ -52,8 +52,20 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     await new Promise(r => setTimeout(r, 2000));
     console.log('[outreach] DOM settled.');
 
-    // Scroll to top
-    await page.evaluate(() => window.scrollTo(0, 0));
+    // ── Step 2b: Human-like browsing — scroll profile and dwell ──
+    // Mimics how a real person reads a profile before acting
+    const scrollPercent = 30 + Math.floor(Math.random() * 40); // 30-70%
+    await page.evaluate((pct) => {
+      const maxScroll = document.body.scrollHeight - window.innerHeight;
+      window.scrollTo({ top: maxScroll * (pct / 100), behavior: 'smooth' });
+    }, scrollPercent);
+    const dwellTime = 10000 + Math.floor(Math.random() * 10000); // 10-20s
+    console.log(`[outreach] Browsing profile (scrolled ${scrollPercent}%, dwelling ${(dwellTime / 1000).toFixed(0)}s)…`);
+    await new Promise(r => setTimeout(r, dwellTime));
+
+    // Scroll back to top for action buttons
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    await new Promise(r => setTimeout(r, 1000));
 
     // Check for login/404/rate-limit
     const currentUrl = page.url();

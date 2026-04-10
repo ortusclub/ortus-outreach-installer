@@ -168,7 +168,7 @@ async function checkProfileHealth(page, profileName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 5, mode = 'connect_only', messageOpenProfiles = false, delayMin = 8, delayMax = 15 }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, mode = 'connect_only', messageOpenProfiles = false, delayMin = 60, delayMax = 120 }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -557,12 +557,23 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             }
 
             // ════════════════════════════════════════════════
-            // STEP 5e: Wait 10 seconds, then next lead
+            // STEP 5e: Delay between leads + session breaks
             // ════════════════════════════════════════════════
             if (!campaign._abort) {
-              const delay = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
-              log(`  ⏳ ${(delay / 1000).toFixed(0)}s`);
-              await new Promise(r => setTimeout(r, delay));
+              // Session break every 15 leads (mimics human taking a break)
+              const SESSION_BREAK_EVERY = 15;
+              if (done > 0 && done % SESSION_BREAK_EVERY === 0) {
+                const breakMin = 10 * 60 * 1000; // 10 minutes
+                const breakMax = 20 * 60 * 1000; // 20 minutes
+                const breakTime = Math.floor(Math.random() * (breakMax - breakMin + 1) + breakMin);
+                log(`  ☕ Session break: ${(breakTime / 60000).toFixed(0)} min (${done} leads processed)`);
+                await new Promise(r => setTimeout(r, breakTime));
+              } else {
+                // Normal delay between leads
+                const delay = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
+                log(`  ⏳ ${(delay / 1000).toFixed(0)}s`);
+                await new Promise(r => setTimeout(r, delay));
+              }
             }
           } catch (err) {
             log(`  ✗ ${err.message}`);
