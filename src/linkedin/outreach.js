@@ -52,6 +52,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     await new Promise(r => setTimeout(r, 2000));
     console.log('[outreach] DOM settled.');
 
+    // ── Step 2a: Zoom to 75% so all action buttons are visible ──
+    await page.evaluate(() => { document.body.style.zoom = '75%'; });
+
     // ── Step 2b: Human-like browsing — scroll profile and dwell ──
     // Mimics how a real person reads a profile before acting
     const scrollPercent = 30 + Math.floor(Math.random() * 40); // 30-70%
