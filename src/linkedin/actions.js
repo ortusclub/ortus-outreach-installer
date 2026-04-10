@@ -35,9 +35,9 @@ async function detectModal(page) {
       b.textContent?.trim().toLowerCase() === text.toLowerCase()
     );
 
-    const sendWithout = findByAria('Send without a note');
-    const addNote = findByAria('Add a note');
-    const send = findByAria('Send') || findByText('send') || findByText('send invitation');
+    const sendWithout = findByAria('Send without a note') || findByText('Send without a note');
+    const addNote = findByAria('Add a note') || findByText('Add a note');
+    const send = findByAria('Send') || findByText('Send') || findByText('send invitation');
     const withdraw = findByText('withdraw');
 
     // Gather all visible text (regular + all shadow DOMs)
