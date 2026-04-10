@@ -362,12 +362,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             if (sheetStatus.includes('accepted') || sheetStatus.includes('declined')) continue; // already checked
           }
 
-          const data = {
-            firstName: row['First Name'] || row['firstName'] || row['first_name'] || '',
-            lastName: row['Last Name'] || row['lastName'] || row['last_name'] || '',
-            company: row['Company'] || row['company'] || '',
-            title: row['Title'] || row['title'] || row['Job Title'] || '',
-          };
+          // Spread all sheet columns as template variables
+          const data = { ...row };
+          // Add normalized aliases for backwards compatibility
+          data.firstName = row['First Name'] || row['firstName'] || row['first_name'] || '';
+          data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
+          data.company = row['Company'] || row['company'] || '';
+          data.title = row['Title'] || row['title'] || row['Job Title'] || '';
 
           let hint = getModeHint(mode, state.processed[url]?.action);
 

@@ -212,5 +212,5 @@ export function personalizeTemplate(template, data = {}) {
   for (const [key, value] of Object.entries(data)) {
     result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value || '');
   }
-  return result.replace(/\{[a-zA-Z]+\}/g, '').trim();
+  return result.replace(/\{[a-zA-Z0-9_ ]+\}/g, '').trim();
 }
