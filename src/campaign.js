@@ -269,19 +269,25 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
 
-    // ── Process each GoLogin profile sequentially ──
+    // ── ROUND-ROBIN: Open ALL profiles, then rotate 1 lead per profile ──
+    // Instead of processing all leads per profile sequentially, we cycle:
+    // Account 1 → lead 1, Account 2 → lead 2, ... Account N → lead N, then repeat
+    // This spreads activity evenly and looks more natural to LinkedIn.
+
+    if (profileIds.length > 3) {
+      log(`⚠ RAM warning: ${profileIds.length} browsers will be open simultaneously. 4 is fine, 10+ may slow your machine.`);
+    }
+
+    // STEP 1: Open all browsers and run health checks
+    const activeSessions = []; // { profileId, pName, browser, page }
+
     for (const profileId of profileIds) {
       if (campaign._abort) break;
 
       const pName = profileNameCache[profileId] || profileId;
       campaign.currentProfile = pName;
 
-      let browser = null;
-
       try {
-        // ════════════════════════════════════════════════════
-        // STEP 1: Open GoLogin profile
-        // ════════════════════════════════════════════════════
         log(`▶ Opening ${pName}…`);
         let launched;
         if (profileId === 'local-browser') {
@@ -289,11 +295,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         } else {
           launched = await launchProfile(profileId, token);
         }
-        browser = launched.browser;
 
-        // ════════════════════════════════════════════════════
-        // STEP 2: Load LinkedIn home page
-        // ════════════════════════════════════════════════════
         let page = launched.page;
 
         try {
@@ -304,61 +306,45 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         // Re-acquire page (prevents detached frame)
         try {
-          const pages = await browser.pages();
+          const pages = await launched.browser.pages();
           if (pages.length > 0) {
             page = pages[pages.length - 1];
             await page.setViewport({ width: 1366, height: 900 });
           }
         } catch { /* keep current */ }
 
-        // ════════════════════════════════════════════════════
-        // STEP 3: Health check BEFORE warmup (don't waste 20s on a bad profile)
-        // ════════════════════════════════════════════════════
+        // Health check
         log(`Checking ${pName} health...`);
         const health = await checkProfileHealth(page, pName);
         if (!health.healthy) {
-          // Local Browser: if not logged in, bring window on-screen and wait for manual login
           if (profileId === 'local-browser') {
             log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
             log(`⏳ Waiting up to 120s for you to log in...`);
-            // Zoom out slightly so the login page fits nicely
             await page.evaluate(() => { document.body.style.zoom = '90%'; }).catch(() => {});
-            // Move window on-screen so user can see and interact
-            await page.evaluate(() => {
-              if (window.moveTo) window.moveTo(100, 100);
-            }).catch(() => {});
-            // Also try CDP to move the window
+            await page.evaluate(() => { if (window.moveTo) window.moveTo(100, 100); }).catch(() => {});
             try {
               const client = await page.target().createCDPSession();
               const { windowId } = await client.send('Browser.getWindowForTarget');
               await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
-            } catch { /* CDP may not support this */ }
+            } catch { /* */ }
 
-            // Poll for login — check every 5s for up to 120s
             let loggedIn = false;
             for (let wait = 0; wait < 24; wait++) {
               await new Promise(r => setTimeout(r, 5000));
               try {
                 const currentUrl = page.url();
-                if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) {
-                  loggedIn = true;
-                  break;
-                }
-                // Check if user navigated to feed
+                if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) { loggedIn = true; break; }
                 const recheck = await checkProfileHealth(page, pName);
-                if (recheck.healthy) {
-                  loggedIn = true;
-                  break;
-                }
-              } catch { /* page may be navigating */ }
+                if (recheck.healthy) { loggedIn = true; break; }
+              } catch { /* */ }
               if ((wait + 1) % 6 === 0) log(`  Still waiting for login... (${(wait + 1) * 5}s)`);
             }
             if (!loggedIn) {
               log(`✗ Local Browser: login timed out after 120s. Skipping.`);
+              await closeLocalBrowser();
               continue;
             }
-            log(`✓ Local Browser: logged in! Moving window off-screen and continuing.`);
-            // Move back off-screen
+            log(`✓ Local Browser: logged in! Moving window off-screen.`);
             try {
               const client = await page.target().createCDPSession();
               const { windowId } = await client.send('Browser.getWindowForTarget');
@@ -366,254 +352,259 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             } catch { /* */ }
           } else {
             log(`WARNING: ${pName} failed health check: ${health.issues.join(', ')}. Skipping.`);
-            continue;  // Skip to next profile
+            try { await launched.browser.close().catch(() => {}); await closeProfile(profileId); } catch { /* */ }
+            continue;
           }
         }
         log(`${pName} health check passed.`);
 
-        // ════════════════════════════════════════════════════
-        // STEP 3b: Wait 20 seconds on home page (session warmup)
-        // ════════════════════════════════════════════════════
-        log('⏳ Waiting 20s on home page…');
+        // Warmup
+        log(`⏳ ${pName}: waiting 20s on home page…`);
         await new Promise(r => setTimeout(r, 20000));
-        log('✓ Warmup done. Starting leads...');
+        log(`✓ ${pName} warmup done.`);
 
-        // ════════════════════════════════════════════════════
-        // STEP 5: Lead processing loop
-        // ════════════════════════════════════════════════════
-        let done = 0;
+        activeSessions.push({ profileId, pName, browser: launched.browser, page });
+      } catch (err) {
+        log(`✗ ${pName}: failed to open — ${err.message}`);
+        pushError(err);
+      }
+    }
 
-        for (const row of targets) {
-          if (campaign._abort) break;
+    if (activeSessions.length === 0) {
+      log('✗ No healthy profiles available. Campaign cannot proceed.');
+    } else {
+      log(`\n✓ ${activeSessions.length} profile(s) ready. Starting round-robin…\n`);
 
-          // Check campaign limit
-          const count = getCampaignCount(profileId);
-          if (count >= dailyLimit) {
-            log(`${pName}: campaign limit (${dailyLimit}) reached.`);
-            break;
-          }
+      // STEP 2: Round-robin lead processing
+      let leadIndex = 0;
+      let totalDone = 0;
+      const weeklyLimited = new Set(); // Profiles that hit weekly limit
 
-          const url = extractLinkedInUrl(row);
-          if (!url) continue;
-
-          // Re-check in case another profile processed this (or is currently processing it)
-          if (mode !== 'check_status' && mode !== 'message_only' && state.processed[url]) continue;
-
-          // Mark as in-progress to prevent concurrent profiles from picking the same lead
-          state.processed[url] = { profileId, profileName: pName, action: '_in_progress', date: new Date().toISOString() };
-          await saveState(state);
-
-          // Mode-aware skip logic
-          const sheetStatus = (row['Connection Status'] || row['connectionStatus'] || '').toLowerCase();
-          const msgStatus = (row['First Message Status'] || row['firstMessageStatus'] || '').toLowerCase();
-
-          if (mode === 'connect_only' || mode === 'auto') {
-            if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected') || sheetStatus.includes('accepted')) continue;
-          } else if (mode === 'message_only') {
-            if (msgStatus.includes('sent')) continue; // already messaged
-            if (!sheetStatus.includes('accepted') && !sheetStatus.includes('connected')) continue; // not yet accepted
-            // Sender attribution: only the account that connected can message
-            // Compare normalized names — strip spaces, punctuation, lowercase
-            const connectedBy = (row['Connection By'] || row['connectionBy'] || '').toLowerCase().replace(/[\s._@-]+/g, '');
-            const normalizedPName = pName.toLowerCase().replace(/[\s._@-]+/g, '');
-            if (connectedBy && !connectedBy.includes(normalizedPName) && !normalizedPName.includes(connectedBy)) {
-              continue; // This lead was connected by a different account
-            }
-          } else if (mode === 'check_status') {
-            if (sheetStatus.includes('accepted') || sheetStatus.includes('declined')) continue; // already checked
-          }
-
-          // Spread all sheet columns as template variables
-          const data = { ...row };
-          // Add normalized aliases for backwards compatibility
-          data.firstName = row['First Name'] || row['firstName'] || row['first_name'] || '';
-          data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
-          data.company = row['Company'] || row['company'] || '';
-          data.title = row['Title'] || row['title'] || row['Job Title'] || '';
-
-          let hint = getModeHint(mode, state.processed[url]?.action);
-
-          // Open Profile: if toggle is on and sheet says "Yes", message directly instead of connecting
-          const isOpenProfile = (row['Open Profile'] || row['openProfile'] || row['open_profile'] || '').toLowerCase().trim();
-          if (messageOpenProfiles && isOpenProfile === 'yes' && hint === 'force_connect') {
-            hint = 'force_message';
-            log(`  ↳ Open Profile detected — will message directly`);
-          }
-
-          try {
-            // Re-acquire page before each lead (prevents stale frame)
-            try {
-              const pages = await browser.pages();
-              if (pages.length > 0) page = pages[pages.length - 1];
-            } catch { /* keep current */ }
-
-            log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
-
-            // performOutreach with retry: up to 3 attempts for transient failures
-            let result;
-            const MAX_RETRIES = 3;
-            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-              result = await performOutreach(page, url, { ...tpl, data }, {}, hint);
-
-              // Don't retry terminal outcomes (success, weekly limit, email required, already processed)
-              const isTransient = result.action === 'skipped' && result.error &&
-                !result.error.includes('WEEKLY_LIMIT') &&
-                !result.error.includes('EMAIL_REQUIRED') &&
-                !result.error.includes('Login page') &&
-                !result.error.includes('Already connected') &&
-                !result.error.includes('Not yet connected') &&
-                !result.error.includes('Still pending') &&
-                !result.error.includes('Can connect directly') &&
-                !result.error.includes('No message template');
-
-              if (!isTransient || attempt === MAX_RETRIES) break;
-
-              const backoff = attempt * 5000; // 5s, 10s
-              log(`  ⟳ Retry ${attempt}/${MAX_RETRIES} in ${backoff / 1000}s — ${result.error}`);
-              await new Promise(r => setTimeout(r, backoff));
-
-              // Re-acquire page before retry
-              try {
-                const pages = await browser.pages();
-                if (pages.length > 0) page = pages[pages.length - 1];
-              } catch { /* keep current */ }
-            }
-            log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
-
-            const now = new Date().toISOString();
-
-            if (SUCCESS_ACTIONS.has(result.action)) {
-              state.processed[url] = { profileId, profileName: pName, action: result.action, date: now };
-              bumpCampaignCount(profileId);
-              done++;
-              campaign.processedToday++;
-              campaign.totalProcessed = campaign.processedToday;
-              await saveState(state);
-
-              // Write success to Google Sheet
-              const sheetData = {};
-              if (result.action === 'connection_sent') {
-                sheetData.connectionStatus = 'Sent';
-                sheetData.connectionDate = now;
-                sheetData.connectionBy = pName;
-              } else if (result.action === 'message_sent') {
-                sheetData.firstMessageStatus = (messageOpenProfiles && isOpenProfile === 'yes') ? 'Sent (Open Profile)' : 'Sent';
-                sheetData.firstMessageDate = now;
-              } else if (result.action === 'inmail_sent') {
-                sheetData.connectionStatus = 'InMail Sent';
-                sheetData.connectionDate = now;
-                sheetData.connectionBy = pName;
-              } else if (result.action === 'status_accepted') {
-                sheetData.connectionStatus = 'Accepted';
-                sheetData.connectionDate = now;
-              } else if (result.action === 'status_pending') {
-                sheetData.connectionStatus = 'Still Pending';
-              } else if (result.action === 'status_declined') {
-                sheetData.connectionStatus = 'Declined';
-                sheetData.connectionDate = now;
-              }
-              await updateSheetRow(sheetUrl, url, sheetData).catch(() => {});
-
-              log(`  ✓ (${done}/${dailyLimit})`);
-            } else {
-              const errorMsg = result.error || result.action;
-
-              // ── Weekly limit → log to sheet, skip to next GoLogin profile ──
-              if (errorMsg.includes('WEEKLY_LIMIT')) {
-                log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Skipping to next profile.`);
-                await updateSheetRow(sheetUrl, url, {
-                  connectionStatus: `SKIPPED: Weekly invitation limit reached`,
-                  connectionDate: now,
-                  connectionBy: pName,
-                }).catch(() => {});
-                break; // Break out of leads loop → next profile
-              }
-
-              // ── Email required → log to sheet, continue to next lead ──
-              if (errorMsg.includes('EMAIL_REQUIRED')) {
-                log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead.`);
-                state.processed[url] = { profileId, profileName: pName, action: 'email_required', date: now };
-                await saveState(state);
-                await updateSheetRow(sheetUrl, url, {
-                  connectionStatus: `SKIPPED: Email required to connect`,
-                  connectionDate: now,
-                  connectionBy: pName,
-                }).catch(() => {});
-                // Continue to next lead (don't break)
-              } else {
-                log('  ✗ Retry next run.');
-                pushError(new Error(`${url}: ${errorMsg}`));
-                // Clear in-progress marker so lead can be retried next run
-                delete state.processed[url];
-                await saveState(state);
-
-                // Write error to Google Sheet
-                await updateSheetRow(sheetUrl, url, {
-                  connectionStatus: `FAILED: ${errorMsg}`,
-                  connectionDate: now,
-                  connectionBy: pName,
-                }).catch(() => {});
-              }
-            }
-
-            // ════════════════════════════════════════════════
-            // STEP 5e: Delay between leads + session breaks
-            // ════════════════════════════════════════════════
-            if (!campaign._abort) {
-              // Session break every 15 leads (mimics human taking a break)
-              const SESSION_BREAK_EVERY = 15;
-              if (done > 0 && done % SESSION_BREAK_EVERY === 0) {
-                const breakMin = 10 * 60 * 1000; // 10 minutes
-                const breakMax = 20 * 60 * 1000; // 20 minutes
-                const breakTime = Math.floor(Math.random() * (breakMax - breakMin + 1) + breakMin);
-                log(`  ☕ Session break: ${(breakTime / 60000).toFixed(0)} min (${done} leads processed)`);
-                await new Promise(r => setTimeout(r, breakTime));
-              } else {
-                // Normal delay between leads
-                const delay = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
-                log(`  ⏳ ${(delay / 1000).toFixed(0)}s`);
-                await new Promise(r => setTimeout(r, delay));
-              }
-            }
-          } catch (err) {
-            log(`  ✗ ${err.message}`);
-            pushError(err);
-          }
+      while (!campaign._abort) {
+        // Check if all profiles have reached their daily limit or are weekly-limited
+        const activeProfiles = activeSessions.filter(s =>
+          getCampaignCount(s.profileId) < dailyLimit && !weeklyLimited.has(s.profileId)
+        );
+        if (activeProfiles.length === 0) {
+          log('All profiles reached their campaign limit or weekly limit.');
+          break;
         }
 
-        log(`■ ${pName}: ${done} processed.`);
-
-      } catch (err) {
-        log(`✗ ${pName}: ${err.message}`);
-        pushError(err);
-      } finally {
-        // ════════════════════════════════════════════════════
-        // STEP 6: Close all tabs + close GoLogin browser
-        // ════════════════════════════════════════════════════
-        if (browser) {
-          try {
-            if (profileId === 'local-browser') {
-              // Local launcher handles its own tab + browser cleanup
-              await closeLocalBrowser();
-            } else {
-              // GoLogin: close tabs, browser, then stop GoLogin profile
-              const pages = await browser.pages();
-              for (const p of pages) {
-                try { await p.close(); } catch { /* */ }
-              }
-              await browser.close().catch(() => {});
-              await closeProfile(profileId);
-            }
-            log(`✓ ${profileNameCache[profileId] || profileId} browser closed.`);
-          } catch (e) {
-            log(`Close: ${e.message}`);
+        // Find the next unprocessed lead
+        let row = null;
+        while (leadIndex < targets.length) {
+          const candidate = targets[leadIndex];
+          const candidateUrl = extractLinkedInUrl(candidate);
+          leadIndex++;
+          if (!candidateUrl) continue;
+          if (mode !== 'check_status' && mode !== 'message_only' && state.processed[candidateUrl]) continue;
+          const sheetStatus = (candidate['Connection Status'] || candidate['connectionStatus'] || '').toLowerCase();
+          if (mode === 'connect_only' || mode === 'auto') {
+            if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected') || sheetStatus.includes('accepted')) continue;
           }
+          row = candidate;
+          break;
+        }
+
+        if (!row) {
+          log('All leads processed or filtered out.');
+          break;
+        }
+
+        // Pick the next profile in rotation (round-robin among active profiles)
+        const session = activeProfiles[totalDone % activeProfiles.length];
+        const { profileId, pName, browser } = session;
+        let { page } = session;
+
+        campaign.currentProfile = pName;
+
+        const url = extractLinkedInUrl(row);
+
+        // Mark as in-progress
+        state.processed[url] = { profileId, profileName: pName, action: '_in_progress', date: new Date().toISOString() };
+        await saveState(state);
+
+        // Mode-aware skip logic for message_only and check_status
+        const sheetStatus = (row['Connection Status'] || row['connectionStatus'] || '').toLowerCase();
+        const msgStatus = (row['First Message Status'] || row['firstMessageStatus'] || '').toLowerCase();
+
+        if (mode === 'message_only') {
+          if (msgStatus.includes('sent')) { delete state.processed[url]; continue; }
+          if (!sheetStatus.includes('accepted') && !sheetStatus.includes('connected')) { delete state.processed[url]; continue; }
+          const connectedBy = (row['Connection By'] || row['connectionBy'] || '').toLowerCase().replace(/[\s._@-]+/g, '');
+          const normalizedPName = pName.toLowerCase().replace(/[\s._@-]+/g, '');
+          if (connectedBy && !connectedBy.includes(normalizedPName) && !normalizedPName.includes(connectedBy)) {
+            delete state.processed[url]; continue;
+          }
+        } else if (mode === 'check_status') {
+          if (sheetStatus.includes('accepted') || sheetStatus.includes('declined')) { delete state.processed[url]; continue; }
+        }
+
+        // Build template data
+        const data = { ...row };
+        data.firstName = row['First Name'] || row['firstName'] || row['first_name'] || '';
+        data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
+        data.company = row['Company'] || row['company'] || '';
+        data.title = row['Title'] || row['title'] || row['Job Title'] || '';
+
+        let hint = getModeHint(mode, state.processed[url]?.action);
+
+        const isOpenProfile = (row['Open Profile'] || row['openProfile'] || row['open_profile'] || '').toLowerCase().trim();
+        if (messageOpenProfiles && isOpenProfile === 'yes' && hint === 'force_connect') {
+          hint = 'force_message';
+          log(`  ↳ Open Profile detected — will message directly`);
+        }
+
+        try {
+          // Re-acquire page before each lead
+          try {
+            const pages = await browser.pages();
+            if (pages.length > 0) page = pages[pages.length - 1];
+            session.page = page;
+          } catch { /* keep current */ }
+
+          log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
+
+          // performOutreach with retry
+          let result;
+          const MAX_RETRIES = 3;
+          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            result = await performOutreach(page, url, { ...tpl, data }, {}, hint);
+
+            const isTransient = result.action === 'skipped' && result.error &&
+              !result.error.includes('WEEKLY_LIMIT') &&
+              !result.error.includes('EMAIL_REQUIRED') &&
+              !result.error.includes('Login page') &&
+              !result.error.includes('Already connected') &&
+              !result.error.includes('Not yet connected') &&
+              !result.error.includes('Still pending') &&
+              !result.error.includes('Can connect directly') &&
+              !result.error.includes('No message template');
+
+            if (!isTransient || attempt === MAX_RETRIES) break;
+
+            const backoff = attempt * 5000;
+            log(`  ⟳ Retry ${attempt}/${MAX_RETRIES} in ${backoff / 1000}s — ${result.error}`);
+            await new Promise(r => setTimeout(r, backoff));
+
+            try {
+              const pages = await browser.pages();
+              if (pages.length > 0) { page = pages[pages.length - 1]; session.page = page; }
+            } catch { /* */ }
+          }
+          log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
+
+          const now = new Date().toISOString();
+
+          if (SUCCESS_ACTIONS.has(result.action)) {
+            state.processed[url] = { profileId, profileName: pName, action: result.action, date: now };
+            bumpCampaignCount(profileId);
+            totalDone++;
+            campaign.processedToday++;
+            campaign.totalProcessed = campaign.processedToday;
+            await saveState(state);
+
+            const sheetData = {};
+            if (result.action === 'connection_sent') {
+              sheetData.connectionStatus = 'Sent';
+              sheetData.connectionDate = now;
+              sheetData.connectionBy = pName;
+            } else if (result.action === 'message_sent') {
+              sheetData.firstMessageStatus = (messageOpenProfiles && isOpenProfile === 'yes') ? 'Sent (Open Profile)' : 'Sent';
+              sheetData.firstMessageDate = now;
+            } else if (result.action === 'inmail_sent') {
+              sheetData.connectionStatus = 'InMail Sent';
+              sheetData.connectionDate = now;
+              sheetData.connectionBy = pName;
+            } else if (result.action === 'status_accepted') {
+              sheetData.connectionStatus = 'Accepted';
+              sheetData.connectionDate = now;
+            } else if (result.action === 'status_pending') {
+              sheetData.connectionStatus = 'Still Pending';
+            } else if (result.action === 'status_declined') {
+              sheetData.connectionStatus = 'Declined';
+              sheetData.connectionDate = now;
+            }
+            await updateSheetRow(sheetUrl, url, sheetData).catch(() => {});
+
+            log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);
+          } else {
+            const errorMsg = result.error || result.action;
+
+            if (errorMsg.includes('WEEKLY_LIMIT')) {
+              log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
+              weeklyLimited.add(profileId);
+              await updateSheetRow(sheetUrl, url, {
+                connectionStatus: `SKIPPED: Weekly invitation limit reached`,
+                connectionDate: now,
+                connectionBy: pName,
+              }).catch(() => {});
+            } else if (errorMsg.includes('EMAIL_REQUIRED')) {
+              log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead.`);
+              state.processed[url] = { profileId, profileName: pName, action: 'email_required', date: now };
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                connectionStatus: `SKIPPED: Email required to connect`,
+                connectionDate: now,
+                connectionBy: pName,
+              }).catch(() => {});
+            } else {
+              log('  ✗ Retry next run.');
+              pushError(new Error(`${url}: ${errorMsg}`));
+              delete state.processed[url];
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                connectionStatus: `FAILED: ${errorMsg}`,
+                connectionDate: now,
+                connectionBy: pName,
+              }).catch(() => {});
+            }
+          }
+
+          // Delay between leads + session breaks
+          if (!campaign._abort) {
+            const SESSION_BREAK_EVERY = 15;
+            if (totalDone > 0 && totalDone % SESSION_BREAK_EVERY === 0) {
+              const breakMin = 10 * 60 * 1000;
+              const breakMax = 20 * 60 * 1000;
+              const breakTime = Math.floor(Math.random() * (breakMax - breakMin + 1) + breakMin);
+              log(`  ☕ Session break: ${(breakTime / 60000).toFixed(0)} min (${totalDone} leads processed across all accounts)`);
+              await new Promise(r => setTimeout(r, breakTime));
+            } else {
+              const delay = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
+              log(`  ⏳ ${(delay / 1000).toFixed(0)}s`);
+              await new Promise(r => setTimeout(r, delay));
+            }
+          }
+        } catch (err) {
+          log(`  ✗ ${err.message}`);
+          pushError(err);
         }
       }
 
-      // ════════════════════════════════════════════════════
-      // STEP 7: Move to next GoLogin profile (immediate)
-      // ════════════════════════════════════════════════════
+      // Log per-profile stats
+      for (const s of activeSessions) {
+        log(`■ ${s.pName}: ${getCampaignCount(s.profileId)} processed.`);
+      }
+    }
+
+    // STEP 3: Close all browsers
+    for (const session of activeSessions) {
+      try {
+        if (session.profileId === 'local-browser') {
+          await closeLocalBrowser();
+        } else {
+          const pages = await session.browser.pages();
+          for (const p of pages) {
+            try { await p.close(); } catch { /* */ }
+          }
+          await session.browser.close().catch(() => {});
+          await closeProfile(session.profileId);
+        }
+        log(`✓ ${session.pName} browser closed.`);
+      } catch (e) {
+        log(`Close ${session.pName}: ${e.message}`);
+      }
     }
   } catch (err) {
     log(`Fatal: ${err.message}`);
