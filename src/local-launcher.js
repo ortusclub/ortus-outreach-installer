@@ -1,91 +1,95 @@
 import puppeteer from 'puppeteer-core';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
+import { resolve } from 'path';
 
 let activeBrowser = null;
-let campaignPage = null; // Track the page WE opened
 
-const REMOTE_DEBUG_PORT = 9222;
+// Persistent profile — cookies survive across runs
+const LOCAL_PROFILE_DIR = resolve('./data/local-profile');
 
 /**
- * Check if Chrome is running with remote debugging on port 9222.
+ * Find Chrome executable path based on OS.
  */
-async function getDebugEndpoint() {
-  try {
-    const res = await fetch(`http://127.0.0.1:${REMOTE_DEBUG_PORT}/json/version`);
-    const data = await res.json();
-    return data.webSocketDebuggerUrl;
-  } catch {
-    return null;
+function findChromePath() {
+  const candidates = [
+    // macOS
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    // Linux
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    // Windows
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  ];
+
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
   }
+  return null;
 }
 
 /**
- * Connect to the user's already-running Chrome via remote debugging.
- * Opens a new tab for the campaign — does not touch existing tabs.
- *
- * PREREQUISITE: Chrome must be running with --remote-debugging-port=9222.
- * One-time setup — see /api/local-browser/setup for the launch command.
+ * Launch a separate Chrome with a persistent profile.
+ * First run: user must log into LinkedIn (cookies are saved).
+ * Every run after: LinkedIn session is remembered automatically.
  *
  * Returns { browser, page } — same interface as GoLogin launcher.
  */
 export async function launchLocalBrowser() {
-  console.log('[local] Connecting to your Chrome...');
+  console.log('[local] Starting local browser...');
 
-  const wsUrl = await getDebugEndpoint();
-
-  if (!wsUrl) {
-    throw new Error(
-      'Cannot connect to Chrome. You need to start Chrome with remote debugging enabled.\n\n' +
-      'Run this command ONCE (close Chrome first, then run it):\n\n' +
-      '  macOS:\n' +
-      '  open -a "Google Chrome" --args --remote-debugging-port=9222\n\n' +
-      '  Linux:\n' +
-      '  google-chrome --remote-debugging-port=9222 &\n\n' +
-      '  Windows:\n' +
-      '  start chrome --remote-debugging-port=9222\n\n' +
-      'After that, Local Browser campaigns will connect to it automatically.\n' +
-      'Your Chrome works normally — the flag just allows Puppeteer to connect.'
-    );
+  const chromePath = process.env.CHROME_PATH || findChromePath();
+  if (!chromePath) {
+    throw new Error('No Chrome/Chromium found. Set CHROME_PATH in .env or install Chrome.');
   }
 
-  console.log('[local] Found Chrome with remote debugging on port 9222.');
+  if (!existsSync(LOCAL_PROFILE_DIR)) mkdirSync(LOCAL_PROFILE_DIR, { recursive: true });
 
-  const browser = await puppeteer.connect({
-    browserWSEndpoint: wsUrl,
+  console.log(`[local] Chrome: ${chromePath}`);
+  console.log(`[local] Profile: ${LOCAL_PROFILE_DIR}`);
+
+  const browser = await puppeteer.launch({
+    executablePath: chromePath,
+    headless: false,
+    userDataDir: LOCAL_PROFILE_DIR,
+    args: [
+      '--window-position=-2400,-2400',
+      '--window-size=1366,900',
+      '--no-first-run',
+      '--no-default-browser-check',
+    ],
     ignoreHTTPSErrors: true,
     protocolTimeout: 60000,
   });
 
   activeBrowser = browser;
 
-  // Open a NEW tab for the campaign — never hijacks existing tabs
-  const page = await browser.newPage();
-  campaignPage = page;
+  const pages = await browser.pages();
+  const page = pages.length > 0 ? pages[0] : await browser.newPage();
 
   await page.setViewport({ width: 1366, height: 900 });
   page.setDefaultNavigationTimeout(30000);
   page.setDefaultTimeout(15000);
 
-  console.log('[local] ✓ Connected. New tab opened for campaign.');
+  console.log('[local] ✓ Chrome launched with persistent profile.');
   return { browser, page };
 }
 
 /**
- * Close only the campaign tab. Chrome stays running with all other tabs.
+ * Close the local browser completely.
  */
 export async function closeLocalBrowser() {
   if (!activeBrowser) return;
 
   try {
-    // Only close the tab WE opened
-    if (campaignPage) {
-      try { await campaignPage.close(); } catch { /* */ }
-      campaignPage = null;
+    const pages = await activeBrowser.pages();
+    for (const p of pages) {
+      try { await p.close(); } catch { /* */ }
     }
-
-    // Disconnect Puppeteer — Chrome keeps running
-    activeBrowser.disconnect();
-    console.log('[local] Campaign tab closed. Chrome stays running.');
+    await activeBrowser.close();
+    console.log('[local] Campaign browser closed.');
   } catch (err) {
     console.warn(`[local] Close warning: ${err.message}`);
   }

@@ -317,8 +317,55 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         log(`Checking ${pName} health...`);
         const health = await checkProfileHealth(page, pName);
         if (!health.healthy) {
-          log(`WARNING: ${pName} failed health check: ${health.issues.join(', ')}. Skipping.`);
-          continue;  // Skip to next profile
+          // Local Browser: if not logged in, bring window on-screen and wait for manual login
+          if (profileId === 'local-browser') {
+            log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
+            log(`⏳ Waiting up to 120s for you to log in...`);
+            // Move window on-screen so user can see and interact
+            await page.evaluate(() => {
+              if (window.moveTo) window.moveTo(100, 100);
+            }).catch(() => {});
+            // Also try CDP to move the window
+            try {
+              const client = await page.target().createCDPSession();
+              const { windowId } = await client.send('Browser.getWindowForTarget');
+              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
+            } catch { /* CDP may not support this */ }
+
+            // Poll for login — check every 5s for up to 120s
+            let loggedIn = false;
+            for (let wait = 0; wait < 24; wait++) {
+              await new Promise(r => setTimeout(r, 5000));
+              try {
+                const currentUrl = page.url();
+                if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) {
+                  loggedIn = true;
+                  break;
+                }
+                // Check if user navigated to feed
+                const recheck = await checkProfileHealth(page, pName);
+                if (recheck.healthy) {
+                  loggedIn = true;
+                  break;
+                }
+              } catch { /* page may be navigating */ }
+              if ((wait + 1) % 6 === 0) log(`  Still waiting for login... (${(wait + 1) * 5}s)`);
+            }
+            if (!loggedIn) {
+              log(`✗ Local Browser: login timed out after 120s. Skipping.`);
+              continue;
+            }
+            log(`✓ Local Browser: logged in! Moving window off-screen and continuing.`);
+            // Move back off-screen
+            try {
+              const client = await page.target().createCDPSession();
+              const { windowId } = await client.send('Browser.getWindowForTarget');
+              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+            } catch { /* */ }
+          } else {
+            log(`WARNING: ${pName} failed health check: ${health.issues.join(', ')}. Skipping.`);
+            continue;  // Skip to next profile
+          }
         }
         log(`${pName} health check passed.`);
 
