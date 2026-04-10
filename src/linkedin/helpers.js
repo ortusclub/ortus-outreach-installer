@@ -158,36 +158,47 @@ export async function getConnectionStatus(page) {
         }
       }
 
-      // 2. Message — aria starts with "Message " (space after, to exclude "Messaging")
-      for (const el of els) {
-        const aria = el.getAttribute('aria-label') || '';
-        if (aria.startsWith('Message ') || aria === 'Message') {
-          return { status: 'message', debug: actionEls, profileName };
-        }
-      }
-      // Fallback: text is exactly "Message" and not the nav bar
-      for (const el of els) {
-        const t = (el.textContent || '').trim();
-        const aria = (el.getAttribute('aria-label') || '');
-        if (t === 'Message' && aria !== 'Messaging' && !aria.includes('new notification')) {
-          return { status: 'message', debug: actionEls, profileName };
-        }
-      }
-
-      // 3. Connect — "Invite X to connect" OR button text "Connect"
+      // 2. Connect — CHECK BEFORE MESSAGE (navbar always has a Message icon)
+      //    aria-label "Invite X to connect"
       for (const el of els) {
         const a = (el.getAttribute('aria-label') || '').toLowerCase();
         if (a.includes('invite') && a.includes('to connect')) {
           return { status: 'connect', debug: actionEls, profileName };
         }
       }
-      // Fallback: button/a with exact text "Connect" (new LinkedIn UI)
+      //    Fallback: button/a with exact text "Connect" (new LinkedIn UI)
       for (const el of els) {
         const t = (el.textContent || '').trim();
         if (t === 'Connect' && (el.tagName === 'BUTTON' || el.tagName === 'A')) {
-          // Exclude tiny elements (icons) and nav items
           if (el.offsetWidth > 30) {
             return { status: 'connect', debug: actionEls, profileName };
+          }
+        }
+      }
+
+      // 3. Message — only AFTER confirming Connect is NOT present
+      //    "Message X" aria on profile action button (NOT navbar)
+      for (const el of els) {
+        const aria = el.getAttribute('aria-label') || '';
+        // Must be "Message <name>" (space + name), not just "Message" alone
+        // The navbar icon has aria="Message" or is inside a nav element
+        if (aria.startsWith('Message ') && aria.length > 10) {
+          // Extra check: must NOT be inside a nav/header element
+          const inNav = el.closest('nav, header, [role="navigation"]');
+          if (!inNav) {
+            return { status: 'message', debug: actionEls, profileName };
+          }
+        }
+      }
+      // Fallback: text is exactly "Message" on a profile action button
+      for (const el of els) {
+        const t = (el.textContent || '').trim();
+        const aria = (el.getAttribute('aria-label') || '');
+        if (t === 'Message' && aria !== 'Messaging' && !aria.includes('new notification')) {
+          // Must NOT be inside navbar
+          const inNav = el.closest('nav, header, [role="navigation"]');
+          if (!inNav) {
+            return { status: 'message', debug: actionEls, profileName };
           }
         }
       }
