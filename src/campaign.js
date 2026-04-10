@@ -168,7 +168,7 @@ async function checkProfileHealth(page, profileName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, mode = 'connect_only', messageOpenProfiles = false, delayMin = 60, delayMax = 120 }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45 }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;

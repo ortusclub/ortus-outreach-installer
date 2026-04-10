@@ -59,7 +59,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       const maxScroll = document.body.scrollHeight - window.innerHeight;
       window.scrollTo({ top: maxScroll * (pct / 100), behavior: 'smooth' });
     }, scrollPercent);
-    const dwellTime = 10000 + Math.floor(Math.random() * 10000); // 10-20s
+    const dwellTime = 5000 + Math.floor(Math.random() * 5000); // 5-10s
     console.log(`[outreach] Browsing profile (scrolled ${scrollPercent}%, dwelling ${(dwellTime / 1000).toFixed(0)}s)…`);
     await new Promise(r => setTimeout(r, dwellTime));
 
