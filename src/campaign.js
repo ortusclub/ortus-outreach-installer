@@ -257,7 +257,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
     // Load profile names
     log('Loading profile names…');
-    const token = getToken();
+    const hasGoLoginProfiles = profileIds.some(id => id !== 'local-browser');
+    const token = hasGoLoginProfiles ? getToken() : null;
     for (const pid of profileIds) {
       if (pid === 'local-browser') {
         profileNameCache[pid] = 'Local Browser';
@@ -531,15 +532,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // ════════════════════════════════════════════════════
         if (browser) {
           try {
-            // Close all tabs
-            const pages = await browser.pages();
-            for (const p of pages) {
-              try { await p.close(); } catch { /* */ }
-            }
-            await browser.close().catch(() => {});
             if (profileId === 'local-browser') {
+              // Local launcher handles its own tab + browser cleanup
               await closeLocalBrowser();
             } else {
+              // GoLogin: close tabs, browser, then stop GoLogin profile
+              const pages = await browser.pages();
+              for (const p of pages) {
+                try { await p.close(); } catch { /* */ }
+              }
+              await browser.close().catch(() => {});
               await closeProfile(profileId);
             }
             log(`✓ ${profileNameCache[profileId] || profileId} browser closed.`);
