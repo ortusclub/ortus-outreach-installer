@@ -229,49 +229,61 @@ export async function sendConnectionRequest(page, note, { tryMoreFirst = false }
 
   let connectClicked = false;
 
-  // PRIORITY 1: Always try the direct Connect button first
-  // Only falls back to More dropdown if this returns null
-  const directClicked = await page.evaluate(() => {
-    // 1. aria-label "Invite X to connect" — works on both <a> and <button>
-    const ariaConnect = document.querySelector('[aria-label*="Invite"][aria-label*="to connect"]');
-    if (ariaConnect) { ariaConnect.click(); return 'aria-invite'; }
+  // Retry loop: keep looking for Connect button for up to 60 seconds
+  // Accounts for slow page loads and lazy-rendered elements
+  const MAX_WAIT_MS = 60000;
+  const POLL_INTERVAL_MS = 5000;
+  const startTime = Date.now();
 
-    // 2. Button or link with exact text "Connect" — primary action on profile page
-    //    Check both regular DOM and Shadow DOM roots
-    const allEls = Array.from(document.querySelectorAll('button, a'));
-    document.querySelectorAll('*').forEach(el => {
-      if (el.shadowRoot) allEls.push(...Array.from(el.shadowRoot.querySelectorAll('button, a')));
+  while (!connectClicked && (Date.now() - startTime) < MAX_WAIT_MS) {
+    // PRIORITY 1: Always try the direct Connect button first
+    const directClicked = await page.evaluate(() => {
+      // 1. aria-label "Invite X to connect" — works on both <a> and <button>
+      const ariaConnect = document.querySelector('[aria-label*="Invite"][aria-label*="to connect"]');
+      if (ariaConnect) { ariaConnect.click(); return 'aria-invite'; }
+
+      // 2. Button or link with exact text "Connect" — primary action on profile page
+      //    Check both regular DOM and Shadow DOM roots
+      const allEls = Array.from(document.querySelectorAll('button, a'));
+      document.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot) allEls.push(...Array.from(el.shadowRoot.querySelectorAll('button, a')));
+      });
+
+      for (const el of allEls) {
+        const text = (el.textContent || '').trim();
+        if (text === 'Connect' && el.offsetWidth > 30) {
+          el.click();
+          return 'text-connect';
+        }
+      }
+
+      return null;
     });
 
-    for (const el of allEls) {
-      const text = (el.textContent || '').trim();
-      if (text === 'Connect' && el.offsetWidth > 30) {
-        el.click();
-        return 'text-connect';
-      }
+    if (directClicked) {
+      console.log(`[actions] ✓ Direct Connect button clicked (${directClicked}).`);
+      connectClicked = true;
+      console.log('[actions] Waiting 5s for modal…');
+      await new Promise(r => setTimeout(r, 5000));
+      break;
     }
 
-    return null;
-  });
-
-  if (directClicked) {
-    console.log(`[actions] ✓ Direct Connect button clicked (${directClicked}).`);
-    connectClicked = true;
-    console.log('[actions] Waiting 5s for modal…');
-    await new Promise(r => setTimeout(r, 5000));
-  }
-
-  // Only try More dropdown if direct button wasn't found
-  if (!connectClicked) {
-    console.log('[actions] No direct Connect → trying More dropdown…');
+    // PRIORITY 2: Only try More dropdown if direct button wasn't found
+    console.log(`[actions] No direct Connect — trying More dropdown… (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
     connectClicked = await clickConnectFromMore(page);
     if (connectClicked) {
       console.log('[actions] Waiting 5s for modal…');
       await new Promise(r => setTimeout(r, 5000));
+      break;
     }
+
+    // Neither found — wait and retry
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.log(`[actions] Connect not found yet (${elapsed}s / 60s). Retrying in 5s…`);
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
   }
 
-  if (!connectClicked) throw new Error('Connect button not found');
+  if (!connectClicked) throw new Error('Connect button not found after 60s');
 
   // ── Wait for modal or Pending (8 attempts = ~24s max, up from 5/15s) ──
   for (let attempt = 1; attempt <= 8; attempt++) {
