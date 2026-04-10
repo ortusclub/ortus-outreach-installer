@@ -22,6 +22,7 @@
 import { existsSync, mkdirSync } from 'fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { launchProfile, closeProfile, getProfiles } from './gologin-launcher.js';
+import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
@@ -258,7 +259,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log('Loading profile names…');
     const token = getToken();
     for (const pid of profileIds) {
-      await getProfileName(pid, token);
+      if (pid === 'local-browser') {
+        profileNameCache[pid] = 'Local Browser';
+      } else {
+        await getProfileName(pid, token);
+      }
     }
     campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
@@ -277,7 +282,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // STEP 1: Open GoLogin profile
         // ════════════════════════════════════════════════════
         log(`▶ Opening ${pName}…`);
-        const launched = await launchProfile(profileId, token);
+        let launched;
+        if (profileId === 'local-browser') {
+          launched = await launchLocalBrowser();
+        } else {
+          launched = await launchProfile(profileId, token);
+        }
         browser = launched.browser;
 
         // ════════════════════════════════════════════════════
@@ -526,7 +536,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               try { await p.close(); } catch { /* */ }
             }
             await browser.close().catch(() => {});
-            await closeProfile(profileId);
+            if (profileId === 'local-browser') {
+              await closeLocalBrowser();
+            } else {
+              await closeProfile(profileId);
+            }
             log(`✓ ${profileNameCache[profileId] || profileId} browser closed.`);
           } catch (e) {
             log(`Close: ${e.message}`);

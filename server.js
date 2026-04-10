@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { startCampaign, stopCampaign, getCampaignStatus, campaign } from './src/campaign.js';
 import { fetchSheet } from './src/sheets.js';
 import { getProfiles, closeAllProfiles } from './src/gologin-launcher.js';
+import { closeLocalBrowser } from './src/local-launcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -358,6 +359,7 @@ async function gracefulShutdown(signal) {
   }
 
   const count = await closeAllProfiles();
+  await closeLocalBrowser();
   console.log(`[shutdown] Closing ${count} profiles...`);
   console.log('[shutdown] Done.');
   process.exit(0);
