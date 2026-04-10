@@ -333,11 +333,11 @@ function updateCampaignSummary() {
 
   const el = document.getElementById('summary-stats');
   if (el) {
+    const accountWord = numAccounts === 1 ? 'account' : 'accounts';
     el.innerHTML = `
-      <div><strong>${totalPerHour}</strong> connections/hour total across <strong>${numAccounts}</strong> account(s)</div>
-      <div><strong>~${Math.round(targetInterval / 60)} min</strong> between each action per account</div>
-      <div style="margin-top:4px"><strong>${totalConnections}</strong> total connections · <strong>${limit}</strong> per account · ~<strong>${hoursNeeded}h</strong></div>
-      <div>Estimated finish: <strong>${finishStr} today</strong></div>
+      <div><strong>${numAccounts} ${accountWord}</strong>, each sending <strong>${rate}</strong> connections per hour</div>
+      <div>= <strong>${totalConnections}</strong> connections done in about <strong>${hoursNeeded} hours</strong></div>
+      <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
     `;
   }
 }
