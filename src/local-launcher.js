@@ -1,9 +1,8 @@
 import puppeteer from 'puppeteer-core';
 import { existsSync } from 'fs';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 
 let activeBrowser = null;
-let launchedChrome = false; // Track if WE launched Chrome or connected to existing
 
 const REMOTE_DEBUG_PORT = 9222;
 
@@ -44,8 +43,26 @@ async function getDebugEndpoint() {
 }
 
 /**
+ * Kill any running Chrome instances so we can relaunch with debugging.
+ */
+function killExistingChrome() {
+  const platform = process.platform;
+  try {
+    if (platform === 'darwin') {
+      execSync('pkill -f "Google Chrome" 2>/dev/null || true');
+    } else if (platform === 'win32') {
+      execSync('taskkill /F /IM chrome.exe 2>nul || exit 0');
+    } else {
+      execSync('pkill -f chrome 2>/dev/null || true');
+    }
+    console.log('[local] Closed existing Chrome instances.');
+  } catch {
+    // Ignore — Chrome may not have been running
+  }
+}
+
+/**
  * Launch Chrome with remote debugging using the user's default profile.
- * If Chrome is already running, it'll open a new window in the existing process.
  */
 function launchChromeWithDebugging(chromePath) {
   const platform = process.platform;
@@ -59,20 +76,20 @@ function launchChromeWithDebugging(chromePath) {
     userDataDir = `${process.env.HOME}/.config/google-chrome`;
   }
 
-  // Launch Chrome with remote debugging on the user's default profile
   const args = [
     `--remote-debugging-port=${REMOTE_DEBUG_PORT}`,
     `--user-data-dir=${userDataDir}`,
     '--profile-directory=Default',
     '--no-first-run',
     '--no-default-browser-check',
+    // Launch off-screen like GoLogin does — doesn't steal focus
+    '--window-position=-2400,-2400',
     '--window-size=1366,900',
   ];
 
   console.log(`[local] Launching Chrome: ${chromePath}`);
   console.log(`[local] User data dir: ${userDataDir}`);
 
-  // Launch detached so it doesn't block
   const child = spawn(chromePath, args, {
     detached: true,
     stdio: 'ignore',
@@ -94,9 +111,8 @@ export async function launchLocalBrowser() {
 
   if (wsUrl) {
     console.log('[local] Found existing Chrome with remote debugging.');
-    launchedChrome = false;
   } else {
-    // Step 2: Launch Chrome with remote debugging
+    // Step 2: Kill existing Chrome (can't add debugging to running instance)
     const chromePath = process.env.CHROME_PATH || findChromePath();
     if (!chromePath) {
       throw new Error(
@@ -104,15 +120,17 @@ export async function launchLocalBrowser() {
       );
     }
 
-    // Close any existing Chrome first (it won't have debugging enabled)
-    console.log('[local] No remote debugging found. Launching Chrome with debugging...');
-    console.log('[local] NOTE: If Chrome is already open, please close it first so we can relaunch with debugging enabled.');
+    console.log('[local] No remote debugging found. Closing existing Chrome and relaunching...');
+    killExistingChrome();
 
+    // Brief pause for Chrome to fully close
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Step 3: Launch Chrome with debugging enabled
     launchChromeWithDebugging(chromePath);
-    launchedChrome = true;
 
     // Wait for Chrome to start and expose the debug endpoint
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 2000));
       wsUrl = await getDebugEndpoint();
       if (wsUrl) break;
@@ -121,13 +139,12 @@ export async function launchLocalBrowser() {
 
     if (!wsUrl) {
       throw new Error(
-        `Chrome launched but debug port ${REMOTE_DEBUG_PORT} not responding after 30s.\n` +
-        'Close ALL Chrome windows and try again — Chrome must start fresh with debugging enabled.'
+        `Chrome launched but debug port ${REMOTE_DEBUG_PORT} not responding after 40s.`
       );
     }
   }
 
-  // Step 3: Connect via Puppeteer
+  // Step 4: Connect via Puppeteer
   console.log(`[local] Connecting to Chrome: ${wsUrl}`);
   const browser = await puppeteer.connect({
     browserWSEndpoint: wsUrl,
@@ -149,13 +166,12 @@ export async function launchLocalBrowser() {
 
 /**
  * Close the local browser connection.
- * Only closes the campaign tab — does NOT close Chrome itself.
+ * Only closes campaign tabs — does NOT close Chrome itself.
  */
 export async function closeLocalBrowser() {
   if (!activeBrowser) return;
 
   try {
-    // Close only the pages WE opened, don't kill the user's browser
     const pages = await activeBrowser.pages();
     for (const p of pages) {
       const url = p.url();

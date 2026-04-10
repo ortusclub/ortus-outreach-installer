@@ -40,6 +40,32 @@ async function clearServerLog() {
   const el = document.getElementById('server-log');
   if (el) el.innerHTML = '';
 }
+
+function copyServerLog() {
+  const el = document.getElementById('server-log');
+  if (!el) return;
+  const text = Array.from(el.querySelectorAll('.entry')).map(e => e.textContent).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = el.closest('#server-log-panel').querySelector('button');
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  });
+}
+
+function copyCampaignLog() {
+  const el = document.getElementById('log-panel');
+  if (!el) return;
+  const text = Array.from(el.querySelectorAll('.entry')).map(e => e.textContent).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = el.previousElementSibling?.querySelector('button');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  });
+}
 let pollInterval = null;
 
 // Dynamic placeholder tags from sheet columns

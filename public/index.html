@@ -18,7 +18,10 @@
     <div id="server-log-panel" class="hidden" style="margin-bottom:16px">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
         <span style="color:#8b949e; font-size:0.75rem">Server console output (auto-refreshes)</span>
-        <button class="btn btn-secondary" onclick="clearServerLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Clear</button>
+        <div style="display:flex; gap:4px">
+          <button class="btn btn-secondary" onclick="copyServerLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Copy</button>
+          <button class="btn btn-secondary" onclick="clearServerLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Clear</button>
+        </div>
       </div>
       <div id="server-log" class="log-panel" style="max-height:200px; font-size:0.7rem"></div>
     </div>
@@ -143,6 +146,9 @@
         <div class="stat-card"><div class="label">Errors</div><div class="value" id="st-errors">0</div></div>
       </div>
       <div class="progress-bar"><div class="fill" id="st-bar" style="width:0%"></div></div>
+      <div style="display:flex; justify-content:flex-end; margin-bottom:4px">
+        <button class="btn btn-secondary" onclick="copyCampaignLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Copy Log</button>
+      </div>
       <div class="log-panel" id="log-panel"><div class="entry info">Waiting to start…</div></div>
     </div>
 
