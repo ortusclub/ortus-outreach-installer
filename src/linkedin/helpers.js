@@ -196,20 +196,35 @@ export async function getConnectionStatus(page) {
         }
       }
 
-      // ── 2. Connect — direct button detection ──
-      //    aria-label "Invite X to connect"
+      // ── 2. Connect — scoped to THIS profile's buttons only ──
+      //    aria-label "Invite X to connect" — must match the profile owner's name
+      const firstName = profileName.split(/\s+/)[0]?.toLowerCase() || '';
       for (const el of els) {
         const a = (el.getAttribute('aria-label') || '').toLowerCase();
         if (a.includes('invite') && a.includes('to connect')) {
-          return { status: 'connect', debug: actionEls, profileName, degree };
+          // Only count if it matches this profile's name, or there's only one such button
+          if (firstName && a.includes(firstName)) {
+            return { status: 'connect', debug: actionEls, profileName, degree };
+          }
         }
       }
-      //    Fallback: button/a with exact text "Connect" (new LinkedIn UI)
+      //    If only one "Invite to connect" exists, it's this profile's
+      const allInvites = els.filter(el => {
+        const a = (el.getAttribute('aria-label') || '').toLowerCase();
+        return a.includes('invite') && a.includes('to connect');
+      });
+      if (allInvites.length === 1) {
+        return { status: 'connect', debug: actionEls, profileName, degree };
+      }
+      //    Fallback: button/a with text "Connect" in the top section only
       for (const el of els) {
         const t = (el.textContent || '').trim();
         if (t === 'Connect' && (el.tagName === 'BUTTON' || el.tagName === 'A')) {
           if (el.offsetWidth > 30) {
-            return { status: 'connect', debug: actionEls, profileName, degree };
+            const rect = el.getBoundingClientRect();
+            if (rect.top < 800) {
+              return { status: 'connect', debug: actionEls, profileName, degree };
+            }
           }
         }
       }

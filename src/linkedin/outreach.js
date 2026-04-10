@@ -56,18 +56,17 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
     // ── Step 2b: Human-like browsing — scroll profile and dwell ──
-    // Mimics how a real person reads a profile before acting
-    const scrollPercent = 30 + Math.floor(Math.random() * 40); // 30-70%
-    await page.evaluate((pct) => {
-      const maxScroll = document.body.scrollHeight - window.innerHeight;
-      window.scrollTo({ top: maxScroll * (pct / 100), behavior: 'smooth' });
-    }, scrollPercent);
+    // Use keyboard End/Home for scrolling — works reliably with CSS zoom on GoLogin
     const dwellTime = 5000 + Math.floor(Math.random() * 5000); // 5-10s
-    console.log(`[outreach] Browsing profile (scrolled ${scrollPercent}%, dwelling ${(dwellTime / 1000).toFixed(0)}s)…`);
+    console.log(`[outreach] Browsing profile (dwelling ${(dwellTime / 1000).toFixed(0)}s)…`);
+    // Scroll down with Page Down (works regardless of zoom)
+    await page.keyboard.press('PageDown');
+    await new Promise(r => setTimeout(r, 1500));
+    await page.keyboard.press('PageDown');
     await new Promise(r => setTimeout(r, dwellTime));
 
-    // Scroll back to top for action buttons
-    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    // Scroll back to top
+    await page.keyboard.press('Home');
     await new Promise(r => setTimeout(r, 1000));
 
     // Check for login/404/rate-limit

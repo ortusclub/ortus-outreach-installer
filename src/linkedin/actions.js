@@ -236,14 +236,32 @@ export async function sendConnectionRequest(page, note) {
   const startTime = Date.now();
 
   while (!connectClicked && (Date.now() - startTime) < MAX_WAIT_MS) {
-    // PRIORITY 1: Always try the direct Connect button first
+    // PRIORITY 1: Always try the direct Connect button for THIS profile
+    // Must match the profile's name to avoid clicking Connect on recommended profiles
     const directClicked = await page.evaluate(() => {
-      // 1. aria-label "Invite X to connect" — works on both <a> and <button>
-      const ariaConnect = document.querySelector('[aria-label*="Invite"][aria-label*="to connect"]');
-      if (ariaConnect) { ariaConnect.click(); return 'aria-invite'; }
+      // Get the profile owner's name from h1
+      const h1 = document.querySelector('h1');
+      const profileName = h1 ? h1.textContent.trim().split('\n')[0].trim().toLowerCase() : '';
+      const firstName = profileName.split(/\s+/)[0]; // First name for partial matching
 
-      // 2. Button or link with exact text "Connect" — primary action on profile page
-      //    Check both regular DOM and Shadow DOM roots
+      // 1. aria-label "Invite X to connect" — ONLY if X matches this profile's name
+      const allInvites = document.querySelectorAll('[aria-label*="Invite"][aria-label*="to connect"]');
+      for (const el of allInvites) {
+        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+        // Match if aria contains the profile's first name
+        if (firstName && aria.includes(firstName)) {
+          el.click();
+          return 'aria-invite-matched';
+        }
+      }
+      // If no name-matched invite found but there's exactly one, it's probably the right one
+      if (allInvites.length === 1) {
+        allInvites[0].click();
+        return 'aria-invite-only';
+      }
+
+      // 2. Button with text "Connect" in the TOP section only (above "People also viewed")
+      //    The profile action buttons are near the h1, typically within the first 800px
       const allEls = Array.from(document.querySelectorAll('button, a'));
       document.querySelectorAll('*').forEach(el => {
         if (el.shadowRoot) allEls.push(...Array.from(el.shadowRoot.querySelectorAll('button, a')));
@@ -252,8 +270,12 @@ export async function sendConnectionRequest(page, note) {
       for (const el of allEls) {
         const text = (el.textContent || '').trim();
         if (text === 'Connect' && el.offsetWidth > 30) {
-          el.click();
-          return 'text-connect';
+          // Only click if the element is in the top portion of the page (not recommendations)
+          const rect = el.getBoundingClientRect();
+          if (rect.top < 800) {
+            el.click();
+            return 'text-connect-top';
+          }
         }
       }
 
