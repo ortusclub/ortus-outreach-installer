@@ -298,6 +298,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         let page = launched.page;
 
+        // Clear cache + service workers (keep cookies so login persists)
+        try {
+          const client = await page.target().createCDPSession();
+          await client.send('Network.clearBrowserCache');
+          await client.send('ServiceWorker.unregister', { scopeURL: 'https://www.linkedin.com/' }).catch(() => {});
+          log(`✓ ${pName}: cache cleared.`);
+        } catch (e) {
+          log(`⚠ ${pName}: cache clear skipped: ${e.message}`);
+        }
+
         try {
           await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (e) {
