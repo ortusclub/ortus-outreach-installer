@@ -66,20 +66,19 @@
         <option value="auto">Auto (everything)</option>
         <option value="inmail_only">InMail Only</option>
       </select>
-      <label for="daily-limit">Campaign Limit (per account)</label>
-      <input type="number" id="daily-limit" value="40" min="1" max="100" />
+      <label for="rate-per-hour">Connections per account / hour</label>
+      <input type="number" id="rate-per-hour" value="6" min="1" max="30" oninput="updateCampaignSummary()" />
 
-      <div style="display:flex; gap:12px; margin-top:4px">
-        <div style="flex:1">
-          <label for="delay-min">Min Delay (seconds)</label>
-          <input type="number" id="delay-min" value="15" min="5" max="300" />
-        </div>
-        <div style="flex:1">
-          <label for="delay-max">Max Delay (seconds)</label>
-          <input type="number" id="delay-max" value="45" min="5" max="300" />
+      <label for="daily-limit">Max connections per account (total)</label>
+      <input type="number" id="daily-limit" value="40" min="1" max="100" oninput="updateCampaignSummary()" />
+
+      <div id="campaign-summary" style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:12px; margin-top:8px; font-size:0.85rem; color:#c9d1d9">
+        <div id="summary-stats"></div>
+        <div style="margin-top:8px; padding-top:8px; border-top:1px solid #30363d">
+          <div style="color:#d29922; font-size:0.8rem">&#9888; Keep your laptop open until the campaign finishes</div>
+          <div style="color:#d29922; font-size:0.8rem">&#9888; Do not close the browser windows that open — they run the campaign</div>
         </div>
       </div>
-      <p style="font-size:0.75rem; color:#8b949e; margin:-12px 0 8px 0">Delay between leads. With round-robin, each account gets natural spacing from cycling.</p>
 
       <div id="open-profile-toggle" style="display:none; margin-top:8px">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
@@ -146,6 +145,10 @@
         <div class="stat-card"><div class="label">Errors</div><div class="value" id="st-errors">0</div></div>
       </div>
       <div class="progress-bar"><div class="fill" id="st-bar" style="width:0%"></div></div>
+      <div id="campaign-warnings" style="display:none; background:#2d1b00; border:1px solid #d29922; border-radius:6px; padding:8px 12px; margin-bottom:8px; font-size:0.8rem">
+        <div style="color:#d29922">&#9888; Keep your laptop open — closing the lid stops the campaign</div>
+        <div style="color:#d29922">&#9888; Do not close the browser windows that open — they run the campaign</div>
+      </div>
       <div style="display:flex; justify-content:flex-end; margin-bottom:4px">
         <button class="btn btn-secondary" onclick="copyCampaignLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Copy Log</button>
       </div>

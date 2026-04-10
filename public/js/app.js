@@ -155,6 +155,7 @@ function renderProfiles(profiles) {
     grid.appendChild(item);
   });
   renderSelectedPanel();
+  updateCampaignSummary();
 }
 
 function renderSelectedPanel() {
@@ -307,6 +308,37 @@ async function previewSheet() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Campaign summary calculator
+// ─────────────────────────────────────────────────────────────────────────────
+function updateCampaignSummary() {
+  const rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 6;
+  const limit = parseInt(document.getElementById('daily-limit').value, 10) || 40;
+  const numAccounts = Math.max(selectedProfileIds.length, 1);
+  const totalPerHour = rate * numAccounts;
+  const hoursNeeded = Math.ceil(limit / rate);
+  const totalConnections = limit * numAccounts;
+
+  const now = new Date();
+  const finishTime = new Date(now.getTime() + hoursNeeded * 60 * 60 * 1000);
+  const finishStr = finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  // Auto-calculate delay: seconds between actions across all accounts
+  const delayPerAction = Math.round(3600 / totalPerHour);
+  const delayMin = Math.max(5, Math.round(delayPerAction * 0.6));
+  const delayMax = Math.max(delayMin + 5, Math.round(delayPerAction * 1.2));
+
+  const el = document.getElementById('summary-stats');
+  if (el) {
+    el.innerHTML = `
+      <div><strong>${totalPerHour}</strong> connections/hour total across <strong>${numAccounts}</strong> account(s)</div>
+      <div><strong>~${delayMin}-${delayMax}s</strong> between each action (auto-calculated)</div>
+      <div style="margin-top:4px"><strong>${totalConnections}</strong> total connections · <strong>${limit}</strong> per account · ~<strong>${hoursNeeded}h</strong></div>
+      <div>Estimated finish: <strong>${finishStr} today</strong></div>
+    `;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
 async function startCampaign() {
@@ -315,9 +347,14 @@ async function startCampaign() {
   if (!sheetUrl) { alert('Enter a Google Sheet URL.'); return; }
   const dailyLimit = parseInt(document.getElementById('daily-limit').value, 10);
   if (!dailyLimit || dailyLimit < 1) { alert('Limit must be at least 1.'); return; }
-  const delayMin = parseInt(document.getElementById('delay-min').value, 10) || 8;
-  const delayMax = parseInt(document.getElementById('delay-max').value, 10) || 15;
-  if (delayMin < 1 || delayMax < delayMin) { alert('Delay min must be >= 1 and max must be >= min.'); return; }
+
+  // Auto-calculate delays from rate
+  const rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 6;
+  const numAccounts = Math.max(selectedProfileIds.length, 1);
+  const totalPerHour = rate * numAccounts;
+  const delayPerAction = Math.round(3600 / totalPerHour);
+  const delayMin = Math.max(5, Math.round(delayPerAction * 0.6));
+  const delayMax = Math.max(delayMin + 5, Math.round(delayPerAction * 1.2));
 
   const templates = {
     connectionNote: document.getElementById('tpl-note').value,
@@ -392,12 +429,15 @@ async function pollStatus() {
     wasRunning = s.running;
 
     const runEl = document.getElementById('st-running');
+    const warningEl = document.getElementById('campaign-warnings');
     if (s.running) {
       runEl.textContent = 'Running';
       runEl.className = 'value running';
+      if (warningEl) warningEl.style.display = '';
     } else {
       runEl.textContent = 'Idle';
       runEl.className = 'value stopped';
+      if (warningEl) warningEl.style.display = 'none';
       document.getElementById('btn-start').disabled = false;
       document.getElementById('btn-stop').disabled = true;
       if (s.logs?.length > 0 && !s.running) stopPolling();
@@ -742,6 +782,7 @@ fetchTemplateList();
 fetchHistory();
 fetchSchedules();
 updatePlaceholderTags();
+updateCampaignSummary();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {
