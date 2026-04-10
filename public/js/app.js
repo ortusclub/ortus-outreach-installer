@@ -3,6 +3,43 @@
 let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
+let serverLogInterval = null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Server Log Panel
+// ─────────────────────────────────────────────────────────────────────────────
+function toggleServerLog() {
+  const panel = document.getElementById('server-log-panel');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    fetchServerLog();
+    if (!serverLogInterval) serverLogInterval = setInterval(fetchServerLog, 3000);
+  } else {
+    if (serverLogInterval) { clearInterval(serverLogInterval); serverLogInterval = null; }
+  }
+}
+
+async function fetchServerLog() {
+  try {
+    const res = await fetch('/api/server-log');
+    const lines = await res.json();
+    const el = document.getElementById('server-log');
+    el.innerHTML = lines.map(line => {
+      let cls = '';
+      if (line.includes('[ERR]')) cls = 'error';
+      else if (line.includes('[WARN]')) cls = 'warn';
+      else if (line.includes('✓')) cls = 'success';
+      return `<div class="entry ${cls}">${escHtml(line)}</div>`;
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+  } catch { /* */ }
+}
+
+async function clearServerLog() {
+  try { await fetch('/api/server-log', { method: 'DELETE' }); } catch { /* */ }
+  const el = document.getElementById('server-log');
+  if (el) el.innerHTML = '';
+}
 let pollInterval = null;
 
 // Dynamic placeholder tags from sheet columns

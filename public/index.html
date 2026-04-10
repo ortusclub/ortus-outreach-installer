@@ -8,8 +8,20 @@
 </head>
 <body>
   <div class="container">
-    <h1>Ortus <span>LinkedIn Outreach</span></h1>
-    <p class="subtitle">Automated connection requests &amp; messaging via GoLogin</p>
+    <div style="display:flex; justify-content:space-between; align-items:center">
+      <div>
+        <h1>Ortus <span>LinkedIn Outreach</span></h1>
+        <p class="subtitle">Automated connection requests &amp; messaging via GoLogin</p>
+      </div>
+      <button class="btn btn-secondary" onclick="toggleServerLog()" style="height:32px; font-size:0.75rem">Server Log</button>
+    </div>
+    <div id="server-log-panel" class="hidden" style="margin-bottom:16px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
+        <span style="color:#8b949e; font-size:0.75rem">Server console output (auto-refreshes)</span>
+        <button class="btn btn-secondary" onclick="clearServerLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Clear</button>
+      </div>
+      <div id="server-log" class="log-panel" style="max-height:200px; font-size:0.7rem"></div>
+    </div>
 
     <!-- ── GoLogin Profiles ── -->
     <div class="section">
