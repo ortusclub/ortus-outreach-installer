@@ -66,6 +66,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260410-djm | Add dynamic template variables from Google Sheet columns | 2026-04-10 | 470e644 | [260410-djm-add-dynamic-template-variables-from-goog](./quick/260410-djm-add-dynamic-template-variables-from-goog/) |
+| 260410-edx | Add local browser non-GoLogin support | 2026-04-10 | fd959b2 | [260410-edx-add-local-browser-non-gologin-support](./quick/260410-edx-add-local-browser-non-gologin-support/) |
 
 ## Session Continuity
 
