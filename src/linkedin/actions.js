@@ -229,9 +229,8 @@ export async function sendConnectionRequest(page, note, { tryMoreFirst = false }
 
   let connectClicked = false;
 
-  // Check for direct Connect button
-  // New UI: <a aria-label="Invite X to connect"> (sidebar uses <button>, so <a> is safe)
-  // Old UI: <button class="...primary...">Connect</button>
+  // PRIORITY 1: Always try the direct Connect button first
+  // Only falls back to More dropdown if this returns null
   const directClicked = await page.evaluate(() => {
     // 1. aria-label "Invite X to connect" — works on both <a> and <button>
     const ariaConnect = document.querySelector('[aria-label*="Invite"][aria-label*="to connect"]');
