@@ -233,14 +233,24 @@ export async function sendConnectionRequest(page, note, { tryMoreFirst = false }
   // New UI: <a aria-label="Invite X to connect"> (sidebar uses <button>, so <a> is safe)
   // Old UI: <button class="...primary...">Connect</button>
   const directClicked = await page.evaluate(() => {
-    // New UI — Connect is an <a> tag, sidebar Connect is <button>
-    const aConnect = document.querySelector('a[aria-label*="Invite"][aria-label*="to connect"]');
-    if (aConnect) { aConnect.click(); return 'a-tag'; }
+    // 1. aria-label "Invite X to connect" — works on both <a> and <button>
+    const ariaConnect = document.querySelector('[aria-label*="Invite"][aria-label*="to connect"]');
+    if (ariaConnect) { ariaConnect.click(); return 'aria-invite'; }
 
-    // Old UI — Connect is a primary <button>
-    const btnConnect = Array.from(document.querySelectorAll('button'))
-      .find(b => b.textContent.trim() === 'Connect' && b.className.includes('primary'));
-    if (btnConnect) { btnConnect.click(); return 'button'; }
+    // 2. Button or link with exact text "Connect" — primary action on profile page
+    //    Check both regular DOM and Shadow DOM roots
+    const allEls = Array.from(document.querySelectorAll('button, a'));
+    document.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot) allEls.push(...Array.from(el.shadowRoot.querySelectorAll('button, a')));
+    });
+
+    for (const el of allEls) {
+      const text = (el.textContent || '').trim();
+      if (text === 'Connect' && el.offsetWidth > 30) {
+        el.click();
+        return 'text-connect';
+      }
+    }
 
     return null;
   });

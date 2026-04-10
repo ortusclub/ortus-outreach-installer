@@ -174,11 +174,21 @@ export async function getConnectionStatus(page) {
         }
       }
 
-      // 3. Connect — "Invite X to connect" or text "Connect"
+      // 3. Connect — "Invite X to connect" OR button text "Connect"
       for (const el of els) {
         const a = (el.getAttribute('aria-label') || '').toLowerCase();
         if (a.includes('invite') && a.includes('to connect')) {
           return { status: 'connect', debug: actionEls, profileName };
+        }
+      }
+      // Fallback: button/a with exact text "Connect" (new LinkedIn UI)
+      for (const el of els) {
+        const t = (el.textContent || '').trim();
+        if (t === 'Connect' && (el.tagName === 'BUTTON' || el.tagName === 'A')) {
+          // Exclude tiny elements (icons) and nav items
+          if (el.offsetWidth > 30) {
+            return { status: 'connect', debug: actionEls, profileName };
+          }
         }
       }
 
