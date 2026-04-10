@@ -423,9 +423,21 @@ export async function sendConnectionRequest(page, note) {
         throw new Error('Send button not found in modal');
       }
 
+      // Post-send verification: confirm the connection actually went through
       await new Promise(r => setTimeout(r, 3000));
-      if (await isPending(page)) console.log('[actions] ✓ Confirmed: Pending.');
-      return;
+      if (await isPending(page)) {
+        console.log('[actions] ✓ Verified: Pending.');
+        return;
+      }
+      // Retry check — sometimes LinkedIn takes a moment
+      await new Promise(r => setTimeout(r, 3000));
+      if (await isPending(page)) {
+        console.log('[actions] ✓ Verified: Pending (2nd check).');
+        return;
+      }
+      // Not confirmed — LinkedIn may have silently dropped the request
+      console.warn('[actions] ⚠ Send clicked but Pending status NOT confirmed. Connection may not have gone through.');
+      throw new Error('SEND_NOT_CONFIRMED: clicked Send but profile does not show Pending');
     }
 
     if (attempt < 8) {

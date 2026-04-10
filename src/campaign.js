@@ -479,7 +479,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               !result.error.includes('Not yet connected') &&
               !result.error.includes('Still pending') &&
               !result.error.includes('Can connect directly') &&
-              !result.error.includes('No message template');
+              !result.error.includes('No message template') &&
+              !result.error.includes('SEND_NOT_CONFIRMED');
 
             if (!isTransient || attempt === MAX_RETRIES) break;
 
@@ -593,7 +594,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       }
     }
 
-    // STEP 3: Close all browsers
+    // STEP 3: Close all browsers (with 2-minute timeout)
+    log('Closing all browsers...');
+    const closeTimeout = setTimeout(() => {
+      log('⚠ Browser close timed out after 2 minutes. Force-ending campaign.');
+    }, 120000);
+
     for (const session of activeSessions) {
       try {
         if (session.profileId === 'local-browser') {
@@ -611,6 +617,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         log(`Close ${session.pName}: ${e.message}`);
       }
     }
+
+    clearTimeout(closeTimeout);
   } catch (err) {
     log(`Fatal: ${err.message}`);
     pushError(err);

@@ -4,6 +4,24 @@ let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
 let serverLogInterval = null;
+let notificationsEnabled = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Browser notifications
+// ─────────────────────────────────────────────────────────────────────────────
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().then(p => { notificationsEnabled = p === 'granted'; });
+  } else if ('Notification' in window && Notification.permission === 'granted') {
+    notificationsEnabled = true;
+  }
+}
+
+function notify(title, body) {
+  if (notificationsEnabled) {
+    try { new Notification(title, { body, icon: '/css/style.css' }); } catch { /* */ }
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Server Log Panel
@@ -67,6 +85,8 @@ function copyCampaignLog() {
   });
 }
 let pollInterval = null;
+let wasRunning = false;
+let wasErrorCount = 0;
 
 // Dynamic placeholder tags from sheet columns
 let sheetColumns = ['firstName', 'lastName', 'company', 'title'];
@@ -431,7 +451,14 @@ async function pollStatus() {
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {
       fetchHistory();
+      notify('Campaign finished', `${s.processedToday} connections sent. ${(s.errors || []).length} errors.`);
     }
+    // Detect new errors
+    if (s.running && (s.errors || []).length > (wasErrorCount || 0)) {
+      const latest = s.errors[s.errors.length - 1];
+      notify('Campaign error', latest?.message || 'Unknown error');
+    }
+    wasErrorCount = (s.errors || []).length;
     wasRunning = s.running;
 
     const runEl = document.getElementById('st-running');
@@ -667,8 +694,6 @@ function downloadCsv() {
   document.body.removeChild(a);
 }
 
-let wasRunning = false;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign Schedules
 // ─────────────────────────────────────────────────────────────────────────────
@@ -789,6 +814,7 @@ fetchHistory();
 fetchSchedules();
 updatePlaceholderTags();
 updateCampaignSummary();
+requestNotificationPermission();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {
