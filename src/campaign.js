@@ -321,6 +321,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           if (profileId === 'local-browser') {
             log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
             log(`⏳ Waiting up to 120s for you to log in...`);
+            // Zoom out slightly so the login page fits nicely
+            await page.evaluate(() => { document.body.style.zoom = '90%'; }).catch(() => {});
             // Move window on-screen so user can see and interact
             await page.evaluate(() => {
               if (window.moveTo) window.moveTo(100, 100);

@@ -78,19 +78,6 @@ app.delete('/api/server-log', (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Local Browser setup check
-// ---------------------------------------------------------------------------
-app.get('/api/local-browser/status', async (_req, res) => {
-  try {
-    const r = await fetch('http://127.0.0.1:9222/json/version');
-    const data = await r.json();
-    res.json({ ready: true, browser: data.Browser || 'Chrome' });
-  } catch {
-    res.json({ ready: false, instructions: 'Close Chrome, then run: open -a "Google Chrome" --args --remote-debugging-port=9222' });
-  }
-});
-
-// ---------------------------------------------------------------------------
 // GoLogin profiles
 // ---------------------------------------------------------------------------
 app.get('/api/profiles', async (_req, res) => {
