@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer-core';
 import { existsSync } from 'fs';
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 
 let activeBrowser = null;
 let launchedChrome = false; // Track if WE launched Chrome or connected to existing
@@ -69,12 +69,10 @@ function launchChromeWithDebugging(chromePath) {
     '--window-size=1366,900',
   ];
 
-  const cmd = `"${chromePath}" ${args.map(a => `"${a}"`).join(' ')}`;
   console.log(`[local] Launching Chrome: ${chromePath}`);
   console.log(`[local] User data dir: ${userDataDir}`);
 
   // Launch detached so it doesn't block
-  const { spawn } = require('child_process');
   const child = spawn(chromePath, args, {
     detached: true,
     stdio: 'ignore',
