@@ -187,18 +187,27 @@ export async function getConnectionStatus(page) {
         return { status: 'message', debug: actionEls, profileName, degree };
       }
 
-      // ── 1. Pending ──
+      // ── 1. Pending — scoped to THIS profile only ──
+      const firstName = profileName.split(/\s+/)[0]?.toLowerCase() || '';
       for (const el of els) {
         const a = (el.getAttribute('aria-label') || '').toLowerCase();
         const t = (el.textContent || '').trim().toLowerCase();
         if (t === 'pending' || a.includes('pending')) {
+          // Check if this Pending button is for the profile owner
+          // aria-label like "Pending, click to withdraw invitation sent to Isaac"
+          if (a.includes('pending') && firstName && !a.includes(firstName)) {
+            continue; // This is a Pending button for someone else (recommendations)
+          }
+          // If it's just text "Pending" with no aria, check position (top section only)
+          if (!a.includes('pending')) {
+            const rect = el.getBoundingClientRect();
+            if (rect.top > 800) continue; // Below the fold — probably recommendations
+          }
           return { status: 'pending', debug: actionEls, profileName, degree };
         }
       }
 
       // ── 2. Connect — scoped to THIS profile's buttons only ──
-      //    aria-label "Invite X to connect" — must match the profile owner's name
-      const firstName = profileName.split(/\s+/)[0]?.toLowerCase() || '';
       for (const el of els) {
         const a = (el.getAttribute('aria-label') || '').toLowerCase();
         if (a.includes('invite') && a.includes('to connect')) {
