@@ -315,3 +315,11 @@ select { cursor: pointer; }
 }
 .schedule-toggle.on::after { left: 21px; }
 .schedule-toggle.off::after { left: 3px; }
+
+/* Local Browser profile card */
+.profile-item.local-browser {
+  border-left: 3px solid #58a6ff;
+}
+.profile-item.local-browser .id {
+  color: #58a6ff;
+}

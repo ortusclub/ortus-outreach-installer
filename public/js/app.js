@@ -34,6 +34,35 @@ async function loadProfiles() {
 function renderProfiles(profiles) {
   const grid = document.getElementById('profiles-grid');
   grid.innerHTML = '';
+
+  // Add Local Browser option at the top
+  const localItem = document.createElement('label');
+  localItem.className = 'profile-item local-browser' + (selectedProfileIds.includes('local-browser') ? ' selected' : '');
+  localItem.dataset.profileId = 'local-browser';
+  localItem.innerHTML = `
+    <input type="checkbox" value="local-browser" ${selectedProfileIds.includes('local-browser') ? 'checked' : ''} />
+    <div>
+      <div class="name">Local Browser</div>
+      <div class="id">Uses your system Chrome -- no GoLogin needed</div>
+    </div>
+  `;
+  const localCb = localItem.querySelector('input');
+  localCb.addEventListener('change', () => {
+    if (localCb.checked) {
+      if (!selectedProfileIds.includes('local-browser')) {
+        selectedProfileIds.push('local-browser');
+        selectedProfileNames['local-browser'] = 'Local Browser';
+      }
+      localItem.classList.add('selected');
+    } else {
+      selectedProfileIds = selectedProfileIds.filter(id => id !== 'local-browser');
+      delete selectedProfileNames['local-browser'];
+      localItem.classList.remove('selected');
+    }
+    renderSelectedPanel();
+  });
+  grid.appendChild(localItem);
+
   profiles.forEach((p) => {
     const item = document.createElement('label');
     item.className = 'profile-item' + (selectedProfileIds.includes(p.id) ? ' selected' : '');
