@@ -322,16 +322,20 @@ function updateCampaignSummary() {
   const finishTime = new Date(now.getTime() + hoursNeeded * 60 * 60 * 1000);
   const finishStr = finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  // Auto-calculate delay: seconds between actions across all accounts
-  const delayPerAction = Math.round(3600 / totalPerHour);
-  const delayMin = Math.max(5, Math.round(delayPerAction * 0.6));
-  const delayMax = Math.max(delayMin + 5, Math.round(delayPerAction * 1.2));
+  // Auto-calculate delay: extra wait between actions
+  // Each outreach takes ~60s (navigate + scroll + dwell + click + modal + note)
+  // So the delay is: (target interval) - (outreach time)
+  const OUTREACH_TIME = 60; // seconds approximately
+  const targetInterval = Math.round(3600 / totalPerHour); // total seconds between starts
+  const extraDelay = Math.max(10, targetInterval - OUTREACH_TIME);
+  const delayMin = Math.max(5, Math.round(extraDelay * 0.7));
+  const delayMax = Math.max(delayMin + 5, Math.round(extraDelay * 1.3));
 
   const el = document.getElementById('summary-stats');
   if (el) {
     el.innerHTML = `
       <div><strong>${totalPerHour}</strong> connections/hour total across <strong>${numAccounts}</strong> account(s)</div>
-      <div><strong>~${delayMin}-${delayMax}s</strong> between each action (auto-calculated)</div>
+      <div><strong>~${Math.round(targetInterval / 60)} min</strong> between each action per account</div>
       <div style="margin-top:4px"><strong>${totalConnections}</strong> total connections · <strong>${limit}</strong> per account · ~<strong>${hoursNeeded}h</strong></div>
       <div>Estimated finish: <strong>${finishStr} today</strong></div>
     `;
@@ -352,9 +356,11 @@ async function startCampaign() {
   const rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 6;
   const numAccounts = Math.max(selectedProfileIds.length, 1);
   const totalPerHour = rate * numAccounts;
-  const delayPerAction = Math.round(3600 / totalPerHour);
-  const delayMin = Math.max(5, Math.round(delayPerAction * 0.6));
-  const delayMax = Math.max(delayMin + 5, Math.round(delayPerAction * 1.2));
+  const OUTREACH_TIME = 60;
+  const targetInterval = Math.round(3600 / totalPerHour);
+  const extraDelay = Math.max(10, targetInterval - OUTREACH_TIME);
+  const delayMin = Math.max(5, Math.round(extraDelay * 0.7));
+  const delayMax = Math.max(delayMin + 5, Math.round(extraDelay * 1.3));
 
   const templates = {
     connectionNote: document.getElementById('tpl-note').value,
