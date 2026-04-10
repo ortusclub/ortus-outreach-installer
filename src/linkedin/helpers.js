@@ -149,21 +149,59 @@ export async function getConnectionStatus(page) {
         }
       }
 
-      // 1. Pending
+      // ── 0. Degree badge check — most reliable "already connected" signal ──
+      // "1st" badge means already connected. Present near the name on all profile layouts.
+      let degree = null;
+      const degreeEl = document.querySelector('.dist-value, .distance-badge, span[class*="degree"]');
+      if (degreeEl) {
+        degree = degreeEl.textContent.trim();
+      }
+      // Fallback: search for "1st", "2nd", "3rd" text near the h1 name
+      if (!degree) {
+        const nameSection = document.querySelector('main .pv-text-details__left-panel, main [class*="top-card"]');
+        if (nameSection) {
+          const spans = nameSection.querySelectorAll('span');
+          for (const s of spans) {
+            const t = s.textContent.trim();
+            if (t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') {
+              degree = t;
+              break;
+            }
+          }
+        }
+      }
+      // Last resort: any small span on the page with just "1st"/"2nd"/"3rd"
+      if (!degree) {
+        const allSpans = document.querySelectorAll('span');
+        for (const s of allSpans) {
+          const t = s.textContent.trim();
+          if ((t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') && s.offsetWidth > 0 && s.offsetWidth < 50) {
+            degree = t;
+            break;
+          }
+        }
+      }
+
+      // If "1st" degree → already connected, return 'message' status
+      if (degree === '1st') {
+        return { status: 'message', debug: actionEls, profileName, degree };
+      }
+
+      // ── 1. Pending ──
       for (const el of els) {
         const a = (el.getAttribute('aria-label') || '').toLowerCase();
         const t = (el.textContent || '').trim().toLowerCase();
         if (t === 'pending' || a.includes('pending')) {
-          return { status: 'pending', debug: actionEls, profileName };
+          return { status: 'pending', debug: actionEls, profileName, degree };
         }
       }
 
-      // 2. Connect — CHECK BEFORE MESSAGE (navbar always has a Message icon)
+      // ── 2. Connect — direct button detection ──
       //    aria-label "Invite X to connect"
       for (const el of els) {
         const a = (el.getAttribute('aria-label') || '').toLowerCase();
         if (a.includes('invite') && a.includes('to connect')) {
-          return { status: 'connect', debug: actionEls, profileName };
+          return { status: 'connect', debug: actionEls, profileName, degree };
         }
       }
       //    Fallback: button/a with exact text "Connect" (new LinkedIn UI)
@@ -171,22 +209,27 @@ export async function getConnectionStatus(page) {
         const t = (el.textContent || '').trim();
         if (t === 'Connect' && (el.tagName === 'BUTTON' || el.tagName === 'A')) {
           if (el.offsetWidth > 30) {
-            return { status: 'connect', debug: actionEls, profileName };
+            return { status: 'connect', debug: actionEls, profileName, degree };
           }
         }
       }
 
-      // 3. Message — only AFTER confirming Connect is NOT present
+      // ── 3. Follow — aria starts with "Follow " ──
+      for (const el of els) {
+        const aria = el.getAttribute('aria-label') || '';
+        if (aria.startsWith('Follow ')) {
+          return { status: 'follow', debug: actionEls, profileName, degree };
+        }
+      }
+
+      // ── 4. Message — last resort, only if no Connect and no degree badge ──
       //    "Message X" aria on profile action button (NOT navbar)
       for (const el of els) {
         const aria = el.getAttribute('aria-label') || '';
-        // Must be "Message <name>" (space + name), not just "Message" alone
-        // The navbar icon has aria="Message" or is inside a nav element
         if (aria.startsWith('Message ') && aria.length > 10) {
-          // Extra check: must NOT be inside a nav/header element
           const inNav = el.closest('nav, header, [role="navigation"]');
           if (!inNav) {
-            return { status: 'message', debug: actionEls, profileName };
+            return { status: 'message', debug: actionEls, profileName, degree };
           }
         }
       }
@@ -195,26 +238,17 @@ export async function getConnectionStatus(page) {
         const t = (el.textContent || '').trim();
         const aria = (el.getAttribute('aria-label') || '');
         if (t === 'Message' && aria !== 'Messaging' && !aria.includes('new notification')) {
-          // Must NOT be inside navbar
           const inNav = el.closest('nav, header, [role="navigation"]');
           if (!inNav) {
-            return { status: 'message', debug: actionEls, profileName };
+            return { status: 'message', debug: actionEls, profileName, degree };
           }
         }
       }
 
-      // 4. Follow — aria starts with "Follow "
-      for (const el of els) {
-        const aria = el.getAttribute('aria-label') || '';
-        if (aria.startsWith('Follow ')) {
-          return { status: 'follow', debug: actionEls, profileName };
-        }
-      }
-
-      return { status: 'unknown', debug: actionEls, profileName };
+      return { status: 'unknown', debug: actionEls, profileName, degree };
     });
 
-    console.log(`[helpers] Status: ${result.status} (name: "${result.profileName || '?'}")`);
+    console.log(`[helpers] Status: ${result.status} (name: "${result.profileName || '?'}", degree: ${result.degree || '?'})`);
     if (result.debug.length > 0) {
       console.log('[helpers] Action elements:', JSON.stringify(result.debug));
     } else {

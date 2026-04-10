@@ -311,13 +311,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         } catch { /* keep current */ }
 
         // ════════════════════════════════════════════════════
-        // STEP 3: Wait 20 seconds on home page
-        // ════════════════════════════════════════════════════
-        log('⏳ Waiting 20s on home page…');
-        await new Promise(r => setTimeout(r, 20000));
-
-        // ════════════════════════════════════════════════════
-        // STEP 3b: Profile health check (D-10 through D-13)
+        // STEP 3: Health check BEFORE warmup (don't waste 20s on a bad profile)
         // ════════════════════════════════════════════════════
         log(`Checking ${pName} health...`);
         const health = await checkProfileHealth(page, pName);
@@ -325,7 +319,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           log(`WARNING: ${pName} failed health check: ${health.issues.join(', ')}. Skipping.`);
           continue;  // Skip to next profile
         }
-        log(`${pName} health check passed. Starting leads...`);
+        log(`${pName} health check passed.`);
+
+        // ════════════════════════════════════════════════════
+        // STEP 3b: Wait 20 seconds on home page (session warmup)
+        // ════════════════════════════════════════════════════
+        log('⏳ Waiting 20s on home page…');
+        await new Promise(r => setTimeout(r, 20000));
+        log('✓ Warmup done. Starting leads...');
 
         // ════════════════════════════════════════════════════
         // STEP 5: Lead processing loop

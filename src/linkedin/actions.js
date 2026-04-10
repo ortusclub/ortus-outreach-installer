@@ -222,7 +222,7 @@ async function clickConnectFromMore(page) {
 // sendConnectionRequest
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendConnectionRequest(page, note, { tryMoreFirst = false } = {}) {
+export async function sendConnectionRequest(page, note) {
   // Scroll to top
   await page.evaluate(() => window.scrollTo(0, 0));
   await randomDelay(300, 500);

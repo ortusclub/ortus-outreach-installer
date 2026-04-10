@@ -81,7 +81,6 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
 
     // ── Step 3: Detect status and execute action ──
     let status;
-    let connectViaMore = false;
 
     if (modeHint === 'check_only') {
       // Just read the status — don't click anything
@@ -96,9 +95,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
       if (status === 'pending') return { action: 'already_processed' };
       if (status !== 'connect') {
-        console.log(`[outreach] Status="${status}", will try More dropdown`);
+        console.log(`[outreach] Status="${status}", will try Connect (retry loop handles More fallback)`);
         status = 'connect';
-        connectViaMore = true;
       }
     } else if (modeHint === 'force_message') {
       status = await getConnectionStatus(page);
@@ -120,7 +118,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         if (state.connectionSent) return { action: 'already_processed' };
         const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
         try {
-          await sendConnectionRequest(page, note, { tryMoreFirst: connectViaMore });
+          await sendConnectionRequest(page, note);
           return { action: 'connection_sent' };
         } catch (err) {
           return { action: 'skipped', error: `Connect failed: ${err.message}` };
@@ -142,7 +140,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log('[outreach] Follow → trying Connect via More…');
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          await sendConnectionRequest(page, note, { tryMoreFirst: true });
+          await sendConnectionRequest(page, note);
           return { action: 'connection_sent' };
         } catch (e) {
           console.log(`[outreach] More Connect failed: ${e.message}`);
@@ -168,7 +166,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log(`[outreach] Unknown → trying Connect via More…`);
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          await sendConnectionRequest(page, note, { tryMoreFirst: true });
+          await sendConnectionRequest(page, note);
           return { action: 'connection_sent' };
         } catch (err) {
           return { action: 'skipped', error: `Unknown status, connect failed: ${err.message}` };
