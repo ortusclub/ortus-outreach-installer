@@ -423,20 +423,42 @@ export async function sendConnectionRequest(page, note) {
         throw new Error('Send button not found in modal');
       }
 
-      // Post-send verification: confirm the connection actually went through
-      await new Promise(r => setTimeout(r, 3000));
+      // Post-send verification: reload the profile and confirm Pending status
+      // Wait for modal to fully close and LinkedIn to process the request
+      console.log('[actions] Verifying connection... waiting 30s for LinkedIn to process.');
+      await new Promise(r => setTimeout(r, 30000));
+
+      // Navigate back to the same profile to get fresh status
+      const currentUrl = page.url();
+      try {
+        await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } catch { /* timeout OK — page still usable */ }
+      await new Promise(r => setTimeout(r, 5000));
+
+      // Check 1: is it Pending now?
       if (await isPending(page)) {
         console.log('[actions] ✓ Verified: Pending.');
         return;
       }
-      // Retry check — sometimes LinkedIn takes a moment
-      await new Promise(r => setTimeout(r, 3000));
+
+      // Wait another 30s and try again — GoLogin is slow
+      console.log('[actions] Not Pending yet. Waiting another 30s...');
+      await new Promise(r => setTimeout(r, 30000));
+
+      // Reload again for fresh state
+      try {
+        await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } catch { /* timeout OK */ }
+      await new Promise(r => setTimeout(r, 5000));
+
+      // Check 2
       if (await isPending(page)) {
         console.log('[actions] ✓ Verified: Pending (2nd check).');
         return;
       }
-      // Not confirmed — LinkedIn may have silently dropped the request
-      console.warn('[actions] ⚠ Send clicked but Pending status NOT confirmed. Connection may not have gone through.');
+
+      // Not confirmed — LinkedIn silently dropped the request
+      console.warn('[actions] ⚠ Send clicked but Pending NOT confirmed after 60s + 2 page reloads.');
       throw new Error('SEND_NOT_CONFIRMED: clicked Send but profile does not show Pending');
     }
 
