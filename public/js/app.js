@@ -11,6 +11,202 @@ function resolveSenderFirstName(profileId, profileName) {
   if (!soo) return '';
   return (soo['First Name'] || soo.firstName || '').toString().trim();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Message Preview
+// ─────────────────────────────────────────────────────────────────────────────
+
+// LinkedIn-imposed length limits. undefined = no hard limit.
+const CHAR_LIMITS = {
+  connectionNote: 300,
+  followUpMessage: undefined,
+  inmailSubject: 200,
+  inmailBody: 1900,
+  opProfileSubject: undefined,
+  opProfileBody: undefined,
+};
+
+// Display labels used in the modal card section headers.
+const PREVIEW_FIELD_LABELS = {
+  connectionNote: 'Connection Note',
+  followUpMessage: 'Follow-up Message',
+  inmailSubject: 'InMail Subject',
+  inmailBody: 'InMail Body',
+  opProfileSubject: 'Open Profile Subject',
+  opProfileBody: 'Open Profile Body',
+};
+
+// Collects the same form state that startCampaign() sends to /api/campaign/start.
+// Mirrors app.js:1122-1185 so the server-side normalization works identically.
+function gatherCampaignFormState() {
+  const sheetUrl = document.getElementById('sheet-url').value.trim();
+  const linkedinColumn = document.getElementById('linkedin-col-select')?.value || '';
+  const mode = document.getElementById('campaign-mode').value;
+  const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
+
+  const templates = {
+    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    followUp1: document.getElementById('tpl-followup').value,
+    inmailSubject: document.getElementById('tpl-inmail-subject').value,
+    inmailBody: document.getElementById('tpl-inmail-body').value,
+    openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
+    openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+  };
+
+  const senderFirstNames = {};
+  for (const id of selectedProfileIds) {
+    const pName = selectedProfileNames[id] || id;
+    senderFirstNames[id] = resolveSenderFirstName(id, pName);
+  }
+
+  return {
+    sheetUrl,
+    linkedinColumn,
+    templates,
+    profileIds: [...selectedProfileIds],
+    senderFirstNames,
+  };
+}
+
+// Returns { disabled: bool, reason: string | null } — drives the Preview button state.
+function getPreviewDisabledReason() {
+  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
+  if (!sheetUrl) return { disabled: true, reason: 'Enter a Google Sheet URL first' };
+  const anyTemplate = [
+    document.getElementById('tpl-note')?.value,
+    document.getElementById('tpl-followup')?.value,
+    document.getElementById('tpl-inmail-subject')?.value,
+    document.getElementById('tpl-inmail-body')?.value,
+    document.getElementById('tpl-op-subject')?.value,
+    document.getElementById('tpl-op-body')?.value,
+  ].some(v => v && v.trim());
+  if (!anyTemplate) return { disabled: true, reason: 'Fill in at least one template to preview' };
+  return { disabled: false, reason: null };
+}
+
+function refreshPreviewButtonState() {
+  const btn = document.getElementById('btn-preview-messages');
+  if (!btn) return;
+  const { disabled, reason } = getPreviewDisabledReason();
+  btn.disabled = disabled;
+  btn.title = disabled ? reason : 'Render current templates against 3 sample leads';
+}
+
+async function handlePreviewClick() {
+  const btn = document.getElementById('btn-preview-messages');
+  const { disabled } = getPreviewDisabledReason();
+  if (disabled) { refreshPreviewButtonState(); return; }
+
+  const state = gatherCampaignFormState();
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+
+  try {
+    const res = await fetch('/api/templates/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      renderPreviewModal([], data.error || `Request failed (${res.status})`);
+    } else {
+      renderPreviewModal(data.previews || [], data.error || null);
+    }
+  } catch (err) {
+    renderPreviewModal([], err.message || 'Network error');
+  } finally {
+    btn.textContent = originalText;
+    refreshPreviewButtonState();
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderPreviewModal(previews, error) {
+  const modal = document.getElementById('preview-modal');
+  const body = document.getElementById('preview-modal-body');
+  const closeBtn = document.getElementById('preview-modal-close');
+  const backdrop = document.getElementById('preview-modal-backdrop');
+  if (!modal || !body) return;
+
+  let html = '';
+  if (error) {
+    html += `<div class="preview-modal__error">Error: ${escapeHtml(error)}</div>`;
+  }
+  if (!error && previews.length === 0) {
+    html += `<div class="preview-modal__empty">No leads with LinkedIn URLs found in the sheet.</div>`;
+  }
+
+  for (const p of previews) {
+    const leadName = [p.lead.firstName, p.lead.lastName].filter(Boolean).join(' ') || '(no name)';
+    html += `<div class="preview-card">`;
+    html += `  <div class="preview-card__lead">`;
+    html += `    <strong>${escapeHtml(leadName)}</strong>`;
+    if (p.lead.company) html += ` <span class="preview-card__company">— ${escapeHtml(p.lead.company)}</span>`;
+    if (p.lead.url) html += ` <a href="${escapeHtml(p.lead.url)}" target="_blank" rel="noopener" class="preview-card__url">${escapeHtml(p.lead.url)}</a>`;
+    html += `  </div>`;
+
+    for (const key of Object.keys(PREVIEW_FIELD_LABELS)) {
+      const text = p.rendered?.[key];
+      if (!text) continue;
+      const limit = CHAR_LIMITS[key];
+      const len = text.length;
+      const over = limit !== undefined && len > limit;
+      const countLabel = limit !== undefined ? `${len} / ${limit} chars` : `${len} chars`;
+      html += `<div class="preview-card__field">`;
+      html += `  <div class="preview-card__field-header">`;
+      html += `    <span class="preview-card__field-name">${escapeHtml(PREVIEW_FIELD_LABELS[key])}</span>`;
+      html += `    <span class="preview-card__count ${over ? 'preview-card__count--over' : ''}">${escapeHtml(countLabel)}</span>`;
+      html += `  </div>`;
+      html += `  <pre class="preview-card__text">${escapeHtml(text)}</pre>`;
+      html += `</div>`;
+    }
+
+    if (p.warnings && p.warnings.length) {
+      html += `<div class="preview-card__warnings">`;
+      html += `  <div class="preview-card__warnings-title">Warnings</div>`;
+      html += `  <ul>${p.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`;
+      html += `</div>`;
+    }
+    html += `</div>`; // .preview-card
+  }
+
+  body.innerHTML = html;
+  modal.hidden = false;
+
+  const onClose = () => {
+    modal.hidden = true;
+    closeBtn.removeEventListener('click', onClose);
+    backdrop.removeEventListener('click', onClose);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
+  closeBtn.addEventListener('click', onClose);
+  backdrop.addEventListener('click', onClose);
+  document.addEventListener('keydown', onKey);
+}
+
+// Keep the Preview button state in sync as the user types / changes selections.
+document.addEventListener('DOMContentLoaded', () => {
+  refreshPreviewButtonState();
+  const watchIds = [
+    'sheet-url',
+    'tpl-note', 'tpl-followup',
+    'tpl-inmail-subject', 'tpl-inmail-body',
+    'tpl-op-subject', 'tpl-op-body',
+  ];
+  for (const id of watchIds) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', refreshPreviewButtonState);
+  }
+});
+
 let serverLogInterval = null;
 let notificationsEnabled = false;
 

@@ -303,6 +303,7 @@
             <button type="button" id="add-note-no" class="yesno-btn active" onclick="setAddNote(false)">No</button>
           </div>
         </div>
+        <button type="button" id="btn-preview-messages" class="btn btn-secondary" onclick="handlePreviewClick()" title="Enter a sheet URL and at least one template to preview">Preview Messages</button>
       </div>
       <div class="template-bar" id="template-bar" style="display:none">
         <select id="tpl-select">
@@ -569,6 +570,20 @@
       <div class="prompt-modal__actions">
         <button id="prompt-modal-cancel" class="btn btn-secondary" type="button">Cancel</button>
         <button id="prompt-modal-save" class="btn" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preview Messages modal — populated by renderPreviewModal() in app.js -->
+  <div id="preview-modal" class="prompt-modal preview-modal" hidden>
+    <div class="prompt-modal__backdrop" id="preview-modal-backdrop"></div>
+    <div class="prompt-modal__card preview-modal__card" role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+      <div class="preview-modal__header">
+        <h3 id="preview-modal-title" class="preview-modal__title">Message Preview</h3>
+        <button type="button" id="preview-modal-close" class="preview-modal__close" aria-label="Close">&times;</button>
+      </div>
+      <div id="preview-modal-body" class="preview-modal__body">
+        <!-- Populated by renderPreviewModal() -->
       </div>
     </div>
   </div>

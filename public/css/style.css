@@ -1758,3 +1758,92 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   display: flex; flex-direction: row;
   gap: 12px; justify-content: flex-end;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Preview Messages modal — reuses .prompt-modal layout, widens card + adds
+   scrollable body, card-per-lead layout, char-count color states.
+   ───────────────────────────────────────────────────────────────────────── */
+.preview-modal__card {
+  width: min(720px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+.preview-modal__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.preview-modal__title {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.preview-modal__close {
+  background: transparent; border: none; color: var(--gray);
+  font-size: 1.4rem; line-height: 1; cursor: pointer;
+  padding: 4px 8px;
+}
+.preview-modal__close:hover { color: var(--ink); }
+.preview-modal__body {
+  overflow-y: auto;
+  padding: 16px 24px 24px;
+}
+.preview-modal__error {
+  padding: 12px; margin-bottom: 12px;
+  border: 1px solid var(--red); color: var(--red);
+  font-size: 0.85rem;
+}
+.preview-modal__empty {
+  padding: 24px 0; color: var(--gray);
+  font-size: 0.9rem; text-align: center;
+}
+.preview-card {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.preview-card:last-child { border-bottom: none; }
+.preview-card__lead { margin-bottom: 12px; font-size: 0.9rem; }
+.preview-card__company { color: var(--gray); }
+.preview-card__url {
+  display: block; margin-top: 4px;
+  color: var(--gray); font-size: 0.75rem; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.preview-card__url:hover { color: var(--ink); text-decoration: underline; }
+.preview-card__field { margin-top: 10px; }
+.preview-card__field-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 4px;
+}
+.preview-card__field-name {
+  font-family: var(--mono); font-size: 0.65rem;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--gray);
+}
+.preview-card__count {
+  font-family: var(--mono); font-size: 0.7rem; color: var(--gray);
+}
+.preview-card__count--over { color: var(--red); font-weight: 600; }
+.preview-card__text {
+  margin: 0; padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--hairline);
+  font-family: var(--body); font-size: 0.85rem;
+  white-space: pre-wrap; word-break: break-word;
+}
+.preview-card__warnings {
+  margin-top: 10px; padding: 8px 10px;
+  border-left: 2px solid var(--red);
+  background: rgba(248, 81, 73, 0.06);
+}
+.preview-card__warnings-title {
+  font-family: var(--mono); font-size: 0.65rem;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--red); margin-bottom: 4px;
+}
+.preview-card__warnings ul { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--ink); }
