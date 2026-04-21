@@ -81,7 +81,7 @@ function bumpCampaignCount(profileId) {
   campaignCounts[profileId] = (campaignCounts[profileId] || 0) + 1;
 }
 
-function extractLinkedInUrl(row, linkedinColumn) {
+export function extractLinkedInUrl(row, linkedinColumn) {
   // 1. User-specified column takes priority
   if (linkedinColumn && row[linkedinColumn]) {
     let v = row[linkedinColumn].trim();
