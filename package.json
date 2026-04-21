@@ -1,19 +1,119 @@
 {
-  "name": "ortus-gologin-clone",
-  "version": "2.0.0",
+  "name": "ortus-outreach",
+  "productName": "The Ortus Outreach",
+  "version": "2.6.0",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
-  "main": "server.js",
+  "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "reset": "echo '{\"processed\":{},\"dailyCounts\":{}}' > data/state.json && echo 'State reset.'"
+    "reset": "echo '{\"processed\":{},\"dailyCounts\":{}}' > data/state.json && echo 'State reset.'",
+    "build:docs": "node docs/build.js",
+    "electron:dev": "electron .",
+    "electron:build": "electron-builder",
+    "electron:build:mac": "electron-builder --mac",
+    "electron:build:win": "electron-builder --win"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "call-bind-apply-helpers": "^1.0.2",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "gologin": "2.2.8",
     "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.5",
     "puppeteer-core": "^22.15.0"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "marked": "^18.0.1",
+    "pptxgenjs": "^4.0.1"
+  },
+  "build": {
+    "appId": "com.ortusclub.outreach",
+    "productName": "The Ortus Outreach",
+    "asar": false,
+    "afterPack": "electron/after-pack.cjs",
+    "files": [
+      "electron/**/*",
+      "server.js",
+      "src/**/*",
+      "public/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!data/**/*",
+      "!.planning/**/*",
+      "!docs/**/*",
+      "!.playwright-mcp/**/*",
+      "!build/**/*",
+      "!dist/**/*",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*",
+      "!node_modules/app-builder-lib/**/*",
+      "!node_modules/builder-util/**/*",
+      "!node_modules/builder-util-runtime/**/*",
+      "!node_modules/dmg-builder/**/*",
+      "!node_modules/dmg-license/**/*",
+      "!node_modules/marked/**/*",
+      "!node_modules/pptxgenjs/**/*",
+      "!**/*.{md,markdown,yaml,yml,ts,map}",
+      "!**/test/**/*",
+      "!**/tests/**/*",
+      "!**/__tests__/**/*",
+      "!**/.github/**/*",
+      "!**/example/**/*",
+      "!**/examples/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.business",
+      "identity": "-"
+    },
+    "dmg": {
+      "writeUpdateInfo": false,
+      "contents": [
+        { "x": 130, "y": 220, "type": "file" },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" },
+        { "x": 270, "y": 380, "type": "file", "path": "build/First-Time Setup.command" }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
   }
 }
