@@ -401,6 +401,10 @@ async function loadProfiles() {
       // Refresh greeting now that we can look up the GD's real first
       // name from the First Name column of the State of Operations sheet.
       updateGreeting();
+      // Replace the email-fallback in "My identifier for Assigned" with the
+      // operator's actual first name from SoO, so the "Assigned to me" chip
+      // count matches (the Assignee column is first names, not emails).
+      refreshIdentifierDefault();
     }).catch(() => {});
     // Refresh countdown every minute — guard against duplicate timers so
     // multiple loadProfiles() calls don't stack intervals.
@@ -609,6 +613,50 @@ function initMyIdentifier() {
     saved = (chip?.textContent || '').trim();
   }
   el.value = saved;
+}
+
+/**
+ * Defaults the "My identifier for Assigned" input to the operator's SoO
+ * first name (e.g. "Antonio") instead of their email. The SoO Assignee
+ * column contains short first names, so matching against an email always
+ * fails and the "Assigned to me" chip shows 0.
+ *
+ * Behavior:
+ *   - If localStorage has a non-empty custom value that is NOT an email,
+ *     respect it (the operator customized it manually).
+ *   - Otherwise, if the operator's email resolves to a firstName in sooData,
+ *     use that firstName and persist it to localStorage.
+ *   - Otherwise, leave the input as-is (the existing email fallback applies).
+ *
+ * Auto-heal: if localStorage already contains an email from a pre-fix
+ * session AND a firstName is now resolvable, overwrite with firstName.
+ */
+function refreshIdentifierDefault() {
+  const el = document.getElementById('my-identifier');
+  if (!el) return;
+  const emailEl = document.getElementById('user-chip-email');
+  const email = ((emailEl?.textContent) || '').trim().toLowerCase();
+  if (!email) return;
+  const sooEntry = sooData && sooData[email];
+  const firstNameRaw = sooEntry && sooEntry.firstName ? sooEntry.firstName.trim() : '';
+  if (!firstNameRaw) return; // no SoO match — leave the email fallback alone
+  const firstName = firstNameRaw.charAt(0).toUpperCase() + firstNameRaw.slice(1);
+
+  let stored = '';
+  try { stored = (localStorage.getItem('ortus-my-identifier') || '').trim(); } catch (_) {}
+
+  // Overwrite only when stored is empty, already an email (auto-heal), or
+  // already equals firstName (re-persist canonical casing). A non-empty,
+  // non-email stored value that differs from firstName is treated as a
+  // deliberate customization and left alone.
+  const storedIsEmail = stored.includes('@');
+  const shouldOverwrite = !stored || storedIsEmail || stored.toLowerCase() === firstName.toLowerCase();
+
+  if (shouldOverwrite) {
+    el.value = firstName;
+    try { localStorage.setItem('ortus-my-identifier', firstName); } catch (_) {}
+    if (typeof updateChipCounts === 'function') updateChipCounts();
+  }
 }
 
 let activePresetFilter = 'all';
