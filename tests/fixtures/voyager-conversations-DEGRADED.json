@@ -1,0 +1,8 @@
+{
+  "included": [
+    { "$type": "com.linkedin.voyager.messaging.Conversation", "entityUrn": "urn:li:fs_conversation:MALFORMED", "events": [] },
+    { "$type": "com.linkedin.voyager.identity.MiniProfile", "firstName": null, "lastName": "Doe", "publicIdentifier": "x" },
+    { "$type": "com.linkedin.voyager.messaging.Conversation", "entityUrn": "urn:li:fs_conversation:2-VALID", "lastActivityAt": null, "events": [{"createdAt": null, "body": {"text": ""}}] }
+  ],
+  "elements": []
+}
