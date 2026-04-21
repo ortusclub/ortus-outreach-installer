@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Engagement & Intelligence
-status: defining-requirements
+status: ready-to-plan
 stopped_at: null
-last_updated: "2026-04-21T11:00:00.000Z"
-last_activity: 2026-04-21 -- Milestone v3.0 started
+last_updated: "2026-04-21T12:00:00.000Z"
+last_activity: 2026-04-21 -- Roadmap created for v3.0 (Phases 11-15)
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Operators can run multi-account LinkedIn outreach campaigns reliably and safely.
-**Current focus:** v3.0 — defining requirements
+**Current focus:** v3.0 — Phase 11 Check DMs is first up
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 11 — Check DMs (next up, not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-21 -- Milestone v3.0 started
+Status: Ready to plan Phase 11
+Last activity: 2026-04-21 -- Roadmap created for v3.0 (Phases 11-15)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -49,18 +49,21 @@ Progress: [░░░░░░░░░░] 0%
 - Check DMs detection: Voyager API primary, DOM scrape fallback (per v3 phase 11 design note)
 - Check DMs UI: in-app Replies panel with snippet + "Open Thread" (external browser), sheet writeback to new Reply columns
 - Check DMs delta: only surface replies newer than last-check watermark per profile
+- Check DMs scoping: per-profile — only scan rows where Message="sent" AND Account Used = running profile
 - SN Scraper: Puppeteer-based (not Chrome extension) — extension approach was abandoned during City Scanner work for React-input reasons
-- Tab framework: split features into top-level tabs — Campaign / SN Scraper / City Scanner / existing sections
+- Tab framework: split features into top-level tabs — Campaign / SN Scraper / City Scanner (Campaign keeps all existing controls)
+- Phase 11 does NOT depend on the tab framework (lives inside the existing Campaign section)
+- Phases 13, 14, 15 all depend on Phase 12 (tab bar); Phase 15 additionally depends on Phase 14
 
 ### Roadmap Evolution
 
 - v1.0: ElevenLabs Calling Integration (6 phases, shipped)
 - v2.0: GoLogin Clone Delivery Hardening (4 phases: 7-10, shipped)
-- v3.0: Engagement & Intelligence (Phases 11+ — Check DMs, Tab framework, City Scanner port, SN Scraper)
+- v3.0: Engagement & Intelligence (Phases 11-15) — Check DMs, Tab Framework, City Scanner Integration, SN Scraper Create, SN Scraper Scrape
 
 ### Pending Todos
 
-None yet.
+None yet — Phase 11 ready for `/gsd-plan-phase 11`.
 
 ### Blockers/Concerns
 
@@ -77,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-21T11:00:00.000Z
-Stopped at: v3.0 milestone defined — about to gather requirements
+Last session: 2026-04-21T12:00:00.000Z
+Stopped at: v3.0 roadmap created — Phase 11 ready to plan
 Resume file: —
