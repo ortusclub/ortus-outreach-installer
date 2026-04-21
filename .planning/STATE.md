@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-09)
 Phase: 7 of 10 (Security Lockdown) — first phase of v2.0
 Plan: — (not yet planned)
 Status: Ready to execute
-Last activity: 2026-04-21 -- Completed quick task 260421-gm6: Add First-Time Setup.command helper to macOS DMG to eliminate Terminal step for teammates
+Last activity: 2026-04-21 -- Completed quick task 260421-hjz: Fix Electron template Save As modal + default identifier to SoO firstName
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -68,6 +68,7 @@ None yet.
 | 260410-djm | Add dynamic template variables from Google Sheet columns | 2026-04-10 | 470e644 | [260410-djm-add-dynamic-template-variables-from-goog](./quick/260410-djm-add-dynamic-template-variables-from-goog/) |
 | 260410-edx | Add local browser non-GoLogin support | 2026-04-10 | fd959b2 | [260410-edx-add-local-browser-non-gologin-support](./quick/260410-edx-add-local-browser-non-gologin-support/) |
 | 260421-gm6 | Add First-Time Setup.command helper to macOS DMG | 2026-04-21 | 7331c72 | [260421-gm6-add-first-time-setup-command-helper-to-m](./quick/260421-gm6-add-first-time-setup-command-helper-to-m/) |
+| 260421-hjz | Fix Electron template Save As modal + default identifier to SoO firstName | 2026-04-21 | 0b07a53 | [260421-hjz-fix-electron-template-save-prompt-and-de](./quick/260421-hjz-fix-electron-template-save-prompt-and-de/) |
 
 ## Session Continuity
 
