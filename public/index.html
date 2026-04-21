@@ -4,16 +4,92 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Ortus LinkedIn Outreach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <div class="container">
-    <div style="display:flex; justify-content:space-between; align-items:center">
-      <div>
-        <h1>Ortus <span>LinkedIn Outreach</span></h1>
-        <p class="subtitle">Automated connection requests &amp; messaging via GoLogin</p>
+  <div class="app">
+
+    <!-- ── Sidebar ── -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar"></span></div>
       </div>
-      <button class="btn btn-secondary" onclick="toggleServerLog()" style="height:32px; font-size:0.75rem">Server Log</button>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Settings</button>
+        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Sheet</button>
+        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>Accounts</button>
+        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Templates</button>
+        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch</button>
+        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
+
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item" data-nav="history-section" onclick="scrollToSection('history-section')">History</button>
+        <button type="button" class="nav-item" data-nav="schedules-section" onclick="scrollToSection('schedules-section')">Schedules</button>
+        <button type="button" class="nav-item" onclick="toggleServerLog()">Server Log</button>
+      </nav>
+
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+
+      <div class="edit-toggle-group">
+        <div class="edit-toggle-label">Notifications</div>
+        <div class="edit-toggle">
+          <button type="button" onclick="requestNotificationPermission()">Enable</button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <strong id="user-chip-email">info@ortus.solutions</strong>
+          <span id="user-chip-date"></span>
+        </div>
+        <button type="button" class="btn btn-sm sidebar-signout" onclick="signOut()">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- ── Main ── -->
+    <main class="main">
+    <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark" id="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span id="greeting-subtitle">—</span> <small id="app-version" style="margin-left:12px; color:var(--gray)"></small></div>
+      </div>
+      <div class="header-stats" id="header-stats">
+        <div class="header-stat">
+          <span class="k" data-edit="overview-today">Today</span>
+          <span class="v" id="hero-today">0</span>
+          <span id="hero-today-sub" hidden>Sent since midnight</span>
+        </div>
+        <div class="header-stat">
+          <span class="k" data-edit="overview-week">7D</span>
+          <span class="v" id="hero-week">0</span>
+          <span id="hero-week-sub" hidden>Rolling 7 days</span>
+        </div>
+        <div class="header-stat">
+          <span class="k" data-edit="overview-errors">Errors 24h</span>
+          <span class="v err" id="hero-errors">0</span>
+          <span id="hero-errors-sub" hidden>No errors</span>
+        </div>
+        <div class="header-stat">
+          <span class="k" data-edit="overview-passover">Passover</span>
+          <span class="v small passover-pills" id="hero-passover">
+            <span class="passover-pill closed" id="hero-passover-op" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" id="hero-passover-cc" title="CC">CC</span>
+          </span>
+        </div>
+      </div>
     </div>
     <div id="server-log-panel" class="hidden" style="margin-bottom:16px">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
@@ -26,73 +102,209 @@
       <div id="server-log" class="log-panel" style="max-height:200px; font-size:0.7rem"></div>
     </div>
 
-    <!-- ── GoLogin Profiles ── -->
-    <div class="section">
-      <h2>1. Select GoLogin Accounts</h2>
-      <input type="text" id="profile-search" placeholder="Search accounts by name or email…" oninput="filterProfiles()" />
-      <div style="margin:8px 0; display:flex; gap:8px">
-        <button class="btn btn-secondary" onclick="selectAllVisible()">Select All Visible</button>
-        <button class="btn btn-secondary" onclick="deselectAll()">Deselect All</button>
-        <button class="btn btn-secondary" onclick="loadProfiles()">Refresh</button>
+    <!-- ── Settings (reordered to position 1) ── -->
+    <div class="section" id="nav-settings">
+      <h2 data-edit="h2-settings">1. Campaign Settings</h2>
+      <label data-edit="label-campaign-mode">Campaign Mode</label>
+      <div class="mode-selector" id="mode-selector">
+        <button type="button" class="mode-side mode-prev" onclick="modeStep(-1)">
+          <div class="mode-side-label"><span data-edit="mode-prev-arrow">↑</span> <span data-edit="mode-prev-label">Previous</span></div>
+          <div class="mode-side-name" id="mode-prev-name">—</div>
+        </button>
+        <div class="mode-center">
+          <div class="mode-counter" id="mode-counter">01 / 07</div>
+          <div class="mode-title" id="mode-title">—</div>
+          <div class="mode-desc" id="mode-desc">—</div>
+          <div class="mode-progress"><div class="mode-progress-fill" id="mode-progress-fill"></div></div>
+        </div>
+        <button type="button" class="mode-side mode-next" onclick="modeStep(1)">
+          <div class="mode-side-label"><span data-edit="mode-next-label">Next</span> <span data-edit="mode-next-arrow">↓</span></div>
+          <div class="mode-side-name" id="mode-next-name">—</div>
+        </button>
       </div>
-      <div id="profiles-loading">Loading profiles…</div>
-      <div id="profiles-grid" class="profile-grid hidden"></div>
-      <div id="profiles-count" style="color:#8b949e; font-size:0.8rem; margin-top:4px"></div>
-
-      <div id="selected-panel" class="selected-panel hidden">
-        <h3>Selected accounts (execution order)</h3>
-        <div id="selected-list"></div>
-      </div>
-    </div>
-
-    <!-- ── Google Sheet ── -->
-    <div class="section">
-      <h2>2. Google Sheet URL</h2>
-      <label for="sheet-url">Public Google Sheet with LinkedIn URLs</label>
-      <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." />
-      <button class="btn btn-secondary" onclick="previewSheet()">Preview Sheet</button>
-      <div id="sheet-preview" class="hidden" style="margin-top:12px"></div>
-    </div>
-
-    <!-- ── Settings ── -->
-    <div class="section">
-      <h2>3. Campaign Settings</h2>
-      <label for="campaign-mode">Campaign Mode</label>
-      <select id="campaign-mode" onchange="onModeChange()">
+      <div class="mode-chips" id="mode-chips"></div>
+      <select id="campaign-mode" onchange="onModeChange()" style="display:none">
         <option value="connect_only">Connect Only</option>
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="message_only">Message Only (follow-ups)</option>
-        <option value="connect_and_message">Connect + Message</option>
-        <option value="auto">Auto (everything)</option>
         <option value="inmail_only">InMail Only</option>
+        <option value="open_profile_only">Open Profile Message (free)</option>
       </select>
-      <label for="rate-per-hour">Connections per account / hour</label>
-      <input type="number" id="rate-per-hour" value="6" min="1" max="30" oninput="updateCampaignSummary()" />
-
-      <label for="daily-limit">Max connections per account (total)</label>
-      <input type="number" id="daily-limit" value="40" min="1" max="100" oninput="updateCampaignSummary()" />
-
-      <div id="campaign-summary" style="background:#161b22; border:1px solid #30363d; border-radius:8px; padding:12px; margin-top:8px; font-size:0.85rem; color:#c9d1d9">
-        <div id="summary-stats"></div>
-        <div style="margin-top:8px; padding-top:8px; border-top:1px solid #30363d">
-          <div style="color:#d29922; font-size:0.8rem">&#9888; Keep your laptop open until the campaign finishes</div>
-          <div style="color:#d29922; font-size:0.8rem">&#9888; Do not close the browser windows that open — they run the campaign</div>
-        </div>
-      </div>
-
       <div id="open-profile-toggle" style="display:none; margin-top:8px">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
           <input type="checkbox" id="open-profile-msg" style="width:16px; height:16px; accent-color:#58a6ff" />
           <span style="font-size:0.9rem; color:#c9d1d9">Message Open Profiles directly</span>
         </label>
-        <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 0 24px">If "Open Profile" = Yes in the sheet, send a message instead of connecting</p>
+        <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 0 24px">Try a free OP message first; if not an Open Profile, send a connection request instead</p>
       </div>
     </div>
 
-    <!-- ── Template Management ── -->
-    <div class="section template-controls">
-      <h2>Message Templates</h2>
-      <div class="template-bar">
+    <!-- ── Rate & Limits (extracted from Choose a Campaign) ── -->
+    <div class="section collapsible collapsed" id="nav-pace">
+      <h2 class="section-toggle" onclick="toggleSection('nav-pace')"><span class="caret">▾</span> <span data-edit="h2-pace">2. Rate &amp; Limits</span></h2>
+      <div class="collapsible-body">
+        <!-- Steppers -->
+        <div class="stepper-grid">
+          <div class="stepper" id="rate-per-hour-wrap">
+            <div class="stepper-label" id="rate-per-hour-label">Connections per account / hour</div>
+            <div class="stepper-row">
+              <input type="number" class="stepper-input" id="rate-per-hour" value="6" min="1" max="30" oninput="updateCampaignSummary()" />
+              <div class="stepper-ctrl">
+                <button type="button" class="step-btn" onclick="stepInput('rate-per-hour', 1)">+</button>
+                <button type="button" class="step-btn" onclick="stepInput('rate-per-hour', -1)">−</button>
+              </div>
+            </div>
+            <div class="stepper-unit" id="rate-per-hour-unit">Actions per hour</div>
+          </div>
+
+          <div class="stepper" id="message-gap-wrap" style="display:none">
+            <div class="stepper-label">Gap between messages (seconds)</div>
+            <div class="stepper-row">
+              <input type="number" class="stepper-input" id="message-gap" value="60" min="10" max="600" oninput="updateCampaignSummary()" />
+              <div class="stepper-ctrl">
+                <button type="button" class="step-btn" onclick="stepInput('message-gap', 5)">+</button>
+                <button type="button" class="step-btn" onclick="stepInput('message-gap', -5)">−</button>
+              </div>
+            </div>
+            <div class="stepper-unit">Recommended 60–120s</div>
+          </div>
+
+          <div class="stepper">
+            <div class="stepper-label" id="daily-limit-label">Max connections per account (total)</div>
+            <div class="stepper-row">
+              <input type="number" class="stepper-input" id="daily-limit" value="40" min="1" max="100" oninput="updateCampaignSummary()" />
+              <div class="stepper-ctrl">
+                <button type="button" class="step-btn" onclick="stepInput('daily-limit', 1)">+</button>
+                <button type="button" class="step-btn" onclick="stepInput('daily-limit', -1)">−</button>
+              </div>
+            </div>
+            <div class="stepper-unit">Maximum total per account</div>
+          </div>
+        </div>
+
+        <!-- Campaign hero summary -->
+        <div id="campaign-summary" class="campaign-hero">
+          <div class="hero-cell">
+            <div class="hero-k" data-edit="hero-actions-k">Actions</div>
+            <div class="hero-v accent" id="hero-actions">—</div>
+            <div class="hero-sub" id="hero-actions-sub">across 0 accounts</div>
+          </div>
+          <div class="hero-cell">
+            <div class="hero-k" data-edit="hero-duration-k">Duration</div>
+            <div class="hero-v" id="hero-duration">—</div>
+            <div class="hero-sub" id="hero-duration-sub">at 6 / hour</div>
+          </div>
+          <div class="hero-cell">
+            <div class="hero-k" data-edit="hero-finish-k">Finishes</div>
+            <div class="hero-v" id="hero-finish">—</div>
+            <div class="hero-sub" id="hero-finish-sub">local time</div>
+          </div>
+          <div id="summary-stats" style="display:none"></div>
+        </div>
+
+        <div class="campaign-warnings-inline">
+          <div class="warn-line" data-edit="warn-1">Keep laptop open until the campaign finishes</div>
+          <div class="warn-line" data-edit="warn-2">Do not close the browser windows that open — they run the campaign</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Google Sheet ── -->
+    <div class="section collapsible collapsed" id="nav-sheet">
+      <h2 class="section-toggle" onclick="toggleSection('nav-sheet')"><span class="caret">▾</span> <span data-edit="h2-sheet">3. Google Sheet URL</span></h2>
+      <div class="collapsible-body">
+        <label for="sheet-url">Public Google Sheet with LinkedIn URLs</label>
+        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." />
+        <button class="btn btn-secondary" onclick="previewSheet()">Preview Sheet</button>
+        <div id="sheet-preview" class="hidden" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- ── GoLogin Profiles ── -->
+    <div class="section collapsible collapsed" id="nav-accounts">
+      <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">4. Select GoLogin Accounts</span></h2>
+      <div class="collapsible-body">
+
+      <!-- Presets -->
+      <div class="preset-row">
+        <button type="button" class="preset" data-preset="assigned" onclick="applyPreset('assigned')">
+          <div>
+            <div class="preset-title">Assigned to me</div>
+            <div class="preset-desc">Profiles where assignee matches my identifier</div>
+          </div>
+          <div class="preset-count" id="preset-count-assigned">—</div>
+        </button>
+        <button type="button" class="preset" data-preset="pool" onclick="applyPreset('pool')">
+          <div>
+            <div class="preset-title">Unassigned Pool</div>
+            <div class="preset-desc">Shared</div>
+          </div>
+          <div class="preset-count" id="preset-count-pool">—</div>
+        </button>
+        <button type="button" class="preset active" data-preset="all" onclick="applyPreset('all')">
+          <div>
+            <div class="preset-title">All</div>
+            <div class="preset-desc">Show every profile</div>
+          </div>
+          <div class="preset-count" id="preset-count-all-accounts">—</div>
+        </button>
+      </div>
+      <div class="my-identity-row">
+        <label class="my-identity-label" for="my-identifier">My identifier for "Assigned"</label>
+        <input type="text" id="my-identifier" placeholder="email or name to match in Assignee"
+               oninput="saveMyIdentifier()" />
+      </div>
+
+      <div class="accounts-browser collapsible" id="accounts-browser">
+        <h3 class="section-toggle accounts-browser-toggle" onclick="toggleSection('accounts-browser')"><span class="caret">▾</span> <span data-edit="h3-browse">Browse Accounts</span></h3>
+        <div class="collapsible-body">
+          <input type="text" id="profile-search" placeholder="Search by name or email…" oninput="filterProfiles()" />
+          <div style="margin:8px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <button class="btn btn-secondary" onclick="selectAllVisible()">Select All Visible</button>
+            <button class="btn btn-secondary" onclick="deselectAll()">Deselect All</button>
+            <button class="btn btn-secondary" onclick="loadProfiles()">Refresh</button>
+            <button class="btn btn-secondary refresh-soo" id="refresh-soo-btn" onclick="refreshSoO()" title="Re-fetch account statuses from the State of Operations sheet">
+              <span>Refresh SoO</span>
+              <span class="refresh-soo-progress"><span class="refresh-soo-bar" id="refresh-soo-bar"></span></span>
+            </button>
+          </div>
+
+          <!-- Filter chips -->
+          <div class="chip-row">
+            <button type="button" class="chip active" data-filter="all" onclick="applyFilter('all')">All <span class="count" id="chip-count-all">0</span></button>
+            <button type="button" class="chip" data-filter="available" onclick="applyFilter('available')">Available <span class="count" id="chip-count-available">0</span></button>
+            <button type="button" class="chip" data-filter="in-use" onclick="applyFilter('in-use')">In use <span class="count" id="chip-count-in-use">0</span></button>
+            <button type="button" class="chip" data-filter="selected" onclick="applyFilter('selected')">Selected only <span class="count" id="chip-count-selected">0</span></button>
+          </div>
+
+          <div id="passover-banner" class="passover-banner"></div>
+          <div id="profiles-loading">Loading profiles…</div>
+          <div id="profiles-grid" class="profile-grid hidden"></div>
+          <div id="profiles-count" style="color:#8b949e; font-size:0.8rem; margin-top:4px"></div>
+        </div>
+      </div>
+
+      <div id="selected-panel" class="selected-panel hidden">
+        <h3 data-edit="h3-selected">Selected accounts (execution order)</h3>
+        <div id="selected-list"></div>
+      </div>
+      </div><!-- /.collapsible-body -->
+    </div>
+
+    <!-- ── Template Management (wraps the 4 tpl-* sections below) ── -->
+    <div class="section template-controls collapsible collapsed" id="nav-templates">
+      <h2 class="section-toggle" onclick="toggleSection('nav-templates')"><span class="caret">▾</span> <span data-edit="h2-templates">5. Message Templates</span></h2>
+      <div class="collapsible-body">
+      <div class="templates-header">
+        <div class="templates-question" id="templates-question" style="display:none">
+          <span class="q-text" id="templates-q-text">Do you want to add a note while connecting?</span>
+          <div class="yesno-toggle">
+            <button type="button" id="add-note-yes" class="yesno-btn" onclick="setAddNote(true)">Yes</button>
+            <button type="button" id="add-note-no" class="yesno-btn active" onclick="setAddNote(false)">No</button>
+          </div>
+        </div>
+      </div>
+      <div class="template-bar" id="template-bar" style="display:none">
         <select id="tpl-select">
           <option value="">-- Select a template --</option>
         </select>
@@ -100,135 +312,278 @@
         <button class="btn btn-secondary" onclick="deleteSelectedTemplate()">Delete</button>
         <button class="btn btn-secondary btn-save-tpl" onclick="saveCurrentTemplate()">Save As&#8230;</button>
       </div>
-    </div>
 
     <!-- ── Connection Note (connect_only, connect_and_message, auto) ── -->
     <div class="section tpl-section" id="tpl-connect-section">
-      <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
+      <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
       <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
       <div class="placeholder-tags" data-target="tpl-note"></div>
     </div>
 
     <!-- ── Follow-up Message (message_only, connect_and_message, auto) ── -->
     <div class="section tpl-section" id="tpl-message-section" style="display:none">
-      <h2>Follow-up Message</h2>
+      <h2 data-edit="h2-followup">Follow-up Message</h2>
       <textarea id="tpl-followup" rows="3" placeholder="Thanks for connecting, {firstName}! I wanted to reach out because…"></textarea>
       <div class="placeholder-tags" data-target="tpl-followup"></div>
     </div>
 
     <!-- ── InMail (inmail_only, auto) ── -->
     <div class="section tpl-section" id="tpl-inmail-section" style="display:none">
-      <h2>InMail Template</h2>
+      <h2 data-edit="h2-inmail">InMail Template</h2>
       <label for="tpl-inmail-subject">Subject</label>
-      <input type="text" id="tpl-inmail-subject" placeholder="Quick question about {company}" />
+      <input type="text" id="tpl-inmail-subject" placeholder="Invite for exclusive Dinner Roundtable for Executive Leaders" />
       <label for="tpl-inmail-body">Body</label>
       <textarea id="tpl-inmail-body" rows="3" placeholder="Hi {firstName}, I came across your profile…"></textarea>
       <div class="placeholder-tags" data-target="tpl-inmail-body"></div>
     </div>
 
-    <!-- ── Controls ── -->
-    <div class="btn-row">
-      <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
-      <button id="btn-stop" class="btn btn-stop" onclick="stopCampaign()" disabled>Stop Campaign</button>
+    <!-- ── Open Profile (open_profile_only) ── -->
+    <div class="section tpl-section" id="tpl-op-section" style="display:none">
+      <h2><span data-edit="h2-op">Open Profile Message Template</span> <span style="font-weight:400; font-size:0.75em; color:#8b949e">(free — no credits used)</span></h2>
+      <label for="tpl-op-subject">Subject <span style="font-weight:400; font-size:0.75em; color:#8b949e">(optional)</span></label>
+      <input type="text" id="tpl-op-subject" placeholder="Invite for exclusive Dinner Roundtable for Executive Leaders" />
+      <label for="tpl-op-body">Body</label>
+      <textarea id="tpl-op-body" rows="4" placeholder="Hi {firstName}, I came across your profile and wanted to connect because…"></textarea>
+      <div class="placeholder-tags" data-target="tpl-op-body"></div>
+    </div>
+      </div><!-- /.collapsible-body (templates) -->
+    </div><!-- /#nav-templates -->
+
+    <!-- ── Launch ── -->
+    <div class="section collapsible collapsed" id="nav-launch">
+      <h2 class="section-toggle" onclick="toggleSection('nav-launch')"><span class="caret">▾</span> <span data-edit="h2-launch">6. Launch</span></h2>
+      <div class="collapsible-body">
+      <div class="launch-hero">
+        <div>
+          <div class="launch-number" id="launch-number">—</div>
+          <div class="launch-caption">
+            <strong id="launch-connections">—</strong> connections ·
+            <strong id="launch-accounts">—</strong> accounts ·
+            ETA <strong id="launch-eta">—</strong>
+          </div>
+        </div>
+        <div class="launch-right">
+          <div class="launch-mode-toggle">
+            <button type="button" id="launch-mode-now" class="launch-mode-btn active" onclick="setLaunchMode('now')">Now</button>
+            <button type="button" id="launch-mode-schedule" class="launch-mode-btn" onclick="setLaunchMode('schedule')">Schedule</button>
+          </div>
+
+          <div class="launch-panel-stage">
+
+          <!-- Now panel — Start / Stop directly under the toggle -->
+          <div class="launch-panel panel-active" id="launch-now-panel">
+            <div class="launch-actions">
+              <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
+              <button id="btn-stop" class="btn btn-stop" onclick="stopCampaign()" disabled>Stop Campaign</button>
+            </div>
+          </div>
+
+          <!-- Schedule panel — captures current page state when saved -->
+          <div class="launch-panel panel-inactive" id="launch-schedule-panel">
+            <div class="schedule-inline-row">
+              <div>
+                <label for="quick-sched-name">Name</label>
+                <input type="text" id="quick-sched-name" placeholder="Morning outreach" />
+              </div>
+              <div>
+                <label for="quick-sched-time">Time</label>
+                <input type="time" id="quick-sched-time" value="09:00" />
+              </div>
+            </div>
+            <div class="schedule-inline-days">
+              <label class="schedule-days-label">Days</label>
+              <div class="day-row">
+                <label><input type="checkbox" class="quick-sched-day" value="1" checked/> Mon</label>
+                <label><input type="checkbox" class="quick-sched-day" value="2" checked/> Tue</label>
+                <label><input type="checkbox" class="quick-sched-day" value="3" checked/> Wed</label>
+                <label><input type="checkbox" class="quick-sched-day" value="4" checked/> Thu</label>
+                <label><input type="checkbox" class="quick-sched-day" value="5" checked/> Fri</label>
+                <label><input type="checkbox" class="quick-sched-day" value="6"/> Sat</label>
+                <label><input type="checkbox" class="quick-sched-day" value="0"/> Sun</label>
+              </div>
+            </div>
+            <div class="launch-actions">
+              <button class="btn btn-start" onclick="saveQuickSchedule()">Save Schedule</button>
+            </div>
+            <p class="schedule-note">Captures everything currently on the page (mode, accounts, templates, sheet, limits). Email reminders go to your address.</p>
+          </div>
+
+          </div><!-- /.launch-panel-stage -->
+        </div>
+      </div>
+      </div><!-- /.collapsible-body (launch) -->
     </div>
 
     <!-- ── Live Status ── -->
-    <div class="section">
-      <h2>Live Status</h2>
+    <div class="section collapsible collapsed" id="nav-status">
+      <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">Live Status</span></h2>
+      <div class="collapsible-body">
       <div id="account-queue" class="account-queue hidden"></div>
       <div class="status-grid">
         <div class="stat-card"><div class="label">Status</div><div class="value" id="st-running">Idle</div></div>
         <div class="stat-card"><div class="label">Mode</div><div class="value" id="st-mode" style="font-size:0.85rem">—</div></div>
-        <div class="stat-card"><div class="label">Current Account</div><div class="value" id="st-profile" style="font-size:0.75rem">—</div></div>
+        <div class="stat-card"><div class="label">Account</div><div class="value" id="st-profile" style="font-size:0.75rem">—</div></div>
         <div class="stat-card"><div class="label">Progress</div><div class="value" id="st-today">0</div></div>
         <div class="stat-card"><div class="label">Total</div><div class="value" id="st-total">0</div></div>
         <div class="stat-card"><div class="label">Errors</div><div class="value" id="st-errors">0</div></div>
       </div>
       <div class="progress-bar"><div class="fill" id="st-bar" style="width:0%"></div></div>
-      <div id="campaign-warnings" style="display:none; background:#2d1b00; border:1px solid #d29922; border-radius:6px; padding:8px 12px; margin-bottom:8px; font-size:0.8rem">
-        <div style="color:#d29922">&#9888; Keep your laptop open — closing the lid stops the campaign</div>
-        <div style="color:#d29922">&#9888; Do not close the browser windows that open — they run the campaign</div>
+      <div id="campaign-warnings" style="display:none">
+        <div>&#9888; Keep your laptop open — closing the lid stops the campaign</div>
+        <div>&#9888; Do not close the browser windows that open — they run the campaign</div>
       </div>
-      <div style="display:flex; justify-content:flex-end; margin-bottom:4px">
-        <button class="btn btn-secondary" onclick="copyCampaignLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Copy Log</button>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px">
+        <button class="btn btn-secondary btn-sm" onclick="copyCampaignLog()">Copy Log</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearCampaignLog()">Clear Log</button>
       </div>
       <div class="log-panel" id="log-panel"><div class="entry info">Waiting to start…</div></div>
+      </div>
     </div>
 
     <!-- Campaign History -->
-    <div class="section" id="history-section">
+    <div class="section collapsible" id="history-section">
       <div class="history-header">
-        <h2>Campaign History</h2>
-        <button class="btn btn-secondary btn-sm" onclick="downloadCsv()">Download CSV</button>
+        <h2 class="section-toggle" onclick="toggleSection('history-section')"><span class="caret">▾</span> <span data-edit="h2-history">Campaign History</span></h2>
+        <div style="display:flex; gap:10px">
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); downloadCsv()">Download CSV</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); clearHistory()">Clear History</button>
+        </div>
       </div>
-      <div id="history-panel">
+      <div id="history-panel" class="collapsible-body">
         <p class="empty-state">Loading history...</p>
       </div>
     </div>
 
-    <!-- ── Campaign Schedules ── -->
-    <div class="section" id="schedules-section">
+    <!-- ── Campaign Schedules — list only, created from Launch section ── -->
+    <div class="section collapsible collapsed" id="schedules-section">
       <div class="history-header">
-        <h2>Campaign Schedules</h2>
-        <button class="btn btn-secondary btn-sm" onclick="toggleScheduleForm()">+ New Schedule</button>
+        <h2 class="section-toggle" onclick="toggleSection('schedules-section')"><span class="caret">▾</span> <span data-edit="h2-schedules">Campaign Schedules</span></h2>
       </div>
-
-      <!-- New schedule form (hidden by default) -->
-      <div id="schedule-form" class="schedule-form hidden">
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
-          <div>
-            <label for="sched-name">Schedule Name</label>
-            <input type="text" id="sched-name" placeholder="Daily outreach 9am" />
-          </div>
-          <div>
-            <label for="sched-cron">Cron Expression</label>
-            <input type="text" id="sched-cron" placeholder="0 9 * * 1-5" />
-            <p style="font-size:0.7rem; color:#8b949e; margin:-12px 0 8px 0">e.g. "0 9 * * 1-5" = weekdays at 9am</p>
-          </div>
+      <div class="collapsible-body">
+        <p class="schedule-note">Create schedules from the <strong>Launch</strong> section above by switching to <em>Schedule</em> mode.</p>
+        <div id="schedule-list">
+          <p class="empty-state">Loading schedules...</p>
         </div>
-        <div>
-          <label for="sched-sheet">Google Sheet URL</label>
-          <input type="text" id="sched-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." />
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px">
-          <div>
-            <label for="sched-mode">Mode</label>
-            <select id="sched-mode">
-              <option value="connect_only">Connect Only</option>
-              <option value="check_status">Check Status</option>
-              <option value="message_only">Message Only</option>
-              <option value="connect_and_message">Connect + Message</option>
-              <option value="auto">Auto</option>
-              <option value="inmail_only">InMail Only</option>
-            </select>
-          </div>
-          <div>
-            <label for="sched-limit">Daily Limit</label>
-            <input type="number" id="sched-limit" value="5" min="1" max="100" />
-          </div>
-          <div>
-            <label for="sched-delay">Delay (min-max sec)</label>
-            <div style="display:flex; gap:6px">
-              <input type="number" id="sched-delay-min" value="15" min="5" max="300" style="flex:1" />
-              <input type="number" id="sched-delay-max" value="45" min="5" max="300" style="flex:1" />
-            </div>
-          </div>
-        </div>
-        <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 12px 0">Schedule uses the currently selected GoLogin profiles above.</p>
-        <div style="display:flex; gap:8px">
-          <button class="btn btn-start btn-sm" onclick="createSchedule()">Save Schedule</button>
-          <button class="btn btn-secondary btn-sm" onclick="toggleScheduleForm()">Cancel</button>
-        </div>
-      </div>
-
-      <!-- Schedule list -->
-      <div id="schedule-list">
-        <p class="empty-state">Loading schedules...</p>
       </div>
     </div>
 
-    <p style="text-align:center; color:#484f58; margin-top:32px; font-size:0.8rem">Ortus Club &copy; 2026</p>
+    <p style="text-align:center; color:var(--gray); margin-top:48px; font-family:var(--mono); font-size:0.62rem; letter-spacing:0.2em; text-transform:uppercase">Ortus Club &copy; 2026</p>
+    </div> <!-- /.container -->
+    </main> <!-- /.main -->
+
+    <!-- ── Right pane — command-center status panels ── -->
+    <aside class="right-pane" id="right-pane">
+      <div class="rp-section">
+        <div class="rp-label" data-edit="rp-label-status">Status</div>
+        <div class="rp-status-line" id="rp-status">
+          <span class="rp-dot" id="rp-dot"></span>
+          <span id="rp-status-text">Idle</span>
+        </div>
+        <div class="rp-sub" id="rp-status-sub">No campaign running</div>
+      </div>
+
+      <div class="rp-section">
+        <div class="rp-label" data-edit="rp-label-passover">Passover</div>
+        <div class="rp-passover-group">
+          <div class="rp-passover-name" data-edit="rp-passover-monthly">OP · InMail · Sales Nav</div>
+          <div class="rp-passover-state" id="rp-op-state">—</div>
+          <div class="rp-passover-detail" id="rp-op-detail">—</div>
+        </div>
+        <div class="rp-passover-group">
+          <div class="rp-passover-name" data-edit="rp-passover-weekly">CC</div>
+          <div class="rp-passover-state" id="rp-cc-state">—</div>
+          <div class="rp-passover-detail" id="rp-cc-detail">—</div>
+        </div>
+        <div class="rp-soo-error" id="rp-soo-error" hidden>
+          SoO unavailable — click refresh to try again
+        </div>
+      </div>
+
+      <div class="rp-section">
+        <div class="rp-label" data-edit="rp-label-selected">Selected</div>
+        <div class="rp-selected-count" id="rp-selected-count">0</div>
+        <div class="rp-sub" id="rp-selected-sub">accounts · 0 targets</div>
+      </div>
+
+      <div class="rp-section">
+        <div class="rp-label" data-edit="rp-label-next-schedule">Next schedule</div>
+        <div class="rp-schedule-name" id="rp-next-schedule-name">None</div>
+        <div class="rp-schedule-time" id="rp-next-schedule-time">No upcoming runs</div>
+      </div>
+
+      <div class="rp-feed">
+        <div class="rp-feed-title" data-edit="rp-label-live-activity">Live activity</div>
+        <div id="rp-feed-list">
+          <div class="rp-feed-item"><span class="rp-feed-time">—</span><span class="rp-feed-text">Waiting for campaign…</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Sticky run bar -->
+    <div class="run-bar" id="run-bar">
+      <div class="run-status" id="run-bar-status">
+        <span class="state-dot"></span>
+        <span id="run-bar-text">Idle</span>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center">
+        <button type="button" class="btn btn-sm" onclick="scrollToSection('nav-status')">View Status</button>
+
+        <!-- Preset pill — opens popover upward with the list + actions -->
+        <div class="preset-pill" id="preset-pill">
+          <button type="button" class="btn btn-sm preset-pill-btn" onclick="togglePresetPopover()">
+            <span>Presets</span>
+            <span class="preset-pill-count" id="preset-pill-count">0</span>
+            <span class="preset-pill-caret">▾</span>
+          </button>
+          <div class="preset-popover" id="preset-popover" hidden>
+            <div class="preset-pop-label" id="preset-pop-pinned-label">Pinned</div>
+            <div class="preset-pop-item preset-pop-last" id="preset-pop-last" onclick="loadLastUsedPreset(); closePresetPopover()">
+              <span><span class="preset-pop-dot"></span>Last Used</span>
+              <span class="preset-pop-tag" id="preset-pop-last-tag">—</span>
+            </div>
+            <div class="preset-pop-divider"></div>
+            <div class="preset-pop-label">Saved</div>
+            <div id="preset-pop-list">
+              <div class="preset-pop-empty">No saved presets yet</div>
+            </div>
+            <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
+              <span>+ Save current as…</span>
+              <span class="preset-pop-caret">→</span>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start Campaign</button>
+        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="stopCampaign()" disabled>Stop Campaign</button>
+      </div>
+    </div>
+
+  </div> <!-- /.app -->
+
+  <!-- Electron-safe replacement for window.prompt() — see promptModal() in app.js -->
+  <div id="prompt-modal" class="prompt-modal" hidden>
+    <div class="prompt-modal__backdrop"></div>
+    <div class="prompt-modal__card" role="dialog" aria-modal="true" aria-labelledby="prompt-modal-label">
+      <label id="prompt-modal-label" class="prompt-modal__label" for="prompt-modal-input">Template name:</label>
+      <input id="prompt-modal-input" type="text" class="prompt-modal__input" autocomplete="off" />
+      <div class="prompt-modal__actions">
+        <button id="prompt-modal-cancel" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="prompt-modal-save" class="btn" type="button">Save</button>
+      </div>
+    </div>
   </div>
+
   <script src="/js/app.js"></script>
+  <script>
+    fetch('/api/health').then(r => r.json()).then(d => {
+      if (d && d.version) {
+        const v = 'v' + d.version;
+        const main = document.getElementById('app-version');
+        const side = document.getElementById('app-version-sidebar');
+        if (main) main.textContent = v;
+        if (side) side.textContent = v;
+      }
+    }).catch(() => {});
+  </script>
 </body>
 </html>
