@@ -93,10 +93,13 @@
     },
     "dmg": {
       "writeUpdateInfo": false,
+      "background": null,
+      "window": { "width": 560, "height": 480 },
+      "iconSize": 110,
       "contents": [
-        { "x": 130, "y": 220, "type": "file" },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" },
-        { "x": 270, "y": 380, "type": "file", "path": "build/First-Time Setup.command" }
+        { "x": 140, "y": 170, "type": "file" },
+        { "x": 420, "y": 170, "type": "link", "path": "/Applications" },
+        { "x": 280, "y": 350, "type": "file", "path": "build/First-Time Setup.command" }
       ]
     },
     "win": {
