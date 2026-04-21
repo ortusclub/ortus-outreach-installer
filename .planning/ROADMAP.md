@@ -56,7 +56,13 @@
   3. After a successful Check DMs run, the underlying Google Sheet rows (scoped to `Message="sent"` AND `Account Used = <running profile>`) have `Reply`, `Reply At`, and `Reply Preview` columns auto-added/populated, and rows already marked `Reply="yes"` are not overwritten.
   4. Running Check DMs a second time with no new activity returns an empty Replies panel; running it after a new inbound reply arrives surfaces only that reply (delta semantics driven by a per-profile `last_check_at` watermark).
   5. If the Voyager API path fails, the feature logs which fallback it attempted (DOM scrape) and surfaces a clear error in the dashboard — the operator is never left wondering whether the scan ran.
-**Plans**: TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 11-01-PLAN.md — Wave 0 — Test infrastructure + live Voyager fixture capture + RED tests
+- [ ] 11-02-PLAN.md — Wave 1 — Core module (check-dms.js, helpers extension, sheets-writer helper, campaign re-exports)
+- [ ] 11-03-PLAN.md — Wave 2 — Server endpoints (4 routes + symmetric mutex) + Apps Script config
+- [ ] 11-04-PLAN.md — Wave 2 — UI (button, Replies panel, polling, CSS, renderer module)
+- [ ] 11-05-PLAN.md — Wave 3 — End-to-end verification + VALIDATION sign-off
 **UI hint**: yes
 
 ### Phase 12: Tab Framework
@@ -119,7 +125,7 @@ Phases 13, 14, 15 depend on Phase 12 (tab bar). Phase 15 additionally depends on
 | 8. Reliability Hardening | v2.0 | 2/2 | Complete | - |
 | 9. Operational Features | v2.0 | 4/4 | Complete | - |
 | 10. Dashboard UX | v2.0 | 2/2 | Complete | 2026-04-09 |
-| 11. Check DMs | v3.0 | 0/? | Not started | - |
+| 11. Check DMs | v3.0 | 0/5 | Not started | - |
 | 12. Tab Framework | v3.0 | 0/? | Not started | - |
 | 13. Ortus City Scanner Integration | v3.0 | 0/? | Not started | - |
 | 14. SN Scraper — Create Saved Search | v3.0 | 0/? | Not started | - |
