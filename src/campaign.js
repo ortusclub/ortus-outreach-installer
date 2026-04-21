@@ -21,6 +21,7 @@
 
 import { existsSync, mkdirSync } from 'fs';
 import { readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import { launchProfile, closeProfile, getProfiles } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
@@ -46,6 +47,29 @@ async function loadState() {
   catch { return { processed: {}, dailyCounts: {} }; }
 }
 async function saveState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
+
+/**
+ * Host-resource preflight — non-blocking. Returns warnings if the host
+ * is already under heavy load so the caller can surface them to the
+ * operator before opening any browsers.
+ */
+function checkHostHealth() {
+  const warnings = [];
+  const GB = 1024 * 1024 * 1024;
+  const freeGB = os.freemem() / GB;
+  const totalGB = os.totalmem() / GB;
+  const load1 = os.loadavg()[0];
+  const cpuCount = os.cpus().length;
+  const loadThreshold = cpuCount * 0.8;
+
+  if (freeGB < 2) {
+    warnings.push(`Free RAM is ${freeGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB total — low.`);
+  }
+  if (load1 > loadThreshold) {
+    warnings.push(`1-min load average ${load1.toFixed(2)} exceeds ${loadThreshold.toFixed(2)} (${cpuCount} CPUs × 0.8).`);
+  }
+  return { ok: warnings.length === 0, warnings };
+}
 
 // Campaign-scoped counters — reset every time a campaign starts
 const campaignCounts = {};
@@ -274,6 +298,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Templates: note=${tpl.connectionNote ? '✓' : '—'} followUp=${tpl.followUpMessage ? '✓' : '—'} inmail=${tpl.inmail.subject ? '✓' : '—'}`);
     if (linkedinColumn) log(`LinkedIn column: "${linkedinColumn}"`);
     if (messageOpenProfiles) log('Open Profile messaging: ON');
+
+    // Preflight: warn if the host is already under heavy load.
+    // Non-blocking — operator decides whether to continue.
+    const health = checkHostHealth();
+    if (!health.ok) {
+      log('⚠ Your machine is under heavy load — close some apps or the campaign may fail.');
+      for (const w of health.warnings) log(`   • ${w}`);
+    }
 
     // ── Fetch leads from Google Sheet ──
     log('Fetching sheet…');
