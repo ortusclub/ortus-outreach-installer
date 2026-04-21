@@ -24,12 +24,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { launchProfile, closeProfile, getProfiles } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
-import { updateSheetRow } from './sheets-writer.js';
+import { updateSheetRow, ensureTrackingColumns } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
+import { dataPath } from './paths.js';
 
-const STATE_FILE = './data/state.json';
-const HISTORY_PATH = './data/history.json';
-const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined']);
+const STATE_FILE = dataPath('state.json');
+const HISTORY_PATH = dataPath('history.json');
+const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined']);
 
 async function appendHistory(entry) {
   let history = [];
@@ -38,7 +39,7 @@ async function appendHistory(entry) {
   await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2));
 }
 
-if (!existsSync('./data')) mkdirSync('./data');
+// Data directory creation is handled centrally in src/paths.js.
 
 async function loadState() {
   try { return JSON.parse(await readFile(STATE_FILE, 'utf8')); }
@@ -56,10 +57,27 @@ function bumpCampaignCount(profileId) {
   campaignCounts[profileId] = (campaignCounts[profileId] || 0) + 1;
 }
 
-function extractLinkedInUrl(row) {
-  for (const key of ['LinkedIn URL', 'linkedinUrl', 'linkedin_url', 'url', 'LinkedIn', 'Profile URL']) {
-    const v = row[key];
-    if (v && v.includes('linkedin.com/in/')) return v.trim();
+function extractLinkedInUrl(row, linkedinColumn) {
+  // 1. User-specified column takes priority
+  if (linkedinColumn && row[linkedinColumn]) {
+    let v = row[linkedinColumn].trim();
+    // Already a full URL (http://linkedin.com, https://linkedin.com, linkedin.com/...)
+    if (v.includes('linkedin.com')) {
+      if (!v.startsWith('http')) v = 'https://' + v;
+      return v;
+    }
+    // Slug or ID without domain — convert to URL
+    if (v && !v.includes(' ') && !v.includes('@')) {
+      return `https://www.linkedin.com/in/${v}`;
+    }
+  }
+
+  // 2. Fallback: scan all columns for any value containing linkedin.com
+  for (const key of Object.keys(row)) {
+    const v = (row[key] || '').trim();
+    if (v.includes('linkedin.com')) {
+      return v.startsWith('http') ? v : 'https://' + v;
+    }
   }
   return null;
 }
@@ -69,6 +87,7 @@ function getModeHint(mode, prevAction) {
   if (mode === 'message_only') return 'force_message';
   if (mode === 'check_status') return 'check_only';
   if (mode === 'inmail_only') return 'force_inmail';
+  if (mode === 'open_profile_only') return 'force_open_profile';
   if (mode === 'connect_and_message') {
     return prevAction === 'connection_sent' ? 'force_message' : 'force_connect';
   }
@@ -113,6 +132,55 @@ async function getProfileName(profileId, token) {
 
 function getToken() {
   return process.env.GOLOGIN_API_TOKEN;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Organic feed browsing — mimics natural LinkedIn usage between connections
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function browseFeedOrganically(page, pName) {
+  try {
+    log(`  🔄 [${pName}] Organic browsing — visiting feed…`);
+    try {
+      await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch { /* timeout OK */ }
+    await new Promise(r => setTimeout(r, 2000 + Math.floor(Math.random() * 2000)));
+
+    // Scroll the feed a bit
+    const scrollCount = 2 + Math.floor(Math.random() * 3); // 2-4 scrolls
+    for (let i = 0; i < scrollCount; i++) {
+      await page.keyboard.press('PageDown');
+      await new Promise(r => setTimeout(r, 1500 + Math.floor(Math.random() * 3000)));
+    }
+
+    // ~30% chance: click a "Like" on a visible post (very natural action)
+    if (Math.random() < 0.3) {
+      const liked = await page.evaluate(() => {
+        const likeButtons = Array.from(document.querySelectorAll('button'));
+        const likeable = likeButtons.filter(b => {
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          // Only click "Like" (not already liked, not "Love", "Celebrate", etc.)
+          return aria.startsWith('like ') && !aria.includes('liked') && b.offsetWidth > 0;
+        });
+        if (likeable.length > 0) {
+          // Pick one of the first 3 visible posts
+          const pick = likeable[Math.floor(Math.random() * Math.min(3, likeable.length))];
+          pick.click();
+          return true;
+        }
+        return false;
+      });
+      if (liked) log(`  👍 [${pName}] Liked a feed post (organic activity)`);
+    }
+
+    // Scroll back to top before leaving
+    await page.keyboard.press('Home');
+    await new Promise(r => setTimeout(r, 1000 + Math.floor(Math.random() * 1000)));
+    log(`  🔄 [${pName}] Organic browsing done.`);
+  } catch (err) {
+    // Non-critical — don't let feed browsing errors break the campaign
+    log(`  ⚠ [${pName}] Feed browse skipped: ${err.message}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -168,7 +236,7 @@ async function checkProfileHealth(page, profileName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45 }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {} }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -192,6 +260,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       subject: templates.inmail?.subject || templates.inmailSubject || '',
       message: templates.inmail?.message || templates.inmailBody || '',
     },
+    openProfileSubject: templates.openProfileSubject || templates.opSubject || '',
+    openProfileBody: templates.openProfileBody || templates.opBody || '',
   };
 
   const campaignStartTime = Date.now();
@@ -202,6 +272,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Profiles: ${profileIds.length} selected`);
     log(`Daily limit: ${dailyLimit}`);
     log(`Templates: note=${tpl.connectionNote ? '✓' : '—'} followUp=${tpl.followUpMessage ? '✓' : '—'} inmail=${tpl.inmail.subject ? '✓' : '—'}`);
+    if (linkedinColumn) log(`LinkedIn column: "${linkedinColumn}"`);
     if (messageOpenProfiles) log('Open Profile messaging: ON');
 
     // ── Fetch leads from Google Sheet ──
@@ -209,43 +280,49 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const rows = await fetchSheetRows(sheetUrl);
     log(`${rows.length} row(s). Columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
-    // Ensure tracking columns exist
-    const sheetId = sheetUrl.match(/\/d\/([^/]+)/)?.[1];
-    if (sheetId) {
-      await updateSheetRow(sheetUrl, '__ensure_columns__', {}).catch(() => {});
-    }
+    // Ensure tracking columns exist (Status, OP, Message, InMail, Account Used, Date Last Action)
+    await ensureTrackingColumns(sheetUrl).catch(err => {
+      log(`⚠ Could not ensure tracking columns: ${err.message}`);
+    });
 
     const state = await loadState();
 
-    // Pre-filter targets
+    // Pre-filter targets. Filter rules (new schema):
+    //   - check_status: only process rows with CC="Sent" (pending invites).
+    //   - all other modes: skip rows where Status="Done".
+    //   - connect_only: additionally require no prior CC history.
+    //   - messaging modes (OP/DM/InMail): additionally skip rows where
+    //     the campaign-specific column is already filled.
     const targets = rows.filter(row => {
-      const url = extractLinkedInUrl(row);
+      const url = extractLinkedInUrl(row, linkedinColumn);
       if (!url) return false;
 
-      const sheetStatus = (row['Connection Status'] || row['connectionStatus'] || '').toLowerCase();
-      const msgStatus = (row['First Message Status'] || row['firstMessageStatus'] || '').toLowerCase();
+      const status    = (row['Status']  || row['status']  || '').toString().toLowerCase().trim();
+      const cc        = (row['CC']      || row['cc']      || '').toString().toLowerCase().trim();
+      const opCell    = (row['OP']      || row['op']      || '').toString().toLowerCase().trim();
+      const msgCell   = (row['Message'] || row['message'] || '').toString().toLowerCase().trim();
+      const inmailCell= (row['InMail']  || row['inmail']  || '').toString().toLowerCase().trim();
+      const msgSent   = msgCell === 'sent' || opCell === 'sent';
 
       if (mode === 'check_status') {
-        // Only check leads where we sent a connection request
-        return sheetStatus.includes('sent') && !sheetStatus.includes('accepted') && !sheetStatus.includes('declined');
+        return cc === 'sent';
       }
 
-      if (mode === 'message_only') {
-        // Only message leads that accepted and haven't been messaged
-        return (sheetStatus.includes('accepted') || sheetStatus.includes('connected')) && !msgStatus.includes('sent');
-      }
+      if (status === 'done') return false;
 
-      if (mode === 'connect_only' || mode === 'auto') {
+      if (mode === 'connect_only') {
+        if (cc) return false;
         const prev = state.processed[url];
         if (prev) return false;
-        if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected') || sheetStatus.includes('accepted')) return false;
         return true;
       }
 
-      if (mode === 'connect_and_message') {
-        if (!sheetStatus && !state.processed[url]) return true;
-        if ((sheetStatus.includes('accepted') || sheetStatus.includes('connected')) && !msgStatus.includes('sent')) return true;
-        return false;
+      if (mode === 'message_only' || mode === 'open_profile_only') {
+        return !msgSent;
+      }
+
+      if (mode === 'inmail_only') {
+        return inmailCell !== 'sent';
       }
 
       const prev = state.processed[url];
@@ -361,9 +438,37 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
             } catch { /* */ }
           } else {
-            log(`WARNING: ${pName} failed health check: ${health.issues.join(', ')}. Skipping.`);
-            try { await launched.browser.close().catch(() => {}); await closeProfile(profileId); } catch { /* */ }
-            continue;
+            log(`⚠ ${pName} not logged in: ${health.issues.join(', ')}. Bringing browser on-screen — please log in.`);
+            log(`⏳ Waiting up to 120s for you to log into ${pName}...`);
+            try {
+              const client = await page.target().createCDPSession();
+              const { windowId } = await client.send('Browser.getWindowForTarget');
+              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
+            } catch { /* */ }
+
+            let loggedIn = false;
+            for (let wait = 0; wait < 24; wait++) {
+              if (campaign._abort) break;
+              await new Promise(r => setTimeout(r, 5000));
+              try {
+                const currentUrl = page.url();
+                if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) { loggedIn = true; break; }
+                const recheck = await checkProfileHealth(page, pName);
+                if (recheck.healthy) { loggedIn = true; break; }
+              } catch { /* */ }
+              if ((wait + 1) % 6 === 0) log(`  Still waiting for ${pName} login... (${(wait + 1) * 5}s)`);
+            }
+            if (!loggedIn) {
+              log(`✗ ${pName}: login timed out after 120s. Skipping.`);
+              try { await launched.browser.close().catch(() => {}); await closeProfile(profileId); } catch { /* */ }
+              continue;
+            }
+            log(`✓ ${pName}: logged in! Moving window off-screen.`);
+            try {
+              const client = await page.target().createCDPSession();
+              const { windowId } = await client.send('Browser.getWindowForTarget');
+              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+            } catch { /* */ }
           }
         }
         log(`${pName} health check passed.`);
@@ -388,6 +493,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       // STEP 2: Round-robin lead processing
       let leadIndex = 0;
       let totalDone = 0;
+      let totalVisited = 0;
       const weeklyLimited = new Set(); // Profiles that hit weekly limit
 
       while (!campaign._abort) {
@@ -404,13 +510,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         let row = null;
         while (leadIndex < targets.length) {
           const candidate = targets[leadIndex];
-          const candidateUrl = extractLinkedInUrl(candidate);
+          const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
           leadIndex++;
           if (!candidateUrl) continue;
-          if (mode !== 'check_status' && mode !== 'message_only' && state.processed[candidateUrl]) continue;
-          const sheetStatus = (candidate['Connection Status'] || candidate['connectionStatus'] || '').toLowerCase();
-          if (mode === 'connect_only' || mode === 'auto') {
-            if (sheetStatus.includes('sent') || sheetStatus.includes('pending') || sheetStatus.includes('connected') || sheetStatus.includes('accepted')) continue;
+          if (mode !== 'check_status' && mode !== 'message_only' && mode !== 'open_profile_only' && state.processed[candidateUrl]) continue;
+          const sheetStatus = (candidate['Status'] || candidate['status'] || '').toLowerCase();
+          if (mode === 'connect_only') {
+            if (sheetStatus) continue;
           }
           row = candidate;
           break;
@@ -421,33 +527,44 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           break;
         }
 
-        // Pick the next profile in rotation (round-robin among active profiles)
-        const session = activeProfiles[totalDone % activeProfiles.length];
+        // Pick the next profile in rotation.
+        // Messaging/OP/InMail modes: batch of 5 leads per profile before rotating.
+        // Connection modes: 1-at-a-time round-robin (proven, don't change).
+        const batchModes = new Set(['open_profile_only', 'message_only', 'inmail_only']);
+        const LEADS_PER_ROTATION = batchModes.has(mode) ? 5 : 1;
+        const rotationCounter = batchModes.has(mode) ? totalVisited : totalDone;
+        const session = activeProfiles[Math.floor(rotationCounter / LEADS_PER_ROTATION) % activeProfiles.length];
         const { profileId, pName, browser } = session;
         let { page } = session;
 
         campaign.currentProfile = pName;
 
-        const url = extractLinkedInUrl(row);
+        const url = extractLinkedInUrl(row, linkedinColumn);
 
         // Mark as in-progress
         state.processed[url] = { profileId, profileName: pName, action: '_in_progress', date: new Date().toISOString() };
         await saveState(state);
 
-        // Mode-aware skip logic for message_only and check_status
-        const sheetStatus = (row['Connection Status'] || row['connectionStatus'] || '').toLowerCase();
-        const msgStatus = (row['First Message Status'] || row['firstMessageStatus'] || '').toLowerCase();
+        // In-loop skip check. Mirrors the pre-filter rules; catches rows
+        // that were updated between pre-filter and now (e.g. by a concurrent
+        // campaign or a mid-run re-fetch).
+        const status    = (row['Status']  || row['status']  || '').toString().toLowerCase().trim();
+        const cc        = (row['CC']      || row['cc']      || '').toString().toLowerCase().trim();
+        const msgCell   = (row['Message'] || row['message'] || '').toString().toLowerCase().trim();
+        const opCell    = (row['OP']      || row['op']      || '').toString().toLowerCase().trim();
+        const inmailCell= (row['InMail']  || row['inmail']  || '').toString().toLowerCase().trim();
+        const msgSent   = msgCell === 'sent' || opCell === 'sent';
 
-        if (mode === 'message_only') {
-          if (msgStatus.includes('sent')) { delete state.processed[url]; continue; }
-          if (!sheetStatus.includes('accepted') && !sheetStatus.includes('connected')) { delete state.processed[url]; continue; }
-          const connectedBy = (row['Connection By'] || row['connectionBy'] || '').toLowerCase().replace(/[\s._@-]+/g, '');
-          const normalizedPName = pName.toLowerCase().replace(/[\s._@-]+/g, '');
-          if (connectedBy && !connectedBy.includes(normalizedPName) && !normalizedPName.includes(connectedBy)) {
+        if (mode === 'check_status') {
+          if (cc !== 'sent') { delete state.processed[url]; continue; }
+        } else {
+          if (status === 'done') { delete state.processed[url]; continue; }
+          if ((mode === 'open_profile_only' || mode === 'message_only') && msgSent) {
             delete state.processed[url]; continue;
           }
-        } else if (mode === 'check_status') {
-          if (sheetStatus.includes('accepted') || sheetStatus.includes('declined')) { delete state.processed[url]; continue; }
+          if (mode === 'inmail_only' && inmailCell === 'sent') {
+            delete state.processed[url]; continue;
+          }
         }
 
         // Build template data
@@ -456,20 +573,35 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
         data.company = row['Company'] || row['company'] || '';
         data.title = row['Title'] || row['title'] || row['Job Title'] || '';
+        data.senderName = pName || '';
+        const resolvedFirst = senderFirstNames[profileId];
+        data.senderFirstName = (resolvedFirst && resolvedFirst.trim())
+          || (pName || '').split(/\s+/)[0]
+          || '';
 
         let hint = getModeHint(mode, state.processed[url]?.action);
 
         const isOpenProfile = (row['Open Profile'] || row['openProfile'] || row['open_profile'] || '').toLowerCase().trim();
-        if (messageOpenProfiles && isOpenProfile === 'yes' && hint === 'force_connect') {
-          hint = 'force_message';
-          log(`  ↳ Open Profile detected — will message directly`);
+        if (messageOpenProfiles && hint === 'force_connect') {
+          // "Message Open Profiles Directly" — try OP first (free message),
+          // fall back to sending a connection request if not an Open Profile.
+          // Runtime detection via the Message panel, not a sheet column.
+          hint = 'force_connect_op_fallback';
+          log(`  ↳ OP-first + Connect-fallback flow`);
         }
 
         try {
-          // Re-acquire page before each lead
+          // Re-acquire page and close stale tabs to prevent RAM buildup
           try {
             const pages = await browser.pages();
-            if (pages.length > 0) page = pages[pages.length - 1];
+            if (pages.length > 1) {
+              page = pages[pages.length - 1];
+              for (let i = 0; i < pages.length - 1; i++) {
+                try { await pages[i].close(); } catch { /* */ }
+              }
+            } else if (pages.length === 1) {
+              page = pages[0];
+            }
             session.page = page;
           } catch { /* keep current */ }
 
@@ -479,7 +611,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           let result;
           const MAX_RETRIES = 3;
           for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            result = await performOutreach(page, url, { ...tpl, data }, {}, hint);
+            result = await performOutreach(page, url, { ...tpl, data }, { profileId }, hint);
 
             const isTransient = result.action === 'skipped' && result.error &&
               !result.error.includes('WEEKLY_LIMIT') &&
@@ -490,17 +622,39 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               !result.error.includes('Still pending') &&
               !result.error.includes('Can connect directly') &&
               !result.error.includes('No message template') &&
-              !result.error.includes('SEND_NOT_CONFIRMED');
+              !result.error.includes('SEND_NOT_CONFIRMED') &&
+              !result.error.includes('LINKEDIN_ERROR_TOAST') &&
+              !result.error.includes('NOTE_TYPING_FAILED') &&
+              // Never retry message send failures — a retry could duplicate
+              // the message if the first send actually landed and only the
+              // verification false-negatived.
+              !result.error.includes('MESSAGE_SEND_FAILED') &&
+              !result.error.includes('Could not type message') &&
+              !result.error.includes('Message button not found') &&
+              !result.error.includes('INMAIL_SEND_FAILED') &&
+              !result.error.includes('InMail button not found') &&
+              !result.error.includes('INMAIL_NO_CREDITS') &&
+              !result.error.includes('NOT_OPEN_PROFILE') &&
+              !result.error.includes('OP_SEND_FAILED') &&
+              !result.error.includes('No Open Profile template');
 
             if (!isTransient || attempt === MAX_RETRIES) break;
 
-            const backoff = attempt * 5000;
+            const backoff = attempt * 15000;
             log(`  ⟳ Retry ${attempt}/${MAX_RETRIES} in ${backoff / 1000}s — ${result.error}`);
             await new Promise(r => setTimeout(r, backoff));
 
             try {
               const pages = await browser.pages();
-              if (pages.length > 0) { page = pages[pages.length - 1]; session.page = page; }
+              if (pages.length > 1) {
+                page = pages[pages.length - 1];
+                for (let i = 0; i < pages.length - 1; i++) {
+                  try { await pages[i].close(); } catch { /* */ }
+                }
+              } else if (pages.length === 1) {
+                page = pages[0];
+              }
+              session.page = page;
             } catch { /* */ }
           }
           log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
@@ -515,28 +669,59 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             campaign.totalProcessed = campaign.processedToday;
             await saveState(state);
 
-            const sheetData = {};
+            const sheetData = { dateLastAction: now, accountUsed: pName };
+            const hyperSent = `=HYPERLINK("${url}","sent")`;
+
             if (result.action === 'connection_sent') {
-              sheetData.connectionStatus = 'Sent';
-              sheetData.connectionDate = now;
-              sheetData.connectionBy = pName;
+              sheetData.status = 'Done';
+              sheetData.cc = 'Sent';
+              sheetData.auditAction = 'Connection sent';
             } else if (result.action === 'message_sent') {
-              sheetData.firstMessageStatus = (messageOpenProfiles && isOpenProfile === 'yes') ? 'Sent (Open Profile)' : 'Sent';
-              sheetData.firstMessageDate = now;
+              sheetData.status = 'Done';
+              // If this message was routed via the Open Profile path (connect
+              // mode + messageOpenProfiles toggle + lead flagged Open Profile),
+              // record to OP instead of Message so the column reflects the path.
+              if (messageOpenProfiles && isOpenProfile === 'yes') {
+                sheetData.op = hyperSent;
+                sheetData.auditAction = 'Open Profile message sent (via connect mode)';
+              } else {
+                sheetData.message = hyperSent;
+                sheetData.auditAction = 'Message sent';
+              }
+            } else if (result.action === 'op_message_sent') {
+              sheetData.status = 'Done';
+              sheetData.op = hyperSent;
+              sheetData.auditAction = 'Open Profile message sent';
             } else if (result.action === 'inmail_sent') {
-              sheetData.connectionStatus = 'InMail Sent';
-              sheetData.connectionDate = now;
-              sheetData.connectionBy = pName;
+              sheetData.status = 'Done';
+              sheetData.inmail = hyperSent;
+              sheetData.auditAction = 'InMail sent';
+              if (typeof result.creditsLeft === 'number') {
+                sheetData.auditNotes = `InMail credits left: ${result.creditsLeft}`;
+                log(`  💳 InMail credits left: ${result.creditsLeft}`);
+                if (result.creditsLeft <= 0) {
+                  log(`  ⚠ ${pName} has 0 InMail credits — removing from InMail rotation.`);
+                  weeklyLimited.add(profileId);
+                }
+              }
             } else if (result.action === 'status_accepted') {
-              sheetData.connectionStatus = 'Accepted';
-              sheetData.connectionDate = now;
+              // Invite accepted — flip CC green, Status=Skipped so follow-up
+              // campaigns (DM, OP, InMail) can process this row next.
+              sheetData.status = 'Skipped';
+              sheetData.cc = 'Accepted';
+              sheetData.auditAction = 'Acceptance confirmed';
             } else if (result.action === 'status_pending') {
-              sheetData.connectionStatus = 'Still Pending';
+              // Still awaiting — keep CC yellow, mark Status=Skipped so
+              // the next check_status run re-evaluates.
+              sheetData.status = 'Skipped';
+              sheetData.cc = 'Sent';
+              sheetData.auditAction = 'Still pending';
             } else if (result.action === 'status_declined') {
-              sheetData.connectionStatus = 'Declined';
-              sheetData.connectionDate = now;
+              sheetData.status = 'Done';
+              sheetData.cc = 'Declined';
+              sheetData.auditAction = 'Declined';
             }
-            await updateSheetRow(sheetUrl, url, sheetData).catch(() => {});
+            await updateSheetRow(sheetUrl, url, sheetData, linkedinColumn).catch(() => {});
 
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);
           } else {
@@ -546,44 +731,115 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
               await updateSheetRow(sheetUrl, url, {
-                connectionStatus: `SKIPPED: Weekly invitation limit reached`,
-                connectionDate: now,
-                connectionBy: pName,
-              }).catch(() => {});
+                status: 'Skipped',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: 'Weekly invitation limit reached',
+              }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('INMAIL_NO_CREDITS')) {
+              log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
+              weeklyLimited.add(profileId);
+              await updateSheetRow(sheetUrl, url, {
+                status: 'Skipped',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: 'InMail credits exhausted',
+              }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('EMAIL_REQUIRED')) {
               log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead.`);
               state.processed[url] = { profileId, profileName: pName, action: 'email_required', date: now };
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                connectionStatus: `SKIPPED: Email required to connect`,
-                connectionDate: now,
-                connectionBy: pName,
-              }).catch(() => {});
+                status: 'Done',
+                cc: 'Unreachable',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: 'Email required to connect',
+              }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('Not yet connected')) {
+              log('  ↷ Not yet connected — will retry after acceptance.');
+              await updateSheetRow(sheetUrl, url, {
+                status: 'Skipped',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: 'Not yet connected',
+              }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('SEND_NOT_CONFIRMED')) {
+              log(`  ⚠ Send clicked but Pending NOT confirmed for ${data.firstName || '?'}. LinkedIn may have silently dropped it.`);
+              delete state.processed[url];
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                status: 'Skipped',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: 'Send not confirmed',
+              }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('LINKEDIN_ERROR_TOAST')) {
+              log(`  ⚠ LinkedIn showed an error toast for ${data.firstName || '?'}.`);
+              delete state.processed[url];
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                status: 'Skipped',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: 'LinkedIn error toast',
+              }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('NOT_OPEN_PROFILE')) {
+              log('  ✗ Not an Open Profile — will skip in future runs.');
+              state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                status: 'Done',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: 'Not Open Profile',
+              }, linkedinColumn).catch(() => {});
             } else {
               log('  ✗ Retry next run.');
               pushError(new Error(`${url}: ${errorMsg}`));
               delete state.processed[url];
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                connectionStatus: `FAILED: ${errorMsg}`,
-                connectionDate: now,
-                connectionBy: pName,
-              }).catch(() => {});
+                status: 'Skipped',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: errorMsg,
+              }, linkedinColumn).catch(() => {});
             }
           }
 
+          totalVisited++;
+
           // Delay between leads + session breaks (interruptible by abort)
           if (!campaign._abort) {
+            // Messaging existing 1st-degree connections is much lower risk than
+            // sending new connection requests, so use a faster cadence and skip
+            // the single-account slowdown + mid-run session break.
+            const isMessageMode = mode === 'message_only';
+            const delayMultiplier = (!isMessageMode && profileIds.length === 1) ? 2.0 : 1.0;
+
             const SESSION_BREAK_EVERY = 15;
             let waitMs;
-            if (totalDone > 0 && totalDone % SESSION_BREAK_EVERY === 0) {
+            if (!isMessageMode && totalDone > 0 && totalDone % SESSION_BREAK_EVERY === 0) {
               const breakMin = 10 * 60 * 1000;
               const breakMax = 20 * 60 * 1000;
               waitMs = Math.floor(Math.random() * (breakMax - breakMin + 1) + breakMin);
               log(`  ☕ Session break: ${(waitMs / 60000).toFixed(0)} min (${totalDone} leads processed across all accounts)`);
+            } else if (isMessageMode) {
+              // User-controlled gap from the dashboard (delayMin–delayMax seconds).
+              waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
+              log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (message gap)`);
             } else {
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
-              log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s`);
+              waitMs = Math.floor(waitMs * delayMultiplier);
+              if (delayMultiplier > 1) log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (single-account: ${delayMultiplier}x slower)`);
+              else log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s`);
+            }
+
+            // ~30% chance: browse the feed organically during the wait (looks like a real user).
+            // Skip entirely in message mode — we want this to move fast.
+            if (!isMessageMode && Math.random() < 0.3 && !campaign._abort) {
+              await browseFeedOrganically(page, pName);
             }
             // Sleep in 2s chunks so abort is checked frequently
             const sleepEnd = Date.now() + waitMs;
