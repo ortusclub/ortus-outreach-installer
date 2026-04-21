@@ -1,34 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Delivery Hardening
-status: executing
-stopped_at: Phase 10 context gathered
-last_updated: "2026-04-09T15:14:38.641Z"
-last_activity: 2026-04-09 -- Phase 10 planning complete
+milestone: v3.0
+milestone_name: Engagement & Intelligence
+status: defining-requirements
+stopped_at: null
+last_updated: "2026-04-21T11:00:00.000Z"
+last_activity: 2026-04-21 -- Milestone v3.0 started
 progress:
-  total_phases: 4
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 6
-  percent: 75
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-09)
+See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Operators can run multi-account LinkedIn outreach campaigns reliably and safely.
-**Current focus:** Phase 7 — Security Lockdown
+**Current focus:** v3.0 — defining requirements
 
 ## Current Position
 
-Phase: 7 of 10 (Security Lockdown) — first phase of v2.0
-Plan: — (not yet planned)
-Status: Ready to execute
-Last activity: 2026-04-21 -- Completed quick task 260421-hjz: Fix Electron template Save As modal + default identifier to SoO firstName
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-21 -- Milestone v3.0 started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -45,13 +45,18 @@ Progress: [░░░░░░░░░░] 0%
 ### Decisions
 
 - Preserve all core automation logic — campaign orchestrator, LinkedIn actions, GoLogin launcher, sheet read/write must NOT be modified
-- Only add new code around core modules, or make minimal non-breaking changes (e.g., replacing readFileSync with readFile in campaign.js)
-- Sales Navigator deferred to v3.0
+- Only add new code around core modules, or make minimal non-breaking changes
+- Check DMs detection: Voyager API primary, DOM scrape fallback (per v3 phase 11 design note)
+- Check DMs UI: in-app Replies panel with snippet + "Open Thread" (external browser), sheet writeback to new Reply columns
+- Check DMs delta: only surface replies newer than last-check watermark per profile
+- SN Scraper: Puppeteer-based (not Chrome extension) — extension approach was abandoned during City Scanner work for React-input reasons
+- Tab framework: split features into top-level tabs — Campaign / SN Scraper / City Scanner / existing sections
 
 ### Roadmap Evolution
 
 - v1.0: ElevenLabs Calling Integration (6 phases, shipped)
-- v2.0: GoLogin Clone Delivery Hardening (4 phases: 7-10)
+- v2.0: GoLogin Clone Delivery Hardening (4 phases: 7-10, shipped)
+- v3.0: Engagement & Intelligence (Phases 11+ — Check DMs, Tab framework, City Scanner port, SN Scraper)
 
 ### Pending Todos
 
@@ -72,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T15:04:09.527Z
-Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-dashboard-ux/10-CONTEXT.md
+Last session: 2026-04-21T11:00:00.000Z
+Stopped at: v3.0 milestone defined — about to gather requirements
+Resume file: —

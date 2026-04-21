@@ -8,22 +8,16 @@ A LinkedIn outreach automation tool for The Ortus Club, comparable to PhantomBus
 
 Operators can run multi-account LinkedIn outreach campaigns reliably and safely — selecting GoLogin profiles, feeding lead lists, and tracking results — without manual browser work.
 
-## Current Milestone: v2.0 Delivery Hardening
+## Current Milestone: v3.0 Engagement & Intelligence
 
-**Goal:** Harden the working automation tool for team delivery — fix security issues, improve reliability, add operational features, and polish the dashboard UX without touching core automation logic.
+**Goal:** Extend the outreach automation into a full lifecycle tool — detect replies to sent DMs, and build in Sales Navigator scraping + lead-volume scanning as independent tabs in the app.
 
 **Target features:**
-- Remove hardcoded secrets, use .env exclusively
-- Add basic auth to the Express server
-- Convert sync file I/O to async in campaign orchestrator
-- Wire template save/load into the dashboard UI
-- Fix progress bar and add campaign history persistence
-- Deduplicate shared utilities
-- Add graceful shutdown with profile cleanup
-- Campaign scheduling (cron-style)
-- CSV export of campaign results
-- Profile health check before campaign start
-- Configurable rate-limit safety (daily/hourly caps, randomized delays)
+- Check DMs — new campaign mode, per-profile scoping, snippet panel + sheet writeback (design locked in `.planning/notes/v3-phase11-check-dms-design.md`)
+- Tab framework — dashboard navigation so Scraper + Scanner land as separate tabs alongside the existing Campaign section
+- Ortus City Scanner — port the existing Electron app (`/Users/antoniovarlese/Downloads/ORTUS_SCANNER_CONTEXT.md`) into a tab; Puppeteer-driven Sales Nav city-by-city lead counting
+- SN Scraper — Create Saved Search — new tab mode: filter form → Puppeteer applies filters in Sales Nav → saves the search → returns saved-search URL
+- SN Scraper — Scrape Saved Search — new tab mode: pick a saved-search URL → paginate → extract leads → CSV/sheet export (reference: `/Users/antoniovarlese/Downloads/ortus-scraper-extension (5).zip`)
 
 ## Requirements
 
@@ -39,14 +33,18 @@ Operators can run multi-account LinkedIn outreach campaigns reliably and safely 
 - ✓ Open Profile messaging toggle — v1.0
 - ✓ Smart DOM settling (MutationObserver) instead of fixed waits — v1.0
 - ✓ Connection note personalization with {firstName}, {lastName}, {company}, {title} — v1.0
+- ✓ Security lockdown — .env-only secrets, email-based auth, SoO allowlist — v2.0
+- ✓ Reliability hardening — async I/O, graceful shutdown, profile health checks — v2.0
+- ✓ Operational features — cron-style scheduling, rate-limit config, campaign history, CSV export — v2.0
+- ✓ Dashboard UX — template save/load, accurate progress bar, history panel — v2.0
+- ✓ Electron desktop packaging — per-user data dir, DMG distribution with First-Time Setup helper — v2.0
 
 ### Active
 
-(Defined in REQUIREMENTS.md — v2.0 Delivery Hardening scope)
+(Defined in REQUIREMENTS.md — v3.0 Engagement & Intelligence scope)
 
 ### Out of Scope
 
-- Sales Navigator URL support — different DOM selectors, deferred to v3.0
 - Agent switching (different LinkedIn personas) — out of scope
 - Multi-sheet column mapping UI — nice-to-have, deferred
 - LinkedIn group messaging — different product surface
@@ -103,4 +101,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-09 after milestone v2.0 started*
+*Last updated: 2026-04-21 — milestone v3.0 Engagement & Intelligence started*
