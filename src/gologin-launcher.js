@@ -62,6 +62,13 @@ export async function launchProfile(profileId, token) {
     extra_params: [
       '--window-position=-2400,-2400',
       '--window-size=1366,900',
+      // Reduce per-Chromium RAM footprint (~100-150MB each) on low-resource hosts
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-features=TranslateUI,MediaRouter',
+      '--disable-renderer-backgrounding',
+      '--renderer-process-limit=2',
+      '--js-flags=--max-old-space-size=512',
     ],
   });
 
@@ -77,7 +84,7 @@ export async function launchProfile(profileId, token) {
   const browser = await puppeteer.connect({
     browserWSEndpoint: wsUrl,
     ignoreHTTPSErrors: true,
-    protocolTimeout: 60000, // Prevent "Runtime.callFunctionOn timed out"
+    protocolTimeout: 120000, // 120s: prevent "Runtime.callFunctionOn timed out" on slow hosts
   });
 
   const pages = await browser.pages();
