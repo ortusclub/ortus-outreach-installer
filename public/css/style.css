@@ -549,6 +549,7 @@ body.theme-light .preset-pop-item:hover { background: rgba(0,0,0,0.04); }
   text-transform: uppercase;
   padding-top: 4px;
 }
+.header-stat .v.warn { color: #f2a03d; }
 .header-stat .v.err { color: var(--red); }
 .header-stat .v.err:empty,
 .header-stat .v.err:is(:not(:empty):is([data-zero])) { color: var(--ink); }
@@ -1847,3 +1848,15 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   color: var(--red); margin-bottom: 4px;
 }
 .preview-card__warnings ul { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--ink); }
+
+/* Phase 11.1 — Slow-mode banner (shown when throttle.active) */
+#throttle-banner {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid #f2a03d;
+  background: rgba(242, 160, 61, 0.08);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+  display: none;   /* JS toggles via style.display */
+}
