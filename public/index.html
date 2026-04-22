@@ -89,6 +89,18 @@
             <span class="passover-pill closed" id="hero-passover-cc" title="CC">CC</span>
           </span>
         </div>
+        <div class="header-stat">
+          <span class="k" data-edit="overview-ram">RAM</span>
+          <span class="v" id="hero-ram">—</span>
+        </div>
+        <div class="header-stat">
+          <span class="k" data-edit="overview-cpu">CPU</span>
+          <span class="v" id="hero-cpu">—</span>
+        </div>
+        <div class="header-stat">
+          <span class="k" data-edit="overview-browsers">Browsers</span>
+          <span class="v" id="hero-browsers">—</span>
+        </div>
       </div>
     </div>
     <div id="server-log-panel" class="hidden" style="margin-bottom:16px">
@@ -433,6 +445,7 @@
         <div>&#9888; Keep your laptop open — closing the lid stops the campaign</div>
         <div>&#9888; Do not close the browser windows that open — they run the campaign</div>
       </div>
+      <div id="throttle-banner" style="display:none"></div>
       <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px">
         <button class="btn btn-secondary btn-sm" onclick="copyCampaignLog()">Copy Log</button>
         <button class="btn btn-secondary btn-sm" onclick="clearCampaignLog()">Clear Log</button>
