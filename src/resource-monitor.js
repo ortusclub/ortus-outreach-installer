@@ -19,6 +19,36 @@
 
 import os from 'node:os';
 import pidusage from 'pidusage';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFile = promisify(execFileCb);
+
+// macOS-only: os.freemem() counts only truly-free pages and ignores inactive
+// and purgeable pages that the kernel will reclaim on demand. vm_stat gives
+// the same breakdown Activity Monitor uses. Falls back to os.freemem() on
+// parse failure.
+async function readMacRamPct() {
+  try {
+    const { stdout } = await execFile('vm_stat');
+    const pageSizeMatch = stdout.match(/page size of (\d+) bytes/);
+    if (!pageSizeMatch) return null;
+    const pageSize = Number(pageSizeMatch[1]);
+    const rowOf = (name) => {
+      const m = stdout.match(new RegExp(`^${name}:\\s+(\\d+)`, 'm'));
+      return m ? Number(m[1]) : 0;
+    };
+    const free      = rowOf('Pages free');
+    const inactive  = rowOf('Pages inactive');
+    const purgeable = rowOf('Pages purgeable');
+    const availableBytes = (free + inactive + purgeable) * pageSize;
+    const totalBytes = os.totalmem();
+    if (totalBytes <= 0) return null;
+    return (1 - availableBytes / totalBytes) * 100;
+  } catch {
+    return null;
+  }
+}
 
 // ── Config ────────────────────────────────────────────────────────────────
 // Matches existing patterns: Number(x) || default keeps invalid/missing env
@@ -68,11 +98,13 @@ export async function sample(browserPids = []) {
     return _cachedSample;
   }
 
-  const ramPct    = (1 - os.freemem() / os.totalmem()) * 100;
   const cpuCount  = os.cpus().length;
   const isWindows = process.platform === 'win32';
+  const isMac     = process.platform === 'darwin';
   const cpuPct    = isWindows ? getCpuPct() : 0;
   const load1     = isWindows ? (cpuPct / 100) * cpuCount : os.loadavg()[0];
+  const macRam    = isMac ? await readMacRamPct() : null;
+  const ramPct    = macRam !== null ? macRam : (1 - os.freemem() / os.totalmem()) * 100;
 
   let pidStats = {};
   if (browserPids.length > 0) {

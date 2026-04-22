@@ -1565,9 +1565,11 @@ function renderHeaderResources(resources) {
   const ramCls = classifyRam(resources.ramPct);
   ramTile.className = ramCls ? `v ${ramCls}` : 'v';
 
-  // CPU — load1 on Unix, cpuPct % on Windows
-  if (resources.load1 > 0) {
-    cpuTile.textContent = resources.load1.toFixed(1);
+  // CPU — display as % of total cores so non-Unix users aren't confused by
+  // raw load averages. load1 on Unix is scaled by cpuCount; cpuPct on Windows
+  // is already a percentage.
+  if (resources.load1 > 0 && resources.cpuCount > 0) {
+    cpuTile.textContent = `${Math.round((resources.load1 / resources.cpuCount) * 100)}%`;
   } else if (resources.cpuPct > 0) {
     cpuTile.textContent = `${Math.round(resources.cpuPct)}%`;
   } else {
