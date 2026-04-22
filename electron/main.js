@@ -122,16 +122,6 @@ function getOrCreateWindow() {
     return { action: 'allow' };
   });
 
-  // D-21 (T-11.2-10 mitigation): close hides to tray; only before-quit lets the
-  // window actually destroy. Prevents the DoS of "X quits the whole app" that
-  // would orphan an in-flight campaign.
-  mainWindow.on('close', (e) => {
-    if (!app.isQuitting) {
-      e.preventDefault();
-      mainWindow.hide();
-    }
-  });
-
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}/`);
   return mainWindow;
 }
@@ -184,27 +174,22 @@ if (!gotLock) {
     try {
       await startServer();
 
-      // D-19 (T-11.2-11 mitigation): hide the dock BEFORE creating any window.
-      // Calling dock.hide AFTER a window is created leaves the dock icon
-      // sticky until the next app activate.
-      if (process.platform === 'darwin' && app.dock?.hide) app.dock.hide();
+      // Launch the dashboard window immediately — normal desktop-app behavior.
+      getOrCreateWindow();
 
+      // Tray icon is kept as a convenience (Show Browsers, quick campaign jump).
+      // Dock icon remains visible; closing the window quits the app normally.
       tray = new Tray(trayIconPath());
       tray.setToolTip('The Ortus Outreach');
       tray.setContextMenu(buildTrayMenu());
 
-      // macOS left-click toggles the dashboard. On Win/Linux left-click shows
-      // the context menu by default — we keep that.
       tray.on('click', () => {
         if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-          mainWindow.hide();
+          mainWindow.focus();
         } else {
           getOrCreateWindow();
         }
       });
-
-      // Do NOT call getOrCreateWindow here — tray-first means we stay dockless
-      // until the operator asks for the window.
     } catch (err) {
       dialog.showErrorBox(
         'The Ortus Outreach',
@@ -221,14 +206,6 @@ if (!gotLock) {
   });
 }
 
-// D-22: NEVER quit on window close. Tray keeps the app alive on every
-// platform. Previously: `if (process.platform !== 'darwin') app.quit();`.
 app.on('window-all-closed', () => {
-  // intentional no-op — tray drives lifecycle.
-});
-
-// Quit path: explicit Cmd+Q or tray Quit menu sets the flag, allowing
-// mainWindow.on('close') to proceed normally.
-app.on('before-quit', () => {
-  app.isQuitting = true;
+  if (process.platform !== 'darwin') app.quit();
 });

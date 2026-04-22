@@ -55,8 +55,8 @@ async function readMacRamPct() {
 // from crashing the module (e.g. "not-a-number" → NaN → falsy → default).
 export function loadConfig() {
   return {
-    RAM_THROTTLE_PCT:         Number(process.env.RAM_THROTTLE_PCT)         || 80,
-    RAM_RELEASE_PCT:          Number(process.env.RAM_RELEASE_PCT)          || 70,
+    RAM_THROTTLE_PCT:         Number(process.env.RAM_THROTTLE_PCT)         || 90,
+    RAM_RELEASE_PCT:          Number(process.env.RAM_RELEASE_PCT)          || 80,
     CPU_THROTTLE_LOAD_FACTOR: Number(process.env.CPU_THROTTLE_LOAD_FACTOR) || 0.9,
     CPU_RELEASE_LOAD_FACTOR:  Number(process.env.CPU_RELEASE_LOAD_FACTOR)  || 0.7,
     THROTTLE_MULTIPLIER:      Number(process.env.THROTTLE_MULTIPLIER)      || 2,

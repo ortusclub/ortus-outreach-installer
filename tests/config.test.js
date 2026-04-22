@@ -19,8 +19,8 @@ function clearEnv() {
 test('defaults when no env vars set', () => {
   clearEnv();
   const cfg = loadConfig();
-  assert.equal(cfg.RAM_THROTTLE_PCT, 80);
-  assert.equal(cfg.RAM_RELEASE_PCT, 70);
+  assert.equal(cfg.RAM_THROTTLE_PCT, 90);
+  assert.equal(cfg.RAM_RELEASE_PCT, 80);
   assert.equal(cfg.CPU_THROTTLE_LOAD_FACTOR, 0.9);
   assert.equal(cfg.CPU_RELEASE_LOAD_FACTOR, 0.7);
   assert.equal(cfg.THROTTLE_MULTIPLIER, 2);
@@ -47,7 +47,7 @@ test('invalid numeric env falls back to default (Number || default)', () => {
   process.env.RAM_THROTTLE_PCT = 'not-a-number';
   process.env.CPU_THROTTLE_LOAD_FACTOR = '';
   const cfg = loadConfig();
-  assert.equal(cfg.RAM_THROTTLE_PCT, 80);
+  assert.equal(cfg.RAM_THROTTLE_PCT, 90);
   assert.equal(cfg.CPU_THROTTLE_LOAD_FACTOR, 0.9);
   clearEnv();
 });

@@ -1591,8 +1591,8 @@ async function pollStatus() {
 // Open Question in 11.1-RESEARCH.md.
 
 function classifyRam(pct) {
-  if (pct >= 80) return 'err';
-  if (pct >= 70) return 'warn';
+  if (pct >= 90) return 'err';
+  if (pct >= 80) return 'warn';
   return '';
 }
 
