@@ -39,7 +39,8 @@
 - Decimal phases (e.g. 11.1): Reserved for urgent insertions (marked INSERTED)
 
 - [ ] **Phase 11: Check DMs** - New Campaign mode; Voyager-based reply detection scoped per profile, with Replies panel + sheet writeback and delta semantics
-- [ ] **Phase 11.1: Resource-Aware Campaign Execution** (INSERTED) - Live RAM/CPU monitor in dashboard, idle profiles park on a low-RAM page between actions, campaign auto-throttles when resources cross threshold
+- [x] **Phase 11.1: Resource-Aware Campaign Execution** (INSERTED) - Live RAM/CPU monitor in dashboard, idle profiles park on a low-RAM page between actions, campaign auto-throttles when resources cross threshold (completed 2026-04-22)
+- [ ] **Phase 11.2: Batch-Mode Campaign + Window Management** (INSERTED) - Refactor campaign loop to batch-of-5 per profile with lazy launch, swap Daily Limit UI to Batches-per-hour, minimize Chromium windows via AppleScript on macOS, make Electron app tray-first with close-to-tray
 - [ ] **Phase 12: Tab Framework** - Dashboard tab bar that hosts Campaign / SN Scraper / City Scanner as first-class tabs with preserved in-progress state
 - [ ] **Phase 13: Ortus City Scanner Integration** - Port the standalone Electron scanner into a tab; Puppeteer-driven city-by-city lead counting
 - [ ] **Phase 14: SN Scraper — Create Saved Search** - Filter form + Puppeteer that applies filters in Sales Nav and saves the search, returning a reusable URL
@@ -66,6 +67,24 @@ Plans:
 - [ ] 11-05-PLAN.md — Wave 3 — End-to-end verification + VALIDATION sign-off
 **UI hint**: yes
 
+### Phase 11.2: Batch-Mode Campaign + Window Management (INSERTED)
+
+**Goal:** Every LinkedIn outreach mode runs as profile-local batches of 5 leads (lazy-launched, parked or fully closed between batches) governed by a simple "batches per hour" knob. On macOS the Orbita Chromium windows minimize to the dock on launch so they don't steal focus, and the Electron app itself runs tray-first — no dock icon, dashboard hides to tray on close.
+**Depends on:** Phase 11.1 (inherits resource-monitor, parkProfile, getProfilePid, throttle primitives — must NOT retune)
+**Requirements**: D-01..D-22 (captured in 11.2-CONTEXT.md)
+**Success Criteria** (what must be TRUE):
+  1. Campaigns process 5 leads per profile per batch for EVERY mode (connect_only, message_only, inmail_only, open_profile_only, check_status). No session-break pauses.
+  2. Between-batch wait is derived from the operator's "Batches per hour" choice (1-6, default 2), with a 60s floor and a 15-min close-vs-park threshold.
+  3. Rate & Limits form shows "Batches per hour" (1-6, default 2) with within-batch gap steppers; the legacy "Max connections per account" input is hidden and safety-capped at 40 in the backend.
+  4. On macOS, every launched Orbita window minimizes to the dock within ~1 second of launch. A "Show Browsers" button on the dashboard (and tray menu item) un-minimizes them for debugging.
+  5. Electron app boots tray-first: no dock icon on macOS, tray icon visible, NO auto-opened window. Tray menu has Show Dashboard / Start Campaign… / Show Browsers / Quit. Closing the dashboard hides it; only Cmd+Q or tray Quit actually exits.
+**Plans:** 3 plans
+Plans:
+- [ ] 11.2-01-PLAN.md — Wave 1 — macOS window management (mac-window.js + launcher hooks + /api/browsers/show endpoint)
+- [ ] 11.2-02-PLAN.md — Wave 2 — Batch-mode campaign loop refactor (delete STEP 1, batch-of-5, lazy launch, close@15min)
+- [ ] 11.2-03-PLAN.md — Wave 3 — Rate & Limits UI relabel + Electron tray mode + human-verify checkpoint
+**UI hint**: yes
+
 ### Phase 11.1: Resource-Aware Campaign Execution (INSERTED)
 **Goal**: Operators can see live RAM/CPU usage in the dashboard, idle GoLogin profiles auto-park on a low-RAM page between actions, and the campaign automatically slows down when system resources cross a configurable threshold — preventing the slowdowns and crashes seen on lower-end colleague machines.
 **Depends on**: Nothing (modifies existing campaign loop and dashboard status endpoint)
@@ -75,7 +94,11 @@ Plans:
   2. When a profile is idle between actions during a campaign, it navigates to a low-RAM page (e.g. about:blank) and returns to LinkedIn before its next action without losing its session.
   3. When RAM or CPU usage crosses a configurable threshold, the campaign delay multiplier increases automatically; when usage falls back below the threshold, normal pacing resumes.
   4. The throttled state is observable in the dashboard (operator sees when the campaign is in slow-mode and why) and the resource trend is legible enough to compare before/after when testing performance changes.
-**Plans**: TBD
+**Plans:** 3/3 plans complete
+Plans:
+- [x] 11.1-01-PLAN.md — Wave 1 — Foundation: resource-monitor module, PID export, Wave 0 test scaffold (node:test)
+- [x] 11.1-02-PLAN.md — Wave 2 — Wire sampling + throttle + parking into the round-robin loop
+- [x] 11.1-03-PLAN.md — Wave 3 — Dashboard tiles (RAM/CPU/Browsers), slow-mode banner, amber CSS
 **UI hint**: yes
 
 ### Phase 12: Tab Framework
@@ -139,7 +162,8 @@ Phases 13, 14, 15 depend on Phase 12 (tab bar). Phase 15 additionally depends on
 | 9. Operational Features | v2.0 | 4/4 | Complete | - |
 | 10. Dashboard UX | v2.0 | 2/2 | Complete | 2026-04-09 |
 | 11. Check DMs | v3.0 | 0/5 | Not started | - |
-| 11.1. Resource-Aware Campaign Execution | v3.0 | 0/? | Not started | - |
+| 11.1. Resource-Aware Campaign Execution | v3.0 | 3/3 | Complete    | 2026-04-22 |
+| 11.2. Batch-Mode Campaign + Window Management | v3.0 | 0/3 | Planned | - |
 | 12. Tab Framework | v3.0 | 0/? | Not started | - |
 | 13. Ortus City Scanner Integration | v3.0 | 0/? | Not started | - |
 | 14. SN Scraper — Create Saved Search | v3.0 | 0/? | Not started | - |
