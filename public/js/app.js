@@ -1487,6 +1487,10 @@ async function pollStatus() {
     const pct = s.totalTargets > 0 ? Math.min(100, Math.round((s.processedToday / s.totalTargets) * 100)) : 0;
     document.getElementById('st-bar').style.width = pct + '%';
 
+    // Phase 11.1: resource tiles + slow-mode banner
+    renderHeaderResources(s.resources || null);
+    renderThrottleBanner(s.throttle || null);
+
     // Update account queue if we have profile names
     if (s.profileNames && s.profileNames.length > 0) {
       renderAccountQueue(s.profileNames, s.currentProfile);
@@ -1522,6 +1526,74 @@ async function pollStatus() {
       }
     }
   } catch { /* */ }
+}
+
+// ─── Phase 11.1: resource tiles + slow-mode banner ─────────────────────────
+// Populated every 2s by pollStatus(). Thresholds match src/resource-monitor.js
+// defaults (RAM_THROTTLE_PCT=80 / RAM_RELEASE_PCT=70 etc). If operator overrides
+// env vars, tile colors stay tied to the 70/80 visual bands — see RESEARCH
+// Open Question in 11.1-RESEARCH.md.
+
+function classifyRam(pct) {
+  if (pct >= 80) return 'err';
+  if (pct >= 70) return 'warn';
+  return '';
+}
+
+function classifyCpu(load1, cpuPct, cpuCount) {
+  const effectiveLoad = load1 > 0 ? load1 : (cpuPct / 100) * cpuCount;
+  if (effectiveLoad >= cpuCount * 0.9) return 'err';
+  if (effectiveLoad >= cpuCount * 0.7) return 'warn';
+  return '';
+}
+
+function renderHeaderResources(resources) {
+  const ramTile = document.getElementById('hero-ram');
+  const cpuTile = document.getElementById('hero-cpu');
+  const brTile  = document.getElementById('hero-browsers');
+  if (!ramTile || !cpuTile || !brTile) return;
+
+  if (!resources) {
+    ramTile.textContent = '—';  ramTile.className = 'v';
+    cpuTile.textContent = '—';  cpuTile.className = 'v';
+    brTile.textContent  = '—';  brTile.className  = 'v';
+    return;
+  }
+
+  // RAM
+  ramTile.textContent = `${Math.round(resources.ramPct)}%`;
+  const ramCls = classifyRam(resources.ramPct);
+  ramTile.className = ramCls ? `v ${ramCls}` : 'v';
+
+  // CPU — load1 on Unix, cpuPct % on Windows
+  if (resources.load1 > 0) {
+    cpuTile.textContent = resources.load1.toFixed(1);
+  } else if (resources.cpuPct > 0) {
+    cpuTile.textContent = `${Math.round(resources.cpuPct)}%`;
+  } else {
+    cpuTile.textContent = '—';
+  }
+  const cpuCls = classifyCpu(resources.load1, resources.cpuPct, resources.cpuCount);
+  cpuTile.className = cpuCls ? `v ${cpuCls}` : 'v';
+
+  // Browsers — count · total RSS
+  const count = (resources.browsers || []).length;
+  const rssGB = ((resources.totalBrowserRssMb || 0) / 1024).toFixed(1);
+  brTile.textContent = `${count}·${rssGB}GB`;
+  brTile.className = 'v';
+}
+
+function renderThrottleBanner(throttle) {
+  const banner = document.getElementById('throttle-banner');
+  if (!banner) return;
+  if (throttle?.active) {
+    banner.textContent = `⚠ SLOW MODE — ${throttle.reason}, delays ${throttle.multiplier}x`;
+    banner.setAttribute('aria-live', 'polite');
+    banner.style.display = '';
+  } else {
+    banner.textContent = '';
+    banner.style.display = 'none';
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
