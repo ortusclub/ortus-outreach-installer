@@ -91,3 +91,13 @@ test('unminimizeByPids: no-op on non-darwin', { skip: isDarwin }, async () => {
     assert.equal(called, false);
   } finally { _setExecFile(null); }
 });
+
+// Sanity check: the endpoint wiring in server.js imports from mac-window.
+// We don't boot Express; we just verify the contract shape is stable.
+test('unminimizeByPids contract matches endpoint expectations', async () => {
+  const result = await unminimizeByPids([]);
+  // Endpoint returns { ok, minimized, skipped, platform } — the helper must
+  // provide { minimized, skipped } which the endpoint then spreads.
+  assert.ok(typeof result.minimized === 'number');
+  assert.ok(typeof result.skipped === 'number');
+});
