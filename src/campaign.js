@@ -319,10 +319,119 @@ export async function parkProfile(page, parkUrl = 'about:blank') {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Phase 11.2: ensureProfileLoggedIn — cache clear + home nav + health check
+// + interactive login wait. Extracted from the old STEP 1 warmup block so
+// ensureOpen() can call it lazily on first batch (D-10).
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function ensureProfileLoggedIn(launched, profileId, pName) {
+  let page = launched.page;
+
+  // Clear cache + service workers (keep cookies so login persists)
+  try {
+    const client = await page.target().createCDPSession();
+    await client.send('Network.clearBrowserCache');
+    await client.send('ServiceWorker.unregister', { scopeURL: 'https://www.linkedin.com/' }).catch(() => {});
+    log(`✓ ${pName}: cache cleared.`);
+  } catch (e) {
+    log(`⚠ ${pName}: cache clear skipped: ${e.message}`);
+  }
+
+  try {
+    await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (e) {
+    log(`⚠ Home nav: ${e.message}`);
+  }
+
+  // Re-acquire page (prevents detached frame)
+  try {
+    const pages = await launched.browser.pages();
+    if (pages.length > 0) {
+      page = pages[pages.length - 1];
+      await page.setViewport({ width: 1366, height: 900 });
+    }
+  } catch { /* keep current */ }
+
+  // Health check
+  log(`Checking ${pName} health...`);
+  const health = await checkProfileHealth(page, pName);
+  if (!health.healthy) {
+    if (profileId === 'local-browser') {
+      log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
+      log(`⏳ Waiting up to 120s for you to log in...`);
+      await page.evaluate(() => { document.body.style.zoom = '90%'; }).catch(() => {});
+      await page.evaluate(() => { if (window.moveTo) window.moveTo(100, 100); }).catch(() => {});
+      try {
+        const client = await page.target().createCDPSession();
+        const { windowId } = await client.send('Browser.getWindowForTarget');
+        await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
+      } catch { /* */ }
+
+      let loggedIn = false;
+      for (let wait = 0; wait < 24; wait++) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const currentUrl = page.url();
+          if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) { loggedIn = true; break; }
+          const recheck = await checkProfileHealth(page, pName);
+          if (recheck.healthy) { loggedIn = true; break; }
+        } catch { /* */ }
+        if ((wait + 1) % 6 === 0) log(`  Still waiting for login... (${(wait + 1) * 5}s)`);
+      }
+      if (!loggedIn) {
+        log(`✗ Local Browser: login timed out after 120s. Skipping.`);
+        await closeLocalBrowser();
+        return { page: null, ok: false };
+      }
+      log(`✓ Local Browser: logged in! Moving window off-screen.`);
+      try {
+        const client = await page.target().createCDPSession();
+        const { windowId } = await client.send('Browser.getWindowForTarget');
+        await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+      } catch { /* */ }
+    } else {
+      log(`⚠ ${pName} not logged in: ${health.issues.join(', ')}. Bringing browser on-screen — please log in.`);
+      log(`⏳ Waiting up to 120s for you to log into ${pName}...`);
+      try {
+        const client = await page.target().createCDPSession();
+        const { windowId } = await client.send('Browser.getWindowForTarget');
+        await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
+      } catch { /* */ }
+
+      let loggedIn = false;
+      for (let wait = 0; wait < 24; wait++) {
+        if (campaign._abort) break;
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const currentUrl = page.url();
+          if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) { loggedIn = true; break; }
+          const recheck = await checkProfileHealth(page, pName);
+          if (recheck.healthy) { loggedIn = true; break; }
+        } catch { /* */ }
+        if ((wait + 1) % 6 === 0) log(`  Still waiting for ${pName} login... (${(wait + 1) * 5}s)`);
+      }
+      if (!loggedIn) {
+        log(`✗ ${pName}: login timed out after 120s. Skipping.`);
+        try { await launched.browser.close().catch(() => {}); await closeProfile(profileId); } catch { /* */ }
+        return { page: null, ok: false };
+      }
+      log(`✓ ${pName}: logged in! Moving window off-screen.`);
+      try {
+        const client = await page.target().createCDPSession();
+        const { windowId } = await client.send('Browser.getWindowForTarget');
+        await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+      } catch { /* */ }
+    }
+  }
+  log(`${pName} health check passed.`);
+  return { page, ok: true };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {} }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, batchesPerHour = 2, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {} }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -360,6 +469,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
     log(`Daily limit: ${dailyLimit}`);
+    // Phase 11.2: clamp batchesPerHour to 1..6 and log the target throughput.
+    batchesPerHour = Math.max(1, Math.min(6, Number(batchesPerHour) || 2));
+    log(`Batches per hour: ${batchesPerHour} (→ ~${batchesPerHour * 5} leads/hour/profile target)`);
     log(`Templates: note=${tpl.connectionNote ? '✓' : '—'} followUp=${tpl.followUpMessage ? '✓' : '—'} inmail=${tpl.inmail.subject ? '✓' : '—'}`);
     if (linkedinColumn) log(`LinkedIn column: "${linkedinColumn}"`);
     if (messageOpenProfiles) log('Open Profile messaging: ON');
@@ -443,20 +555,27 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
 
-    // ── ROUND-ROBIN: Open ALL profiles, then rotate 1 lead per profile ──
-    // Instead of processing all leads per profile sequentially, we cycle:
-    // Account 1 → lead 1, Account 2 → lead 2, ... Account N → lead N, then repeat
-    // This spreads activity evenly and looks more natural to LinkedIn.
+    // ── Phase 11.2: LAZY-LAUNCH BATCH LOOP ──
+    // Profiles open on first batch (D-10). Each profile processes BATCH_SIZE leads
+    // back-to-back, then either parks on about:blank (short gap) or closes + re-opens
+    // next batch (long gap, D-13). Session break is gone (D-04). batchesPerHour sets
+    // the target between-batch spacing (D-03).
 
     if (profileIds.length > 3) {
-      log(`⚠ RAM warning: ${profileIds.length} browsers will be open simultaneously. 4 is fine, 10+ may slow your machine.`);
+      log(`⚠ RAM warning: up to ${profileIds.length} browsers may be open simultaneously. 4 is fine, 10+ may slow your machine.`);
     }
 
-    // STEP 1: Open all browsers and run health checks
-    const activeSessions = []; // { profileId, pName, browser, page }
+    // Campaign-scoped session cache, replaces activeSessions array.
+    const sessions = new Map(); // profileId → { profileId, pName, browser, page, warmedUp }
 
-    for (const profileId of profileIds) {
-      if (campaign._abort) break;
+    /**
+     * Lazy launch + warmup + health check. Called on first batch per profile;
+     * subsequent batches short-circuit to the cached session (D-11 — 20s warmup
+     * only on first open). Returns null if the profile cannot be made healthy.
+     */
+    async function ensureOpen(profileId) {
+      const cached = sessions.get(profileId);
+      if (cached) return cached;
 
       const pName = profileNameCache[profileId] || profileId;
       campaign.currentProfile = pName;
@@ -470,144 +589,93 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           launched = await launchProfile(profileId, token);
         }
 
-        let page = launched.page;
+        const { page, ok } = await ensureProfileLoggedIn(launched, profileId, pName);
+        if (!ok) return null;
 
-        // Clear cache + service workers (keep cookies so login persists)
-        try {
-          const client = await page.target().createCDPSession();
-          await client.send('Network.clearBrowserCache');
-          await client.send('ServiceWorker.unregister', { scopeURL: 'https://www.linkedin.com/' }).catch(() => {});
-          log(`✓ ${pName}: cache cleared.`);
-        } catch (e) {
-          log(`⚠ ${pName}: cache clear skipped: ${e.message}`);
-        }
-
-        try {
-          await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-        } catch (e) {
-          log(`⚠ Home nav: ${e.message}`);
-        }
-
-        // Re-acquire page (prevents detached frame)
-        try {
-          const pages = await launched.browser.pages();
-          if (pages.length > 0) {
-            page = pages[pages.length - 1];
-            await page.setViewport({ width: 1366, height: 900 });
-          }
-        } catch { /* keep current */ }
-
-        // Health check
-        log(`Checking ${pName} health...`);
-        const health = await checkProfileHealth(page, pName);
-        if (!health.healthy) {
-          if (profileId === 'local-browser') {
-            log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
-            log(`⏳ Waiting up to 120s for you to log in...`);
-            await page.evaluate(() => { document.body.style.zoom = '90%'; }).catch(() => {});
-            await page.evaluate(() => { if (window.moveTo) window.moveTo(100, 100); }).catch(() => {});
-            try {
-              const client = await page.target().createCDPSession();
-              const { windowId } = await client.send('Browser.getWindowForTarget');
-              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
-            } catch { /* */ }
-
-            let loggedIn = false;
-            for (let wait = 0; wait < 24; wait++) {
-              await new Promise(r => setTimeout(r, 5000));
-              try {
-                const currentUrl = page.url();
-                if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) { loggedIn = true; break; }
-                const recheck = await checkProfileHealth(page, pName);
-                if (recheck.healthy) { loggedIn = true; break; }
-              } catch { /* */ }
-              if ((wait + 1) % 6 === 0) log(`  Still waiting for login... (${(wait + 1) * 5}s)`);
-            }
-            if (!loggedIn) {
-              log(`✗ Local Browser: login timed out after 120s. Skipping.`);
-              await closeLocalBrowser();
-              continue;
-            }
-            log(`✓ Local Browser: logged in! Moving window off-screen.`);
-            try {
-              const client = await page.target().createCDPSession();
-              const { windowId } = await client.send('Browser.getWindowForTarget');
-              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
-            } catch { /* */ }
-          } else {
-            log(`⚠ ${pName} not logged in: ${health.issues.join(', ')}. Bringing browser on-screen — please log in.`);
-            log(`⏳ Waiting up to 120s for you to log into ${pName}...`);
-            try {
-              const client = await page.target().createCDPSession();
-              const { windowId } = await client.send('Browser.getWindowForTarget');
-              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
-            } catch { /* */ }
-
-            let loggedIn = false;
-            for (let wait = 0; wait < 24; wait++) {
-              if (campaign._abort) break;
-              await new Promise(r => setTimeout(r, 5000));
-              try {
-                const currentUrl = page.url();
-                if (!currentUrl.includes('/login') && !currentUrl.includes('/authwall') && currentUrl.includes('linkedin.com')) { loggedIn = true; break; }
-                const recheck = await checkProfileHealth(page, pName);
-                if (recheck.healthy) { loggedIn = true; break; }
-              } catch { /* */ }
-              if ((wait + 1) % 6 === 0) log(`  Still waiting for ${pName} login... (${(wait + 1) * 5}s)`);
-            }
-            if (!loggedIn) {
-              log(`✗ ${pName}: login timed out after 120s. Skipping.`);
-              try { await launched.browser.close().catch(() => {}); await closeProfile(profileId); } catch { /* */ }
-              continue;
-            }
-            log(`✓ ${pName}: logged in! Moving window off-screen.`);
-            try {
-              const client = await page.target().createCDPSession();
-              const { windowId } = await client.send('Browser.getWindowForTarget');
-              await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
-            } catch { /* */ }
-          }
-        }
-        log(`${pName} health check passed.`);
-
-        // Warmup
+        // First-batch-only 20s home-page warmup (D-11).
         log(`⏳ ${pName}: waiting 20s on home page…`);
         await new Promise(r => setTimeout(r, 20000));
         log(`✓ ${pName} warmup done.`);
 
-        activeSessions.push({ profileId, pName, browser: launched.browser, page });
+        const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
+        sessions.set(profileId, session);
+        return session;
       } catch (err) {
         log(`✗ ${pName}: failed to open — ${err.message}`);
         pushError(err);
+        return null;
       }
     }
 
-    if (activeSessions.length === 0) {
-      log('✗ No healthy profiles available. Campaign cannot proceed.');
-    } else {
-      log(`\n✓ ${activeSessions.length} profile(s) ready. Starting round-robin…\n`);
-
-      // STEP 2: Round-robin lead processing
-      let leadIndex = 0;
-      let totalDone = 0;
-      let totalVisited = 0;
-      const weeklyLimited = new Set(); // Profiles that hit weekly limit
-
-      while (!campaign._abort) {
-        // Check if all profiles have reached their daily limit or are weekly-limited
-        const activeProfiles = activeSessions.filter(s =>
-          getCampaignCount(s.profileId) < dailyLimit && !weeklyLimited.has(s.profileId)
-        );
-        if (activeProfiles.length === 0) {
-          log('All profiles reached their campaign limit or weekly limit.');
-          break;
+    /**
+     * Close a single profile's browser, timing the operation (Q5 observability).
+     * Serialized by the caller — only one close at a time (Pitfall 5 resolution).
+     * Guards against double-close via sessions.get() guard.
+     */
+    async function closeSession(profileId) {
+      const s = sessions.get(profileId);
+      if (!s) return { durationMs: 0 };
+      const t0 = Date.now();
+      try {
+        if (profileId === 'local-browser') {
+          await closeLocalBrowser();
+        } else {
+          const pages = await s.browser.pages().catch(() => []);
+          for (const p of pages) {
+            try { await p.close(); } catch { /* */ }
+          }
+          await s.browser.close().catch(() => {});
+          await closeProfile(profileId);
         }
+        const durationMs = Date.now() - t0;
+        log(`✓ ${s.pName} browser closed. ⏱ close duration ${durationMs}ms`);
+        sessions.delete(profileId);
+        return { durationMs };
+      } catch (e) {
+        const durationMs = Date.now() - t0;
+        log(`Close ${s.pName}: ${e.message} (⏱ ${durationMs}ms)`);
+        sessions.delete(profileId);
+        return { durationMs };
+      }
+    }
 
+    let leadIndex = 0;
+    let totalDone = 0;
+    let totalVisited = 0;
+    let leadsExhausted = false;
+    const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
+
+    log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
+
+    outer: while (!campaign._abort && !leadsExhausted) {
+      const activeProfiles = profileIds.filter(id =>
+        getCampaignCount(id) < dailyLimit && !weeklyLimited.has(id)
+      );
+      if (activeProfiles.length === 0) {
+        log('All profiles reached their campaign limit or weekly limit.');
+        break;
+      }
+
+      for (const profileId of activeProfiles) {
+        if (campaign._abort) break outer;
+        if (leadsExhausted) break outer;
+
+        const session = await ensureOpen(profileId);
+        if (!session) continue; // opened-but-unhealthy OR launch failed; try next profile
+
+        const { pName, browser } = session;
+        let { page } = session;
+        campaign.currentProfile = pName;
+
+        const batchStart = Date.now();
+
+        // ── Inner: up to BATCH_SIZE leads for this profile ──
+        for (let leadInBatch = 0; leadInBatch < BATCH_SIZE && !campaign._abort; leadInBatch++) {
         // ── Phase 11.1: per-iteration resource sample + throttle decision ──
         // Pattern: RESEARCH.md §Pattern 2 (cached sample) + §Pattern 3 (multiplicative composition).
         // Writes campaign._lastSample and campaign._throttle for the status endpoint to read.
         try {
-          const activePids = activeSessions
+          const activePids = [...sessions.values()]
             .filter(s => s.profileId !== 'local-browser')
             .map(s => getProfilePid(s.profileId))
             .filter(Boolean);
@@ -643,18 +711,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         if (!row) {
           log('All leads processed or filtered out.');
+          leadsExhausted = true;
           break;
         }
-
-        // Pick the next profile in rotation.
-        // Messaging/OP/InMail modes: batch of 5 leads per profile before rotating.
-        // Connection modes: 1-at-a-time round-robin (proven, don't change).
-        const batchModes = new Set(['open_profile_only', 'message_only', 'inmail_only']);
-        const LEADS_PER_ROTATION = batchModes.has(mode) ? 5 : 1;
-        const rotationCounter = batchModes.has(mode) ? totalVisited : totalDone;
-        const session = activeProfiles[Math.floor(rotationCounter / LEADS_PER_ROTATION) % activeProfiles.length];
-        const { profileId, pName, browser } = session;
-        let { page } = session;
 
         campaign.currentProfile = pName;
 
@@ -936,11 +995,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             await parkProfile(page, rmCfg.PARK_PAGE);
           }
 
-          // Delay between leads + session breaks (interruptible by abort)
+          // Within-batch delay between leads (interruptible by abort).
+          // Phase 11.2 (D-04): session-break branch removed — between-batch
+          // gap is handled after the inner BATCH_SIZE loop, derived from
+          // batchesPerHour.
           if (!campaign._abort) {
             // Messaging existing 1st-degree connections is much lower risk than
             // sending new connection requests, so use a faster cadence and skip
-            // the single-account slowdown + mid-run session break.
+            // the single-account slowdown.
             const isMessageMode = mode === 'message_only';
             const delayMultiplier = computeDelayMultiplier({
               mode,
@@ -949,14 +1011,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               throttleMultiplier: campaign._throttle?.multiplier ?? 1,
             });
 
-            const SESSION_BREAK_EVERY = 15;
             let waitMs;
-            if (!isMessageMode && totalDone > 0 && totalDone % SESSION_BREAK_EVERY === 0) {
-              const breakMin = 10 * 60 * 1000;
-              const breakMax = 20 * 60 * 1000;
-              waitMs = Math.floor(Math.random() * (breakMax - breakMin + 1) + breakMin);
-              log(`  ☕ Session break: ${(waitMs / 60000).toFixed(0)} min (${totalDone} leads processed across all accounts)`);
-            } else if (isMessageMode) {
+            if (isMessageMode) {
               // User-controlled gap from the dashboard (delayMin–delayMax seconds).
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
               log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (message gap)`);
@@ -989,36 +1045,48 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           log(`  ✗ ${err.message}`);
           pushError(err);
         }
-      }
+        }  // end inner BATCH_SIZE for-loop
 
-      // Log per-profile stats
-      for (const s of activeSessions) {
-        log(`■ ${s.pName}: ${getCampaignCount(s.profileId)} processed.`);
-      }
+        // ── Between-batch decision (D-03, D-12, D-13) ──
+        if (campaign._abort || leadsExhausted) break outer;
+
+        const batchDurationMs = Date.now() - batchStart;
+        const waitMs = computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
+        if (shouldCloseBetweenBatches({ waitMs })) {
+          log(`  ⊗ ${pName}: gap ${(waitMs / 60000).toFixed(1)}min > ${getCloseGapMin()}min — closing browser.`);
+          await closeSession(profileId);
+        } else {
+          if (rmCfg.IDLE_PARKING_ENABLED && !page.isClosed?.()) {
+            await parkProfile(page, rmCfg.PARK_PAGE);
+          }
+          log(`  ⏸ ${pName}: parked for ${(waitMs / 1000).toFixed(0)}s until next batch.`);
+        }
+
+        // Chunked sleep so abort is responsive. Runs AFTER close so close
+        // latency counts against the gap, not wall-clock (D-03 semantics).
+        const gapEnd = Date.now() + waitMs;
+        while (Date.now() < gapEnd && !campaign._abort) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }  // end for-each profile in activeProfiles
+    }  // end outer:while
+
+    // Log per-profile stats (from the sessions Map — covers both still-open
+    // and already-closed profiles via campaignCounts).
+    for (const profileId of profileIds) {
+      const pName = profileNameCache[profileId] || profileId;
+      log(`■ ${pName}: ${getCampaignCount(profileId)} processed.`);
     }
 
-    // STEP 3: Close all browsers (with 2-minute timeout)
+    // STEP 3: Close all remaining browsers (with 2-minute timeout).
+    // Profiles that were closed between batches are already out of `sessions`.
     log('Closing all browsers...');
     const closeTimeout = setTimeout(() => {
       log('⚠ Browser close timed out after 2 minutes. Force-ending campaign.');
     }, 120000);
 
-    for (const session of activeSessions) {
-      try {
-        if (session.profileId === 'local-browser') {
-          await closeLocalBrowser();
-        } else {
-          const pages = await session.browser.pages();
-          for (const p of pages) {
-            try { await p.close(); } catch { /* */ }
-          }
-          await session.browser.close().catch(() => {});
-          await closeProfile(session.profileId);
-        }
-        log(`✓ ${session.pName} browser closed.`);
-      } catch (e) {
-        log(`Close ${session.pName}: ${e.message}`);
-      }
+    for (const profileId of [...sessions.keys()]) {
+      await closeSession(profileId);
     }
 
     clearTimeout(closeTimeout);
@@ -1033,6 +1101,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         mode: campaign.mode,
         profiles: campaign.profileNames,
         dailyLimit: dailyLimit,
+        batchesPerHour: batchesPerHour,  // Phase 11.2 (D-06)
         totalProcessed: campaign.totalProcessed,
         successCount: campaign.processedToday,
         errorCount: campaign.errors.length,
