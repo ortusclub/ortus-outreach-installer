@@ -1,11 +1,12 @@
 import puppeteer from 'puppeteer-core';
 import { existsSync, mkdirSync } from 'fs';
-import { resolve } from 'path';
+import { dataPath } from './paths.js';
+import { minimizeByPid } from './mac-window.js';
 
 let activeBrowser = null;
 
 // Persistent profile — cookies survive across runs
-const LOCAL_PROFILE_DIR = resolve('./data/local-profile');
+const LOCAL_PROFILE_DIR = dataPath('local-profile');
 
 /**
  * Find Chrome executable path based on OS.
@@ -56,9 +57,13 @@ export async function launchLocalBrowser() {
     userDataDir: LOCAL_PROFILE_DIR,
     args: [
       '--window-position=-2400,-2400',
-      '--window-size=1366,900',
+      '--window-size=1600,1000',
       '--no-first-run',
       '--no-default-browser-check',
+      // Anti-detection stealth flags (inspired by playwright-stealth)
+      '--disable-blink-features=AutomationControlled',  // Hides navigator.webdriver
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-infobars',                              // No "Chrome is controlled" bar
     ],
     ignoreHTTPSErrors: true,
     protocolTimeout: 60000,
@@ -69,11 +74,32 @@ export async function launchLocalBrowser() {
   const pages = await browser.pages();
   const page = pages.length > 0 ? pages[0] : await browser.newPage();
 
-  await page.setViewport({ width: 1366, height: 900 });
+  await page.setViewport({ width: 1600, height: 1000 });
   page.setDefaultNavigationTimeout(30000);
   page.setDefaultTimeout(15000);
 
-  console.log('[local] ✓ Chrome launched with persistent profile.');
+  // Stealth: hide automation indicators from page JS
+  await page.evaluateOnNewDocument(() => {
+    // Remove webdriver flag
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    // Normal plugins array (headless Chrome has 0)
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => [1, 2, 3, 4, 5],
+    });
+    // Normal languages
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['en-US', 'en'],
+    });
+    // Chrome runtime object (missing in automation)
+    if (!window.chrome) window.chrome = { runtime: {} };
+  });
+
+  console.log('[local] ✓ Chrome launched with persistent profile (stealth enabled).');
+
+  // Phase 11.2 (D-16): minimize the Chromium window on macOS.
+  const pid = browser.process?.()?.pid;
+  if (pid) { minimizeByPid(pid).catch(() => {}); }
+
   return { browser, page };
 }
 
