@@ -158,15 +158,39 @@
         <!-- Steppers -->
         <div class="stepper-grid">
           <div class="stepper" id="rate-per-hour-wrap">
-            <div class="stepper-label" id="rate-per-hour-label">Connections per account / hour</div>
+            <div class="stepper-label" id="rate-per-hour-label">Batches per hour</div>
             <div class="stepper-row">
-              <input type="number" class="stepper-input" id="rate-per-hour" value="6" min="1" max="30" oninput="updateCampaignSummary()" />
+              <input type="number" class="stepper-input" id="rate-per-hour" value="2" min="1" max="6" oninput="updateCampaignSummary()" />
               <div class="stepper-ctrl">
                 <button type="button" class="step-btn" onclick="stepInput('rate-per-hour', 1)">+</button>
                 <button type="button" class="step-btn" onclick="stepInput('rate-per-hour', -1)">−</button>
               </div>
             </div>
-            <div class="stepper-unit" id="rate-per-hour-unit">Actions per hour</div>
+            <div class="stepper-unit" id="rate-per-hour-unit">Batches per profile per hour (5 leads per batch)</div>
+          </div>
+
+          <div class="stepper" id="within-batch-min-wrap">
+            <div class="stepper-label">Gap between leads within a batch (min, sec)</div>
+            <div class="stepper-row">
+              <input type="number" class="stepper-input" id="within-batch-min" value="15" min="5" max="120" oninput="updateCampaignSummary()" />
+              <div class="stepper-ctrl">
+                <button type="button" class="step-btn" onclick="stepInput('within-batch-min', 1)">+</button>
+                <button type="button" class="step-btn" onclick="stepInput('within-batch-min', -1)">−</button>
+              </div>
+            </div>
+            <div class="stepper-unit">Floor 15s recommended</div>
+          </div>
+
+          <div class="stepper" id="within-batch-max-wrap">
+            <div class="stepper-label">Gap between leads within a batch (max, sec)</div>
+            <div class="stepper-row">
+              <input type="number" class="stepper-input" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
+              <div class="stepper-ctrl">
+                <button type="button" class="step-btn" onclick="stepInput('within-batch-max', 1)">+</button>
+                <button type="button" class="step-btn" onclick="stepInput('within-batch-max', -1)">−</button>
+              </div>
+            </div>
+            <div class="stepper-unit">Ceiling 45s recommended</div>
           </div>
 
           <div class="stepper" id="message-gap-wrap" style="display:none">
@@ -181,7 +205,7 @@
             <div class="stepper-unit">Recommended 60–120s</div>
           </div>
 
-          <div class="stepper">
+          <div class="stepper" id="daily-limit-wrap" style="display:none">
             <div class="stepper-label" id="daily-limit-label">Max connections per account (total)</div>
             <div class="stepper-row">
               <input type="number" class="stepper-input" id="daily-limit" value="40" min="1" max="100" oninput="updateCampaignSummary()" />
@@ -204,7 +228,7 @@
           <div class="hero-cell">
             <div class="hero-k" data-edit="hero-duration-k">Duration</div>
             <div class="hero-v" id="hero-duration">—</div>
-            <div class="hero-sub" id="hero-duration-sub">at 6 / hour</div>
+            <div class="hero-sub" id="hero-duration-sub">at 2 batches / hour</div>
           </div>
           <div class="hero-cell">
             <div class="hero-k" data-edit="hero-finish-k">Finishes</div>
@@ -447,6 +471,7 @@
       </div>
       <div id="throttle-banner" style="display:none"></div>
       <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-show-browsers" onclick="showBrowsers()" title="Un-minimize all active profile windows">Show Browsers</button>
         <button class="btn btn-secondary btn-sm" onclick="copyCampaignLog()">Copy Log</button>
         <button class="btn btn-secondary btn-sm" onclick="clearCampaignLog()">Clear Log</button>
       </div>

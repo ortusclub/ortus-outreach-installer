@@ -1011,15 +1011,23 @@ function onModeChange() {
     if (op) op.style.display = '';
   }
 
-  // Swap rate-per-hour ↔ message-gap inputs
+  // Swap rate-per-hour ↔ message-gap inputs. Phase 11.2: within-batch gap
+  // steppers (D-07) are visible for every non-message mode, hidden in
+  // message_only where the existing #message-gap field governs cadence.
   const rateWrap = document.getElementById('rate-per-hour-wrap');
   const gapWrap = document.getElementById('message-gap-wrap');
+  const wbMinWrap = document.getElementById('within-batch-min-wrap');
+  const wbMaxWrap = document.getElementById('within-batch-max-wrap');
   if (mode === 'message_only') {
     if (rateWrap) rateWrap.style.display = 'none';
     if (gapWrap) gapWrap.style.display = '';
+    if (wbMinWrap) wbMinWrap.style.display = 'none';
+    if (wbMaxWrap) wbMaxWrap.style.display = 'none';
   } else {
     if (rateWrap) rateWrap.style.display = '';
     if (gapWrap) gapWrap.style.display = 'none';
+    if (wbMinWrap) wbMinWrap.style.display = '';
+    if (wbMaxWrap) wbMaxWrap.style.display = '';
   }
 
   // Persist last-used mode
@@ -1212,13 +1220,16 @@ async function previewSheet() {
 function updateCampaignSummary() {
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
 
-  // Mode-specific vocabulary
+  // Mode-specific vocabulary. Phase 11.2 (D-06..D-09): rate is ALWAYS "Batches
+  // per hour" — the rate input is the same batches-per-hour knob in every mode
+  // post-11.2. limitLabel is decorative (the #daily-limit-wrap is hidden) but
+  // still assigned so downstream setters don't crash.
   const MODE_WORDS = {
-    connect_only:        { action: 'connections', actionVerb: 'sending',     rateLabel: 'Connections per account / hour', limitLabel: 'Max connections per account (total)' },
-    message_only:        { action: 'messages',    actionVerb: 'sending',     rateLabel: 'Messages per account / hour',    limitLabel: 'Max messages per account (total)' },
-    inmail_only:         { action: 'InMails',     actionVerb: 'sending',     rateLabel: 'InMails per account / hour',      limitLabel: 'Max InMails per account (total)' },
-    open_profile_only:   { action: 'Open Profile messages', actionVerb: 'sending', rateLabel: 'Open Profile messages per account / hour', limitLabel: 'Max Open Profile messages per account (total)' },
-    check_status:        { action: 'checks',      actionVerb: 'checking',    rateLabel: 'Status checks per account / hour', limitLabel: 'Max connection checks per account (total)' },
+    connect_only:        { action: 'connections',            actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
+    message_only:        { action: 'messages',               actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
+    inmail_only:         { action: 'InMails',                actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
+    open_profile_only:   { action: 'Open Profile messages',  actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
+    check_status:        { action: 'checks',                 actionVerb: 'checking', rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
   };
   const words = MODE_WORDS[mode] || MODE_WORDS.connect_only;
 
@@ -1228,7 +1239,9 @@ function updateCampaignSummary() {
   const limitLabelEl = document.getElementById('daily-limit-label');
   if (limitLabelEl) limitLabelEl.textContent = words.limitLabel;
 
-  // Cap the daily-limit input at the sheet row count once known
+  // Cap the daily-limit input at the sheet row count once known. Note: the
+  // wrapper is hidden post-11.2 (D-08), but the input remains so its value
+  // still posts as the backend safety cap.
   const limitInput = document.getElementById('daily-limit');
   const rows = typeof window.sheetTotalRows === 'number' && window.sheetTotalRows > 0 ? window.sheetTotalRows : null;
   if (limitInput && rows) {
@@ -1240,25 +1253,28 @@ function updateCampaignSummary() {
   const limit = parseInt(document.getElementById('daily-limit').value, 10) || 40;
   const numAccounts = Math.max(selectedProfileIds.length, 1);
 
-  // In message mode the "rate" is derived from the user-picked gap.
-  // Messaging a 1st-degree connection takes ~25s of real work per profile
-  // (navigate, dwell, click Message, type via contenteditable, click Send).
-  // Connect/InMail mode is much heavier (~90s: modal, note, post-send verify).
+  // Phase 11.2: rate is batches/hour for every mode. In message_only we still
+  // derive a rate-ish value from the gap field for the summary text.
   const MSG_OUTREACH_TIME = 25;
-  const CONNECT_OUTREACH_TIME = 90;
 
   let rate;
   if (mode === 'message_only') {
     const gap = parseInt(document.getElementById('message-gap')?.value, 10) || 60;
     rate = Math.max(1, Math.round(3600 / (MSG_OUTREACH_TIME + gap)));
   } else {
-    rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 6;
+    rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 2;
   }
 
-  const totalPerHour = rate * numAccounts;
+  // Phase 11.2 (D-01): each batch = 5 leads. Approximate leads/hour from the
+  // batch rate for the hero copy. In message mode this is the rate (pure msgs).
+  const LEADS_PER_BATCH = 5;
+  const leadsPerHour = mode === 'message_only' ? rate : rate * LEADS_PER_BATCH;
+  const totalPerHour = leadsPerHour * numAccounts;
   const totalActions = limit * numAccounts;
-  // Compute duration in minutes so we can render "42 min" instead of "1 hour"
-  const minutesNeeded = Math.max(1, Math.ceil((limit / rate) * 60));
+  // Duration based on leads/hour (batches × 5), capped by the backend safety
+  // limit. Example: 2 bph × 1 account × 5 leads = 10 leads/hr. 40 cap ⇒ 240 min.
+  const effectiveRate = Math.max(1, leadsPerHour);
+  const minutesNeeded = Math.max(1, Math.ceil((limit / effectiveRate) * 60));
   const durationStr = minutesNeeded < 60
     ? `${minutesNeeded} min`
     : `${Math.floor(minutesNeeded / 60)}h ${minutesNeeded % 60}m`;
@@ -1270,11 +1286,19 @@ function updateCampaignSummary() {
   const el = document.getElementById('summary-stats');
   if (el) {
     const accountWord = numAccounts === 1 ? 'account' : 'accounts';
-    el.innerHTML = `
-      <div><strong>${numAccounts} ${accountWord}</strong>, each ${words.actionVerb} <strong>${rate}</strong> ${words.action} per hour</div>
-      <div>= <strong>${totalActions}</strong> ${words.action} done in about <strong>${durationStr}</strong></div>
-      <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
-    `;
+    if (mode === 'message_only') {
+      el.innerHTML = `
+        <div><strong>${numAccounts} ${accountWord}</strong>, each ${words.actionVerb} <strong>${rate}</strong> ${words.action} per hour</div>
+        <div>= up to <strong>${totalActions}</strong> ${words.action} capped by the safety limit (${limit}/account)</div>
+        <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
+      `;
+    } else {
+      el.innerHTML = `
+        <div><strong>${numAccounts} ${accountWord}</strong>, each running <strong>${rate}</strong> batch${rate === 1 ? '' : 'es'} per hour (~${leadsPerHour} leads/hour per account)</div>
+        <div>= up to <strong>${totalActions}</strong> ${words.action} capped by the safety limit (${limit}/account)</div>
+        <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
+      `;
+    }
   }
 
   // Launch hero mirror
@@ -1293,7 +1317,11 @@ function updateCampaignSummary() {
   setText('hero-actions', String(totalActions));
   setText('hero-actions-sub', `${numAccounts} ${accountWord} · ${words.action}`);
   setText('hero-duration', durationStr);
-  setText('hero-duration-sub', `${rate} ${words.action}/hr × ${numAccounts}`);
+  if (mode === 'message_only') {
+    setText('hero-duration-sub', `${rate} ${words.action}/hr × ${numAccounts}`);
+  } else {
+    setText('hero-duration-sub', `${rate} batches/hr × ${numAccounts}`);
+  }
   setText('hero-finish', finishStr);
   setText('hero-finish-sub', `from now · local time`);
 }
@@ -1350,23 +1378,23 @@ async function startCampaign() {
 
   const mode = document.getElementById('campaign-mode').value;
 
-  // Delays: message mode uses the explicit gap field; everything else derives
-  // from the connections-per-hour rate.
+  // Phase 11.2 (D-02, D-07): within-batch gap comes from explicit steppers for
+  // non-message modes. Message mode keeps the #message-gap stepper because
+  // messaging existing connections has different cadence semantics.
   let delayMin, delayMax;
   if (mode === 'message_only') {
     const gap = parseInt(document.getElementById('message-gap')?.value, 10) || 60;
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    const rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 6;
-    const numAccounts = Math.max(selectedProfileIds.length, 1);
-    const totalPerHour = rate * numAccounts;
-    const OUTREACH_TIME = 60;
-    const targetInterval = Math.round(3600 / totalPerHour);
-    const extraDelay = Math.max(10, targetInterval - OUTREACH_TIME);
-    delayMin = Math.max(5, Math.round(extraDelay * 0.7));
-    delayMax = Math.max(delayMin + 5, Math.round(extraDelay * 1.3));
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 15;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 45;
+    if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
+
+  // Phase 11.2 (D-06): batchesPerHour is the primary pacing knob (1..6), sourced
+  // from the relabeled #rate-per-hour input. Clamp defensively before POST.
+  const batchesPerHour = Math.max(1, Math.min(6, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
 
   // If the user answered "No" to the "add a note while connecting?" question,
   // drop the connection note regardless of what's in the textarea.
@@ -1387,7 +1415,19 @@ async function startCampaign() {
     const res = await fetch('/api/campaign/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileIds: selectedProfileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked, delayMin, delayMax, linkedinColumn: document.getElementById('linkedin-col-select')?.value || '', senderFirstNames }),
+      body: JSON.stringify({
+        profileIds: selectedProfileIds,
+        sheetUrl,
+        templates,
+        batchesPerHour,
+        dailyLimit,
+        mode,
+        messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
+        delayMin,
+        delayMax,
+        linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
+        senderFirstNames
+      }),
     });
     const data = await res.json();
     if (data.error) { alert(`Error: ${data.error}`); return; }
@@ -1403,6 +1443,22 @@ async function startCampaign() {
 
 async function stopCampaign() {
   try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
+}
+
+// Phase 11.2 (D-18): un-minimize all active browser windows (debug aid).
+// Calls the session-gated POST /api/browsers/show shipped in Plan 01.
+async function showBrowsers() {
+  try {
+    const res = await fetch('/api/browsers/show', { method: 'POST' });
+    const data = await res.json();
+    if (data.platform === 'other') {
+      alert('Window minimize only runs on macOS. Nothing to show.');
+      return;
+    }
+    alert(`Un-minimized ${data.minimized} browser${data.minimized === 1 ? '' : 's'}${data.skipped ? ` (${data.skipped} skipped)` : ''}.`);
+  } catch (err) {
+    alert(`Could not show browsers: ${err.message}`);
+  }
 }
 
 function setCampaignButtons(running) {
@@ -1847,20 +1903,22 @@ async function saveQuickSchedule() {
 
   const mode = document.getElementById('campaign-mode').value || 'connect_only';
 
+  // Phase 11.2 (D-02, D-07): schedule form mirrors the main campaign form for
+  // within-batch gap — explicit steppers for non-message modes.
   let delayMin, delayMax;
   if (mode === 'message_only') {
     const gap = parseInt(document.getElementById('message-gap')?.value, 10) || 60;
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    const rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 6;
-    const numAccounts = Math.max(selectedProfileIds.length, 1);
-    const totalPerHour = rate * numAccounts;
-    const targetInterval = Math.round(3600 / totalPerHour);
-    const extraDelay = Math.max(10, targetInterval - 60);
-    delayMin = Math.max(5, Math.round(extraDelay * 0.7));
-    delayMax = Math.max(delayMin + 5, Math.round(extraDelay * 1.3));
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 15;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 45;
+    if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
+
+  // Phase 11.2 (D-06): persist batchesPerHour on the schedule so cron fires
+  // honour the operator's pacing choice.
+  const batchesPerHour = Math.max(1, Math.min(6, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
 
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
@@ -1884,6 +1942,7 @@ async function saveQuickSchedule() {
         mode,
         templates,
         dailyLimit,
+        batchesPerHour,
         delayMin,
         delayMax,
         enabled: true,
@@ -2559,9 +2618,15 @@ function collectCurrentConfig() {
     mode: getV('campaign-mode') || 'connect_only',
     sheetUrl: getV('sheet-url').trim(),
     profileIds: [...selectedProfileIds],
-    ratePerHour: getN('rate-per-hour', 6),
+    // Phase 11.2: post-relabel, #rate-per-hour is batches/hour (1..6). Keep
+    // ratePerHour field for cross-version back-compat read; batchesPerHour is
+    // the 11.2+ canonical name.
+    ratePerHour: getN('rate-per-hour', 2),
+    batchesPerHour: getN('rate-per-hour', 2),
     dailyLimit: getN('daily-limit', 40),
     messageGap: getN('message-gap', 60),
+    delayMin: getN('within-batch-min', 15),
+    delayMax: getN('within-batch-max', 45),
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
@@ -2586,9 +2651,33 @@ function applyPresetConfig(config) {
     if (typeof onModeChange === 'function') onModeChange();
   }
   setV('sheet-url', config.sheetUrl || '');
-  setV('rate-per-hour', config.ratePerHour ?? 6);
+
+  // Phase 11.2 (D-09): legacy presets saved before 11.2 carried a ratePerHour
+  // with connections-per-hour semantics (1..30). Post-11.2 the same input is
+  // batches-per-hour (1..6). If we detect a legacy preset (ratePerHour present,
+  // batchesPerHour absent), reset the input to the new default (2) and flash a
+  // one-time banner so the operator knows their old number did NOT survive.
+  const isLegacyPreset = config.ratePerHour !== undefined && config.batchesPerHour === undefined;
+  if (isLegacyPreset) {
+    setV('rate-per-hour', 2);
+    let banner = document.getElementById('legacy-preset-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'legacy-preset-banner';
+      banner.style.cssText = 'padding:8px 12px; margin:8px 0; background:#3a2f1a; color:#ffd480; border-radius:6px; font-size:0.9rem;';
+      banner.textContent = "Pacing was redesigned: 'Batches per hour' replaces 'Connections per hour'. Your saved preset's rate was reset to the default (2 batches/hour). Adjust if needed.";
+      const main = document.querySelector('.main .container') || document.querySelector('main') || document.body;
+      main.insertBefore(banner, main.firstChild);
+    }
+    banner.style.display = 'block';
+    setTimeout(() => { if (banner) banner.style.display = 'none'; }, 20000);
+  } else {
+    setV('rate-per-hour', config.batchesPerHour ?? config.ratePerHour ?? 2);
+  }
   setV('daily-limit', config.dailyLimit ?? 40);
   setV('message-gap', config.messageGap ?? 60);
+  setV('within-batch-min', config.delayMin ?? 15);
+  setV('within-batch-max', config.delayMax ?? 45);
   if (config.linkedinColumn) setV('linkedin-col-select', config.linkedinColumn);
 
   const opCheck = document.getElementById('open-profile-msg');

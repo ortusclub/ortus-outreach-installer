@@ -380,11 +380,19 @@ app.post('/api/templates/preview', async (req, res) => {
 // ---------------------------------------------------------------------------
 app.post('/api/campaign/start', (req, res) => {
   try {
-    const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames } = req.body;
+    const { profileIds, sheetUrl, templates, dailyLimit, batchesPerHour, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames } = req.body;
 
     if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
+    // Phase 11.2 (T-11.2-09): clamp batchesPerHour at the trust boundary — the
+    // form clamps to 1..6 but a tampered body could send anything.
+    if (batchesPerHour !== undefined) {
+      const bph = Number(batchesPerHour);
+      if (!Number.isFinite(bph) || bph < 1 || bph > 6) {
+        return res.status(400).json({ error: 'batchesPerHour must be between 1 and 6' });
+      }
+    }
 
     // Fire and forget — campaign runs in background. The operator who kicked
     // it off gets the finish/failure notification.
@@ -394,6 +402,7 @@ app.post('/api/campaign/start', (req, res) => {
       sheetUrl,
       templates: templates || {},
       dailyLimit: Number(dailyLimit),
+      batchesPerHour: batchesPerHour !== undefined ? Number(batchesPerHour) : 2,
       mode: mode || 'auto',
       messageOpenProfiles: !!messageOpenProfiles,
       delayMin: delayMin ? Number(delayMin) : undefined,
@@ -693,6 +702,7 @@ function registerSchedule(schedule) {
         sheetUrl: schedule.sheetUrl,
         templates: schedule.templates || {},
         dailyLimit: schedule.dailyLimit || 5,
+        batchesPerHour: schedule.batchesPerHour || 2,
         mode: schedule.mode || 'connect_only',
         delayMin: schedule.delayMin,
         delayMax: schedule.delayMax,
@@ -727,11 +737,18 @@ app.get('/api/schedules', async (_req, res) => {
 
 app.post('/api/schedules', async (req, res) => {
   try {
-    const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, delayMin, delayMax, enabled } = req.body;
+    const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, batchesPerHour, delayMin, delayMax, enabled } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     if (!cronExpr || !cron.validate(cronExpr)) return res.status(400).json({ error: 'valid cron expression required' });
     if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    // Phase 11.2: same trust-boundary clamp as /api/campaign/start.
+    if (batchesPerHour !== undefined) {
+      const bph = Number(batchesPerHour);
+      if (!Number.isFinite(bph) || bph < 1 || bph > 6) {
+        return res.status(400).json({ error: 'batchesPerHour must be between 1 and 6' });
+      }
+    }
 
     const all = await loadSchedules();
     const id = req.body.id || `sched_${Date.now()}`;
@@ -739,7 +756,9 @@ app.post('/api/schedules', async (req, res) => {
     const schedule = {
       id, name, cron: cronExpr, profileIds, sheetUrl,
       mode: mode || 'connect_only', templates: templates || {},
-      dailyLimit: dailyLimit || 5, delayMin, delayMax,
+      dailyLimit: dailyLimit || 5,
+      batchesPerHour: batchesPerHour !== undefined ? Number(batchesPerHour) : 2,
+      delayMin, delayMax,
       enabled: enabled !== false, lastRun: null,
       // Existing schedules keep their original owner; new/edited ones default
       // to the currently authenticated user if none explicitly provided.
