@@ -39,6 +39,7 @@
 - Decimal phases (e.g. 11.1): Reserved for urgent insertions (marked INSERTED)
 
 - [ ] **Phase 11: Check DMs** - New Campaign mode; Voyager-based reply detection scoped per profile, with Replies panel + sheet writeback and delta semantics
+- [ ] **Phase 11.1: Resource-Aware Campaign Execution** (INSERTED) - Live RAM/CPU monitor in dashboard, idle profiles park on a low-RAM page between actions, campaign auto-throttles when resources cross threshold
 - [ ] **Phase 12: Tab Framework** - Dashboard tab bar that hosts Campaign / SN Scraper / City Scanner as first-class tabs with preserved in-progress state
 - [ ] **Phase 13: Ortus City Scanner Integration** - Port the standalone Electron scanner into a tab; Puppeteer-driven city-by-city lead counting
 - [ ] **Phase 14: SN Scraper — Create Saved Search** - Filter form + Puppeteer that applies filters in Sales Nav and saves the search, returning a reusable URL
@@ -63,6 +64,18 @@ Plans:
 - [ ] 11-03-PLAN.md — Wave 2 — Server endpoints (4 routes + symmetric mutex) + Apps Script config
 - [ ] 11-04-PLAN.md — Wave 2 — UI (button, Replies panel, polling, CSS, renderer module)
 - [ ] 11-05-PLAN.md — Wave 3 — End-to-end verification + VALIDATION sign-off
+**UI hint**: yes
+
+### Phase 11.1: Resource-Aware Campaign Execution (INSERTED)
+**Goal**: Operators can see live RAM/CPU usage in the dashboard, idle GoLogin profiles auto-park on a low-RAM page between actions, and the campaign automatically slows down when system resources cross a configurable threshold — preventing the slowdowns and crashes seen on lower-end colleague machines.
+**Depends on**: Nothing (modifies existing campaign loop and dashboard status endpoint)
+**Requirements**: TBD (captured in 11.1-CONTEXT.md via discuss-phase)
+**Success Criteria** (what must be TRUE):
+  1. Dashboard shows live RAM and CPU usage updating on the existing 2-second status poll, visible without scrolling.
+  2. When a profile is idle between actions during a campaign, it navigates to a low-RAM page (e.g. about:blank) and returns to LinkedIn before its next action without losing its session.
+  3. When RAM or CPU usage crosses a configurable threshold, the campaign delay multiplier increases automatically; when usage falls back below the threshold, normal pacing resumes.
+  4. The throttled state is observable in the dashboard (operator sees when the campaign is in slow-mode and why) and the resource trend is legible enough to compare before/after when testing performance changes.
+**Plans**: TBD
 **UI hint**: yes
 
 ### Phase 12: Tab Framework
@@ -126,6 +139,7 @@ Phases 13, 14, 15 depend on Phase 12 (tab bar). Phase 15 additionally depends on
 | 9. Operational Features | v2.0 | 4/4 | Complete | - |
 | 10. Dashboard UX | v2.0 | 2/2 | Complete | 2026-04-09 |
 | 11. Check DMs | v3.0 | 0/5 | Not started | - |
+| 11.1. Resource-Aware Campaign Execution | v3.0 | 0/? | Not started | - |
 | 12. Tab Framework | v3.0 | 0/? | Not started | - |
 | 13. Ortus City Scanner Integration | v3.0 | 0/? | Not started | - |
 | 14. SN Scraper — Create Saved Search | v3.0 | 0/? | Not started | - |
