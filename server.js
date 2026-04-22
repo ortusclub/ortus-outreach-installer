@@ -825,7 +825,7 @@ app.get('/api/export/csv', async (_req, res) => {
 // Start server
 // ---------------------------------------------------------------------------
 app.listen(PORT, async () => {
-  console.log(`\n  ✦ Ortus GoLogin Clone v2.0`);
+  console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
   console.log(`  ✦ Sheet tracking: ${process.env.SHEETS_WEBAPP_URL ? '✓ configured' : '✗ not configured (set SHEETS_WEBAPP_URL)'}`);
