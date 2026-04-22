@@ -32,6 +32,7 @@ import {
   sample as rmSample,
   decideThrottle,
   cfg as rmCfg,
+  computeDelayMultiplier,
   _resetSampleCache,
 } from './resource-monitor.js';
 
@@ -562,6 +563,28 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           break;
         }
 
+        // ── Phase 11.1: per-iteration resource sample + throttle decision ──
+        // Pattern: RESEARCH.md §Pattern 2 (cached sample) + §Pattern 3 (multiplicative composition).
+        // Writes campaign._lastSample and campaign._throttle for the status endpoint to read.
+        try {
+          const activePids = activeSessions
+            .filter(s => s.profileId !== 'local-browser')
+            .map(s => getProfilePid(s.profileId))
+            .filter(Boolean);
+          campaign._lastSample = await rmSample(activePids);
+          const prevThrottle = campaign._throttle || { active: false, reason: '', multiplier: 1 };
+          const nextThrottle = decideThrottle(prevThrottle, campaign._lastSample, rmCfg);
+          if (!prevThrottle.active && nextThrottle.active) {
+            log(`⚠ Throttle ENGAGED: ${nextThrottle.reason} — delays now ${nextThrottle.multiplier}x`);
+          } else if (prevThrottle.active && !nextThrottle.active) {
+            log(`✓ Throttle RELEASED — delays back to 1x`);
+          }
+          campaign._throttle = nextThrottle;
+        } catch (err) {
+          // Sampling failure must never break a campaign.
+          log(`[resource-monitor] sample failed: ${err.message}`);
+        }
+
         // Find the next unprocessed lead
         let row = null;
         while (leadIndex < targets.length) {
@@ -866,13 +889,25 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
           totalVisited++;
 
+          // ── Phase 11.1: park the idle profile on a low-RAM page during the delay window (D-10, D-11) ──
+          // Always parks, regardless of throttle state. IDLE_PARKING_ENABLED env kill switch wins.
+          // Swallows errors (parkProfile itself catches + logs).
+          if (rmCfg.IDLE_PARKING_ENABLED) {
+            await parkProfile(page, rmCfg.PARK_PAGE);
+          }
+
           // Delay between leads + session breaks (interruptible by abort)
           if (!campaign._abort) {
             // Messaging existing 1st-degree connections is much lower risk than
             // sending new connection requests, so use a faster cadence and skip
             // the single-account slowdown + mid-run session break.
             const isMessageMode = mode === 'message_only';
-            const delayMultiplier = (!isMessageMode && profileIds.length === 1) ? 2.0 : 1.0;
+            const delayMultiplier = computeDelayMultiplier({
+              mode,
+              profileCount: profileIds.length,
+              throttleActive:     campaign._throttle?.active     ?? false,
+              throttleMultiplier: campaign._throttle?.multiplier ?? 1,
+            });
 
             const SESSION_BREAK_EVERY = 15;
             let waitMs;
@@ -888,8 +923,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             } else {
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
               waitMs = Math.floor(waitMs * delayMultiplier);
-              if (delayMultiplier > 1) log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (single-account: ${delayMultiplier}x slower)`);
-              else log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s`);
+              if (delayMultiplier > 1) {
+                const parts = [];
+                if (!isMessageMode && profileIds.length === 1) parts.push('single-account 2x');
+                if (campaign._throttle?.active) parts.push(`throttled ${campaign._throttle.multiplier}x`);
+                log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (${parts.join(' + ')})`);
+              } else {
+                log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s`);
+              }
             }
 
             // ~30% chance: browse the feed organically during the wait (looks like a real user).
