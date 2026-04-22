@@ -35,19 +35,30 @@ export async function minimizeByPid(pid) {
   if (!isDarwin) return;
   const n = coercePid(pid);
   if (!n) return;
-  // repeat-until-window loop handles the compositor race (RESEARCH §Pitfall 1).
+  // `miniaturized` is read-only on System Events windows (error -10006).
+  // The writable path is the AXMinimized accessibility attribute.
+  // Repeat-until-window loop handles the compositor race: the process may
+  // exist before its first window has drawn.
   const script = `
     tell application "System Events"
-      repeat 10 times
-        if (count of windows of (first process whose unix id is ${n})) > 0 then exit repeat
-        delay 0.1
-      end repeat
-      set miniaturized of every window of (first process whose unix id is ${n}) to true
+      tell (first process whose unix id is ${n})
+        repeat 30 times
+          if (count of windows) > 0 then exit repeat
+          delay 0.1
+        end repeat
+        repeat with w in every window
+          try
+            set value of attribute "AXMinimized" of w to true
+          end try
+        end repeat
+      end tell
     end tell
   `.trim();
   try {
-    await _execFile('/usr/bin/osascript', ['-e', script], { timeout: 3000 });
-  } catch { /* best-effort */ }
+    await _execFile('/usr/bin/osascript', ['-e', script], { timeout: 5000 });
+  } catch (err) {
+    console.warn(`[mac-window] minimizeByPid(${n}) failed: ${err.message || err}`);
+  }
 }
 
 /**
@@ -61,13 +72,23 @@ export async function unminimizeByPids(pids) {
   for (const pid of pids || []) {
     const n = coercePid(pid);
     if (!n) { skipped++; continue; }
-    const script =
-      `tell application "System Events" to ` +
-      `set miniaturized of every window of (first process whose unix id is ${n}) to false`;
+    const script = `
+      tell application "System Events"
+        tell (first process whose unix id is ${n})
+          repeat with w in every window
+            try
+              set value of attribute "AXMinimized" of w to false
+            end try
+          end repeat
+          set frontmost to true
+        end tell
+      end tell
+    `.trim();
     try {
-      await _execFile('/usr/bin/osascript', ['-e', script], { timeout: 2000 });
+      await _execFile('/usr/bin/osascript', ['-e', script], { timeout: 3000 });
       minimized++;
-    } catch {
+    } catch (err) {
+      console.warn(`[mac-window] unminimize(${n}) failed: ${err.message || err}`);
       skipped++;
     }
   }

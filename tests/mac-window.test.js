@@ -19,8 +19,8 @@ test('minimizeByPid: invokes osascript with expected argv on darwin', { skip: !i
     assert.equal(calls[0].args[0], '-e');
     const script = calls[0].args[1];
     assert.match(script, /first process whose unix id is 12345/);
-    assert.match(script, /miniaturized of every window/);
-    assert.match(script, /repeat 10 times/);
+    assert.match(script, /AXMinimized/);
+    assert.match(script, /repeat 30 times/);
     assert.ok(typeof calls[0].opts.timeout === 'number' && calls[0].opts.timeout >= 2000);
   } finally {
     _setExecFile(null);
