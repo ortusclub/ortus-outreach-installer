@@ -114,3 +114,16 @@ export async function closeAllProfiles() {
   }
   return ids.length;
 }
+
+/**
+ * Return the OS PID of the GoLogin-spawned Chromium for this profile,
+ * or null if the profile isn't launched / the SDK didn't record a process.
+ *
+ * Added for phase 11.1 (resource-monitor). puppeteer.connect() returns null
+ * from browser.process(), so we reach into the SDK's own process handle.
+ * See .planning/phases/11.1.../11.1-RESEARCH.md §Pitfall 1.
+ */
+export function getProfilePid(profileId) {
+  const GL = activeProfiles.get(profileId);
+  return GL?.processSpawned?.pid ?? null;
+}

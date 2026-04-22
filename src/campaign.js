@@ -22,12 +22,18 @@
 import { existsSync, mkdirSync } from 'fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import { launchProfile, closeProfile, getProfiles } from './gologin-launcher.js';
+import { launchProfile, closeProfile, getProfiles, getProfilePid } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, ensureTrackingColumns } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { dataPath } from './paths.js';
+import {
+  sample as rmSample,
+  decideThrottle,
+  cfg as rmCfg,
+  _resetSampleCache,
+} from './resource-monitor.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
@@ -256,6 +262,21 @@ async function checkProfileHealth(page, profileName) {
   return { healthy: issues.length === 0, issues };
 }
 
+/**
+ * Park an idle profile on a low-RAM page during the per-lead delay window.
+ * Swallows errors — parking failure must never break a campaign (D-10, D-11).
+ * Called between performOutreach and the delay sleep in the round-robin loop.
+ * Phase 11.1. Exported for tests/park-profile.test.js.
+ */
+export async function parkProfile(page, parkUrl = 'about:blank') {
+  if (!page || page.isClosed?.()) return;
+  try {
+    await page.goto(parkUrl, { waitUntil: 'domcontentloaded', timeout: 5000 });
+  } catch (err) {
+    log(`  ⚠ Park failed: ${err.message}`);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
@@ -272,6 +293,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.mode = mode;
   campaign.profileNames = [];
   campaign.errors = [];
+  campaign._lastSample = null;   // phase 11.1: reset resource snapshot
+  campaign._throttle   = null;   // phase 11.1: reset throttle state
+  _resetSampleCache();           // clear module-level cache so first sample() is fresh
 
   // Reset campaign counts — allows reusing same accounts immediately
   for (const key of Object.keys(campaignCounts)) delete campaignCounts[key];
@@ -959,5 +983,31 @@ export function getCampaignStatus() {
     profileNames: campaign.profileNames || [],
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
+    // Phase 11.1: null when no campaign has run yet / no sample taken.
+    resources: campaign._lastSample ? {
+      ramPct:            campaign._lastSample.ramPct,
+      load1:             campaign._lastSample.load1,
+      cpuPct:            campaign._lastSample.cpuPct,
+      cpuCount:          campaign._lastSample.cpuCount,
+      browsers:          campaign._lastSample.browsers,
+      totalBrowserRssMb: campaign._lastSample.totalBrowserRssMb,
+      sampledAt:         campaign._lastSample.sampledAt,
+    } : null,
+    throttle: campaign._throttle ? {
+      active:     campaign._throttle.active,
+      reason:     campaign._throttle.reason,
+      multiplier: campaign._throttle.multiplier,
+    } : null,
   };
+}
+
+/**
+ * Test-only state setter. DO NOT call from production code.
+ * Exposed so tests/status-payload.test.js can assert shape without
+ * driving the full campaign loop.
+ */
+export function _setTestState(patch) {
+  if (patch && typeof patch === 'object') {
+    Object.assign(campaign, patch);
+  }
 }
