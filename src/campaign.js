@@ -41,6 +41,45 @@ const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
 const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined']);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 11.2: batch-loop constants + pure helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Hard cap — 5 leads per batch per profile, for ALL modes (D-01). Not configurable. */
+export const BATCH_SIZE = 5;
+
+/** Minimum between-batch wait — floor for the derived-from-bph math (D-03). */
+const MIN_BETWEEN_BATCHES_MS = 60 * 1000;
+
+/** Gap threshold past which we close the browser instead of parking (D-13). */
+const PROFILE_CLOSE_GAP_MIN_DEFAULT = 15;
+function getCloseGapMin() {
+  const v = Number(process.env.PROFILE_CLOSE_GAP_MIN);
+  return Number.isFinite(v) && v > 0 ? v : PROFILE_CLOSE_GAP_MIN_DEFAULT;
+}
+
+/**
+ * Pure helper — between-batch wait in ms from batchesPerHour target spacing.
+ * Applies a 60s floor. Exported for tests/batch-loop.test.js.
+ */
+export function computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs = 0 }) {
+  const bph = Math.max(1, Math.min(6, Number(batchesPerHour) || 2));
+  const targetMs = (3600 / bph) * 1000;
+  return Math.max(MIN_BETWEEN_BATCHES_MS, targetMs - Math.max(0, batchDurationMs));
+}
+
+/**
+ * Pure helper — close the profile between batches when the gap is long enough
+ * that keeping Chromium warm costs more than the re-launch S3 round-trip.
+ * Exported for tests/batch-loop.test.js.
+ */
+export function shouldCloseBetweenBatches({ waitMs, closeGapMin }) {
+  const threshold = Number.isFinite(closeGapMin) && closeGapMin > 0
+    ? closeGapMin
+    : getCloseGapMin();
+  return Number(waitMs) > threshold * 60 * 1000;
+}
+
 async function appendHistory(entry) {
   let history = [];
   try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf8')); } catch { /* first run */ }
