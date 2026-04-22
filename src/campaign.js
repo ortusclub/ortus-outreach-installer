@@ -34,6 +34,7 @@ import {
   cfg as rmCfg,
   computeDelayMultiplier,
   _resetSampleCache,
+  getAmbient,
 } from './resource-monitor.js';
 
 const STATE_FILE = dataPath('state.json');
@@ -1014,6 +1015,11 @@ export function stopCampaign() {
 }
 
 export function getCampaignStatus() {
+  // Prefer campaign-loop samples (include browser PIDs) but fall back to the
+  // ambient sampler so tiles populate the moment the server starts.
+  const amb = getAmbient();
+  const smp = campaign._lastSample || amb.sample;
+  const thr = campaign._throttle   || amb.throttle;
   return {
     running: campaign.running,
     currentProfile: campaign.currentProfile,
@@ -1024,20 +1030,19 @@ export function getCampaignStatus() {
     profileNames: campaign.profileNames || [],
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
-    // Phase 11.1: null when no campaign has run yet / no sample taken.
-    resources: campaign._lastSample ? {
-      ramPct:            campaign._lastSample.ramPct,
-      load1:             campaign._lastSample.load1,
-      cpuPct:            campaign._lastSample.cpuPct,
-      cpuCount:          campaign._lastSample.cpuCount,
-      browsers:          campaign._lastSample.browsers,
-      totalBrowserRssMb: campaign._lastSample.totalBrowserRssMb,
-      sampledAt:         campaign._lastSample.sampledAt,
+    resources: smp ? {
+      ramPct:            smp.ramPct,
+      load1:             smp.load1,
+      cpuPct:            smp.cpuPct,
+      cpuCount:          smp.cpuCount,
+      browsers:          smp.browsers,
+      totalBrowserRssMb: smp.totalBrowserRssMb,
+      sampledAt:         smp.sampledAt,
     } : null,
-    throttle: campaign._throttle ? {
-      active:     campaign._throttle.active,
-      reason:     campaign._throttle.reason,
-      multiplier: campaign._throttle.multiplier,
+    throttle: thr ? {
+      active:     thr.active,
+      reason:     thr.reason,
+      multiplier: thr.multiplier,
     } : null,
   };
 }

@@ -138,6 +138,43 @@ export function decideThrottle(state, smp, config) {
   };
 }
 
+// ── Ambient sampling (always-on, independent of campaign state) ───────────
+// Server-wide 5s interval so the dashboard tiles have live RAM/CPU data from
+// the moment the app opens, not only while the round-robin loop is iterating.
+// Idempotent: a second start() call is a no-op.
+let _ambientSample = null;
+let _ambientThrottle = null;
+let _ambientInterval = null;
+
+export function getAmbient() {
+  return { sample: _ambientSample, throttle: _ambientThrottle };
+}
+
+export function startAmbientSampling(getBrowserPids = () => []) {
+  if (_ambientInterval) return;
+  const tick = async () => {
+    try {
+      const pids = (typeof getBrowserPids === 'function' ? getBrowserPids() : []) || [];
+      const smp = await sample(pids);
+      const prev = _ambientThrottle || { active: false, reason: '', multiplier: 1 };
+      _ambientSample = smp;
+      _ambientThrottle = decideThrottle(prev, smp, cfg);
+    } catch {
+      // Sampling must never crash the server. Swallow.
+    }
+  };
+  tick();
+  _ambientInterval = setInterval(tick, MIN_SAMPLE_INTERVAL_MS);
+  if (_ambientInterval.unref) _ambientInterval.unref();
+}
+
+export function stopAmbientSampling() {
+  if (_ambientInterval) {
+    clearInterval(_ambientInterval);
+    _ambientInterval = null;
+  }
+}
+
 // ── Pure delay-multiplier matrix (D-08) ───────────────────────────────────
 // Extracted from campaign.js:851 so the matrix is unit-testable.
 // Preserves byte-identical behavior for existing cases: message_only → 1,

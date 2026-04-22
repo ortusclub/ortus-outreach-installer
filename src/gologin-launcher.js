@@ -127,3 +127,14 @@ export function getProfilePid(profileId) {
   const GL = activeProfiles.get(profileId);
   return GL?.processSpawned?.pid ?? null;
 }
+
+/**
+ * Return every live GoLogin Chromium PID known to the launcher. Used by the
+ * ambient resource sampler so tiles reflect launched browsers even before
+ * the round-robin loop takes over.
+ */
+export function getActiveBrowserPids() {
+  return [...activeProfiles.values()]
+    .map(GL => GL?.processSpawned?.pid)
+    .filter(pid => typeof pid === 'number');
+}

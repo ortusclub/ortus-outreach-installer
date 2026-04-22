@@ -16,9 +16,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startCampaign, stopCampaign, getCampaignStatus, campaign, extractLinkedInUrl } from './src/campaign.js';
+import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { fetchSheet } from './src/sheets.js';
-import { getProfiles, closeAllProfiles } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
 import { initNotifier, notifyAll, notifyEmail } from './src/notifier.js';
 import { fetchSoOData } from './src/soo.js';
@@ -827,6 +828,7 @@ app.get('/api/export/csv', async (_req, res) => {
 app.listen(PORT, async () => {
   console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
+  startAmbientSampling(getActiveBrowserPids);
   console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
   console.log(`  ✦ Sheet tracking: ${process.env.SHEETS_WEBAPP_URL ? '✓ configured' : '✗ not configured (set SHEETS_WEBAPP_URL)'}`);
 
