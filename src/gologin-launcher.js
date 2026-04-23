@@ -1,6 +1,6 @@
 import GoLogin from 'gologin';
 import puppeteer from 'puppeteer-core';
-import { minimizeByPid } from './mac-window.js';
+import { hideByPid } from './mac-window.js';
 
 const activeProfiles = new Map();
 
@@ -98,7 +98,7 @@ export async function launchProfile(profileId, token) {
   // Phase 11.2 (D-16): minimize the Chromium window on macOS. Best-effort,
   // fire-and-forget so we don't stall the launch hot path.
   const pid = GL?.processSpawned?.pid;
-  if (pid) { minimizeByPid(pid).catch(() => {}); }
+  if (pid) { hideByPid(pid).catch(() => {}); }
 
   return { browser, page };
 }

@@ -21,7 +21,7 @@ import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { fetchSheet } from './src/sheets.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
-import { unminimizeByPids } from './src/mac-window.js';
+import { unhideByPids } from './src/mac-window.js';
 import { initNotifier, notifyAll, notifyEmail } from './src/notifier.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
@@ -442,17 +442,17 @@ app.get('/api/campaign/status', (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 11.2: Show Browsers — un-minimize every active Chromium window (D-18).
+// Phase 11.2: Show Browsers — un-hide every active Chromium process (D-18).
 // Called by the dashboard "Show Browsers" button and the tray menu item.
 // ---------------------------------------------------------------------------
 app.post('/api/browsers/show', async (_req, res) => {
   try {
     if (process.platform !== 'darwin') {
-      return res.json({ ok: true, minimized: 0, skipped: 0, platform: 'other' });
+      return res.json({ ok: true, shown: 0, skipped: 0, platform: 'other' });
     }
     const pids = getActiveBrowserPids();
-    const { minimized, skipped } = await unminimizeByPids(pids);
-    res.json({ ok: true, minimized, skipped, platform: 'darwin' });
+    const { shown, skipped } = await unhideByPids(pids);
+    res.json({ ok: true, shown, skipped, platform: 'darwin' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,7 +1,7 @@
 import puppeteer from 'puppeteer-core';
 import { existsSync, mkdirSync } from 'fs';
 import { dataPath } from './paths.js';
-import { minimizeByPid } from './mac-window.js';
+import { hideByPid } from './mac-window.js';
 
 let activeBrowser = null;
 
@@ -98,7 +98,7 @@ export async function launchLocalBrowser() {
 
   // Phase 11.2 (D-16): minimize the Chromium window on macOS.
   const pid = browser.process?.()?.pid;
-  if (pid) { minimizeByPid(pid).catch(() => {}); }
+  if (pid) { hideByPid(pid).catch(() => {}); }
 
   return { browser, page };
 }

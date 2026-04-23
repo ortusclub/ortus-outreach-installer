@@ -1,7 +1,11 @@
 /**
- * macOS AppleScript wrapper — minimize/un-minimize Chromium windows by PID.
- * Phase 11.2 (D-16, D-18). Best-effort: swallows errors, no-op on non-darwin.
- * See .planning/phases/11.2.../11.2-RESEARCH.md §Pattern 1 + §Pitfall 1.
+ * macOS AppleScript wrapper — hide/unhide Chromium processes by PID.
+ * Phase 11.2 (D-16, D-18) + 260423-v40. Best-effort: swallows errors, no-op on non-darwin.
+ *
+ * Why "hide" and not "minimize": minimize has a race — the window must draw
+ * at least one frame before AppleScript can act on it, which causes a brief
+ * on-screen flash. Hide (Cmd+H equivalent) acts on the process, so it applies
+ * before the first window draws — no flash. The dock icon stays visible.
  */
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -14,8 +18,7 @@ let _execFile = realExecFile;
 
 /**
  * Test hook — inject a replacement execFile(cmd, args, opts) -> Promise<{stdout,stderr}>.
- * Matches the convention used by resource-monitor._resetSampleCache and
- * campaign._setTestState. Pass null to restore the real /usr/bin/osascript invocation.
+ * Pass null to restore the real /usr/bin/osascript invocation.
  */
 export function _setExecFile(fn) {
   _execFile = fn ?? realExecFile;
@@ -28,46 +31,37 @@ function coercePid(pid) {
 }
 
 /**
- * Minimize every window of the Chromium/Orbita process at the given PID.
+ * Hide the process at the given PID (macOS Cmd+H equivalent).
  * Best-effort: never throws, no-op on non-darwin, 3s timeout, numeric-only PID.
  */
-export async function minimizeByPid(pid) {
+export async function hideByPid(pid) {
   if (!isDarwin) return;
   const n = coercePid(pid);
   if (!n) return;
-  // `miniaturized` is read-only on System Events windows (error -10006).
-  // The writable path is the AXMinimized accessibility attribute.
-  // Repeat-until-window loop handles the compositor race: the process may
-  // exist before its first window has drawn.
+  // System Events `set visible of process to false` is the scriptable form of
+  // Cmd+H — applies to the process itself, not individual windows, so it works
+  // even if the first window has not drawn yet. Dock icon stays.
   const script = `
     tell application "System Events"
       tell (first process whose unix id is ${n})
-        repeat 30 times
-          if (count of windows) > 0 then exit repeat
-          delay 0.1
-        end repeat
-        repeat with w in every window
-          try
-            set value of attribute "AXMinimized" of w to true
-          end try
-        end repeat
+        set visible to false
       end tell
     end tell
   `.trim();
   try {
-    await _execFile('/usr/bin/osascript', ['-e', script], { timeout: 5000 });
+    await _execFile('/usr/bin/osascript', ['-e', script], { timeout: 3000 });
   } catch (err) {
-    console.warn(`[mac-window] minimizeByPid(${n}) failed: ${err.message || err}`);
+    console.warn(`[mac-window] hideByPid(${n}) failed: ${err.message || err}`);
   }
 }
 
 /**
- * Un-minimize every window for each PID. Returns a count summary.
- * No-op on non-darwin (returns { minimized: 0, skipped: 0 }).
+ * Un-hide every process in the PID list. Returns a count summary.
+ * No-op on non-darwin (returns { shown: 0, skipped: 0 }).
  */
-export async function unminimizeByPids(pids) {
-  if (!isDarwin) return { minimized: 0, skipped: 0 };
-  let minimized = 0;
+export async function unhideByPids(pids) {
+  if (!isDarwin) return { shown: 0, skipped: 0 };
+  let shown = 0;
   let skipped = 0;
   for (const pid of pids || []) {
     const n = coercePid(pid);
@@ -75,22 +69,18 @@ export async function unminimizeByPids(pids) {
     const script = `
       tell application "System Events"
         tell (first process whose unix id is ${n})
-          repeat with w in every window
-            try
-              set value of attribute "AXMinimized" of w to false
-            end try
-          end repeat
+          set visible to true
           set frontmost to true
         end tell
       end tell
     `.trim();
     try {
       await _execFile('/usr/bin/osascript', ['-e', script], { timeout: 3000 });
-      minimized++;
+      shown++;
     } catch (err) {
-      console.warn(`[mac-window] unminimize(${n}) failed: ${err.message || err}`);
+      console.warn(`[mac-window] unhide(${n}) failed: ${err.message || err}`);
       skipped++;
     }
   }
-  return { minimized, skipped };
+  return { shown, skipped };
 }

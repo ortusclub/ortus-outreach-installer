@@ -1445,17 +1445,17 @@ async function stopCampaign() {
   try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
 }
 
-// Phase 11.2 (D-18): un-minimize all active browser windows (debug aid).
+// Phase 11.2 (D-18): un-hide all active browser processes (debug aid).
 // Calls the session-gated POST /api/browsers/show shipped in Plan 01.
 async function showBrowsers() {
   try {
     const res = await fetch('/api/browsers/show', { method: 'POST' });
     const data = await res.json();
     if (data.platform === 'other') {
-      alert('Window minimize only runs on macOS. Nothing to show.');
+      alert('Window hiding only runs on macOS. Nothing to show.');
       return;
     }
-    alert(`Un-minimized ${data.minimized} browser${data.minimized === 1 ? '' : 's'}${data.skipped ? ` (${data.skipped} skipped)` : ''}.`);
+    alert(`Shown ${data.shown} browser${data.shown === 1 ? '' : 's'}${data.skipped ? ` (${data.skipped} skipped)` : ''}.`);
   } catch (err) {
     alert(`Could not show browsers: ${err.message}`);
   }
