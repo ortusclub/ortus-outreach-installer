@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 Phase: 11.2 (batch-mode-campaign-window-management) — EXECUTING
 Plan: 1 of 3
 Status: Executing Phase 11.2
-Last activity: 2026-04-23 - Completed quick task 260423-eiw: Route Open Profile campaigns through Sales Navigator for /in/ URLs
+Last activity: 2026-04-23 - Completed quick task 260423-j3b: Fix OP detection (Free to Open Profile badge) + unify /in/ to Sales Nav conversion upfront
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -81,6 +81,7 @@ None yet.
 | 260421-ot5 | Reduce RAM pressure and timeout failures on end-user machines | 2026-04-21 | f783bc4 | [260421-ot5-reduce-ram-pressure-and-timeout-failures](./quick/260421-ot5-reduce-ram-pressure-and-timeout-failures/) |
 | 260421-pae | Add Preview Messages button (render templates against first 3 leads) | 2026-04-21 | 0066ece | [260421-pae-add-preview-messages-button-click-to-ren](./quick/260421-pae-add-preview-messages-button-click-to-ren/) |
 | 260423-eiw | Route Open Profile campaigns through Sales Navigator for /in/ URLs | 2026-04-23 | 8d9f43a | [260423-eiw-route-open-profile-campaigns-through-sal](./quick/260423-eiw-route-open-profile-campaigns-through-sal/) |
+| 260423-j3b | Fix OP detection (Free to Open Profile badge) + unify /in/ to Sales Nav conversion upfront | 2026-04-23 | d100e7d | [260423-j3b-fix-op-detection-free-to-open-profile-ba](./quick/260423-j3b-fix-op-detection-free-to-open-profile-ba/) |
 
 ## Session Continuity
 
