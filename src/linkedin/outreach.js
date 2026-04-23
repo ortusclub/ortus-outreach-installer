@@ -16,6 +16,12 @@ import { sendConnectionRequest, sendMessage, sendInMail, sendViaSalesNav, resolv
 // direct Sales Nav links rather than standard profile URLs.
 const SALES_NAV_URL_RE = /\/sales\/(people|lead)\//;
 
+// LinkedIn encoded member URN in an /in/ URL — e.g. `ACwAAAAqhRIB3oRn1YJ…`.
+// Always starts with "AC" and is followed by URL-safe base64 chars. We transform
+// these directly to Sales Nav URLs. Vanity /in/ slugs (e.g. /in/john-smith) do
+// not match and cannot be transformed — the lead skips with a clear reason.
+const IN_MEMBER_URN_RE = /\/in\/(AC[A-Za-z0-9_-]{10,})(?:\/|$|\?)/;
+
 /**
  * Smart wait: resolves when the DOM stops changing for 1.5s OR after maxWait ms.
  * Much faster than a fixed 30s wait — typically resolves in 5-10s.
@@ -40,6 +46,23 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
   try {
     let url = targetUrl.trim();
     if (!url.startsWith('http')) url = 'https://' + url;
+
+    // ── URL transform: /in/{memberId} → /sales/lead/{memberId} for OP/InMail ──
+    // Routes campaigns that need the Sales Nav composer (positive
+    // "Free to Open Profile" signal) straight to the Sales Nav lead page, so
+    // we never load /in/ at all. Vanity slugs (/in/john-smith) can't be
+    // transformed — those skip with a clear reason.
+    if (modeHint === 'force_open_profile' || modeHint === 'force_inmail') {
+      if (!SALES_NAV_URL_RE.test(url)) {
+        const m = url.match(IN_MEMBER_URN_RE);
+        if (!m) {
+          console.warn('[outreach] /in/ URL not in encoded member-URN format — cannot route to Sales Nav');
+          return { action: 'skipped', error: 'URL not in member-URN format — cannot route to Sales Nav' };
+        }
+        url = `https://www.linkedin.com/sales/lead/${m[1]}`;
+        console.log(`[outreach] Transformed /in/ → Sales Nav: ${url}`);
+      }
+    }
 
     // ── Step 0: Check LinkedIn session cookie health ──
     try {
@@ -127,27 +150,6 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     });
     if (pageError) {
       return { action: 'skipped', error: `Page error: ${pageError}` };
-    }
-
-    // ── Upfront /in/ → Sales Nav URL conversion for OP/InMail modes ──
-    // Both modes require the Sales Nav composer to gate sends correctly
-    // (positive "Free to Open Profile" signal on the panel). If the sheet
-    // row is an /in/ URL, resolve the Sales Nav equivalent ONCE here; if
-    // unresolvable, fail closed and skip the lead (same reason for both
-    // modes — already covered by campaign.js retry guard).
-    if (modeHint === 'force_open_profile' || modeHint === 'force_inmail') {
-      if (!SALES_NAV_URL_RE.test(page.url())) {
-        const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
-        if (!salesNavUrl) {
-          return { action: 'skipped', error: 'Sales Nav link not available on profile' };
-        }
-        try {
-          await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        } catch (e) {
-          console.warn(`[outreach] Sales Nav navigation issue: ${e.message}`);
-        }
-        await new Promise(r => setTimeout(r, 5000));
-      }
     }
 
     // ── Step 3: Detect status and execute action ──
