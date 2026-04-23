@@ -9,7 +9,7 @@
  */
 
 import { randomDelay, getConnectionStatus, getVoyagerDegree, personalizeTemplate } from './helpers.js';
-import { sendConnectionRequest, sendMessage, sendInMail, sendOpenProfileMessage, sendViaSalesNav } from './actions.js';
+import { sendConnectionRequest, sendMessage, sendInMail, sendOpenProfileMessage, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
 
 // Matches Sales Navigator profile URLs (linkedin.com/sales/people/… or /sales/lead/…).
 // Used to short-circuit the /in/-shaped status check for sheets whose rows are
@@ -243,23 +243,37 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         return { action: 'skipped', error: 'Sales Nav: unknown result' };
       }
 
-      // Open Profile flow — visit the profile and try clicking Message.
-      // If it opens the free-message panel ("Free message" text), send it.
-      // If not, skip the lead without cost. 1st-degrees are skipped too
-      // (they should use regular message_only mode instead).
+      // /in/ URL: route through Sales Navigator. The /in/ Open Profile
+      // detection (sendOpenProfileMessage) false-rejects free senders, so
+      // we resolve the Sales Nav URL from the More dropdown, navigate, and
+      // delegate to sendViaSalesNav which has deterministic free-vs-paid
+      // panel detection.
       status = await getConnectionStatus(page);
       if (status === 'message') return { action: 'skipped', error: 'Already 1st-degree — use message mode' };
       if (!templates.openProfileBody) return { action: 'skipped', error: 'No Open Profile template' };
+
+      const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
+      if (!salesNavUrl) return { action: 'skipped', error: 'Sales Nav link not available on profile' };
+
       try {
-        await sendOpenProfileMessage(
-          page,
-          personalizeTemplate(templates.openProfileSubject || '', templates.data || {}),
-          personalizeTemplate(templates.openProfileBody || '', templates.data || {}),
-        );
-        return { action: 'op_message_sent' };
-      } catch (err) {
-        return { action: 'skipped', error: `Open Profile failed: ${err.message}` };
+        await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } catch (e) {
+        console.warn(`[outreach] Sales Nav navigation issue: ${e.message}`);
       }
+      await new Promise(r => setTimeout(r, 5000));
+
+      const d = templates.data || {};
+      const result = await sendViaSalesNav(page, {
+        mode: 'force_open_profile',
+        opSubject: personalizeTemplate(templates.openProfileSubject || '', d),
+        opBody:    personalizeTemplate(templates.openProfileBody    || '', d),
+      });
+      if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+      if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
+      if (result.reason === 'not_open_profile')           return { action: 'skipped', error: 'NOT_OPEN_PROFILE: credit counter shown on Sales Nav panel' };
+      if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
+      if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
+      return { action: 'skipped', error: 'Sales Nav: unknown result' };
     } else if (modeHint === 'force_connect_op_fallback') {
       // "Message Open Profiles Directly" in Connect campaign — try OP first,
       // fall back to Connect if the lead isn't OP-enabled.
@@ -284,23 +298,38 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         return { action: 'skipped', error: result.error || result.reason || 'Sales Nav unknown' };
       }
 
-      // /in/ URL: try OP first via the existing path, fall back to Connect
-      // on NOT_OPEN_PROFILE.
+      // /in/ URL: try Sales Nav first (mirrors the SALES_NAV_URL_RE
+      // short-circuit above). If the Sales Nav link is not resolvable from
+      // the /in/ page, fall back to the direct /in/ Connect path — this is
+      // a Connect campaign at heart and we should not skip entire rows just
+      // because Sales Nav is unavailable.
       if (opBody) {
-        try {
-          await sendOpenProfileMessage(page, opSubj, opBody);
-          return { action: 'op_message_sent' };
-        } catch (err) {
-          const msg = String(err?.message || '');
-          if (!msg.includes('NOT_OPEN_PROFILE')) {
-            return { action: 'skipped', error: `Open Profile failed: ${msg}` };
+        const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
+        if (salesNavUrl) {
+          try {
+            await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          } catch (e) {
+            console.warn(`[outreach] Sales Nav navigation issue: ${e.message}`);
           }
-          try { await page.reload({ waitUntil: 'domcontentloaded' }); } catch { /* */ }
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise(r => setTimeout(r, 5000));
+
+          const result = await sendViaSalesNav(page, {
+            mode: 'force_connect_op_fallback',
+            opSubject: opSubj,
+            opBody: opBody,
+            connectionNote: note,
+          });
+          if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+          if (result.ok && result.kind === 'connection_sent') return { action: 'connection_sent' };
+          if (result.reason === 'unreachable')                return { action: 'skipped', error: 'Sales Nav: neither OP nor Connect available' };
+          if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
+          return { action: 'skipped', error: result.error || result.reason || 'Sales Nav unknown' };
         }
+        // Sales Nav URL not resolvable — fall through to /in/ Connect fallback below.
+        console.warn('[outreach] Sales Nav link not available on /in/ page — falling back to direct Connect');
       }
 
-      // Connect fallback
+      // Connect fallback (also the path when opBody is empty)
       status = await getConnectionStatus(page);
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
       if (status === 'pending') return { action: 'already_processed' };
