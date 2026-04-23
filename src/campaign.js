@@ -814,7 +814,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               !result.error.includes('INMAIL_NO_CREDITS') &&
               !result.error.includes('NOT_OPEN_PROFILE') &&
               !result.error.includes('OP_SEND_FAILED') &&
-              !result.error.includes('No Open Profile template');
+              !result.error.includes('No Open Profile template') &&
+              !result.error.includes('Sales Nav link not available') &&
+              !result.error.includes('Sales Nav compose textbox') &&
+              !result.error.includes('Sales Nav send failed') &&
+              !result.error.includes('Sales Nav: neither OP nor Connect') &&
+              !result.error.includes('Already 1st-degree') &&
+              !result.error.includes('no_credits') &&
+              !result.error.includes('no_compose_textbox');
 
             if (!isTransient || attempt === MAX_RETRIES) break;
 
