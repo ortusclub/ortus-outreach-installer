@@ -16,6 +16,11 @@
 
 import { randomDelay, clickByAria, clickByText } from './helpers.js';
 
+// Matches Sales Navigator profile URLs (/sales/people/… or /sales/lead/…).
+// Kept in sync with the identical constant in outreach.js — duplication here
+// is deliberate (avoids cross-coupling the two files for a 1-line regex).
+const SALES_NAV_URL_RE = /\/sales\/(people|lead)\//;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Detect modal — checks both regular DOM and Shadow DOM
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1191,19 +1196,26 @@ export async function sendInMail(page, subject, message) {
   // InMail goes through Sales Navigator for both local and gologin accounts.
   // Path: More dropdown → extract Sales Nav href → page.goto(href) →
   // click Message on the Sales Nav lead page → type → Send.
-  const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
-  if (!salesNavUrl) throw new Error('INMAIL_SEND_FAILED: View in Sales Navigator href not found');
+  //
+  // If caller already navigated to Sales Nav (performOutreach's upfront
+  // conversion for OP/InMail modes), skip the internal resolve+goto —
+  // backward-compatible for /in/ callers, no-op for Sales Nav callers.
+  const alreadyOnSalesNav = SALES_NAV_URL_RE.test(page.url());
+  if (!alreadyOnSalesNav) {
+    const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
+    if (!salesNavUrl) throw new Error('INMAIL_SEND_FAILED: View in Sales Navigator href not found');
 
-  console.log(`[actions] Navigating to Sales Nav: ${salesNavUrl}`);
-  try {
-    await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  } catch (e) {
-    console.warn(`[actions] Sales Nav navigation issue: ${e.message}`);
+    console.log(`[actions] Navigating to Sales Nav: ${salesNavUrl}`);
+    try {
+      await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (e) {
+      console.warn(`[actions] Sales Nav navigation issue: ${e.message}`);
+    }
+    await new Promise(r => setTimeout(r, 5000));
   }
-  await new Promise(r => setTimeout(r, 5000));
 
   // Click Message on the Sales Nav lead page, inspect panel, type and send.
-  // Uses the shared Sales Nav primitives defined below sendOpenProfileMessage.
+  // Uses the shared Sales Nav primitives defined below.
   const msgClicked = await clickSalesNavMessageButton(page);
   if (!msgClicked) throw new Error('INMAIL_SEND_FAILED: Sales Nav Message button missing');
 
@@ -1411,6 +1423,12 @@ async function readSalesNavComposerState(page) {
   return await page.evaluate(() => {
     const text = document.body?.innerText || '';
     const isFree = /free message/i.test(text);
+    // Positive Open Profile signal — LinkedIn renders the literal badge text
+    // "Free to Open Profile" in the Sales Nav message panel for free-send
+    // targets. Using the presence of this badge (instead of the absence of
+    // a credit counter) avoids false-positives when the panel renders without
+    // a credit counter for non-OP reasons (slow render, A/B variant, etc.).
+    const isFreeToOpenProfile = /free to open profile/i.test(text);
     const creditMatch = text.match(/Use\s+\d+\s+of\s+(\d+)\s+credits?/i);
     const hasCreditCounter = !!creditMatch;
     const creditsAvailable = creditMatch ? parseInt(creditMatch[1], 10) : null;
@@ -1422,7 +1440,7 @@ async function readSalesNavComposerState(page) {
       'textarea[aria-label*="type your message" i], ' +
       'form[data-x-conversation-widget="compose-form"] textarea'
     );
-    return { isFree, hasCreditCounter, creditsAvailable, hasSubject, hasCompose };
+    return { isFree, isFreeToOpenProfile, hasCreditCounter, creditsAvailable, hasSubject, hasCompose };
   });
 }
 
@@ -1500,7 +1518,10 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
   }
 
   if (mode === 'force_open_profile') {
-    if (panel.hasCreditCounter) {
+    // Positive-signal gating: only send if the "Free to Open Profile" badge
+    // is present. "No credit counter" is not proof of Open Profile — the
+    // panel can render without a counter for transient/non-OP reasons.
+    if (!panel.isFreeToOpenProfile) {
       return { ok: false, reason: 'not_open_profile' };
     }
     const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
@@ -1510,8 +1531,8 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
   }
 
   if (mode === 'force_inmail') {
-    if (!panel.hasCreditCounter) {
-      // Free panel — use OP template (same behaviour as the /in/ opportunistic-OP path)
+    if (panel.isFreeToOpenProfile) {
+      // Explicit OP badge — send free via the OP template.
       const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
       if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
       console.log('[actions] ✓ Sales Nav free message sent (InMail mode, OP path)');
@@ -1528,16 +1549,17 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
   }
 
   if (mode === 'force_connect_op_fallback') {
-    // Connection campaign + "Message OPs Directly": try Message → if free panel
-    // send OP; if paid/absent, close and fall through to "..." → Connect.
+    // Connection campaign + "Message OPs Directly": try Message → if the
+    // "Free to Open Profile" badge is present, send OP; otherwise close
+    // and fall through to "..." → Connect.
     if (clicked) {
-      if (panel.hasCompose && !panel.hasCreditCounter) {
+      if (panel.hasCompose && panel.isFreeToOpenProfile) {
         const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
         if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
         console.log('[actions] ✓ Sales Nav OP message sent (connect-with-OP-fallback)');
         return { ok: true, kind: 'op_message_sent' };
       }
-      // Paid InMail panel or no composer — close it before trying Connect.
+      // Paid InMail panel, no composer, or not OP — close before trying Connect.
       await closeSalesNavComposer(page);
       await new Promise(r => setTimeout(r, 1000));
     }
