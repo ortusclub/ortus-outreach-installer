@@ -1108,6 +1108,82 @@ export async function sendMessage(page, message) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// resolveSalesNavUrlFromInProfile
+// ═════════════════════════════════════════════════════════════════════════════
+// Pure helper: clicks the More dropdown on a /in/ profile and extracts the
+// "View in Sales Navigator" href via a three-tier lookup (dropdown-scoped
+// anchor → any anchor with /sales/{lead,people}/ → text-match item with
+// child a[href]). Does NOT navigate. Returns the absolute URL string on
+// success or null on failure. Never throws — callers choose their own
+// failure mode.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function resolveSalesNavUrlFromInProfile(page) {
+  console.log('[actions] resolveSalesNavUrlFromInProfile: opening More dropdown…');
+
+  let moreOk = false;
+  try {
+    moreOk = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const more = btns.find(b => {
+        const a = (b.getAttribute('aria-label') || '').toLowerCase();
+        const t = (b.textContent || '').trim().toLowerCase();
+        return a === 'more actions' || a === 'more' || t === 'more';
+      });
+      if (more) { more.click(); return true; }
+      return false;
+    });
+  } catch (e) {
+    console.warn(`[actions] resolveSalesNavUrlFromInProfile: More click failed: ${e.message}`);
+    return null;
+  }
+
+  if (!moreOk) {
+    console.warn('[actions] resolveSalesNavUrlFromInProfile: More button not found');
+    return null;
+  }
+
+  await new Promise(r => setTimeout(r, 2500));
+
+  let salesNavUrl = null;
+  try {
+    salesNavUrl = await page.evaluate(() => {
+      const anchors = Array.from(document.querySelectorAll('a'));
+      for (const a of anchors) {
+        const href = a.getAttribute('href') || '';
+        if (href.includes('/sales/lead/') || href.includes('/sales/people/')) {
+          const inDropdown = a.closest('.artdeco-dropdown__content, [role="menu"]');
+          if (inDropdown) return a.href;
+        }
+      }
+      for (const a of anchors) {
+        const href = a.getAttribute('href') || '';
+        if (href.includes('/sales/lead/') || href.includes('/sales/people/')) return a.href;
+      }
+      const items = Array.from(document.querySelectorAll('[role="button"], .artdeco-dropdown__item, li'));
+      for (const el of items) {
+        const text = (el.textContent || '').trim();
+        if (text.includes('View in Sales Navigator')) {
+          const a = el.querySelector('a[href]');
+          if (a) return a.href;
+        }
+      }
+      return null;
+    });
+  } catch (e) {
+    console.warn(`[actions] resolveSalesNavUrlFromInProfile: href extract failed: ${e.message}`);
+    return null;
+  }
+
+  if (salesNavUrl) {
+    console.log(`[actions] resolveSalesNavUrlFromInProfile: resolved → ${salesNavUrl}`);
+  } else {
+    console.warn('[actions] resolveSalesNavUrlFromInProfile: no Sales Nav href found in dropdown');
+  }
+  return salesNavUrl || null;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // sendInMail
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1115,47 +1191,7 @@ export async function sendInMail(page, subject, message) {
   // InMail goes through Sales Navigator for both local and gologin accounts.
   // Path: More dropdown → extract Sales Nav href → page.goto(href) →
   // click Message on the Sales Nav lead page → type → Send.
-  console.log('[actions] InMail: opening More dropdown…');
-
-  const moreOk = await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll('button'));
-    const more = btns.find(b => {
-      const a = (b.getAttribute('aria-label') || '').toLowerCase();
-      const t = (b.textContent || '').trim().toLowerCase();
-      return a === 'more actions' || a === 'more' || t === 'more';
-    });
-    if (more) { more.click(); return true; }
-    return false;
-  });
-  if (!moreOk) throw new Error('InMail button not found (More dropdown missing)');
-
-  await new Promise(r => setTimeout(r, 2500));
-
-  // Extract the Sales Navigator href from the dropdown
-  const salesNavUrl = await page.evaluate(() => {
-    const anchors = Array.from(document.querySelectorAll('a'));
-    for (const a of anchors) {
-      const href = a.getAttribute('href') || '';
-      if (href.includes('/sales/lead/') || href.includes('/sales/people/')) {
-        const inDropdown = a.closest('.artdeco-dropdown__content, [role="menu"]');
-        if (inDropdown) return a.href;
-      }
-    }
-    for (const a of anchors) {
-      const href = a.getAttribute('href') || '';
-      if (href.includes('/sales/lead/') || href.includes('/sales/people/')) return a.href;
-    }
-    const items = Array.from(document.querySelectorAll('[role="button"], .artdeco-dropdown__item, li'));
-    for (const el of items) {
-      const text = (el.textContent || '').trim();
-      if (text.includes('View in Sales Navigator')) {
-        const a = el.querySelector('a[href]');
-        if (a) return a.href;
-      }
-    }
-    return null;
-  });
-
+  const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
   if (!salesNavUrl) throw new Error('INMAIL_SEND_FAILED: View in Sales Navigator href not found');
 
   console.log(`[actions] Navigating to Sales Nav: ${salesNavUrl}`);
