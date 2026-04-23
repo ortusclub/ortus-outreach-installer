@@ -102,6 +102,77 @@ export async function findButtonByText(page, text) {
 }
 
 /**
+ * Fast connection degree check via LinkedIn's internal Voyager API.
+ * Runs fetch() inside the page context so it inherits all cookies/headers.
+ * Returns 1, 2, 3, or null (if API call fails or profile not found).
+ *
+ * This is much more reliable than DOM scraping for degree detection.
+ * Falls back gracefully — callers should still use getConnectionStatus() as backup.
+ */
+export async function getVoyagerDegree(page) {
+  try {
+    const degree = await page.evaluate(async () => {
+      try {
+        // Extract public identifier from current URL
+        const m = window.location.pathname.match(/\/in\/([^/]+)/);
+        if (!m) return null;
+        const publicId = m[1];
+
+        // CSRF token from JSESSIONID cookie
+        const csrf = document.cookie.split(';')
+          .map(c => c.trim())
+          .find(c => c.startsWith('JSESSIONID='));
+        if (!csrf) return null;
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        const resp = await fetch(
+          `https://www.linkedin.com/voyager/api/identity/profiles/${publicId}/networkinfo`,
+          {
+            headers: {
+              'accept': 'application/vnd.linkedin.normalized+json+2.1',
+              'csrf-token': token,
+              'x-restli-protocol-version': '2.0.0',
+            },
+            credentials: 'include',
+          }
+        );
+        if (!resp.ok) return null;
+
+        const data = await resp.json();
+        // The distance field is like "DISTANCE_1", "DISTANCE_2", "DISTANCE_3", "OUT_OF_NETWORK"
+        const distance = data?.data?.distance?.value || data?.distance?.value || null;
+        if (distance === 'DISTANCE_1') return 1;
+        if (distance === 'DISTANCE_2') return 2;
+        if (distance === 'DISTANCE_3') return 3;
+
+        // Fallback: look through included entities
+        if (data?.included) {
+          for (const entity of data.included) {
+            if (entity.distance?.value) {
+              const d = entity.distance.value;
+              if (d === 'DISTANCE_1') return 1;
+              if (d === 'DISTANCE_2') return 2;
+              if (d === 'DISTANCE_3') return 3;
+            }
+          }
+        }
+
+        return null;
+      } catch {
+        return null;
+      }
+    });
+
+    if (degree !== null) {
+      console.log(`[helpers] Voyager API: degree=${degree}`);
+    }
+    return degree;
+  } catch {
+    return null; // Graceful fallback
+  }
+}
+
+/**
  * Get connection status. Uses aria-label + text only.
  */
 export async function getConnectionStatus(page) {
@@ -154,7 +225,13 @@ export async function getConnectionStatus(page) {
       let degree = null;
       const degreeEl = document.querySelector('.dist-value, .distance-badge, span[class*="degree"]');
       if (degreeEl) {
-        degree = degreeEl.textContent.trim();
+        const raw = degreeEl.textContent || '';
+        // Extract the actual "1st" / "2nd" / "3rd" / "3rd+" token from whatever
+        // text/aria-label the element contains (avoids strict-equality misses
+        // when the element wraps "1st degree connection ... 1st").
+        const m = raw.match(/\b(1st|2nd|3rd\+?)\b/);
+        if (m) degree = m[1];
+        else degree = raw.trim();
       }
       // Fallback: search for "1st", "2nd", "3rd" text near the h1 name
       if (!degree) {

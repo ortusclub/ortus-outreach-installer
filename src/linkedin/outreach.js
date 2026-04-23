@@ -8,8 +8,13 @@
  *   4. Execute action via JS click (works regardless of element visibility)
  */
 
-import { randomDelay, getConnectionStatus, personalizeTemplate } from './helpers.js';
-import { sendConnectionRequest, sendMessage, sendInMail } from './actions.js';
+import { randomDelay, getConnectionStatus, getVoyagerDegree, personalizeTemplate } from './helpers.js';
+import { sendConnectionRequest, sendMessage, sendInMail, sendOpenProfileMessage, sendViaSalesNav } from './actions.js';
+
+// Matches Sales Navigator profile URLs (linkedin.com/sales/people/… or /sales/lead/…).
+// Used to short-circuit the /in/-shaped status check for sheets whose rows are
+// direct Sales Nav links rather than standard profile URLs.
+const SALES_NAV_URL_RE = /\/sales\/(people|lead)\//;
 
 /**
  * Smart wait: resolves when the DOM stops changing for 1.5s OR after maxWait ms.
@@ -36,6 +41,23 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     let url = targetUrl.trim();
     if (!url.startsWith('http')) url = 'https://' + url;
 
+    // ── Step 0: Check LinkedIn session cookie health ──
+    try {
+      const cookies = await page.cookies('https://www.linkedin.com');
+      const liAt = cookies.find(c => c.name === 'li_at');
+      if (!liAt) {
+        console.warn('[outreach] ⚠ No li_at cookie — session may be expired');
+        return { action: 'skipped', error: 'LinkedIn session expired (no li_at cookie)' };
+      }
+      // Check if cookie expires soon (within 1 hour)
+      if (liAt.expires > 0) {
+        const expiresIn = liAt.expires - (Date.now() / 1000);
+        if (expiresIn < 3600) {
+          console.warn(`[outreach] ⚠ li_at cookie expires in ${Math.round(expiresIn / 60)}min`);
+        }
+      }
+    } catch { /* cookie check is best-effort */ }
+
     // ── Step 1: Navigate to lead's profile ──
     // Use networkidle0 — waits until no network requests for 500ms
     try {
@@ -56,18 +78,32 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
     // ── Step 2b: Human-like browsing — scroll profile and dwell ──
-    // Use keyboard End/Home for scrolling — works reliably with CSS zoom on GoLogin
-    const dwellTime = 5000 + Math.floor(Math.random() * 5000); // 5-10s
-    console.log(`[outreach] Browsing profile (dwelling ${(dwellTime / 1000).toFixed(0)}s)…`);
+    // ~20% chance of a "deep read" (20-30s) to mimic genuinely interested browsing
+    const isDeepRead = Math.random() < 0.2;
+    const dwellTime = isDeepRead
+      ? 20000 + Math.floor(Math.random() * 10000)   // 20-30s deep read
+      : 5000 + Math.floor(Math.random() * 5000);     // 5-10s normal browse
+    console.log(`[outreach] Browsing profile (${isDeepRead ? 'deep read ' : ''}${(dwellTime / 1000).toFixed(0)}s)…`);
+
     // Scroll down with Page Down (works regardless of zoom)
     await page.keyboard.press('PageDown');
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1000 + Math.floor(Math.random() * 1500)));
     await page.keyboard.press('PageDown');
-    await new Promise(r => setTimeout(r, dwellTime));
+
+    if (isDeepRead) {
+      // Deep read: scroll further down, pause, scroll more — like reading their experience
+      await new Promise(r => setTimeout(r, 3000 + Math.floor(Math.random() * 3000)));
+      await page.keyboard.press('PageDown');
+      await new Promise(r => setTimeout(r, 2000 + Math.floor(Math.random() * 2000)));
+      await page.keyboard.press('PageDown');
+      await new Promise(r => setTimeout(r, dwellTime - 10000)); // remaining dwell
+    } else {
+      await new Promise(r => setTimeout(r, dwellTime));
+    }
 
     // Scroll back to top
     await page.keyboard.press('Home');
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 800 + Math.floor(Math.random() * 700)));
 
     // Check for login/404/rate-limit
     const currentUrl = page.url();
@@ -94,10 +130,20 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     }
 
     // ── Step 3: Detect status and execute action ──
+    // Fast-path: Voyager API degree check (more reliable than DOM scraping)
+    const voyagerDegree = await getVoyagerDegree(page);
+    // Voyager gives definitive answers for degree-1 (connected) and can help
+    // disambiguate when DOM detection returns 'unknown'
+
     let status;
 
     if (modeHint === 'check_only') {
       // Just read the status — don't click anything
+      // Voyager fast-path for check_only
+      if (voyagerDegree === 1) {
+        console.log('[outreach] Voyager: degree=1 → accepted');
+        return { action: 'status_accepted' };
+      }
       status = await getConnectionStatus(page);
       console.log(`[outreach] Check status: ${status}`);
       if (status === 'message') return { action: 'status_accepted' };
@@ -105,6 +151,11 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (status === 'connect' || status === 'follow') return { action: 'status_declined' };
       return { action: 'status_unknown', error: `Status: ${status}` };
     } else if (modeHint === 'force_connect') {
+      // Voyager fast-path: if already connected, skip immediately
+      if (voyagerDegree === 1) {
+        console.log('[outreach] Voyager: degree=1 → already connected');
+        return { action: 'skipped', error: 'Already connected' };
+      }
       status = await getConnectionStatus(page);
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
       if (status === 'pending') return { action: 'already_processed' };
@@ -113,14 +164,152 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         status = 'connect';
       }
     } else if (modeHint === 'force_message') {
+      // Voyager fast-path: need degree 1 to message
+      if (voyagerDegree !== null && voyagerDegree !== 1) {
+        console.log(`[outreach] Voyager: degree=${voyagerDegree} → not connected yet`);
+        return { action: 'skipped', error: 'Not yet connected' };
+      }
       status = await getConnectionStatus(page);
       if (status === 'connect') return { action: 'skipped', error: 'Not yet connected' };
       if (status === 'pending') return { action: 'skipped', error: 'Still pending' };
       status = 'message';
     } else if (modeHint === 'force_inmail') {
+      // Sales Nav URL router — if the sheet URL is already a Sales Nav link,
+      // the /in/-shaped status check doesn't apply. Click Message on the
+      // Sales Nav page directly: free panel = free send (OP template),
+      // paid panel with credits = burn 1 credit (InMail template), else skip.
+      if (SALES_NAV_URL_RE.test(page.url())) {
+        const d = templates.data || {};
+        const result = await sendViaSalesNav(page, {
+          mode: 'force_inmail',
+          opSubject:     personalizeTemplate(templates.openProfileSubject || '', d),
+          opBody:        personalizeTemplate(templates.openProfileBody || '', d),
+          inmailSubject: personalizeTemplate(templates.inmail?.subject || '', d),
+          inmailBody:    personalizeTemplate(templates.inmail?.message || '', d),
+        });
+        if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+        if (result.ok && result.kind === 'inmail_sent')     return { action: 'inmail_sent', creditsLeft: result.creditsLeft };
+        if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
+        if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
+        if (result.reason === 'no_credits')                 return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
+        if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
+        return { action: 'skipped', error: 'Sales Nav: unknown result' };
+      }
+
       status = await getConnectionStatus(page);
-      if (status === 'connect') return { action: 'skipped', error: 'Can connect directly' };
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
+
+      // Opportunistic Open Profile — if an OP template is configured, try
+      // the free-message panel first. This saves an InMail credit when the
+      // target has Open Profile enabled. If not OP, fall through to InMail.
+      if (templates.openProfileBody) {
+        try {
+          await sendOpenProfileMessage(
+            page,
+            personalizeTemplate(templates.openProfileSubject || '', templates.data || {}),
+            personalizeTemplate(templates.openProfileBody || '', templates.data || {}),
+          );
+          return { action: 'op_message_sent' };
+        } catch (err) {
+          const msg = String(err?.message || '');
+          if (!msg.includes('NOT_OPEN_PROFILE')) {
+            // Real error (not a "not OP" signal) — don't retry via InMail.
+            return { action: 'skipped', error: `Open Profile failed: ${msg}` };
+          }
+          // Not OP. Close any lingering panels and re-check status before InMail.
+          try { await page.reload({ waitUntil: 'domcontentloaded' }); } catch { /* */ }
+          await new Promise(r => setTimeout(r, 2000));
+          status = await getConnectionStatus(page);
+        }
+      }
+
+      if (status === 'connect') return { action: 'skipped', error: 'Can connect directly' };
+    } else if (modeHint === 'force_open_profile') {
+      // Sales Nav URL router — bypasses the /in/-shaped status check
+      // (which false-rejects these rows). Free panel = send, paid panel = skip.
+      if (SALES_NAV_URL_RE.test(page.url())) {
+        if (!templates.openProfileBody) return { action: 'skipped', error: 'No Open Profile template' };
+        const d = templates.data || {};
+        const result = await sendViaSalesNav(page, {
+          mode: 'force_open_profile',
+          opSubject: personalizeTemplate(templates.openProfileSubject || '', d),
+          opBody:    personalizeTemplate(templates.openProfileBody || '', d),
+        });
+        if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+        if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
+        if (result.reason === 'not_open_profile')           return { action: 'skipped', error: 'NOT_OPEN_PROFILE: credit counter shown on Sales Nav panel' };
+        if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
+        if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
+        return { action: 'skipped', error: 'Sales Nav: unknown result' };
+      }
+
+      // Open Profile flow — visit the profile and try clicking Message.
+      // If it opens the free-message panel ("Free message" text), send it.
+      // If not, skip the lead without cost. 1st-degrees are skipped too
+      // (they should use regular message_only mode instead).
+      status = await getConnectionStatus(page);
+      if (status === 'message') return { action: 'skipped', error: 'Already 1st-degree — use message mode' };
+      if (!templates.openProfileBody) return { action: 'skipped', error: 'No Open Profile template' };
+      try {
+        await sendOpenProfileMessage(
+          page,
+          personalizeTemplate(templates.openProfileSubject || '', templates.data || {}),
+          personalizeTemplate(templates.openProfileBody || '', templates.data || {}),
+        );
+        return { action: 'op_message_sent' };
+      } catch (err) {
+        return { action: 'skipped', error: `Open Profile failed: ${err.message}` };
+      }
+    } else if (modeHint === 'force_connect_op_fallback') {
+      // "Message Open Profiles Directly" in Connect campaign — try OP first,
+      // fall back to Connect if the lead isn't OP-enabled.
+      const d = templates.data || {};
+      const opSubj = templates.openProfileSubject ? personalizeTemplate(templates.openProfileSubject, d) : '';
+      const opBody = templates.openProfileBody    ? personalizeTemplate(templates.openProfileBody,    d) : '';
+      const note   = templates.connectionNote     ? personalizeTemplate(templates.connectionNote,     d) : '';
+
+      // Sales Nav URL: delegate to the router — it handles Message-panel
+      // detection and the "..." → Connect fallback inside one visit.
+      if (SALES_NAV_URL_RE.test(page.url())) {
+        const result = await sendViaSalesNav(page, {
+          mode: 'force_connect_op_fallback',
+          opSubject: opSubj,
+          opBody: opBody,
+          connectionNote: note,
+        });
+        if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+        if (result.ok && result.kind === 'connection_sent') return { action: 'connection_sent' };
+        if (result.reason === 'unreachable')                return { action: 'skipped', error: 'Sales Nav: neither OP nor Connect available' };
+        if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
+        return { action: 'skipped', error: result.error || result.reason || 'Sales Nav unknown' };
+      }
+
+      // /in/ URL: try OP first via the existing path, fall back to Connect
+      // on NOT_OPEN_PROFILE.
+      if (opBody) {
+        try {
+          await sendOpenProfileMessage(page, opSubj, opBody);
+          return { action: 'op_message_sent' };
+        } catch (err) {
+          const msg = String(err?.message || '');
+          if (!msg.includes('NOT_OPEN_PROFILE')) {
+            return { action: 'skipped', error: `Open Profile failed: ${msg}` };
+          }
+          try { await page.reload({ waitUntil: 'domcontentloaded' }); } catch { /* */ }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+
+      // Connect fallback
+      status = await getConnectionStatus(page);
+      if (status === 'message') return { action: 'skipped', error: 'Already connected' };
+      if (status === 'pending') return { action: 'already_processed' };
+      try {
+        await sendConnectionRequest(page, note);
+        return { action: 'connection_sent' };
+      } catch (err) {
+        return { action: 'skipped', error: `Connect failed: ${err.message}` };
+      }
     } else {
       status = await getConnectionStatus(page);
     }
@@ -164,10 +353,10 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           return { action: 'skipped', error: 'Connect not in More, no InMail template' };
         }
         try {
-          await sendInMail(page,
+          const inmailResult = await sendInMail(page,
             personalizeTemplate(templates.inmail.subject || '', data),
             personalizeTemplate(templates.inmail.message || '', data));
-          return { action: 'inmail_sent' };
+          return { action: 'inmail_sent', creditsLeft: inmailResult?.creditsLeft ?? null };
         } catch (err) {
           return { action: 'skipped', error: `InMail failed: ${err.message}` };
         }

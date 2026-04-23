@@ -48,11 +48,17 @@ async function detectModal(page) {
 
     const hasHowDoYouKnow = pageText.includes('how do you know');
 
-    // Weekly/invitation limit detection
+    // Weekly/invitation limit detection — matches both modal text and inline banner text
+    // Banner says: "weekly limit for connection invitations"
+    // Modal says: "weekly invitation limit"
     const hasWeeklyLimit = pageText.includes('weekly invitation limit') ||
+                           pageText.includes('weekly limit for connection') ||
+                           pageText.includes('invitation was not sent') ||
                            pageText.includes("you've reached") ||
+                           pageText.includes('reached the weekly limit') ||
                            pageText.includes('invitation limit') ||
-                           pageText.includes('too many pending');
+                           pageText.includes('too many pending') ||
+                           pageText.includes('try again next week');
 
     // Email required to connect
     const hasEmailRequired = pageText.includes('enter their email') ||
@@ -79,17 +85,82 @@ async function detectModal(page) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function isPending(page) {
-  return page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    document.querySelectorAll('*').forEach(el => {
-      if (el.shadowRoot) buttons.push(...Array.from(el.shadowRoot.querySelectorAll('button')));
-    });
-    return buttons.some(b => {
-      const t = (b.textContent || '').trim().toLowerCase();
+  // Step 1: Check for Pending as a visible button in the profile's action bar
+  // ONLY check buttons and actionable elements — NOT divs/spans (too many false positives)
+  const directPending = await page.evaluate(() => {
+    const h1 = document.querySelector('h1');
+    const profileName = h1 ? h1.textContent.trim().split('\n')[0].trim().toLowerCase() : '';
+    const firstName = profileName.split(/\s+/)[0] || '';
+
+    // Find the "More" button to locate the action bar
+    const moreBtn = Array.from(document.querySelectorAll('button')).find(b => {
       const a = (b.getAttribute('aria-label') || '').toLowerCase();
-      return t === 'pending' || a.includes('pending');
+      const t = (b.textContent || '').trim().toLowerCase();
+      return a === 'more actions' || a === 'more' || t === 'more';
     });
+
+    // Scope: only check buttons in the action bar area (same parent as More button)
+    const actionBar = moreBtn ? (moreBtn.closest('div, section, ul') || moreBtn.parentElement) : null;
+    const searchAreas = actionBar ? [actionBar] : [];
+    // Also check the h1's parent section
+    if (h1) {
+      const h1Section = h1.closest('main, section, [class*="top-card"]');
+      if (h1Section && !searchAreas.includes(h1Section)) searchAreas.push(h1Section);
+    }
+
+    for (const area of searchAreas) {
+      const buttons = Array.from(area.querySelectorAll('button, a, [role="button"]'));
+      for (const b of buttons) {
+        const t = (b.textContent || '').trim().toLowerCase();
+        const a = (b.getAttribute('aria-label') || '').toLowerCase();
+
+        if (a.includes('pending')) {
+          if (firstName && !a.includes(firstName)) continue;
+          return 'aria-scoped';
+        }
+        if (t === 'pending' && b.offsetWidth > 0) {
+          return 'text-scoped';
+        }
+      }
+    }
+    return null;
   });
+
+  if (directPending) return true;
+
+  // Step 2: Open the "More" dropdown and check for "Pending" inside it
+  const morePending = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const more = buttons.find(b => {
+      const a = (b.getAttribute('aria-label') || '').toLowerCase();
+      const t = (b.textContent || '').trim().toLowerCase();
+      return a === 'more actions' || a === 'more' || t === 'more';
+    });
+    if (more) { more.click(); return true; }
+    return false;
+  });
+
+  if (!morePending) return false;
+
+  await new Promise(r => setTimeout(r, 2000));
+
+  const pendingInDropdown = await page.evaluate(() => {
+    // Only check dropdown-specific elements
+    const items = Array.from(document.querySelectorAll('li, [role="menuitem"], .artdeco-dropdown__item'));
+    for (const el of items) {
+      const t = (el.textContent || '').trim().toLowerCase();
+      if (t === 'pending') return true;
+      const a = (el.getAttribute('aria-label') || '').toLowerCase();
+      if (a.includes('pending')) return true;
+    }
+    return false;
+  });
+
+  // Close the dropdown
+  await page.evaluate(() => document.body.click());
+  await new Promise(r => setTimeout(r, 500));
+
+  return pendingInDropdown;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,33 +168,230 @@ async function isPending(page) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function typeIntoField(page, text) {
-  const focused = await page.evaluate(() => {
-    const selectors = [
-      'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]',
-      '.msg-form__contenteditable', '[aria-label*="Write a message"]',
-    ];
+  // Order matters: most-specific message/note selectors first. Otherwise the
+  // generic `div[contenteditable="true"]` can match LinkedIn's top-nav search
+  // bar (also contenteditable) and silently type into it.
+  // For message composers specifically, if multiple are present we take the
+  // LAST one (most recently mounted) — LinkedIn appends new bubbles to the
+  // end of `.msg-overlay-list-bubble`, and the most recent is the current lead.
+  const SELECTORS = [
+    // Connect-note modal
+    'textarea[name="message"]', 'textarea#custom-message',
+    // Message composer (Quill editor) — scoped to the form container
+    '.msg-form__contenteditable',
+    '.msg-form__msg-content-container div[contenteditable="true"]',
+    '.msg-form div[contenteditable="true"]',
+    'div[aria-label*="Write a message"]',
+    'div[aria-label*="Add a note"]',
+    // InMail / other dialogs
+    'div[role="dialog"] textarea',
+    'div[role="dialog"] div[contenteditable="true"]',
+    // Generic textarea fallback
+    'textarea',
+  ];
+  // Selectors for which we should pick the LAST match (most recently mounted).
+  const PICK_LAST_SELECTORS = new Set([
+    '.msg-form__contenteditable',
+    '.msg-form__msg-content-container div[contenteditable="true"]',
+    '.msg-form div[contenteditable="true"]',
+    'div[aria-label*="Write a message"]',
+  ]);
 
-    // Regular DOM
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el) { el.focus(); el.click(); return true; }
-    }
+  const MAX_ATTEMPTS = 3;
 
-    // All Shadow DOM roots
-    const shadowHosts = Array.from(document.querySelectorAll('*')).filter(el => el.shadowRoot);
-    for (const host of shadowHosts) {
-      for (const sel of selectors) {
-        const found = host.shadowRoot.querySelector(sel);
-        if (found) { found.focus(); found.click(); return true; }
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // Inject value directly using React's native setter so the synthetic
+    // onChange fires and LinkedIn's controlled component accepts it.
+    const injected = await page.evaluate((selectors, pickLastSelectors, value) => {
+      const pickLast = new Set(pickLastSelectors);
+      const findField = (root) => {
+        for (const sel of selectors) {
+          if (pickLast.has(sel)) {
+            const all = root.querySelectorAll(sel);
+            if (all.length) return all[all.length - 1];
+          } else {
+            const el = root.querySelector(sel);
+            if (el) return el;
+          }
+        }
+        return null;
+      };
+
+      let el = findField(document);
+      if (!el) {
+        const hosts = Array.from(document.querySelectorAll('*')).filter(x => x.shadowRoot);
+        for (const host of hosts) {
+          el = findField(host.shadowRoot);
+          if (el) break;
+        }
       }
-    }
-    return false;
-  });
+      if (!el) return { ok: false, reason: 'field-not-found' };
 
-  if (!focused) return false;
-  await randomDelay(200, 400);
-  await page.keyboard.type(text, { delay: 30 });
-  return true;
+      el.focus();
+
+      const isTextarea = el.tagName === 'TEXTAREA';
+      const isInput = el.tagName === 'INPUT';
+
+      if (isTextarea || isInput) {
+        const proto = isTextarea ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        nativeSetter.call(el, '');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        nativeSetter.call(el, value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        // contenteditable path — LinkedIn's message composer is a Quill
+        // editor. Quill maintains its own document model and listens for
+        // `paste` events via its Clipboard module, so dispatching a real
+        // ClipboardEvent with a DataTransfer is the most reliable way to
+        // populate it. Fall back to execCommand('insertText') if paste
+        // didn't land.
+        el.focus();
+        // Select + delete any existing content
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+          document.execCommand('delete', false);
+        } catch { /* */ }
+
+        let pasted = false;
+        try {
+          const dt = new DataTransfer();
+          dt.setData('text/plain', value);
+          const pasteEvent = new ClipboardEvent('paste', {
+            clipboardData: dt,
+            bubbles: true,
+            cancelable: true,
+          });
+          el.dispatchEvent(pasteEvent);
+          pasted = true;
+        } catch { /* */ }
+
+        // Only fall back to execCommand if paste genuinely failed. Quill strips
+        // newlines in textContent and may wrap in <p> tags, so we can't compare
+        // strictly — check that the editor has roughly the right amount of text.
+        const currentText = (el.textContent || el.innerText || '').replace(/\u200B/g, '');
+        const normalizedCurrent = currentText.replace(/\s+/g, ' ').trim();
+        const normalizedTarget = value.replace(/\s+/g, ' ').trim();
+        const lengthRatio = normalizedTarget.length > 0
+          ? normalizedCurrent.length / normalizedTarget.length
+          : 1;
+
+        if (!pasted || lengthRatio < 0.8 || lengthRatio > 1.2) {
+          // Paste didn't land — clear whatever partial content exists first,
+          // then use execCommand('insertText').
+          try {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand('delete', false);
+          } catch { /* */ }
+          const lines = value.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].length) document.execCommand('insertText', false, lines[i]);
+            if (i < lines.length - 1) {
+              if (!document.execCommand('insertLineBreak', false)) {
+                document.execCommand('insertText', false, '\n');
+              }
+            }
+          }
+        }
+      }
+
+      const got = isTextarea || isInput ? el.value : (el.textContent || el.innerText || '');
+      return { ok: true, got };
+    }, SELECTORS, [...PICK_LAST_SELECTORS], text);
+
+    if (!injected.ok) {
+      console.warn(`[actions] Field not found on attempt ${attempt}: ${injected.reason}`);
+      await new Promise(r => setTimeout(r, 500));
+      continue;
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+
+    // Read back authoritative content after React re-render
+    const fieldContent = await page.evaluate((selectors, pickLastSelectors) => {
+      const pickLast = new Set(pickLastSelectors);
+      const findField = (root) => {
+        for (const sel of selectors) {
+          if (pickLast.has(sel)) {
+            const all = root.querySelectorAll(sel);
+            if (all.length) return all[all.length - 1];
+          } else {
+            const el = root.querySelector(sel);
+            if (el) return el;
+          }
+        }
+        return null;
+      };
+      let el = findField(document);
+      if (!el) {
+        const hosts = Array.from(document.querySelectorAll('*')).filter(x => x.shadowRoot);
+        for (const host of hosts) {
+          el = findField(host.shadowRoot);
+          if (el) break;
+        }
+      }
+      if (!el) return '';
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el.value || '';
+      return el.textContent || el.innerText || '';
+    }, SELECTORS, [...PICK_LAST_SELECTORS]);
+
+    // Verification: strict equality for textareas (connect-note modal),
+    // whitespace-normalized match for contenteditable (Quill message composer,
+    // which wraps content in <p> tags and collapses newlines in textContent).
+    const expected = text.replace(/\r\n/g, '\n');
+    const got = fieldContent.replace(/\r\n/g, '\n');
+    const normalize = s => s.replace(/\s+/g, ' ').trim();
+
+    if (got === expected || normalize(got) === normalize(expected)) {
+      if (attempt > 1) console.log(`[actions] Note verified on attempt ${attempt}.`);
+      return true;
+    }
+
+    console.warn(
+      `[actions] Note mismatch (attempt ${attempt}/${MAX_ATTEMPTS}). ` +
+      `Expected ${expected.length} chars, got ${got.length}. ` +
+      `Expected head: "${expected.substring(0, 60)}…" Got head: "${got.substring(0, 60)}…"`
+    );
+
+    // Fallback on final attempt: keyboard typing (rare path)
+    if (attempt === MAX_ATTEMPTS - 1) {
+      await page.evaluate((selectors) => {
+        const findField = (root) => {
+          for (const sel of selectors) {
+            const el = root.querySelector(sel);
+            if (el) return el;
+          }
+          return null;
+        };
+        const el = findField(document);
+        if (!el) return;
+        el.focus();
+        if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+          const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, '');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          el.innerHTML = '';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }, SELECTORS);
+      await new Promise(r => setTimeout(r, 300));
+      await page.keyboard.type(text, { delay: 15 });
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  console.error('[actions] Failed to type note correctly after all attempts. Will NOT send.');
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,17 +436,18 @@ async function clickConnectFromMore(page) {
       }
     }
 
-    // Also try clicking a span/div with exact text "Connect" inside a dropdown
-    const allEls = Array.from(document.querySelectorAll('span, div'));
-    for (const el of allEls) {
-      // Must be exact match and small element (not a big container)
-      const text = (el.textContent || '').trim();
-      const directText = el.childNodes.length <= 2 ? text : '';
-      if (directText === 'Connect' && el.offsetWidth > 0) {
-        // Click the list item parent if possible, otherwise the element itself
-        const parent = el.closest('li') || el.closest('[role="menuitem"]') || el;
-        parent.click();
-        return 'dom-span';
+    // Try spans inside the actual dropdown container only
+    const dropdowns = document.querySelectorAll('.artdeco-dropdown__content, [role="menu"], .artdeco-dropdown__content--is-open');
+    for (const dropdown of dropdowns) {
+      if (!dropdown.offsetWidth) continue; // skip hidden dropdowns
+      const spans = dropdown.querySelectorAll('span, div, a');
+      for (const el of spans) {
+        const text = (el.textContent || '').trim();
+        if (text === 'Connect' && el.offsetWidth > 0) {
+          const parent = el.closest('li') || el.closest('[role="menuitem"]') || el;
+          parent.click();
+          return 'dropdown-connect';
+        }
       }
     }
 
@@ -222,7 +491,8 @@ async function clickConnectFromMore(page) {
 // sendConnectionRequest
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendConnectionRequest(page, note) {
+export async function sendConnectionRequest(page, noteArg) {
+  let note = noteArg;
   // Scroll to top
   await page.evaluate(() => window.scrollTo(0, 0));
   await randomDelay(300, 500);
@@ -236,49 +506,37 @@ export async function sendConnectionRequest(page, note) {
   const startTime = Date.now();
 
   while (!connectClicked && (Date.now() - startTime) < MAX_WAIT_MS) {
-    // PRIORITY 1: Always try the direct Connect button for THIS profile
-    // Must match the profile's name to avoid clicking Connect on recommended profiles
     const directClicked = await page.evaluate(() => {
-      // Get the profile owner's name from h1
       const h1 = document.querySelector('h1');
       const profileName = h1 ? h1.textContent.trim().split('\n')[0].trim().toLowerCase() : '';
-      const firstName = profileName.split(/\s+/)[0]; // First name for partial matching
+      const firstName = profileName.split(/\s+/)[0] || '';
 
-      // 1. aria-label "Invite X to connect" — ONLY if X matches this profile's name
-      const allInvites = document.querySelectorAll('[aria-label*="Invite"][aria-label*="to connect"]');
-      for (const el of allInvites) {
-        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-        // Match if aria contains the profile's first name
-        if (firstName && aria.includes(firstName)) {
-          el.click();
-          return 'aria-invite-matched';
-        }
-      }
-      // If no name-matched invite found but there's exactly one, it's probably the right one
-      if (allInvites.length === 1) {
-        allInvites[0].click();
-        return 'aria-invite-only';
-      }
-
-      // 2. Button with text "Connect" in the TOP section only (above "People also viewed")
-      //    The profile action buttons are near the h1, typically within the first 800px
-      const allEls = Array.from(document.querySelectorAll('button, a'));
-      document.querySelectorAll('*').forEach(el => {
-        if (el.shadowRoot) allEls.push(...Array.from(el.shadowRoot.querySelectorAll('button, a')));
-      });
-
-      for (const el of allEls) {
-        const text = (el.textContent || '').trim();
-        if (text === 'Connect' && el.offsetWidth > 30) {
-          // Only click if the element is in the top portion of the page (not recommendations)
-          const rect = el.getBoundingClientRect();
-          if (rect.top < 800) {
+      // METHOD 1: aria-label "Invite [name] to connect" — name MUST match
+      if (firstName) {
+        const allInvites = document.querySelectorAll('[aria-label*="Invite"][aria-label*="to connect"]');
+        for (const el of allInvites) {
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          if (aria.includes(firstName)) {
             el.click();
-            return 'text-connect-top';
+            return 'aria-invite-matched';
           }
         }
       }
 
+      // METHOD 2: <a href="...custom-invite..."> link — unique to profile owner
+      const allLinks = Array.from(document.querySelectorAll('a'));
+      document.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot) allLinks.push(...Array.from(el.shadowRoot.querySelectorAll('a')));
+      });
+      for (const el of allLinks) {
+        const href = (el.getAttribute('href') || '');
+        if (href.includes('custom-invite')) {
+          el.click();
+          return 'custom-invite-link';
+        }
+      }
+
+      // NO OTHER FALLBACKS — if neither matched, go to More dropdown
       return null;
     });
 
@@ -307,15 +565,59 @@ export async function sendConnectionRequest(page, note) {
 
   if (!connectClicked) throw new Error('Connect button not found after 60s');
 
-  // ── Wait for modal or Pending (8 attempts = ~24s max, up from 5/15s) ──
+  // ── Wait for modal, success toast, or Pending (8 attempts = ~24s max) ──
   for (let attempt = 1; attempt <= 8; attempt++) {
-    if (await isPending(page)) {
-      console.log('[actions] ✓ Connection sent directly.');
+    // Check for "Invitation sent to X" green toast — definitive proof
+    const successToast = await page.evaluate(() => {
+      const toasts = document.querySelectorAll('.artdeco-toast-item, [data-test-artdeco-toast-item-type="success"]');
+      for (const t of toasts) {
+        const text = (t.textContent || '').toLowerCase();
+        if (text.includes('invitation sent')) return text.trim().substring(0, 100);
+      }
+      return null;
+    });
+    if (successToast) {
+      console.log(`[actions] ✓ Success toast: "${successToast}"`);
       return;
     }
 
+    // IMPORTANT: Check modal FIRST — if a modal is open, we MUST handle it.
+    // Do NOT check isPending before modal, because isPending can false-positive
+    // from recommendation Pending buttons while the modal is still open.
     const modal = await detectModal(page);
+    if (modal.found) {
+      // Modal is open — handle it below (fall through to modal handling code)
+    } else {
+      // No modal — safe to check Pending
+      if (await isPending(page)) {
+        console.log('[actions] ✓ Connection sent (Pending detected).');
+        return;
+      }
+    }
 
+    // Check for inline weekly limit banner (appears instead of modal)
+    const inlineBanner = await page.evaluate(() => {
+      const text = (document.body?.innerText || '').substring(0, 5000).toLowerCase();
+      if (text.includes('invitation was not sent') ||
+          text.includes('weekly limit for connection') ||
+          text.includes('reached the weekly limit') ||
+          text.includes('try again next week')) {
+        return true;
+      }
+      let shadowText = '';
+      document.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot) shadowText += (el.shadowRoot.textContent || '').substring(0, 2000).toLowerCase();
+      });
+      return shadowText.includes('invitation was not sent') ||
+             shadowText.includes('weekly limit') ||
+             shadowText.includes('try again next week');
+    });
+    if (inlineBanner) {
+      console.log('[actions] ⚠ Inline weekly limit banner detected on page.');
+      throw new Error('WEEKLY_LIMIT');
+    }
+
+    // modal was already detected above — reuse it
     if (modal.found) {
       console.log(`[actions] Modal (attempt ${attempt}):`, JSON.stringify({
         addNote: modal.hasAddNote, sendWithout: modal.hasSendWithout,
@@ -358,10 +660,111 @@ export async function sendConnectionRequest(page, note) {
       if (note && modal.hasAddNote) {
         console.log('[actions] Clicking "Add a note"…');
         await clickByAria(page, 'Add a note');
-        await new Promise(r => setTimeout(r, 2000));
-        await typeIntoField(page, note);
-        console.log('[actions] Note typed.');
-        await randomDelay(500, 800);
+        await new Promise(r => setTimeout(r, 5000));
+        const noteTyped = await typeIntoField(page, note);
+        if (!noteTyped) {
+          console.warn('[actions] Note typing failed after 3 attempts. Clearing field and sending without a note.');
+          // Clear any half-typed content so it can't possibly leak
+          await page.evaluate(() => {
+            const sels = ['textarea[name="message"]', 'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]'];
+            for (const sel of sels) {
+              const el = document.querySelector(sel);
+              if (el) {
+                el.focus();
+                if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+                  const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, '');
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                  el.innerHTML = '';
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                return;
+              }
+            }
+          });
+          await new Promise(r => setTimeout(r, 300));
+
+          // Dismiss the entire invite modal (Cancel button in the Add-a-note view
+          // closes the whole flow on current LinkedIn)
+          await clickByText(page, 'Cancel').catch(() => {});
+          await page.keyboard.press('Escape').catch(() => {});
+          await new Promise(r => setTimeout(r, 1500));
+
+          // Re-click Connect from scratch — reuses the same direct-click logic
+          // as the top of this function
+          const reconnected = await page.evaluate(() => {
+            const h1 = document.querySelector('h1');
+            const profileName = h1 ? h1.textContent.trim().split('\n')[0].trim().toLowerCase() : '';
+            const firstName = profileName.split(/\s+/)[0] || '';
+            if (firstName) {
+              const allInvites = document.querySelectorAll('[aria-label*="Invite"][aria-label*="to connect"]');
+              for (const el of allInvites) {
+                const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                if (aria.includes(firstName)) { el.click(); return 'aria'; }
+              }
+            }
+            return null;
+          });
+
+          if (!reconnected) {
+            // Fall back to More dropdown
+            const moreOk = await clickConnectFromMore(page);
+            if (!moreOk) {
+              console.error('[actions] Could not re-open Connect after note failure. Aborting.');
+              throw new Error('NOTE_TYPING_FAILED: could not re-open Connect to send without a note');
+            }
+          }
+
+          await new Promise(r => setTimeout(r, 5000));
+
+          // Now the fresh invite modal is showing; click "Send without a note"
+          note = '';
+          const sentR = await clickByAria(page, 'Send without a note');
+          if (!sentR) {
+            // Some modals label it just "Send"
+            const sendR = await clickByAria(page, 'Send');
+            if (!sendR) {
+              const byText = await clickByText(page, 'Send without a note');
+              if (!byText) {
+                console.error('[actions] Fresh invite modal did not expose Send-without-note button.');
+                throw new Error('NOTE_TYPING_FAILED: fresh invite modal missing Send-without-note');
+              }
+            }
+          }
+          console.log('[actions] ✓ Sent without a note (note typing fallback).');
+          // Jump straight to post-send verification
+          await new Promise(r => setTimeout(r, 2000));
+
+          // Post-send verification: reload profile and confirm Pending
+          console.log('[actions] Verifying connection... waiting 30s for LinkedIn to process.');
+          await new Promise(r => setTimeout(r, 30000));
+          const currentUrl = page.url();
+          try {
+            await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          } catch { /* timeout OK */ }
+          await new Promise(r => setTimeout(r, 5000));
+          await page.evaluate(() => { document.body.style.zoom = '75%'; });
+          if (await isPending(page)) {
+            console.log('[actions] ✓ Verified: Pending (fallback send).');
+            return;
+          }
+          console.log('[actions] Not Pending yet. Waiting another 30s...');
+          await new Promise(r => setTimeout(r, 30000));
+          try {
+            await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          } catch { /* */ }
+          await new Promise(r => setTimeout(r, 5000));
+          await page.evaluate(() => { document.body.style.zoom = '75%'; });
+          if (await isPending(page)) {
+            console.log('[actions] ✓ Verified: Pending (fallback send, 2nd check).');
+            return;
+          }
+          throw new Error('SEND_NOT_CONFIRMED: fallback send without note did not land as Pending');
+        }
+        console.log('[actions] Note typed and verified.');
+        await new Promise(r => setTimeout(r, 5000));
       }
 
       // ── Click Send — all via JS ──
@@ -423,6 +826,51 @@ export async function sendConnectionRequest(page, note) {
         throw new Error('Send button not found in modal');
       }
 
+      // ── Immediate toast check — success or error ──
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Check for success toast first: "Invitation sent to X"
+      const sentToast = await page.evaluate(() => {
+        const toasts = document.querySelectorAll('.artdeco-toast-item, [data-test-artdeco-toast-item-type="success"]');
+        for (const t of toasts) {
+          const text = (t.textContent || '').toLowerCase();
+          if (text.includes('invitation sent')) return text.trim().substring(0, 100);
+        }
+        return null;
+      });
+      if (sentToast) {
+        console.log(`[actions] ✓ Verified via toast: "${sentToast}"`);
+        return;
+      }
+      const errorToast = await page.evaluate(() => {
+        const toast = document.querySelector(
+          'div[data-test-artdeco-toast-item-type="error"], ' +
+          '.artdeco-toast-item--error, ' +
+          'li-icon[type="error"]'
+        );
+        if (toast) {
+          const container = toast.closest('.artdeco-toast-item') || toast.parentElement;
+          return (container?.textContent || toast.textContent || '').trim().substring(0, 200);
+        }
+        // Also check all Shadow DOM roots
+        const roots = [];
+        document.querySelectorAll('*').forEach(el => { if (el.shadowRoot) roots.push(el.shadowRoot); });
+        for (const root of roots) {
+          const sToast = root.querySelector(
+            'div[data-test-artdeco-toast-item-type="error"], .artdeco-toast-item--error'
+          );
+          if (sToast) {
+            const container = sToast.closest('.artdeco-toast-item') || sToast.parentElement;
+            return (container?.textContent || sToast.textContent || '').trim().substring(0, 200);
+          }
+        }
+        return null;
+      });
+      if (errorToast) {
+        console.error(`[actions] ⚠ LinkedIn error toast after send: "${errorToast}"`);
+        throw new Error(`LINKEDIN_ERROR_TOAST: ${errorToast}`);
+      }
+
       // Post-send verification: reload the profile and confirm Pending status
       // Wait for modal to fully close and LinkedIn to process the request
       console.log('[actions] Verifying connection... waiting 30s for LinkedIn to process.');
@@ -434,6 +882,8 @@ export async function sendConnectionRequest(page, note) {
         await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       } catch { /* timeout OK — page still usable */ }
       await new Promise(r => setTimeout(r, 5000));
+      // Reapply zoom after reload so button positions match expectations
+      await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
       // Check 1: is it Pending now?
       if (await isPending(page)) {
@@ -450,6 +900,7 @@ export async function sendConnectionRequest(page, note) {
         await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       } catch { /* timeout OK */ }
       await new Promise(r => setTimeout(r, 5000));
+      await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
       // Check 2
       if (await isPending(page)) {
@@ -499,47 +950,161 @@ export async function sendConnectionRequest(page, note) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export async function sendMessage(page, message) {
-  const clicked = await page.evaluate(() => {
-    const btn = Array.from(document.querySelectorAll('button, a')).find(b =>
-      b.textContent?.trim().toLowerCase() === 'message' &&
-      (b.getAttribute('aria-label') || '').toLowerCase().includes('message')
-    );
-    if (btn) { btn.click(); return true; }
-    return false;
-  });
+  // ── Direct messaging compose flow ─────────────────────────────────────
+  // Instead of clicking the profile's "Message" button (which opens a
+  // floating bubble that can bleed into the previous lead), navigate
+  // straight to LinkedIn's dedicated compose page with the recipient's
+  // public identifier in the query string:
+  //
+  //   https://www.linkedin.com/messaging/compose/?recipient=<publicId>
+  //
+  // This gives a clean composer per lead, zero bubble reuse, zero URN
+  // lookups. Verified working 2026-04-15 by testing the URL directly.
 
-  if (!clicked) throw new Error('Message button not found');
+  // Step 1: extract the publicId from the current profile URL (/in/<publicId>)
+  const currentUrl = page.url();
+  const publicIdMatch = currentUrl.match(/\/in\/([^/?#]+)/);
+  if (!publicIdMatch) {
+    throw new Error(`MESSAGE_SEND_FAILED: could not parse publicId from ${currentUrl}`);
+  }
+  const publicId = publicIdMatch[1];
+  console.log(`[actions] publicId: ${publicId}`);
 
-  await new Promise(r => setTimeout(r, 3000));
+  // Step 2: navigate to the dedicated compose page
+  const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
+  console.log(`[actions] Navigating to ${composeUrl}`);
+  try {
+    await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (e) {
+    console.warn(`[actions] Compose navigation warning: ${e.message}`);
+  }
+  await new Promise(r => setTimeout(r, 4000));
 
-  for (const sel of ['.msg-overlay-conversation-bubble', '.msg-form', 'div[contenteditable="true"]']) {
-    try { await page.waitForSelector(sel, { timeout: 5000 }); break; } catch { /* */ }
+  // Step 3: Wait for the compose textbox to be present
+  const composeSelectors = [
+    'div[role="textbox"][aria-label*="Write a message"]',
+    'div[role="textbox"][aria-label*="message" i]',
+    'div[class*="msg-form__contenteditable"]',
+    '.msg-form__contenteditable',
+  ];
+  let composerReady = false;
+  for (const sel of composeSelectors) {
+    try {
+      await page.waitForSelector(sel, { timeout: 5000 });
+      composerReady = true;
+      break;
+    } catch { /* try next */ }
+  }
+  if (!composerReady) {
+    throw new Error('MESSAGE_SEND_FAILED: compose textbox did not appear');
   }
 
   await randomDelay(400, 800);
   const typed = await typeIntoField(page, message);
   if (!typed) throw new Error('Could not type message');
 
-  await randomDelay(500, 800);
-
-  let sent = await clickByAria(page, 'Send');
-  if (!sent) sent = await clickByText(page, 'Send');
-  if (!sent) {
-    sent = await page.evaluate(() => {
-      const btn = document.querySelector('.msg-form__send-button, button[type="submit"]');
-      if (btn) { btn.click(); return true; }
-      return false;
-    });
-  }
-  if (!sent) throw new Error('Send button not found');
-
-  console.log('[actions] ✓ Message sent.');
-  await new Promise(r => setTimeout(r, 2000));
-
-  await page.evaluate(() => {
-    const close = document.querySelector('button[aria-label*="Close"]');
-    if (close) close.click();
+  // Wait for a Send button to become enabled. Uses OpenOutreach's
+  // semantic-first selector chain so it survives LinkedIn class renames.
+  const enabled = await page.evaluate(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const selectorChain = [
+      'button[type="submit"][class*="msg-form"]',
+      'button[class*="msg-form__send-button"]',
+      '.msg-form__send-button',
+      'button[class*="send-btn"]',
+      'button[class*="send-button"]',
+      'form button[type="submit"]',
+    ];
+    const findBtn = () => {
+      for (const sel of selectorChain) {
+        const b = document.querySelector(sel);
+        if (b) return b;
+      }
+      return null;
+    };
+    for (let i = 0; i < 20; i++) {
+      const btn = findBtn();
+      if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+        return { ok: true, text: (btn.textContent || '').trim().substring(0, 30) };
+      }
+      await sleep(150);
+    }
+    const btn = findBtn();
+    if (!btn) return { ok: false, reason: 'send-button-not-found' };
+    return {
+      ok: false,
+      reason: 'send-button-disabled',
+      disabled: btn.disabled,
+      ariaDisabled: btn.getAttribute('aria-disabled'),
+      textContent: (document.querySelector('[class*="msg-form__contenteditable"]')?.textContent || '').substring(0, 40),
+    };
   });
+
+  if (!enabled.ok) {
+    throw new Error(`MESSAGE_SEND_FAILED: ${enabled.reason}${enabled.textContent !== undefined ? ` (composer text: "${enabled.textContent}")` : ''}`);
+  }
+
+  // Click via the same selector chain
+  const sendClicked = await page.evaluate(() => {
+    const selectorChain = [
+      'button[type="submit"][class*="msg-form"]',
+      'button[class*="msg-form__send-button"]',
+      '.msg-form__send-button',
+      'button[class*="send-btn"]',
+      'button[class*="send-button"]',
+      'form button[type="submit"]',
+    ];
+    for (const sel of selectorChain) {
+      const btn = document.querySelector(sel);
+      if (btn && !btn.disabled) { btn.click(); return true; }
+    }
+    return false;
+  });
+  if (!sendClicked) throw new Error('MESSAGE_SEND_FAILED: could not click Send button');
+
+  // Verify send via multiple signals — accept ANY of:
+  //   - composer is now empty (LinkedIn clears on success)
+  //   - Send button is disabled again (composer empty → button disabled)
+  //   - conversation shows a "sent just now" / most-recent message bubble
+  await new Promise(r => setTimeout(r, 2500));
+  const verified = await page.evaluate(() => {
+    const editor = document.querySelector('.msg-form__contenteditable, .msg-form div[contenteditable="true"]');
+    const editorText = editor
+      ? (editor.textContent || editor.innerText || '').replace(/\u200B/g, '').trim()
+      : '';
+    const composerEmpty = editorText.length === 0;
+
+    const sendBtn = document.querySelector('.msg-form__send-button, button.msg-form__send-button');
+    const sendDisabled = sendBtn ? (sendBtn.disabled || sendBtn.getAttribute('aria-disabled') === 'true') : true;
+
+    return { composerEmpty, sendDisabled, editorText: editorText.substring(0, 60) };
+  });
+
+  if (!verified.composerEmpty && !verified.sendDisabled) {
+    throw new Error(`MESSAGE_SEND_FAILED: send not confirmed (composer: "${verified.editorText}")`);
+  }
+
+  console.log(`[actions] ✓ Message sent (composerEmpty=${verified.composerEmpty}, sendDisabled=${verified.sendDisabled}).`);
+
+  // Close the chat overlay so it doesn't stay floating on the page
+  await page.evaluate(() => {
+    // Scope to the msg-overlay container so we don't click random Close buttons
+    const overlay = document.querySelector('.msg-overlay-bubble-header, .msg-overlay-conversation-bubble');
+    if (!overlay) return;
+    const header = overlay.closest('.msg-overlay-conversation-bubble') || overlay;
+    // Look for the X close button inside the header controls
+    const closeBtn = header.querySelector(
+      'button[aria-label*="Close your conversation"], ' +
+      'button[aria-label="Close"], ' +
+      '.msg-overlay-bubble-header__control--close, ' +
+      '.msg-overlay-bubble-header__controls button[aria-label*="Close"]'
+    );
+    if (closeBtn) { closeBtn.click(); return; }
+    // Fallback: any button with "Close" aria in the header area
+    const anyClose = header.querySelector('button[aria-label*="Close"]');
+    if (anyClose) anyClose.click();
+  });
+  await new Promise(r => setTimeout(r, 500));
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -547,36 +1112,516 @@ export async function sendMessage(page, message) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export async function sendInMail(page, subject, message) {
-  const clicked = await page.evaluate(() => {
+  // InMail goes through Sales Navigator for both local and gologin accounts.
+  // Path: More dropdown → extract Sales Nav href → page.goto(href) →
+  // click Message on the Sales Nav lead page → type → Send.
+  console.log('[actions] InMail: opening More dropdown…');
+
+  const moreOk = await page.evaluate(() => {
     const btns = Array.from(document.querySelectorAll('button'));
-    const btn = btns.find(b => b.textContent?.trim().includes('InMail')) ||
-                btns.find(b => b.textContent?.trim() === 'Message');
-    if (btn) { btn.click(); return true; }
+    const more = btns.find(b => {
+      const a = (b.getAttribute('aria-label') || '').toLowerCase();
+      const t = (b.textContent || '').trim().toLowerCase();
+      return a === 'more actions' || a === 'more' || t === 'more';
+    });
+    if (more) { more.click(); return true; }
     return false;
   });
-  if (!clicked) throw new Error('InMail button not found');
+  if (!moreOk) throw new Error('InMail button not found (More dropdown missing)');
 
   await new Promise(r => setTimeout(r, 2500));
 
-  if (subject) {
-    for (const sel of ['input[name="subject"]', 'input[aria-label*="Subject"]']) {
-      try {
-        await page.waitForSelector(sel, { timeout: 3000 });
-        await page.click(sel);
-        await page.type(sel, subject, { delay: 30 });
-        break;
-      } catch { /* */ }
+  // Extract the Sales Navigator href from the dropdown
+  const salesNavUrl = await page.evaluate(() => {
+    const anchors = Array.from(document.querySelectorAll('a'));
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      if (href.includes('/sales/lead/') || href.includes('/sales/people/')) {
+        const inDropdown = a.closest('.artdeco-dropdown__content, [role="menu"]');
+        if (inDropdown) return a.href;
+      }
     }
+    for (const a of anchors) {
+      const href = a.getAttribute('href') || '';
+      if (href.includes('/sales/lead/') || href.includes('/sales/people/')) return a.href;
+    }
+    const items = Array.from(document.querySelectorAll('[role="button"], .artdeco-dropdown__item, li'));
+    for (const el of items) {
+      const text = (el.textContent || '').trim();
+      if (text.includes('View in Sales Navigator')) {
+        const a = el.querySelector('a[href]');
+        if (a) return a.href;
+      }
+    }
+    return null;
+  });
+
+  if (!salesNavUrl) throw new Error('INMAIL_SEND_FAILED: View in Sales Navigator href not found');
+
+  console.log(`[actions] Navigating to Sales Nav: ${salesNavUrl}`);
+  try {
+    await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (e) {
+    console.warn(`[actions] Sales Nav navigation issue: ${e.message}`);
+  }
+  await new Promise(r => setTimeout(r, 5000));
+
+  // Click Message on the Sales Nav lead page, inspect panel, type and send.
+  // Uses the shared Sales Nav primitives defined below sendOpenProfileMessage.
+  const msgClicked = await clickSalesNavMessageButton(page);
+  if (!msgClicked) throw new Error('INMAIL_SEND_FAILED: Sales Nav Message button missing');
+
+  await new Promise(r => setTimeout(r, 3500));
+
+  const panel = await readSalesNavComposerState(page);
+  if (panel.creditsAvailable === 0) {
+    throw new Error('INMAIL_NO_CREDITS: 0 InMail credits remaining — stopping InMail sends');
+  }
+  if (panel.creditsAvailable !== null) {
+    console.log(`[actions] InMail credits available before send: ${panel.creditsAvailable}`);
+  } else {
+    console.warn('[actions] Could not read InMail credit counter (regex miss)');
   }
 
-  await randomDelay(300, 600);
-  await typeIntoField(page, message);
+  const sendResult = await typeAndSendSalesNavComposer(page, subject, message);
+  if (!sendResult.ok) throw new Error(`INMAIL_SEND_FAILED: ${sendResult.error}`);
 
-  await randomDelay(500, 800);
-  let sent = await clickByAria(page, 'Send');
-  if (!sent) sent = await clickByText(page, 'Send');
-  if (!sent) throw new Error('InMail Send not found');
+  const creditsLeft = panel.creditsAvailable !== null ? Math.max(0, panel.creditsAvailable - 1) : null;
+  console.log(`[actions] ✓ InMail sent via Sales Navigator. Credits remaining: ${creditsLeft ?? 'unknown'}`);
+  return { creditsLeft };
+}
 
-  console.log('[actions] ✓ InMail sent.');
-  await new Promise(r => setTimeout(r, 2000));
+// ═════════════════════════════════════════════════════════════════════════════
+// sendOpenProfileMessage
+// ═════════════════════════════════════════════════════════════════════════════
+// Free-message flow for LinkedIn Premium users who have Open Profile enabled.
+// Works for 2nd/3rd degree profiles when the target has Open Profile, in which
+// case clicking Message on their profile page opens a side panel that says
+// "Free message" and contains an optional Subject field + compose textbox.
+//
+// If the clicked panel does NOT show "Free message", this is NOT an Open
+// Profile and we throw NOT_OPEN_PROFILE so the campaign skips the lead
+// without spending a credit.
+//
+// Assumes the caller has already navigated to the target's profile page.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function sendOpenProfileMessage(page, subject, body) {
+  console.log('[actions] OpenProfile: looking for Message button…');
+
+  // Step 1: click Message. Try top-card direct button first, then fall back
+  // to the More (three-dots) dropdown which sometimes hosts it.
+  let clicked = await page.evaluate(() => {
+    const h1 = document.querySelector('h1');
+    const profileName = h1 ? h1.textContent.trim().split('\n')[0].trim().toLowerCase() : '';
+    const firstName = profileName.split(/\s+/)[0] || '';
+
+    // Direct Message button matching the profile's first name
+    const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    for (const el of candidates) {
+      const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+      const text = (el.textContent || '').trim().toLowerCase();
+      if (
+        (aria.startsWith('message ') || text === 'message') &&
+        (!firstName || aria.includes(firstName) || text === 'message') &&
+        el.offsetWidth > 0
+      ) {
+        // Skip nav-bar Messaging link
+        if (el.closest('nav, header, [role="navigation"]')) continue;
+        el.click();
+        return 'direct';
+      }
+    }
+    return null;
+  });
+
+  if (!clicked) {
+    console.log('[actions] OpenProfile: no direct Message button — trying More dropdown…');
+    // Open More dropdown
+    const moreOk = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const more = btns.find(b => {
+        const a = (b.getAttribute('aria-label') || '').toLowerCase();
+        const t = (b.textContent || '').trim().toLowerCase();
+        return a === 'more actions' || a === 'more' || t === 'more';
+      });
+      if (more) { more.click(); return true; }
+      return false;
+    });
+    if (!moreOk) throw new Error('Message button not found (no More dropdown)');
+    await new Promise(r => setTimeout(r, 2500));
+
+    // Click the Message item inside the dropdown
+    clicked = await page.evaluate(() => {
+      const items = Array.from(document.querySelectorAll('.artdeco-dropdown__item, [role="menuitem"], [role="button"], li, a, button'));
+      for (const el of items) {
+        const text = (el.textContent || '').trim();
+        // Match "Message <Name>" or just "Message"
+        if (/^Message(\s+\w+)?/.test(text) && el.offsetWidth > 0) {
+          const inDropdown = el.closest('.artdeco-dropdown__content, [role="menu"]');
+          if (inDropdown) { el.click(); return 'dropdown'; }
+        }
+      }
+      return null;
+    });
+    if (!clicked) throw new Error('Message button not found (not in dropdown either)');
+  }
+
+  console.log(`[actions] OpenProfile: Message clicked (${clicked})`);
+  await new Promise(r => setTimeout(r, 3500));
+
+  // Step 2: verify this is actually an Open Profile free-message panel.
+  // The side panel contains literal "Free message" text and no credit counter.
+  const panelState = await page.evaluate(() => {
+    const text = document.body.innerText || '';
+    const isFree = /free message/i.test(text);
+    const hasCreditCounter = /Use\s+\d+\s+of\s+\d+\s+credits?/i.test(text);
+    const hasSubject = !!document.querySelector('input[name="subject"], input[aria-label*="Subject" i], input[placeholder*="Subject" i]');
+    const hasCompose = !!document.querySelector('.msg-form__contenteditable, div[role="textbox"][aria-label*="message" i]');
+    return { isFree, hasCreditCounter, hasSubject, hasCompose };
+  });
+  console.log(`[actions] OpenProfile panel state: ${JSON.stringify(panelState)}`);
+
+  if (panelState.hasCreditCounter) {
+    throw new Error('NOT_OPEN_PROFILE: credit counter visible — this would cost an InMail credit');
+  }
+  if (!panelState.hasCompose) {
+    throw new Error('NOT_OPEN_PROFILE: compose textbox did not appear after clicking Message');
+  }
+  if (!panelState.isFree) {
+    throw new Error('NOT_OPEN_PROFILE: "Free message" marker not found in panel');
+  }
+
+  // Step 3: fill subject (optional) via native setter
+  if (subject && panelState.hasSubject) {
+    await page.evaluate((subj) => {
+      const input = document.querySelector('input[name="subject"], input[aria-label*="Subject" i], input[placeholder*="Subject" i]');
+      if (!input) return;
+      input.focus();
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, subj);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, subject);
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  // Step 4: type body via the shared typeIntoField (paste-event → Quill path)
+  const typedOk = await typeIntoField(page, body);
+  if (!typedOk) throw new Error('Could not type message (OpenProfile composer)');
+
+  // Step 5: click Send, wait for enabled
+  await new Promise(r => setTimeout(r, 800));
+  const sendOk = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const chain = [
+      'button[type="submit"][class*="msg-form"]',
+      'button[class*="msg-form__send-button"]',
+      '.msg-form__send-button',
+      'form button[type="submit"]',
+    ];
+    const findBtn = () => {
+      for (const sel of chain) {
+        const b = document.querySelector(sel);
+        if (b) return b;
+      }
+      return null;
+    };
+    for (let i = 0; i < 20; i++) {
+      const btn = findBtn();
+      if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+        btn.click();
+        return true;
+      }
+      await sleep(150);
+    }
+    return false;
+  });
+  if (!sendOk) throw new Error('OP_SEND_FAILED: Send button never enabled');
+
+  await new Promise(r => setTimeout(r, 2500));
+  console.log('[actions] ✓ Open Profile message sent.');
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Sales Nav router — shared primitives + entry point
+// ═════════════════════════════════════════════════════════════════════════════
+// Some sheets contain direct Sales Navigator URLs (linkedin.com/sales/people/…
+// or /sales/lead/…) instead of standard /in/… profile URLs. The regular
+// /in/-shaped status check + Open Profile / InMail flows misread the Sales
+// Nav DOM. This router short-circuits both flows for Sales Nav URLs and
+// drives the Sales Nav Message composer directly.
+//
+// The same three primitives are also reused by sendInMail, which ends up on a
+// Sales Nav page via the /in/ More-dropdown. Zero duplicated Sales Nav logic.
+// ═════════════════════════════════════════════════════════════════════════════
+
+async function clickSalesNavMessageButton(page) {
+  return await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll('button, a'));
+    for (const b of btns) {
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      const t = (b.textContent || '').trim().toLowerCase();
+      if ((t === 'message' || aria.startsWith('message') || aria.includes('message')) && b.offsetWidth > 0) {
+        b.click();
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
+async function readSalesNavComposerState(page) {
+  return await page.evaluate(() => {
+    const text = document.body?.innerText || '';
+    const isFree = /free message/i.test(text);
+    const creditMatch = text.match(/Use\s+\d+\s+of\s+(\d+)\s+credits?/i);
+    const hasCreditCounter = !!creditMatch;
+    const creditsAvailable = creditMatch ? parseInt(creditMatch[1], 10) : null;
+    const hasSubject = !!document.querySelector('input[name="subject"], input[aria-label*="Subject" i], input[placeholder*="Subject" i]');
+    const hasCompose = !!document.querySelector(
+      '.msg-form__contenteditable, ' +
+      'div[role="textbox"][aria-label*="message" i], ' +
+      'textarea[name="message"], ' +
+      'textarea[aria-label*="type your message" i], ' +
+      'form[data-x-conversation-widget="compose-form"] textarea'
+    );
+    return { isFree, hasCreditCounter, creditsAvailable, hasSubject, hasCompose };
+  });
+}
+
+async function typeAndSendSalesNavComposer(page, subject, body) {
+  // Subject (optional — Sales Nav paid panel has it; free panel sometimes doesn't)
+  if (subject) {
+    await page.evaluate((subj) => {
+      const subjInput = document.querySelector('input[name="subject"], input[aria-label*="Subject" i], input[placeholder*="Subject" i]');
+      if (!subjInput) return;
+      subjInput.focus();
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nativeSetter.call(subjInput, subj);
+      subjInput.dispatchEvent(new Event('input', { bubbles: true }));
+      subjInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }, subject);
+    await new Promise(r => setTimeout(r, 600));
+  }
+
+  const typedOk = await typeIntoField(page, body);
+  if (!typedOk) return { ok: false, error: 'Could not type message (Sales Nav composer)' };
+
+  await new Promise(r => setTimeout(r, 800));
+  const sendOk = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 20; i++) {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const send = btns.find(b => {
+        const t = (b.textContent || '').trim().toLowerCase();
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        const isSend = t === 'send' || aria === 'send' || aria.startsWith('send ');
+        const isDisabled = b.disabled || b.getAttribute('aria-disabled') === 'true';
+        return isSend && !isDisabled && b.offsetWidth > 0;
+      });
+      if (send) { send.click(); return true; }
+      await sleep(150);
+    }
+    return false;
+  });
+  if (!sendOk) return { ok: false, error: 'Send button never enabled' };
+
+  await new Promise(r => setTimeout(r, 3000));
+  return { ok: true };
+}
+
+/**
+ * Assumes the page is already on a Sales Nav URL
+ * (linkedin.com/sales/people/… or /sales/lead/…).
+ * Decision rules match the /in/ flow exactly:
+ *   - force_open_profile : free panel → send, paid panel → do NOT send.
+ *   - force_inmail       : free panel → send free (OP template),
+ *                          paid panel → spend 1 credit (InMail template),
+ *                          0 credits  → skip.
+ *
+ * Returns a status object; never throws.
+ */
+export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSubject, inmailBody, connectionNote }) {
+  console.log(`[actions] SalesNavRouter: mode=${mode} — looking for Message button on Sales Nav page…`);
+
+  // For the connect-with-OP-fallback mode, a missing Message button is
+  // acceptable — we'll jump straight to the overflow → Connect path.
+  const clicked = await clickSalesNavMessageButton(page);
+  if (!clicked && mode !== 'force_connect_op_fallback') return { ok: false, reason: 'message_button_not_found' };
+
+  let panel = { hasCompose: false, hasCreditCounter: false, creditsAvailable: null, hasSubject: false, isFree: false };
+  if (clicked) {
+    await new Promise(r => setTimeout(r, 3500));
+    panel = await readSalesNavComposerState(page);
+    console.log(`[actions] SalesNavRouter panel: ${JSON.stringify(panel)}`);
+  }
+
+  // force_connect_op_fallback intentionally handles the no-composer case by
+  // falling through to the "..." → Connect path, so skip the early bail.
+  if (!panel.hasCompose && mode !== 'force_connect_op_fallback') {
+    return { ok: false, reason: 'no_compose_textbox' };
+  }
+
+  if (mode === 'force_open_profile') {
+    if (panel.hasCreditCounter) {
+      return { ok: false, reason: 'not_open_profile' };
+    }
+    const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
+    if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
+    console.log('[actions] ✓ Sales Nav Open Profile message sent');
+    return { ok: true, kind: 'op_message_sent' };
+  }
+
+  if (mode === 'force_inmail') {
+    if (!panel.hasCreditCounter) {
+      // Free panel — use OP template (same behaviour as the /in/ opportunistic-OP path)
+      const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
+      if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
+      console.log('[actions] ✓ Sales Nav free message sent (InMail mode, OP path)');
+      return { ok: true, kind: 'op_message_sent' };
+    }
+    if (panel.creditsAvailable === 0) {
+      return { ok: false, reason: 'no_credits' };
+    }
+    const result = await typeAndSendSalesNavComposer(page, inmailSubject, inmailBody);
+    if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
+    const creditsLeft = panel.creditsAvailable !== null ? Math.max(0, panel.creditsAvailable - 1) : null;
+    console.log(`[actions] ✓ Sales Nav InMail sent. Credits remaining: ${creditsLeft ?? 'unknown'}`);
+    return { ok: true, kind: 'inmail_sent', creditsLeft };
+  }
+
+  if (mode === 'force_connect_op_fallback') {
+    // Connection campaign + "Message OPs Directly": try Message → if free panel
+    // send OP; if paid/absent, close and fall through to "..." → Connect.
+    if (clicked) {
+      if (panel.hasCompose && !panel.hasCreditCounter) {
+        const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
+        if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
+        console.log('[actions] ✓ Sales Nav OP message sent (connect-with-OP-fallback)');
+        return { ok: true, kind: 'op_message_sent' };
+      }
+      // Paid InMail panel or no composer — close it before trying Connect.
+      await closeSalesNavComposer(page);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    const overflowOpen = await clickSalesNavOverflowMenu(page);
+    if (!overflowOpen) return { ok: false, reason: 'unreachable', error: 'Overflow menu button not found' };
+    await new Promise(r => setTimeout(r, 1500));
+
+    const connectOpened = await clickSalesNavConnectMenuItem(page);
+    if (!connectOpened) return { ok: false, reason: 'unreachable', error: 'Connect menu item not found' };
+    await new Promise(r => setTimeout(r, 2500));
+
+    const sent = await fillAndSendSalesNavConnectModal(page, connectionNote);
+    if (!sent.ok) return { ok: false, reason: 'send_failed', error: sent.error };
+    console.log('[actions] ✓ Sales Nav Connect request sent (OP fallback)');
+    return { ok: true, kind: 'connection_sent' };
+  }
+
+  return { ok: false, reason: 'unknown_mode' };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sales Nav overflow-menu + Connect modal primitives
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function clickSalesNavOverflowMenu(page) {
+  return await page.evaluate(() => {
+    const candidates = [
+      'button[aria-label="Open actions overflow menu"]',
+      'button[data-x--lead-actions-bar-overflow-menu]',
+      'button[aria-haspopup="true"][aria-expanded="false"]',
+    ];
+    for (const sel of candidates) {
+      const btn = document.querySelector(sel);
+      if (btn && btn.offsetWidth > 0) { btn.click(); return true; }
+    }
+    return false;
+  });
+}
+
+async function clickSalesNavConnectMenuItem(page) {
+  // The overflow menu renders into #hue-web-menu-outlet and becomes visible
+  // when .<something>_visible_... is added. We text-match "Connect" inside
+  // the visible menu to find the option regardless of hashed class names.
+  return await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 20; i++) {
+      const outlet = document.getElementById('hue-web-menu-outlet');
+      if (outlet) {
+        const menus = outlet.querySelectorAll('[class*="_visible_"]');
+        for (const menu of menus) {
+          const items = menu.querySelectorAll('li, button, [role="menuitem"], a');
+          for (const item of items) {
+            const txt = (item.textContent || '').trim();
+            if (/^connect$/i.test(txt) && item.offsetWidth > 0) {
+              item.click();
+              return true;
+            }
+          }
+        }
+      }
+      await sleep(150);
+    }
+    return false;
+  });
+}
+
+async function fillAndSendSalesNavConnectModal(page, note) {
+  // Fill the invitation note (optional) and click Send in .artdeco-modal__actionbar.
+  if (note) {
+    const filled = await page.evaluate((noteText) => {
+      const ta = document.querySelector('#connect-cta-form__invitation, textarea[maxlength="300"]');
+      if (!ta) return false;
+      ta.focus();
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(ta, noteText);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      ta.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, note.slice(0, 300));
+    if (!filled) return { ok: false, error: 'Connect modal note textarea not found' };
+    await new Promise(r => setTimeout(r, 600));
+  }
+
+  const sent = await page.evaluate(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 20; i++) {
+      const bar = document.querySelector('.artdeco-modal__actionbar');
+      if (bar) {
+        const btns = Array.from(bar.querySelectorAll('button'));
+        const send = btns.find(b => {
+          const t = (b.textContent || '').trim().toLowerCase();
+          const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+          const isSend = t === 'send' || t === 'send invitation' || t === 'send now' || aria === 'send' || aria.startsWith('send ');
+          const isDisabled = b.disabled || b.getAttribute('aria-disabled') === 'true';
+          return isSend && !isDisabled && b.offsetWidth > 0;
+        });
+        if (send) { send.click(); return true; }
+      }
+      await sleep(150);
+    }
+    return false;
+  });
+  if (!sent) return { ok: false, error: 'Send button never enabled in Connect modal' };
+
+  await new Promise(r => setTimeout(r, 2500));
+  return { ok: true };
+}
+
+async function closeSalesNavComposer(page) {
+  // Close the message overlay before attempting Connect — the panel covers
+  // the profile header which we need to click into.
+  await page.evaluate(() => {
+    const close = document.querySelector('button[aria-label*="Close" i][class*="_close_"], .msg-overlay-bubble-header__control[aria-label*="close" i]');
+    if (close) { close.click(); return; }
+    // Fallback: any visible close button inside the message overlay region
+    const overlays = document.querySelectorAll('#message-overlay, [data-sn-view-name="subpage-message-overlay"]');
+    for (const o of overlays) {
+      const closeBtn = o.querySelector('button[aria-label*="close" i], button[aria-label*="dismiss" i]');
+      if (closeBtn && closeBtn.offsetWidth > 0) { closeBtn.click(); return; }
+    }
+  });
 }
