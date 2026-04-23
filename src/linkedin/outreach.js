@@ -9,7 +9,7 @@
  */
 
 import { randomDelay, getConnectionStatus, getVoyagerDegree, personalizeTemplate } from './helpers.js';
-import { sendConnectionRequest, sendMessage, sendInMail, sendOpenProfileMessage, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
+import { sendConnectionRequest, sendMessage, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
 
 // Matches Sales Navigator profile URLs (linkedin.com/sales/people/… or /sales/lead/…).
 // Used to short-circuit the /in/-shaped status check for sheets whose rows are
@@ -129,6 +129,27 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       return { action: 'skipped', error: `Page error: ${pageError}` };
     }
 
+    // ── Upfront /in/ → Sales Nav URL conversion for OP/InMail modes ──
+    // Both modes require the Sales Nav composer to gate sends correctly
+    // (positive "Free to Open Profile" signal on the panel). If the sheet
+    // row is an /in/ URL, resolve the Sales Nav equivalent ONCE here; if
+    // unresolvable, fail closed and skip the lead (same reason for both
+    // modes — already covered by campaign.js retry guard).
+    if (modeHint === 'force_open_profile' || modeHint === 'force_inmail') {
+      if (!SALES_NAV_URL_RE.test(page.url())) {
+        const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
+        if (!salesNavUrl) {
+          return { action: 'skipped', error: 'Sales Nav link not available on profile' };
+        }
+        try {
+          await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch (e) {
+          console.warn(`[outreach] Sales Nav navigation issue: ${e.message}`);
+        }
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
+
     // ── Step 3: Detect status and execute action ──
     // Fast-path: Voyager API degree check (more reliable than DOM scraping)
     const voyagerDegree = await getVoyagerDegree(page);
@@ -174,94 +195,28 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (status === 'pending') return { action: 'skipped', error: 'Still pending' };
       status = 'message';
     } else if (modeHint === 'force_inmail') {
-      // Sales Nav URL router — if the sheet URL is already a Sales Nav link,
-      // the /in/-shaped status check doesn't apply. Click Message on the
-      // Sales Nav page directly: free panel = free send (OP template),
-      // paid panel with credits = burn 1 credit (InMail template), else skip.
-      if (SALES_NAV_URL_RE.test(page.url())) {
-        const d = templates.data || {};
-        const result = await sendViaSalesNav(page, {
-          mode: 'force_inmail',
-          opSubject:     personalizeTemplate(templates.openProfileSubject || '', d),
-          opBody:        personalizeTemplate(templates.openProfileBody || '', d),
-          inmailSubject: personalizeTemplate(templates.inmail?.subject || '', d),
-          inmailBody:    personalizeTemplate(templates.inmail?.message || '', d),
-        });
-        if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
-        if (result.ok && result.kind === 'inmail_sent')     return { action: 'inmail_sent', creditsLeft: result.creditsLeft };
-        if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
-        if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
-        if (result.reason === 'no_credits')                 return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
-        if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
-        return { action: 'skipped', error: 'Sales Nav: unknown result' };
-      }
-
-      status = await getConnectionStatus(page);
-      if (status === 'message') return { action: 'skipped', error: 'Already connected' };
-
-      // Opportunistic Open Profile — if an OP template is configured, try
-      // the free-message panel first. This saves an InMail credit when the
-      // target has Open Profile enabled. If not OP, fall through to InMail.
-      if (templates.openProfileBody) {
-        try {
-          await sendOpenProfileMessage(
-            page,
-            personalizeTemplate(templates.openProfileSubject || '', templates.data || {}),
-            personalizeTemplate(templates.openProfileBody || '', templates.data || {}),
-          );
-          return { action: 'op_message_sent' };
-        } catch (err) {
-          const msg = String(err?.message || '');
-          if (!msg.includes('NOT_OPEN_PROFILE')) {
-            // Real error (not a "not OP" signal) — don't retry via InMail.
-            return { action: 'skipped', error: `Open Profile failed: ${msg}` };
-          }
-          // Not OP. Close any lingering panels and re-check status before InMail.
-          try { await page.reload({ waitUntil: 'domcontentloaded' }); } catch { /* */ }
-          await new Promise(r => setTimeout(r, 2000));
-          status = await getConnectionStatus(page);
-        }
-      }
-
-      if (status === 'connect') return { action: 'skipped', error: 'Can connect directly' };
+      // Upfront conversion guaranteed we're on a Sales Nav URL.
+      // sendViaSalesNav routes: "Free to Open Profile" badge → OP template
+      // (free); credit counter with credits → InMail template; 0 credits → skip.
+      const d = templates.data || {};
+      const result = await sendViaSalesNav(page, {
+        mode: 'force_inmail',
+        opSubject:     personalizeTemplate(templates.openProfileSubject || '', d),
+        opBody:        personalizeTemplate(templates.openProfileBody || '', d),
+        inmailSubject: personalizeTemplate(templates.inmail?.subject || '', d),
+        inmailBody:    personalizeTemplate(templates.inmail?.message || '', d),
+      });
+      if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+      if (result.ok && result.kind === 'inmail_sent')     return { action: 'inmail_sent', creditsLeft: result.creditsLeft };
+      if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
+      if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
+      if (result.reason === 'no_credits')                 return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
+      if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
+      return { action: 'skipped', error: 'Sales Nav: unknown result' };
     } else if (modeHint === 'force_open_profile') {
-      // Sales Nav URL router — bypasses the /in/-shaped status check
-      // (which false-rejects these rows). Free panel = send, paid panel = skip.
-      if (SALES_NAV_URL_RE.test(page.url())) {
-        if (!templates.openProfileBody) return { action: 'skipped', error: 'No Open Profile template' };
-        const d = templates.data || {};
-        const result = await sendViaSalesNav(page, {
-          mode: 'force_open_profile',
-          opSubject: personalizeTemplate(templates.openProfileSubject || '', d),
-          opBody:    personalizeTemplate(templates.openProfileBody || '', d),
-        });
-        if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
-        if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
-        if (result.reason === 'not_open_profile')           return { action: 'skipped', error: 'NOT_OPEN_PROFILE: credit counter shown on Sales Nav panel' };
-        if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
-        if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
-        return { action: 'skipped', error: 'Sales Nav: unknown result' };
-      }
-
-      // /in/ URL: route through Sales Navigator. The /in/ Open Profile
-      // detection (sendOpenProfileMessage) false-rejects free senders, so
-      // we resolve the Sales Nav URL from the More dropdown, navigate, and
-      // delegate to sendViaSalesNav which has deterministic free-vs-paid
-      // panel detection.
-      status = await getConnectionStatus(page);
-      if (status === 'message') return { action: 'skipped', error: 'Already 1st-degree — use message mode' };
+      // Upfront conversion guaranteed we're on a Sales Nav URL. Delegate to
+      // sendViaSalesNav; it uses isFreeToOpenProfile to gate free-vs-paid.
       if (!templates.openProfileBody) return { action: 'skipped', error: 'No Open Profile template' };
-
-      const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
-      if (!salesNavUrl) return { action: 'skipped', error: 'Sales Nav link not available on profile' };
-
-      try {
-        await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      } catch (e) {
-        console.warn(`[outreach] Sales Nav navigation issue: ${e.message}`);
-      }
-      await new Promise(r => setTimeout(r, 5000));
-
       const d = templates.data || {};
       const result = await sendViaSalesNav(page, {
         mode: 'force_open_profile',
@@ -270,7 +225,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       });
       if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
       if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
-      if (result.reason === 'not_open_profile')           return { action: 'skipped', error: 'NOT_OPEN_PROFILE: credit counter shown on Sales Nav panel' };
+      if (result.reason === 'not_open_profile')           return { action: 'skipped', error: 'NOT_OPEN_PROFILE: Free to Open Profile badge not present on Sales Nav panel' };
       if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
       if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
       return { action: 'skipped', error: 'Sales Nav: unknown result' };
