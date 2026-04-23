@@ -656,6 +656,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         break;
       }
 
+      // Round-robin: every profile does ONE batch, then we sleep once at the
+      // end of the round. Per-profile rate is maintained by the round cadence
+      // (batchesPerHour × BATCH_SIZE leads/profile/hour), not by sleeping
+      // between individual profiles. With N profiles the total throughput is
+      // N × batchesPerHour × BATCH_SIZE leads/hour.
+      const roundStart = Date.now();
+
       for (const profileId of activeProfiles) {
         if (campaign._abort) break outer;
         if (leadsExhausted) break outer;
@@ -1058,24 +1065,42 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (campaign._abort || leadsExhausted) break outer;
 
         const batchDurationMs = Date.now() - batchStart;
-        const waitMs = computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
-        if (shouldCloseBetweenBatches({ waitMs })) {
-          log(`  ⊗ ${pName}: gap ${(waitMs / 60000).toFixed(1)}min > ${getCloseGapMin()}min — closing browser.`);
+        // Per-profile close-vs-park decision — cheaper to close if we won't
+        // be back to this profile for a while. The round sleep below keeps
+        // the global cadence; this only decides whether the profile sits idle
+        // on about:blank or gets closed entirely between rounds.
+        const perProfileWaitMs = computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
+        if (shouldCloseBetweenBatches({ waitMs: perProfileWaitMs })) {
+          log(`  ⊗ ${pName}: gap ${(perProfileWaitMs / 60000).toFixed(1)}min > ${getCloseGapMin()}min — closing browser.`);
           await closeSession(profileId);
         } else {
           if (rmCfg.IDLE_PARKING_ENABLED && !page.isClosed?.()) {
             await parkProfile(page, rmCfg.PARK_PAGE);
           }
-          log(`  ⏸ ${pName}: parked for ${(waitMs / 1000).toFixed(0)}s until next batch.`);
+          log(`  ⏸ ${pName}: parked until next round.`);
         }
 
-        // Chunked sleep so abort is responsive. Runs AFTER close so close
-        // latency counts against the gap, not wall-clock (D-03 semantics).
-        const gapEnd = Date.now() + waitMs;
+        // No per-profile sleep — move to the next profile immediately so all
+        // N profiles do one batch each in the current round.
+      }  // end for-each profile in activeProfiles
+
+      // ── End-of-round sleep (D-03) ──
+      // Sleep until the round cadence target has elapsed. batchesPerHour sets
+      // the target — e.g. bph=2 means rounds should start every 30min. If the
+      // round took longer than the target, no sleep.
+      if (campaign._abort || leadsExhausted) break outer;
+      const roundTargetMs = (3600 / batchesPerHour) * 1000;
+      const roundElapsed = Date.now() - roundStart;
+      const roundSleepMs = Math.max(0, roundTargetMs - roundElapsed);
+      if (roundSleepMs > 0) {
+        log(`  ⏸ Round complete — sleeping ${(roundSleepMs / 60000).toFixed(1)}min until next round.`);
+        const gapEnd = Date.now() + roundSleepMs;
         while (Date.now() < gapEnd && !campaign._abort) {
           await new Promise(r => setTimeout(r, 2000));
         }
-      }  // end for-each profile in activeProfiles
+      } else {
+        log(`  ↻ Round took ${(roundElapsed / 60000).toFixed(1)}min (≥ ${(roundTargetMs / 60000).toFixed(0)}min target) — starting next round immediately.`);
+      }
     }  // end outer:while
 
     // Log per-profile stats (from the sessions Map — covers both still-open
