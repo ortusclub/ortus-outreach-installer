@@ -1,0 +1,68 @@
+[
+  {
+    "firstName": "Gurneet",
+    "lastName": "Jodhka",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAAAAqhRIB3oRn1YJ5JZVaJS-8ML3JS0sZaTQ",
+    "Message": "sent",
+    "Account Used": "Antonio",
+    "Reply": ""
+  },
+  {
+    "firstName": "Shash",
+    "lastName": "Patel",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAAADQcfEB9BiCh1ajWuGKxCzsScP7IGUZvTw",
+    "Message": "sent",
+    "Account Used": "Antonio",
+    "Reply": ""
+  },
+  {
+    "firstName": "Julia",
+    "lastName": "Nguyen",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAABMElp0BflO-iGMBHAz3Syooy7A5ecJ_JiM",
+    "Message": "sent",
+    "Account Used": "Antonio",
+    "Reply": "yes",
+    "Reply At": "2026-04-20T10:30:00.000Z",
+    "Reply Preview": "Already marked — manual edit; MUST NOT overwrite"
+  },
+  {
+    "firstName": "Patricia",
+    "lastName": "Collins",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAAAFL3g8BvkiUFO6DNdKxygMDAN09RH7ymH4",
+    "Message": "sent",
+    "Account Used": "Patricia",
+    "Reply": ""
+  },
+  {
+    "firstName": "Liam",
+    "lastName": "OShea",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAAAMUxVMBQjBMz3GkQRQLaFJwURBitQvMVvI",
+    "Message": "sent",
+    "Account Used": "Patricia",
+    "Reply": ""
+  },
+  {
+    "firstName": "John",
+    "lastName": "Smith",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAAAEAAAA0000000000000000000000000001",
+    "Message": "sent",
+    "Account Used": "Antonio",
+    "Reply": ""
+  },
+  {
+    "firstName": "John",
+    "lastName": "Smith",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAAAEAAAA0000000000000000000000000002",
+    "Message": "sent",
+    "Account Used": "Antonio",
+    "Reply": ""
+  },
+  {
+    "firstName": "NotMatched",
+    "lastName": "Person",
+    "Linkedin URL": "https://www.linkedin.com/in/ACwAAAEAAAA9999999999999999999999999999",
+    "Message": "",
+    "Account Used": "Antonio",
+    "Reply": ""
+  }
+]

@@ -9,6 +9,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js",
+    "test:check-dms": "node --test tests/check-dms-*.test.js",
     "reset": "echo '{\"processed\":{},\"dailyCounts\":{}}' > data/state.json && echo 'State reset.'",
     "build:docs": "node docs/build.js",
     "electron:dev": "electron .",

@@ -1,0 +1,166 @@
+/**
+ * Phase 11.3 Wave 0 — RED test for the checkProfileDms orchestrator.
+ *
+ * End-to-end mock test: stubs getConversationsPage + updateSheetRow +
+ * getSheetRowStatus, asserts the orchestrator wires them together correctly
+ * for the expected flow.
+ *
+ * Will fail with ERR_MODULE_NOT_FOUND until Plan 11.3-02 creates
+ * src/linkedin/check-dms.js.
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+import { checkProfileDms, _setDeps } from '../src/linkedin/check-dms.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SHEET_ROWS = JSON.parse(
+  await readFile(join(__dirname, 'fixtures/sheet-rows.json'), 'utf-8')
+);
+
+function mockPage() { return { mock: true }; }
+
+function mockDeps({ conversationsPages = [], rowStatuses = {}, sheetUpdates = [] } = {}) {
+  const stubs = {
+    getConversationsPage: async () => conversationsPages.shift() ?? null,
+    getSheetRowStatus: async (_url, linkedinUrl) => rowStatuses[linkedinUrl] ?? null,
+    updateSheetRow: async (_url, linkedinUrl, tracking) => { sheetUpdates.push({ linkedinUrl, tracking }); },
+    ensureOpen: async () => ({ page: mockPage(), profileId: 'Antonio', pName: 'Antonio' }),
+    closeSession: async () => {},
+    // Orchestrator reads candidate rows from an injected function too:
+    getCandidateRows: async () => SHEET_ROWS.filter(r => r['Account Used'] === 'Antonio' && r.Message === 'sent'),
+  };
+  return { stubs, sheetUpdates };
+}
+
+test('checkProfileDms: scans conversations and writes matched replies to sheet', async () => {
+  const { stubs, sheetUpdates } = mockDeps({
+    conversationsPages: [{
+      elements: [
+        {
+          entityUrn: 'urn:li:fs_conversation:2-abc',
+          lastActivityAt: Date.now(),
+          participants: [{ miniProfile: { firstName: 'Gurneet', lastName: 'Jodhka' } }],
+          events: [{ createdAt: Date.now(), eventContent: { body: { text: 'Thanks for reaching out' } } }],
+        },
+      ],
+      paging: { count: 20, start: 0, total: 1 },
+    }],
+  });
+
+  _setDeps(stubs);
+  try {
+    const result = await checkProfileDms('Antonio', {
+      watermark: 0,
+      sheetUrl: 'https://sheet.example',
+      linkedinColumn: 'Linkedin URL',
+    });
+
+    assert.equal(result.replies.length, 1);
+    assert.equal(result.replies[0].match.firstName, 'Gurneet');
+    assert.equal(sheetUpdates.length, 1);
+    assert.equal(sheetUpdates[0].tracking.Reply, 'yes');
+    assert.match(sheetUpdates[0].tracking.ReplyPreview, /Thanks/);
+  } finally {
+    _setDeps(null);
+  }
+});
+
+test('checkProfileDms: skips writeback when row already has Reply=yes', async () => {
+  const sheetUpdates = [];
+  const { stubs } = mockDeps({
+    conversationsPages: [{
+      elements: [
+        {
+          entityUrn: 'urn:li:fs_conversation:2-xyz',
+          lastActivityAt: Date.now(),
+          participants: [{ miniProfile: { firstName: 'Julia', lastName: 'Nguyen' } }],
+          events: [{ createdAt: Date.now(), eventContent: { body: { text: 'New reply' } } }],
+        },
+      ],
+      paging: { count: 20, start: 0, total: 1 },
+    }],
+    rowStatuses: {
+      'https://www.linkedin.com/in/ACwAABMElp0BflO-iGMBHAz3Syooy7A5ecJ_JiM': { Reply: 'yes' },
+    },
+    sheetUpdates,
+  });
+
+  _setDeps(stubs);
+  try {
+    const result = await checkProfileDms('Antonio', {
+      watermark: 0,
+      sheetUrl: 'https://sheet.example',
+      linkedinColumn: 'Linkedin URL',
+    });
+    assert.equal(sheetUpdates.length, 0, 'should NOT write to sheet when Reply=yes already');
+    assert.equal(result.replies.length, 1, 'reply still surfaces in the panel even if sheet not written');
+  } finally {
+    _setDeps(null);
+  }
+});
+
+test('checkProfileDms: falls back to DOM scrape when Voyager returns null', async () => {
+  let domScraped = false;
+  const { stubs } = mockDeps({
+    conversationsPages: [null], // Voyager fails
+  });
+  stubs.scrapeInboxDom = async () => { domScraped = true; return '<ul></ul>'; };
+
+  _setDeps(stubs);
+  try {
+    const result = await checkProfileDms('Antonio', {
+      watermark: 0,
+      sheetUrl: 'https://sheet.example',
+      linkedinColumn: 'Linkedin URL',
+    });
+    assert.ok(domScraped, 'should attempt DOM scrape when Voyager returns null');
+    assert.ok(Array.isArray(result.replies));
+  } finally {
+    _setDeps(null);
+  }
+});
+
+test('checkProfileDms: does NOT advance watermark on failure', async () => {
+  const { stubs } = mockDeps({ conversationsPages: [null] });
+  stubs.scrapeInboxDom = async () => { throw new Error('scrape failed'); };
+
+  _setDeps(stubs);
+  try {
+    const result = await checkProfileDms('Antonio', {
+      watermark: 1000,
+      sheetUrl: 'https://sheet.example',
+      linkedinColumn: 'Linkedin URL',
+    });
+    assert.equal(result.newWatermark, undefined, 'no new watermark on failure');
+    assert.ok(result.errors.length > 0, 'errors array populated');
+  } finally {
+    _setDeps(null);
+  }
+});
+
+test('checkProfileDms: advances watermark on success', async () => {
+  const { stubs } = mockDeps({
+    conversationsPages: [{
+      elements: [],
+      paging: { count: 20, start: 0, total: 0 },
+    }],
+  });
+
+  _setDeps(stubs);
+  try {
+    const before = Date.now();
+    const result = await checkProfileDms('Antonio', {
+      watermark: 0,
+      sheetUrl: 'https://sheet.example',
+      linkedinColumn: 'Linkedin URL',
+    });
+    assert.ok(result.newWatermark >= before, 'watermark advanced to at-least run start time');
+    assert.equal(result.errors.length, 0);
+  } finally {
+    _setDeps(null);
+  }
+});
