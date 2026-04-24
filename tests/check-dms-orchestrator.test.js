@@ -39,15 +39,22 @@ function mockDeps({ conversationsPages = [], rowStatuses = {}, sheetUpdates = []
 test('checkProfileDms: scans conversations and writes matched replies to sheet', async () => {
   const { stubs, sheetUpdates } = mockDeps({
     conversationsPages: [{
+      // NORMALIZED shape produced by getConversationsPage (see 11.3-RESEARCH.md Finding 1)
       elements: [
         {
-          entityUrn: 'urn:li:fs_conversation:2-abc',
+          entityUrn: 'urn:li:msg_conversation:2-abc',
+          threadId: '2-abc',
           lastActivityAt: Date.now(),
-          participants: [{ miniProfile: { firstName: 'Gurneet', lastName: 'Jodhka' } }],
-          events: [{ createdAt: Date.now(), eventContent: { body: { text: 'Thanks for reaching out' } } }],
+          unreadCount: 1,
+          participants: [{ firstName: 'Gurneet', lastName: 'Jodhka', profileUrl: 'https://www.linkedin.com/in/gurneet' }],
+          lastMessage: {
+            text: 'Thanks for reaching out',
+            deliveredAt: Date.now(),
+            actor: { firstName: 'Gurneet', lastName: 'Jodhka', profileUrl: 'https://www.linkedin.com/in/gurneet' },
+          },
         },
       ],
-      paging: { count: 20, start: 0, total: 1 },
+      metadata: {},
     }],
   });
 
@@ -75,13 +82,19 @@ test('checkProfileDms: skips writeback when row already has Reply=yes', async ()
     conversationsPages: [{
       elements: [
         {
-          entityUrn: 'urn:li:fs_conversation:2-xyz',
+          entityUrn: 'urn:li:msg_conversation:2-xyz',
+          threadId: '2-xyz',
           lastActivityAt: Date.now(),
-          participants: [{ miniProfile: { firstName: 'Julia', lastName: 'Nguyen' } }],
-          events: [{ createdAt: Date.now(), eventContent: { body: { text: 'New reply' } } }],
+          unreadCount: 1,
+          participants: [{ firstName: 'Julia', lastName: 'Nguyen', profileUrl: 'https://www.linkedin.com/in/julia' }],
+          lastMessage: {
+            text: 'New reply',
+            deliveredAt: Date.now(),
+            actor: { firstName: 'Julia', lastName: 'Nguyen', profileUrl: 'https://www.linkedin.com/in/julia' },
+          },
         },
       ],
-      paging: { count: 20, start: 0, total: 1 },
+      metadata: {},
     }],
     rowStatuses: {
       'https://www.linkedin.com/in/ACwAABMElp0BflO-iGMBHAz3Syooy7A5ecJ_JiM': { Reply: 'yes' },

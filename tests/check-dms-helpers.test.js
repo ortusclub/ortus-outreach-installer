@@ -50,15 +50,17 @@ function mockPage(evalResult) {
   };
 }
 
-test('getConversationsPage: calls /voyager/api/messaging/conversations with correct headers', async () => {
-  const page = mockPage({ elements: [], paging: { count: 20, start: 0, total: 0 } });
+test('getConversationsPage: calls GraphQL messengerConversations endpoint with correct headers', async () => {
+  // Live fixture (2026-04-24) shows LinkedIn uses:
+  // /voyager/api/graphql?queryId=messengerConversations.{hash}&variables=(...)
+  // Response wraps the collection under data.messengerConversationsBySyncToken.
+  const page = mockPage({ data: { messengerConversationsBySyncToken: { elements: [], metadata: {} } } });
   await getConversationsPage(page, { start: 0, count: 20 });
   assert.equal(page._calls.length, 1);
   const { fetches } = page._calls[0];
   assert.equal(fetches.length, 1);
-  assert.match(fetches[0].url, /\/voyager\/api\/messaging\/conversations/);
-  assert.match(fetches[0].url, /count=20/);
-  assert.match(fetches[0].url, /start=0/);
+  assert.match(fetches[0].url, /\/voyager\/api\/graphql/, 'uses GraphQL endpoint');
+  assert.match(fetches[0].url, /queryId=messengerConversations/, 'queryId includes messengerConversations');
   const headers = fetches[0].opts.headers;
   assert.match(headers.accept, /application\/vnd\.linkedin/);
   assert.equal(headers['x-restli-protocol-version'], '2.0.0');
