@@ -27,26 +27,50 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-// ── Tracking columns we manage ──
+// ── Tracking columns we manage (new schema) ──
 var TRACKING_COLUMNS = [
+  'Status',
+  'CC',
+  'OP',
+  'Message',
+  'InMail',
+  'Account Used',
+  'Date Last Action',
+  // Phase 11.3 — Check DMs writeback columns. Non-destructive: updateRow
+  // will not overwrite Reply="yes" if the operator manually edited the row.
+  'Reply',
+  'Reply At',
+  'Reply Preview'
+];
+
+// Action columns — get a dash "—" by default, HYPERLINK when the action happens.
+var ACTION_COLUMNS = ['OP', 'Message', 'InMail'];
+
+// Old tracking columns to REMOVE on ensureColumns (lossy cleanup)
+var OLD_COLUMNS_TO_REMOVE = [
   'Connection Status',
   'Connection Date',
   'Connection By',
   'First Message Status',
   'First Message Date',
   'Follow-up Status',
-  'Follow-up Date'
+  'Follow-up Date',
+  'InMail Credits Left'
 ];
 
 // ── Field name → Column header mapping ──
 var FIELD_MAP = {
-  connectionStatus:    'Connection Status',
-  connectionDate:      'Connection Date',
-  connectionBy:        'Connection By',
-  firstMessageStatus:  'First Message Status',
-  firstMessageDate:    'First Message Date',
-  followUpStatus:      'Follow-up Status',
-  followUpDate:        'Follow-up Date'
+  status:          'Status',
+  cc:              'CC',
+  op:              'OP',
+  message:         'Message',
+  inmail:          'InMail',
+  accountUsed:     'Account Used',
+  dateLastAction:  'Date Last Action',
+  // Phase 11.3 — Check DMs writeback
+  Reply:           'Reply',
+  ReplyAt:         'Reply At',
+  ReplyPreview:    'Reply Preview'
 };
 
 // ── URL column detection ──
@@ -86,6 +110,12 @@ function doPost(e) {
 
       case 'getStatus':
         return handleGetStatus(sheet, data);
+
+      case 'getSoO':
+        return handleGetSoO(data);
+
+      case 'getRowStatus':
+        return handleGetRowStatus(sheet, data);
     }
 
   } catch (err) {
@@ -110,26 +140,184 @@ function doGet(e) {
 function handleEnsureColumns(sheet) {
   var headers = getHeaders(sheet);
   var added = [];
+  var removed = [];
 
-  TRACKING_COLUMNS.forEach(function(col) {
-    if (headers.indexOf(col) === -1) {
-      var nextCol = headers.length + 1;
-      sheet.getRange(1, nextCol).setValue(col);
-      // Bold the header
-      sheet.getRange(1, nextCol).setFontWeight('bold');
-      headers.push(col);
-      added.push(col);
+  // 1) Remove old tracking columns (iterate right → left so indices stay valid)
+  for (var i = headers.length - 1; i >= 0; i--) {
+    if (OLD_COLUMNS_TO_REMOVE.indexOf(headers[i]) !== -1) {
+      sheet.deleteColumn(i + 1);
+      removed.push(headers[i]);
+      headers.splice(i, 1);
     }
+  }
+
+  // 2) Add missing tracking columns, each inserted right after the nearest
+  // preceding TRACKING_COLUMN that already exists. This keeps the on-sheet
+  // order aligned with TRACKING_COLUMNS even when columns are added later.
+  TRACKING_COLUMNS.forEach(function(col, idx) {
+    if (headers.indexOf(col) !== -1) return;
+
+    var insertAfter = -1;
+    for (var k = idx - 1; k >= 0; k--) {
+      var prevIdx = headers.indexOf(TRACKING_COLUMNS[k]);
+      if (prevIdx !== -1) { insertAfter = prevIdx; break; }
+    }
+
+    var newPos;
+    if (insertAfter === -1) {
+      // No preceding tracking col exists — append at the end.
+      newPos = headers.length;
+      sheet.getRange(1, newPos + 1).setValue(col);
+    } else {
+      sheet.insertColumnAfter(insertAfter + 1);
+      newPos = insertAfter + 1;
+      sheet.getRange(1, newPos + 1).setValue(col);
+    }
+    sheet.getRange(1, newPos + 1).setFontWeight('bold');
+    headers.splice(newPos, 0, col);
+    added.push(col);
   });
+
+  var lastRow = sheet.getLastRow();
+
+  // 3) Dash-fill empty cells in action columns
+  if (lastRow >= 2) {
+    ACTION_COLUMNS.forEach(function(col) {
+      var idx = headers.indexOf(col);
+      if (idx === -1) return;
+      var range = sheet.getRange(2, idx + 1, lastRow - 1, 1);
+      var values = range.getValues();
+      for (var r = 0; r < values.length; r++) {
+        var cur = (values[r][0] || '').toString().trim();
+        if (cur === '') values[r][0] = '—';
+      }
+      range.setValues(values);
+    });
+  }
+
+  // 4) One-time migration — map old Status vocabulary into the new
+  // Status (Done/Skipped) + CC (Sent/Accepted/Declined/Unreachable) scheme.
+  // Idempotent: rows already using the new vocab stay as-is.
+  if (lastRow >= 2 && headers.indexOf('CC') !== -1) {
+    migrateOldStatusValues(sheet, headers, lastRow);
+  }
+
+  // 5) Conditional formatting
+  applyStatusFormatting(sheet, headers);
+  applyCCFormatting(sheet, headers);
 
   return jsonResponse({
     success: true,
     headers: headers,
     added: added,
-    message: added.length > 0
-      ? 'Added columns: ' + added.join(', ')
-      : 'All tracking columns already exist'
+    removed: removed,
+    message: 'ensureColumns complete. added=[' + added.join(', ') + '] removed=[' + removed.join(', ') + ']'
   });
+}
+
+function migrateOldStatusValues(sheet, headers, lastRow) {
+  var statusIdx = headers.indexOf('Status');
+  var ccIdx = headers.indexOf('CC');
+  if (statusIdx === -1 || ccIdx === -1) return;
+
+  var statusRange = sheet.getRange(2, statusIdx + 1, lastRow - 1, 1);
+  var ccRange = sheet.getRange(2, ccIdx + 1, lastRow - 1, 1);
+  var statusVals = statusRange.getValues();
+  var ccVals = ccRange.getValues();
+
+  // Old Status → { new Status, CC to set if CC cell is still empty }
+  var map = {
+    'invite pending':    { status: 'Done',    cc: 'Sent' },
+    'connected':         { status: 'Done',    cc: '' },
+    'declined':          { status: 'Done',    cc: 'Declined' },
+    'not connectable':   { status: 'Done',    cc: 'Unreachable' },
+    'not yet connected': { status: 'Skipped', cc: '' },
+    'weekly limit':      { status: 'Skipped', cc: '' },
+    'error':             { status: 'Skipped', cc: '' },
+    'inmail sent':       { status: 'Done',    cc: '' }
+  };
+
+  var changed = false;
+  for (var r = 0; r < statusVals.length; r++) {
+    var cur = (statusVals[r][0] || '').toString().toLowerCase().trim();
+    var m = map[cur];
+    if (!m) continue;
+    statusVals[r][0] = m.status;
+    if (m.cc && !(ccVals[r][0] || '').toString().trim()) {
+      ccVals[r][0] = m.cc;
+    }
+    changed = true;
+  }
+
+  if (changed) {
+    statusRange.setValues(statusVals);
+    ccRange.setValues(ccVals);
+  }
+}
+
+function applyStatusFormatting(sheet, headers) {
+  var statusIdx = headers.indexOf('Status');
+  if (statusIdx === -1) return;
+  var lastRow = Math.max(sheet.getLastRow(), 2);
+  var range = sheet.getRange(2, statusIdx + 1, lastRow - 1, 1);
+
+  // Remove existing rules that touch this column, then re-apply ours.
+  var existing = sheet.getConditionalFormatRules();
+  var others = existing.filter(function(rule) {
+    var ranges = rule.getRanges();
+    for (var i = 0; i < ranges.length; i++) {
+      if (ranges[i].getColumn() === statusIdx + 1) return false;
+    }
+    return true;
+  });
+
+  // Light, unobtrusive colors — Status is informational now. CC carries
+  // the loud gradient (yellow/green/red).
+  var rules = [
+    { val: 'Done',    bg: '#f0f9f1', fg: '#4a7a54' },
+    { val: 'Skipped', bg: '#f5f5f5', fg: '#888888' }
+  ].map(function(r) {
+    return SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo(r.val)
+      .setBackground(r.bg)
+      .setFontColor(r.fg)
+      .setRanges([range])
+      .build();
+  });
+
+  sheet.setConditionalFormatRules(others.concat(rules));
+}
+
+function applyCCFormatting(sheet, headers) {
+  var ccIdx = headers.indexOf('CC');
+  if (ccIdx === -1) return;
+  var lastRow = Math.max(sheet.getLastRow(), 2);
+  var range = sheet.getRange(2, ccIdx + 1, lastRow - 1, 1);
+
+  var existing = sheet.getConditionalFormatRules();
+  var others = existing.filter(function(rule) {
+    var ranges = rule.getRanges();
+    for (var i = 0; i < ranges.length; i++) {
+      if (ranges[i].getColumn() === ccIdx + 1) return false;
+    }
+    return true;
+  });
+
+  var rules = [
+    { val: 'Sent',        bg: '#fff4d6', fg: '#8a5a00' }, // yellow — invite pending
+    { val: 'Accepted',    bg: '#d9f1da', fg: '#0a6b27' }, // green  — connection confirmed
+    { val: 'Declined',    bg: '#fce4e4', fg: '#a1252b' }, // red    — invite declined
+    { val: 'Unreachable', bg: '#fce4e4', fg: '#a1252b' }  // red    — couldn't send invite
+  ].map(function(r) {
+    return SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo(r.val)
+      .setBackground(r.bg)
+      .setFontColor(r.fg)
+      .setRanges([range])
+      .build();
+  });
+
+  sheet.setConditionalFormatRules(others.concat(rules));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -142,13 +330,41 @@ function handleUpdateRow(sheet, data) {
   }
 
   var headers = getHeaders(sheet);
-  var urlColIndex = findUrlColumn(headers);
+
+  // If caller specified which column to search, use that directly
+  var urlColIndex = -1;
+  if (data.urlColumnName) {
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i] === data.urlColumnName) { urlColIndex = i; break; }
+    }
+  }
+  // Fallback to auto-detection
+  if (urlColIndex === -1) {
+    urlColIndex = findUrlColumn(headers, sheet);
+  }
 
   if (urlColIndex === -1) {
     return jsonResponse({ error: 'No LinkedIn URL column found in the sheet' });
   }
 
+  // Try exact match first, then loose match (contains the linkedin.com/in/ slug)
   var targetRow = findRowByUrl(sheet, urlColIndex, data.linkedinUrl);
+
+  if (targetRow === -1) {
+    // Loose match: extract the slug from the search URL and match against cell values
+    var slugMatch = data.linkedinUrl.match(/linkedin\.com\/in\/([^/?#]+)/i);
+    if (slugMatch) {
+      var slug = slugMatch[1].toLowerCase();
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var allVals = sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues();
+        for (var r = 0; r < allVals.length; r++) {
+          var cellVal = (allVals[r][0] || '').toString().toLowerCase();
+          if (cellVal.indexOf(slug) !== -1) { targetRow = r + 2; break; }
+        }
+      }
+    }
+  }
 
   if (targetRow === -1) {
     return jsonResponse({ error: 'Row not found for: ' + data.linkedinUrl });
@@ -176,7 +392,7 @@ function handleBatchUpdate(sheet, data) {
   }
 
   var headers = getHeaders(sheet);
-  var urlColIndex = findUrlColumn(headers);
+  var urlColIndex = findUrlColumn(headers, sheet);
 
   if (urlColIndex === -1) {
     return jsonResponse({ error: 'No LinkedIn URL column found' });
@@ -224,7 +440,7 @@ function handleBatchUpdate(sheet, data) {
 
 function handleGetStatus(sheet, data) {
   var headers = getHeaders(sheet);
-  var urlColIndex = findUrlColumn(headers);
+  var urlColIndex = findUrlColumn(headers, sheet);
 
   if (urlColIndex === -1) {
     return jsonResponse({ error: 'No LinkedIn URL column found' });
@@ -259,6 +475,49 @@ function handleGetStatus(sheet, data) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Action: Get single row status (Phase 11.3 — Check DMs non-destructive write)
+// Returns { success, row: { Reply, 'Reply At', 'Reply Preview', ... } } for
+// the row whose LinkedIn URL matches `data.linkedinUrl`. Used by the check-dms
+// orchestrator to avoid overwriting operator-edited Reply="yes" rows.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function handleGetRowStatus(sheet, data) {
+  if (!data.linkedinUrl) {
+    return jsonResponse({ error: 'linkedinUrl is required' });
+  }
+
+  var headers = getHeaders(sheet);
+  var urlColIndex = data.urlColumnName
+    ? headers.indexOf(data.urlColumnName)
+    : findUrlColumn(headers, sheet);
+
+  if (urlColIndex === -1) {
+    return jsonResponse({ error: 'No LinkedIn URL column found' });
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return jsonResponse({ success: false, reason: 'empty-sheet' });
+  }
+
+  var allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var searchUrl = normalizeUrl(data.linkedinUrl);
+
+  for (var i = 0; i < allData.length; i++) {
+    var cellUrl = normalizeUrl(allData[i][urlColIndex]);
+    if (cellUrl !== searchUrl) continue;
+
+    var rowData = {};
+    for (var j = 0; j < headers.length; j++) {
+      rowData[headers[j]] = allData[i][j] || '';
+    }
+    return jsonResponse({ success: true, row: rowData });
+  }
+
+  return jsonResponse({ success: false, reason: 'not-found' });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Utility functions
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -270,11 +529,36 @@ function getHeaders(sheet) {
   });
 }
 
-function findUrlColumn(headers) {
+function findUrlColumn(headers, sheet) {
+  // Priority 1: exact match on known URL column names
   for (var i = 0; i < headers.length; i++) {
     if (URL_COLUMN_NAMES.indexOf(headers[i]) !== -1) return i;
-    if (headers[i].toLowerCase().indexOf('linkedin') !== -1) return i;
   }
+
+  // Priority 2: scan first data row to find a column containing "linkedin.com"
+  if (sheet) {
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      var firstRow = sheet.getRange(2, 1, 1, headers.length).getValues()[0];
+      for (var j = 0; j < firstRow.length; j++) {
+        var val = (firstRow[j] || '').toString().toLowerCase();
+        if (val.indexOf('linkedin.com') !== -1) return j;
+      }
+    }
+  }
+
+  // Priority 3: header name contains 'url' or 'link' (but not just 'linkedin')
+  for (var k = 0; k < headers.length; k++) {
+    var h = headers[k].toLowerCase();
+    if (h.indexOf('url') !== -1 || h.indexOf('profile link') !== -1) return k;
+  }
+
+  // Priority 4: any header with 'linkedin' AND 'url' or 'link' or 'bio' or 'profile'
+  for (var l = 0; l < headers.length; l++) {
+    var hl = headers[l].toLowerCase();
+    if (hl.indexOf('linkedin') !== -1 && (hl.indexOf('url') !== -1 || hl.indexOf('link') !== -1 || hl.indexOf('bio') !== -1 || hl.indexOf('profile') !== -1)) return l;
+  }
+
   return -1;
 }
 
@@ -314,12 +598,186 @@ function writeFields(sheet, headers, row, data) {
         headers.push(colName);
       }
 
-      sheet.getRange(row, colIndex + 1).setValue(data[field]);
+      var cell = sheet.getRange(row, colIndex + 1);
+      var value = data[field];
+      // Detect HYPERLINK formula so action cells render as clickable "sent"
+      if (typeof value === 'string' && value.charAt(0) === '=') {
+        cell.setFormula(value);
+      } else {
+        cell.setValue(value);
+      }
       updated.push(colName);
     }
   }
 
+  // Dash-fill any action column on this row that's still blank.
+  ACTION_COLUMNS.forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx === -1) return;
+    var cell = sheet.getRange(row, idx + 1);
+    var cur = (cell.getValue() || '').toString().trim();
+    if (cur === '') cell.setValue('—');
+  });
+
+  // Append audit entry if this write represents an action (has accountUsed).
+  if (data.accountUsed) {
+    appendAuditLog(sheet.getParent(), {
+      date: data.dateLastAction || new Date().toISOString(),
+      linkedinUrl: data.linkedinUrl || '',
+      action: data.auditAction || data.status || '',
+      account: data.accountUsed,
+      notes: data.auditNotes || ''
+    });
+  }
+
   return updated;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Audit Log — separate tab, full history
+// ═══════════════════════════════════════════════════════════════════════════
+
+var AUDIT_SHEET_NAME = 'Audit Log';
+var AUDIT_HEADERS = ['Date', 'Lead URL', 'Action', 'Account', 'Notes'];
+
+function getOrCreateAuditSheet(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName(AUDIT_SHEET_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(AUDIT_SHEET_NAME);
+    sheet.getRange(1, 1, 1, AUDIT_HEADERS.length).setValues([AUDIT_HEADERS]);
+    sheet.getRange(1, 1, 1, AUDIT_HEADERS.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function appendAuditLog(spreadsheet, entry) {
+  try {
+    var sheet = getOrCreateAuditSheet(spreadsheet);
+    sheet.appendRow([
+      entry.date || '',
+      entry.linkedinUrl || '',
+      entry.action || '',
+      entry.account || '',
+      entry.notes || ''
+    ]);
+  } catch (err) {
+    // Silent — audit is best-effort, must never break the main write.
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: Get SoO (State of Operations) account statuses
+// ═══════════════════════════════════════════════════════════════════════════
+// Reads the SoO sheet and returns per-email status for LinkedIn, InMail, etc.
+// data.sooSheetId = the SoO spreadsheet ID
+// data.sooGid (optional) = specific tab gid
+
+function handleGetSoO(data) {
+  if (!data.sooSheetId) {
+    return jsonResponse({ error: 'sooSheetId is required', errorCode: 'BAD_REQUEST' });
+  }
+
+  var spreadsheet = SpreadsheetApp.openById(data.sooSheetId);
+  var sheet;
+
+  // If gid provided, find the sheet by gid
+  if (data.sooGid) {
+    var sheets = spreadsheet.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getSheetId().toString() === data.sooGid.toString()) {
+        sheet = sheets[i];
+        break;
+      }
+    }
+    if (!sheet) {
+      return jsonResponse({
+        error: 'Sheet tab with gid ' + data.sooGid + ' not found',
+        errorCode: 'SHEET_NOT_FOUND'
+      });
+    }
+  } else {
+    sheet = spreadsheet.getActiveSheet();
+  }
+
+  var headers = getHeaders(sheet);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return jsonResponse({ accounts: [], headers: headers, total: 0 });
+  }
+
+  // ── Strict header-based column lookup ────────────────────────────────────
+  // All columns are located by header name, case-insensitive. No fallback to
+  // positional indexes — if a required header is missing, we return a clear
+  // error rather than silently reading from the wrong column.
+  function findHeader(predicate) {
+    for (var i = 0; i < headers.length; i++) {
+      var h = (headers[i] || '').toString().toLowerCase().trim();
+      if (predicate(h)) return i;
+    }
+    return -1;
+  }
+
+  var emailCol         = findHeader(function(h) { return h === 'email'; });
+  var firstNameCol     = findHeader(function(h) { return h === 'first name'; });
+  var linkedinOpCol    = findHeader(function(h) { return h.indexOf('linkedin') !== -1 && h.indexOf('op credits') !== -1 && h.indexOf('sales') === -1; });
+  var linkedinUserCol  = findHeader(function(h) { return h.indexOf('linkedin') !== -1 && h.indexOf('op user') !== -1; });
+  var salesNavOpCol    = findHeader(function(h) { return h.indexOf('sales nav') !== -1 && h.indexOf('op credits') !== -1; });
+  var salesNavUserCol  = findHeader(function(h) { return h.indexOf('sales nav') !== -1 && h.indexOf('user') !== -1; });
+  var inmailCreditsCol = findHeader(function(h) { return h.indexOf('inmail') !== -1 && h.indexOf('credits') !== -1; });
+  var inmailUserCol    = findHeader(function(h) { return h.indexOf('inmail') !== -1 && h.indexOf('user') !== -1; });
+  var ccCreditsCol     = findHeader(function(h) { return h.indexOf('cc') !== -1 && h.indexOf('credits') !== -1; });
+
+  if (emailCol === -1) {
+    return jsonResponse({
+      error: 'Required "Email" column header not found in SoO sheet',
+      errorCode: 'MISSING_EMAIL_HEADER'
+    });
+  }
+
+  var allData = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var accounts = [];
+  var currentSection = ''; // Track section headers like "Pool Accounts Unassigned"
+
+  for (var r = 0; r < allData.length; r++) {
+    var email = (allData[r][emailCol] || '').toString().trim();
+    if (!email) continue;
+
+    // Detect section headers (no @ sign = section label, not an email)
+    if (email.indexOf('@') === -1) {
+      currentSection = email;
+      continue;
+    }
+
+    var account = { email: email, section: currentSection };
+
+    // Return ALL columns as raw key-value pairs (keyed by header name)
+    for (var c = 0; c < headers.length; c++) {
+      if (c === emailCol) continue; // already have email
+      var val = (allData[r][c] || '').toString().trim();
+      if (val) account[headers[c]] = val;
+    }
+
+    // Structured fields for frontend consumption — header-based, not positional.
+    if (linkedinOpCol !== -1)    account.linkedinCredits  = (allData[r][linkedinOpCol]    || '').toString().trim();
+    if (linkedinUserCol !== -1)  account.linkedinUser     = (allData[r][linkedinUserCol]  || '').toString().trim();
+    if (salesNavOpCol !== -1)    account.salesNavCredits  = (allData[r][salesNavOpCol]    || '').toString().trim();
+    if (salesNavUserCol !== -1)  account.salesNavUser     = (allData[r][salesNavUserCol]  || '').toString().trim();
+    if (inmailCreditsCol !== -1) account.inmailCredits    = (allData[r][inmailCreditsCol] || '').toString().trim();
+    if (inmailUserCol !== -1)    account.inmailUser       = (allData[r][inmailUserCol]    || '').toString().trim();
+    if (ccCreditsCol !== -1)     account.ccCredits        = (allData[r][ccCreditsCol]     || '').toString().trim();
+
+    // First name — used as {senderFirstName} in templates. Header-based.
+    // If the "First Name" column is missing, leave blank rather than grab the
+    // wrong column by positional index.
+    if (firstNameCol !== -1) {
+      account.firstName = (allData[r][firstNameCol] || '').toString().trim();
+    }
+
+    accounts.push(account);
+  }
+
+  return jsonResponse({ accounts: accounts, headers: headers, total: accounts.length });
 }
 
 function jsonResponse(obj) {

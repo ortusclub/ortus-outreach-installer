@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { startCampaign, stopCampaign, getCampaignStatus, campaign, extractLinkedInUrl } from './src/campaign.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
+import { checkProfileDms } from './src/linkedin/check-dms.js';
 import { fetchSheet } from './src/sheets.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
@@ -380,6 +381,9 @@ app.post('/api/templates/preview', async (req, res) => {
 // ---------------------------------------------------------------------------
 app.post('/api/campaign/start', (req, res) => {
   try {
+    // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
+    if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
+
     const { profileIds, sheetUrl, templates, dailyLimit, batchesPerHour, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames } = req.body;
 
     if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
@@ -456,6 +460,129 @@ app.post('/api/browsers/show', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 11.3: Check DMs
+// Scans LinkedIn inboxes for replies to previously messaged prospects and
+// writes results to the sheet + in-memory cache for the UI to fetch.
+// ---------------------------------------------------------------------------
+const checkDms = {
+  running: false,
+  _abort: false,
+  currentProfile: null,
+  repliesFound: 0,
+  errors: [],
+  startedAt: null,
+  _lastResults: null, // { byProfile: { name: [replies] }, ambiguous, completedAt }
+};
+
+const CHECK_DMS_STATE_FILE = dataPath('check-dms-state.json');
+
+async function loadCheckDmsWatermarks() {
+  try {
+    const raw = await readFile(CHECK_DMS_STATE_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch { return {}; }
+}
+
+async function saveCheckDmsWatermarks(state) {
+  try {
+    await mkdir(dirname(CHECK_DMS_STATE_FILE), { recursive: true });
+    await writeFile(CHECK_DMS_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (err) {
+    console.warn(`[check-dms] failed to save watermarks: ${err.message}`);
+  }
+}
+
+app.post('/api/check-dms/start', async (req, res) => {
+  try {
+    if (campaign.running) return res.status(409).json({ error: 'Campaign is running — stop it first' });
+    if (checkDms.running) return res.status(409).json({ error: 'Check DMs is already running' });
+
+    const { profileIds, sheetUrl, linkedinColumn } = req.body;
+    if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    checkDms.running = true;
+    checkDms._abort = false;
+    checkDms.startedAt = Date.now();
+    checkDms.repliesFound = 0;
+    checkDms.errors = [];
+    checkDms.currentProfile = null;
+    checkDms._lastResults = null;
+
+    const owner = req.user;
+
+    // Fire and forget
+    (async () => {
+      const watermarks = await loadCheckDmsWatermarks();
+      const byProfile = {};
+      const ambiguous = [];
+      try {
+        for (const profileId of profileIds) {
+          if (checkDms._abort) break;
+          checkDms.currentProfile = profileId;
+          const watermark = watermarks[profileId]?.last_check_at
+            ? Date.parse(watermarks[profileId].last_check_at) || 0
+            : 0;
+          const result = await checkProfileDms(profileId, {
+            watermark,
+            sheetUrl,
+            linkedinColumn: linkedinColumn || 'Linkedin URL',
+          });
+          byProfile[profileId] = result.replies || [];
+          checkDms.repliesFound += (result.replies || []).length;
+          if (Array.isArray(result.ambiguous)) ambiguous.push(...result.ambiguous.map(a => ({ ...a, profileId })));
+          if (Array.isArray(result.errors) && result.errors.length) {
+            checkDms.errors.push(...result.errors.map(e => `[${profileId}] ${e}`));
+          }
+          // Advance watermark only on success (orchestrator returns newWatermark undefined on failure)
+          if (typeof result.newWatermark === 'number') {
+            watermarks[profileId] = { last_check_at: new Date(result.newWatermark).toISOString() };
+          }
+        }
+        await saveCheckDmsWatermarks(watermarks);
+        checkDms._lastResults = { byProfile, ambiguous, completedAt: Date.now() };
+        notifyEmail(owner, {
+          title: 'Check DMs finished',
+          body: `Check DMs finished: ${checkDms.repliesFound} new reply(ies), ${checkDms.errors.length} error(s).`,
+          link: '/',
+        }).catch(() => {});
+      } catch (err) {
+        console.error('Check DMs error:', err.message);
+        checkDms.errors.push(err.message);
+      } finally {
+        checkDms.running = false;
+        checkDms.currentProfile = null;
+      }
+    })();
+
+    res.json({ ok: true, message: 'Check DMs started' });
+  } catch (err) {
+    console.error('Check DMs start error:', err.message);
+    checkDms.running = false;
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/check-dms/stop', (_req, res) => {
+  checkDms._abort = true;
+  res.json({ ok: true, message: 'Abort requested' });
+});
+
+app.get('/api/check-dms/status', (_req, res) => {
+  res.json({
+    running: checkDms.running,
+    currentProfile: checkDms.currentProfile,
+    repliesFound: checkDms.repliesFound,
+    errors: checkDms.errors,
+    startedAt: checkDms.startedAt,
+  });
+});
+
+app.get('/api/check-dms/replies', (_req, res) => {
+  res.json(checkDms._lastResults || { byProfile: {}, ambiguous: [], completedAt: null });
 });
 
 // ---------------------------------------------------------------------------
