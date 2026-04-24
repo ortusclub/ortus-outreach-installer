@@ -1,5 +1,11 @@
 /* global fetch */
 
+// Phase 11.3 — app.js is now an ES module so we can import the Replies renderer
+// directly (no setTimeout race between classic + module script loading).
+// Every function referenced from an inline onclick handler in index.html is
+// re-exposed on `window` at the bottom of this file.
+import { renderRepliesPanel } from '/js/replies-panel.mjs';
+
 let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
@@ -1464,6 +1470,105 @@ async function showBrowsers() {
 function setCampaignButtons(running) {
   ['btn-start', 'btn-start-rb'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = running; });
   ['btn-stop',  'btn-stop-rb' ].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !running; });
+  // Disable Check DMs while a campaign runs (mutex — both need the same browsers)
+  const btnCheck = document.getElementById('btn-check-dms');
+  if (btnCheck) btnCheck.disabled = running;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 11.3 — Check DMs
+// ─────────────────────────────────────────────────────────────────────────────
+let checkDmsPollTimer = null;
+
+async function startCheckDms() {
+  try {
+    if (!selectedProfileIds.length) {
+      alert('Select at least one profile before running Check DMs.');
+      return;
+    }
+    const sheetUrl = document.getElementById('sheet-url')?.value?.trim();
+    if (!sheetUrl) {
+      alert('Enter a Google Sheet URL first.');
+      return;
+    }
+    const linkedinColumn = document.getElementById('linkedin-column')?.value?.trim() || 'Linkedin URL';
+
+    const btn = document.getElementById('btn-check-dms');
+    if (btn) btn.disabled = true;
+
+    // Expand the Replies section so the operator sees progress
+    const section = document.getElementById('replies-section');
+    if (section) section.classList.remove('collapsed');
+
+    const res = await fetch('/api/check-dms/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileIds: selectedProfileIds, sheetUrl, linkedinColumn }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Check DMs could not start: ${data.error || res.statusText}`);
+      if (btn) btn.disabled = false;
+      return;
+    }
+    startCheckDmsPolling();
+  } catch (err) {
+    alert(`Check DMs error: ${err.message}`);
+    const btn = document.getElementById('btn-check-dms');
+    if (btn) btn.disabled = false;
+  }
+}
+
+function startCheckDmsPolling() {
+  if (checkDmsPollTimer) clearInterval(checkDmsPollTimer);
+  checkDmsPollTimer = setInterval(pollCheckDmsStatus, 2000);
+  pollCheckDmsStatus();
+}
+
+function stopCheckDmsPolling() {
+  if (checkDmsPollTimer) {
+    clearInterval(checkDmsPollTimer);
+    checkDmsPollTimer = null;
+  }
+}
+
+async function pollCheckDmsStatus() {
+  try {
+    const res = await fetch('/api/check-dms/status');
+    if (!res.ok) return;
+    const status = await res.json();
+
+    const statusEl = document.getElementById('replies-status');
+    if (statusEl) {
+      if (status.running) {
+        const active = status.currentProfile ? ` — scanning ${status.currentProfile}` : '';
+        statusEl.textContent = `Scanning${active}…  (${status.repliesFound || 0} new replies so far)`;
+      } else if (status.startedAt) {
+        statusEl.textContent = '';
+      } else {
+        statusEl.textContent = '';
+      }
+    }
+
+    if (!status.running) {
+      stopCheckDmsPolling();
+      await fetchCheckDmsReplies();
+      const btn = document.getElementById('btn-check-dms');
+      if (btn) btn.disabled = !!document.getElementById('btn-stop')?.disabled === false;
+    }
+  } catch {
+    // ignore transient fetch errors; next tick retries
+  }
+}
+
+async function fetchCheckDmsReplies() {
+  try {
+    const res = await fetch('/api/check-dms/replies');
+    if (!res.ok) return;
+    const result = await res.json();
+    const container = document.getElementById('replies-body');
+    if (container) renderRepliesPanel(container, result);
+  } catch { /* */ }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2913,3 +3018,56 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', refreshPresetList);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 11.3 — inline-onclick re-exposure for the ESM conversion.
+// Every function referenced from an on*="…" attribute in public/index.html
+// MUST live on `window` for the inline handler to resolve at click-time.
+// Derived from:
+//   grep -oE 'on(click|input|change|submit|blur|focus|keyup|keydown)="[^"]*"' public/index.html \
+//     | grep -oE '[a-zA-Z_$][a-zA-Z0-9_$]*\s*\(' \
+//     | grep -oE '^[a-zA-Z_$][a-zA-Z0-9_$]*' \
+//     | sort -u  (excluding the DOM api `stopPropagation`)
+// If you add a new inline onclick in index.html, you MUST add it here too
+// or the click throws ReferenceError at runtime.
+// ─────────────────────────────────────────────────────────────────────────────
+window.applyFilter = applyFilter;
+window.applyPreset = applyPreset;
+window.clearCampaignLog = clearCampaignLog;
+window.clearHistory = clearHistory;
+window.clearServerLog = clearServerLog;
+window.closePresetPopover = closePresetPopover;
+window.copyCampaignLog = copyCampaignLog;
+window.copyServerLog = copyServerLog;
+window.deleteSelectedTemplate = deleteSelectedTemplate;
+window.deselectAll = deselectAll;
+window.downloadCsv = downloadCsv;
+window.filterProfiles = filterProfiles;
+window.handlePreviewClick = handlePreviewClick;
+window.loadLastUsedPreset = loadLastUsedPreset;
+window.loadProfiles = loadProfiles;
+window.loadSelectedTemplate = loadSelectedTemplate;
+window.modeStep = modeStep;
+window.onModeChange = onModeChange;
+window.previewSheet = previewSheet;
+window.refreshSoO = refreshSoO;
+window.requestNotificationPermission = requestNotificationPermission;
+window.saveCurrentAsPreset = saveCurrentAsPreset;
+window.saveCurrentTemplate = saveCurrentTemplate;
+window.saveMyIdentifier = saveMyIdentifier;
+window.saveQuickSchedule = saveQuickSchedule;
+window.scrollToSection = scrollToSection;
+window.selectAllVisible = selectAllVisible;
+window.setAddNote = setAddNote;
+window.setLaunchMode = setLaunchMode;
+window.setTheme = setTheme;
+window.showBrowsers = showBrowsers;
+window.signOut = signOut;
+window.startCampaign = startCampaign;
+window.startCheckDms = startCheckDms;
+window.stepInput = stepInput;
+window.stopCampaign = stopCampaign;
+window.toggleSection = toggleSection;
+window.toggleServerLog = toggleServerLog;
+window.togglePresetPopover = togglePresetPopover;
+window.updateCampaignSummary = updateCampaignSummary;

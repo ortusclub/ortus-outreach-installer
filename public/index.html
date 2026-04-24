@@ -412,6 +412,7 @@
             <div class="launch-actions">
               <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
               <button id="btn-stop" class="btn btn-stop" onclick="stopCampaign()" disabled>Stop Campaign</button>
+              <button id="btn-check-dms" class="btn btn-secondary" onclick="startCheckDms()" title="Scan LinkedIn inboxes for new replies">Check DMs</button>
             </div>
           </div>
 
@@ -476,6 +477,17 @@
         <button class="btn btn-secondary btn-sm" onclick="clearCampaignLog()">Clear Log</button>
       </div>
       <div class="log-panel" id="log-panel"><div class="entry info">Waiting to start…</div></div>
+      </div>
+    </div>
+
+    <!-- Replies panel (Phase 11.3 — Check DMs output) -->
+    <div class="section collapsible collapsed" id="replies-section">
+      <div class="history-header">
+        <h2 class="section-toggle" onclick="toggleSection('replies-section')"><span class="caret">▾</span> <span data-edit="h2-replies">Replies</span></h2>
+        <div class="replies-status muted" id="replies-status"></div>
+      </div>
+      <div class="section-body">
+        <div id="replies-body"><p class="muted">No scan yet — click "Check DMs" to start.</p></div>
       </div>
     </div>
 
@@ -626,7 +638,7 @@
     </div>
   </div>
 
-  <script src="/js/app.js"></script>
+  <script type="module" src="/js/app.js"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

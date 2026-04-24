@@ -1860,3 +1860,87 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   color: var(--ink);
   display: none;   /* JS toggles via style.display */
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Phase 11.3 — Replies panel (Check DMs output)
+   Monochrome command-deck styling, no colored backgrounds, no new fonts.
+   ───────────────────────────────────────────────────────────────────────── */
+.replies-status {
+  margin-left: auto;
+  font-size: 0.8rem;
+  padding-right: 12px;
+}
+.replies-profile-section,
+.replies-ambiguous-section {
+  margin-bottom: 16px;
+}
+.replies-profile-header {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted, #888);
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+  margin-bottom: 8px;
+}
+.reply-row {
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border, #2a2a2a);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "name meta"
+    "snippet snippet";
+  row-gap: 4px;
+  column-gap: 12px;
+}
+.reply-row:last-child {
+  border-bottom: none;
+}
+.reply-row--ambiguous {
+  opacity: 0.75;
+}
+.reply-name {
+  grid-area: name;
+  font-weight: 600;
+}
+.reply-snippet {
+  grid-area: snippet;
+  font-size: 0.9rem;
+  color: var(--ink-muted, #888);
+  font-style: italic;
+}
+.reply-meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+}
+.reply-time {
+  color: var(--ink-muted, #888);
+  font-family: var(--mono);
+}
+.reply-open-thread {
+  color: var(--ink, inherit);
+  text-decoration: underline;
+  font-size: 0.8rem;
+}
+.reply-open-thread:hover {
+  text-decoration: none;
+}
+.replies-errors {
+  padding: 8px 12px;
+  border-left: 3px solid #c44;
+  background: rgba(200, 68, 68, 0.06);
+  margin-bottom: 12px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.replies-footer {
+  margin-top: 12px;
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  color: var(--ink-muted, #888);
+}
