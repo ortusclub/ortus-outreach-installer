@@ -13,16 +13,19 @@ import assert from 'node:assert/strict';
 
 import { fetchNewConversations } from '../src/linkedin/check-dms.js';
 
-// Helper — synthesize a page of N conversations, each separated by 1 hour
+// Helper — synthesize a page of N conversations, each separated by 1 hour.
+// Timestamps decrease monotonically across ALL pages (not just within a page)
+// so pagination's "stop when oldest <= watermark" is testable end-to-end.
 function synthPage({ start, count, total, baseTs, decreasing = true }) {
   const elements = [];
   for (let i = 0; i < count; i++) {
-    const offset = decreasing ? i : -i;
+    const globalIndex = start + i;
+    const offset = decreasing ? globalIndex : -globalIndex;
     elements.push({
-      entityUrn: `urn:li:fs_conversation:${start + i}`,
+      entityUrn: `urn:li:fs_conversation:${globalIndex}`,
       lastActivityAt: baseTs - offset * 3600 * 1000,
-      participants: [{ miniProfile: { firstName: `Test${start + i}`, lastName: 'Person' } }],
-      events: [{ createdAt: baseTs - offset * 3600 * 1000, eventContent: { body: { text: `msg ${start + i}` } } }],
+      participants: [{ miniProfile: { firstName: `Test${globalIndex}`, lastName: 'Person' } }],
+      events: [{ createdAt: baseTs - offset * 3600 * 1000, eventContent: { body: { text: `msg ${globalIndex}` } } }],
     });
   }
   return { elements, paging: { count, start, total } };

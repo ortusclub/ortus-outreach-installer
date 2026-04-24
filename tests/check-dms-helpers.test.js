@@ -19,8 +19,8 @@ function mockPage(evalResult) {
     _calls: calls,
     async evaluate(fn, ...args) {
       // The fn runs in the "browser" context; we emulate by calling it with a stubbed
-      // global fetch + cookie + location. Tests capture the URL and headers the fn
-      // would have used.
+      // global fetch + cookie + performance.getEntriesByType. Tests capture the URL
+      // and headers the fn would have used.
       const fetches = [];
       const stubFetch = async (url, opts) => {
         fetches.push({ url, opts });
@@ -30,14 +30,24 @@ function mockPage(evalResult) {
           async json() { return evalResult; },
         };
       };
-      // The helper uses document.cookie for CSRF — emulate:
       const stubDocument = {
         cookie: 'JSESSIONID="ajax:123abc"',
       };
-      // Replace globals ONLY for the duration of this call
-      const orig = { fetch: global.fetch, document: global.document };
+      // Helper discovers the XHR URL via performance entries. Emulate with a
+      // representative LinkedIn GraphQL URL pointing at messengerConversations.
+      const stubPerformance = {
+        getEntriesByType(type) {
+          if (type !== 'resource') return [];
+          return [{
+            name: 'https://www.linkedin.com/voyager/api/graphql?queryId=messengerConversations.0d5e6781bbe9ffff&variables=(mailboxUrn:urn%3Ali%3Afsd_profile%3AACwAAA,count:20)',
+            startTime: 100,
+          }];
+        },
+      };
+      const orig = { fetch: global.fetch, document: global.document, performance: global.performance, URL: global.URL };
       global.fetch = stubFetch;
       global.document = stubDocument;
+      global.performance = stubPerformance;
       try {
         const out = await fn(...args);
         calls.push({ fetches });
@@ -45,6 +55,7 @@ function mockPage(evalResult) {
       } finally {
         global.fetch = orig.fetch;
         global.document = orig.document;
+        global.performance = orig.performance;
       }
     },
   };

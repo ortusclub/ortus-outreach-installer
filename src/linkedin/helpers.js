@@ -370,3 +370,129 @@ export function personalizeTemplate(template, data = {}) {
   }
   return result.replace(/\{[a-zA-Z0-9_ ]+\}/g, '').trim();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 11.3 — Voyager GraphQL messenger conversations fetch + normalization.
+// Caller is responsible for having the page already navigated to
+// https://www.linkedin.com/messaging/ so LinkedIn's React app has fired the
+// messengerConversations XHR (we discover the queryId by reading performance
+// entries rather than hardcoding it — queryId hashes rotate occasionally).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Fetch (and normalize) one page of inbox conversations.
+ * Returns { elements: [...], metadata } or null on failure.
+ *
+ * Normalized element shape (11.3-RESEARCH.md Finding 1):
+ *   { entityUrn, threadId, lastActivityAt, unreadCount,
+ *     participants: [{firstName, lastName, profileUrl}],
+ *     lastMessage?: {text, deliveredAt, actor: {firstName, lastName, profileUrl}} }
+ */
+export async function getConversationsPage(page, { start = 0, count = 20 } = {}) {
+  try {
+    const raw = await page.evaluate(async ({ start, count }) => {
+      try {
+        // ── 1. Discover the XHR URL from LinkedIn's own recent requests ──
+        // This avoids hardcoding queryId hashes (which rotate). We rely on the
+        // caller to have already loaded the /messaging/ inbox so the XHR has
+        // fired and lives in performance entries.
+        const entries = performance.getEntriesByType('resource')
+          .filter(e => typeof e.name === 'string' && e.name.includes('queryId=messengerConversations'))
+          .sort((a, b) => b.startTime - a.startTime);
+
+        if (entries.length === 0) {
+          return null; // inbox not loaded yet — orchestrator navigates and retries
+        }
+
+        const urlObj = new URL(entries[0].name);
+        // Tune pagination params on the discovered URL. LinkedIn accepts
+        // `count` for page size; `start` for offset (sync-token variants may
+        // ignore `start`, which is fine — first-page semantics cover Wave 1).
+        if (count) urlObj.searchParams.set('count', String(count));
+        if (start) urlObj.searchParams.set('start', String(start));
+
+        // ── 2. Auth headers — copy exactly what getVoyagerDegree uses ──
+        const csrf = document.cookie.split(';').map(c => c.trim())
+          .find(c => c.startsWith('JSESSIONID='));
+        if (!csrf) return null;
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        const resp = await fetch(urlObj.toString(), {
+          headers: {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': token,
+            'x-restli-protocol-version': '2.0.0',
+          },
+          credentials: 'include',
+        });
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch {
+        return null;
+      }
+    }, { start, count });
+
+    if (!raw || typeof raw !== 'object') return null;
+
+    // ── Normalize raw GraphQL → internal shape ──
+    const payload = raw.data?.messengerConversationsBySyncToken
+      ?? raw.data?.messengerConversationsByCategoryQuery
+      ?? raw.data;
+
+    const elementsRaw = Array.isArray(payload?.elements) ? payload.elements : [];
+    const elements = elementsRaw.map(normalizeConversation).filter(Boolean);
+    return { elements, metadata: payload?.metadata || null };
+  } catch (err) {
+    console.warn(`[helpers] getConversationsPage failed: ${err.message || err}`);
+    return null;
+  }
+}
+
+/**
+ * Normalize a raw LinkedIn conversation → internal shape.
+ * Defensive: returns null if any required field is missing.
+ */
+function normalizeConversation(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const backendUrn = String(raw.backendUrn || '');
+  const threadId = backendUrn.replace(/^urn:li:messagingThread:/, '') ||
+                   String(raw.entityUrn || '').split(',').pop()?.replace(/\)$/, '') ||
+                   '';
+
+  const participants = (raw.conversationParticipants || [])
+    .map(p => {
+      const member = p?.participantType?.member;
+      if (!member) return null;
+      return {
+        firstName: member.firstName?.text || '',
+        lastName: member.lastName?.text || '',
+        profileUrl: member.profileUrl || '',
+      };
+    })
+    .filter(Boolean);
+
+  const lastMessageRaw = raw.messages?.elements?.[0];
+  let lastMessage = null;
+  if (lastMessageRaw) {
+    const actorMember = lastMessageRaw.actor?.participantType?.member;
+    lastMessage = {
+      text: lastMessageRaw.body?.text || '',
+      deliveredAt: lastMessageRaw.deliveredAt || raw.lastActivityAt || 0,
+      actor: actorMember ? {
+        firstName: actorMember.firstName?.text || '',
+        lastName: actorMember.lastName?.text || '',
+        profileUrl: actorMember.profileUrl || '',
+      } : null,
+    };
+  }
+
+  return {
+    entityUrn: raw.entityUrn || '',
+    threadId,
+    lastActivityAt: raw.lastActivityAt || 0,
+    unreadCount: raw.unreadCount || 0,
+    participants,
+    lastMessage,
+  };
+}

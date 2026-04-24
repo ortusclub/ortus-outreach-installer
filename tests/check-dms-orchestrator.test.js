@@ -116,30 +116,10 @@ test('checkProfileDms: skips writeback when row already has Reply=yes', async ()
   }
 });
 
-test('checkProfileDms: falls back to DOM scrape when Voyager returns null', async () => {
-  let domScraped = false;
-  const { stubs } = mockDeps({
-    conversationsPages: [null], // Voyager fails
-  });
-  stubs.scrapeInboxDom = async () => { domScraped = true; return '<ul></ul>'; };
-
-  _setDeps(stubs);
-  try {
-    const result = await checkProfileDms('Antonio', {
-      watermark: 0,
-      sheetUrl: 'https://sheet.example',
-      linkedinColumn: 'Linkedin URL',
-    });
-    assert.ok(domScraped, 'should attempt DOM scrape when Voyager returns null');
-    assert.ok(Array.isArray(result.replies));
-  } finally {
-    _setDeps(null);
-  }
-});
-
-test('checkProfileDms: does NOT advance watermark on failure', async () => {
+test('checkProfileDms: returns errors + does NOT advance watermark when Voyager returns null', async () => {
+  // DOM-scrape fallback deferred per 2026-04-24 revision in 11.3-CONTEXT.md.
+  // Voyager null → scan fails, operator retries.
   const { stubs } = mockDeps({ conversationsPages: [null] });
-  stubs.scrapeInboxDom = async () => { throw new Error('scrape failed'); };
 
   _setDeps(stubs);
   try {
@@ -150,6 +130,7 @@ test('checkProfileDms: does NOT advance watermark on failure', async () => {
     });
     assert.equal(result.newWatermark, undefined, 'no new watermark on failure');
     assert.ok(result.errors.length > 0, 'errors array populated');
+    assert.deepEqual(result.replies, []);
   } finally {
     _setDeps(null);
   }

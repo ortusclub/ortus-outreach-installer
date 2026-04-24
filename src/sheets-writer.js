@@ -23,14 +23,24 @@ async function postToWebApp(payload) {
   }
 
   try {
-    const res = await fetch(url, {
+    // Apps Script returns 302 on POST. Node fetch converts POST→GET on
+    // redirect, hitting doGet() instead of doPost(). Handle manually.
+    const body = JSON.stringify(payload);
+    const initial = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      redirect: 'follow', // Apps Script redirects on POST
+      body,
+      redirect: 'manual',
     });
 
-    // Apps Script returns a redirect to the actual response
+    let res;
+    if (initial.status >= 300 && initial.status < 400) {
+      const location = initial.headers.get('location');
+      res = await fetch(location);
+    } else {
+      res = initial;
+    }
+
     const text = await res.text();
     try {
       return JSON.parse(text);
@@ -83,7 +93,7 @@ export async function ensureTrackingColumns(sheetUrl) {
  * @param {string} linkedinUrl - LinkedIn profile URL (used to find the row)
  * @param {object} tracking - Fields to update
  */
-export async function updateSheetRow(sheetUrl, linkedinUrl, tracking) {
+export async function updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinColumn) {
   if (!getWebAppUrl()) {
     console.log('[sheets-writer] No SHEETS_WEBAPP_URL configured — skipping');
     return false;
@@ -95,6 +105,7 @@ export async function updateSheetRow(sheetUrl, linkedinUrl, tracking) {
     action: 'updateRow',
     sheetId,
     linkedinUrl,
+    urlColumnName: linkedinColumn || '',
     ...tracking,
   });
 
@@ -107,6 +118,44 @@ export async function updateSheetRow(sheetUrl, linkedinUrl, tracking) {
     console.warn(`[sheets-writer] Update failed for ${linkedinUrl}: ${result.error}`);
   }
   return false;
+}
+
+/**
+ * Phase 11.3 — reads the Reply tracking columns for a single row.
+ * Used by check-dms.js's non-destructive writeback: if the row already has
+ * Reply="yes" we skip re-writing (preserves manual operator edits).
+ *
+ * Returns { Reply, ReplyAt, ReplyPreview } on hit, null if row not found or
+ * webapp not configured. The Apps Script's `getRowStatus` action must return
+ * { success: true, row: { Reply, ReplyAt, ReplyPreview }, ... } for a match.
+ *
+ * @param {string} sheetUrl - The Google Sheet URL
+ * @param {string} linkedinUrl - LinkedIn profile URL
+ * @param {string} linkedinColumn - name of the URL column
+ * @returns {Promise<{Reply?: string, ReplyAt?: string, ReplyPreview?: string} | null>}
+ */
+export async function getSheetRowStatus(sheetUrl, linkedinUrl, linkedinColumn) {
+  if (!getWebAppUrl()) return null;
+
+  const sheetId = extractSheetId(sheetUrl);
+
+  const result = await postToWebApp({
+    action: 'getRowStatus',
+    sheetId,
+    linkedinUrl,
+    urlColumnName: linkedinColumn || '',
+  });
+
+  if (result?.success && result?.row) {
+    return {
+      Reply: result.row.Reply || result.row.reply || '',
+      ReplyAt: result.row['Reply At'] || result.row.replyAt || '',
+      ReplyPreview: result.row['Reply Preview'] || result.row.replyPreview || '',
+    };
+  }
+
+  // Row not found or error → treat as "no status" so caller can write freely.
+  return null;
 }
 
 /**
