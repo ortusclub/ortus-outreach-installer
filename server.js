@@ -23,6 +23,7 @@ import { fetchSheet } from './src/sheets.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
 import { unhideByPids } from './src/mac-window.js';
+import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail } from './src/notifier.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
@@ -401,6 +402,7 @@ app.post('/api/campaign/start', (req, res) => {
     // Fire and forget — campaign runs in background. The operator who kicked
     // it off gets the finish/failure notification.
     const owner = req.user;
+    preventSleep('campaign');
     startCampaign({
       profileIds,
       sheetUrl,
@@ -427,6 +429,8 @@ app.post('/api/campaign/start', (req, res) => {
         body: `Your campaign failed: ${err.message}`,
         link: '/',
       }).catch(() => {});
+    }).finally(() => {
+      allowSleep();
     });
 
     res.json({ ok: true, message: 'Campaign started' });
@@ -514,6 +518,7 @@ app.post('/api/check-dms/start', async (req, res) => {
 
     const owner = req.user;
 
+    preventSleep('check-dms');
     // Fire and forget
     (async () => {
       const watermarks = await loadCheckDmsWatermarks();
@@ -555,6 +560,7 @@ app.post('/api/check-dms/start', async (req, res) => {
       } finally {
         checkDms.running = false;
         checkDms.currentProfile = null;
+        allowSleep();
       }
     })();
 
@@ -823,6 +829,7 @@ function registerSchedule(schedule) {
       body: `${schedule.name} is running now on ${schedule.profileIds.length} account(s).`,
       link: '/',
     }).catch(() => {});
+    preventSleep(`schedule:${schedule.name}`);
     try {
       await startCampaign({
         profileIds: schedule.profileIds,
@@ -851,6 +858,8 @@ function registerSchedule(schedule) {
         body: `${schedule.name} failed: ${err.message}`,
         link: '/',
       }).catch(() => {});
+    } finally {
+      allowSleep();
     }
   });
   activeJobs.set(schedule.id, { main, prefire });

@@ -644,6 +644,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     let totalVisited = 0;
     let leadsExhausted = false;
     const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
+    // Phase 2.8.8: silent-failure guard — if a profile produces BATCH_SIZE
+    // consecutive non-success outcomes, park it for the rest of the run.
+    // Catches silent weekly-limit exhaustion and any other systemic per-account
+    // failure pattern that our explicit detectors miss.
+    const consecutiveSkips = new Map();
 
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
 
@@ -916,7 +921,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             await updateSheetRow(sheetUrl, url, sheetData, linkedinColumn).catch(() => {});
 
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);
+            consecutiveSkips.set(profileId, 0);
           } else {
+            const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
+            consecutiveSkips.set(profileId, skipCount);
+            if (skipCount >= BATCH_SIZE && !weeklyLimited.has(profileId)) {
+              log(`  ⚠ ${pName}: ${BATCH_SIZE} consecutive non-success outcomes — parking account for rest of run.`);
+              weeklyLimited.add(profileId);
+            }
             const errorMsg = result.error || result.action;
 
             if (errorMsg.includes('WEEKLY_LIMIT')) {
