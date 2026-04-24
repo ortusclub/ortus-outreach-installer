@@ -22,6 +22,11 @@ const SALES_NAV_URL_RE = /\/sales\/(people|lead)\//;
 // not match and cannot be transformed — the lead skips with a clear reason.
 const IN_MEMBER_URN_RE = /\/in\/(AC[A-Za-z0-9_-]{10,})(?:\/|$|\?)/;
 
+// Sales Nav member URN in a /sales/lead/ or /sales/people/ URL — same encoding
+// as /in/, used for the reverse transform (Connect campaigns need /in/ because
+// Sales Nav pages don't expose the Connect button the same way).
+const SALES_MEMBER_URN_RE = /\/sales\/(?:lead|people)\/(AC[A-Za-z0-9_-]{10,})(?:[,/]|$|\?)/;
+
 /**
  * Smart wait: resolves when the DOM stops changing for 1.5s OR after maxWait ms.
  * Much faster than a fixed 30s wait — typically resolves in 5-10s.
@@ -61,6 +66,23 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         }
         url = `https://www.linkedin.com/sales/lead/${m[1]}`;
         console.log(`[outreach] Transformed /in/ → Sales Nav: ${url}`);
+      }
+    }
+
+    // ── URL transform: /sales/lead/{memberId} → /in/{memberId} for Connect ──
+    // Sales Nav pages don't expose the Connect button the same way /in/ pages
+    // do, and the /in/-shaped status check false-positives "already connected"
+    // on Sales Nav DOM → lead gets skipped. For connection campaigns, reverse
+    // the transform: extract the URN and rebuild as /in/{urn}.
+    if (modeHint === 'force_connect') {
+      if (SALES_NAV_URL_RE.test(url)) {
+        const m = url.match(SALES_MEMBER_URN_RE);
+        if (!m) {
+          console.warn('[outreach] Sales Nav URL not in encoded member-URN format — cannot route to /in/');
+          return { action: 'skipped', error: 'Sales Nav URL not in member-URN format — cannot route to /in/' };
+        }
+        url = `https://www.linkedin.com/in/${m[1]}`;
+        console.log(`[outreach] Transformed Sales Nav → /in/: ${url}`);
       }
     }
 
