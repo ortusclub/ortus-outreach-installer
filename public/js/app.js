@@ -211,6 +211,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', refreshPreviewButtonState);
   }
+  // Phase 2.8.12: poll status once on load so the cockpit picks up an
+  // already-running campaign across page refreshes. If a campaign is live,
+  // this also kickstarts continuous polling via the running-detect path.
+  pollStatus().then(() => {
+    if (__cockpit.running) startPolling();
+  }).catch(() => {});
 });
 
 let serverLogInterval = null;
@@ -1500,6 +1506,135 @@ function showCampaignToast(msg, duration = 6000) {
   toast._timer = setTimeout(() => toast.classList.remove('visible'), duration);
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 2.8.12 — Live Cockpit panel (Concept B from sketches).
+// pollStatus saves the latest snapshot into __cockpit; a 250ms tick reads
+// it and computes the smooth countdown without re-hitting the network.
+// ─────────────────────────────────────────────────────────────────────────
+const __cockpit = {
+  running: false,
+  paused: false,
+  pauseRequested: false,
+  action: null,
+  mode: null,
+  pName: null,
+};
+const COCKPIT_RING_CIRCUMFERENCE = 282.7; // 2πr where r=45
+
+function updateCockpit(s) {
+  __cockpit.running = !!s.running;
+  __cockpit.paused = !!s.paused;
+  __cockpit.pauseRequested = !!s.pauseRequested;
+  __cockpit.action = s.currentAction || null;
+  __cockpit.mode = s.mode || null;
+  __cockpit.pName = s.currentProfile || null;
+  renderCockpit();
+}
+
+function renderCockpit() {
+  const ring = document.querySelector('.cockpit-ring');
+  const ringFg = document.getElementById('cockpit-ring-fg');
+  const num = document.getElementById('cockpit-ring-num');
+  const unit = document.getElementById('cockpit-ring-unit');
+  const tag = document.getElementById('cockpit-status-tag');
+  const dot = document.getElementById('cockpit-pulse-dot');
+  const action = document.getElementById('cockpit-action');
+  const lead = document.getElementById('cockpit-lead');
+  const account = document.getElementById('cockpit-account');
+  const modeEl = document.getElementById('cockpit-mode-meta');
+  if (!ring || !ringFg || !num || !unit || !tag || !dot || !action) return;
+
+  // Idle — no campaign running.
+  if (!__cockpit.running) {
+    ring.classList.remove('indeterminate', 'paused');
+    ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE;
+    num.textContent = '—';
+    unit.textContent = 'idle';
+    tag.textContent = 'IDLE';
+    dot.classList.remove('live', 'paused-dot');
+    action.textContent = 'No campaign running';
+    if (lead)    lead.textContent    = '—';
+    if (account) account.textContent = '—';
+    if (modeEl)  modeEl.textContent  = '—';
+    return;
+  }
+
+  // Paused — distinct visual.
+  if (__cockpit.paused) {
+    ring.classList.remove('indeterminate');
+    ring.classList.add('paused');
+    ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE * 0.3;
+    num.textContent = '||';
+    unit.textContent = 'paused';
+    tag.textContent = 'PAUSED';
+    dot.classList.remove('live'); dot.classList.add('paused-dot');
+    action.textContent = 'Paused — press Resume to continue';
+    if (lead)    lead.textContent    = (__cockpit.action && __cockpit.action.lead)    || '—';
+    if (account) account.textContent = (__cockpit.action && __cockpit.action.account) || __cockpit.pName || '—';
+    if (modeEl)  modeEl.textContent  = formatMode(__cockpit.mode);
+    return;
+  }
+
+  // Running — countdown if action has endsAt, else indeterminate arc.
+  ring.classList.remove('paused');
+  tag.textContent = __cockpit.pauseRequested ? 'PAUSING…' : 'LIVE';
+  dot.classList.remove('paused-dot'); dot.classList.add('live');
+
+  const a = __cockpit.action;
+  if (!a) {
+    ring.classList.add('indeterminate');
+    num.textContent = '◐';
+    unit.textContent = 'working';
+    action.textContent = 'Running…';
+    if (lead)    lead.textContent    = '—';
+    if (account) account.textContent = __cockpit.pName || '—';
+    if (modeEl)  modeEl.textContent  = formatMode(__cockpit.mode);
+    return;
+  }
+
+  action.textContent = a.label || 'Running…';
+  if (lead)    lead.textContent    = a.lead    || '—';
+  if (account) account.textContent = a.account || __cockpit.pName || '—';
+  if (modeEl)  modeEl.textContent  = formatMode(a.mode || __cockpit.mode);
+
+  if (a.endsAt && a.startedAt) {
+    ring.classList.remove('indeterminate');
+    const total = a.endsAt - a.startedAt;
+    const remainingMs = Math.max(0, a.endsAt - Date.now());
+    const pct = total > 0 ? Math.min(1, (total - remainingMs) / total) : 0;
+    ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE * (1 - pct);
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    if (remainingSec >= 60) {
+      num.textContent = Math.ceil(remainingSec / 60);
+      unit.textContent = 'minutes';
+    } else {
+      num.textContent = remainingSec;
+      unit.textContent = 'seconds';
+    }
+  } else {
+    ring.classList.add('indeterminate');
+    num.textContent = '◐';
+    unit.textContent = 'working';
+  }
+}
+
+function formatMode(m) {
+  if (!m) return '—';
+  const map = {
+    connect_only: 'Connect',
+    message_only: 'Message',
+    inmail_only: 'InMail',
+    open_profile_only: 'Open Profile',
+    check_status: 'Check Status',
+    connect_and_message: 'Connect + Message',
+    auto: 'Auto',
+  };
+  return map[m] || m;
+}
+
+// 250ms client-side tick keeps the countdown smooth without re-polling.
+setInterval(renderCockpit, 250);
+
 // Phase 11.2 (D-18): un-hide all active browser processes (debug aid).
 // Calls the session-gated POST /api/browsers/show shipped in Plan 01.
 async function showBrowsers() {
@@ -1671,6 +1806,9 @@ async function pollStatus() {
   try {
     const res = await fetch('/api/campaign/status');
     const s = await res.json();
+    // Phase 2.8.12: feed the cockpit panel with the latest status snapshot
+    // (renderCockpit + tick handle the smooth countdown without re-polling).
+    updateCockpit(s);
 
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {

@@ -2034,3 +2034,149 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 /* Status pill colors for the live status panel — paused/pausing variants. */
 .value.paused  { color: var(--gold); }
 .value.pausing { color: var(--gray); font-style: italic; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Phase 2.8.12 — Live Cockpit panel.
+   Concept B (circular ring + structured metadata). Sits at the top of the
+   Live Status section. Driven by /api/campaign/status.currentAction +
+   client-side 250ms tick for smooth countdown.
+   ───────────────────────────────────────────────────────────────────────── */
+.cockpit-panel {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding: 24px 28px;
+  border: 1px solid var(--hairline);
+  margin-bottom: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+}
+.cockpit-ring {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  flex-shrink: 0;
+}
+.cockpit-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.cockpit-ring-bg {
+  fill: none;
+  stroke: var(--hairline);
+  stroke-width: 4;
+}
+.cockpit-ring-fg {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s linear;
+}
+/* Indeterminate state — slowly rotating arc so user sees movement even
+   when no countdown is active (loading a page, sending invitation, etc.) */
+.cockpit-ring.indeterminate svg {
+  animation: cockpit-spin 2.4s linear infinite;
+}
+.cockpit-ring.indeterminate .cockpit-ring-fg {
+  stroke-dashoffset: 198 !important; /* ~30% arc visible */
+  transition: none;
+}
+.cockpit-ring.paused .cockpit-ring-fg {
+  stroke: var(--gray);
+}
+@keyframes cockpit-spin {
+  from { transform: rotate(-90deg); }
+  to   { transform: rotate(270deg); }
+}
+.cockpit-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+.cockpit-ring-num {
+  font-family: var(--display);
+  font-size: 2.4rem;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.cockpit-ring-unit {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  color: var(--gray);
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+.cockpit-info {
+  flex: 1;
+  min-width: 0;
+}
+.cockpit-tag {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  color: var(--gray);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cockpit-pulse-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gray);
+}
+.cockpit-pulse-dot.live {
+  background: var(--green);
+  animation: cockpit-pulse 1.4s ease-in-out infinite;
+}
+.cockpit-pulse-dot.paused-dot {
+  background: var(--gold);
+}
+@keyframes cockpit-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+.cockpit-action {
+  font-family: var(--display);
+  font-size: 1.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  margin-bottom: 14px;
+  color: var(--ink);
+  word-break: break-word;
+}
+.cockpit-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 18px;
+  font-size: 0.82rem;
+}
+.cockpit-meta-label {
+  color: var(--gray);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  align-self: center;
+}
+.cockpit-meta-value {
+  color: var(--ink);
+  word-break: break-word;
+}
+
+@media (max-width: 700px) {
+  .cockpit-panel { flex-direction: column; align-items: stretch; gap: 20px; padding: 20px; }
+  .cockpit-ring { align-self: center; }
+}

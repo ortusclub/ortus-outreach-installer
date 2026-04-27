@@ -177,9 +177,27 @@ export const campaign = {
   currentProfile: null,
   processedToday: 0,
   totalProcessed: 0,
+  // Phase 2.8.12: live cockpit action surface for the dashboard. Frontend
+  // computes countdown remaining = max(0, endsAt - Date.now()). When endsAt
+  // is null, the action is indeterminate (rotating arc).
+  currentAction: null,
   logs: [],
   errors: [],
 };
+
+// Phase 2.8.12: tiny helper — sets the action shown in the dashboard cockpit.
+// durationMs > 0 = timed wait (countdown); durationMs null = indeterminate.
+function setAction(label, opts = {}) {
+  const { lead = null, account = null, mode = null, durationMs = null } = opts;
+  campaign.currentAction = {
+    label,
+    lead: lead || null,
+    account: account || campaign.currentProfile || null,
+    mode: mode || campaign.mode || null,
+    endsAt: typeof durationMs === 'number' && durationMs > 0 ? Date.now() + durationMs : null,
+    startedAt: Date.now(),
+  };
+}
 
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
@@ -594,6 +612,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       try {
         log(`▶ Opening ${pName}…`);
+        setAction('Opening browser', { account: pName });
         let launched;
         if (profileId === 'local-browser') {
           launched = await launchLocalBrowser();
@@ -626,6 +645,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // First-batch-only 20s home-page warmup (D-11). Abort-aware so we
         // don't sit through 20s of warmup after Stop has been pressed.
         log(`⏳ ${pName}: waiting 20s on home page…`);
+        setAction('Warming up session', { account: pName, durationMs: 20000 });
         const warmEnd = Date.now() + 20000;
         while (Date.now() < warmEnd && !campaign._abort) {
           await new Promise(r => setTimeout(r, 1000));
@@ -841,6 +861,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           } catch { /* keep current */ }
 
           log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
+          setAction('Processing lead', { lead: data.firstName || '?', account: pName });
 
           // performOutreach with retry
           let result;
@@ -888,6 +909,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
             const backoff = attempt * 15000;
             log(`  ⟳ Retry ${attempt}/${MAX_RETRIES} in ${backoff / 1000}s — ${result.error}`);
+            setAction(`Retrying lead (${attempt}/${MAX_RETRIES})`, { lead: data.firstName || '?', account: pName, durationMs: backoff });
             // Abort-aware sleep: 1s polling chunks so Stop interrupts within ~1s.
             const retryEnd = Date.now() + backoff;
             while (Date.now() < retryEnd && !campaign._abort) {
@@ -1115,9 +1137,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // ~30% chance: browse the feed organically during the wait (looks like a real user).
             // Skip entirely in message mode — we want this to move fast.
             if (!isMessageMode && Math.random() < 0.3 && !campaign._abort) {
+              setAction('Organic browsing', { account: pName });
               await browseFeedOrganically(page, pName);
             }
             // Sleep in 2s chunks so abort is checked frequently
+            setAction('Waiting before next lead', { account: pName, durationMs: waitMs });
             const sleepEnd = Date.now() + waitMs;
             while (Date.now() < sleepEnd && !campaign._abort) {
               await new Promise(r => setTimeout(r, 2000));
@@ -1163,6 +1187,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       const roundSleepMs = Math.max(0, roundTargetMs - roundElapsed);
       if (roundSleepMs > 0) {
         log(`  ⏸ Round complete — sleeping ${(roundSleepMs / 60000).toFixed(1)}min until next round.`);
+        setAction('Round complete — next round in', { durationMs: roundSleepMs });
         const gapEnd = Date.now() + roundSleepMs;
         while (Date.now() < gapEnd && !campaign._abort) {
           await new Promise(r => setTimeout(r, 2000));
@@ -1215,6 +1240,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     campaign.running = false;
     campaign.currentProfile = null;
     log('=== Campaign ended ===');
+    campaign.currentAction = null; // clear cockpit
   }
 }
 
@@ -1254,6 +1280,7 @@ export function resumeCampaign() {
 async function awaitUnpause() {
   if (!campaign._pauseRequested && !campaign._paused) return;
   campaign._paused = true;
+  setAction('Paused — awaiting resume');
   log('⏸ Campaign paused — browsers stay open. Press Resume to continue.');
   while (campaign._paused && !campaign._abort) {
     await new Promise(r => setTimeout(r, 1000));
@@ -1273,6 +1300,7 @@ export function getCampaignStatus() {
     running: campaign.running,
     paused: campaign._paused,
     pauseRequested: campaign._pauseRequested,
+    currentAction: campaign.currentAction,
     currentProfile: campaign.currentProfile,
     processedToday: campaign.processedToday,
     totalProcessed: campaign.totalProcessed,
