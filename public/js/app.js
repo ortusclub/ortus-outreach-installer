@@ -3072,6 +3072,7 @@ onModeChange();
 pollStatus();
 fetchTemplateList();
 fetchHistory();
+loadPersistedErrors();
 initRunBarMirror();
 initScrollSpy();
 fetchSchedules();
@@ -3885,3 +3886,39 @@ function toggleParkedDetail() {
 }
 
 window.toggleParkedDetail = toggleParkedDetail;
+
+// Phase 2.8.20 (W1-B2) — fetch persisted errors and merge with in-memory ones.
+// Public surfaces (hero-errors count) intentionally untouched — they aggregate
+// from /api/history which already survives refresh. These helpers are exposed
+// for future "Recent errors" UI surfaces.
+let _persistedErrorsCache = [];
+async function loadPersistedErrors() {
+  try {
+    const res = await fetch('/api/errors');
+    if (!res.ok) return _persistedErrorsCache;
+    const arr = await res.json();
+    if (Array.isArray(arr)) _persistedErrorsCache = arr;
+    return _persistedErrorsCache;
+  } catch (_) { return _persistedErrorsCache; }
+}
+
+function mergedErrorsForCount(liveErrors) {
+  // Dedup by `at + message` so the same error doesn't show twice when both
+  // the live in-memory array and the disk log contain it.
+  const seen = new Set();
+  const out = [];
+  const push = (e) => {
+    if (!e) return;
+    const at = e.at || e.time || '';
+    const key = `${at}|${e.message || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(e);
+  };
+  for (const e of (_persistedErrorsCache || [])) push(e);
+  for (const e of (liveErrors || [])) push(e);
+  return out;
+}
+
+window.loadPersistedErrors = loadPersistedErrors;
+window.mergedErrorsForCount = mergedErrorsForCount;
