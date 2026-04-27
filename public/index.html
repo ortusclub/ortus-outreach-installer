@@ -276,8 +276,11 @@
         </button>
       </div>
       <div class="my-identity-row">
-        <label class="my-identity-label" for="my-identifier">My identifier for "Assigned"</label>
-        <input type="text" id="my-identifier" placeholder="email or name to match in Assignee"
+        <label class="my-identity-label" for="my-identifier">
+          Match name
+          <a href="#" id="identifier-toggle" onclick="event.preventDefault(); toggleIdentifierMode()" class="identifier-toggle-link">Override</a>
+        </label>
+        <input type="text" id="my-identifier" readonly placeholder="auto-derived from email · click Override to edit"
                oninput="saveMyIdentifier()" />
       </div>
 

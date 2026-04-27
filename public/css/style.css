@@ -2410,3 +2410,22 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   color: var(--gray);
   font-family: inherit;
 }
+
+/* Phase 2.8.19 (C2) — Override / Auto toggle next to "Match name" label */
+.identifier-toggle-link {
+  float: right;
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+  text-decoration: none;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 1px;
+}
+.identifier-toggle-link:hover {
+  color: var(--ink);
+}
+#my-identifier[readonly] {
+  opacity: 0.7;
+  cursor: default;
+}

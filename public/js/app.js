@@ -838,13 +838,21 @@ function getMyIdentifier() {
 function saveMyIdentifier() {
   const el = document.getElementById('my-identifier');
   if (!el) return;
-  try { localStorage.setItem('ortus-my-identifier', el.value.trim()); } catch (_) {}
+  // Phase 2.8.19 (C2): a typed save implies the user wants control — set the
+  // override flag so refreshIdentifierDefault stops fighting them on later loads.
+  if (!el.hasAttribute('readonly')) {
+    try {
+      localStorage.setItem('ortus-my-identifier', el.value.trim());
+      localStorage.setItem('ortus-my-identifier-override', '1');
+    } catch (_) {}
+  }
   updateChipCounts();
 }
 
 function initMyIdentifier() {
   const el = document.getElementById('my-identifier');
   if (!el) return;
+  // Always paint the current saved/auto-derived value
   let saved = '';
   try { saved = localStorage.getItem('ortus-my-identifier') || ''; } catch (_) {}
   if (!saved) {
@@ -852,7 +860,52 @@ function initMyIdentifier() {
     saved = (chip?.textContent || '').trim();
   }
   el.value = saved;
+  // Phase 2.8.19 (C2): apply readonly + toggle-link state based on override flag
+  applyIdentifierMode();
 }
+
+function applyIdentifierMode() {
+  const el = document.getElementById('my-identifier');
+  const link = document.getElementById('identifier-toggle');
+  if (!el) return;
+  let overridden = false;
+  try { overridden = !!localStorage.getItem('ortus-my-identifier-override'); } catch (_) {}
+  if (overridden) {
+    el.removeAttribute('readonly');
+    if (link) link.textContent = 'Auto';
+  } else {
+    el.setAttribute('readonly', '');
+    if (link) link.textContent = 'Override';
+  }
+}
+
+function toggleIdentifierMode() {
+  let overridden = false;
+  try { overridden = !!localStorage.getItem('ortus-my-identifier-override'); } catch (_) {}
+  if (overridden) {
+    // Switching back to Auto — clear override flag AND clear the saved value so
+    // refreshIdentifierDefault / initMyIdentifier can re-populate from SoO/email.
+    try {
+      localStorage.removeItem('ortus-my-identifier-override');
+      localStorage.removeItem('ortus-my-identifier');
+    } catch (_) {}
+    // Re-derive: re-init from chip, then let SoO refresh take over
+    initMyIdentifier();
+    if (typeof refreshIdentifierDefault === 'function') refreshIdentifierDefault();
+  } else {
+    // Entering Override — set flag, keep current value as starting point
+    const el = document.getElementById('my-identifier');
+    try {
+      localStorage.setItem('ortus-my-identifier-override', '1');
+      localStorage.setItem('ortus-my-identifier', el?.value?.trim() || '');
+    } catch (_) {}
+    applyIdentifierMode();
+    el?.focus();
+  }
+  if (typeof updateChipCounts === 'function') updateChipCounts();
+}
+
+window.toggleIdentifierMode = toggleIdentifierMode;
 
 /**
  * Defaults the "My identifier for Assigned" input to the operator's SoO
@@ -873,6 +926,10 @@ function initMyIdentifier() {
 function refreshIdentifierDefault() {
   const el = document.getElementById('my-identifier');
   if (!el) return;
+  // Phase 2.8.19 (C2): if user is in Override mode, never auto-overwrite their value.
+  let overridden = false;
+  try { overridden = !!localStorage.getItem('ortus-my-identifier-override'); } catch (_) {}
+  if (overridden) return;
   const emailEl = document.getElementById('user-chip-email');
   const email = ((emailEl?.textContent) || '').trim().toLowerCase();
   if (!email) return;
