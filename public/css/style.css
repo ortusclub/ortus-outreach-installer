@@ -2395,3 +2395,18 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .nav-glyph.current { color: var(--gold);  opacity: 1; }
 .nav-glyph.empty   { color: var(--gray);  opacity: 0.55; }
 .nav-glyph:empty   { display: none; }
+
+/* Phase 2.8.19 (B2) — right-pane Status row demoted to non-live confirmation.
+   Cockpit (inside Live Status section) is the single live-state authority. */
+.rp-status-line.demoted {
+  font-family: var(--body, 'Hanken Grotesk', sans-serif);
+  font-size: 0.78rem;
+  color: var(--gray);
+}
+.rp-status-line.demoted .rp-dot {
+  opacity: 0.6;
+}
+.rp-status-line.demoted #rp-status-text {
+  color: var(--gray);
+  font-family: inherit;
+}
