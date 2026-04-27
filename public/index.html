@@ -138,6 +138,16 @@
         </label>
         <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 0 24px">Try a free OP message first; if not an Open Profile, send a connection request instead</p>
       </div>
+
+      <!-- Phase 2.8.19 (C3): Local browser name as a top-level setting.
+           Two-way binds with the per-profile-card #local-browser-first-name input
+           (rendered dynamically by renderProfiles); both write the same
+           localStorage.localBrowserFirstName key. -->
+      <div class="my-identity-row" style="margin-top:16px">
+        <label class="my-identity-label" for="settings-local-browser-name">Local browser name</label>
+        <input type="text" id="settings-local-browser-name" placeholder="Used as {senderFirstName} when running on the local browser" />
+        <div style="font-size:0.66rem; color:var(--gray); margin-top:4px; letter-spacing:0.04em">Applies when you tick the "Local browser" profile card.</div>
+      </div>
     </div>
 
     <!-- ── Rate & Limits (extracted from Choose a Campaign) ── -->

@@ -3736,3 +3736,31 @@ if (document.readyState === 'loading') {
 try {
   if (_migrateStaleH2Numbers() && typeof applySavedEdits === 'function') applySavedEdits();
 } catch (_) {}
+
+// Phase 2.8.19 (C3) — two-way bind Settings "Local browser name" with the
+// dynamically-rendered profile-card input (#local-browser-first-name). Both
+// read/write the same localStorage.localBrowserFirstName key, but the card
+// input is rendered conditionally inside renderProfiles, so we use a
+// delegated listener for that direction.
+(function bindLocalBrowserNameSetting() {
+  const settingsInput = document.getElementById('settings-local-browser-name');
+  if (!settingsInput) return;
+
+  // Initial hydrate from the module-local value (already loaded from localStorage at top of file)
+  settingsInput.value = (typeof localBrowserFirstName === 'string') ? localBrowserFirstName : '';
+
+  // Settings → state + card mirror
+  settingsInput.addEventListener('input', (e) => {
+    localBrowserFirstName = e.target.value;
+    try { localStorage.setItem('localBrowserFirstName', localBrowserFirstName); } catch (_) {}
+    const cardInput = document.getElementById('local-browser-first-name');
+    if (cardInput && cardInput.value !== e.target.value) cardInput.value = e.target.value;
+  });
+
+  // Card → settings mirror (delegated because card input may not exist yet)
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'local-browser-first-name') {
+      if (settingsInput.value !== e.target.value) settingsInput.value = e.target.value;
+    }
+  });
+})();
