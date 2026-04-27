@@ -56,6 +56,13 @@ export const BATCH_SIZE = 5;
  */
 const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 90000;
 
+/** Phase 2.8.20 (W3-D1) — state.json `processed` retention window in days.
+ *  Default 60. Entries older than this are dropped on next loadState; the
+ *  pruned state persists on the next saveState call. Configurable via env.
+ *  Semantics: a lead untouched for N days is "forgotten" — fair game to retry.
+ */
+const STATE_RETENTION_DAYS = Number(process.env.STATE_RETENTION_DAYS) || 60;
+
 function withWatchdog(promise, timeoutMs, profileId) {
   let timer;
   const watchdog = new Promise((_, reject) => {
@@ -109,8 +116,25 @@ async function appendHistory(entry) {
 // Data directory creation is handled centrally in src/paths.js.
 
 async function loadState() {
-  try { return JSON.parse(await readFile(STATE_FILE, 'utf8')); }
+  let s;
+  try { s = JSON.parse(await readFile(STATE_FILE, 'utf8')); }
   catch { return { processed: {}, dailyCounts: {} }; }
+  // Phase 2.8.20 (W3-D1): prune entries older than retention window.
+  // Done at load (not save) so the trim happens once per process startup
+  // rather than on every campaign-step persistence.
+  const cutoff = Date.now() - STATE_RETENTION_DAYS * 86400000;
+  let pruned = 0;
+  for (const [url, entry] of Object.entries(s.processed || {})) {
+    const ts = entry?.date ? Date.parse(entry.date) : NaN;
+    if (Number.isFinite(ts) && ts < cutoff) {
+      delete s.processed[url];
+      pruned++;
+    }
+  }
+  if (pruned > 0) {
+    console.log(`[state] pruned ${pruned} entries older than ${STATE_RETENTION_DAYS}d`);
+  }
+  return s;
 }
 async function saveState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
 
