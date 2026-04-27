@@ -362,11 +362,20 @@ export async function getConnectionStatus(page) {
   }
 }
 
+// P-03 fix (2.8.18): escape regex metachars in keys before building a RegExp.
+// Sheet column headers like "Job Title (Current)" or "Company (HQ)" contain
+// `(` `)` etc. — without escaping, `new RegExp("\\{Job Title (Current)\\}")`
+// throws SyntaxError, the loop crashes, and the lead skips with a cryptic
+// auditAction ("Invalid regular expression…").
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function personalizeTemplate(template, data = {}) {
   if (!template) return '';
   let result = template;
   for (const [key, value] of Object.entries(data)) {
-    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value || '');
+    result = result.replace(new RegExp(`\\{${escapeRegex(key)}\\}`, 'g'), value || '');
   }
   return result.replace(/\{[a-zA-Z0-9_ ]+\}/g, '').trim();
 }

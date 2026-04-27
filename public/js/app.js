@@ -2406,8 +2406,14 @@ async function fetchSchedules() {
           '<div class="sched-meta">' + escHtml(cronFriendly) + ' &middot; ' + modeLabel + ' &middot; limit ' + (s.dailyLimit || 5) + ' &middot; last: ' + escHtml(lastRun) + '</div>' +
         '</div>' +
         '<div class="sched-actions">' +
-          '<button class="schedule-toggle ' + (s.enabled ? 'on' : 'off') + '" onclick="toggleScheduleEnabled(\'' + s.id + '\', ' + !s.enabled + ')" title="' + (s.enabled ? 'Disable' : 'Enable') + '"></button>' +
-          '<button class="btn-remove" onclick="deleteSchedule(\'' + s.id + '\')" title="Delete">&times;</button>' +
+          // P-06 fix (2.8.18): defense-in-depth — escape single-quotes/backslashes in s.id
+          // before embedding in the single-quoted onclick string. Server-side validation
+          // (sched_<digits>) is the primary guard; this closes the injection sink even
+          // if a malformed id ever survives the server check.
+          ((safeId) => (
+            '<button class="schedule-toggle ' + (s.enabled ? 'on' : 'off') + '" onclick="toggleScheduleEnabled(\'' + safeId + '\', ' + !s.enabled + ')" title="' + (s.enabled ? 'Disable' : 'Enable') + '"></button>' +
+            '<button class="btn-remove" onclick="deleteSchedule(\'' + safeId + '\')" title="Delete">&times;</button>'
+          ))(String(s.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")) +
         '</div>' +
       '</div>';
     }).join('');

@@ -557,11 +557,21 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       }
 
       if (mode === 'message_only' || mode === 'open_profile_only') {
-        return !msgSent;
+        if (msgSent) return false;
+        // P-04 fix (2.8.18): the in-loop sheet write is best-effort
+        // (.catch(()=>{}) on every updateSheetRow). A transient Sheets API
+        // outage immediately after a successful send leaves the sheet
+        // un-stamped — but state.processed[url] WAS updated. Without this
+        // check, the next campaign run re-sends the same message to the
+        // same 1st-degree connection.
+        if (state.processed[url]) return false;
+        return true;
       }
 
       if (mode === 'inmail_only') {
-        return inmailCell !== 'sent';
+        if (inmailCell === 'sent') return false;
+        if (state.processed[url]) return false;
+        return true;
       }
 
       const prev = state.processed[url];
@@ -1255,6 +1265,9 @@ export function stopCampaign() {
   campaign._paused = false;
   campaign._pauseRequested = false;
   log('■ Stop requested.');
+  // P-02 fix (2.8.18): return a real shape instead of undefined so
+  // /api/campaign/stop sends `{ok:true}` like every other endpoint.
+  return { ok: true };
 }
 
 // Phase 2.8.9: pause/resume.

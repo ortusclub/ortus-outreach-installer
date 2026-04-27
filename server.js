@@ -903,7 +903,20 @@ app.post('/api/schedules', async (req, res) => {
     }
 
     const all = await loadSchedules();
-    const id = req.body.id || `sched_${Date.now()}`;
+    // P-06 fix (2.8.18): validate any client-supplied id against the expected
+    // shape (sched_<digits>). Without this, the client can inject arbitrary
+    // strings — including ones that break out of the single-quote-delimited
+    // onclick attribute in app.js:2409 and produce stored XSS in the schedules
+    // panel. Reject anything not matching the canonical shape.
+    let id;
+    if (req.body.id) {
+      if (!/^sched_\d+$/.test(req.body.id)) {
+        return res.status(400).json({ error: 'invalid schedule id' });
+      }
+      id = req.body.id;
+    } else {
+      id = `sched_${Date.now()}`;
+    }
     const existing = all.findIndex(s => s.id === id);
     const schedule = {
       id, name, cron: cronExpr, profileIds, sheetUrl,
@@ -912,9 +925,12 @@ app.post('/api/schedules', async (req, res) => {
       batchesPerHour: batchesPerHour !== undefined ? Number(batchesPerHour) : 2,
       delayMin, delayMax,
       enabled: enabled !== false, lastRun: null,
-      // Existing schedules keep their original owner; new/edited ones default
-      // to the currently authenticated user if none explicitly provided.
-      createdBy: req.body.createdBy || (existing >= 0 ? (all[existing].createdBy || req.user) : req.user),
+      // P-06 fix (2.8.18): never trust req.body.createdBy — that lets a
+      // logged-in user spoof schedule ownership and redirect notification
+      // emails to other operators. createdBy is always derived from req.user
+      // (set by the auth middleware from the session cookie). For updates,
+      // preserve the existing owner.
+      createdBy: existing >= 0 ? (all[existing].createdBy || req.user) : req.user,
     };
     if (existing >= 0) { all[existing] = { ...all[existing], ...schedule }; }
     else { all.push(schedule); }

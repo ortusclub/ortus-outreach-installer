@@ -19,11 +19,16 @@ function parseCSV(csv) {
   for (let i = 0; i < csv.length; i++) {
     const ch = csv[i];
     if (ch === '"') {
+      // parseCSV only splits lines; preserve quote characters verbatim so
+      // splitCSVLine can use them to delimit fields. Without this, a field
+      // like "url,with,commas" lost its quotes here and splitCSVLine then
+      // treated every comma as a field separator.
       if (inQuotes && csv[i + 1] === '"') {
-        current += '"';
-        i++; // skip escaped quote
+        current += '""'; // preserve the escaped-quote pair
+        i++;
       } else {
         inQuotes = !inQuotes;
+        current += ch;
       }
     } else if (ch === '\n' && !inQuotes) {
       lines.push(current);
@@ -91,7 +96,10 @@ export async function fetchSheet(sheetUrl) {
 
   console.log(`[sheets] Fetching CSV from: ${csvUrl}`);
 
-  const response = await fetch(csvUrl);
+  // P-05 fix (2.8.18): 15s timeout. Without one, a Sheets/Apps Script outage
+  // (or a network hang) can stall the campaign loop indefinitely — the
+  // operator just sees "Idle" with no log activity.
+  const response = await fetch(csvUrl, { signal: AbortSignal.timeout(15000) });
   if (!response.ok) {
     throw new Error(`Failed to fetch Google Sheet (HTTP ${response.status}). Is the sheet publicly viewable?`);
   }

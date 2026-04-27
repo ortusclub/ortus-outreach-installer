@@ -20,7 +20,7 @@
 import * as helpers from './helpers.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import * as sheetsWriter from '../sheets-writer.js';
-import { launchProfile, closeProfile } from '../gologin-launcher.js';
+import { launchProfile, closeProfile, getProfiles } from '../gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from '../local-launcher.js';
 import { fetchSheet } from '../sheets.js';
 
@@ -45,18 +45,33 @@ const _realDeps = {
       return { page: launched.page, browser: launched.browser, profileId, pName: 'Local Browser' };
     }
     const token = process.env.GOLOGIN_API_TOKEN;
+    // P-01 fix (2.8.18): look up the real GoLogin profile NAME so it matches
+    // what campaign.js writes into the "Account Used" sheet column. Previously
+    // pName was set to profileId (a hashed GoLogin internal id) which never
+    // matched the human-readable name in the sheet → getCandidateRows always
+    // returned [] → Check DMs silently reported 0 replies on every run.
+    let pName = profileId;
+    try {
+      const profiles = await getProfiles(token);
+      const found = profiles.find(p => p.id === profileId);
+      if (found && found.name) pName = found.name;
+    } catch { /* getProfiles is cached; if it fails fall back to profileId */ }
     const launched = await launchProfile(profileId, token);
-    return { page: launched.page, browser: launched.browser, profileId, pName: profileId };
+    return { page: launched.page, browser: launched.browser, profileId, pName };
   },
   async closeSession(profileId) {
     if (profileId === 'local-browser') return closeLocalBrowser();
     return closeProfile(profileId);
   },
-  async getCandidateRows(profileId, sheetUrl) {
+  async getCandidateRows(profileName, sheetUrl) {
+    // P-01 fix (2.8.18): filter by profile NAME, not profileId — see ensureOpen
+    // comment above. The "Account Used" column holds the value written by
+    // campaign.js, which is pName (e.g. "matt.adcock@ortus.solutions"), not
+    // the GoLogin internal profile id.
     const rows = await fetchSheet(sheetUrl);
     return rows.filter(r =>
       (r.Message || '').toString().toLowerCase() === 'sent' &&
-      (r['Account Used'] || '').toString() === profileId
+      (r['Account Used'] || '').toString() === profileName
     );
   },
 };
@@ -237,7 +252,9 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
       convs.push(...extra);
     }
 
-    const candidateRows = await _deps.getCandidateRows(profileId, sheetUrl);
+    // P-01 fix (2.8.18): pass profile NAME (matches what campaign.js writes
+    // into "Account Used"), not profileId.
+    const candidateRows = await _deps.getCandidateRows(session.pName, sheetUrl);
 
     for (const conv of convs) {
       const lastMessage = conv.lastMessage || null;

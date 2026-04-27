@@ -25,18 +25,22 @@ async function postToWebApp(payload) {
   try {
     // Apps Script returns 302 on POST. Node fetch converts POST→GET on
     // redirect, hitting doGet() instead of doPost(). Handle manually.
+    // P-05 fix (2.8.18): 15s timeout on both legs of the redirect chain.
+    // Without it, an Apps Script hang stalls the campaign loop indefinitely.
     const body = JSON.stringify(payload);
+    const signal = AbortSignal.timeout(15000);
     const initial = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
       redirect: 'manual',
+      signal,
     });
 
     let res;
     if (initial.status >= 300 && initial.status < 400) {
       const location = initial.headers.get('location');
-      res = await fetch(location);
+      res = await fetch(location, { signal: AbortSignal.timeout(15000) });
     } else {
       res = initial;
     }
