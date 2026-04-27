@@ -3529,16 +3529,24 @@ function applyInitialExpand() {
   }
 }
 
-// Wire summary refresh to existing campaign-summary recompute path.
-// `updateCampaignSummary` is already called from many input-change paths.
-if (typeof window.updateCampaignSummary === 'function') {
-  const _origUpdateCampaignSummary = window.updateCampaignSummary;
-  window.updateCampaignSummary = function (...args) {
-    const r = _origUpdateCampaignSummary.apply(this, args);
+// Wire summary refresh: a delegated input/change listener on document covers
+// every form control inside any `.section` without needing to intercept the
+// (locally-scoped) updateCampaignSummary symbol — that wrapper only catches
+// `window.updateCampaignSummary` callers, missing direct in-file callers.
+let _sectionSummaryDebounce = null;
+function _scheduleSectionSummaryRefresh() {
+  if (_sectionSummaryDebounce) return;
+  _sectionSummaryDebounce = setTimeout(() => {
+    _sectionSummaryDebounce = null;
     try { updateSectionSummaries(); } catch (_) {}
-    return r;
-  };
+  }, 80);
 }
+document.addEventListener('input',  (e) => {
+  if (e.target && e.target.closest && e.target.closest('.section')) _scheduleSectionSummaryRefresh();
+}, true);
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.closest && e.target.closest('.section')) _scheduleSectionSummaryRefresh();
+}, true);
 
 // Run once on initial load — apply default expand and render summaries.
 // Defer slightly so other startup code (loadProfiles, fetchTemplateList, etc.)
