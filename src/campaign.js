@@ -48,6 +48,24 @@ const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent
 /** Hard cap — 5 leads per batch per profile, for ALL modes (D-01). Not configurable. */
 export const BATCH_SIZE = 5;
 
+/** Phase 2.8.20 (W2-A1) — per-lead watchdog timeout. Catches Puppeteer hangs
+ *  that the protocol-level 120s timeout would otherwise paper over. Default
+ *  90s; env-overridable for stress-testing (LEAD_TIMEOUT_MS=2000 will time
+ *  out almost every lead, useful for proving the path).
+ */
+const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 90000;
+
+function withWatchdog(promise, timeoutMs, profileId) {
+  let timer;
+  const watchdog = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(
+      new Error('lead_timeout_watchdog'),
+      { kind: 'watchdog', profileId, timeoutMs }
+    )), timeoutMs);
+  });
+  return Promise.race([promise, watchdog]).finally(() => clearTimeout(timer));
+}
+
 /** Minimum between-batch wait — floor for the derived-from-bph math (D-03). */
 const MIN_BETWEEN_BATCHES_MS = 60 * 1000;
 
@@ -911,7 +929,25 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           let result;
           const MAX_RETRIES = 3;
           for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            result = await performOutreach(page, url, { ...tpl, data }, { profileId }, hint);
+            // Phase 2.8.20 (W2-A1): wrap with watchdog so a Puppeteer hang
+            // can't freeze the loop indefinitely. On timeout, returns a
+            // skipped result with the lead_timeout_watchdog signal which
+            // the existing TRANSIENT_SIGNALS allow-list (extended below)
+            // routes through the normal 3-retry/backoff flow.
+            try {
+              result = await withWatchdog(
+                performOutreach(page, url, { ...tpl, data }, { profileId }, hint),
+                LEAD_TIMEOUT_MS,
+                profileId,
+              );
+            } catch (err) {
+              if (err && err.kind === 'watchdog') {
+                log(`  ⏱ ${pName}: lead timed out after ${LEAD_TIMEOUT_MS / 1000}s — ${url}`);
+                result = { action: 'skipped', error: 'lead_timeout_watchdog' };
+              } else {
+                throw err;
+              }
+            }
 
             // Phase 2.8.17 (H-03): allow-list for transient (retryable) errors.
             // Replaces the previous deny-list which let any unforeseen new error
@@ -938,6 +974,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               'net::ERR_',
               'timed out',
               'rate_limited',
+              'lead_timeout_watchdog',
             ];
             const isTransient = result.action === 'skipped' && !!result.error &&
               TRANSIENT_SIGNALS.some(sig => result.error.includes(sig));
