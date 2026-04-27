@@ -12,6 +12,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1087,6 +1088,18 @@ app.post('/api/notify/test', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 2.8.20 (W1-C1) — fatal-error sink. Sync write because the process is
+// already dying — async writes risk being dropped before the event loop ends.
+// Line-delimited JSON (NDJSON) keeps appends cheap and partial-write-safe.
+// ---------------------------------------------------------------------------
+function appendFatalErrorSync(entry) {
+  try {
+    const line = JSON.stringify(entry) + '\n';
+    appendFileSync(dataPath('fatal-errors.log'), line);
+  } catch (_) { /* truly nothing left to do */ }
+}
+
+// ---------------------------------------------------------------------------
 // Graceful shutdown — close GoLogin profiles on SIGINT/SIGTERM (REL-03)
 // ---------------------------------------------------------------------------
 async function gracefulShutdown(signal) {
@@ -1108,3 +1121,29 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Phase 2.8.20 (W1-C1) — catch crashes that would otherwise leave orphan
+// browsers and skip the cloud-commit phase. Writes a fatal-error line
+// synchronously, then runs the same graceful shutdown path.
+process.on('uncaughtException', (err) => {
+  appendFatalErrorSync({
+    at: new Date().toISOString(),
+    kind: 'uncaughtException',
+    message: err && err.message ? err.message : String(err),
+    stack:   err && err.stack   ? err.stack   : '',
+  });
+  console.error(`[fatal] uncaughtException: ${err && err.message}`);
+  gracefulShutdown('FATAL').catch(() => process.exit(1));
+});
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const stack   = reason instanceof Error ? reason.stack   : '';
+  appendFatalErrorSync({
+    at: new Date().toISOString(),
+    kind: 'unhandledRejection',
+    message,
+    stack,
+  });
+  console.error(`[fatal] unhandledRejection: ${message}`);
+  gracefulShutdown('FATAL').catch(() => process.exit(1));
+});
