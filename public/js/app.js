@@ -2610,6 +2610,8 @@ function setActiveNav(id) {
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
   const trigger = document.querySelector(`.nav-item[data-nav="${id}"]`);
   if (trigger) trigger.classList.add('active');
+  // A3 — re-run sidebar glyphs when scroll-spy changes the active section
+  if (typeof updateSidebarGlyphs === 'function') updateSidebarGlyphs();
 }
 
 function initScrollSpy() {
@@ -3530,6 +3532,39 @@ function applyInitialExpand() {
       // intentional: do NOT writeback to localStorage
     }
     break;
+  }
+}
+
+function updateSidebarGlyphs(readiness) {
+  // readiness from computeSectionReadiness(); compute fresh if not provided
+  const r = readiness || computeSectionReadiness();
+  // Determine current section from existing scroll-spy active class
+  const activeBtn = document.querySelector('.nav-item.active');
+  const activeId = activeBtn ? activeBtn.getAttribute('data-nav') : null;
+
+  // Items in scope: the five numbered sidebar nav items.
+  // Throughput (`nav-pace`) is not in the sidebar (scroll-only).
+  const items = [
+    { id: 'nav-settings',  key: 'settings'  },
+    { id: 'nav-sheet',     key: 'sheet'     },
+    { id: 'nav-accounts',  key: 'accounts'  },
+    { id: 'nav-templates', key: 'templates' },
+    { id: 'nav-launch',    key: 'launch'    },
+  ];
+  for (const { id, key } of items) {
+    const el = document.getElementById(`nav-glyph-${key}`);
+    if (!el) continue;
+    el.classList.remove('done', 'current', 'empty');
+    if (id === activeId) {
+      el.textContent = '▸';
+      el.classList.add('current');
+    } else if (r[key].state === 'done') {
+      el.textContent = '✓';
+      el.classList.add('done');
+    } else {
+      el.textContent = '◯';
+      el.classList.add('empty');
+    }
   }
 }
 

@@ -2381,3 +2381,17 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .section-summary:empty { display: none; }
 .section-summary.done { color: var(--gray); }
 .section-summary.empty { color: var(--gray); opacity: 0.55; }
+
+/* Phase 2.8.19 (A3) — sidebar state glyph (✓ done · ▸ current · ◯ empty) */
+.nav-glyph {
+  float: right;
+  font-size: 0.7rem;
+  line-height: 1;
+  margin-left: 8px;
+  color: var(--gray);
+  opacity: 0.55;
+}
+.nav-glyph.done    { color: var(--green); opacity: 1; }
+.nav-glyph.current { color: var(--gold);  opacity: 1; }
+.nav-glyph.empty   { color: var(--gray);  opacity: 0.55; }
+.nav-glyph:empty   { display: none; }
