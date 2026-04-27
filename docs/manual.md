@@ -114,7 +114,7 @@ Top to bottom:
 
 ## 2.2 Centre — the deck
 
-The main column is where the work happens. Six numbered sections stack down the page: **1. Campaign Settings**, **2. Rate & Limits**, **3. Google Sheet URL**, **4. Accounts**, **5. Templates**, **6. Launch** — followed by **Live Status**, **Campaign History**, and **Campaign Schedules** for review.
+The main column is where the work happens. Six numbered sections stack down the page: **1. Campaign Settings**, **2. Google Sheet URL**, **3. Accounts**, **4. Rate & Limits**, **5. Templates**, **6. Launch** — followed by **Live Status**, **Campaign History**, and **Campaign Schedules** for review.
 
 Most sections are **collapsible**. Click the heading to open or close. The caret (▾) rotates to show state.
 
