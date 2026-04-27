@@ -3646,8 +3646,6 @@ function _doInitialSectionRender() {
     }
     applyInitialExpand();
     updateSectionSummaries();
-    // B2: right-pane Status row is non-live (cockpit is the live authority)
-    document.getElementById('rp-status')?.classList.add('demoted');
   } catch (_) {}
 }
 if (document.readyState === 'loading') {
