@@ -3,7 +3,7 @@
 **Date:** 2026-04-27
 **Approach:** 1 — surgical patches (no architectural change)
 **Design contract:** existing "Bugatti command deck" — monochrome, hairlines, gold only on Start CTA, radii 0 or 9999
-**Companion sketches:** `public/sketches/papercuts-{index,A,B,C}.html`
+**Companion sketches:** `public/sketches/papercuts-{index,A,B,C,B2-options}.html`
 
 ## Scope
 
@@ -95,36 +95,27 @@ Live Status / History / Schedules nav items get no glyph (they don't represent s
 
 **Cuts addressed:** #5 (status duplicated 4 places), #6 (two log surfaces), #8 (no Stop in run bar)
 
-### B1 — Run-bar Stop button
+### B1 — Run-bar Stop button (already shipped — verification only)
 
-When campaign status is `running`, the run bar shows a Stop pill on the right (before "View Status"):
+`#btn-stop-rb` already exists in the run bar (`public/index.html:638`) with `confirmStopCampaign()` wired up, and `app.js:1752` enables/disables it based on `running` state. There's also a `#btn-pause-rb` Pause button. No new code; B1 collapses to a manual verification step during the patch QA pass.
 
-- Border: `1px solid var(--red)`, `border-radius: 9999px`
-- Text: `var(--red)`, "Stop", uppercase tracked-out
-- Click handler: calls existing `stopCampaign()` from `app.js` — same function the Launch section's Stop button calls
-- Visibility: hidden when status ≠ `running`; the existing Start CTA hides when running and reappears when idle
+### B2 — Cockpit stays · right pane stops claiming live state · header labels clarified (option α)
 
-The Launch section's Stop button stays (muscle memory + parity with Start being there).
-
-### B2 — Right pane = single live-status authority
-
-Today four surfaces show "what is happening now":
-
-1. Header stats (Today / 7D / Errors 24h / Passover)
-2. Live Cockpit panel (`#live-cockpit-panel` — added in 2.8.12)
-3. Right pane Status row (`aside.right-pane`)
-4. Run bar dot
+Decided 2026-04-27: option α from `public/sketches/papercuts-B2-options.html`. The cockpit panel (`#cockpit-panel`, lives inside the Live Status section, has SVG progress ring + status tag + meta + dual-stat block + progress bar) is significantly bigger than the original spec assumed and stays as the single live-state surface. The right pane and header stats are demoted to non-live roles so duplication of "what is happening now" goes from four surfaces to one (cockpit) plus the run-bar dot anchor.
 
 Changes:
 
-- **Live Cockpit panel deletes.** Its three rows (Action / Account / Next-in) move into the right pane as new rows under the existing Status row. The right pane gains a "Stuck?" row (yes/no), derived client-side from the existing `/api/campaign/status` response: stuck = no progress field has changed for ≥ 90 seconds. If the status response already exposes a `stuck` flag, use that instead.
-- **Header stats stay** but get scope clarification in their hidden subtitle reveal:
-  - Today → "Today (sent)"
-  - 7D → "7-day total"
-  - Errors 24h → "Errors in last 24h"
-  - Passover → "Days to next reset"
-  These labels become primary (visible by default), making clear that header stats are trailing-window numbers, not the live state.
-- **Run bar dot** stays as it is (it's the persistent "what's the campaign doing right now" anchor).
+- **Right pane Status row demoted.** Today the row reads "Idle / Running" with a colored dot and a `--gold`-tinted live feel. After: the value text drops to a single static word in `--gray` ("Idle" / "Running") with no large display-font treatment. Conceptually it confirms "is a campaign happening at all," not "what is it doing right now." All other right-pane sections (Passover, Selected, Next schedule) are unchanged.
+- **Header stats stay** but the four primary labels become explicit about the trailing-window scope:
+  - "Today" → "Today (sent)"
+  - "7D" → "7-day total"
+  - "Errors 24h" → "Errors · 24h"
+  - "Passover" → unchanged (passover is already self-explanatory)
+  Existing hidden subtitles (`#hero-today-sub` etc.) stay hidden — the primary `data-edit` label text is what changes.
+- **Cockpit panel itself is unchanged.** No SVG ring tweaks, no stats refactor. Stays the showpiece of Live Status.
+- **Run bar dot** unchanged.
+
+The "Stuck?" row idea from the original spec is dropped — without the cockpit absorption it would be an isolated new feature, not a paper-cut fix.
 
 ### B3 — One log, two filters
 
@@ -191,10 +182,12 @@ This is the only patch that adds a backend endpoint (`GET /api/notify/status`). 
 
 | File | Cluster | Change type |
 |---|---|---|
-| `public/index.html` | A1, A2, A3, B1, B2, B3, C2, C3, C4 | markup edits |
-| `public/js/app.js` | A2, A3, B1, B2, B3, C2, C3, C4 | function additions + event wiring |
-| `public/css/style.css` | A2, A3, B1, B2, C4 | new utility classes (state glyphs, run-bar Stop pill, notif state rows) |
+| `public/index.html` | A1, A2, A3, B2, B3, C2, C3, C4 | markup edits |
+| `public/js/app.js` | A2, A3, B2, B3, C2, C3, C4 | function additions + event wiring |
+| `public/css/style.css` | A2, A3, B2, C4 | new utility classes (state glyphs, demoted right-pane status, notif state rows) |
 | `server.js` | C4 only | one new GET endpoint `/api/notify/status` returning `{ smtpConfigured }` |
+
+B1 touches no files (verification only — already shipped).
 
 No new dependencies. No changes to `src/`, no changes to existing `/api/*` endpoints.
 
@@ -206,8 +199,8 @@ No new dependencies. No changes to `src/`, no changes to existing `/api/*` endpo
 - Sidebar nav shows `✓ / ▸ / ◯` glyphs that match the section state.
 
 **Cluster B passes when:**
-- Run bar shows a Stop pill while the campaign is running; clicking it stops the campaign with no console errors.
-- Live Cockpit panel is removed from the DOM; right pane shows Action / Account / Next-in / Stuck rows during a run.
+- Run bar's existing Stop button is verified: enabled while a campaign is running, click triggers `confirmStopCampaign()`, no console errors.
+- Right pane Status row renders in `--gray` (no display-font, no gold tint); cockpit panel stays as the single live-state surface; header stats labels read "Today (sent) / 7-day total / Errors · 24h / Passover".
 - Inline Server Log panel is removed; Live Status log panel has a "Show server lines" checkbox; with it checked, server log lines appear inline.
 
 **Cluster C passes when:**

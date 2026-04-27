@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Paper cuts · B2 — three options</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:880px;line-height:1.5;margin-bottom:36px}
+
+.tri{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--hl)}
+.col{padding:26px 22px 28px;border-right:1px solid var(--hl);min-height:760px;display:flex;flex-direction:column}
+.col:last-child{border-right:none}
+.col-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.col-tag{font-family:var(--d);font-size:1.6rem;line-height:1;color:var(--ink)}
+.col-tag.rec{color:var(--gold)}
+.col-name{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.col-pitch{font-size:0.78rem;color:var(--ink);line-height:1.45;margin-bottom:18px;min-height:62px}
+
+/* mock surfaces */
+.mini-h{font-size:0.52rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:8px;display:flex;justify-content:space-between}
+.mini-h .src{color:var(--gray);font-style:italic;text-transform:none;letter-spacing:0.04em;font-size:0.6rem}
+.mini-h.del .src{color:var(--red)}
+
+.cockpit{border:1px solid var(--hl);padding:16px;margin-bottom:14px}
+.cockpit.del{opacity:.25;border-style:dashed}
+.ring-row{display:flex;gap:14px;align-items:center;margin-bottom:10px}
+.ring{width:64px;height:64px;border-radius:50%;border:2px solid var(--hl);display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative}
+.ring::before{content:'';position:absolute;inset:-2px;border:2px solid var(--gold);border-radius:50%;clip-path:polygon(50% 50%, 50% 0, 100% 0, 100% 60%, 50% 60%)}
+.ring-num{font-family:var(--d);font-size:1.4rem;line-height:1;z-index:1}
+.cock-info{flex:1}
+.cock-tag{font-size:0.56rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--green);margin-bottom:4px}
+.cock-tag::before{content:'●';margin-right:6px}
+.cock-act{font-family:var(--d);font-size:1.1rem;line-height:1;text-transform:uppercase;margin-bottom:6px}
+.cock-meta{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:0.62rem}
+.cock-meta .l{color:var(--gray);letter-spacing:0.14em;text-transform:uppercase}
+.stats{border-top:1px solid var(--hls);padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.stat{font-size:0.62rem}
+.stat .l{color:var(--gray);letter-spacing:0.14em;text-transform:uppercase}
+.stat .v{font-family:var(--d);font-size:1.1rem;line-height:1.2}
+.stat-bar{height:2px;background:var(--hls);margin-top:6px;grid-column:1 / -1;position:relative}
+.stat-bar::after{content:'';position:absolute;left:0;top:0;bottom:0;width:24%;background:var(--gold)}
+
+.rp{border:1px solid var(--hl);padding:14px}
+.rp-row{padding:8px 0;border-bottom:1px solid var(--hls);font-size:0.7rem;display:flex;justify-content:space-between;align-items:baseline}
+.rp-row:last-child{border-bottom:none}
+.rp-row .k{color:var(--gray);font-size:0.54rem;letter-spacing:0.18em;text-transform:uppercase}
+.rp-row .v{color:var(--ink)}
+.rp-row .v.live{color:var(--gold);font-family:var(--d);font-size:1rem;line-height:1}
+.rp-row .v.dim{color:var(--gray);opacity:.6}
+.rp-row.live{background:var(--hls);margin:0 -14px;padding:8px 14px;border:none;border-top:1px solid var(--hl);border-bottom:1px solid var(--hl)}
+
+/* header stats mock */
+.hs{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;border:1px solid var(--hl);padding:12px;margin-bottom:14px}
+.hs-c{display:flex;flex-direction:column;gap:3px}
+.hs-c .k{font-size:0.5rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray)}
+.hs-c .v{font-family:var(--d);font-size:1.4rem;line-height:1}
+.hs-c.changed .k{color:var(--gold)}
+
+.spacer{flex:1}
+.cost{margin-top:18px;padding:14px;border:1px solid var(--hl);background:var(--hls);font-size:0.7rem;line-height:1.5;color:var(--ink)}
+.cost b{color:var(--gold);font-family:var(--d);font-size:0.85rem;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px}
+.cost ul{margin-left:14px;color:var(--ink)}
+.cost ul li{margin:2px 0}
+.cost ul li.minus{color:var(--gray)}
+.cost ul li.plus{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumbs"><a href="papercuts-index.html">← Paper cuts index</a> · B2 · cockpit-vs-right-pane options</div>
+  <h1>B2 — three options</h1>
+  <p class="deck">When I wrote the spec I assumed Live Cockpit was 3 rows. It's actually a full panel with SVG ring, dual stats, and a progress bar — and it lives inside Live Status, not above it. So "delete the cockpit and absorb into right pane" is bigger than surgical. Three honest options:</p>
+
+  <div class="tri">
+
+    <!-- α -->
+    <div class="col">
+      <div class="col-h"><span class="col-tag rec">α</span><span class="col-name">recommended</span></div>
+      <div class="col-pitch">Keep the cockpit. Strip "live" claims from the right pane (back to orientation only). Clarify header-stat labels.</div>
+
+      <div class="mini-h"><span>Live Status · cockpit</span><span class="src">unchanged</span></div>
+      <div class="cockpit">
+        <div class="ring-row">
+          <div class="ring"><div class="ring-num">12</div></div>
+          <div class="cock-info">
+            <div class="cock-tag">Running</div>
+            <div class="cock-act">Connecting</div>
+            <div class="cock-meta">
+              <span class="l">Lead</span><span>John D.</span>
+              <span class="l">Account</span><span>Antonio</span>
+              <span class="l">Mode</span><span>Connect</span>
+            </div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="l">Sent today</div><div class="v">12 / 50</div></div>
+          <div class="stat"><div class="l">Errors</div><div class="v">0</div></div>
+          <div class="stat-bar"></div>
+        </div>
+      </div>
+
+      <div class="mini-h"><span>Right pane · static again</span><span class="src">live rows removed</span></div>
+      <div class="rp">
+        <div class="rp-row"><span class="k">Status</span><span class="v dim">Running</span></div>
+        <div class="rp-row"><span class="k">Passover</span><span class="v">14d / 3d</span></div>
+        <div class="rp-row"><span class="k">Selected</span><span class="v">3 accounts · 50 leads</span></div>
+        <div class="rp-row"><span class="k">Next schedule</span><span class="v">Tue 09:00</span></div>
+      </div>
+
+      <div class="mini-h" style="margin-top:14px"><span>Header stats · scope clarified</span><span class="src">labels primary</span></div>
+      <div class="hs">
+        <div class="hs-c changed"><span class="k">Today (sent)</span><span class="v">12</span></div>
+        <div class="hs-c changed"><span class="k">7-day total</span><span class="v">128</span></div>
+        <div class="hs-c changed"><span class="k">Errors 24h</span><span class="v">0</span></div>
+        <div class="hs-c changed"><span class="k">Passover</span><span class="v">14d</span></div>
+      </div>
+
+      <div class="spacer"></div>
+      <div class="cost">
+        <b>Cost</b>
+        <ul>
+          <li class="plus">+ small CSS tweak (right-pane status row goes dim)</li>
+          <li class="plus">+ 4 label edits (header stats)</li>
+          <li class="minus">- nothing deleted</li>
+          <li class="minus">- no design-system risk</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- β -->
+    <div class="col">
+      <div class="col-h"><span class="col-tag">β</span><span class="col-name">literal spec</span></div>
+      <div class="col-pitch">Delete the cockpit panel entirely. Right pane absorbs ring, action, meta, stats, bar.</div>
+
+      <div class="mini-h del"><span>Live Status · cockpit</span><span class="src">deleted</span></div>
+      <div class="cockpit del">
+        <div class="ring-row">
+          <div class="ring"><div class="ring-num">—</div></div>
+          <div class="cock-info">
+            <div class="cock-tag">Removed</div>
+            <div class="cock-act">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mini-h"><span>Right pane · much taller, much denser</span><span class="src">absorbs all live state</span></div>
+      <div class="rp">
+        <div class="rp-row live"><span class="k">Action</span><span class="v live">Connecting</span></div>
+        <div class="rp-row live"><span class="k">Lead</span><span class="v">John D.</span></div>
+        <div class="rp-row live"><span class="k">Account</span><span class="v">Antonio</span></div>
+        <div class="rp-row live"><span class="k">Mode</span><span class="v">Connect</span></div>
+        <div class="rp-row live"><span class="k">Sent today</span><span class="v live">12 / 50</span></div>
+        <div class="rp-row live"><span class="k">Errors</span><span class="v">0</span></div>
+        <div class="rp-row live"><span class="k">Stuck?</span><span class="v dim">no</span></div>
+        <div class="rp-row"><span class="k">Passover</span><span class="v">14d / 3d</span></div>
+        <div class="rp-row"><span class="k">Selected</span><span class="v">3 · 50</span></div>
+        <div class="rp-row"><span class="k">Next schedule</span><span class="v">Tue 09:00</span></div>
+      </div>
+
+      <div class="spacer"></div>
+      <div class="cost">
+        <b>Cost</b>
+        <ul>
+          <li class="minus">- delete entire cockpit DOM + CSS</li>
+          <li class="minus">- right pane gains 7+ live rows · much taller</li>
+          <li class="minus">- ring SVG either dropped or rebuilt smaller in right pane</li>
+          <li class="minus">- Live Status section becomes log-only · loses its showpiece</li>
+          <li class="minus">- not "surgical" anymore</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- γ -->
+    <div class="col">
+      <div class="col-h"><span class="col-tag">γ</span><span class="col-name">defer</span></div>
+      <div class="col-pitch">Drop B2 from this patch. Cockpit + right pane stay exactly as today. Revisit in a separate spec.</div>
+
+      <div class="mini-h"><span>Live Status · cockpit</span><span class="src">unchanged</span></div>
+      <div class="cockpit">
+        <div class="ring-row">
+          <div class="ring"><div class="ring-num">12</div></div>
+          <div class="cock-info">
+            <div class="cock-tag">Running</div>
+            <div class="cock-act">Connecting</div>
+            <div class="cock-meta">
+              <span class="l">Lead</span><span>John D.</span>
+              <span class="l">Account</span><span>Antonio</span>
+              <span class="l">Mode</span><span>Connect</span>
+            </div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="l">Sent today</div><div class="v">12 / 50</div></div>
+          <div class="stat"><div class="l">Errors</div><div class="v">0</div></div>
+          <div class="stat-bar"></div>
+        </div>
+      </div>
+
+      <div class="mini-h"><span>Right pane · unchanged</span><span class="src">still claims live state</span></div>
+      <div class="rp">
+        <div class="rp-row live"><span class="k">Status</span><span class="v live">Running</span></div>
+        <div class="rp-row"><span class="k">Passover</span><span class="v">14d / 3d</span></div>
+        <div class="rp-row"><span class="k">Selected</span><span class="v">3 accounts · 50 leads</span></div>
+        <div class="rp-row"><span class="k">Next schedule</span><span class="v">Tue 09:00</span></div>
+      </div>
+
+      <div class="mini-h" style="margin-top:14px"><span>Header stats · unchanged</span><span class="src">labels stay terse</span></div>
+      <div class="hs">
+        <div class="hs-c"><span class="k">Today</span><span class="v">12</span></div>
+        <div class="hs-c"><span class="k">7D</span><span class="v">128</span></div>
+        <div class="hs-c"><span class="k">Errors 24h</span><span class="v">0</span></div>
+        <div class="hs-c"><span class="k">Passover</span><span class="v">14d</span></div>
+      </div>
+
+      <div class="spacer"></div>
+      <div class="cost">
+        <b>Cost</b>
+        <ul>
+          <li class="plus">+ zero risk</li>
+          <li class="plus">+ ship A + B1-verify + B3 + C now</li>
+          <li class="minus">- duplication of "live state" stays (4 surfaces remain)</li>
+          <li class="minus">- needs a follow-up spec when the right answer becomes clearer</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
