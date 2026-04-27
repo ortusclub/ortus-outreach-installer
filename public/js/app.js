@@ -1230,6 +1230,8 @@ async function previewSheet() {
     preview.innerHTML = html;
     sheetColumns = data.columns;
     window.sheetTotalRows = typeof data.totalRows === 'number' ? data.totalRows : null;
+    try { window.__sheetPreviewCache = { count: (typeof data.totalRows === 'number' ? data.totalRows : 0), at: Date.now() }; } catch (_) {}
+    try { if (typeof updateSectionSummaries === 'function') updateSectionSummaries(); } catch (_) {}
     updatePlaceholderTags();
     updateCampaignSummary();
   } catch (err) {
@@ -3456,8 +3458,10 @@ function computeSectionReadiness() {
       : '',
   };
 
-  // Accounts — done if at least one selected
-  const selCount = (window.selectedProfileIds && window.selectedProfileIds.length) || 0;
+  // Accounts — done if at least one selected.
+  // selectedProfileIds is a module-local `let` declared near the top of this file;
+  // bare-symbol reference resolves because we're in the same script.
+  const selCount = (typeof selectedProfileIds !== 'undefined' && selectedProfileIds && selectedProfileIds.length) || 0;
   out.accounts = {
     state: selCount > 0 ? 'done' : 'empty',
     summary: selCount > 0 ? `${selCount} selected` : '',
