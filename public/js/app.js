@@ -3525,13 +3525,13 @@ function computeSectionReadiness() {
       : '',
   };
 
-  // Throughput (pace) — done if values present.
-  // Summary stays minimal: just the rate. The full breakdown is visible
-  // when the section is expanded; the header should not duplicate it.
+  // Throughput (pace) — non-required section. State still computed for
+  // sidebar-glyph consistency, but no header summary (the section's own body
+  // shows the live total — duplicating it in the header is noise).
   const rate = document.getElementById('rate-per-hour')?.value || '';
   out.pace = {
     state: rate ? 'done' : 'empty',
-    summary: rate ? `${rate}/hr` : '',
+    summary: '',
   };
 
   // Launch — "done" means all required prior sections are done
