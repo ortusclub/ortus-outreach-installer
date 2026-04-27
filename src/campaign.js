@@ -28,6 +28,7 @@ import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, ensureTrackingColumns } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { dataPath } from './paths.js';
+import { checkDiskFree } from './disk-check.js';
 import {
   sample as rmSample,
   decideThrottle,
@@ -182,6 +183,16 @@ function getModeHint(mode, prevAction) {
   }
   return null;
 }
+
+// Phase 2.8.20 (W3-C2): cached disk status, refreshed on a 30s interval.
+// Kept module-local so getCampaignStatus() can stay synchronous (it's called
+// from /api/campaign/status hot path).
+let _diskStatusCache = { freeBytes: null, thresholdBytes: 0, ok: true, error: null };
+async function _refreshDiskStatus() {
+  try { _diskStatusCache = await checkDiskFree(); } catch (_) {}
+}
+_refreshDiskStatus();
+setInterval(_refreshDiskStatus, 30000).unref?.();
 
 // ── Campaign state (exposed to dashboard) ──
 export const campaign = {
@@ -1438,6 +1449,7 @@ export function getCampaignStatus() {
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),
+    disk: { ..._diskStatusCache },
     resources: smp ? {
       ramPct:            smp.ramPct,
       load1:             smp.load1,

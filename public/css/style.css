@@ -2469,3 +2469,16 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
+
+/* Phase 2.8.20 (W3-C2) — disk-low warning banner */
+.disk-warning-banner {
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-family: var(--body, 'Hanken Grotesk', sans-serif);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  padding: 10px 14px;
+  margin: 0 0 16px 0;
+  background: transparent;
+}
+

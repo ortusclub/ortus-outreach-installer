@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-core';
 import { existsSync, mkdirSync } from 'fs';
 import { dataPath } from './paths.js';
 import { hideByPid } from './mac-window.js';
+import { checkDiskFree, formatBytes } from './disk-check.js';
 
 let activeBrowser = null;
 
@@ -39,6 +40,11 @@ function findChromePath() {
  * Returns { browser, page } — same interface as GoLogin launcher.
  */
 export async function launchLocalBrowser() {
+  // Phase 2.8.20 (W3-C2): disk-space pre-flight (same gate as GoLogin launcher).
+  const disk = await checkDiskFree();
+  if (!disk.ok) {
+    throw new Error(`Disk space too low (${formatBytes(disk.freeBytes)} free, ${formatBytes(disk.thresholdBytes)} required) — clear space before launching.`);
+  }
   console.log('[local] Starting local browser...');
 
   const chromePath = process.env.CHROME_PATH || findChromePath();

@@ -1,6 +1,7 @@
 import GoLogin from 'gologin';
 import puppeteer from 'puppeteer-core';
 import { hideByPid } from './mac-window.js';
+import { checkDiskFree, formatBytes } from './disk-check.js';
 
 const activeProfiles = new Map();
 
@@ -54,6 +55,13 @@ export function clearProfileCache() {
  * The browser window is positioned off-screen to avoid stealing focus.
  */
 export async function launchProfile(profileId, token) {
+  // Phase 2.8.20 (W3-C2): refuse to launch when free disk is below threshold.
+  // Profile downloads + screenshots + logs accumulate; a full disk silently
+  // corrupts state (writes return ENOSPC and the campaign limps on).
+  const disk = await checkDiskFree();
+  if (!disk.ok) {
+    throw new Error(`Disk space too low (${formatBytes(disk.freeBytes)} free, ${formatBytes(disk.thresholdBytes)} required) — clear space before launching.`);
+  }
   console.log(`[gologin] Starting ${profileId}…`);
 
   const GL = new GoLogin({

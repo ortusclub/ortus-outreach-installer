@@ -28,6 +28,7 @@ import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail } from './src/notifier.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
+import { checkDiskFree } from './src/disk-check.js';
 import {
   createUser, verifyCredentials, userExists,
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
@@ -1046,6 +1047,14 @@ app.listen(PORT, async () => {
     for (const s of schedules) registerSchedule(s);
     if (schedules.length) console.log(`  ✦ Schedules: ${schedules.filter(s => s.enabled).length} active of ${schedules.length} total`);
   }).catch(err => console.error('Failed to load schedules:', err.message));
+});
+
+// ---------------------------------------------------------------------------
+// Disk-status endpoint (Phase 2.8.20 / W3-C2) — read-only free-bytes check.
+// ---------------------------------------------------------------------------
+app.get('/api/disk-status', async (_req, res) => {
+  const status = await checkDiskFree();
+  res.json(status);
 });
 
 // ---------------------------------------------------------------------------

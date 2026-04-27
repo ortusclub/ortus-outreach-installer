@@ -2007,6 +2007,7 @@ async function pollStatus() {
     wasErrorCount = (s.errors || []).length;
     wasRunning = s.running;
     renderParkedProfiles(s.parked);
+    renderDiskBanner(s.disk);
 
     // Phase 2.8.13: status / mode / profile pills moved INTO the cockpit panel
     // (handled by renderCockpit). The legacy st-running/st-mode/st-profile
@@ -3922,3 +3923,24 @@ function mergedErrorsForCount(liveErrors) {
 
 window.loadPersistedErrors = loadPersistedErrors;
 window.mergedErrorsForCount = mergedErrorsForCount;
+
+// Phase 2.8.20 (W3-C2) — disk-low banner driven by /api/campaign/status payload.
+function _formatBytesClient(n) {
+  if (n == null || !Number.isFinite(n)) return '?';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(0)} MB`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+function renderDiskBanner(disk) {
+  const banner = document.getElementById('disk-warning-banner');
+  const text = document.getElementById('disk-warning-text');
+  if (!banner || !text) return;
+  if (!disk || disk.ok !== false) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  text.textContent = `Disk: ${_formatBytesClient(disk.freeBytes)} free — clear space before launching.`;
+}
