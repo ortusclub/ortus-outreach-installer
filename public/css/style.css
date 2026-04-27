@@ -2322,18 +2322,42 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   margin-top: 10px;
   line-height: 1.5;
 }
-.alpha-foot {
-  margin-top: 22px;
-  padding-top: 18px;
+/* Phase 2.8.15: campaign-hero restyled when nested inside the throughput panel.
+   Flows as the panel's bottom forecast row instead of a standalone boxed grid. */
+.alpha-throughput .campaign-hero.alpha-forecast {
+  background: transparent;
+  border: 0;
   border-top: 1px solid var(--hairline-soft);
-  display: flex;
-  gap: 28px;
-  flex-wrap: wrap;
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 0.78rem;
-  color: var(--gray);
+  border-radius: 0;
+  margin: 24px 0 0 !important;
+  padding: 22px 0 0 !important;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
 }
-.alpha-foot b { color: var(--gold); font-family: var(--display); font-size: 1.1rem; }
+.alpha-throughput .campaign-hero.alpha-forecast .hero-cell {
+  background: transparent;
+  padding: 0 28px;
+  border-left: 1px solid var(--hairline-soft);
+}
+.alpha-throughput .campaign-hero.alpha-forecast .hero-cell:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.alpha-throughput .campaign-hero.alpha-forecast .hero-k {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  margin-bottom: 8px;
+}
+.alpha-throughput .campaign-hero.alpha-forecast .hero-v {
+  font-size: 2.2rem;
+  font-variant-numeric: tabular-nums;
+}
+.alpha-throughput .campaign-hero.alpha-forecast .hero-sub {
+  font-size: 0.62rem;
+  margin-top: 6px;
+  letter-spacing: 0.12em;
+}
 
 @media (max-width: 700px) {
   .alpha-throughput { padding: 22px 20px; }

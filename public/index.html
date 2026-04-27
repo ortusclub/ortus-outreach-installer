@@ -196,10 +196,30 @@
               <div class="alpha-knob-help">Random pause between each invitation. Below 15s looks robotic to LinkedIn.</div>
             </div>
           </div>
-          <div class="alpha-foot">
-            <span>Daily target: <b id="alpha-daily-target">—</b></span>
-            <span>Round time: <b id="alpha-round-time">—</b> min between rounds</span>
+          <!-- Phase 2.8.15: Forecast row absorbed from the old standalone
+               campaign-hero block. Same IDs (hero-actions / hero-duration /
+               hero-finish + subs) so updateCampaignSummary writes here unchanged. -->
+          <div id="campaign-summary" class="campaign-hero alpha-forecast">
+            <div class="hero-cell">
+              <div class="hero-k" data-edit="hero-actions-k">Actions</div>
+              <div class="hero-v accent" id="hero-actions">—</div>
+              <div class="hero-sub" id="hero-actions-sub">across 0 accounts</div>
+            </div>
+            <div class="hero-cell">
+              <div class="hero-k" data-edit="hero-duration-k">Duration</div>
+              <div class="hero-v" id="hero-duration">—</div>
+              <div class="hero-sub" id="hero-duration-sub">at 2 batches / hour</div>
+            </div>
+            <div class="hero-cell">
+              <div class="hero-k" data-edit="hero-finish-k">Finishes</div>
+              <div class="hero-v" id="hero-finish">—</div>
+              <div class="hero-sub" id="hero-finish-sub">local time</div>
+            </div>
+            <div id="summary-stats" style="display:none"></div>
           </div>
+          <!-- Hidden alpha-foot anchors retained so alphaRecalc doesn't null-throw -->
+          <span id="alpha-daily-target" style="display:none"></span>
+          <span id="alpha-round-time" style="display:none"></span>
         </div>
 
         <!-- Hidden inputs preserve backend wire — backend reads rate-per-hour as
@@ -218,26 +238,6 @@
         <div id="within-batch-max-wrap" style="display:none"></div>
         <div id="message-gap-wrap" style="display:none"></div>
         <div id="daily-limit-wrap" style="display:none"></div>
-
-        <!-- Campaign hero summary -->
-        <div id="campaign-summary" class="campaign-hero">
-          <div class="hero-cell">
-            <div class="hero-k" data-edit="hero-actions-k">Actions</div>
-            <div class="hero-v accent" id="hero-actions">—</div>
-            <div class="hero-sub" id="hero-actions-sub">across 0 accounts</div>
-          </div>
-          <div class="hero-cell">
-            <div class="hero-k" data-edit="hero-duration-k">Duration</div>
-            <div class="hero-v" id="hero-duration">—</div>
-            <div class="hero-sub" id="hero-duration-sub">at 2 batches / hour</div>
-          </div>
-          <div class="hero-cell">
-            <div class="hero-k" data-edit="hero-finish-k">Finishes</div>
-            <div class="hero-v" id="hero-finish">—</div>
-            <div class="hero-sub" id="hero-finish-sub">local time</div>
-          </div>
-          <div id="summary-stats" style="display:none"></div>
-        </div>
 
         <div class="campaign-warnings-inline">
           <div class="warn-line" data-edit="warn-1">Keep laptop open until the campaign finishes</div>
