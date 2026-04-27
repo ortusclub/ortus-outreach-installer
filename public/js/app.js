@@ -3555,10 +3555,20 @@ document.addEventListener('change', (e) => {
 // Run once on initial load — apply default expand and render summaries.
 // Defer slightly so other startup code (loadProfiles, fetchTemplateList, etc.)
 // has a chance to populate state before we read it.
+// Defer the one-shot initial render until after the async startup loaders
+// (loadProfiles, fetchTemplateList, etc.) have had time to populate state.
+// 1500 ms is a heuristic — these loaders are local-server fetches that
+// typically settle in < 500 ms, but we leave headroom for slow machines
+// (the project's target user base runs on overloaded laptops). The delegated
+// input/change listeners above keep summaries fresh after this initial pass.
+const INITIAL_RENDER_DELAY_MS = 1500;
+function _doInitialSectionRender() {
+  try { applyInitialExpand(); updateSectionSummaries(); } catch (_) {}
+}
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => { try { applyInitialExpand(); updateSectionSummaries(); } catch (_) {} }, 50);
+    setTimeout(_doInitialSectionRender, INITIAL_RENDER_DELAY_MS);
   });
 } else {
-  setTimeout(() => { try { applyInitialExpand(); updateSectionSummaries(); } catch (_) {} }, 50);
+  setTimeout(_doInitialSectionRender, INITIAL_RENDER_DELAY_MS);
 }
