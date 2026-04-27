@@ -330,6 +330,18 @@ async function browseFeedOrganically(page, pName) {
 async function checkProfileHealth(page, profileName) {
   const issues = [];
 
+  // Phase 2.8.20 (W2-A2) — session-expired detection. If the page URL is on
+  // a LinkedIn auth/checkpoint page, the cookies are dead. Surface this as a
+  // distinct sessionExpired flag so the caller can park the profile for the
+  // rest of the run instead of burning 5 retries on a dead session.
+  try {
+    const cur = page.url();
+    if (cur && (cur.includes('/login') || cur.includes('/uas/login') || cur.includes('/checkpoint'))) {
+      issues.push('session expired (auth page detected)');
+      return { healthy: false, issues, sessionExpired: true };
+    }
+  } catch (_) { /* fall through to the existing Check 1 below */ }
+
   // Check 1: URL-based login detection
   try {
     const url = page.url();
@@ -424,6 +436,14 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
   // Health check
   log(`Checking ${pName} health...`);
   const health = await checkProfileHealth(page, pName);
+  // Phase 2.8.20 (W2-A2): bubble up sessionExpired so the caller can park
+  // the profile cleanly. Skip the recovery-prompt UX (which is for when the
+  // user just needs to log in once more — sessionExpired means cookies are
+  // dead and we should drop this profile from rotation entirely).
+  if (health.sessionExpired) {
+    log(`✗ ${pName}: session expired — parking profile for rest of run.`);
+    return { page: null, ok: false, sessionExpired: true };
+  }
   if (!health.healthy) {
     if (profileId === 'local-browser') {
       log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
@@ -694,7 +714,24 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           return null;
         }
 
-        const { page, ok } = await ensureProfileLoggedIn(launched, profileId, pName);
+        const { page, ok, sessionExpired } = await ensureProfileLoggedIn(launched, profileId, pName);
+        if (sessionExpired) {
+          // Phase 2.8.20 (W2-A2): drop this profile from the round-robin and
+          // surface in the right pane via parkedProfiles (W1-B1's mechanism).
+          weeklyLimited.add(profileId);
+          campaign.parkedProfiles.push({
+            profileId,
+            pName,
+            parkedAt: Date.now(),
+            reason: 'session_expired',
+          });
+          // Close the now-unusable session immediately to free RAM
+          try {
+            if (profileId === 'local-browser') await closeLocalBrowser();
+            else await closeProfile(profileId);
+          } catch { /* */ }
+          return null;
+        }
         if (!ok) return null;
         if (campaign._abort) {
           try {
