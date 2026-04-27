@@ -263,15 +263,24 @@ function notify(title, body) {
 }
 
 async function sendTestNotification() {
+  // Phase 2.8.19 (C4): record result so the sidebar Notifications panel can show
+  // "<time> ago · delivered" or "<time> ago · failed" on the Last test row.
+  const recordResult = (result) => {
+    try { localStorage.setItem('ortus-last-notify-test', JSON.stringify({ at: Date.now(), result })); } catch (_) {}
+    if (typeof refreshNotifPanel === 'function') refreshNotifPanel();
+  };
   try {
     const res = await fetch('/api/notify/test', { method: 'POST' });
     const data = await res.json();
     if (!res.ok || !data.ok) {
+      recordResult('failed');
       alert('Test failed: ' + (data.error || `HTTP ${res.status}`));
       return;
     }
+    recordResult('delivered');
     alert(`Test email sent.\nRecipients reached: ${data.sent ?? 0}${data.reason ? '\nNote: ' + data.reason : ''}`);
   } catch (err) {
+    recordResult('failed');
     alert('Test failed: ' + err.message);
   }
 }
@@ -3764,3 +3773,63 @@ try {
     }
   });
 })();
+
+// Phase 2.8.19 (C4) — sidebar Notifications panel state rendering.
+async function refreshNotifPanel() {
+  // Browser push permission
+  const pushEl = document.getElementById('notif-push-state');
+  const enableBtn = document.getElementById('notif-enable-btn');
+  if (pushEl) {
+    pushEl.classList.remove('ok', 'warn', 'bad');
+    if (!('Notification' in window)) {
+      pushEl.textContent = 'unavailable';
+      pushEl.classList.add('warn');
+      if (enableBtn) enableBtn.style.display = 'none';
+    } else {
+      const p = Notification.permission;
+      if (p === 'granted') { pushEl.textContent = 'granted'; pushEl.classList.add('ok'); }
+      else if (p === 'denied') { pushEl.textContent = 'denied'; pushEl.classList.add('bad'); }
+      else { pushEl.textContent = 'default'; pushEl.classList.add('warn'); }
+      if (enableBtn) enableBtn.style.display = (p === 'default') ? 'inline-block' : 'none';
+    }
+  }
+  // SMTP wired
+  const smtpEl = document.getElementById('notif-smtp-state');
+  if (smtpEl) {
+    smtpEl.classList.remove('ok', 'warn', 'bad');
+    try {
+      const res = await fetch('/api/notify/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.smtpConfigured) { smtpEl.textContent = 'wired'; smtpEl.classList.add('ok'); }
+        else { smtpEl.textContent = 'not configured'; smtpEl.classList.add('warn'); }
+      }
+    } catch (_) { /* leave as — */ }
+  }
+  // Last test
+  const lastEl = document.getElementById('notif-last-test');
+  if (lastEl) {
+    lastEl.classList.remove('ok', 'warn', 'bad');
+    try {
+      const raw = localStorage.getItem('ortus-last-notify-test');
+      if (raw) {
+        const { at, result } = JSON.parse(raw);
+        const ago = (typeof _humanAgo === 'function') ? _humanAgo(at) : new Date(at).toLocaleTimeString();
+        lastEl.textContent = `${ago} · ${result}`;
+        lastEl.classList.add(result === 'delivered' ? 'ok' : 'bad');
+      } else {
+        lastEl.textContent = 'never';
+        lastEl.classList.add('warn');
+      }
+    } catch (_) { /* */ }
+  }
+}
+
+window.refreshNotifPanel = refreshNotifPanel;
+
+// Run once on initial load (after the existing deferred render kick from A2).
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { setTimeout(refreshNotifPanel, 200); });
+} else {
+  setTimeout(refreshNotifPanel, 200);
+}

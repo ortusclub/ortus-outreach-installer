@@ -44,8 +44,23 @@
 
       <div class="edit-toggle-group">
         <div class="edit-toggle-label">Notifications</div>
-        <div class="edit-toggle">
-          <button type="button" onclick="requestNotificationPermission()">Enable</button>
+        <div class="notif-state-rows" id="notif-state-rows">
+          <div class="notif-row">
+            <span class="notif-row-k">Browser push</span>
+            <span id="notif-push-state" class="notif-row-v">—</span>
+          </div>
+          <div class="notif-row">
+            <span class="notif-row-k">Email · SMTP</span>
+            <span id="notif-smtp-state" class="notif-row-v">—</span>
+          </div>
+          <div class="notif-row">
+            <span class="notif-row-k">Last test</span>
+            <span id="notif-last-test" class="notif-row-v">never</span>
+          </div>
+          <div class="notif-actions">
+            <button type="button" id="notif-enable-btn" class="btn btn-sm" onclick="requestNotificationPermission()" style="display:none">Enable</button>
+            <button type="button" class="btn btn-sm" onclick="sendTestNotification()">Send test</button>
+          </div>
         </div>
       </div>
 

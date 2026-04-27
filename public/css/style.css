@@ -2429,3 +2429,13 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   opacity: 0.7;
   cursor: default;
 }
+
+/* Phase 2.8.19 (C4) — sidebar Notifications panel state rows */
+.notif-state-rows { display: flex; flex-direction: column; gap: 6px; font-size: 0.7rem; }
+.notif-row { display: flex; justify-content: space-between; align-items: center; }
+.notif-row-k { color: var(--ink); }
+.notif-row-v { color: var(--gray); letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.6rem; }
+.notif-row-v.ok   { color: var(--green); }
+.notif-row-v.warn { color: var(--gray); }
+.notif-row-v.bad  { color: var(--red); }
+.notif-actions { display: flex; gap: 6px; margin-top: 4px; }

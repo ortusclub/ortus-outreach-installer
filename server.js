@@ -1048,6 +1048,15 @@ app.listen(PORT, async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Notification status endpoint (Phase 2.8.19 / C4) — read-only check of SMTP
+// configuration so the sidebar Notifications panel can show "wired" /
+// "not configured" without dialing out.
+// ---------------------------------------------------------------------------
+app.get('/api/notify/status', (_req, res) => {
+  res.json({ smtpConfigured: !!process.env.SMTP_HOST });
+});
+
+// ---------------------------------------------------------------------------
 // Notification test endpoint — sends a test email to configured recipients
 // ---------------------------------------------------------------------------
 app.post('/api/notify/test', async (req, res) => {
