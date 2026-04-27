@@ -114,10 +114,12 @@ export async function closeProfile(profileId) {
 }
 
 export async function closeAllProfiles() {
+  // Phase 2.8.10: parallel close. Each GL.stop() can take 2-5s for the
+  // GoLogin SDK to sync profile state to the cloud — serialized that means
+  // 8-20s wall-clock with 4 profiles. Run in parallel: ~5s for all of them.
+  // closeProfile already swallows its own errors so Promise.all won't reject.
   const ids = [...activeProfiles.keys()];
-  for (const id of ids) {
-    await closeProfile(id);
-  }
+  await Promise.all(ids.map(id => closeProfile(id)));
   return ids.length;
 }
 

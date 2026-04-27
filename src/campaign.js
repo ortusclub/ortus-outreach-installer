@@ -581,6 +581,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
      * only on first open). Returns null if the profile cannot be made healthy.
      */
     async function ensureOpen(profileId) {
+      // Phase 2.8.10: refuse to launch new browsers after stop has been
+      // requested. Closes the launch-race that was leaving orphan windows
+      // requiring a second Stop click to clean up.
+      if (campaign._abort) return null;
+
       const cached = sessions.get(profileId);
       if (cached) return cached;
 
@@ -596,12 +601,42 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           launched = await launchProfile(profileId, token);
         }
 
+        // Phase 2.8.10: abort may have fired DURING the launch above. Close
+        // the just-launched browser immediately rather than letting it become
+        // an orphan that survives /api/campaign/stop.
+        if (campaign._abort) {
+          log(`■ ${pName}: stop requested mid-launch — closing immediately.`);
+          try {
+            if (profileId === 'local-browser') await closeLocalBrowser();
+            else await closeProfile(profileId);
+          } catch { /* */ }
+          return null;
+        }
+
         const { page, ok } = await ensureProfileLoggedIn(launched, profileId, pName);
         if (!ok) return null;
+        if (campaign._abort) {
+          try {
+            if (profileId === 'local-browser') await closeLocalBrowser();
+            else await closeProfile(profileId);
+          } catch { /* */ }
+          return null;
+        }
 
-        // First-batch-only 20s home-page warmup (D-11).
+        // First-batch-only 20s home-page warmup (D-11). Abort-aware so we
+        // don't sit through 20s of warmup after Stop has been pressed.
         log(`⏳ ${pName}: waiting 20s on home page…`);
-        await new Promise(r => setTimeout(r, 20000));
+        const warmEnd = Date.now() + 20000;
+        while (Date.now() < warmEnd && !campaign._abort) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        if (campaign._abort) {
+          try {
+            if (profileId === 'local-browser') await closeLocalBrowser();
+            else await closeProfile(profileId);
+          } catch { /* */ }
+          return null;
+        }
         log(`✓ ${pName} warmup done.`);
 
         const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
@@ -846,10 +881,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               !result.error.includes('no_compose_textbox');
 
             if (!isTransient || attempt === MAX_RETRIES) break;
+            // Phase 2.8.10: bail retries entirely if user clicked Stop —
+            // no point retrying a dead browser, and the 15s/30s sleeps were
+            // the dominant source of "loop won't exit" lag after Stop.
+            if (campaign._abort) { log('  ■ Abort detected — skipping retry.'); break; }
 
             const backoff = attempt * 15000;
             log(`  ⟳ Retry ${attempt}/${MAX_RETRIES} in ${backoff / 1000}s — ${result.error}`);
-            await new Promise(r => setTimeout(r, backoff));
+            // Abort-aware sleep: 1s polling chunks so Stop interrupts within ~1s.
+            const retryEnd = Date.now() + backoff;
+            while (Date.now() < retryEnd && !campaign._abort) {
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            if (campaign._abort) { log('  ■ Abort during retry backoff.'); break; }
 
             try {
               const pages = await browser.pages();
@@ -881,7 +925,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
             if (result.action === 'connection_sent') {
               sheetData.status = 'Done';
-              sheetData.cc = 'Sent';
+              // Phase 2.8.10: write the sender's account name into CC instead
+              // of the generic "Sent" so the operator can see at a glance
+              // which profile sent each connection request.
+              sheetData.cc = pName;
               sheetData.auditAction = 'Connection sent';
             } else if (result.action === 'message_sent') {
               sheetData.status = 'Done';
