@@ -303,11 +303,18 @@ function applyCCFormatting(sheet, headers) {
     return true;
   });
 
-  var rules = [
-    { val: 'Sent',        bg: '#fff4d6', fg: '#8a5a00' }, // yellow — invite pending
+  // Rules evaluate top-to-bottom; first match wins. We list the exact-text
+  // status labels FIRST so they take precedence, then a formula-based rule
+  // catches any other non-blank value (sender-name labels written by the
+  // app since 2.8.10) and treats it as "invite pending" yellow.
+  var ccColLetter = columnToLetter(ccIdx + 1);
+  var firstCellA1 = ccColLetter + '2';
+
+  var exactRules = [
     { val: 'Accepted',    bg: '#d9f1da', fg: '#0a6b27' }, // green  — connection confirmed
     { val: 'Declined',    bg: '#fce4e4', fg: '#a1252b' }, // red    — invite declined
-    { val: 'Unreachable', bg: '#fce4e4', fg: '#a1252b' }  // red    — couldn't send invite
+    { val: 'Unreachable', bg: '#fce4e4', fg: '#a1252b' }, // red    — couldn't send invite
+    { val: 'Sent',        bg: '#fff4d6', fg: '#8a5a00' }  // yellow — legacy "Sent" rows
   ].map(function(r) {
     return SpreadsheetApp.newConditionalFormatRule()
       .whenTextEqualTo(r.val)
@@ -317,7 +324,29 @@ function applyCCFormatting(sheet, headers) {
       .build();
   });
 
-  sheet.setConditionalFormatRules(others.concat(rules));
+  // Catch-all: any non-blank value that wasn't matched by the exact rules
+  // above (e.g. "matt.adcock@ortus.solutions") = invite pending = yellow.
+  // The "—" placeholder rendered into untouched action cells is excluded.
+  var pendingFormula = '=AND(' + firstCellA1 + '<>"", ' + firstCellA1 + '<>"—")';
+  var pendingRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(pendingFormula)
+    .setBackground('#fff4d6')
+    .setFontColor('#8a5a00')
+    .setRanges([range])
+    .build();
+
+  sheet.setConditionalFormatRules(others.concat(exactRules).concat([pendingRule]));
+}
+
+// Convert 1-based column index to A1 letter ("A", "B", … "AA", "AB" …).
+function columnToLetter(n) {
+  var s = '';
+  while (n > 0) {
+    var r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
