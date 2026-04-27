@@ -183,6 +183,7 @@ export const campaign = {
   currentAction: null,
   logs: [],
   errors: [],
+  parkedProfiles: [],
 };
 
 // Phase 2.8.12: tiny helper — sets the action shown in the dashboard cockpit.
@@ -468,6 +469,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.mode = mode;
   campaign.profileNames = [];
   campaign.errors = [];
+  campaign.parkedProfiles = [];
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
@@ -1022,6 +1024,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             if (skipCount >= BATCH_SIZE && !weeklyLimited.has(profileId)) {
               log(`  ⚠ ${pName}: ${BATCH_SIZE} consecutive non-success outcomes — parking account for rest of run.`);
               weeklyLimited.add(profileId);
+              campaign.parkedProfiles.push({
+                profileId,
+                pName,
+                parkedAt: Date.now(),
+                reason: 'consecutive_skips',
+                skipCount,
+              });
             }
             const errorMsg = result.error || result.action;
 
@@ -1327,6 +1336,7 @@ export function getCampaignStatus() {
     profileNames: campaign.profileNames || [],
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
+    parked: campaign.parkedProfiles.slice(),
     resources: smp ? {
       ramPct:            smp.ramPct,
       load1:             smp.load1,

@@ -2439,3 +2439,33 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .notif-row-v.warn { color: var(--gray); }
 .notif-row-v.bad  { color: var(--red); }
 .notif-actions { display: flex; gap: 6px; margin-top: 4px; }
+
+/* Phase 2.8.20 (W1-B1) — right-pane Parked row (visible during runs) */
+.rp-parked-line {
+  font-family: var(--body, 'Hanken Grotesk', sans-serif);
+  font-size: 0.78rem;
+  color: var(--gray);
+  letter-spacing: 0.04em;
+}
+.rp-parked-line.has-parked {
+  color: var(--red);
+}
+.rp-parked-line:hover { opacity: 0.85; }
+.rp-parked-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  background: var(--hairline-soft, rgba(255,255,255,0.06));
+  font-size: 0.66rem;
+  color: var(--gray);
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+.rp-parked-detail .rp-parked-item { display: block; padding: 2px 0; }
+.rp-parked-detail .rp-parked-item .rp-parked-name { color: var(--ink); }
+.rp-parked-detail .rp-parked-item .rp-parked-reason {
+  margin-left: 6px;
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}

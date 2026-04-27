@@ -2006,6 +2006,7 @@ async function pollStatus() {
     }
     wasErrorCount = (s.errors || []).length;
     wasRunning = s.running;
+    renderParkedProfiles(s.parked);
 
     // Phase 2.8.13: status / mode / profile pills moved INTO the cockpit panel
     // (handled by renderCockpit). The legacy st-running/st-mode/st-profile
@@ -3833,3 +3834,54 @@ if (document.readyState === 'loading') {
 } else {
   setTimeout(refreshNotifPanel, 200);
 }
+
+// Phase 2.8.20 (W1-B1) — surface parked profiles in the right pane.
+function _humanAgoFromTs(ts) {
+  if (!ts || !Number.isFinite(ts)) return '';
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function _prettyParkReason(r) {
+  switch (r) {
+    case 'consecutive_skips': return 'too many skips';
+    case 'session_expired':   return 'session expired';
+    default:                  return r || 'parked';
+  }
+}
+
+function renderParkedProfiles(parked) {
+  const row = document.getElementById('rp-parked-row');
+  const line = document.getElementById('rp-parked-line');
+  const detail = document.getElementById('rp-parked-detail');
+  if (!row || !line || !detail) return;
+  const list = Array.isArray(parked) ? parked : [];
+  if (list.length === 0) {
+    row.hidden = true;
+    line.classList.remove('has-parked');
+    detail.hidden = true;
+    detail.innerHTML = '';
+    return;
+  }
+  row.hidden = false;
+  line.classList.add('has-parked');
+  const names = list.map(p => p.pName || p.profileId).join(', ');
+  line.textContent = `${list.length} parked · ${names}`;
+  detail.innerHTML = list.map(p => `
+    <span class="rp-parked-item">
+      <span class="rp-parked-name">${(p.pName || p.profileId)}</span>
+      <span class="rp-parked-reason">${_prettyParkReason(p.reason)}</span>
+      · ${_humanAgoFromTs(p.parkedAt)}
+    </span>
+  `).join('');
+}
+
+function toggleParkedDetail() {
+  const detail = document.getElementById('rp-parked-detail');
+  if (detail) detail.hidden = !detail.hidden;
+}
+
+window.toggleParkedDetail = toggleParkedDetail;

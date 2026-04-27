@@ -583,6 +583,13 @@
         <div class="rp-sub" id="rp-status-sub">No campaign running</div>
       </div>
 
+      <!-- Phase 2.8.20 (W1-B1): parked profiles surface during a run -->
+      <div class="rp-section" id="rp-parked-row" hidden>
+        <div class="rp-label" data-edit="rp-label-parked">Parked</div>
+        <div class="rp-parked-line" id="rp-parked-line" onclick="toggleParkedDetail()" style="cursor:pointer">—</div>
+        <div class="rp-parked-detail" id="rp-parked-detail" hidden></div>
+      </div>
+
       <div class="rp-section">
         <div class="rp-label" data-edit="rp-label-passover">Passover</div>
         <div class="rp-passover-group">
