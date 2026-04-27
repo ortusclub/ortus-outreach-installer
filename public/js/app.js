@@ -318,50 +318,70 @@ function promptModal({ label = 'Enter value:', defaultValue = '' } = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Server Log Panel
 // ─────────────────────────────────────────────────────────────────────────────
-function toggleServerLog() {
-  const panel = document.getElementById('server-log-panel');
-  panel.classList.toggle('hidden');
-  if (!panel.classList.contains('hidden')) {
-    fetchServerLog();
-    if (!serverLogInterval) serverLogInterval = setInterval(fetchServerLog, 3000);
-  } else {
-    if (serverLogInterval) { clearInterval(serverLogInterval); serverLogInterval = null; }
+// Phase 2.8.19 (B3) — unified log: server lines render into a sub-container
+// inside #log-panel when the "Show server lines" checkbox is on. The inline
+// #server-log-panel was deleted; the sidebar "Open log" button now scrolls to
+// Live Status and expands it.
+function openUnifiedLog() {
+  const sec = document.getElementById('nav-status');
+  if (sec && sec.classList.contains('collapsible') && sec.classList.contains('collapsed')) {
+    sec.classList.remove('collapsed');
+    try { localStorage.setItem('section-collapsed:nav-status', '0'); } catch (_) {}
   }
+  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-async function fetchServerLog() {
+async function refreshServerLines() {
+  const cb = document.getElementById('show-server-lines');
+  if (!cb || !cb.checked) return;
+  const panel = document.getElementById('log-panel');
+  if (!panel) return;
   try {
     const res = await fetch('/api/server-log');
+    if (!res.ok) return;
     const lines = await res.json();
-    const el = document.getElementById('server-log');
-    el.innerHTML = lines.map(line => {
-      let cls = '';
-      if (line.includes('[ERR]')) cls = 'error';
+    let container = panel.querySelector('#server-lines-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'server-lines-container';
+      panel.appendChild(container);
+    }
+    container.innerHTML = lines.map((line) => {
+      let cls = 'info';
+      if (line.includes('[ERR]')) cls = 'err';
       else if (line.includes('[WARN]')) cls = 'warn';
-      else if (line.includes('✓')) cls = 'success';
-      return `<div class="entry ${cls}">${escHtml(line)}</div>`;
+      return `<div class="entry ${cls}" style="opacity:.6"><span style="color:var(--gray); font-size:0.6rem; letter-spacing:0.14em; margin-right:6px; text-transform:uppercase">srv</span>${escHtml(line)}</div>`;
     }).join('');
-    el.scrollTop = el.scrollHeight;
-  } catch { /* */ }
+  } catch (_) { /* */ }
 }
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'show-server-lines') {
+    if (e.target.checked) {
+      refreshServerLines();
+      if (!serverLogInterval) serverLogInterval = setInterval(refreshServerLines, 4000);
+    } else {
+      if (serverLogInterval) { clearInterval(serverLogInterval); serverLogInterval = null; }
+      const panel = document.getElementById('log-panel');
+      const container = panel?.querySelector('#server-lines-container');
+      if (container) container.remove();
+    }
+  }
+});
 
 async function clearServerLog() {
+  // Backwards-compat name kept in case any other module calls it.
+  // Hits the backend ring buffer DELETE and removes the local sub-container.
   try { await fetch('/api/server-log', { method: 'DELETE' }); } catch { /* */ }
-  const el = document.getElementById('server-log');
-  if (el) el.innerHTML = '';
+  const panel = document.getElementById('log-panel');
+  const container = panel?.querySelector('#server-lines-container');
+  if (container) container.innerHTML = '';
+  try { localStorage.setItem('ortus-log-cleared-at', new Date().toISOString()); } catch (_) {}
 }
 
-function copyServerLog() {
-  const el = document.getElementById('server-log');
-  if (!el) return;
-  const text = Array.from(el.querySelectorAll('.entry')).map(e => e.textContent).join('\n');
-  navigator.clipboard.writeText(text).then(() => {
-    const btn = el.closest('#server-log-panel').querySelector('button');
-    const orig = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
-  });
-}
+// Note: the previous standalone server-log helpers were removed in 2.8.19.
+// The unified Copy Log / Clear Log buttons handle the campaign log; server lines
+// live inside #log-panel so they're included in those operations automatically.
 
 function clearCampaignLog() {
   const el = document.getElementById('log-panel');
@@ -3360,7 +3380,6 @@ window.clearHistory = clearHistory;
 window.clearServerLog = clearServerLog;
 window.closePresetPopover = closePresetPopover;
 window.copyCampaignLog = copyCampaignLog;
-window.copyServerLog = copyServerLog;
 window.deleteSelectedTemplate = deleteSelectedTemplate;
 window.deselectAll = deselectAll;
 window.downloadCsv = downloadCsv;
@@ -3396,7 +3415,7 @@ window.pauseOrResumeCampaign = pauseOrResumeCampaign;
 window.alphaSyncRate = alphaSyncRate;
 window.alphaStepLeads = alphaStepLeads;
 window.toggleSection = toggleSection;
-window.toggleServerLog = toggleServerLog;
+window.openUnifiedLog = openUnifiedLog;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
 

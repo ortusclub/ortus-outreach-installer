@@ -31,7 +31,7 @@
         <div class="nav-section-label">Review</div>
         <button type="button" class="nav-item" data-nav="history-section" onclick="scrollToSection('history-section')">History</button>
         <button type="button" class="nav-item" data-nav="schedules-section" onclick="scrollToSection('schedules-section')">Schedules</button>
-        <button type="button" class="nav-item" onclick="toggleServerLog()">Server Log</button>
+        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
       </nav>
 
       <div class="theme-toggle-group">
@@ -103,17 +103,6 @@
         </div>
       </div>
     </div>
-    <div id="server-log-panel" class="hidden" style="margin-bottom:16px">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
-        <span style="color:#8b949e; font-size:0.75rem">Server console output (auto-refreshes)</span>
-        <div style="display:flex; gap:4px">
-          <button class="btn btn-secondary" onclick="copyServerLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Copy</button>
-          <button class="btn btn-secondary" onclick="clearServerLog()" style="height:24px; font-size:0.7rem; padding:2px 8px">Clear</button>
-        </div>
-      </div>
-      <div id="server-log" class="log-panel" style="max-height:200px; font-size:0.7rem"></div>
-    </div>
-
     <!-- ── Settings (reordered to position 1) ── -->
     <div class="section" id="nav-settings">
       <h2 data-edit="h2-settings">1. Campaign Settings <span class="section-summary" id="summary-settings"></span></h2>
@@ -500,7 +489,11 @@
         <div>&#9888; Do not close the browser windows that open — they run the campaign</div>
       </div>
       <div id="throttle-banner" style="display:none"></div>
-      <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:8px">
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-bottom:8px">
+        <label style="display:flex; align-items:center; gap:6px; font-size:0.7rem; color:var(--gray); margin-right:auto; cursor:pointer">
+          <input type="checkbox" id="show-server-lines" style="width:14px; height:14px; accent-color:var(--gold)" />
+          Show server lines
+        </label>
         <button type="button" class="btn btn-secondary btn-sm" id="btn-show-browsers" onclick="showBrowsers()" title="Un-minimize all active profile windows">Show Browsers</button>
         <button class="btn btn-secondary btn-sm" onclick="copyCampaignLog()">Copy Log</button>
         <button class="btn btn-secondary btn-sm" onclick="clearCampaignLog()">Clear Log</button>
