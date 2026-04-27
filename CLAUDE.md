@@ -1,82 +1,69 @@
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**ElevenLabs Calling Integration — Sidebar Enhancements**
+**Ortus Outreach** — LinkedIn outreach automation for The Ortus Club. Electron desktop app
+that drives multiple GoLogin browser profiles to send connection requests, follow-ups,
+and direct messages from a Google Sheet of leads. Used by ~3 colleagues on macOS laptops.
 
-Enhancements to the Ortus Club's ElevenLabs batch calling integration, which lives as a Google Apps Script attached to a Google Sheet. The system reads leads from the sheet, submits batch outbound calls via ElevenLabs Conversational AI + Twilio, and tracks results. Two specific improvements are needed: voice selection from the sidebar and fixing dynamic variable mapping.
-
-**Core Value:** The sidebar must reliably pass all user-entered event details (host name, event name, etc.) to the ElevenLabs agent so every call is personalized — and let operators switch the calling voice without leaving the sheet.
+**Core value:** Reliable, observable, hands-off outreach. The campaign loop must keep
+running even when individual accounts hit limits, sessions expire, or laptops are slow.
 
 ### Constraints
 
-- **Runtime**: Google Apps Script (V8 engine, no ES modules, no npm)
-- **Deployment**: Code is pasted into Apps Script editor; sidebar uses HEAD deployment (no redeploy needed after code changes)
-- **API limits**: ElevenLabs API rate limits apply; batch concurrency capped at 5
-- **Voice API**: Need to verify the correct ElevenLabs endpoint for listing voices and updating agent voice settings
-<!-- GSD:project-end -->
+- **Runtime:** Node ≥22 (currently v25.9.0), no bundler for frontend, vanilla JS + Express 4
+- **Browser automation:** GoLogin SDK 2.2.8 + puppeteer-core ^22.15.0, headed only
+- **Test framework:** `node --test` (no Jest, no Vitest)
+- **Distribution:** electron-builder DMG for macOS (no auto-update yet)
+- **End-user hardware:** colleagues run on slow/overloaded machines; assume CPU/RAM
+  starvation when tuning timeouts
 
-<!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
-## Recommended Stack
-### Core Platform
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| Google Apps Script | V8 runtime | Server-side logic, API calls | Already in use; no alternative for Sheets sidebar |
-| HTML Service | Built-in | Sidebar UI | Only option for GAS sidebars |
-### APIs
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| ElevenLabs `/v2/voices` | v2 | List available voices with metadata | Returns `preview_url`, `labels`, `is_bookmarked` -- everything needed for the picker |
-| ElevenLabs `/v1/convai/batch-calling/submit` | v1 | Submit batch calls with voice override | Existing endpoint; add `conversation_config_override.tts.voice_id` per recipient |
-### Supporting Libraries
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| None needed | -- | -- | GAS provides `UrlFetchApp`, `PropertiesService`, `HtmlService` natively |
-## Alternatives Considered
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Voice list endpoint | `/v2/voices` (paginated) | `/v1/voices` (returns all) | v2 has filtering, pagination, proper `has_more` flag. v1 may work for small libraries but is legacy. |
-| Voice override | `conversation_config_override.tts` | PATCH agent voice setting | Override is per-batch, non-destructive. PATCH mutates the agent globally -- dangerous for concurrent operators. |
-| State persistence | `PropertiesService.getUserProperties()` | `CacheService` | User properties persist across sessions; cache expires. |
-## Installation
-- `getVoices()` -- calls `/v2/voices`, returns array of `{voice_id, name, labels, preview_url, is_bookmarked}`
-- Modified `submitBatchCall()` -- accepts `voice_id` parameter, injects `conversation_config_override`
-## Sources
-- [ElevenLabs List Voices v2](https://elevenlabs.io/docs/api-reference/voices/search) -- HIGH confidence
-- [ElevenLabs Batch Calling Submit](https://elevenlabs.io/docs/api-reference/batch-calling/create) -- HIGH confidence
-<!-- GSD:stack-end -->
+| Library | Version | Purpose |
+|---------|---------|---------|
+| express | ^4.21.0 | HTTP server, routes |
+| gologin | 2.2.8 | Browser profile management |
+| puppeteer-core | ^22.15.0 | Browser automation |
+| node-cron | ^4.2.1 | Scheduled campaign triggers |
+| nodemailer | ^8.0.5 | Notification emails (errors/digests) |
+| bcryptjs | ^3.0.3 | Password hashing for local auth |
+| cookie-parser | ^1.4.7 | Session cookie parsing |
+| pidusage | ^4.0.1 | Process resource sampling |
+| dotenv | ^16.4.5 | .env loading |
+| electron (dev) | ^33.4.11 | Desktop shell |
+| electron-builder (dev) | ^25.1.8 | DMG builds |
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
-## Conventions
-
-Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
-
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
+- `server.js` (1158 lines) — Express app, all HTTP routes, campaign orchestration entry points
+- `src/campaign.js` (1503 lines) — campaign loop, parking, watchdog, throttle, state, history
+- `src/gologin-launcher.js` / `src/local-launcher.js` — browser launching paths
+- `src/linkedin/` — outreach actions, navigation, selectors (**off-limits — see Conventions**)
+- `src/sheets.js` / `src/sheets-writer.js` — Google Sheets read/write
+- `src/disk-check.js` / `src/resource-monitor.js` — preflight + runtime resource checks
+- `src/auth.js` — local auth (bcryptjs)
+- `src/notifier.js` — email notifications
+- `src/caffeinate.js` — keep-awake on macOS during runs
+- `public/index.html` + `public/js/app.js` (3946 lines) + `public/css/style.css` —
+  command-deck UI (monochrome, hairlines, gold only on Start CTA)
+- `electron/main.js` — Electron shell
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
+## Conventions
 
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+- **Atomic JSON writes** — write to `<file>.tmp` then `rename`; see `appendErrorLog` in `src/campaign.js` and `saveState` patterns.
+- **NDJSON for crash-safe append-only logs** — see `appendFatalErrorSync` in `server.js` for the fatal-error log written from synchronous error handlers.
+- **Bugatti command-deck design system** — monochrome, hairlines, gold only on Start CTA, radii 0 or 9999, no other accent colors. Tokens defined at top of `public/css/style.css`.
+- **Testing pattern** — `node --test tests/*.test.js`. Pure-helper unit tests preferred over integration tests; manual browser verification for UI changes.
+- **Off-limits files** — `src/linkedin/outreach.js` and `src/linkedin/actions.js`. The user has been burned by changes here. Never modify these without an explicit user request.
 
-Use these entry points:
-- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd:debug` for investigation and bug fixing
-- `/gsd:execute-phase` for planned phase work
+## Workflow
 
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
+This repo uses the superpowers plugin for Claude Code: brainstorming → writing-plans →
+subagent-driven-development. Specs live in `docs/superpowers/specs/`, plans in
+`docs/superpowers/plans/`. Each lens (operator UX, reliability, code health, etc.)
+ships as a feature branch (`<lens>-<version>`) with end-of-branch verification, then
+fast-forward merge to `main`.
 
-
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
+Recent lenses shipped:
+- 2.8.19 — operator UX paper-cuts (lens A)
+- 2.8.20 — reliability under stress (lens B)
+- 2.8.21 — code health & hygiene (lens C, this branch)
