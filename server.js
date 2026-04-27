@@ -15,7 +15,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startCampaign, stopCampaign, getCampaignStatus, campaign, extractLinkedInUrl } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, campaign, extractLinkedInUrl } from './src/campaign.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { checkProfileDms } from './src/linkedin/check-dms.js';
@@ -440,9 +440,25 @@ app.post('/api/campaign/start', (req, res) => {
   }
 });
 
-app.post('/api/campaign/stop', (_req, res) => {
+app.post('/api/campaign/stop', async (_req, res) => {
   const result = stopCampaign();
+  // Phase 2.8.9: force-close all Orbita/local browsers immediately so the
+  // operator sees them disappear rather than waiting for the loop to wind down.
+  // Errors here are non-fatal — the loop's own cleanup is idempotent.
+  try { await closeAllProfiles(); } catch (err) { console.warn('[stop] closeAllProfiles:', err.message); }
+  try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
   res.json(result);
+});
+
+// Phase 2.8.9: pause/resume control. Pause is non-destructive — browsers stay
+// open, the loop sleeps at the next lead boundary. Resume picks up where it
+// left off.
+app.post('/api/campaign/pause', (_req, res) => {
+  res.json(pauseCampaign());
+});
+
+app.post('/api/campaign/resume', (_req, res) => {
+  res.json(resumeCampaign());
 });
 
 app.get('/api/campaign/status', (_req, res) => {

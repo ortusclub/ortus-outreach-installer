@@ -411,7 +411,8 @@
           <div class="launch-panel panel-active" id="launch-now-panel">
             <div class="launch-actions">
               <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
-              <button id="btn-stop" class="btn btn-stop" onclick="stopCampaign()" disabled>Stop Campaign</button>
+              <button id="btn-pause" class="btn btn-secondary" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open">Pause</button>
+              <button id="btn-stop" class="btn btn-stop" onclick="confirmStopCampaign()" disabled>Stop Campaign</button>
               <button id="btn-check-dms" class="btn btn-secondary" onclick="startCheckDms()" title="Scan LinkedIn inboxes for new replies">Check DMs</button>
             </div>
           </div>
@@ -605,11 +606,27 @@
         </div>
 
         <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start Campaign</button>
-        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="stopCampaign()" disabled>Stop Campaign</button>
+        <button type="button" id="btn-pause-rb" class="btn btn-sm btn-secondary" onclick="pauseOrResumeCampaign()" disabled>Pause</button>
+        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled>Stop Campaign</button>
       </div>
     </div>
 
   </div> <!-- /.app -->
+
+  <!-- Phase 2.8.9: Stop confirmation modal -->
+  <div id="confirm-stop-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="stop-modal-title">
+      <h3 id="stop-modal-title" class="modal-title">Stop Campaign?</h3>
+      <p class="modal-body">All running browsers will be force-closed and the current run will end. Any leads already sent today are saved — leads in progress will roll back to "not attempted".</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeStopModal()">Cancel</button>
+        <button type="button" class="btn btn-stop" onclick="confirmStopCampaignNow()">Yes, Stop Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 2.8.9: Inline toast for pause/resume status hints -->
+  <div id="campaign-toast" class="campaign-toast" role="status" aria-live="polite"></div>
 
   <!-- Electron-safe replacement for window.prompt() — see promptModal() in app.js -->
   <div id="prompt-modal" class="prompt-modal" hidden>

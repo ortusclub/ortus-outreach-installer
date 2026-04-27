@@ -1451,6 +1451,55 @@ async function stopCampaign() {
   try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
 }
 
+// Phase 2.8.9: Stop confirmation modal — guards against accidental clicks.
+function confirmStopCampaign() {
+  const modal = document.getElementById('confirm-stop-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeStopModal() {
+  const modal = document.getElementById('confirm-stop-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function confirmStopCampaignNow() {
+  closeStopModal();
+  // Visual feedback while the server force-closes browsers (~1-2s).
+  showCampaignToast('Stopping campaign — closing browsers…', 4000);
+  await stopCampaign();
+}
+
+// Phase 2.8.9: Pause/Resume toggle. Button label is driven by polled status,
+// not local state, so the source of truth is the server.
+async function pauseOrResumeCampaign() {
+  const btn = document.getElementById('btn-pause');
+  if (!btn) return;
+  const label = (btn.textContent || '').trim();
+  try {
+    if (label === 'Resume') {
+      btn.disabled = true;
+      btn.textContent = 'Resuming…';
+      await fetch('/api/campaign/resume', { method: 'POST' });
+    } else {
+      btn.disabled = true;
+      btn.textContent = 'Pausing…';
+      showCampaignToast('Pausing — current lead will finish first (~60–120s). Browsers stay open.', 8000);
+      await fetch('/api/campaign/pause', { method: 'POST' });
+    }
+  } catch (err) {
+    showCampaignToast(`Pause/Resume error: ${err.message}`, 5000);
+  }
+}
+
+function showCampaignToast(msg, duration = 6000) {
+  const toast = document.getElementById('campaign-toast');
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.classList.add('visible');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove('visible'), duration);
+}
+
 // Phase 11.2 (D-18): un-hide all active browser processes (debug aid).
 // Calls the session-gated POST /api/browsers/show shipped in Plan 01.
 async function showBrowsers() {
@@ -1467,12 +1516,30 @@ async function showBrowsers() {
   }
 }
 
-function setCampaignButtons(running) {
+function setCampaignButtons(running, paused = false, pauseRequested = false) {
   ['btn-start', 'btn-start-rb'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = running; });
   ['btn-stop',  'btn-stop-rb' ].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !running; });
   // Disable Check DMs while a campaign runs (mutex — both need the same browsers)
   const btnCheck = document.getElementById('btn-check-dms');
   if (btnCheck) btnCheck.disabled = running;
+  // Phase 2.8.9: pause/resume button state mirrors server-reported status.
+  ['btn-pause', 'btn-pause-rb'].forEach(id => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    if (!running) {
+      b.disabled = true;
+      b.textContent = 'Pause';
+    } else if (paused) {
+      b.disabled = false;
+      b.textContent = 'Resume';
+    } else if (pauseRequested) {
+      b.disabled = true;
+      b.textContent = 'Pausing…';
+    } else {
+      b.disabled = false;
+      b.textContent = 'Pause';
+    }
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1621,9 +1688,19 @@ async function pollStatus() {
     const runEl = document.getElementById('st-running');
     const warningEl = document.getElementById('campaign-warnings');
     if (s.running) {
-      runEl.textContent = 'Running';
-      runEl.className = 'value running';
+      if (s.paused) {
+        runEl.textContent = 'Paused';
+        runEl.className = 'value paused';
+      } else if (s.pauseRequested) {
+        runEl.textContent = 'Pausing…';
+        runEl.className = 'value pausing';
+      } else {
+        runEl.textContent = 'Running';
+        runEl.className = 'value running';
+      }
       if (warningEl) warningEl.style.display = '';
+      // Keep pause-button label in sync with server state.
+      setCampaignButtons(true, !!s.paused, !!s.pauseRequested);
     } else {
       runEl.textContent = 'Idle';
       runEl.className = 'value stopped';
@@ -3067,6 +3144,10 @@ window.startCampaign = startCampaign;
 window.startCheckDms = startCheckDms;
 window.stepInput = stepInput;
 window.stopCampaign = stopCampaign;
+window.confirmStopCampaign = confirmStopCampaign;
+window.confirmStopCampaignNow = confirmStopCampaignNow;
+window.closeStopModal = closeStopModal;
+window.pauseOrResumeCampaign = pauseOrResumeCampaign;
 window.toggleSection = toggleSection;
 window.toggleServerLog = toggleServerLog;
 window.togglePresetPopover = togglePresetPopover;

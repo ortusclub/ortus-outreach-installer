@@ -169,6 +169,11 @@ function getModeHint(mode, prevAction) {
 export const campaign = {
   running: false,
   _abort: false,
+  // Phase 2.8.9: pause/resume. _pauseRequested flips immediately on user click;
+  // _paused flips once the loop boundary acknowledges (i.e. current lead done).
+  // The two-state separation lets the UI show "Pausing…" vs "Paused".
+  _paused: false,
+  _pauseRequested: false,
   currentProfile: null,
   processedToday: 0,
   totalProcessed: 0,
@@ -436,6 +441,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
   campaign.running = true;
   campaign._abort = false;
+  campaign._paused = false;
+  campaign._pauseRequested = false;
   campaign.currentProfile = null;
   campaign.processedToday = 0;
   campaign.totalProcessed = 0;
@@ -683,6 +690,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         // ── Inner: up to BATCH_SIZE leads for this profile ──
         for (let leadInBatch = 0; leadInBatch < BATCH_SIZE && !campaign._abort; leadInBatch++) {
+        // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
+        await awaitUnpause();
+        if (campaign._abort) break;
         // ── Phase 11.1: per-iteration resource sample + throttle decision ──
         // Pattern: RESEARCH.md §Pattern 2 (cached sample) + §Pattern 3 (multiplicative composition).
         // Writes campaign._lastSample and campaign._throttle for the status endpoint to read.
@@ -1163,7 +1173,47 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
 export function stopCampaign() {
   campaign._abort = true;
+  // Wake any in-flight awaitUnpause() so the loop can exit cleanly.
+  campaign._paused = false;
+  campaign._pauseRequested = false;
   log('■ Stop requested.');
+}
+
+// Phase 2.8.9: pause/resume.
+// Pause sets a request flag — the loop checks at lead boundaries (top of the
+// inner BATCH_SIZE loop) and only then flips _paused = true. Browsers stay
+// open during pause; resume clears both flags and the awaitUnpause loop exits.
+export function pauseCampaign() {
+  if (!campaign.running) return { ok: false, reason: 'not-running' };
+  if (campaign._paused || campaign._pauseRequested) {
+    return { ok: true, alreadyPausing: true };
+  }
+  campaign._pauseRequested = true;
+  log('⏸ Pause requested — will pause after current lead completes.');
+  return { ok: true };
+}
+
+export function resumeCampaign() {
+  if (!campaign.running) return { ok: false, reason: 'not-running' };
+  if (!campaign._paused && !campaign._pauseRequested) {
+    return { ok: true, notPaused: true };
+  }
+  campaign._pauseRequested = false;
+  campaign._paused = false; // awaitUnpause's while-loop will exit on next tick
+  log('▶ Resume requested.');
+  return { ok: true };
+}
+
+async function awaitUnpause() {
+  if (!campaign._pauseRequested && !campaign._paused) return;
+  campaign._paused = true;
+  log('⏸ Campaign paused — browsers stay open. Press Resume to continue.');
+  while (campaign._paused && !campaign._abort) {
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  if (!campaign._abort) log('▶ Campaign resumed.');
+  campaign._paused = false;
+  campaign._pauseRequested = false;
 }
 
 export function getCampaignStatus() {
@@ -1174,6 +1224,8 @@ export function getCampaignStatus() {
   const thr = campaign._throttle   || amb.throttle;
   return {
     running: campaign.running,
+    paused: campaign._paused,
+    pauseRequested: campaign._pauseRequested,
     currentProfile: campaign.currentProfile,
     processedToday: campaign.processedToday,
     totalProcessed: campaign.totalProcessed,

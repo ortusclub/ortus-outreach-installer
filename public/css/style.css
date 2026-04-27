@@ -1944,3 +1944,93 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   font-family: var(--mono);
   color: var(--ink-muted, #888);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Phase 2.8.9 — Stop confirmation modal + pause/resume toast.
+   Monochrome, hairline borders, matches the command-deck aesthetic.
+   ───────────────────────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: modal-fade-in 120ms ease-out;
+}
+.modal-backdrop.hidden { display: none; }
+
+.modal-card {
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  max-width: 480px;
+  width: 100%;
+  padding: 36px 40px 32px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: modal-rise 160ms ease-out;
+}
+.modal-title {
+  font-family: var(--display);
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 16px;
+  line-height: 1;
+}
+.modal-body {
+  font-family: var(--body);
+  font-size: 0.95rem;
+  color: var(--gray);
+  line-height: 1.5;
+  margin-bottom: 28px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.modal-actions .btn { min-width: 120px; }
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Inline toast — bottom-center, auto-dismisses. Used for pause/resume hints. */
+.campaign-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 12px 20px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--ink);
+  max-width: 520px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease, transform 200ms ease;
+  z-index: 10000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.campaign-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Status pill colors for the live status panel — paused/pausing variants. */
+.value.paused  { color: var(--gold); }
+.value.pausing { color: var(--gray); font-style: italic; }
