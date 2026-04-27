@@ -3406,10 +3406,10 @@ window.updateCampaignSummary = updateCampaignSummary;
 
 const SECTION_ORDER = [
   { id: 'nav-settings',  key: 'settings',  required: true  },
+  { id: 'nav-pace',      key: 'pace',      required: false },
   { id: 'nav-sheet',     key: 'sheet',     required: true  },
   { id: 'nav-accounts',  key: 'accounts',  required: true  },
   { id: 'nav-templates', key: 'templates', required: true  },
-  { id: 'nav-pace',      key: 'pace',      required: false },
   { id: 'nav-launch',    key: 'launch',    required: true  },
 ];
 
@@ -3424,10 +3424,10 @@ function _migrateStaleH2Numbers() {
     if (!edits || typeof edits !== 'object') return false;
     const expectedNum = {
       'h2-settings':  '1.',
-      'h2-sheet':     '2.',
-      'h2-accounts':  '3.',
-      'h2-templates': '4.',
-      'h2-pace':      '5.',
+      'h2-pace':      '2.',
+      'h2-sheet':     '3.',
+      'h2-accounts':  '4.',
+      'h2-templates': '5.',
       'h2-launch':    '6.',
     };
     let changed = false;
