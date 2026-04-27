@@ -217,6 +217,17 @@ document.addEventListener('DOMContentLoaded', () => {
   pollStatus().then(() => {
     if (__cockpit.running) startPolling();
   }).catch(() => {});
+
+  // Phase 2.8.14: relocate the Throughput section (#nav-pace) to sit right
+  // under the Accounts section (#nav-accounts) so the live total recalculation
+  // is contextual to the account selection above it.
+  const pace = document.getElementById('nav-pace');
+  const accounts = document.getElementById('nav-accounts');
+  if (pace && accounts && pace.parentElement && pace.parentElement === accounts.parentElement) {
+    accounts.parentElement.insertBefore(pace, accounts.nextSibling);
+  }
+  // Sync visible→hidden once and run an initial recalc.
+  if (typeof alphaSyncRate === 'function') alphaSyncRate();
 });
 
 let serverLogInterval = null;
@@ -1229,7 +1240,77 @@ async function previewSheet() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign summary calculator
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 2.8.14 — Alpha Throughput panel (replaces the old Rate & Limits steppers).
+// alpha-leads-per-hour is the visible knob (5-30, step 5). rate-per-hour stays
+// as the hidden source-of-truth for the backend (1-6 batches/hour). The two
+// are kept in sync via alphaSyncRate (leads = batches × 5).
+// ─────────────────────────────────────────────────────────────────────────
+function alphaSyncRate() {
+  const leadsEl = document.getElementById('alpha-leads-per-hour');
+  const batchesEl = document.getElementById('rate-per-hour');
+  if (!leadsEl || !batchesEl) return;
+  let leads = parseInt(leadsEl.value, 10);
+  if (!Number.isFinite(leads)) leads = 10;
+  // Snap to multiples of 5 within [5, 30]
+  leads = Math.max(5, Math.min(30, Math.round(leads / 5) * 5));
+  if (parseInt(leadsEl.value, 10) !== leads) leadsEl.value = String(leads);
+  batchesEl.value = String(leads / 5);
+  updateCampaignSummary();
+}
+
+function alphaStepLeads(delta) {
+  const leadsEl = document.getElementById('alpha-leads-per-hour');
+  if (!leadsEl) return;
+  const cur = parseInt(leadsEl.value, 10) || 10;
+  leadsEl.value = String(Math.max(5, Math.min(30, cur + delta)));
+  alphaSyncRate();
+}
+
+function alphaRecalc() {
+  const leadsEl = document.getElementById('alpha-leads-per-hour');
+  const totalEl = document.getElementById('alpha-total-leads');
+  const acctCountEl = document.getElementById('alpha-acct-count');
+  const perAcctEl = document.getElementById('alpha-per-acct');
+  const eqTotalEl = document.getElementById('alpha-eq-total');
+  const dailyTargetEl = document.getElementById('alpha-daily-target');
+  const roundTimeEl = document.getElementById('alpha-round-time');
+  if (!leadsEl || !totalEl) return; // alpha panel not on page — nothing to do
+
+  const leads = parseInt(leadsEl.value, 10) || 10;
+  const numAccounts = Array.isArray(selectedProfileIds) ? selectedProfileIds.length : 0;
+  const total = leads * numAccounts;
+
+  totalEl.textContent = total > 0 ? String(total) : '—';
+  if (acctCountEl) acctCountEl.textContent = String(numAccounts);
+  if (perAcctEl)   perAcctEl.textContent   = String(leads);
+  if (eqTotalEl)   eqTotalEl.textContent   = String(total);
+
+  // Daily target: clamp at the per-account daily limit × accounts.
+  const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 40;
+  if (dailyTargetEl) {
+    if (numAccounts === 0) {
+      dailyTargetEl.textContent = '—';
+    } else {
+      // 10-hour working window approximation, capped by per-account daily limit
+      const tenHrCap = total * 10;
+      const safetyCap = dailyLimit * numAccounts;
+      dailyTargetEl.textContent = Math.min(tenHrCap, safetyCap) + ' leads / day';
+    }
+  }
+
+  // Round time: 60 / batchesPerHour minutes between rounds.
+  if (roundTimeEl) {
+    const batches = Math.max(1, Math.round(leads / 5));
+    roundTimeEl.textContent = '~' + Math.round(60 / batches);
+  }
+}
+
 function updateCampaignSummary() {
+  // Phase 2.8.14: alpha throughput panel recalculates whenever this fires
+  // (account toggle, rate/pause edit). Safe to call before alpha is ready —
+  // it null-guards every element lookup.
+  alphaRecalc();
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
 
   // Mode-specific vocabulary. Phase 11.2 (D-06..D-09): rate is ALWAYS "Batches
@@ -3287,6 +3368,8 @@ window.confirmStopCampaign = confirmStopCampaign;
 window.confirmStopCampaignNow = confirmStopCampaignNow;
 window.closeStopModal = closeStopModal;
 window.pauseOrResumeCampaign = pauseOrResumeCampaign;
+window.alphaSyncRate = alphaSyncRate;
+window.alphaStepLeads = alphaStepLeads;
 window.toggleSection = toggleSection;
 window.toggleServerLog = toggleServerLog;
 window.togglePresetPopover = togglePresetPopover;

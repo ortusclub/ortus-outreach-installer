@@ -2221,3 +2221,123 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   .cockpit-panel { flex-direction: column; align-items: stretch; gap: 20px; padding: 20px; }
   .cockpit-ring { align-self: center; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Phase 2.8.14 — Alpha Throughput panel (replaces the old steppers in §4).
+   Lives under nav-pace, but moved-in-DOM after nav-accounts so it sits
+   immediately under "Select GoLogin Accounts".
+   ───────────────────────────────────────────────────────────────────────── */
+.alpha-throughput {
+  border: 1px solid var(--hairline);
+  padding: 32px 36px;
+  background: linear-gradient(180deg, rgba(247,190,104,0.04), transparent);
+  margin-bottom: 18px;
+}
+.alpha-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+  margin-bottom: 10px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.alpha-big {
+  font-family: var(--display);
+  font-size: 5.2rem;
+  line-height: 1;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.alpha-big-unit {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  color: var(--gray);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+.alpha-eq {
+  margin-left: auto;
+  color: var(--gray);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  text-align: right;
+  line-height: 1.7;
+}
+.alpha-eq b { color: var(--ink); font-weight: 500; }
+.alpha-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-top: 22px;
+}
+.alpha-knob-label {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  color: var(--gray);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.alpha-knob-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.alpha-knob-input {
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 2.6rem;
+  line-height: 1;
+  width: 80px;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+  padding: 0;
+}
+.alpha-knob-input.alpha-pause-input { width: 60px; }
+.alpha-knob-input::-webkit-outer-spin-button,
+.alpha-knob-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.alpha-knob-input { -moz-appearance: textfield; }
+.alpha-knob-suffix,
+.alpha-pause-sep {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  color: var(--gray);
+}
+.step-col { display: flex; flex-direction: column; gap: 4px; }
+.alpha-throughput .step-btn {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid var(--hairline); background: transparent;
+  color: var(--ink); cursor: pointer; font-size: 0.85rem;
+}
+.alpha-throughput .step-btn:hover { border-color: var(--ink); }
+.alpha-knob-help {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  color: var(--gray);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+.alpha-foot {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline-soft);
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  color: var(--gray);
+}
+.alpha-foot b { color: var(--gold); font-family: var(--display); font-size: 1.1rem; }
+
+@media (max-width: 700px) {
+  .alpha-throughput { padding: 22px 20px; }
+  .alpha-headline { flex-direction: column; gap: 14px; }
+  .alpha-eq { margin-left: 0; text-align: left; }
+  .alpha-controls { grid-template-columns: 1fr; }
+}

@@ -153,70 +153,71 @@
 
     <!-- ── Rate & Limits (extracted from Choose a Campaign) ── -->
     <div class="section collapsible collapsed" id="nav-pace">
-      <h2 class="section-toggle" onclick="toggleSection('nav-pace')"><span class="caret">▾</span> <span data-edit="h2-pace">2. Rate &amp; Limits</span></h2>
+      <h2 class="section-toggle" onclick="toggleSection('nav-pace')"><span class="caret">▾</span> <span data-edit="h2-pace">4. Throughput</span></h2>
       <div class="collapsible-body">
-        <!-- Steppers -->
-        <div class="stepper-grid">
-          <div class="stepper" id="rate-per-hour-wrap">
-            <div class="stepper-label" id="rate-per-hour-label">Batches per hour (per account)</div>
-            <div class="stepper-row">
-              <input type="number" class="stepper-input" id="rate-per-hour" value="2" min="1" max="6" oninput="updateCampaignSummary()" />
-              <div class="stepper-ctrl">
-                <button type="button" class="step-btn" onclick="stepInput('rate-per-hour', 1)">+</button>
-                <button type="button" class="step-btn" onclick="stepInput('rate-per-hour', -1)">−</button>
-              </div>
+        <!-- Phase 2.8.14: Alpha throughput panel — sketches/rate-limits-rethink.html#α
+             Shows total leads/hour live as accounts get checked/unchecked.
+             Storage convention: rate-per-hour stays as batches/hour (1-6) for
+             backend compat; alpha-leads-per-hour is the visible value (5-30, step 5),
+             converted via leads = batches × 5. -->
+        <div class="alpha-throughput">
+          <div class="alpha-headline">
+            <div>
+              <div class="alpha-big" id="alpha-total-leads">—</div>
+              <div class="alpha-big-unit">leads / hour total</div>
             </div>
-            <div class="stepper-unit" id="rate-per-hour-unit">Batches per profile per hour (5 leads per batch)</div>
+            <div class="alpha-eq">
+              <b id="alpha-acct-count">0</b> accounts<br>
+              × <b id="alpha-per-acct">10</b> leads / hour each<br>
+              = <b id="alpha-eq-total" style="color:var(--gold)">0</b> leads / hour
+            </div>
           </div>
-
-          <div class="stepper" id="within-batch-min-wrap">
-            <div class="stepper-label">Gap between leads within a batch (min, sec)</div>
-            <div class="stepper-row">
-              <input type="number" class="stepper-input" id="within-batch-min" value="15" min="5" max="120" oninput="updateCampaignSummary()" />
-              <div class="stepper-ctrl">
-                <button type="button" class="step-btn" onclick="stepInput('within-batch-min', 1)">+</button>
-                <button type="button" class="step-btn" onclick="stepInput('within-batch-min', -1)">−</button>
+          <div class="alpha-controls">
+            <div>
+              <div class="alpha-knob-label">Speed per account</div>
+              <div class="alpha-knob-row">
+                <input class="alpha-knob-input" type="number" id="alpha-leads-per-hour" value="10" min="5" max="30" step="5" oninput="alphaSyncRate()" />
+                <div class="step-col">
+                  <button type="button" class="step-btn" onclick="alphaStepLeads(5)">+</button>
+                  <button type="button" class="step-btn" onclick="alphaStepLeads(-5)">−</button>
+                </div>
+                <span class="alpha-knob-suffix">leads / hour</span>
               </div>
+              <div class="alpha-knob-help">Each account works through 5-lead batches. Above 15 = LinkedIn may rate-limit the account.</div>
             </div>
-            <div class="stepper-unit">Floor 15s recommended</div>
+            <div>
+              <div class="alpha-knob-label">Pause between leads</div>
+              <div class="alpha-knob-row">
+                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="15" min="5" max="120" oninput="updateCampaignSummary()" />
+                <span class="alpha-pause-sep">to</span>
+                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
+                <span class="alpha-knob-suffix">seconds</span>
+              </div>
+              <div class="alpha-knob-help">Random pause between each invitation. Below 15s looks robotic to LinkedIn.</div>
+            </div>
           </div>
-
-          <div class="stepper" id="within-batch-max-wrap">
-            <div class="stepper-label">Gap between leads within a batch (max, sec)</div>
-            <div class="stepper-row">
-              <input type="number" class="stepper-input" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
-              <div class="stepper-ctrl">
-                <button type="button" class="step-btn" onclick="stepInput('within-batch-max', 1)">+</button>
-                <button type="button" class="step-btn" onclick="stepInput('within-batch-max', -1)">−</button>
-              </div>
-            </div>
-            <div class="stepper-unit">Ceiling 45s recommended</div>
-          </div>
-
-          <div class="stepper" id="message-gap-wrap" style="display:none">
-            <div class="stepper-label">Gap between messages (seconds)</div>
-            <div class="stepper-row">
-              <input type="number" class="stepper-input" id="message-gap" value="60" min="10" max="600" oninput="updateCampaignSummary()" />
-              <div class="stepper-ctrl">
-                <button type="button" class="step-btn" onclick="stepInput('message-gap', 5)">+</button>
-                <button type="button" class="step-btn" onclick="stepInput('message-gap', -5)">−</button>
-              </div>
-            </div>
-            <div class="stepper-unit">Recommended 60–120s</div>
-          </div>
-
-          <div class="stepper" id="daily-limit-wrap" style="display:none">
-            <div class="stepper-label" id="daily-limit-label">Max connections per account (total)</div>
-            <div class="stepper-row">
-              <input type="number" class="stepper-input" id="daily-limit" value="40" min="1" max="100" oninput="updateCampaignSummary()" />
-              <div class="stepper-ctrl">
-                <button type="button" class="step-btn" onclick="stepInput('daily-limit', 1)">+</button>
-                <button type="button" class="step-btn" onclick="stepInput('daily-limit', -1)">−</button>
-              </div>
-            </div>
-            <div class="stepper-unit">Maximum total per account</div>
+          <div class="alpha-foot">
+            <span>Daily target: <b id="alpha-daily-target">—</b></span>
+            <span>Round time: <b id="alpha-round-time">—</b> min between rounds</span>
           </div>
         </div>
+
+        <!-- Hidden inputs preserve backend wire — backend reads rate-per-hour as
+             batchesPerHour (1-6); alphaSyncRate keeps it in sync with the visible
+             leads/hour input. message-gap + daily-limit kept hidden for legacy code. -->
+        <input type="hidden" id="rate-per-hour" value="2" />
+        <input type="hidden" id="message-gap" value="60" />
+        <input type="hidden" id="daily-limit" value="40" />
+
+        <!-- Legacy label/wrapper anchors so setLaunchMode and other readers don't crash -->
+        <span id="rate-per-hour-label" style="display:none"></span>
+        <span id="rate-per-hour-unit" style="display:none"></span>
+        <span id="daily-limit-label" style="display:none"></span>
+        <div id="rate-per-hour-wrap" style="display:none"></div>
+        <div id="within-batch-min-wrap" style="display:none"></div>
+        <div id="within-batch-max-wrap" style="display:none"></div>
+        <div id="message-gap-wrap" style="display:none"></div>
+        <div id="daily-limit-wrap" style="display:none"></div>
 
         <!-- Campaign hero summary -->
         <div id="campaign-summary" class="campaign-hero">
@@ -247,7 +248,7 @@
 
     <!-- ── Google Sheet ── -->
     <div class="section collapsible collapsed" id="nav-sheet">
-      <h2 class="section-toggle" onclick="toggleSection('nav-sheet')"><span class="caret">▾</span> <span data-edit="h2-sheet">3. Google Sheet URL</span></h2>
+      <h2 class="section-toggle" onclick="toggleSection('nav-sheet')"><span class="caret">▾</span> <span data-edit="h2-sheet">2. Google Sheet URL</span></h2>
       <div class="collapsible-body">
         <label for="sheet-url">Public Google Sheet with LinkedIn URLs</label>
         <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." />
@@ -258,7 +259,7 @@
 
     <!-- ── GoLogin Profiles ── -->
     <div class="section collapsible collapsed" id="nav-accounts">
-      <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">4. Select GoLogin Accounts</span></h2>
+      <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span></h2>
       <div class="collapsible-body">
 
       <!-- Presets -->
