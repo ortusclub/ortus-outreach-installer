@@ -1344,7 +1344,11 @@ function updateCampaignSummary() {
   }
 
   const limit = parseInt(document.getElementById('daily-limit').value, 10) || 40;
-  const numAccounts = Math.max(selectedProfileIds.length, 1);
+  // Phase 2.8.16: use REAL account count, no defensive Math.max(..., 1) — that
+  // was making the forecast tiles show numbers (e.g. 40 actions) when the
+  // operator hadn't selected any account yet. Downstream renders "—" if 0.
+  const numAccounts = selectedProfileIds.length;
+  const numAccountsForMath = Math.max(numAccounts, 1); // for divisions / clamps only
 
   // Phase 11.2: rate is batches/hour for every mode. In message_only we still
   // derive a rate-ish value from the gap field for the summary text.
@@ -1407,16 +1411,27 @@ function updateCampaignSummary() {
   // Settings-section campaign hero
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const accountWord = numAccounts === 1 ? 'account' : 'accounts';
-  setText('hero-actions', String(totalActions));
-  setText('hero-actions-sub', `${numAccounts} ${accountWord} · ${words.action}`);
-  setText('hero-duration', durationStr);
-  if (mode === 'message_only') {
-    setText('hero-duration-sub', `${rate} ${words.action}/hr × ${numAccounts}`);
+  // Phase 2.8.16: when no accounts selected, show "—" everywhere instead of
+  // misleading numbers derived from a default-of-1.
+  if (numAccounts === 0) {
+    setText('hero-actions', '—');
+    setText('hero-actions-sub', `select accounts to see forecast`);
+    setText('hero-duration', '—');
+    setText('hero-duration-sub', '—');
+    setText('hero-finish', '—');
+    setText('hero-finish-sub', '—');
   } else {
-    setText('hero-duration-sub', `${rate} batches/hr × ${numAccounts}`);
+    setText('hero-actions', String(totalActions));
+    setText('hero-actions-sub', `${numAccounts} ${accountWord} · ${words.action}`);
+    setText('hero-duration', durationStr);
+    if (mode === 'message_only') {
+      setText('hero-duration-sub', `${rate} ${words.action}/hr × ${numAccounts}`);
+    } else {
+      setText('hero-duration-sub', `${rate} batches/hr × ${numAccounts}`);
+    }
+    setText('hero-finish', finishStr);
+    setText('hero-finish-sub', `from now · local time`);
   }
-  setText('hero-finish', finishStr);
-  setText('hero-finish-sub', `from now · local time`);
 }
 
 // Stepper helper — increments/decrements a number input and fires its oninput

@@ -174,7 +174,7 @@
           </div>
           <div class="alpha-controls">
             <div>
-              <div class="alpha-knob-label">Speed per account</div>
+              <div class="alpha-knob-label">Leads / hour, per account</div>
               <div class="alpha-knob-row">
                 <input class="alpha-knob-input" type="number" id="alpha-leads-per-hour" value="10" min="5" max="30" step="5" oninput="alphaSyncRate()" />
                 <div class="step-col">
@@ -183,7 +183,7 @@
                 </div>
                 <span class="alpha-knob-suffix">leads / hour</span>
               </div>
-              <div class="alpha-knob-help">Each account works through 5-lead batches. Above 15 = LinkedIn may rate-limit the account.</div>
+              <div class="alpha-knob-help">Each account processes leads in 5-lead batches. Adjust in increments of 5.</div>
             </div>
             <div>
               <div class="alpha-knob-label">Pause between leads</div>
@@ -193,7 +193,7 @@
                 <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
                 <span class="alpha-knob-suffix">seconds</span>
               </div>
-              <div class="alpha-knob-help">Random pause between each invitation. Below 15s looks robotic to LinkedIn.</div>
+              <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
             </div>
           </div>
           <!-- Phase 2.8.15: Forecast row absorbed from the old standalone
