@@ -3413,6 +3413,46 @@ const SECTION_ORDER = [
   { id: 'nav-launch',    key: 'launch',    required: true  },
 ];
 
+// Phase 2.8.19 — one-time migration: rewrite stale numeric prefixes on saved
+// h2 label overrides (e.g. "1.5. Rate & Limits" → "5. Rate & Limits") so
+// renumbering after section reorders propagates without nuking user wording.
+function _migrateStaleH2Numbers() {
+  try {
+    const raw = localStorage.getItem('ortus-edits');
+    if (!raw) return false;
+    const edits = JSON.parse(raw);
+    if (!edits || typeof edits !== 'object') return false;
+    const expectedNum = {
+      'h2-settings':  '1.',
+      'h2-sheet':     '2.',
+      'h2-accounts':  '3.',
+      'h2-templates': '4.',
+      'h2-pace':      '5.',
+      'h2-launch':    '6.',
+    };
+    let changed = false;
+    for (const key of Object.keys(expectedNum)) {
+      const cur = edits[key];
+      if (typeof cur !== 'string') continue;
+      // Match a leading number prefix: "5. ", "1.5. ", "10. ", etc.
+      const m = cur.match(/^\s*\d+(?:\.\d+)?\.\s+(.*)$/);
+      if (!m) continue;
+      const rest = m[1];
+      const corrected = `${expectedNum[key]} ${rest}`;
+      if (corrected !== cur) {
+        edits[key] = corrected;
+        changed = true;
+      }
+    }
+    if (changed) {
+      localStorage.setItem('ortus-edits', JSON.stringify(edits));
+    }
+    return changed;
+  } catch (_) {
+    return false;
+  }
+}
+
 function _humanAgo(ts) {
   if (!ts) return '';
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -3485,12 +3525,13 @@ function computeSectionReadiness() {
       : '',
   };
 
-  // Throughput (pace) — done if values present
+  // Throughput (pace) — done if values present.
+  // Summary stays minimal: just the rate. The full breakdown is visible
+  // when the section is expanded; the header should not duplicate it.
   const rate = document.getElementById('rate-per-hour')?.value || '';
-  const dailyLimit = document.getElementById('daily-limit')?.value || '';
   out.pace = {
-    state: (rate && dailyLimit) ? 'done' : 'empty',
-    summary: (rate && dailyLimit) ? `${rate}/hr · ${dailyLimit} max/account` : '',
+    state: rate ? 'done' : 'empty',
+    summary: rate ? `${rate}/hr` : '',
   };
 
   // Launch — "done" means all required prior sections are done
@@ -3598,7 +3639,14 @@ document.addEventListener('change', (e) => {
 // input/change listeners above keep summaries fresh after this initial pass.
 const INITIAL_RENDER_DELAY_MS = 1500;
 function _doInitialSectionRender() {
-  try { applyInitialExpand(); updateSectionSummaries(); } catch (_) {}
+  try {
+    if (_migrateStaleH2Numbers()) {
+      // Re-apply saved edits so the corrected labels paint to the DOM
+      if (typeof applySavedEdits === 'function') applySavedEdits();
+    }
+    applyInitialExpand();
+    updateSectionSummaries();
+  } catch (_) {}
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
@@ -3607,3 +3655,8 @@ if (document.readyState === 'loading') {
 } else {
   setTimeout(_doInitialSectionRender, INITIAL_RENDER_DELAY_MS);
 }
+
+// Run migration synchronously too — covers the < 1500ms window before deferred render
+try {
+  if (_migrateStaleH2Numbers() && typeof applySavedEdits === 'function') applySavedEdits();
+} catch (_) {}
