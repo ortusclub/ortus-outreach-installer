@@ -457,39 +457,43 @@
     <div class="section collapsible collapsed" id="nav-status">
       <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">Live Status</span></h2>
       <div class="collapsible-body">
-      <!-- Phase 2.8.12: Live cockpit — what the campaign is doing right NOW -->
+      <!-- Phase 2.8.12 + 2.8.13: Live cockpit — single panel, all live state -->
       <div class="cockpit-panel" id="cockpit-panel">
-        <div class="cockpit-ring">
-          <svg viewBox="0 0 100 100" aria-hidden="true">
-            <circle class="cockpit-ring-bg" cx="50" cy="50" r="45"></circle>
-            <circle class="cockpit-ring-fg" id="cockpit-ring-fg" cx="50" cy="50" r="45"
-                    stroke-dasharray="282.7" stroke-dashoffset="282.7"></circle>
-          </svg>
-          <div class="cockpit-ring-center">
-            <div class="cockpit-ring-num" id="cockpit-ring-num">—</div>
-            <div class="cockpit-ring-unit" id="cockpit-ring-unit">idle</div>
+        <div class="cockpit-top">
+          <div class="cockpit-ring">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="cockpit-ring-bg" cx="50" cy="50" r="45"></circle>
+              <circle class="cockpit-ring-fg" id="cockpit-ring-fg" cx="50" cy="50" r="45"
+                      stroke-dasharray="282.7" stroke-dashoffset="282.7"></circle>
+            </svg>
+            <div class="cockpit-ring-center">
+              <div class="cockpit-ring-num" id="cockpit-ring-num">—</div>
+              <div class="cockpit-ring-unit" id="cockpit-ring-unit">idle</div>
+            </div>
+          </div>
+          <div class="cockpit-info">
+            <div class="cockpit-tag"><span class="cockpit-pulse-dot" id="cockpit-pulse-dot"></span><span id="cockpit-status-tag">IDLE</span></div>
+            <div class="cockpit-action" id="cockpit-action">No campaign running</div>
+            <div class="cockpit-meta">
+              <div class="cockpit-meta-label">Lead</div>     <div class="cockpit-meta-value" id="cockpit-lead">—</div>
+              <div class="cockpit-meta-label">Account</div>  <div class="cockpit-meta-value" id="cockpit-account">—</div>
+              <div class="cockpit-meta-label">Mode</div>     <div class="cockpit-meta-value" id="cockpit-mode-meta">—</div>
+            </div>
           </div>
         </div>
-        <div class="cockpit-info">
-          <div class="cockpit-tag"><span class="cockpit-pulse-dot" id="cockpit-pulse-dot"></span><span id="cockpit-status-tag">IDLE</span></div>
-          <div class="cockpit-action" id="cockpit-action">No campaign running</div>
-          <div class="cockpit-meta">
-            <div class="cockpit-meta-label">Lead</div>     <div class="cockpit-meta-value" id="cockpit-lead">—</div>
-            <div class="cockpit-meta-label">Account</div>  <div class="cockpit-meta-value" id="cockpit-account">—</div>
-            <div class="cockpit-meta-label">Mode</div>     <div class="cockpit-meta-value" id="cockpit-mode-meta">—</div>
+        <div class="cockpit-stats">
+          <div class="cockpit-stat">
+            <div class="cockpit-stat-label">Sent today</div>
+            <div class="cockpit-stat-value"><span id="st-today">0</span><span class="cockpit-stat-of"> of </span><span id="st-total">0</span></div>
           </div>
+          <div class="cockpit-stat">
+            <div class="cockpit-stat-label">Errors</div>
+            <div class="cockpit-stat-value" id="st-errors">0</div>
+          </div>
+          <div class="cockpit-stat-bar"><div class="cockpit-stat-bar-fill" id="st-bar" style="width:0%"></div></div>
         </div>
       </div>
       <div id="account-queue" class="account-queue hidden"></div>
-      <div class="status-grid">
-        <div class="stat-card"><div class="label">Status</div><div class="value" id="st-running">Idle</div></div>
-        <div class="stat-card"><div class="label">Mode</div><div class="value" id="st-mode" style="font-size:0.85rem">—</div></div>
-        <div class="stat-card"><div class="label">Account</div><div class="value" id="st-profile" style="font-size:0.75rem">—</div></div>
-        <div class="stat-card"><div class="label">Progress</div><div class="value" id="st-today">0</div></div>
-        <div class="stat-card"><div class="label">Total</div><div class="value" id="st-total">0</div></div>
-        <div class="stat-card"><div class="label">Errors</div><div class="value" id="st-errors">0</div></div>
-      </div>
-      <div class="progress-bar"><div class="fill" id="st-bar" style="width:0%"></div></div>
       <div id="campaign-warnings" style="display:none">
         <div>&#9888; Keep your laptop open — closing the lid stops the campaign</div>
         <div>&#9888; Do not close the browser windows that open — they run the campaign</div>

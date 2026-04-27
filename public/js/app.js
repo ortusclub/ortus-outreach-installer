@@ -1823,45 +1823,45 @@ async function pollStatus() {
     wasErrorCount = (s.errors || []).length;
     wasRunning = s.running;
 
+    // Phase 2.8.13: status / mode / profile pills moved INTO the cockpit panel
+    // (handled by renderCockpit). The legacy st-running/st-mode/st-profile
+    // tiles are gone — guard their setters in case any are still in the DOM
+    // (e.g. older cached HTML).
     const runEl = document.getElementById('st-running');
     const warningEl = document.getElementById('campaign-warnings');
     if (s.running) {
-      if (s.paused) {
-        runEl.textContent = 'Paused';
-        runEl.className = 'value paused';
-      } else if (s.pauseRequested) {
-        runEl.textContent = 'Pausing…';
-        runEl.className = 'value pausing';
-      } else {
-        runEl.textContent = 'Running';
-        runEl.className = 'value running';
+      if (runEl) {
+        if (s.paused) { runEl.textContent = 'Paused'; runEl.className = 'value paused'; }
+        else if (s.pauseRequested) { runEl.textContent = 'Pausing…'; runEl.className = 'value pausing'; }
+        else { runEl.textContent = 'Running'; runEl.className = 'value running'; }
       }
       if (warningEl) warningEl.style.display = '';
-      // Keep pause-button label in sync with server state.
       setCampaignButtons(true, !!s.paused, !!s.pauseRequested);
     } else {
-      runEl.textContent = 'Idle';
-      runEl.className = 'value stopped';
+      if (runEl) { runEl.textContent = 'Idle'; runEl.className = 'value stopped'; }
       if (warningEl) warningEl.style.display = 'none';
       setCampaignButtons(false);
       if (s.logs?.length > 0 && !s.running) stopPolling();
     }
 
-    document.getElementById('st-profile').textContent = s.currentProfile || '—';
+    const profEl = document.getElementById('st-profile');
+    if (profEl) profEl.textContent = s.currentProfile || '—';
+    const modeEl = document.getElementById('st-mode');
+    if (modeEl) {
+      const modeLabels = {
+        connect_only: 'Connect Only',
+        message_only: 'Message Only', inmail_only: 'InMail Only', check_status: 'Check Status',
+        open_profile_only: 'Open Profile',
+      };
+      modeEl.textContent = modeLabels[s.mode] || s.mode || '—';
+    }
 
-    const modeLabels = {
-      connect_only: 'Connect Only',
-      message_only: 'Message Only', inmail_only: 'InMail Only', check_status: 'Check Status',
-      open_profile_only: 'Open Profile',
-    };
-    document.getElementById('st-mode').textContent = modeLabels[s.mode] || s.mode || '—';
-
-    document.getElementById('st-today').textContent = s.processedToday;
-    document.getElementById('st-total').textContent = s.totalTargets;
-    document.getElementById('st-errors').textContent = (s.errors || []).length;
+    const todayEl = document.getElementById('st-today');     if (todayEl)  todayEl.textContent  = s.processedToday;
+    const totalEl = document.getElementById('st-total');     if (totalEl)  totalEl.textContent  = s.totalTargets;
+    const errEl   = document.getElementById('st-errors');    if (errEl)    errEl.textContent    = (s.errors || []).length;
 
     const pct = s.totalTargets > 0 ? Math.min(100, Math.round((s.processedToday / s.totalTargets) * 100)) : 0;
-    document.getElementById('st-bar').style.width = pct + '%';
+    const barEl = document.getElementById('st-bar');         if (barEl)    barEl.style.width = pct + '%';
 
     // Phase 11.1: resource tiles + slow-mode banner
     renderHeaderResources(s.resources || null);
@@ -2522,26 +2522,28 @@ function initScrollSpy() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Run bar mirror — reads #st-running state without modifying pollStatus
+// Run bar mirror — Phase 2.8.13: now reads from __cockpit (the cockpit panel
+// owns the canonical running/paused state since the legacy st-running tile
+// was removed). Polled on the same 2s cadence as pollStatus.
 // ─────────────────────────────────────────────────────────────────────────────
 function initRunBarMirror() {
-  const src = document.getElementById('st-running');
   const bar = document.getElementById('run-bar-status');
   const txt = document.getElementById('run-bar-text');
   const statusSection = document.getElementById('nav-status');
-  if (!src || !bar || !txt) return;
+  if (!bar || !txt) return;
   let wasRunning = false;
   const sync = () => {
-    const running = src.classList.contains('running');
+    const running = !!__cockpit.running;
     bar.classList.toggle('running', running);
-    const profile = document.getElementById('st-profile')?.textContent || '';
-    const mode = document.getElementById('st-mode')?.textContent || '';
+    const profile = (__cockpit.action && __cockpit.action.account) || __cockpit.pName || '';
+    const mode = formatMode(__cockpit.mode);
     const today = document.getElementById('st-today')?.textContent || '0';
     const total = document.getElementById('st-total')?.textContent || '0';
     if (running) {
-      txt.innerHTML = `<strong>Running</strong> · ${mode} · ${profile} · ${today}/${total}`;
+      const label = __cockpit.paused ? 'Paused' : (__cockpit.pauseRequested ? 'Pausing…' : 'Running');
+      txt.innerHTML = `<strong>${label}</strong> · ${mode} · ${profile} · ${today}/${total}`;
     } else {
-      txt.textContent = src.textContent || 'Idle';
+      txt.textContent = 'Idle';
     }
 
     // Right-pane status mirror
@@ -2569,7 +2571,6 @@ function initRunBarMirror() {
     }
     wasRunning = running;
   };
-  new MutationObserver(sync).observe(src, { childList: true, attributes: true, subtree: true });
   setInterval(sync, 2000);
   sync();
 }

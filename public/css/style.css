@@ -2043,12 +2043,53 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
    ───────────────────────────────────────────────────────────────────────── */
 .cockpit-panel {
   display: flex;
-  align-items: center;
-  gap: 32px;
-  padding: 24px 28px;
+  flex-direction: column;
+  padding: 24px 28px 20px;
   border: 1px solid var(--hairline);
   margin-bottom: 16px;
   background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+}
+.cockpit-top {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.cockpit-stats {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding-top: 18px;
+  margin-top: 20px;
+  border-top: 1px solid var(--hairline);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.cockpit-stat { display: flex; flex-direction: column; gap: 4px; }
+.cockpit-stat-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  color: var(--gray);
+  text-transform: uppercase;
+}
+.cockpit-stat-value {
+  font-family: var(--display);
+  font-size: 1.4rem;
+  color: var(--ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cockpit-stat-of { color: var(--gray); font-family: var(--mono, ui-monospace, monospace); font-size: 0.7rem; letter-spacing: 0.06em; }
+.cockpit-stat-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--hairline-soft);
+  position: relative;
+  overflow: hidden;
+}
+.cockpit-stat-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--gold);
+  transition: width 0.5s linear;
 }
 .cockpit-ring {
   position: relative;

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rate &amp; Limits — Concept Sketches</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999;
+    --hairline: rgba(255,255,255,0.15);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --gold: #F7BE68;
+    --green: #3fb950;
+    --red: #f85149;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); padding: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; }
+  .page-sub { color: var(--gray); font-size: 0.9rem; margin-bottom: 56px; max-width: 700px; line-height: 1.5; }
+
+  .concept { margin-bottom: 72px; max-width: 980px; }
+  .concept-header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline); }
+  .concept-letter { font-family: var(--display); font-size: 1.4rem; color: var(--gold); }
+  .concept-name { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.04em; text-transform: uppercase; }
+  .concept-tag { color: var(--gray); font-size: 0.78rem; font-family: var(--mono); margin-left: auto; }
+  .concept-notes { color: var(--gray); font-size: 0.82rem; margin: 14px 0 24px; line-height: 1.55; }
+  .concept-notes b { color: var(--ink); font-weight: 600; }
+
+  /* shared "section" frame to mimic the dashboard */
+  .section { border: 1px solid var(--hairline); padding: 28px 32px; }
+  .section-h2 { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 24px; }
+
+  /* shared stepper (matches existing app stepper visual roughly) */
+  .stepper-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .stepper { padding: 20px 24px; border: 1px solid var(--hairline-soft); }
+  .stepper-label { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; color: var(--gray); text-transform: uppercase; margin-bottom: 14px; }
+  .stepper-row { display: flex; align-items: center; gap: 16px; }
+  .stepper-input { background: transparent; border: none; color: var(--ink); font-family: var(--display); font-size: 3rem; line-height: 1; width: 100px; outline: none; font-variant-numeric: tabular-nums; }
+  .step-btn { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--hairline); background: transparent; color: var(--ink); cursor: pointer; font-size: 0.9rem; }
+  .step-btn:hover { border-color: var(--ink); }
+  .stepper-ctrl { display: flex; flex-direction: column; gap: 4px; }
+  .stepper-unit { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); margin-top: 12px; line-height: 1.4; }
+
+  /* ───────────────────────────────────────────────────
+     A — PLAIN-ENGLISH (lightest touch — just relabel)
+     ─────────────────────────────────────────────────── */
+  .a-stepper-unit { color: var(--gold); }
+
+  /* ───────────────────────────────────────────────────
+     B — RANGE SLIDER (single dual-handle for the pause)
+     ─────────────────────────────────────────────────── */
+  .b-row { padding: 20px 24px; border: 1px solid var(--hairline-soft); margin-bottom: 18px; }
+  .b-row-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  .b-row-label { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; color: var(--gray); text-transform: uppercase; }
+  .b-row-values { font-family: var(--display); font-size: 1.6rem; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+  .b-row-values .v { color: var(--gold); }
+  .b-slider { position: relative; height: 36px; padding: 14px 0; }
+  .b-track { position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--hairline); transform: translateY(-50%); }
+  .b-track-fill { position: absolute; top: 50%; height: 2px; background: var(--gold); transform: translateY(-50%); left: 18%; right: 22%; }
+  .b-handle { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%; background: var(--ink); border: 2px solid var(--gold); transform: translate(-50%, -50%); cursor: ew-resize; }
+  .b-handle.left { left: 18%; }
+  .b-handle.right { left: 78%; }
+  .b-tick-row { display: flex; justify-content: space-between; margin-top: 10px; }
+  .b-tick { font-family: var(--mono); font-size: 0.65rem; color: var(--gray); }
+  .b-summary { color: var(--gray); font-size: 0.78rem; font-family: var(--mono); margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline-soft); }
+  .b-summary .h { color: var(--ink); }
+
+  /* ───────────────────────────────────────────────────
+     C — THROUGHPUT DIAL (one number, derived rest)
+     ─────────────────────────────────────────────────── */
+  .c-dial { display: flex; align-items: center; gap: 36px; padding: 32px; }
+  .c-big {
+    font-family: var(--display);
+    font-size: 7rem;
+    line-height: 1;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    width: 200px;
+    text-align: center;
+  }
+  .c-big input {
+    background: transparent; border: none; color: var(--ink);
+    font: inherit; text-align: center; width: 100%; outline: none;
+  }
+  .c-big-unit { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); letter-spacing: 0.18em; text-transform: uppercase; text-align: center; margin-top: 8px; }
+  .c-derived { flex: 1; }
+  .c-derived-label { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
+  .c-derived-list { display: grid; grid-template-columns: auto 1fr; gap: 8px 24px; font-size: 0.95rem; }
+  .c-derived-key { color: var(--gray); font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; }
+  .c-derived-val { color: var(--ink); }
+  .c-derived-val .num { color: var(--gold); font-family: var(--display); font-size: 1.2rem; }
+  .c-advanced { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--hairline-soft); font-size: 0.78rem; color: var(--gray); cursor: pointer; }
+  .c-advanced:hover { color: var(--ink); }
+
+  /* ───────────────────────────────────────────────────
+     D — PRESET CARDS (pick a tempo)
+     ─────────────────────────────────────────────────── */
+  .d-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .d-card {
+    border: 1px solid var(--hairline);
+    padding: 24px 22px 22px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+  }
+  .d-card:hover { border-color: var(--ink); }
+  .d-card.active {
+    border-color: var(--gold);
+    background: linear-gradient(180deg, rgba(247,190,104,0.06), transparent);
+  }
+  .d-card.active::after {
+    content: '';
+    position: absolute; top: 12px; right: 12px;
+    width: 8px; height: 8px; border-radius: 50%; background: var(--gold);
+  }
+  .d-card-name { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
+  .d-card-tagline { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); margin-bottom: 18px; letter-spacing: 0.04em; }
+  .d-card-rate { font-family: var(--display); font-size: 2.2rem; color: var(--gold); margin-bottom: 4px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .d-card-rate-unit { font-family: var(--mono); font-size: 0.65rem; color: var(--gray); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 16px; }
+  .d-card-detail { font-size: 0.8rem; color: var(--gray); line-height: 1.5; }
+  .d-card-detail b { color: var(--ink); font-weight: 500; }
+  .d-custom-toggle {
+    margin-top: 18px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--gray);
+    cursor: pointer;
+    text-align: center;
+    padding-top: 16px;
+    border-top: 1px solid var(--hairline-soft);
+  }
+  .d-custom-toggle:hover { color: var(--ink); }
+
+  .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 0.78rem; font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<h1 class="page-title">Rate &amp; Limits — Concept Sketches</h1>
+<p class="page-sub">
+  Four ways to make this section understandable at a glance. Today's labels ("Gap between leads within a batch (min, sec) — Floor 15s recommended") are technically accurate but operationally opaque — operators have to mentally translate.
+  All four concepts ship the SAME underlying knobs (batches/hour, min/max pause); they just frame them differently.
+</p>
+
+<!-- ════════════════════════════════════════════════ A — PLAIN ENGLISH ════ -->
+<section class="concept">
+  <div class="concept-header">
+    <span class="concept-letter">A</span>
+    <span class="concept-name">Plain English</span>
+    <span class="concept-tag">smallest change — just relabel</span>
+  </div>
+  <p class="concept-notes">
+    <b>Approach:</b> keep the existing 3-stepper layout. Rewrite labels in operator-speak. Replace technical hints ("Floor 15s recommended") with consequence-framed hints in gold ("Below 15s = looks robotic to LinkedIn").
+    <br><br>
+    <b>Trade-off:</b> minimum disruption, fastest to ship. Doesn't fix the underlying issue that operators have to think in three separate inputs.
+  </p>
+
+  <div class="section">
+    <h2 class="section-h2">2. Rate &amp; Limits</h2>
+    <div class="stepper-grid">
+      <div class="stepper">
+        <div class="stepper-label">How many batches per hour, per account</div>
+        <div class="stepper-row">
+          <input class="stepper-input" type="number" value="2">
+          <div class="stepper-ctrl"><button class="step-btn">+</button><button class="step-btn">−</button></div>
+        </div>
+        <div class="stepper-unit a-stepper-unit">5 leads per batch · 2 batches = 10 leads/hour/account</div>
+      </div>
+      <div class="stepper">
+        <div class="stepper-label">Shortest pause between leads (sec)</div>
+        <div class="stepper-row">
+          <input class="stepper-input" type="number" value="15">
+          <div class="stepper-ctrl"><button class="step-btn">+</button><button class="step-btn">−</button></div>
+        </div>
+        <div class="stepper-unit a-stepper-unit">Below 15s = looks robotic to LinkedIn</div>
+      </div>
+      <div class="stepper">
+        <div class="stepper-label">Longest pause between leads (sec)</div>
+        <div class="stepper-row">
+          <input class="stepper-input" type="number" value="45">
+          <div class="stepper-ctrl"><button class="step-btn">+</button><button class="step-btn">−</button></div>
+        </div>
+        <div class="stepper-unit a-stepper-unit">Above 45s = wastes throughput</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════ B — RANGE SLIDER ═════ -->
+<section class="concept">
+  <div class="concept-header">
+    <span class="concept-letter">B</span>
+    <span class="concept-name">Range Slider</span>
+    <span class="concept-tag">visual range — one control for min/max</span>
+  </div>
+  <p class="concept-notes">
+    <b>Approach:</b> the min/max pause becomes ONE dual-handle slider. The orange band visually shows the random window. Numbers float above the handles.
+    Batches/hour stays a separate stepper since it's conceptually different.
+    <br><br>
+    <b>Trade-off:</b> intuitive at a glance — operator instantly understands "the pause is randomized between THESE two values". Requires a custom dual-handle slider component (~50 lines of JS). Native HTML doesn't support range sliders with two handles.
+  </p>
+
+  <div class="section">
+    <h2 class="section-h2">2. Rate &amp; Limits</h2>
+
+    <div class="stepper" style="margin-bottom: 18px;">
+      <div class="stepper-label">How many batches per hour, per account</div>
+      <div class="stepper-row">
+        <input class="stepper-input" type="number" value="2">
+        <div class="stepper-ctrl"><button class="step-btn">+</button><button class="step-btn">−</button></div>
+      </div>
+      <div class="stepper-unit">5 leads per batch · 2 batches = 10 leads/hour/account</div>
+    </div>
+
+    <div class="b-row">
+      <div class="b-row-head">
+        <div class="b-row-label">Pause between leads (randomized each time)</div>
+        <div class="b-row-values"><span class="v">15</span> – <span class="v">45</span> sec</div>
+      </div>
+      <div class="b-slider">
+        <div class="b-track"></div>
+        <div class="b-track-fill"></div>
+        <div class="b-handle left"></div>
+        <div class="b-handle right"></div>
+      </div>
+      <div class="b-tick-row">
+        <span class="b-tick">5s</span>
+        <span class="b-tick">30s</span>
+        <span class="b-tick">60s</span>
+        <span class="b-tick">90s</span>
+        <span class="b-tick">120s</span>
+      </div>
+      <div class="b-summary">
+        <span class="h">In plain terms:</span> after each invitation the campaign waits a random amount between <b style="color:var(--gold)">15</b> and <b style="color:var(--gold)">45</b> seconds before the next one. Drag the handles to change.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════ C — THROUGHPUT DIAL ══ -->
+<section class="concept">
+  <div class="concept-header">
+    <span class="concept-letter">C</span>
+    <span class="concept-name">Throughput Dial</span>
+    <span class="concept-tag">one number — the rest auto-derives</span>
+  </div>
+  <p class="concept-notes">
+    <b>Approach:</b> the operator only specifies "How many leads per hour, per account". System derives batches and pause window automatically (with sensible defaults) and shows the breakdown.
+    Hidden-by-default "Advanced" toggle reveals the underlying steppers if the operator wants fine control.
+    <br><br>
+    <b>Trade-off:</b> simplest mental model — most operators don't care about batches vs pauses, they just want X leads per hour. Loses fine-grained control unless Advanced is opened. Need to commit to a derivation rule (e.g. "leads/hour ÷ 5 = batches/hour, pause = 3600/leads ± 50%").
+  </p>
+
+  <div class="section">
+    <h2 class="section-h2">2. Rate &amp; Limits</h2>
+    <div class="c-dial">
+      <div>
+        <div class="c-big"><input type="number" value="10"></div>
+        <div class="c-big-unit">leads / hour / account</div>
+      </div>
+      <div class="c-derived">
+        <div class="c-derived-label">What this means</div>
+        <div class="c-derived-list">
+          <div class="c-derived-key">Batches</div>     <div class="c-derived-val"><span class="num">2</span> per hour (5 leads each)</div>
+          <div class="c-derived-key">Pause</div>       <div class="c-derived-val">randomized <span class="num">15</span>–<span class="num">45</span> sec between leads</div>
+          <div class="c-derived-key">Round time</div>  <div class="c-derived-val">~30 min (then long sleep before next round)</div>
+          <div class="c-derived-key">Daily ceiling</div><div class="c-derived-val">capped at the daily limit you set in §3</div>
+        </div>
+        <div class="c-advanced">▸ Advanced — set batches and pauses manually</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════ D — PRESET CARDS ════ -->
+<section class="concept">
+  <div class="concept-header">
+    <span class="concept-letter">D</span>
+    <span class="concept-name">Preset Cards</span>
+    <span class="concept-tag">pick a tempo — like cruise control</span>
+  </div>
+  <p class="concept-notes">
+    <b>Approach:</b> three big cards — <b>Cautious</b>, <b>Balanced</b>, <b>Aggressive</b> — each preconfigured with sensible numbers. Operator picks one. Custom toggle reveals the steppers for fine-tuning.
+    <br><br>
+    <b>Trade-off:</b> zero math required — operator picks based on risk appetite. Best for new operators. Power users will want Custom (so we expose it). Fits well with how teams probably actually think about this ("are we being careful or pushing it today?").
+  </p>
+
+  <div class="section">
+    <h2 class="section-h2">2. Rate &amp; Limits — Tempo</h2>
+    <div class="d-cards">
+      <div class="d-card">
+        <div class="d-card-name">Cautious</div>
+        <div class="d-card-tagline">when LinkedIn feels twitchy</div>
+        <div class="d-card-rate">5</div>
+        <div class="d-card-rate-unit">leads / hour / account</div>
+        <div class="d-card-detail">1 batch per hour · pause <b>30–90s</b> between leads · long round gap</div>
+      </div>
+      <div class="d-card active">
+        <div class="d-card-name">Balanced</div>
+        <div class="d-card-tagline">recommended default</div>
+        <div class="d-card-rate">10</div>
+        <div class="d-card-rate-unit">leads / hour / account</div>
+        <div class="d-card-detail">2 batches per hour · pause <b>15–45s</b> between leads · medium round gap</div>
+      </div>
+      <div class="d-card">
+        <div class="d-card-name">Aggressive</div>
+        <div class="d-card-tagline">push throughput on a fresh account</div>
+        <div class="d-card-rate">20</div>
+        <div class="d-card-rate-unit">leads / hour / account</div>
+        <div class="d-card-detail">4 batches per hour · pause <b>10–25s</b> between leads · short round gap</div>
+      </div>
+    </div>
+    <div class="d-custom-toggle">▸ Custom — set every knob manually</div>
+  </div>
+</section>
+
+<div class="footer">
+  Sketches are static mockups — none of the inputs do anything. Pick A, B, C, or D
+  (or a hybrid like "D for the default, but A as the fallback when Custom is opened")
+  and I'll wire it to the existing rate-per-hour / within-batch-min / within-batch-max state.
+</div>
+
+</body>
+</html>
