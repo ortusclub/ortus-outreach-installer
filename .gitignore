@@ -5,3 +5,4 @@ node_modules/
 
 # Runtime state
 data/state.json
+.vercel
