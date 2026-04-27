@@ -546,6 +546,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       if (mode === 'connect_only') {
         if (cc) return false;
+        // Phase 2.8.17 (H-04): if messageOpenProfiles routed this lead via the
+        // OP path on a previous run, OP="sent" — don't re-message. Belt-and-
+        // suspenders with the H-02 CC stamp; either alone closes the loophole
+        // but checking both makes the rule robust to manual sheet edits.
+        if (messageOpenProfiles && opCell === 'sent') return false;
         const prev = state.processed[url];
         if (prev) return false;
         return true;
@@ -869,37 +874,34 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             result = await performOutreach(page, url, { ...tpl, data }, { profileId }, hint);
 
-            const isTransient = result.action === 'skipped' && result.error &&
-              !result.error.includes('WEEKLY_LIMIT') &&
-              !result.error.includes('EMAIL_REQUIRED') &&
-              !result.error.includes('Login page') &&
-              !result.error.includes('Already connected') &&
-              !result.error.includes('Not yet connected') &&
-              !result.error.includes('Still pending') &&
-              !result.error.includes('Can connect directly') &&
-              !result.error.includes('No message template') &&
-              !result.error.includes('SEND_NOT_CONFIRMED') &&
-              !result.error.includes('LINKEDIN_ERROR_TOAST') &&
-              !result.error.includes('NOTE_TYPING_FAILED') &&
-              // Never retry message send failures — a retry could duplicate
-              // the message if the first send actually landed and only the
-              // verification false-negatived.
-              !result.error.includes('MESSAGE_SEND_FAILED') &&
-              !result.error.includes('Could not type message') &&
-              !result.error.includes('Message button not found') &&
-              !result.error.includes('INMAIL_SEND_FAILED') &&
-              !result.error.includes('InMail button not found') &&
-              !result.error.includes('INMAIL_NO_CREDITS') &&
-              !result.error.includes('NOT_OPEN_PROFILE') &&
-              !result.error.includes('OP_SEND_FAILED') &&
-              !result.error.includes('No Open Profile template') &&
-              !result.error.includes('Sales Nav link not available') &&
-              !result.error.includes('Sales Nav compose textbox') &&
-              !result.error.includes('Sales Nav send failed') &&
-              !result.error.includes('Sales Nav: neither OP nor Connect') &&
-              !result.error.includes('Already 1st-degree') &&
-              !result.error.includes('no_credits') &&
-              !result.error.includes('no_compose_textbox');
+            // Phase 2.8.17 (H-03): allow-list for transient (retryable) errors.
+            // Replaces the previous deny-list which let any unforeseen new error
+            // string default to "transient" — burning 45s of retries on terminal
+            // outcomes like "URL not in member-URN format", "session expired",
+            // or "Profile not found". Anything not matched here = treated as
+            // terminal (single attempt, no retry). Comments per signal:
+            //   detached / Target closed / Session closed → puppeteer lost the page
+            //   Protocol error                            → CDP transport blip
+            //   Execution context was destroyed           → page navigated mid-action
+            //   Navigation timeout / net::ERR_            → flaky network or LinkedIn slow
+            //   timed out                                 → generic puppeteer wait timeout
+            //   rate_limited                              → LinkedIn told us to slow down
+            //                                                — backing off then retrying is
+            //                                                exactly the right response
+            const TRANSIENT_SIGNALS = [
+              'detached',
+              'Target closed',
+              'Session closed',
+              'Connection closed',
+              'Protocol error',
+              'Execution context was destroyed',
+              'Navigation timeout',
+              'net::ERR_',
+              'timed out',
+              'rate_limited',
+            ];
+            const isTransient = result.action === 'skipped' && !!result.error &&
+              TRANSIENT_SIGNALS.some(sig => result.error.includes(sig));
 
             if (!isTransient || attempt === MAX_RETRIES) break;
             // Phase 2.8.10: bail retries entirely if user clicked Stop —
@@ -954,20 +956,23 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.auditAction = 'Connection sent';
             } else if (result.action === 'message_sent') {
               sheetData.status = 'Done';
-              // If this message was routed via the Open Profile path (connect
-              // mode + messageOpenProfiles toggle + lead flagged Open Profile),
-              // record to OP instead of Message so the column reflects the path.
-              if (messageOpenProfiles && isOpenProfile === 'yes') {
-                sheetData.op = hyperSent;
-                sheetData.auditAction = 'Open Profile message sent (via connect mode)';
-              } else {
-                sheetData.message = hyperSent;
-                sheetData.auditAction = 'Message sent';
-              }
+              sheetData.message = hyperSent;
+              sheetData.auditAction = 'Message sent';
             } else if (result.action === 'op_message_sent') {
               sheetData.status = 'Done';
               sheetData.op = hyperSent;
-              sheetData.auditAction = 'Open Profile message sent';
+              // Phase 2.8.17 (H-02): when this run was a Connect campaign that
+              // routed a Free-to-Open-Profile lead via the OP path, also stamp
+              // CC with pName so the operator can see at a glance which Connect
+              // run touched the lead. Without this, OP-via-Connect leads look
+              // un-touched in the CC column and a re-run sends the OP message
+              // again (cf. H-04).
+              if (mode === 'connect_only' && messageOpenProfiles) {
+                sheetData.cc = pName;
+                sheetData.auditAction = 'Open Profile message sent (via connect mode)';
+              } else {
+                sheetData.auditAction = 'Open Profile message sent';
+              }
             } else if (result.action === 'inmail_sent') {
               sheetData.status = 'Done';
               sheetData.inmail = hyperSent;

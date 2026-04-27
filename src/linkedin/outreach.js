@@ -20,12 +20,15 @@ const SALES_NAV_URL_RE = /\/sales\/(people|lead)\//;
 // Always starts with "AC" and is followed by URL-safe base64 chars. We transform
 // these directly to Sales Nav URLs. Vanity /in/ slugs (e.g. /in/john-smith) do
 // not match and cannot be transformed — the lead skips with a clear reason.
-const IN_MEMBER_URN_RE = /\/in\/(AC[A-Za-z0-9_-]{10,})(?:\/|$|\?)/;
+// Phase 2.8.17 (H-01): allow `#fragment` as a URN terminator. Sales Nav emits
+// `#chat`, `#tab=…` etc. and operators copy-paste deep links — without `#`
+// the regex returned null and the lead skipped with "URL not in URN format".
+const IN_MEMBER_URN_RE = /\/in\/(AC[A-Za-z0-9_-]{10,})(?:[/?#]|$)/;
 
 // Sales Nav member URN in a /sales/lead/ or /sales/people/ URL — same encoding
 // as /in/, used for the reverse transform (Connect campaigns need /in/ because
 // Sales Nav pages don't expose the Connect button the same way).
-const SALES_MEMBER_URN_RE = /\/sales\/(?:lead|people)\/(AC[A-Za-z0-9_-]{10,})(?:[,/]|$|\?)/;
+const SALES_MEMBER_URN_RE = /\/sales\/(?:lead|people)\/(AC[A-Za-z0-9_-]{10,})(?:[,/?#]|$)/;
 
 /**
  * Smart wait: resolves when the DOM stops changing for 1.5s OR after maxWait ms.
