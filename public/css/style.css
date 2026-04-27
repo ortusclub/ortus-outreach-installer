@@ -2365,3 +2365,19 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   .alpha-eq { margin-left: 0; text-align: left; }
   .alpha-controls { grid-template-columns: 1fr; }
 }
+
+/* Phase 2.8.19 (A2) — section-status one-line summary, right-aligned in the h2 */
+.section-summary {
+  float: right;
+  font-family: var(--body, 'Hanken Grotesk', sans-serif);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+  font-weight: 400;
+  line-height: 1.6;
+  margin-left: 12px;
+}
+.section-summary:empty { display: none; }
+.section-summary.done { color: var(--gray); }
+.section-summary.empty { color: var(--gray); opacity: 0.55; }

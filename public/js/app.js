@@ -3395,3 +3395,158 @@ window.toggleSection = toggleSection;
 window.toggleServerLog = toggleServerLog;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2.8.19 (A2/A3) — section readiness, summaries, and sidebar glyphs
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SECTION_ORDER = [
+  { id: 'nav-settings',  key: 'settings',  required: true  },
+  { id: 'nav-sheet',     key: 'sheet',     required: true  },
+  { id: 'nav-accounts',  key: 'accounts',  required: true  },
+  { id: 'nav-templates', key: 'templates', required: true  },
+  { id: 'nav-pace',      key: 'pace',      required: false },
+  { id: 'nav-launch',    key: 'launch',    required: true  },
+];
+
+function _humanAgo(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function _prettyMode(mode) {
+  switch (mode) {
+    case 'connect_only': return 'Connect';
+    case 'message_only': return 'Message';
+    case 'inmail_only': return 'InMail';
+    case 'open_profile_only': return 'Open Profile';
+    case 'check_status': return 'Check status';
+    case 'connect_and_message': return 'Connect + message';
+    case 'auto': return 'Auto';
+    default: return mode;
+  }
+}
+
+function computeSectionReadiness() {
+  const out = {};
+
+  // Settings — done if mode is selected
+  const modeEl = document.getElementById('campaign-mode');
+  const mode = modeEl ? modeEl.value : '';
+  const noteOn = (() => { try { return localStorage.getItem('ortus-add-note') === '1'; } catch (_) { return false; } })();
+  out.settings = {
+    state: mode ? 'done' : 'empty',
+    summary: mode
+      ? (mode === 'connect_only' ? `Connect · ${noteOn ? 'with note' : 'no note'}` : _prettyMode(mode))
+      : '',
+  };
+
+  // Sheet — done if URL field non-empty
+  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
+  out.sheet = {
+    state: sheetUrl ? 'done' : 'empty',
+    summary: sheetUrl
+      ? (window.__sheetPreviewCache
+          ? `${window.__sheetPreviewCache.count} leads · ${_humanAgo(window.__sheetPreviewCache.at)}`
+          : 'URL set · preview not loaded')
+      : '',
+  };
+
+  // Accounts — done if at least one selected
+  const selCount = (window.selectedProfileIds && window.selectedProfileIds.length) || 0;
+  out.accounts = {
+    state: selCount > 0 ? 'done' : 'empty',
+    summary: selCount > 0 ? `${selCount} selected` : '',
+  };
+
+  // Templates — done if a template body is non-empty for the current mode
+  let tplBody = '';
+  let tplName = '';
+  const tplSel = document.getElementById('template-select');
+  if (tplSel && tplSel.value) tplName = tplSel.value;
+  if (mode === 'connect_only')           tplBody = (document.getElementById('tpl-note')?.value || '');
+  else if (mode === 'message_only')      tplBody = (document.getElementById('tpl-followup')?.value || '');
+  else if (mode === 'inmail_only')       tplBody = (document.getElementById('tpl-inmail-body')?.value || '');
+  else if (mode === 'open_profile_only') tplBody = (document.getElementById('tpl-op-body')?.value || '');
+  out.templates = {
+    state: tplBody.trim() ? 'done' : 'empty',
+    summary: tplBody.trim()
+      ? `${tplName ? tplName + ' · ' : ''}${tplBody.trim().slice(0, 40)}${tplBody.trim().length > 40 ? '…' : ''}`
+      : '',
+  };
+
+  // Throughput (pace) — done if values present
+  const rate = document.getElementById('rate-per-hour')?.value || '';
+  const dailyLimit = document.getElementById('daily-limit')?.value || '';
+  out.pace = {
+    state: (rate && dailyLimit) ? 'done' : 'empty',
+    summary: (rate && dailyLimit) ? `${rate}/hr · ${dailyLimit} max/account` : '',
+  };
+
+  // Launch — "done" means all required prior sections are done
+  const allPriorDone =
+    out.settings.state === 'done' &&
+    out.sheet.state === 'done' &&
+    out.accounts.state === 'done' &&
+    out.templates.state === 'done';
+  out.launch = { state: allPriorDone ? 'done' : 'empty', summary: allPriorDone ? 'ready' : 'blocked' };
+
+  return out;
+}
+
+function updateSectionSummaries() {
+  const readiness = computeSectionReadiness();
+  for (const { key } of SECTION_ORDER) {
+    const el = document.getElementById(`summary-${key}`);
+    if (!el) continue;
+    el.textContent = readiness[key].summary || '';
+    el.classList.toggle('done', readiness[key].state === 'done');
+    el.classList.toggle('empty', readiness[key].state === 'empty');
+  }
+  // A3 hook — refresh sidebar glyphs if A3 has been installed (safe no-op until then)
+  if (typeof updateSidebarGlyphs === 'function') updateSidebarGlyphs(readiness);
+  return readiness;
+}
+
+let _initialExpandApplied = false;
+function applyInitialExpand() {
+  if (_initialExpandApplied) return;
+  _initialExpandApplied = true;
+  const readiness = computeSectionReadiness();
+  for (const { id, key, required } of SECTION_ORDER) {
+    if (!required) continue;
+    if (readiness[key].state !== 'empty') continue;
+    const sec = document.getElementById(id);
+    if (sec && sec.classList.contains('collapsible') && sec.classList.contains('collapsed')) {
+      sec.classList.remove('collapsed');
+      // intentional: do NOT writeback to localStorage
+    }
+    break;
+  }
+}
+
+// Wire summary refresh to existing campaign-summary recompute path.
+// `updateCampaignSummary` is already called from many input-change paths.
+if (typeof window.updateCampaignSummary === 'function') {
+  const _origUpdateCampaignSummary = window.updateCampaignSummary;
+  window.updateCampaignSummary = function (...args) {
+    const r = _origUpdateCampaignSummary.apply(this, args);
+    try { updateSectionSummaries(); } catch (_) {}
+    return r;
+  };
+}
+
+// Run once on initial load — apply default expand and render summaries.
+// Defer slightly so other startup code (loadProfiles, fetchTemplateList, etc.)
+// has a chance to populate state before we read it.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => { try { applyInitialExpand(); updateSectionSummaries(); } catch (_) {} }, 50);
+  });
+} else {
+  setTimeout(() => { try { applyInitialExpand(); updateSectionSummaries(); } catch (_) {} }, 50);
+}
