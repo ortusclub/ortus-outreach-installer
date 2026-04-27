@@ -1048,6 +1048,20 @@ app.listen(PORT, async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Persisted errors endpoint (Phase 2.8.20 / W1-B2) — read-only.
+// Returns the contents of data/errors.log.json (empty array if missing).
+// ---------------------------------------------------------------------------
+app.get('/api/errors', async (_req, res) => {
+  try {
+    const raw = await readFile(dataPath('errors.log.json'), 'utf8');
+    const arr = JSON.parse(raw);
+    res.json(Array.isArray(arr) ? arr : []);
+  } catch (_) {
+    res.json([]);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Notification status endpoint (Phase 2.8.19 / C4) — read-only check of SMTP
 // configuration so the sidebar Notifications panel can show "wired" /
 // "not configured" without dialing out.

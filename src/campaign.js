@@ -206,9 +206,36 @@ function log(msg) {
   campaign.logs.push(line);
   if (campaign.logs.length > 500) campaign.logs.shift();
 }
+const ERROR_LOG_FILE = dataPath('errors.log.json');
+const MAX_ERROR_LOG_ENTRIES = Number(process.env.MAX_ERROR_LOG_ENTRIES) || 500;
+
+async function appendErrorLog(entry) {
+  // Best-effort persistence — never block or break the campaign loop.
+  try {
+    let arr = [];
+    try {
+      const raw = await readFile(ERROR_LOG_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch { /* file missing or unreadable — start fresh */ }
+    arr.push(entry);
+    if (arr.length > MAX_ERROR_LOG_ENTRIES) {
+      arr.splice(0, arr.length - MAX_ERROR_LOG_ENTRIES);
+    }
+    // Atomic write: tmp file + rename, so a crash mid-write doesn't corrupt
+    const tmp = ERROR_LOG_FILE + '.tmp';
+    await writeFile(tmp, JSON.stringify(arr, null, 2));
+    const { rename } = await import('node:fs/promises');
+    await rename(tmp, ERROR_LOG_FILE);
+  } catch (_) { /* swallow — disk-log failure must not break campaigns */ }
+}
+
 function pushError(err) {
-  campaign.errors.push({ time: new Date().toISOString(), message: err.message });
+  const entry = { at: new Date().toISOString(), message: err.message, profileName: campaign.currentProfile };
+  campaign.errors.push({ time: entry.at, message: entry.message });
   if (campaign.errors.length > 100) campaign.errors.shift();
+  // Phase 2.8.20 (W1-B2): also persist to disk (fire-and-forget).
+  appendErrorLog(entry).catch(() => {});
 }
 
 // ── Profile name cache ──
