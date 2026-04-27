@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Paper cuts · B — Cockpit unification</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:780px;line-height:1.5;margin-bottom:44px}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--hl)}
+.col{padding:30px;border-right:1px solid var(--hl);min-height:680px;position:relative}
+.col:last-child{border-right:none}
+.col-label{font-size:0.6rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gray);margin-bottom:24px;display:flex;justify-content:space-between}
+.col-label .tag{color:var(--ink)}
+.col-after .col-label .tag{color:var(--gold)}
+
+/* mock surfaces */
+.box{border:1px solid var(--hl);padding:14px 16px;margin-bottom:12px}
+.box.dim{opacity:.4}
+.box-h{font-size:0.56rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gray);margin-bottom:10px;display:flex;justify-content:space-between}
+.box-h .src{color:var(--gray);font-style:italic;text-transform:none;letter-spacing:0.04em;font-size:0.62rem}
+.headstats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.hs-cell{display:flex;flex-direction:column;gap:4px}
+.hs-k{font-size:0.52rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.hs-v{font-family:var(--d);font-size:1.6rem;line-height:1}
+
+.cockpit-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:0.74rem;border-bottom:1px solid var(--hls)}
+.cockpit-row:last-child{border-bottom:none}
+.cockpit-row .v{color:var(--gold);font-family:var(--d);font-size:1rem}
+
+.feed-item{display:grid;grid-template-columns:50px 1fr;gap:10px;padding:6px 0;font-size:0.7rem;border-bottom:1px solid var(--hls)}
+.feed-item:last-child{border-bottom:none}
+.feed-item .t{color:var(--gray);font-size:0.62rem}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--green);margin-right:8px;vertical-align:middle}
+.dot.r{background:var(--red)}
+
+.runbar{position:absolute;left:0;right:0;bottom:0;border-top:1px solid var(--hl);background:var(--bg);padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
+.runbar .lt{font-size:0.7rem;letter-spacing:0.06em;color:var(--ink)}
+.runbar .lt .who{color:var(--gray);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;margin-left:10px}
+.runbar .rt{display:flex;gap:10px}
+.pill{border:1px solid var(--hl);border-radius:9999px;padding:8px 18px;font-size:0.66rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink);background:transparent}
+.pill.stop{border-color:var(--red);color:var(--red)}
+.pill.gold{border-color:var(--gold);color:var(--gold)}
+
+/* arrows showing duplication */
+.dup-tag{position:absolute;font-size:0.54rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--red);transform:translateY(-50%)}
+
+.notes{margin-top:36px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--hl)}
+.note{padding:22px 24px;border-right:1px solid var(--hl)}
+.note:last-child{border-right:none}
+.note-h{font-size:0.6rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.note p{font-size:0.78rem;color:var(--ink);line-height:1.55}
+.note small{display:block;margin-top:10px;font-size:0.62rem;color:var(--gray);letter-spacing:0.14em;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumbs"><a href="papercuts-index.html">← Paper cuts index</a> · B · Cockpit unification</div>
+  <h1>Cockpit unification</h1>
+  <p class="deck">Right now live status is duplicated across 4 surfaces (header stats, Live Cockpit panel, right pane, run-bar dot) and there are 2 log surfaces (Server Log + Live Status log). After: right pane is the single live-status authority, run bar carries the Stop button, Live Status section absorbs Server Log behind a toggle.</p>
+
+  <div class="split">
+    <!-- BEFORE -->
+    <div class="col col-before">
+      <div class="col-label"><span>Before</span><span class="tag">Today · 4 status surfaces</span></div>
+
+      <div class="box">
+        <div class="box-h"><span>Header stats</span><span class="src">surface 1</span></div>
+        <div class="headstats">
+          <div class="hs-cell"><span class="hs-k">Today</span><span class="hs-v">0</span></div>
+          <div class="hs-cell"><span class="hs-k">7D</span><span class="hs-v">0</span></div>
+          <div class="hs-cell"><span class="hs-k">Errors 24h</span><span class="hs-v">0</span></div>
+          <div class="hs-cell"><span class="hs-k">Passover</span><span class="hs-v">—</span></div>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-h"><span>Live Cockpit panel</span><span class="src">surface 2</span></div>
+        <div class="cockpit-row"><span>Action</span><span class="v">Connecting</span></div>
+        <div class="cockpit-row"><span>Account</span><span class="v">Antonio · 12 / 30</span></div>
+        <div class="cockpit-row"><span>Next in</span><span class="v">00:42</span></div>
+      </div>
+
+      <div class="box">
+        <div class="box-h"><span>Right pane · Status</span><span class="src">surface 3</span></div>
+        <div class="cockpit-row"><span><span class="dot"></span>Running</span><span class="v">12 / 30</span></div>
+      </div>
+
+      <div class="box">
+        <div class="box-h"><span>Server Log (toggled)</span><span class="src">log 1</span></div>
+        <div class="feed-item"><span class="t">14:22</span><span>POST /api/profiles 200</span></div>
+        <div class="feed-item"><span class="t">14:21</span><span>cron tick · no schedules</span></div>
+      </div>
+
+      <div class="box">
+        <div class="box-h"><span>Live Status · log panel</span><span class="src">log 2</span></div>
+        <div class="feed-item"><span class="t">14:22</span><span>Connect sent → John D.</span></div>
+        <div class="feed-item"><span class="t">14:21</span><span>Loading sales nav profile</span></div>
+      </div>
+
+      <div class="runbar">
+        <div class="lt"><span class="dot"></span>Running<span class="who">surface 4 · no Stop</span></div>
+        <div class="rt"><button class="pill">View Status</button><button class="pill gold">Start Campaign</button></div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="col col-after">
+      <div class="col-label"><span>After</span><span class="tag">Proposed</span></div>
+
+      <div class="box">
+        <div class="box-h"><span>Header stats · trailing window only</span><span class="src">scope clarified</span></div>
+        <div class="headstats">
+          <div class="hs-cell"><span class="hs-k">Today (sent)</span><span class="hs-v">12</span></div>
+          <div class="hs-cell"><span class="hs-k">7D total</span><span class="hs-v">128</span></div>
+          <div class="hs-cell"><span class="hs-k">Errors 24h</span><span class="hs-v">0</span></div>
+          <div class="hs-cell"><span class="hs-k">Passover</span><span class="hs-v">14d</span></div>
+        </div>
+      </div>
+
+      <div class="box dim">
+        <div class="box-h"><span>Live Cockpit panel</span><span class="src">absorbed into right pane →</span></div>
+        <div class="cockpit-row"><span>—</span><span class="v">removed</span></div>
+      </div>
+
+      <div class="box">
+        <div class="box-h"><span>Right pane · the single live authority</span><span class="src">expanded</span></div>
+        <div class="cockpit-row"><span><span class="dot"></span>Running</span><span class="v">Connecting</span></div>
+        <div class="cockpit-row"><span>Account</span><span class="v">Antonio · 12 / 30</span></div>
+        <div class="cockpit-row"><span>Next in</span><span class="v">00:42</span></div>
+        <div class="cockpit-row"><span>Stuck?</span><span class="v" style="color:var(--gray)">no</span></div>
+      </div>
+
+      <div class="box">
+        <div class="box-h"><span>Live Status · unified log</span><span class="src">[ ] show server lines</span></div>
+        <div class="feed-item"><span class="t">14:22</span><span>Connect sent → John D.</span></div>
+        <div class="feed-item"><span class="t">14:21</span><span>Loading sales nav profile</span></div>
+        <div class="feed-item"><span class="t">14:20</span><span>Account started · Antonio</span></div>
+      </div>
+
+      <div class="runbar">
+        <div class="lt"><span class="dot"></span>Running · Connecting<span class="who">12 / 30 · 00:42</span></div>
+        <div class="rt"><button class="pill stop">Stop</button><button class="pill">View Log</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <div class="note-h">Patch 1 · run-bar Stop</div>
+      <p>Run bar gets a Stop pill (red hairline) when running. It calls the same <code>stopCampaign()</code> the Launch section does. The Launch Stop button stays for muscle-memory.</p>
+      <small>Cut #8</small>
+    </div>
+    <div class="note">
+      <div class="note-h">Patch 2 · right pane = authority</div>
+      <p>Live Cockpit panel content moves into the right pane. Cockpit panel deletes. Header stats stay but get scope labels (Today <em>sent</em>, 7D <em>total</em>) so they read as trailing windows, not "now."</p>
+      <small>Cut #5</small>
+    </div>
+    <div class="note">
+      <div class="note-h">Patch 3 · one log, two filters</div>
+      <p>Server Log inline panel deletes. Live Status log gets a "Show server lines" checkbox. One scrolling surface, two views.</p>
+      <small>Cut #6</small>
+    </div>
+  </div>
+</div>
+</body>
+</html>

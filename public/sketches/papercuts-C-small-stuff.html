@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Paper cuts · C — The small stuff</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:780px;line-height:1.5;margin-bottom:44px}
+
+.row-pair{border:1px solid var(--hl);margin-bottom:18px}
+.row-h{padding:14px 18px;border-bottom:1px solid var(--hl);display:flex;justify-content:space-between;align-items:center;background:var(--hls)}
+.row-h .name{font-family:var(--d);font-size:1.2rem;text-transform:uppercase;letter-spacing:0.04em}
+.row-h .cuts{font-size:0.58rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.row-body{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.cell{padding:24px;border-right:1px solid var(--hl);min-height:160px;display:flex;flex-direction:column}
+.cell:last-child{border-right:none}
+.cell-label{font-size:0.58rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gray);margin-bottom:18px;display:flex;justify-content:space-between}
+.cell-label .tag{color:var(--ink)}
+.cell.after .cell-label .tag{color:var(--gold)}
+
+/* widget mocks */
+.mode-old{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:14px 0}
+.mode-old .arr{font-family:var(--d);font-size:1.6rem;color:var(--gray)}
+.mode-old .center{text-align:center}
+.mode-old .ctr{font-size:0.58rem;letter-spacing:0.2em;color:var(--gray);text-transform:uppercase}
+.mode-old .ttl{font-family:var(--d);font-size:1.6rem;line-height:1;text-transform:uppercase}
+.mode-old .desc{font-size:0.7rem;color:var(--gray);margin-top:4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.chip{padding:6px 12px;border:1px solid var(--hl);border-radius:9999px;font-size:0.62rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray)}
+.chip.on{color:var(--gold);border-color:var(--gold)}
+
+.kv{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:8px 0;border-bottom:1px solid var(--hls);font-size:0.74rem}
+.kv:last-child{border-bottom:none}
+.kv .k{color:var(--gray);font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase}
+.kv .v{color:var(--ink)}
+.kv .v.dim{color:var(--gray);opacity:.6}
+.kv input{background:transparent;border:none;border-bottom:1px solid var(--hl);color:var(--ink);font-family:inherit;font-size:0.74rem;padding:4px 0;width:100%}
+
+.notif-old{display:flex;justify-content:space-between;align-items:center;padding:10px 0}
+.notif-old .btn{padding:6px 14px;border:1px solid var(--hl);border-radius:9999px;font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--ink);background:transparent}
+.notif-new{display:flex;flex-direction:column;gap:8px}
+.notif-pair{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--hls);font-size:0.7rem}
+.notif-pair .state{font-size:0.6rem;letter-spacing:0.16em;text-transform:uppercase}
+.notif-pair .state.on{color:var(--green)}
+.notif-pair .state.off{color:var(--gray)}
+
+.callout{margin-top:8px;font-size:0.62rem;letter-spacing:0.04em;color:var(--gray)}
+.callout.warn{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumbs"><a href="papercuts-index.html">← Paper cuts index</a> · C · The small stuff</div>
+  <h1>The small stuff</h1>
+  <p class="deck">Four micro-fixes that each bug me a little but together feel like polish. None touch backend logic. Each row is one before/after.</p>
+
+  <!-- C1: mode picker -->
+  <div class="row-pair">
+    <div class="row-h"><span class="name">C1 · Campaign mode picker</span><span class="cuts">cut #4</span></div>
+    <div class="row-body">
+      <div class="cell">
+        <div class="cell-label"><span>Before</span><span class="tag">3 surfaces, same value</span></div>
+        <div class="mode-old">
+          <span class="arr">‹</span>
+          <div class="center">
+            <div class="ctr">01 / 07</div>
+            <div class="ttl">Connections</div>
+            <div class="desc">Send connection requests with optional note</div>
+          </div>
+          <span class="arr">›</span>
+        </div>
+        <div class="chips">
+          <span class="chip on">Connect</span><span class="chip">Status</span><span class="chip">Message</span><span class="chip">InMail</span><span class="chip">Open Profile</span>
+        </div>
+        <div class="callout">+ a hidden &lt;select&gt; under it as source of truth</div>
+      </div>
+      <div class="cell after">
+        <div class="cell-label"><span>After</span><span class="tag">Chips only · description below</span></div>
+        <div class="chips" style="margin-top:0">
+          <span class="chip on">Connect</span><span class="chip">Status</span><span class="chip">Message</span><span class="chip">InMail</span><span class="chip">Open Profile</span><span class="chip">Auto</span>
+        </div>
+        <div style="margin-top:18px;font-size:0.78rem;color:var(--ink)">Send connection requests with an optional note.</div>
+        <div class="callout warn">Removed: prev/next selector, mode counter, hidden &lt;select&gt; source-of-truth becomes the chip rail itself.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C2: identity -->
+  <div class="row-pair">
+    <div class="row-h"><span class="name">C2 · Operator identity</span><span class="cuts">cut #13</span></div>
+    <div class="row-body">
+      <div class="cell">
+        <div class="cell-label"><span>Before</span><span class="tag">Two fields, both editable</span></div>
+        <div class="kv"><span class="k">Sidebar chip</span><span class="v">info@ortus.solutions</span></div>
+        <div class="kv"><span class="k">Accounts &gt; Identifier</span><span class="v"><input type="text" value="antonio" /></span></div>
+        <div class="callout">"Assigned to me" preset matches against the free-text identifier — drift between the two breaks the preset.</div>
+      </div>
+      <div class="cell after">
+        <div class="cell-label"><span>After</span><span class="tag">Sidebar chip is the truth</span></div>
+        <div class="kv"><span class="k">Operator</span><span class="v">info@ortus.solutions</span></div>
+        <div class="kv"><span class="k">Match name</span><span class="v dim">antonio · auto-derived</span></div>
+        <div class="callout warn">Match name auto-derives from email local-part. Edit available behind a small "override" link only when needed.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C3: local browser -->
+  <div class="row-pair">
+    <div class="row-h"><span class="name">C3 · "Local browser" identity</span><span class="cuts">cut #14</span></div>
+    <div class="row-body">
+      <div class="cell">
+        <div class="cell-label"><span>Before</span><span class="tag">Hidden in profile-card checkbox</span></div>
+        <div class="kv"><span class="k">Where it lives</span><span class="v dim">Profile card → "use local browser" checkbox → side input</span></div>
+        <div class="kv"><span class="k">Persistence</span><span class="v dim">localStorage · localBrowserFirstName</span></div>
+        <div class="callout">No top-level setting. Discovered by accident. Easy to forget which name was used last week.</div>
+      </div>
+      <div class="cell after">
+        <div class="cell-label"><span>After</span><span class="tag">Real setting in Settings · Operator</span></div>
+        <div class="kv"><span class="k">Local browser name</span><span class="v"><input type="text" value="Antonio Varlese" /></span></div>
+        <div class="kv"><span class="k">Used by</span><span class="v dim">profile cards marked "local"</span></div>
+        <div class="callout warn">Same localStorage key, just surfaced as a labeled input. Profile-card checkbox stays.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C4: notifications -->
+  <div class="row-pair">
+    <div class="row-h"><span class="name">C4 · Notifications</span><span class="cuts">cut #16</span></div>
+    <div class="row-body">
+      <div class="cell">
+        <div class="cell-label"><span>Before</span><span class="tag">Single Enable button</span></div>
+        <div class="notif-old"><span>Notifications</span><button class="btn">Enable</button></div>
+        <div class="callout">No indication of current permission. Test email gives no inline feedback.</div>
+      </div>
+      <div class="cell after">
+        <div class="cell-label"><span>After</span><span class="tag">State + last test result</span></div>
+        <div class="notif-new">
+          <div class="notif-pair"><span>Browser push</span><span class="state on">Granted</span></div>
+          <div class="notif-pair"><span>Email · SMTP</span><span class="state on">Wired</span></div>
+          <div class="notif-pair"><span>Last test</span><span class="state off">2h ago · delivered</span></div>
+        </div>
+        <div class="callout warn">Read-only state surfaces. Test button stays nearby.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

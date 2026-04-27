@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Paper cuts · A — Setup flow nudge</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:760px;line-height:1.5;margin-bottom:44px}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--hl)}
+.col{padding:32px;border-right:1px solid var(--hl);min-height:560px}
+.col:last-child{border-right:none}
+.col-label{font-size:0.6rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gray);margin-bottom:24px;display:flex;justify-content:space-between}
+.col-label .tag{color:var(--ink)}
+.col-after .col-label .tag{color:var(--gold)}
+
+/* sidebar mock */
+.side{font-family:var(--b);border-top:1px solid var(--hls);border-bottom:1px solid var(--hls);padding:18px 0}
+.nav-h{font-size:0.56rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.nav{display:flex;flex-direction:column}
+.nav-item{display:grid;grid-template-columns:24px 1fr 18px;align-items:center;padding:10px 0;font-size:0.86rem;color:var(--ink);cursor:default;border-top:1px solid var(--hls)}
+.nav-item:first-of-type{border-top:none}
+.nav-item .num{color:var(--gray);font-size:0.7rem}
+.nav-item.current{color:var(--gold)}
+.nav-item.current .num{color:var(--gold)}
+.nav-item .state{justify-self:end;font-size:0.7rem;color:var(--gray);font-family:var(--b)}
+.nav-item .state.done{color:var(--green)}
+.nav-item .state.empty{color:var(--gray);opacity:.6}
+.nav-item .state.cur{color:var(--gold)}
+
+/* page section mock */
+.pg{margin-top:28px;border-top:1px solid var(--hl);padding-top:20px}
+.sec{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--hls);font-size:0.78rem;letter-spacing:0.06em;color:var(--ink)}
+.sec .l{display:flex;gap:14px;align-items:center}
+.sec .l .n{color:var(--gray);font-size:0.66rem;letter-spacing:0.16em;min-width:24px}
+.sec .l .name{font-weight:500}
+.sec .r{font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray)}
+.sec.collapsed{opacity:.55}
+.sec.expanded{background:var(--hls);padding:14px 12px;margin:0 -12px;border-bottom:1px solid var(--hl)}
+.sec.expanded .r{color:var(--gold)}
+.sec.done .r{color:var(--green)}
+
+.callout{margin-top:30px;padding:14px 16px;border:1px solid var(--gold);font-size:0.7rem;letter-spacing:0.06em;color:var(--gold);display:flex;gap:12px;align-items:center}
+.callout .arr{font-family:var(--d);font-size:1.6rem;line-height:.6}
+
+.notes{margin-top:36px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--hl)}
+.note{padding:22px 24px;border-right:1px solid var(--hl)}
+.note:last-child{border-right:none}
+.note-h{font-size:0.6rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.note p{font-size:0.78rem;color:var(--ink);line-height:1.55;letter-spacing:0.02em}
+.note small{display:block;margin-top:10px;font-size:0.62rem;color:var(--gray);letter-spacing:0.14em;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="crumbs"><a href="papercuts-index.html">← Paper cuts index</a> · A · Setup flow nudge</div>
+  <h1>Setup flow nudge</h1>
+  <p class="deck">Today the page numbers itself 1 → 4 → 2 → 3 → 5 → 6 (Throughput was extracted but labels weren't renumbered). Everything starts collapsed. After: numbers match visual order, the sidebar shows step state (✓ / ◯ / ▸), and the next required-but-empty section auto-expands.</p>
+
+  <div class="split">
+    <!-- BEFORE -->
+    <div class="col col-before">
+      <div class="col-label"><span>Before</span><span class="tag">Today</span></div>
+
+      <div class="side">
+        <div class="nav-h">Campaign</div>
+        <div class="nav">
+          <div class="nav-item"><span class="num">I.</span><span>Settings</span><span class="state"></span></div>
+          <div class="nav-item"><span class="num">II.</span><span>Sheet</span><span class="state"></span></div>
+          <div class="nav-item"><span class="num">III.</span><span>Accounts</span><span class="state"></span></div>
+          <div class="nav-item"><span class="num">IV.</span><span>Templates</span><span class="state"></span></div>
+          <div class="nav-item"><span class="num">V.</span><span>Launch</span><span class="state"></span></div>
+        </div>
+      </div>
+
+      <div class="pg">
+        <div class="sec collapsed"><div class="l"><span class="n">1.</span><span class="name">Campaign Settings</span></div><div class="r">expanded</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">4.</span><span class="name">Throughput</span></div><div class="r">collapsed</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">2.</span><span class="name">Google Sheet URL</span></div><div class="r">collapsed</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">3.</span><span class="name">Select GoLogin Accounts</span></div><div class="r">collapsed</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">5.</span><span class="name">Message Templates</span></div><div class="r">collapsed</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">6.</span><span class="name">Launch</span></div><div class="r">collapsed</div></div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="col col-after">
+      <div class="col-label"><span>After</span><span class="tag">Proposed</span></div>
+
+      <div class="side">
+        <div class="nav-h">Campaign</div>
+        <div class="nav">
+          <div class="nav-item"><span class="num">1.</span><span>Settings</span><span class="state done">✓</span></div>
+          <div class="nav-item"><span class="num">2.</span><span>Sheet</span><span class="state done">✓</span></div>
+          <div class="nav-item current"><span class="num">3.</span><span>Accounts</span><span class="state cur">▸</span></div>
+          <div class="nav-item"><span class="num">4.</span><span>Templates</span><span class="state empty">◯</span></div>
+          <div class="nav-item"><span class="num">5.</span><span>Throughput</span><span class="state empty">◯</span></div>
+          <div class="nav-item"><span class="num">6.</span><span>Launch</span><span class="state empty">◯</span></div>
+        </div>
+      </div>
+
+      <div class="pg">
+        <div class="sec done"><div class="l"><span class="n">1.</span><span class="name">Campaign Settings</span></div><div class="r">Connections · 6/hr</div></div>
+        <div class="sec done"><div class="l"><span class="n">2.</span><span class="name">Google Sheet URL</span></div><div class="r">42 leads · last opened 2m ago</div></div>
+        <div class="sec expanded"><div class="l"><span class="n">3.</span><span class="name">Select GoLogin Accounts</span></div><div class="r">▾ next step</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">4.</span><span class="name">Message Templates</span></div><div class="r">empty</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">5.</span><span class="name">Throughput</span></div><div class="r">defaults</div></div>
+        <div class="sec collapsed"><div class="l"><span class="n">6.</span><span class="name">Launch</span></div><div class="r">locked</div></div>
+      </div>
+
+      <div class="callout"><span class="arr">▸</span><span>Next: pick the GoLogin accounts you'll run from</span></div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <div class="note-h">Patch 1 · renumber</div>
+      <p>Sequence labels in <code>index.html</code> get updated to match top-to-bottom order. Throughput moves to "5." Pure copy change, zero JS.</p>
+      <small>Cut #1</small>
+    </div>
+    <div class="note">
+      <div class="note-h">Patch 2 · smart default expand</div>
+      <p>On load, walk sections in order. First one that's empty/required → expand. Sections with valid input → collapse with one-line summary on the right.</p>
+      <small>Cut #2 · #3</small>
+    </div>
+    <div class="note">
+      <div class="note-h">Patch 3 · sidebar state glyphs</div>
+      <p>Sidebar nav shows <code>✓</code> / <code>◯</code> / <code>▸</code> next to each step. Single function reading the same state the section summaries use. No extra API.</p>
+      <small>Cut #3</small>
+    </div>
+  </div>
+</div>
+</body>
+</html>
