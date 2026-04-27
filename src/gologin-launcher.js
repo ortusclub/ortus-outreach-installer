@@ -107,8 +107,23 @@ export async function closeProfile(profileId) {
   const GL = activeProfiles.get(profileId);
   if (!GL) return;
 
-  try { await GL.stop(); }
-  catch (err) { console.warn(`[gologin] Stop warning: ${err.message}`); }
+  // Phase 2.8.11 root-cause fix: GL.stop() does NOT kill the Orbita Chromium
+  // process — it only uploads cookies + commits profile state to GoLogin's
+  // cloud (see node_modules/gologin/src/gologin.js stopAndCommit, line 1045).
+  // The actual process kill must come from GL.killBrowser() which calls
+  // processSpawned.kill() directly. Without this, the browser window stays
+  // visible until something else (Puppeteer's browser.close() over CDP) finally
+  // takes the process down — and for parked/idle profiles the CDP path is
+  // unreliable, leaving "ghost" windows after Stop.
+  try { GL.killBrowser(); }
+  catch (err) { console.warn(`[gologin] killBrowser warning: ${err.message}`); }
+
+  // Cloud commit (cookies, profile state) is fire-and-forget — we don't want
+  // the Stop endpoint blocked for 3-20s of cloud sync just to acknowledge the
+  // user. The SDK's is_stopping guard makes a duplicate stopAndCommit safe.
+  GL.stopAndCommit({ posting: true }, false).catch(err => {
+    console.warn(`[gologin] background commit for ${profileId}: ${err.message}`);
+  });
 
   activeProfiles.delete(profileId);
 }
