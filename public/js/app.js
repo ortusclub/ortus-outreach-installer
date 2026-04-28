@@ -3075,6 +3075,7 @@ pollStatus();
 fetchTemplateList();
 fetchHistory();
 loadPersistedErrors();
+loadPersistedWarnings();
 initRunBarMirror();
 initScrollSpy();
 fetchSchedules();
@@ -3908,7 +3909,12 @@ function renderSoftWarnings(warnings) {
   const detail = document.getElementById('rp-warnings-detail');
   if (!row || !line || !detail) return;
 
-  const list = Array.isArray(warnings) ? warnings : [];
+  const runtime = Array.isArray(warnings) ? warnings : [];
+  const persisted = Array.isArray(_persistedWarnings) ? _persistedWarnings : [];
+  // Merge by (profileId, kind, detectedAt) — runtime takes precedence on overlap
+  const seen = new Set(runtime.map(w => `${w.profileId}|${w.kind}|${w.detectedAt}`));
+  const merged = runtime.concat(persisted.filter(w => !seen.has(`${w.profileId}|${w.kind}|${w.detectedAt}`)));
+  const list = merged;
   if (list.length === 0) {
     row.hidden = true;
     line.classList.remove('has-warnings');
@@ -3982,6 +3988,20 @@ function mergedErrorsForCount(liveErrors) {
 
 window.loadPersistedErrors = loadPersistedErrors;
 window.mergedErrorsForCount = mergedErrorsForCount;
+
+let _persistedWarnings = [];
+async function loadPersistedWarnings() {
+  try {
+    const r = await fetch('/api/warnings');
+    if (!r.ok) return;
+    const { warnings } = await r.json();
+    _persistedWarnings = Array.isArray(warnings) ? warnings : [];
+    if (typeof renderSoftWarnings === 'function') {
+      renderSoftWarnings(_persistedWarnings);
+    }
+  } catch {}
+}
+window.loadPersistedWarnings = loadPersistedWarnings;
 
 // Phase 2.8.20 (W3-C2) — disk-low banner driven by /api/campaign/status payload.
 function _formatBytesClient(n) {

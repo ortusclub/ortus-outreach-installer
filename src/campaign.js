@@ -20,7 +20,7 @@
  */
 
 import { existsSync, mkdirSync } from 'fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
 import { launchProfile, closeProfile, getProfiles, getProfilePid } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
@@ -261,6 +261,7 @@ function log(msg) {
   if (campaign.logs.length > 500) campaign.logs.shift();
 }
 const ERROR_LOG_FILE = dataPath('errors.log.json');
+const WARNINGS_LOG_FILE = dataPath('warnings-log.ndjson');
 const MAX_ERROR_LOG_ENTRIES = Number(process.env.MAX_ERROR_LOG_ENTRIES) || 500;
 
 // Soft-warning dedupe window — same (profileId, kind) within this many ms is suppressed.
@@ -296,6 +297,7 @@ function pushSoftWarning(state, { profileId, pName, kind, message }) {
     state.softWarnings.shift();
   }
 
+  appendWarningLog(entry).catch(() => {}); // fire-and-forget, errors logged in helper
   return entry;
 }
 
@@ -318,6 +320,22 @@ async function appendErrorLog(entry) {
     const { rename } = await import('node:fs/promises');
     await rename(tmp, ERROR_LOG_FILE);
   } catch (_) { /* swallow — disk-log failure must not break campaigns */ }
+}
+
+/**
+ * Append a soft-warning entry to the NDJSON log, fire-and-forget.
+ * Async (not sync — soft warnings are advisory, no need for crash-safe
+ * sync write like server.js's appendFatalErrorSync).
+ *
+ * @param {Object} entry - { profileId, pName, kind, message, detectedAt }
+ */
+async function appendWarningLog(entry) {
+  try {
+    const line = JSON.stringify(entry) + '\n';
+    await appendFile(WARNINGS_LOG_FILE, line);
+  } catch (err) {
+    console.warn('[appendWarningLog]', err.message);
+  }
 }
 
 function pushError(err) {

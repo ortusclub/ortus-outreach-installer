@@ -1071,6 +1071,20 @@ app.get('/api/errors', async (_req, res) => {
   }
 });
 
+app.get('/api/warnings', async (_req, res) => {
+  try {
+    const buf = await readFile(dataPath('warnings-log.ndjson'), 'utf-8').catch(() => '');
+    const lines = buf.split('\n').filter(Boolean);
+    const warnings = lines
+      .slice(-200)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+    res.json({ warnings });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Notification status endpoint (Phase 2.8.19 / C4) — read-only check of SMTP
 // configuration so the sidebar Notifications panel can show "wired" /
