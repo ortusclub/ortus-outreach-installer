@@ -52,6 +52,7 @@
       "!docs/**/*",
       "!.playwright-mcp/**/*",
       "!build/**/*",
+      "build/tray-iconTemplate*.png",
       "!dist/**/*",
       "!node_modules/electron/**/*",
       "!node_modules/electron-builder/**/*",
