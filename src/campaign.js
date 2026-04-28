@@ -679,6 +679,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
     const state = await loadState();
 
+    // Hotfix 2.8.24-P1: clear stale _in_progress markers from previous runs.
+    // These accumulate from (a) exceptions in the per-lead catch at the bottom
+    // of the inner loop, (b) WEEKLY_LIMIT / INMAIL_NO_CREDITS branches that
+    // don't clean up, and (c) hard crashes mid-lead. Without this, leads stuck
+    // _in_progress are invisible to the pre-filter for STATE_RETENTION_DAYS.
+    const stalePending = Object.entries(state.processed).filter(
+      ([, v]) => v?.action === '_in_progress'
+    );
+    if (stalePending.length > 0) {
+      log(`Clearing ${stalePending.length} stale _in_progress marker(s) from previous run`);
+      for (const [url] of stalePending) delete state.processed[url];
+      await saveState(state);
+    }
+
     // Pre-filter targets. Filter rules (new schema):
     //   - check_status: only process rows with CC="Sent" (pending invites).
     //   - all other modes: skip rows where Status="Done".
