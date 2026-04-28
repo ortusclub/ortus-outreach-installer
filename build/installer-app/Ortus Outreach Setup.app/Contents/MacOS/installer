@@ -1,0 +1,12 @@
+#!/bin/bash
+APP_PATH="/Applications/The Ortus Outreach.app"
+
+if [ ! -d "$APP_PATH" ]; then
+  /usr/bin/osascript -e 'display dialog "Please drag The Ortus Outreach to your Applications folder first, then run Ortus Outreach Setup again." buttons {"OK"} default button "OK" with icon caution with title "Ortus Outreach Setup"'
+  exit 1
+fi
+
+/usr/bin/xattr -cr "$APP_PATH"
+/usr/bin/osascript -e 'display dialog "Setup complete. Launching The Ortus Outreach now." buttons {"OK"} default button "OK" giving up after 2 with title "Ortus Outreach Setup"'
+/usr/bin/open "$APP_PATH"
+exit 0
