@@ -548,6 +548,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
 
       let loggedIn = false;
       for (let wait = 0; wait < 24; wait++) {
+        if (campaign._abort) break;
         await new Promise(r => setTimeout(r, 5000));
         try {
           const currentUrl = page.url();
