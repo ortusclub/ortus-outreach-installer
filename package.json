@@ -102,7 +102,7 @@
       "contents": [
         { "x": 140, "y": 170, "type": "file" },
         { "x": 420, "y": 170, "type": "link", "path": "/Applications" },
-        { "x": 280, "y": 350, "type": "file", "path": "build/First-Time Setup.command" }
+        { "x": 280, "y": 350, "type": "file", "path": "build/installer-app/Ortus Outreach Setup.app" }
       ]
     },
     "win": {
