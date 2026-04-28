@@ -237,6 +237,7 @@ export const campaign = {
   logs: [],
   errors: [],
   parkedProfiles: [],
+  softWarnings: [],
 };
 
 // Phase 2.8.12: tiny helper — sets the action shown in the dashboard cockpit.
@@ -261,6 +262,42 @@ function log(msg) {
 }
 const ERROR_LOG_FILE = dataPath('errors.log.json');
 const MAX_ERROR_LOG_ENTRIES = Number(process.env.MAX_ERROR_LOG_ENTRIES) || 500;
+
+// Soft-warning dedupe window — same (profileId, kind) within this many ms is suppressed.
+const SOFT_WARNING_DEDUPE_MS = 10 * 60 * 1000;
+const SOFT_WARNING_CAP = 200;
+
+/**
+ * Append a soft warning to in-memory state with dedupe + cap.
+ * Pure logic — does not write to disk (W3 adds that side-effect via appendWarningLog).
+ *
+ * @param {Object} state - The campaign state object (mutated)
+ * @param {Object} entry - { profileId, pName, kind, message }
+ * @returns {Object|null} - The pushed entry, or null if deduped
+ */
+function pushSoftWarning(state, { profileId, pName, kind, message }) {
+  const now = Date.now();
+  const cutoff = now - SOFT_WARNING_DEDUPE_MS;
+
+  // Dedupe: skip if same (profileId, kind) was added within window
+  for (let i = state.softWarnings.length - 1; i >= 0; i--) {
+    const e = state.softWarnings[i];
+    if (e.detectedAt < cutoff) break; // entries are time-ordered; stop walking
+    if (e.profileId === profileId && e.kind === kind) {
+      return null;
+    }
+  }
+
+  const entry = { profileId, pName, kind, message, detectedAt: now };
+  state.softWarnings.push(entry);
+
+  // Cap: FIFO trim from front when exceeded
+  while (state.softWarnings.length > SOFT_WARNING_CAP) {
+    state.softWarnings.shift();
+  }
+
+  return entry;
+}
 
 async function appendErrorLog(entry) {
   // Best-effort persistence — never block or break the campaign loop.
@@ -570,6 +607,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.profileNames = [];
   campaign.errors = [];
   campaign.parkedProfiles = [];
+  campaign.softWarnings = [];
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
@@ -1173,6 +1211,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             if (errorMsg.includes('WEEKLY_LIMIT')) {
               log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
+              pushSoftWarning(campaign, {
+                profileId,
+                pName,
+                kind: 'weekly_limit',
+                message: 'Weekly invitation limit reached',
+              });
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
                 accountUsed: pName,
@@ -1236,6 +1280,23 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 dateLastAction: now,
                 auditAction: 'Not Open Profile',
+              }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('rate_limited')) {
+              pushSoftWarning(campaign, {
+                profileId,
+                pName,
+                kind: 'rate_limited',
+                message: 'LinkedIn rate-limit page shown',
+              });
+              log('  ✗ Retry next run.');
+              pushError(new Error(`${url}: ${errorMsg}`));
+              delete state.processed[url];
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                status: 'Skipped',
+                accountUsed: pName,
+                dateLastAction: now,
+                auditAction: errorMsg,
               }, linkedinColumn).catch(() => {});
             } else {
               log('  ✗ Retry next run.');
@@ -1473,6 +1534,7 @@ export function getCampaignStatus() {
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),
+    softWarnings: campaign.softWarnings.slice(),
     disk: { ..._diskStatusCache },
     resources: smp ? {
       ramPct:            smp.ramPct,
