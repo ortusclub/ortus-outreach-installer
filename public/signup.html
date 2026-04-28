@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign up — Ortus Outreach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/auth.css">
+</head>
+<body>
+  <div class="auth-shell">
+
+    <aside class="auth-deck">
+      <div class="auth-deck-top">
+        <div class="auth-deck-tag">Ortus // 2026</div>
+        <div class="auth-deck-crest" id="deck-version">v—</div>
+      </div>
+
+      <div class="auth-deck-wordmark">
+        Ortus<br><em>Outreach</em>
+        <span class="oversub">LinkedIn · Command Deck</span>
+      </div>
+
+      <div class="deck-marquee">
+        <div class="deck-marquee-track">
+          <div class="deck-marquee-line"><span>Connections</span><span class="dash"></span><span class="mini">01 · Invites</span></div>
+          <div class="deck-marquee-line mute"><span>InMails</span><span class="dash"></span><span class="mini">02 · Premium</span></div>
+          <div class="deck-marquee-line"><span>Direct Messages</span><span class="dash"></span><span class="mini">03 · 1st deg</span></div>
+          <div class="deck-marquee-line mute"><span>Open Profiles</span><span class="dash"></span><span class="mini">04 · Free</span></div>
+          <div class="deck-marquee-line"><span>Status Check</span><span class="dash"></span><span class="mini">05 · Audit</span></div>
+          <!-- Duplicate for seamless loop -->
+          <div class="deck-marquee-line"><span>Connections</span><span class="dash"></span><span class="mini">01 · Invites</span></div>
+          <div class="deck-marquee-line mute"><span>InMails</span><span class="dash"></span><span class="mini">02 · Premium</span></div>
+          <div class="deck-marquee-line"><span>Direct Messages</span><span class="dash"></span><span class="mini">03 · 1st deg</span></div>
+          <div class="deck-marquee-line mute"><span>Open Profiles</span><span class="dash"></span><span class="mini">04 · Free</span></div>
+          <div class="deck-marquee-line"><span>Status Check</span><span class="dash"></span><span class="mini">05 · Audit</span></div>
+        </div>
+      </div>
+
+      <div class="auth-deck-footer">
+        <span><span class="auth-deck-dot"></span>An Ortus Innovation</span>
+        <span>2026</span>
+      </div>
+    </aside>
+
+    <section class="auth-form-pane">
+      <form class="auth-form" id="signup-form" autocomplete="on">
+        <header class="auth-form-header">
+          <div class="auth-form-label">Enrollment · 01</div>
+          <h1 class="auth-form-title">Sign <em style="font-style:normal">up</em></h1>
+          <div class="auth-form-sub">Must match an email in the State of Operations sheet</div>
+        </header>
+
+        <div class="auth-form-rule"></div>
+
+        <div class="auth-field">
+          <div class="auth-field-head">
+            <label for="email">Email</label>
+            <span class="aside">State of Operations</span>
+          </div>
+          <input id="email" name="email" type="email" autocomplete="username" required placeholder="name@ortusclub.com">
+        </div>
+
+        <div class="auth-field">
+          <div class="auth-field-head">
+            <label for="password">Password</label>
+            <span class="aside">Min 8 chars</span>
+          </div>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
+        </div>
+
+        <div class="auth-field">
+          <div class="auth-field-head">
+            <label for="password2">Confirm</label>
+          </div>
+          <input id="password2" name="password2" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
+        </div>
+
+        <div class="auth-actions">
+          <button type="submit" class="btn btn-start">Create account →</button>
+        </div>
+
+        <div class="auth-feedback error" id="auth-error"></div>
+
+        <div class="auth-foot">
+          <span>Already enrolled?</span>
+          <a href="/login.html">Sign in →</a>
+        </div>
+      </form>
+    </section>
+
+  </div>
+
+  <script>
+    fetch('/api/health').then(r => r.json()).then(d => {
+      if (d && d.version) {
+        const v = 'v' + d.version;
+        const el = document.getElementById('deck-version');
+        if (el) el.textContent = v;
+      }
+    }).catch(() => {});
+
+    const form = document.getElementById('signup-form');
+    const errBox = document.getElementById('auth-error');
+    const submitBtn = form.querySelector('button[type="submit"]');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errBox.classList.remove('visible');
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const password2 = document.getElementById('password2').value;
+      if (password !== password2) {
+        errBox.textContent = 'Passwords do not match';
+        errBox.classList.add('visible');
+        return;
+      }
+      submitBtn.disabled = true;
+      const original = submitBtn.textContent;
+      submitBtn.textContent = 'Creating…';
+      try {
+        const r = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          errBox.textContent = data.error || 'Signup failed';
+          errBox.classList.add('visible');
+          submitBtn.disabled = false;
+          submitBtn.textContent = original;
+          return;
+        }
+        window.location.href = '/';
+      } catch (err) {
+        errBox.textContent = err.message;
+        errBox.classList.add('visible');
+        submitBtn.disabled = false;
+        submitBtn.textContent = original;
+      }
+    });
+  </script>
+</body>
+</html>
