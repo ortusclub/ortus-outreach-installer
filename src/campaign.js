@@ -196,7 +196,7 @@ export function extractLinkedInUrl(row, linkedinColumn) {
   return null;
 }
 
-function getModeHint(mode, prevAction) {
+export function getModeHint(mode, prevAction) {
   if (mode === 'connect_only') return 'force_connect';
   if (mode === 'message_only') return 'force_message';
   if (mode === 'check_status') return 'check_only';
