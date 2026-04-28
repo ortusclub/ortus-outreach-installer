@@ -1438,8 +1438,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // the global cadence; this only decides whether the profile sits idle
         // on about:blank or gets closed entirely between rounds.
         const perProfileWaitMs = computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
-        if (shouldCloseBetweenBatches({ waitMs: perProfileWaitMs })) {
-          log(`  ⊗ ${pName}: gap ${(perProfileWaitMs / 60000).toFixed(1)}min > ${getCloseGapMin()}min — closing browser.`);
+
+        // Concurrency cap (2.8.25-P2): also close if others are waiting for a
+        // slot. Without this, the first N profiles hold their slots forever and
+        // profiles N+1, N+2, ... never get to run.
+        const othersWaiting = sessions.size >= MAX_CONCURRENT_PROFILES &&
+          profileIds.some(id =>
+            id !== profileId && !sessions.has(id) && !weeklyLimited.has(id)
+          );
+
+        if (shouldCloseBetweenBatches({ waitMs: perProfileWaitMs }) || othersWaiting) {
+          const reason = othersWaiting && !shouldCloseBetweenBatches({ waitMs: perProfileWaitMs })
+            ? `slot rotation (${sessions.size - 1}/${MAX_CONCURRENT_PROFILES} after close)`
+            : `gap ${(perProfileWaitMs / 60000).toFixed(1)}min > ${getCloseGapMin()}min`;
+          log(`  ⊗ ${pName}: ${reason} — closing browser.`);
           await closeSession(profileId);
         } else {
           if (rmCfg.IDLE_PARKING_ENABLED && !page.isClosed?.()) {
