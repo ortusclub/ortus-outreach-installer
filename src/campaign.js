@@ -1234,6 +1234,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('EMAIL_REQUIRED')) {
               log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead.`);
+              pushSoftWarning(campaign, {
+                profileId,
+                pName,
+                kind: 'email_required',
+                message: 'LinkedIn requires email to connect',
+              });
               state.processed[url] = { profileId, profileName: pName, action: 'email_required', date: now };
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
