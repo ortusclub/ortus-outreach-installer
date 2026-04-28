@@ -2007,6 +2007,7 @@ async function pollStatus() {
     wasErrorCount = (s.errors || []).length;
     wasRunning = s.running;
     renderParkedProfiles(s.parked);
+    renderSoftWarnings(s.softWarnings);
     renderDiskBanner(s.disk);
 
     // Phase 2.8.13: status / mode / profile pills moved INTO the cockpit panel
@@ -3887,6 +3888,64 @@ function toggleParkedDetail() {
 }
 
 window.toggleParkedDetail = toggleParkedDetail;
+
+// ─── Soft warnings (W2 of 2.8.22) ───────────────────────────────────────────
+
+function _prettyWarningKind(k) {
+  switch (k) {
+    case 'weekly_limit': return 'Weekly limit';
+    case 'rate_limited': return 'Rate limited';
+    case 'email_required': return 'Email required';
+    case 'how_do_you_know': return 'Know-them prompt';
+    case 'page_error': return 'Page error';
+    default: return 'Warning';
+  }
+}
+
+function renderSoftWarnings(warnings) {
+  const row = document.getElementById('rp-warnings-row');
+  const line = document.getElementById('rp-warnings-line');
+  const detail = document.getElementById('rp-warnings-detail');
+  if (!row || !line || !detail) return;
+
+  const list = Array.isArray(warnings) ? warnings : [];
+  if (list.length === 0) {
+    row.hidden = true;
+    line.classList.remove('has-warnings');
+    line.textContent = '—';
+    detail.hidden = true;
+    detail.innerHTML = '';
+    return;
+  }
+
+  row.hidden = false;
+  line.classList.add('has-warnings');
+
+  // Most-recent first
+  const sorted = list.slice().sort((a, b) => b.detectedAt - a.detectedAt);
+  const newest = sorted[0];
+  const ago = _humanAgoFromTs(newest.detectedAt);
+  const summary = `${(newest.pName || newest.profileId)} · ${_prettyWarningKind(newest.kind)} · ${ago}`;
+  const more = sorted.length > 1 ? ` (+${sorted.length - 1} more)` : '';
+  line.textContent = summary + more;
+
+  // Detail: full list, one per line
+  detail.innerHTML = sorted.map(w => `
+    <div class="rp-warnings-item">
+      <span class="rp-warnings-name">${escapeHtml(w.pName || w.profileId)}</span> ·
+      <span class="rp-warnings-kind">${_prettyWarningKind(w.kind)}</span> ·
+      <span class="rp-warnings-msg">${escapeHtml(w.message || '')}</span>
+      <span class="rp-warnings-time">${_humanAgoFromTs(w.detectedAt)}</span>
+    </div>
+  `).join('');
+}
+
+function toggleWarningDetail() {
+  const detail = document.getElementById('rp-warnings-detail');
+  if (!detail) return;
+  detail.hidden = !detail.hidden;
+}
+window.toggleWarningDetail = toggleWarningDetail;
 
 // Phase 2.8.20 (W1-B2) — fetch persisted errors and merge with in-memory ones.
 // Public surfaces (hero-errors count) intentionally untouched — they aggregate

@@ -2470,6 +2470,42 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   text-transform: uppercase;
 }
 
+/* Phase 2.8.22 (W2) — soft warnings surface */
+.rp-warnings-line {
+  font-family: var(--body, 'Hanken Grotesk', sans-serif);
+  font-size: 0.78rem;
+  color: var(--gray);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  margin-top: 2px;
+}
+.rp-warnings-line.has-warnings {
+  color: var(--gray);
+}
+.rp-warnings-line:hover { opacity: 0.85; }
+.rp-warnings-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  background: var(--hairline-soft, rgba(255,255,255,0.06));
+  font-size: 0.66rem;
+  color: var(--gray);
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+.rp-warnings-detail .rp-warnings-item { display: block; padding: 2px 0; }
+.rp-warnings-detail .rp-warnings-item .rp-warnings-name { color: var(--ink); }
+.rp-warnings-detail .rp-warnings-item .rp-warnings-kind {
+  margin-left: 6px;
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.rp-warnings-detail .rp-warnings-item .rp-warnings-time {
+  margin-left: 6px;
+  color: var(--gray);
+}
+
 /* Phase 2.8.20 (W3-C2) — disk-low warning banner */
 .disk-warning-banner {
   border: 1px solid var(--red);
