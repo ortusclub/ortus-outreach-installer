@@ -56,6 +56,11 @@ export const BATCH_SIZE = 5;
  */
 const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 180000;
 
+// Concurrency cap (2.8.25): max simultaneously-open browser profiles. With queue-
+// and-rotate: if user selects more than this, the extras wait for a slot to free.
+// Default 3 fits ~1.5 GB on 8 GB machines. Override via .env if you have more RAM.
+const MAX_CONCURRENT_PROFILES = Number(process.env.MAX_CONCURRENT_PROFILES) || 3;
+
 /** Phase 2.8.20 (W3-D1) — state.json `processed` retention window in days.
  *  Default 60. Entries older than this are dropped on next loadState; the
  *  pruned state persists on the next saveState call. Configurable via env.
@@ -794,6 +799,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       const cached = sessions.get(profileId);
       if (cached) return cached;
+
+      // Concurrency cap (2.8.25-P1): if we're already at MAX_CONCURRENT_PROFILES
+      // open browsers, this profile waits for a slot. Returning null here flows to
+      // the existing `if (!session) continue;` in the round-robin (line ~943).
+      // P2 forces a close at batch end if others are waiting, so the slot rotates.
+      if (sessions.size >= MAX_CONCURRENT_PROFILES) {
+        const waitingName = profileNameCache[profileId] || profileId;
+        log(`  ⏸ ${waitingName}: waiting for a slot (${sessions.size}/${MAX_CONCURRENT_PROFILES} open)`);
+        return null;
+      }
 
       const pName = profileNameCache[profileId] || profileId;
       campaign.currentProfile = pName;
