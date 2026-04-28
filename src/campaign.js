@@ -51,10 +51,10 @@ export const BATCH_SIZE = 5;
 
 /** Phase 2.8.20 (W2-A1) — per-lead watchdog timeout. Catches Puppeteer hangs
  *  that the protocol-level 120s timeout would otherwise paper over. Default
- *  90s; env-overridable for stress-testing (LEAD_TIMEOUT_MS=2000 will time
+ *  180s; env-overridable for stress-testing (LEAD_TIMEOUT_MS=2000 will time
  *  out almost every lead, useful for proving the path).
  */
-const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 90000;
+const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 180000;
 
 /** Phase 2.8.20 (W3-D1) — state.json `processed` retention window in days.
  *  Default 60. Entries older than this are dropped on next loadState; the
