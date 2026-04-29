@@ -93,11 +93,26 @@ export async function launchProfile(profileId, token) {
   const browser = await puppeteer.connect({
     browserWSEndpoint: wsUrl,
     ignoreHTTPSErrors: true,
-    protocolTimeout: 120000, // 120s: prevent "Runtime.callFunctionOn timed out" on slow hosts
+    // 2.8.27: bumped 120s -> 180s. Slow profiles (large cookie jars, many
+    // tabs from --restore-last-session) were timing out on Network.enable
+    // before Puppeteer could attach. Rakibul.islam was launch-failing every
+    // round all night because of this.
+    protocolTimeout: 180000,
   });
 
   const pages = await browser.pages();
   const page = pages.length > 0 ? pages[0] : await browser.newPage();
+
+  // 2.8.27: close excess tabs that --restore-last-session brought back from
+  // the previous run. GoLogin's SDK appends --restore-last-session to every
+  // launch and we can't override it, so over time stale tabs accumulate
+  // (one user saw 10+ tabs piled up). We keep pages[0] and close the rest.
+  if (pages.length > 1) {
+    console.log(`[gologin] Closing ${pages.length - 1} stale tab(s) from previous session`);
+    for (let i = 1; i < pages.length; i++) {
+      try { await pages[i].close({ runBeforeUnload: false }); } catch { /* best-effort */ }
+    }
+  }
 
   await page.setViewport({ width: 1366, height: 900 });
   page.setDefaultNavigationTimeout(30000);
@@ -125,6 +140,21 @@ export async function closeProfile(profileId) {
   // unreliable, leaving "ghost" windows after Stop.
   try { GL.killBrowser(); }
   catch (err) { console.warn(`[gologin] killBrowser warning: ${err.message}`); }
+
+  // 2.8.27: SIGKILL fallback. GL.killBrowser() sends SIGTERM to the spawned
+  // Orbita process. If Chromium is mid-something (uploading a profile,
+  // hung renderer, etc.), SIGTERM may be ignored and the process — plus all
+  // its visible windows — lingers indefinitely. After 2s, force-kill.
+  const proc = GL?.processSpawned;
+  if (proc?.pid && !proc.killed) {
+    setTimeout(() => {
+      try {
+        process.kill(proc.pid, 0); // throws ESRCH if already dead
+        console.warn(`[gologin] SIGTERM didn't take after 2s — SIGKILL pid ${proc.pid}`);
+        try { process.kill(proc.pid, 'SIGKILL'); } catch { /* */ }
+      } catch { /* already dead — good */ }
+    }, 2000);
+  }
 
   // Cloud commit (cookies, profile state) is fire-and-forget — we don't want
   // the Stop endpoint blocked for 3-20s of cloud sync just to acknowledge the
