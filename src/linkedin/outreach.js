@@ -126,32 +126,37 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
     // ── Step 2b: Human-like browsing — scroll profile and dwell ──
-    // ~20% chance of a "deep read" (20-30s) to mimic genuinely interested browsing
-    const isDeepRead = Math.random() < 0.2;
-    const dwellTime = isDeepRead
-      ? 20000 + Math.floor(Math.random() * 10000)   // 20-30s deep read
-      : 5000 + Math.floor(Math.random() * 5000);     // 5-10s normal browse
-    console.log(`[outreach] Browsing profile (${isDeepRead ? 'deep read ' : ''}${(dwellTime / 1000).toFixed(0)}s)…`);
+    // 2.8.29: skip the entire dwell block for check_only — read-only mode,
+    // no LinkedIn-visible action that could be flagged. The dwell is pure
+    // anti-detection padding for sends, not reads. Saves 5-30s per check.
+    if (modeHint !== 'check_only') {
+      // ~20% chance of a "deep read" (20-30s) to mimic genuinely interested browsing
+      const isDeepRead = Math.random() < 0.2;
+      const dwellTime = isDeepRead
+        ? 20000 + Math.floor(Math.random() * 10000)   // 20-30s deep read
+        : 5000 + Math.floor(Math.random() * 5000);     // 5-10s normal browse
+      console.log(`[outreach] Browsing profile (${isDeepRead ? 'deep read ' : ''}${(dwellTime / 1000).toFixed(0)}s)…`);
 
-    // Scroll down with Page Down (works regardless of zoom)
-    await page.keyboard.press('PageDown');
-    await new Promise(r => setTimeout(r, 1000 + Math.floor(Math.random() * 1500)));
-    await page.keyboard.press('PageDown');
+      // Scroll down with Page Down (works regardless of zoom)
+      await page.keyboard.press('PageDown');
+      await new Promise(r => setTimeout(r, 1000 + Math.floor(Math.random() * 1500)));
+      await page.keyboard.press('PageDown');
 
-    if (isDeepRead) {
-      // Deep read: scroll further down, pause, scroll more — like reading their experience
-      await new Promise(r => setTimeout(r, 3000 + Math.floor(Math.random() * 3000)));
-      await page.keyboard.press('PageDown');
-      await new Promise(r => setTimeout(r, 2000 + Math.floor(Math.random() * 2000)));
-      await page.keyboard.press('PageDown');
-      await new Promise(r => setTimeout(r, dwellTime - 10000)); // remaining dwell
-    } else {
-      await new Promise(r => setTimeout(r, dwellTime));
+      if (isDeepRead) {
+        // Deep read: scroll further down, pause, scroll more — like reading their experience
+        await new Promise(r => setTimeout(r, 3000 + Math.floor(Math.random() * 3000)));
+        await page.keyboard.press('PageDown');
+        await new Promise(r => setTimeout(r, 2000 + Math.floor(Math.random() * 2000)));
+        await page.keyboard.press('PageDown');
+        await new Promise(r => setTimeout(r, dwellTime - 10000)); // remaining dwell
+      } else {
+        await new Promise(r => setTimeout(r, dwellTime));
+      }
+
+      // Scroll back to top
+      await page.keyboard.press('Home');
+      await new Promise(r => setTimeout(r, 800 + Math.floor(Math.random() * 700)));
     }
-
-    // Scroll back to top
-    await page.keyboard.press('Home');
-    await new Promise(r => setTimeout(r, 800 + Math.floor(Math.random() * 700)));
 
     // Check for login/404/rate-limit
     const currentUrl = page.url();

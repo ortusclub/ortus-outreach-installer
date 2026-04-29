@@ -1543,7 +1543,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             });
 
             let waitMs;
-            if (isMessageMode) {
+            if (mode === 'check_status') {
+              // 2.8.29: Check Status is read-only — no LinkedIn-visible action
+              // that could be flagged. Skip the anti-detection between-lead
+              // delay (15-45s padding for sends) and use a tiny breath
+              // (1-3s) just so we're not hammering the same profile back-to-back
+              // with zero pause. Combined with the dwell-skip in outreach.js
+              // this brings per-check time from ~95s down to ~25-35s.
+              waitMs = (1 + Math.floor(Math.random() * 2)) * 1000;
+              log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (check-only — no rate limits apply)`);
+            } else if (isMessageMode) {
               // User-controlled gap from the dashboard (delayMin–delayMax seconds).
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
               log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (message gap)`);
@@ -1561,8 +1570,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             }
 
             // ~30% chance: browse the feed organically during the wait (looks like a real user).
-            // Skip entirely in message mode — we want this to move fast.
-            if (!isMessageMode && Math.random() < 0.3 && !campaign._abort) {
+            // Skip entirely in message mode AND check_status mode — both should move fast.
+            if (!isMessageMode && mode !== 'check_status' && Math.random() < 0.3 && !campaign._abort) {
               setAction('Organic browsing', { account: pName });
               await browseFeedOrganically(page, pName);
             }
@@ -1588,7 +1597,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // be back to this profile for a while. The round sleep below keeps
         // the global cadence; this only decides whether the profile sits idle
         // on about:blank or gets closed entirely between rounds.
-        const perProfileWaitMs = computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
+        // 2.8.29: in check_status mode batches happen back-to-back with no
+        // round sleep, so the profile is back almost immediately — keep it
+        // open (perProfileWaitMs = 0) to avoid 30s of close+relaunch overhead
+        // every BATCH_SIZE rows.
+        const perProfileWaitMs = (mode === 'check_status')
+          ? 0
+          : computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
 
         // Concurrency cap (2.8.25-P2): also close if others are waiting for a
         // slot. Without this, the first N profiles hold their slots forever and
@@ -1619,8 +1634,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       // Sleep until the round cadence target has elapsed. batchesPerHour sets
       // the target — e.g. bph=2 means rounds should start every 30min. If the
       // round took longer than the target, no sleep.
+      // 2.8.29: skipped entirely for check_status — no rate-limit risk, just
+      // burn through every pending invite as fast as the browser allows.
       if (campaign._abort || leadsExhausted) break outer;
-      const roundTargetMs = (3600 / batchesPerHour) * 1000;
+      const roundTargetMs = (mode === 'check_status') ? 0 : (3600 / batchesPerHour) * 1000;
       const roundElapsed = Date.now() - roundStart;
       const roundSleepMs = Math.max(0, roundTargetMs - roundElapsed);
       if (roundSleepMs > 0) {
