@@ -793,6 +793,67 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         await getProfileName(pid, token);
       }
     }
+
+    // 2.8.28 (Check Status routing fix): For check_status mode, ignore the
+    // UI-selected profileIds and auto-derive from the sheet's Account Used
+    // column. Each pending invite can ONLY be correctly checked by its
+    // original sender; using any other account yields false "Declined" verdicts
+    // (and previously corrupted the Account Used column on write — fixed in
+    // the write path below). The UI selection is destructive in this mode,
+    // so we override it with the truth from the sheet.
+    if (mode === 'check_status') {
+      // Refresh the cache to ensure newly-added profiles are visible.
+      if (token) {
+        try {
+          const all = await getProfiles(token);
+          profileNameCache = {};
+          for (const p of all) profileNameCache[p.id] = p.name;
+        } catch (err) {
+          log(`⚠ Could not refresh GoLogin profile list: ${err.message}`);
+        }
+      }
+      const nameToId = {};
+      Object.keys(profileNameCache).forEach(id => { nameToId[profileNameCache[id]] = id; });
+
+      const sendersInSheet = new Map(); // name -> count
+      const unmatchedSenders = new Map(); // name -> count
+      for (const row of targets) {
+        const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+        if (!acct) {
+          unmatchedSenders.set('(blank)', (unmatchedSenders.get('(blank)') || 0) + 1);
+          continue;
+        }
+        if (nameToId[acct]) {
+          sendersInSheet.set(acct, (sendersInSheet.get(acct) || 0) + 1);
+        } else {
+          unmatchedSenders.set(acct, (unmatchedSenders.get(acct) || 0) + 1);
+        }
+      }
+
+      const derivedProfileIds = [];
+      for (const name of sendersInSheet.keys()) {
+        derivedProfileIds.push(nameToId[name]);
+      }
+
+      log(`Check Status auto-routing → ${derivedProfileIds.length} sender(s) found in sheet (CC=Sent)`);
+      sendersInSheet.forEach((count, name) => log(`  • ${name}: ${count} pending`));
+      if (unmatchedSenders.size > 0) {
+        log(`⚠ Skipping ${[...unmatchedSenders.values()].reduce((a,b)=>a+b,0)} row(s) whose Account Used is unknown:`);
+        unmatchedSenders.forEach((count, name) => log(`  • ${name}: ${count} row(s) — no GoLogin profile matches`));
+      }
+
+      if (derivedProfileIds.length === 0) {
+        log('✗ Check Status: no sender accounts in the sheet match any GoLogin profile in this workspace.');
+        log('=== Campaign ended ===');
+        campaign.running = false;
+        campaign.endedAt = Date.now();
+        return;
+      }
+
+      // Replace the UI-selected list with the derived list.
+      profileIds = derivedProfileIds;
+    }
+
     campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
 
@@ -1043,6 +1104,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         if (mode === 'check_status') {
           if (cc !== 'sent') { delete state.processed[url]; continue; }
+          // 2.8.28: per-profile routing guard. Even with auto-derived profile
+          // list, the targets array is shared across profiles in the round
+          // robin — make sure each profile only checks rows it originally
+          // sent. Prevents the cross-account false-Declined bug.
+          const rowAcct = (row['Account Used'] || row['account used'] || '').toString().trim();
+          if (rowAcct !== pName) { delete state.processed[url]; continue; }
         } else {
           if (status === 'done') { delete state.processed[url]; continue; }
           if ((mode === 'open_profile_only' || mode === 'message_only') && msgSent) {
@@ -1189,7 +1256,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             campaign.totalProcessed = campaign.processedToday;
             await saveState(state);
 
-            const sheetData = { dateLastAction: now, accountUsed: pName };
+            // 2.8.28: For check_status, do NOT include accountUsed — preserving
+            // the original sender attribution is essential. The audit log
+            // append is also conditionally suppressed for check_status reads.
+            const sheetData = (mode === 'check_status')
+              ? { dateLastAction: now }
+              : { dateLastAction: now, accountUsed: pName };
             const hyperSent = `=HYPERLINK("${url}","sent")`;
 
             if (result.action === 'connection_sent') {
@@ -1231,21 +1303,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 }
               }
             } else if (result.action === 'status_accepted') {
-              // Invite accepted — flip CC green, Status=Skipped so follow-up
-              // campaigns (DM, OP, InMail) can process this row next.
-              sheetData.status = 'Skipped';
-              sheetData.cc = 'Accepted';
+              // 2.8.28: New Check Status contract — CC text untouched
+              // (stays "Sent"), CC cell colored green via ccColor. Status
+              // set to "Check Done." Account Used preserved.
+              sheetData.status = 'Check Done.';
+              sheetData.ccColor = 'green';
               sheetData.auditAction = 'Acceptance confirmed';
             } else if (result.action === 'status_pending') {
-              // Still awaiting — keep CC yellow, mark Status=Skipped so
-              // the next check_status run re-evaluates.
-              sheetData.status = 'Skipped';
-              sheetData.cc = 'Sent';
+              sheetData.status = 'Check Done.';
+              sheetData.ccColor = 'yellow';
               sheetData.auditAction = 'Still pending';
             } else if (result.action === 'status_declined') {
-              sheetData.status = 'Done';
-              sheetData.cc = 'Declined';
-              sheetData.auditAction = 'Declined';
+              sheetData.status = 'Check Done.';
+              sheetData.ccColor = 'red';
+              sheetData.auditAction = 'No longer pending';
             }
             await updateSheetRow(sheetUrl, url, sheetData, linkedinColumn).catch(() => {});
 
