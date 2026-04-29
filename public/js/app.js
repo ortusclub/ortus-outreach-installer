@@ -1540,7 +1540,12 @@ function stepInput(inputId, delta) {
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
 async function startCampaign() {
-  if (selectedProfileIds.length === 0) { alert('Select at least one GoLogin profile.'); return; }
+  // 2.8.29: For check_status mode, profiles are auto-derived from the sheet
+  // (Account Used column). UI selection is ignored — skip the validation.
+  const _modeForValidation = document.getElementById('campaign-mode').value;
+  if (_modeForValidation !== 'check_status' && selectedProfileIds.length === 0) {
+    alert('Select at least one GoLogin profile.'); return;
+  }
   const sheetUrl = document.getElementById('sheet-url').value.trim();
   if (!sheetUrl) { alert('Enter a Google Sheet URL.'); return; }
   const dailyLimit = parseInt(document.getElementById('daily-limit').value, 10);
