@@ -794,6 +794,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       }
     }
 
+    // 2.8.28-P2: per-profile target slices for check_status mode (set inside
+    // the auto-derivation block below; consumed by the inner while loop's
+    // per-profile cursor logic).
+    let _checkStatusTargetsByProfile = null;
+
     // 2.8.28 (Check Status routing fix): For check_status mode, ignore the
     // UI-selected profileIds and auto-derive from the sheet's Account Used
     // column. Each pending invite can ONLY be correctly checked by its
@@ -852,6 +857,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       // Replace the UI-selected list with the derived list.
       profileIds = derivedProfileIds;
+
+      // 2.8.28-P2: Build per-profile target lists. Without this, the shared
+      // round-robin leadIndex would burn BATCH_SIZE slots per profile on
+      // skipped non-matching rows — every profile would close with 0
+      // processed. Each profile gets its own slice and its own cursor below.
+      _checkStatusTargetsByProfile = {};
+      for (const pid of derivedProfileIds) _checkStatusTargetsByProfile[pid] = [];
+      for (const row of targets) {
+        const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+        const pid = nameToId[acct];
+        if (pid && _checkStatusTargetsByProfile[pid]) {
+          _checkStatusTargetsByProfile[pid].push(row);
+        }
+      }
     }
 
     campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
@@ -997,6 +1016,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     let totalDone = 0;
     let totalVisited = 0;
     let leadsExhausted = false;
+    // 2.8.28-P2: per-profile cursors for check_status mode (each profile has
+    // its own targets slice in _checkStatusTargetsByProfile from the auto-
+    // derivation block above). Exhaustion is tracked per-profile too — the
+    // campaign ends when every derived profile has run out of its own rows.
+    const _checkStatusCursorByProfile = {};
+    const _checkStatusExhausted = new Set();
     const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
     // Phase 2.8.8: silent-failure guard — if a profile produces BATCH_SIZE
     // consecutive non-success outcomes, park it for the rest of the run.
@@ -1062,23 +1087,54 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           log(`[resource-monitor] sample failed: ${err.message}`);
         }
 
-        // Find the next unprocessed lead
+        // Find the next unprocessed lead.
+        // 2.8.28-P2: For check_status mode, use the per-profile target slice
+        // built at auto-derivation time. Each profile has its own list and
+        // its own cursor — round-robin across profiles still works, but each
+        // profile only sees rows it originally sent. Without this, the
+        // shared leadIndex below would burn BATCH_SIZE attempts per profile
+        // on rows belonging to other profiles, and every profile would close
+        // with 0 processed.
         let row = null;
-        while (leadIndex < targets.length) {
-          const candidate = targets[leadIndex];
-          const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
-          leadIndex++;
-          if (!candidateUrl) continue;
-          if (mode !== 'check_status' && mode !== 'message_only' && mode !== 'open_profile_only' && state.processed[candidateUrl]) continue;
-          const sheetStatus = (candidate['Status'] || candidate['status'] || '').toLowerCase();
-          if (mode === 'connect_only') {
-            if (sheetStatus) continue;
+        if (mode === 'check_status' && _checkStatusTargetsByProfile) {
+          const slice = _checkStatusTargetsByProfile[profileId] || [];
+          let cursor = _checkStatusCursorByProfile[profileId] || 0;
+          while (cursor < slice.length) {
+            const candidate = slice[cursor];
+            const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
+            cursor++;
+            if (!candidateUrl) continue;
+            row = candidate;
+            break;
           }
-          row = candidate;
-          break;
+          _checkStatusCursorByProfile[profileId] = cursor;
+        } else {
+          while (leadIndex < targets.length) {
+            const candidate = targets[leadIndex];
+            const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
+            leadIndex++;
+            if (!candidateUrl) continue;
+            if (mode !== 'message_only' && mode !== 'open_profile_only' && state.processed[candidateUrl]) continue;
+            const sheetStatus = (candidate['Status'] || candidate['status'] || '').toLowerCase();
+            if (mode === 'connect_only') {
+              if (sheetStatus) continue;
+            }
+            row = candidate;
+            break;
+          }
         }
 
         if (!row) {
+          // 2.8.28-P2: in check_status, per-profile exhaustion is normal —
+          // skip this profile this round, end only when ALL profiles drained.
+          if (mode === 'check_status' && _checkStatusTargetsByProfile) {
+            _checkStatusExhausted.add(profileId);
+            if (_checkStatusExhausted.size >= profileIds.length) {
+              log('All Check Status profiles have completed their checks.');
+              leadsExhausted = true;
+            }
+            break; // exit the BATCH for-loop, move to next profile in rotation
+          }
           log('All leads processed or filtered out.');
           leadsExhausted = true;
           break;
