@@ -862,22 +862,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           return null;
         }
 
-        // First-batch-only 20s home-page warmup (D-11). Abort-aware so we
-        // don't sit through 20s of warmup after Stop has been pressed.
-        log(`⏳ ${pName}: waiting 20s on home page…`);
-        setAction('Warming up session', { account: pName, durationMs: 20000 });
-        const warmEnd = Date.now() + 20000;
-        while (Date.now() < warmEnd && !campaign._abort) {
-          await new Promise(r => setTimeout(r, 1000));
-        }
-        if (campaign._abort) {
-          try {
-            if (profileId === 'local-browser') await closeLocalBrowser();
-            else await closeProfile(profileId);
-          } catch { /* */ }
-          return null;
-        }
-        log(`✓ ${pName} warmup done.`);
+        // 2.8.27: home-page warmup removed per operator request — saved ~20s
+        // per profile launch. The cache-clear nav already loads LinkedIn home,
+        // and the per-lead navigation has its own networkidle0 + DOM-settle
+        // waits, so the additional dwell here was redundant.
 
         const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
         sessions.set(profileId, session);
