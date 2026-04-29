@@ -265,6 +265,62 @@ app.get('/api/sheet/preview', async (req, res) => {
   }
 });
 
+// 2.8.29: Check Status preview. Reads the sheet, counts CC=Sent rows by
+// Account Used, cross-references with available GoLogin profile names,
+// returns the per-account coverage and unmatched senders. UI uses this to
+// render the auto-derived coverage panel before Start.
+app.get('/api/check-status/preview', async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'url query param required' });
+
+    const [rows, profiles] = await Promise.all([
+      fetchSheet(url),
+      (async () => {
+        try {
+          const { getProfiles } = await import('./src/gologin-launcher.js');
+          const token = process.env.GOLOGIN_API_TOKEN;
+          if (!token) return [];
+          return await getProfiles(token);
+        } catch { return []; }
+      })(),
+    ]);
+
+    const knownNames = new Set(profiles.map(p => p.name));
+
+    const byAccount = {};
+    const unmatched = {};
+    let totalPending = 0;
+    for (const row of rows) {
+      const cc = (row['CC'] || row['cc'] || '').toString().toLowerCase().trim();
+      if (cc !== 'sent') continue;
+      totalPending++;
+      const acct = (row['Account Used'] || row['account used'] || '').toString().trim() || '(blank)';
+      if (knownNames.has(acct)) {
+        byAccount[acct] = (byAccount[acct] || 0) + 1;
+      } else {
+        unmatched[acct] = (unmatched[acct] || 0) + 1;
+      }
+    }
+
+    // Rough runtime estimate: ~95s per lead average (per the dev-mode logs).
+    const runtimeSeconds = totalPending * 95;
+
+    res.json({
+      totalPending,
+      byAccount: Object.entries(byAccount).map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+      unmatched: Object.entries(unmatched).map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+      accountsCount: Object.keys(byAccount).length,
+      runtimeSeconds,
+    });
+  } catch (err) {
+    console.error('Check status preview error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Template preview — render current templates against the first 3 leads so
 // the operator can spot missing variables / over-limit messages before launch.

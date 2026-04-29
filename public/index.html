@@ -277,6 +277,34 @@
       </div>
     </div>
 
+    <!-- ── Check Status panel (2.8.29) — visible only when mode = check_status. ──
+         Auto-derives the profile list and coverage from the sheet's Account Used
+         column; templates / profile picker / pace controls are hidden in this mode. -->
+    <div class="section" id="nav-check-status" style="display:none">
+      <h2 class="section-toggle"><span data-edit="h2-check-status">2b. Check Status — Coverage</span></h2>
+      <div style="padding: 0 0 8px;">
+        <div id="cs-loading" style="color:var(--gray); font-size:12px; padding:14px 0;">Loading coverage from sheet…</div>
+        <div id="cs-content" style="display:none">
+          <div class="label-tag" style="font-family:var(--display);letter-spacing:0.08em;font-size:11px;color:var(--gray);text-transform:uppercase;margin-bottom:12px">Pending invites by account · auto-derived from CC=Sent</div>
+          <div id="cs-coverage" style="border:1px solid var(--hairline)"></div>
+          <div id="cs-unmatched" style="margin-top:12px; font-size:12px; color:var(--gray);"></div>
+          <div id="cs-summary" style="display:flex; gap:24px; padding:16px 0; margin-top:16px; border-top:1px solid var(--hairline-soft); border-bottom:1px solid var(--hairline-soft)"></div>
+          <div style="display:flex; gap:20px; font-size:12px; margin-top:16px">
+            <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#16a34a;display:inline-block"></span> Accepted</div>
+            <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#eab308;display:inline-block"></span> Pending</div>
+            <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#dc2626;display:inline-block"></span> No longer pending</div>
+          </div>
+          <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
+            <strong style="color:var(--gray)">Templates / Daily limit / Profile picker</strong> — not used in Check Status. Read-only mode; no requests sent. Profiles are auto-routed per row.
+          </div>
+        </div>
+        <div id="cs-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">
+          No pending invites in this sheet (no rows with <code>CC=Sent</code>). Send some connection requests first.
+        </div>
+        <div id="cs-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
+      </div>
+    </div>
+
     <!-- ── GoLogin Profiles ── -->
     <div class="section collapsible collapsed" id="nav-accounts">
       <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>

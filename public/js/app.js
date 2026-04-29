@@ -211,6 +211,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', refreshPreviewButtonState);
   }
+  // 2.8.29: refresh check-status preview when sheet URL changes (debounced).
+  let csDebounce = null;
+  const sheetEl = document.getElementById('sheet-url');
+  if (sheetEl) sheetEl.addEventListener('input', () => {
+    if (document.getElementById('campaign-mode').value !== 'check_status') return;
+    clearTimeout(csDebounce);
+    csDebounce = setTimeout(refreshCheckStatusPreview, 600);
+  });
   // Phase 2.8.12: poll status once on load so the cockpit picks up an
   // already-running campaign across page refreshes. If a campaign is live,
   // this also kickstarts continuous polling via the running-detect path.
@@ -1067,6 +1075,74 @@ function setAddNote(on) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Mode-based template visibility
 // ─────────────────────────────────────────────────────────────────────────────
+// 2.8.29: Check Status preview fetch + render.
+async function refreshCheckStatusPreview() {
+  const url = (document.getElementById('sheet-url')?.value || '').trim();
+  const loading = document.getElementById('cs-loading');
+  const content = document.getElementById('cs-content');
+  const empty = document.getElementById('cs-empty');
+  const errBox = document.getElementById('cs-error');
+  if (!loading || !content || !empty || !errBox) return;
+  loading.style.display = '';
+  content.style.display = 'none';
+  empty.style.display = 'none';
+  errBox.style.display = 'none';
+
+  if (!url) {
+    loading.style.display = 'none';
+    errBox.textContent = 'Enter a Google Sheet URL above first.';
+    errBox.style.display = '';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/check-status/preview?url=' + encodeURIComponent(url));
+    const data = await r.json();
+    loading.style.display = 'none';
+    if (data.error) { errBox.textContent = data.error; errBox.style.display = ''; return; }
+    if (!data.totalPending) { empty.style.display = ''; return; }
+
+    const max = Math.max(1, ...data.byAccount.map(a => a.count));
+    const coverageHtml = data.byAccount.map(a => {
+      const pct = Math.round((a.count / max) * 100);
+      return `<div style="display:grid;grid-template-columns:220px 1fr 60px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px">
+        <div style="font-weight:500">${escHtml(a.name)}</div>
+        <div style="height:4px;background:var(--hairline-soft);position:relative"><div style="position:absolute;inset:0 auto 0 0;background:var(--ink);width:${pct}%"></div></div>
+        <div style="text-align:right;font-family:var(--display);font-size:18px;letter-spacing:0.04em">${a.count}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('cs-coverage').innerHTML = coverageHtml;
+
+    if (data.unmatched && data.unmatched.length) {
+      const unmatchedTotal = data.unmatched.reduce((s, u) => s + u.count, 0);
+      document.getElementById('cs-unmatched').innerHTML =
+        `⚠ ${unmatchedTotal} row(s) will be skipped — Account Used doesn't match any GoLogin profile in this workspace: ` +
+        data.unmatched.map(u => `${escHtml(u.name)} (${u.count})`).join(', ');
+    } else {
+      document.getElementById('cs-unmatched').innerHTML = '';
+    }
+
+    const mins = Math.round(data.runtimeSeconds / 60);
+    const runtime = mins >= 60 ? `~${Math.floor(mins/60)}h ${mins%60}m` : `~${mins} min`;
+    document.getElementById('cs-summary').innerHTML = `
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${data.totalPending}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Invites to check</div></div>
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${data.accountsCount}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Accounts</div></div>
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${runtime}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Estimated runtime</div></div>
+    `;
+    content.style.display = '';
+
+    // Update Start CTA labels with the count
+    ['btn-start', 'btn-start-rb'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.textContent = `Start Check (${data.totalPending} invites)`;
+    });
+  } catch (err) {
+    loading.style.display = 'none';
+    errBox.textContent = 'Could not load preview: ' + err.message;
+    errBox.style.display = '';
+  }
+}
+
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const connect = document.getElementById('tpl-connect-section');
@@ -1137,6 +1213,25 @@ function onModeChange() {
     if (gapWrap) gapWrap.style.display = 'none';
     if (wbMinWrap) wbMinWrap.style.display = '';
     if (wbMaxWrap) wbMaxWrap.style.display = '';
+  }
+
+  // 2.8.29: Check Status mode UI rebuild — hide pace/accounts/templates,
+  // show the auto-derived coverage panel.
+  const csPanel = document.getElementById('nav-check-status');
+  const navPace = document.getElementById('nav-pace');
+  const navAccounts = document.getElementById('nav-accounts');
+  const isCheckStatus = (mode === 'check_status');
+  if (csPanel) csPanel.style.display = isCheckStatus ? '' : 'none';
+  if (navPace) navPace.style.display = isCheckStatus ? 'none' : '';
+  if (navAccounts) navAccounts.style.display = isCheckStatus ? 'none' : '';
+  if (isCheckStatus) {
+    refreshCheckStatusPreview();
+  } else {
+    // Reset Start CTA back to default when leaving check_status mode.
+    ['btn-start', 'btn-start-rb'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.textContent = 'Start Campaign';
+    });
   }
 
   // Persist last-used mode
