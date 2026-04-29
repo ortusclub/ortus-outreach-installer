@@ -107,23 +107,28 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     } catch { /* cookie check is best-effort */ }
 
     // ── Step 1: Navigate to lead's profile ──
-    // Use networkidle0 — waits until no network requests for 500ms
+    // 2.8.29 perf: check_only uses domcontentloaded (not networkidle0) — the
+    // Voyager API only needs the URL pathname + cookies, both available as
+    // soon as the document parses. networkidle0 waits for LinkedIn's polling
+    // to stop and routinely costs 10-20s of dead time. Send paths still wait
+    // because they need the action buttons rendered.
+    const navWait = (modeHint === 'check_only') ? 'domcontentloaded' : 'networkidle0';
+    const navTimeout = (modeHint === 'check_only') ? 15000 : 30000;
     try {
-      await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+      await page.goto(url, { waitUntil: navWait, timeout: navTimeout });
     } catch (e) {
-      // Fallback: if networkidle0 times out, the page is still usable
-      console.log(`[outreach] networkidle0 timed out, continuing: ${e.message}`);
+      console.log(`[outreach] ${navWait} timed out, continuing: ${e.message}`);
     }
 
-    // ── Step 2: Smart wait — DOM settles when mutations stop for 1.5s ──
-    console.log('[outreach] Waiting for DOM to settle…');
-    await waitForDomSettle(page, { settleMs: 1500, maxWait: 15000 });
-    // Small buffer for late-loading elements (LinkedIn lazy renders some cards)
-    await new Promise(r => setTimeout(r, 2000));
-    console.log('[outreach] DOM settled.');
-
-    // ── Step 2a: Zoom to 75% so all action buttons are visible ──
-    await page.evaluate(() => { document.body.style.zoom = '75%'; });
+    // ── Step 2: DOM settle / buffer / zoom — only needed for paths that
+    // interact with the page. check_only reads the Voyager API and exits.
+    if (modeHint !== 'check_only') {
+      console.log('[outreach] Waiting for DOM to settle…');
+      await waitForDomSettle(page, { settleMs: 1500, maxWait: 15000 });
+      await new Promise(r => setTimeout(r, 2000));
+      console.log('[outreach] DOM settled.');
+      await page.evaluate(() => { document.body.style.zoom = '75%'; });
+    }
 
     // ── Step 2b: Human-like browsing — scroll profile and dwell ──
     // 2.8.29: skip the entire dwell block for check_only — read-only mode,
@@ -191,12 +196,19 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     let status;
 
     if (modeHint === 'check_only') {
-      // Just read the status — don't click anything
-      // Voyager fast-path for check_only
+      // Voyager fast-path: same source as the 1st-degree badge LinkedIn renders.
       if (voyagerDegree === 1) {
         console.log('[outreach] Voyager: degree=1 → accepted');
         return { action: 'status_accepted' };
       }
+      if (voyagerDegree === 2 || voyagerDegree === 3) {
+        // Not connected per the API — but we still need to know if our invite
+        // is pending or was withdrawn/declined. That requires the DOM button.
+        console.log(`[outreach] Voyager: degree=${voyagerDegree} → check button state`);
+      }
+      // 2.8.29 perf: only settle the DOM when we actually need to scrape it
+      // (Voyager didn't give a definitive degree-1 answer).
+      await waitForDomSettle(page, { settleMs: 1000, maxWait: 8000 });
       status = await getConnectionStatus(page);
       console.log(`[outreach] Check status: ${status}`);
       if (status === 'message') return { action: 'status_accepted' };

@@ -265,10 +265,10 @@ app.get('/api/sheet/preview', async (req, res) => {
   }
 });
 
-// 2.8.29: Check Status preview. Reads the sheet, counts CC=Sent rows by
-// Account Used, cross-references with available GoLogin profile names,
-// returns the per-account coverage and unmatched senders. UI uses this to
-// render the auto-derived coverage panel before Start.
+// 2.8.29: Check Status preview. Reads the sheet, counts rows where Account
+// Used (column D) is filled — that's the signal an invite went out. CC text
+// is no longer the source of truth. Cross-references the senders with
+// available GoLogin profile names and returns per-account coverage.
 app.get('/api/check-status/preview', async (req, res) => {
   try {
     const { url } = req.query;
@@ -294,10 +294,11 @@ app.get('/api/check-status/preview', async (req, res) => {
     const unmatched = {};
     let totalPending = 0;
     for (const row of rows) {
-      const cc = (row['CC'] || row['cc'] || '').toString().toLowerCase().trim();
-      if (cc !== 'sent') continue;
+      // 2.8.29: Account Used (column D) being filled = an invite was sent.
+      // CC column is no longer the source of truth.
+      const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+      if (!acct) continue;
       totalPending++;
-      const acct = (row['Account Used'] || row['account used'] || '').toString().trim() || '(blank)';
       if (LOCAL_BROWSER_NAMES.has(acct)) {
         // Bucket all local-browser variants under one canonical display name.
         byAccount['Local Browser'] = (byAccount['Local Browser'] || 0) + 1;
@@ -308,8 +309,9 @@ app.get('/api/check-status/preview', async (req, res) => {
       }
     }
 
-    // Rough runtime estimate: ~95s per lead average (per the dev-mode logs).
-    const runtimeSeconds = totalPending * 95;
+    // Rough runtime estimate: ~25s per lead with the 2.8.29 fast-path
+    // (domcontentloaded nav + Voyager API, no DOM settle for degree-1 hits).
+    const runtimeSeconds = totalPending * 25;
 
     res.json({
       totalPending,
@@ -450,7 +452,9 @@ app.post('/api/campaign/start', (req, res) => {
 
     const { profileIds, sheetUrl, templates, dailyLimit, batchesPerHour, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames } = req.body;
 
-    if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
+    // 2.8.29: check_status auto-derives profiles from the sheet's Account Used
+    // column inside campaign.js, so an empty profileIds array is valid here.
+    if (mode !== 'check_status' && !profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
     // Phase 11.2 (T-11.2-09): clamp batchesPerHour at the trust boundary — the

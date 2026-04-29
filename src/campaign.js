@@ -740,7 +740,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       const msgSent   = msgCell === 'sent' || opCell === 'sent';
 
       if (mode === 'check_status') {
-        return cc === 'sent';
+        // 2.8.29: Account Used (column D) being filled = an invite was sent.
+        // CC text is no longer the source of truth.
+        const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+        return acct.length > 0;
       }
 
       if (status === 'done') return false;
@@ -784,8 +787,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
     // Load profile names
     log('Loading profile names…');
+    // 2.8.29: in check_status mode profileIds starts empty (auto-derived from
+    // sheet below) — but we still need the GoLogin token to fetch the profile
+    // list and resolve Account Used → profile id. Always grab the token here.
     const hasGoLoginProfiles = profileIds.some(id => id !== 'local-browser');
-    const token = hasGoLoginProfiles ? getToken() : null;
+    const token = (hasGoLoginProfiles || mode === 'check_status') ? getToken() : null;
     for (const pid of profileIds) {
       if (pid === 'local-browser') {
         profileNameCache[pid] = 'Local Browser';
@@ -848,7 +854,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         derivedProfileIds.push(nameToId[name]);
       }
 
-      log(`Check Status auto-routing → ${derivedProfileIds.length} sender(s) found in sheet (CC=Sent)`);
+      log(`Check Status auto-routing → ${derivedProfileIds.length} sender(s) found in sheet (Account Used filled)`);
       sendersInSheet.forEach((count, name) => log(`  • ${name}: ${count} pending`));
       if (unmatchedSenders.size > 0) {
         log(`⚠ Skipping ${[...unmatchedSenders.values()].reduce((a,b)=>a+b,0)} row(s) whose Account Used is unknown:`);
@@ -1045,8 +1051,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
 
     outer: while (!campaign._abort && !leadsExhausted) {
+      // 2.8.29: check_status ignores daily limit — read-only mode, no
+      // LinkedIn-visible action that could trip a rate limiter.
       const activeProfiles = profileIds.filter(id =>
-        getCampaignCount(id) < dailyLimit && !weeklyLimited.has(id)
+        (mode === 'check_status' || getCampaignCount(id) < dailyLimit) && !weeklyLimited.has(id)
       );
       if (activeProfiles.length === 0) {
         log('All profiles reached their campaign limit or weekly limit.');
@@ -1074,7 +1082,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         const batchStart = Date.now();
 
         // ── Inner: up to BATCH_SIZE leads for this profile ──
-        for (let leadInBatch = 0; leadInBatch < BATCH_SIZE && !campaign._abort; leadInBatch++) {
+        // 2.8.29: check_status drains every row for this profile in one go.
+        // No batching, no rotation — open the browser, do all checks, close.
+        const innerLimit = (mode === 'check_status') ? Infinity : BATCH_SIZE;
+        for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort; leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause();
         if (campaign._abort) break;
@@ -1172,7 +1183,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         const msgSent   = msgCell === 'sent' || opCell === 'sent';
 
         if (mode === 'check_status') {
-          if (cc !== 'sent') { delete state.processed[url]; continue; }
+          // 2.8.29: criterion is Account Used filled, not CC=Sent.
+          const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+          if (!acct) { delete state.processed[url]; continue; }
           // 2.8.28-P2: routing guard removed. The per-profile target slices
           // built at auto-derivation time already guarantee each profile sees
           // only rows it originally sent. The defense-in-depth name-equality
