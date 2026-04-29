@@ -819,8 +819,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       }
       const nameToId = {};
       Object.keys(profileNameCache).forEach(id => { nameToId[profileNameCache[id]] = id; });
+      // 2.8.29: Local browser is a valid pseudo-profile. Sheets store its
+      // Account Used as variants like "local-browser", "local-browser - manual",
+      // or "Local Browser" — all map to the single 'local-browser' pseudo-id.
+      nameToId['Local Browser'] = 'local-browser';
+      nameToId['local-browser'] = 'local-browser';
+      nameToId['local-browser - manual'] = 'local-browser';
 
-      const sendersInSheet = new Map(); // name -> count
+      const sendersInSheet = new Map(); // name -> count (uses display name)
       const unmatchedSenders = new Map(); // name -> count
       for (const row of targets) {
         const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
@@ -829,7 +835,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           continue;
         }
         if (nameToId[acct]) {
-          sendersInSheet.set(acct, (sendersInSheet.get(acct) || 0) + 1);
+          // For local-browser variants, bucket under the canonical "Local Browser" label.
+          const displayName = (nameToId[acct] === 'local-browser') ? 'Local Browser' : acct;
+          sendersInSheet.set(displayName, (sendersInSheet.get(displayName) || 0) + 1);
         } else {
           unmatchedSenders.set(acct, (unmatchedSenders.get(acct) || 0) + 1);
         }
@@ -857,6 +865,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       // Replace the UI-selected list with the derived list.
       profileIds = derivedProfileIds;
+      // 2.8.29: ensure local-browser has a display name in the cache even when
+      // it came from auto-derivation rather than UI selection.
+      if (derivedProfileIds.includes('local-browser') && !profileNameCache['local-browser']) {
+        profileNameCache['local-browser'] = 'Local Browser';
+      }
 
       // 2.8.28-P2: Build per-profile target lists. Without this, the shared
       // round-robin leadIndex would burn BATCH_SIZE slots per profile on
@@ -1160,12 +1173,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         if (mode === 'check_status') {
           if (cc !== 'sent') { delete state.processed[url]; continue; }
-          // 2.8.28: per-profile routing guard. Even with auto-derived profile
-          // list, the targets array is shared across profiles in the round
-          // robin — make sure each profile only checks rows it originally
-          // sent. Prevents the cross-account false-Declined bug.
-          const rowAcct = (row['Account Used'] || row['account used'] || '').toString().trim();
-          if (rowAcct !== pName) { delete state.processed[url]; continue; }
+          // 2.8.28-P2: routing guard removed. The per-profile target slices
+          // built at auto-derivation time already guarantee each profile sees
+          // only rows it originally sent. The defense-in-depth name-equality
+          // check tripped on local-browser variants (e.g., row says
+          // "local-browser", pName is "Local Browser") and broke an entire
+          // legitimate code path. Slice-based filtering is sufficient.
         } else {
           if (status === 'done') { delete state.processed[url]; continue; }
           if ((mode === 'open_profile_only' || mode === 'message_only') && msgSent) {

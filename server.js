@@ -287,6 +287,8 @@ app.get('/api/check-status/preview', async (req, res) => {
     ]);
 
     const knownNames = new Set(profiles.map(p => p.name));
+    // 2.8.29: local-browser variants are valid pseudo-profiles.
+    const LOCAL_BROWSER_NAMES = new Set(['Local Browser', 'local-browser', 'local-browser - manual']);
 
     const byAccount = {};
     const unmatched = {};
@@ -296,7 +298,10 @@ app.get('/api/check-status/preview', async (req, res) => {
       if (cc !== 'sent') continue;
       totalPending++;
       const acct = (row['Account Used'] || row['account used'] || '').toString().trim() || '(blank)';
-      if (knownNames.has(acct)) {
+      if (LOCAL_BROWSER_NAMES.has(acct)) {
+        // Bucket all local-browser variants under one canonical display name.
+        byAccount['Local Browser'] = (byAccount['Local Browser'] || 0) + 1;
+      } else if (knownNames.has(acct)) {
         byAccount[acct] = (byAccount[acct] || 0) + 1;
       } else {
         unmatched[acct] = (unmatched[acct] || 0) + 1;
