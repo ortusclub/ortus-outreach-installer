@@ -19,7 +19,7 @@
  *    g. Open next GoLogin profile, repeat
  */
 
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, appendFileSync, statSync, renameSync } from 'fs';
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
 import { launchProfile, closeProfile, getProfiles, getProfilePid } from './gologin-launcher.js';
@@ -264,7 +264,29 @@ function log(msg) {
   console.log(line);
   campaign.logs.push(line);
   if (campaign.logs.length > 500) campaign.logs.shift();
+  // 2.8.27: persist every line to data/campaign.log so post-run debugging
+  // doesn't require dev-mode stdout. The in-memory campaign.logs is capped
+  // at 500 lines; this file accumulates the full history. Rotation is
+  // size-based at campaign start (rotateCampaignLogIfBig), so this hot-path
+  // append stays cheap (no statSync per line).
+  try {
+    appendFileSync(CAMPAIGN_LOG_FILE, line + '\n');
+  } catch { /* never let logging take down the campaign */ }
 }
+
+/** 2.8.27: size-based rotation. Called once at campaign start. If campaign.log
+ *  exceeds MAX bytes, rename to campaign.log.1 (overwriting any previous .1)
+ *  and start fresh. Bounds disk usage at ~2x MAX without per-line overhead. */
+const CAMPAIGN_LOG_FILE = dataPath('campaign.log');
+const CAMPAIGN_LOG_ROTATED = dataPath('campaign.log.1');
+const MAX_CAMPAIGN_LOG_BYTES = Number(process.env.MAX_CAMPAIGN_LOG_BYTES) || 50 * 1024 * 1024;
+function rotateCampaignLogIfBig() {
+  try {
+    const sz = statSync(CAMPAIGN_LOG_FILE).size;
+    if (sz >= MAX_CAMPAIGN_LOG_BYTES) renameSync(CAMPAIGN_LOG_FILE, CAMPAIGN_LOG_ROTATED);
+  } catch { /* file doesn't exist yet — first run, fine */ }
+}
+
 const ERROR_LOG_FILE = dataPath('errors.log.json');
 const WARNINGS_LOG_FILE = dataPath('warnings-log.ndjson');
 const MAX_ERROR_LOG_ENTRIES = Number(process.env.MAX_ERROR_LOG_ENTRIES) || 500;
@@ -654,6 +676,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   const campaignStartTime = Date.now();
 
   try {
+    rotateCampaignLogIfBig();
     log('=== Campaign starting ===');
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
