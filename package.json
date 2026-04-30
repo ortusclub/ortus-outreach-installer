@@ -14,8 +14,9 @@
     "build:docs": "node docs/build.js",
     "electron:dev": "electron .",
     "electron:build": "electron-builder",
-    "electron:build:mac": "electron-builder --mac",
-    "electron:build:win": "electron-builder --win"
+    "electron:build:mac": "electron-builder --mac && node scripts/rename-dmgs.js",
+    "electron:build:win": "electron-builder --win",
+    "release:mac": "npm run electron:build:mac && node scripts/release-mac.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -100,6 +101,7 @@
       "background": null,
       "window": { "width": 560, "height": 480 },
       "iconSize": 110,
+      "artifactName": "Ortus-Outreach-${arch}.dmg",
       "contents": [
         { "x": 140, "y": 170, "type": "file" },
         { "x": 420, "y": 170, "type": "link", "path": "/Applications" },
