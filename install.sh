@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ortus Outreach — one-line installer.
+# Ortus Outreach -- one-line installer.
 #
 # Downloads the latest DMG, copies the app into /Applications, strips the
 # quarantine attribute (so macOS Gatekeeper does not block it), and launches.
@@ -7,13 +7,13 @@
 # Usage (paste into Terminal):
 #   curl -fsSL https://raw.githubusercontent.com/ortusclub/ortus-outreach-installer/main/install.sh | bash
 
-set -euo pipefail
+set -eo pipefail
 
 REPO="ortusclub/ortus-outreach-installer"
 APP_NAME="The Ortus Outreach.app"
 APP_DEST="/Applications/$APP_NAME"
 
-if [[ "$(uname -m)" == "arm64" ]]; then
+if [ "$(uname -m)" = "arm64" ]; then
   DMG="Ortus-Outreach-arm64.dmg"
 else
   DMG="Ortus-Outreach-intel.dmg"
@@ -30,10 +30,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "→ Downloading $DMG…"
+echo ">> Downloading $DMG..."
 /usr/bin/curl -fSL "$URL" -o "$TMP_DMG"
 
-echo "→ Mounting…"
+echo ">> Mounting DMG..."
 /bin/mkdir -p "$MOUNT"
 /usr/bin/hdiutil attach "$TMP_DMG" -nobrowse -quiet -mountpoint "$MOUNT"
 
@@ -41,14 +41,14 @@ echo "→ Mounting…"
 /usr/bin/pkill -x "The Ortus Outreach" 2>/dev/null || true
 sleep 1
 
-echo "→ Installing to /Applications…"
+echo ">> Installing to /Applications..."
 /bin/rm -rf "$APP_DEST"
 /bin/cp -R "$MOUNT/$APP_NAME" "$APP_DEST"
 
-echo "→ Removing quarantine attributes…"
+echo ">> Removing quarantine attributes..."
 /usr/bin/xattr -cr "$APP_DEST"
 
-echo "→ Launching The Ortus Outreach…"
+echo ">> Launching The Ortus Outreach..."
 /usr/bin/open "$APP_DEST"
 
-echo "✓ Done."
+echo "Done."
