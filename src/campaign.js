@@ -746,6 +746,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         return acct.length > 0;
       }
 
+      if (mode === 'message_only') {
+        // 2.8.31: messageable = Voyager-confirmed connection (CC ends with " Y")
+        // AND no message/OP sent yet AND not already processed.
+        // Status="Check Done." rows are EXPLICITLY allowed — they're the only
+        // rows that have ever been verified. The status==='done' filter below
+        // would otherwise reject every accepted invite.
+        if (msgSent) return false;
+        if (state.processed[url]) return false;
+        const ccRaw = (row['CC'] || row['cc'] || '').toString();
+        if (!/\sY\s*$/.test(ccRaw)) return false;
+        return true;
+      }
+
       if (status === 'done') return false;
 
       if (mode === 'connect_only') {
@@ -760,7 +773,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         return true;
       }
 
-      if (mode === 'message_only' || mode === 'open_profile_only') {
+      if (mode === 'open_profile_only') {
         if (msgSent) return false;
         // P-04 fix (2.8.18): the in-loop sheet write is best-effort
         // (.catch(()=>{}) on every updateSheetRow). A transient Sheets API
@@ -791,7 +804,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // sheet below) — but we still need the GoLogin token to fetch the profile
     // list and resolve Account Used → profile id. Always grab the token here.
     const hasGoLoginProfiles = profileIds.some(id => id !== 'local-browser');
-    const token = (hasGoLoginProfiles || mode === 'check_status') ? getToken() : null;
+    // 2.8.31: message_only also auto-derives profileIds from sheet (only the
+    // sender that connected the lead can DM it), so we need the GoLogin token
+    // even when the UI didn't pre-select profiles.
+    const tokenNeeded = hasGoLoginProfiles || mode === 'check_status' || mode === 'message_only';
+    const token = tokenNeeded ? getToken() : null;
     for (const pid of profileIds) {
       if (pid === 'local-browser') {
         profileNameCache[pid] = 'Local Browser';
@@ -800,19 +817,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       }
     }
 
-    // 2.8.28-P2: per-profile target slices for check_status mode (set inside
-    // the auto-derivation block below; consumed by the inner while loop's
-    // per-profile cursor logic).
+    // 2.8.28-P2: per-profile target slices (named for legacy reasons; used by
+    // BOTH check_status and message_only since 2.8.31). Consumed by the inner
+    // loop's per-profile cursor logic.
     let _checkStatusTargetsByProfile = null;
 
-    // 2.8.28 (Check Status routing fix): For check_status mode, ignore the
-    // UI-selected profileIds and auto-derive from the sheet's Account Used
-    // column. Each pending invite can ONLY be correctly checked by its
-    // original sender; using any other account yields false "Declined" verdicts
-    // (and previously corrupted the Account Used column on write — fixed in
-    // the write path below). The UI selection is destructive in this mode,
-    // so we override it with the truth from the sheet.
-    if (mode === 'check_status') {
+    // 2.8.28 (Check Status routing) / 2.8.31 (extended to message_only):
+    // For modes where each row can only be processed by its original sender
+    // (check_status — only the sender knows; message_only — only the sender
+    // is connected), ignore UI-selected profileIds and auto-derive from
+    // Account Used. Using any other account silently fails Voyager checks.
+    if (mode === 'check_status' || mode === 'message_only') {
       // Refresh the cache to ensure newly-added profiles are visible.
       if (token) {
         try {
@@ -854,15 +869,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         derivedProfileIds.push(nameToId[name]);
       }
 
-      log(`Check Status auto-routing → ${derivedProfileIds.length} sender(s) found in sheet (Account Used filled)`);
-      sendersInSheet.forEach((count, name) => log(`  • ${name}: ${count} pending`));
+      const modeLabel = (mode === 'check_status') ? 'Check Status' : 'Message Only';
+      const rowLabel = (mode === 'check_status') ? 'pending' : 'connected (Y)';
+      log(`${modeLabel} auto-routing → ${derivedProfileIds.length} sender(s) found in sheet`);
+      sendersInSheet.forEach((count, name) => log(`  • ${name}: ${count} ${rowLabel}`));
       if (unmatchedSenders.size > 0) {
         log(`⚠ Skipping ${[...unmatchedSenders.values()].reduce((a,b)=>a+b,0)} row(s) whose Account Used is unknown:`);
         unmatchedSenders.forEach((count, name) => log(`  • ${name}: ${count} row(s) — no GoLogin profile matches`));
       }
 
       if (derivedProfileIds.length === 0) {
-        log('✗ Check Status: no sender accounts in the sheet match any GoLogin profile in this workspace.');
+        log(`✗ ${modeLabel}: no sender accounts in the sheet match any GoLogin profile in this workspace.`);
         log('=== Campaign ended ===');
         campaign.running = false;
         campaign.endedAt = Date.now();
@@ -1112,15 +1129,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         }
 
         // Find the next unprocessed lead.
-        // 2.8.28-P2: For check_status mode, use the per-profile target slice
-        // built at auto-derivation time. Each profile has its own list and
-        // its own cursor — round-robin across profiles still works, but each
-        // profile only sees rows it originally sent. Without this, the
-        // shared leadIndex below would burn BATCH_SIZE attempts per profile
-        // on rows belonging to other profiles, and every profile would close
-        // with 0 processed.
+        // 2.8.28-P2 / 2.8.31: For modes that auto-route by sender (check_status,
+        // message_only), use the per-profile target slice built at auto-
+        // derivation time. Each profile only sees rows it originally sent.
         let row = null;
-        if (mode === 'check_status' && _checkStatusTargetsByProfile) {
+        if ((mode === 'check_status' || mode === 'message_only') && _checkStatusTargetsByProfile) {
           const slice = _checkStatusTargetsByProfile[profileId] || [];
           let cursor = _checkStatusCursorByProfile[profileId] || 0;
           while (cursor < slice.length) {
@@ -1149,15 +1162,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         }
 
         if (!row) {
-          // 2.8.28-P2: in check_status, per-profile exhaustion is normal —
-          // skip this profile this round, end only when ALL profiles drained.
-          if (mode === 'check_status' && _checkStatusTargetsByProfile) {
+          // 2.8.28-P2 / 2.8.31: per-profile exhaustion is normal in auto-routed
+          // modes — skip this profile, end only when ALL profiles have drained.
+          if ((mode === 'check_status' || mode === 'message_only') && _checkStatusTargetsByProfile) {
             _checkStatusExhausted.add(profileId);
             if (_checkStatusExhausted.size >= profileIds.length) {
-              log('All Check Status profiles have completed their checks.');
+              const label = (mode === 'check_status') ? 'Check Status' : 'Message Only';
+              log(`All ${label} profiles have completed.`);
               leadsExhausted = true;
             }
-            break; // exit the BATCH for-loop, move to next profile in rotation
+            break;
           }
           log('All leads processed or filtered out.');
           leadsExhausted = true;
@@ -1192,9 +1206,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // check tripped on local-browser variants (e.g., row says
           // "local-browser", pName is "Local Browser") and broke an entire
           // legitimate code path. Slice-based filtering is sufficient.
+        } else if (mode === 'message_only') {
+          // 2.8.31: re-validate Y suffix and msg-not-sent in case the sheet
+          // was updated between pre-filter and now.
+          const ccRaw = (row['CC'] || row['cc'] || '').toString();
+          if (!/\sY\s*$/.test(ccRaw)) { delete state.processed[url]; continue; }
+          if (msgSent) { delete state.processed[url]; continue; }
         } else {
           if (status === 'done') { delete state.processed[url]; continue; }
-          if ((mode === 'open_profile_only' || mode === 'message_only') && msgSent) {
+          if (mode === 'open_profile_only' && msgSent) {
             delete state.processed[url]; continue;
           }
           if (mode === 'inmail_only' && inmailCell === 'sent') {
@@ -1385,21 +1405,24 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 }
               }
             } else if (result.action === 'status_accepted') {
-              // 2.8.28: New Check Status contract — CC text untouched
-              // (stays "Sent"), CC cell colored green via ccColor. Status
-              // set to "Check Done." Account Used preserved.
+              // 2.8.31: CC text gets " Y" suffix (Voyager-confirmed connection).
+              // The Y is what Message-Only filters on — only Y rows get DM'd.
               sheetData.status = 'Check Done.';
               sheetData.ccColor = 'green';
+              sheetData.connected = true;
               sheetData.auditAction = 'Acceptance confirmed';
             } else if (result.action === 'status_pending') {
               sheetData.status = 'Check Done.';
               sheetData.ccColor = 'yellow';
+              sheetData.connected = false;
               sheetData.auditAction = 'Still pending';
             } else if (result.action === 'status_declined') {
               sheetData.status = 'Check Done.';
               sheetData.ccColor = 'red';
+              sheetData.connected = false;
               sheetData.auditAction = 'No longer pending';
             }
+            // status_unknown: no connected field — leave CC text alone
             await updateSheetRow(sheetUrl, url, sheetData, linkedinColumn).catch(() => {});
 
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);

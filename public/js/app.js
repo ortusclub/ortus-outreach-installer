@@ -1635,10 +1635,10 @@ function stepInput(inputId, delta) {
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
 async function startCampaign() {
-  // 2.8.29: For check_status mode, profiles are auto-derived from the sheet
-  // (Account Used column). UI selection is ignored — skip the validation.
+  // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
+  // the sheet's Account Used column. UI selection ignored — skip validation.
   const _modeForValidation = document.getElementById('campaign-mode').value;
-  if (_modeForValidation !== 'check_status' && selectedProfileIds.length === 0) {
+  if (_modeForValidation !== 'check_status' && _modeForValidation !== 'message_only' && selectedProfileIds.length === 0) {
     alert('Select at least one GoLogin profile.'); return;
   }
   const sheetUrl = document.getElementById('sheet-url').value.trim();

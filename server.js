@@ -452,9 +452,12 @@ app.post('/api/campaign/start', (req, res) => {
 
     const { profileIds, sheetUrl, templates, dailyLimit, batchesPerHour, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames } = req.body;
 
-    // 2.8.29: check_status auto-derives profiles from the sheet's Account Used
-    // column inside campaign.js, so an empty profileIds array is valid here.
-    if (mode !== 'check_status' && !profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
+    // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
+    // the sheet's Account Used column inside campaign.js (only the original
+    // sender can check / message a given lead), so empty profileIds is valid.
+    if (mode !== 'check_status' && mode !== 'message_only' && !profileIds?.length) {
+      return res.status(400).json({ error: 'profileIds required' });
+    }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
     // Phase 11.2 (T-11.2-09): clamp batchesPerHour at the trust boundary — the
