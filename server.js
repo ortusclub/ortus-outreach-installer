@@ -290,17 +290,24 @@ app.get('/api/check-status/preview', async (req, res) => {
     // 2.8.29: local-browser variants are valid pseudo-profiles.
     const LOCAL_BROWSER_NAMES = new Set(['Local Browser', 'local-browser', 'local-browser - manual']);
 
+    // 2.8.32: same endpoint serves both check_status (Account Used filled)
+    // and message_only (CC ends with " Y") via ?mode= query param.
+    const mode = (req.query.mode || 'check_status').toString();
+
     const byAccount = {};
     const unmatched = {};
     let totalPending = 0;
     for (const row of rows) {
-      // 2.8.29: Account Used (column D) being filled = an invite was sent.
-      // CC column is no longer the source of truth.
       const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
       if (!acct) continue;
+      if (mode === 'message_only') {
+        // Filter: CC ends with " Y" (Voyager-confirmed acceptance from a
+        // prior Check Status run). Account Used still drives routing.
+        const ccRaw = (row['CC'] || row['cc'] || '').toString();
+        if (!/\sY\s*$/.test(ccRaw)) continue;
+      }
       totalPending++;
       if (LOCAL_BROWSER_NAMES.has(acct)) {
-        // Bucket all local-browser variants under one canonical display name.
         byAccount['Local Browser'] = (byAccount['Local Browser'] || 0) + 1;
       } else if (knownNames.has(acct)) {
         byAccount[acct] = (byAccount[acct] || 0) + 1;

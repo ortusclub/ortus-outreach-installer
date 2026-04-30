@@ -211,13 +211,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', refreshPreviewButtonState);
   }
-  // 2.8.29: refresh check-status preview when sheet URL changes (debounced).
+  // 2.8.29 / 2.8.32: refresh coverage preview when sheet URL changes (debounced).
   let csDebounce = null;
   const sheetEl = document.getElementById('sheet-url');
   if (sheetEl) sheetEl.addEventListener('input', () => {
-    if (document.getElementById('campaign-mode').value !== 'check_status') return;
+    const m = document.getElementById('campaign-mode').value;
     clearTimeout(csDebounce);
-    csDebounce = setTimeout(refreshCheckStatusPreview, 600);
+    if (m === 'check_status') {
+      csDebounce = setTimeout(refreshCheckStatusPreview, 600);
+    } else if (m === 'message_only') {
+      csDebounce = setTimeout(refreshMessageOnlyPreview, 600);
+    }
   });
   // Phase 2.8.12: poll status once on load so the cockpit picks up an
   // already-running campaign across page refreshes. If a campaign is live,
@@ -1143,6 +1147,71 @@ async function refreshCheckStatusPreview() {
   }
 }
 
+// 2.8.32: Message Only preview — same shape as Check Status, filtered by
+// "CC ends with Y" instead of "Account Used filled".
+async function refreshMessageOnlyPreview() {
+  const url = (document.getElementById('sheet-url')?.value || '').trim();
+  const loading = document.getElementById('mo-loading');
+  const content = document.getElementById('mo-content');
+  const empty = document.getElementById('mo-empty');
+  const errBox = document.getElementById('mo-error');
+  if (!loading || !content || !empty || !errBox) return;
+  loading.style.display = '';
+  content.style.display = 'none';
+  empty.style.display = 'none';
+  errBox.style.display = 'none';
+
+  if (!url) {
+    loading.style.display = 'none';
+    errBox.textContent = 'Enter a Google Sheet URL above first.';
+    errBox.style.display = '';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/check-status/preview?mode=message_only&url=' + encodeURIComponent(url));
+    const data = await r.json();
+    loading.style.display = 'none';
+    if (data.error) { errBox.textContent = data.error; errBox.style.display = ''; return; }
+    if (!data.totalPending) { empty.style.display = ''; return; }
+
+    const max = Math.max(1, ...data.byAccount.map(a => a.count));
+    const coverageHtml = data.byAccount.map(a => {
+      const pct = Math.round((a.count / max) * 100);
+      return `<div style="display:grid;grid-template-columns:220px 1fr 60px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px">
+        <div style="font-weight:500">${escHtml(a.name)}</div>
+        <div style="height:4px;background:var(--hairline-soft);position:relative"><div style="position:absolute;inset:0 auto 0 0;background:var(--ink);width:${pct}%"></div></div>
+        <div style="text-align:right;font-family:var(--display);font-size:18px;letter-spacing:0.04em">${a.count}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('mo-coverage').innerHTML = coverageHtml;
+
+    if (data.unmatched && data.unmatched.length) {
+      const unmatchedTotal = data.unmatched.reduce((s, u) => s + u.count, 0);
+      document.getElementById('mo-unmatched').innerHTML =
+        `⚠ ${unmatchedTotal} row(s) will be skipped — Account Used doesn't match any GoLogin profile in this workspace: ` +
+        data.unmatched.map(u => `${escHtml(u.name)} (${u.count})`).join(', ');
+    } else {
+      document.getElementById('mo-unmatched').innerHTML = '';
+    }
+
+    document.getElementById('mo-summary').innerHTML = `
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${data.totalPending}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Connections to DM</div></div>
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${data.accountsCount}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Accounts</div></div>
+    `;
+    content.style.display = '';
+
+    ['btn-start', 'btn-start-rb'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.textContent = `Start Messages (${data.totalPending})`;
+    });
+  } catch (err) {
+    loading.style.display = 'none';
+    errBox.textContent = 'Could not load preview: ' + err.message;
+    errBox.style.display = '';
+  }
+}
+
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const connect = document.getElementById('tpl-connect-section');
@@ -1215,19 +1284,28 @@ function onModeChange() {
     if (wbMaxWrap) wbMaxWrap.style.display = '';
   }
 
-  // 2.8.29: Check Status mode UI rebuild — hide pace/accounts/templates,
-  // show the auto-derived coverage panel.
+  // 2.8.29 / 2.8.32: Auto-routed modes (check_status, message_only) hide the
+  // profile picker and show a coverage panel. message_only KEEPS templates
+  // (you still need a message to send) but hides only the profile picker.
   const csPanel = document.getElementById('nav-check-status');
+  const moPanel = document.getElementById('nav-message-only');
   const navPace = document.getElementById('nav-pace');
   const navAccounts = document.getElementById('nav-accounts');
   const isCheckStatus = (mode === 'check_status');
+  const isMessageOnly = (mode === 'message_only');
+  const isAutoRouted = isCheckStatus || isMessageOnly;
   if (csPanel) csPanel.style.display = isCheckStatus ? '' : 'none';
+  if (moPanel) moPanel.style.display = isMessageOnly ? '' : 'none';
+  if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
+  // Pace section is only hidden for check_status (read-only, no rate limits).
+  // message_only keeps it — daily limit + batches still apply.
   if (navPace) navPace.style.display = isCheckStatus ? 'none' : '';
-  if (navAccounts) navAccounts.style.display = isCheckStatus ? 'none' : '';
   if (isCheckStatus) {
     refreshCheckStatusPreview();
+  } else if (isMessageOnly) {
+    refreshMessageOnlyPreview();
   } else {
-    // Reset Start CTA back to default when leaving check_status mode.
+    // Reset Start CTA back to default when leaving auto-routed modes.
     ['btn-start', 'btn-start-rb'].forEach(id => {
       const b = document.getElementById(id);
       if (b) b.textContent = 'Start Campaign';
