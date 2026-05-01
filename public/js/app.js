@@ -1297,9 +1297,11 @@ function onModeChange() {
   if (csPanel) csPanel.style.display = isCheckStatus ? '' : 'none';
   if (moPanel) moPanel.style.display = isMessageOnly ? '' : 'none';
   if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
-  // Pace section is only hidden for check_status (read-only, no rate limits).
-  // message_only keeps it — daily limit + batches still apply.
-  if (navPace) navPace.style.display = isCheckStatus ? 'none' : '';
+  // 2.8.34: Pace section hidden for both auto-routed modes. check_status is
+  // read-only; message_only DMs 1st-degree connections (low-risk) and now
+  // drains every accepted lead back-to-back like check_status — no rate
+  // limits, no daily cap, no inter-lead pause.
+  if (navPace) navPace.style.display = isAutoRouted ? 'none' : '';
   if (isCheckStatus) {
     refreshCheckStatusPreview();
   } else if (isMessageOnly) {
