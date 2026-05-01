@@ -250,8 +250,11 @@ async function typeIntoField(page, text) {
         // editor. Quill maintains its own document model and listens for
         // `paste` events via its Clipboard module, so dispatching a real
         // ClipboardEvent with a DataTransfer is the most reliable way to
-        // populate it. Fall back to execCommand('insertText') if paste
-        // didn't land.
+        // populate it.
+        // 2.8.34: trust the paste; the outer post-400ms verification
+        // re-tries on mismatch. The previous synchronous lengthRatio check
+        // raced Quill's async render and forced an execCommand fallback that
+        // overwrote the in-flight paste, leaving a malformed editor.
         el.focus();
         // Select + delete any existing content
         try {
@@ -263,7 +266,6 @@ async function typeIntoField(page, text) {
           document.execCommand('delete', false);
         } catch { /* */ }
 
-        let pasted = false;
         try {
           const dt = new DataTransfer();
           dt.setData('text/plain', value);
@@ -273,40 +275,7 @@ async function typeIntoField(page, text) {
             cancelable: true,
           });
           el.dispatchEvent(pasteEvent);
-          pasted = true;
         } catch { /* */ }
-
-        // Only fall back to execCommand if paste genuinely failed. Quill strips
-        // newlines in textContent and may wrap in <p> tags, so we can't compare
-        // strictly — check that the editor has roughly the right amount of text.
-        const currentText = (el.textContent || el.innerText || '').replace(/\u200B/g, '');
-        const normalizedCurrent = currentText.replace(/\s+/g, ' ').trim();
-        const normalizedTarget = value.replace(/\s+/g, ' ').trim();
-        const lengthRatio = normalizedTarget.length > 0
-          ? normalizedCurrent.length / normalizedTarget.length
-          : 1;
-
-        if (!pasted || lengthRatio < 0.8 || lengthRatio > 1.2) {
-          // Paste didn't land — clear whatever partial content exists first,
-          // then use execCommand('insertText').
-          try {
-            const range = document.createRange();
-            range.selectNodeContents(el);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
-            document.execCommand('delete', false);
-          } catch { /* */ }
-          const lines = value.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].length) document.execCommand('insertText', false, lines[i]);
-            if (i < lines.length - 1) {
-              if (!document.execCommand('insertLineBreak', false)) {
-                document.execCommand('insertText', false, '\n');
-              }
-            }
-          }
-        }
       }
 
       const got = isTextarea || isInput ? el.value : (el.textContent || el.innerText || '');
@@ -367,32 +336,10 @@ async function typeIntoField(page, text) {
       `Expected head: "${expected.substring(0, 60)}…" Got head: "${got.substring(0, 60)}…"`
     );
 
-    // Fallback on final attempt: keyboard typing (rare path)
-    if (attempt === MAX_ATTEMPTS - 1) {
-      await page.evaluate((selectors) => {
-        const findField = (root) => {
-          for (const sel of selectors) {
-            const el = root.querySelector(sel);
-            if (el) return el;
-          }
-          return null;
-        };
-        const el = findField(document);
-        if (!el) return;
-        el.focus();
-        if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-          const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-          Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, '');
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        } else {
-          el.innerHTML = '';
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      }, SELECTORS);
-      await new Promise(r => setTimeout(r, 300));
-      await page.keyboard.type(text, { delay: 15 });
-      await new Promise(r => setTimeout(r, 500));
-    }
+    // 2.8.34: keyboard.type fallback removed. Prior runs showed the typing
+    // path producing visible mistakes (Quill mid-render fights with synthetic
+    // keystrokes). Paste-only is safer: if all paste attempts fail, return
+    // false and let the caller surface the error rather than typing.
   }
 
   console.error('[actions] Failed to type note correctly after all attempts. Will NOT send.');
@@ -983,7 +930,9 @@ export async function sendMessage(page, message) {
   } catch (e) {
     console.warn(`[actions] Compose navigation warning: ${e.message}`);
   }
-  await new Promise(r => setTimeout(r, 4000));
+  // 2.8.34: 4s → 1.5s. DMs to 1st-degree connections are low-risk; the long
+  // dwell was anti-detection theater. waitForSelector below is the real gate.
+  await new Promise(r => setTimeout(r, 1500));
 
   // Step 3: Wait for the compose textbox to be present
   const composeSelectors = [
@@ -1004,7 +953,8 @@ export async function sendMessage(page, message) {
     throw new Error('MESSAGE_SEND_FAILED: compose textbox did not appear');
   }
 
-  await randomDelay(400, 800);
+  // 2.8.34: 400-800 → 150-300ms. Tiny breath before paste, no theater.
+  await randomDelay(150, 300);
   const typed = await typeIntoField(page, message);
   if (!typed) throw new Error('Could not type message');
 

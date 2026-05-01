@@ -1078,8 +1078,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     outer: while (!campaign._abort && !leadsExhausted) {
       // 2.8.29: check_status ignores daily limit — read-only mode, no
       // LinkedIn-visible action that could trip a rate limiter.
+      // 2.8.34: message_only mirrors this — DMing 1st-degree connections is
+      // low-risk; user-facing dailyLimit is still respected via UI input
+      // separately when desired.
       const activeProfiles = profileIds.filter(id =>
-        (mode === 'check_status' || getCampaignCount(id) < dailyLimit) && !weeklyLimited.has(id)
+        (mode === 'check_status' || mode === 'message_only' || getCampaignCount(id) < dailyLimit) && !weeklyLimited.has(id)
       );
       if (activeProfiles.length === 0) {
         log('All profiles reached their campaign limit or weekly limit.');
@@ -1108,8 +1111,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         // ── Inner: up to BATCH_SIZE leads for this profile ──
         // 2.8.29: check_status drains every row for this profile in one go.
-        // No batching, no rotation — open the browser, do all checks, close.
-        const innerLimit = (mode === 'check_status') ? Infinity : BATCH_SIZE;
+        // 2.8.34: message_only does the same — open the browser, send to all
+        // accepted connections back-to-back, close. No batching, no rotation.
+        const innerLimit = (mode === 'check_status' || mode === 'message_only') ? Infinity : BATCH_SIZE;
         for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort; leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause();
@@ -1587,19 +1591,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             });
 
             let waitMs;
-            if (mode === 'check_status') {
+            if (mode === 'check_status' || isMessageMode) {
               // 2.8.29: Check Status is read-only — no LinkedIn-visible action
-              // that could be flagged. Skip the anti-detection between-lead
-              // delay (15-45s padding for sends) and use a tiny breath
-              // (1-3s) just so we're not hammering the same profile back-to-back
-              // with zero pause. Combined with the dwell-skip in outreach.js
-              // this brings per-check time from ~95s down to ~25-35s.
+              // that could be flagged.
+              // 2.8.34: message_only mirrors this — DMs to 1st-degree
+              // connections are low-risk. Tiny 1-3s breath so we're not
+              // hammering the same profile back-to-back with zero pause.
               waitMs = (1 + Math.floor(Math.random() * 2)) * 1000;
-              log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (check-only — no rate limits apply)`);
-            } else if (isMessageMode) {
-              // User-controlled gap from the dashboard (delayMin–delayMax seconds).
-              waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
-              log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (message gap)`);
+              const label = (mode === 'check_status')
+                ? 'check-only — no rate limits apply'
+                : 'message — no rate limits apply';
+              log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (${label})`);
             } else {
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
               waitMs = Math.floor(waitMs * delayMultiplier);
@@ -1643,9 +1645,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // on about:blank or gets closed entirely between rounds.
         // 2.8.29: in check_status mode batches happen back-to-back with no
         // round sleep, so the profile is back almost immediately — keep it
-        // open (perProfileWaitMs = 0) to avoid 30s of close+relaunch overhead
-        // every BATCH_SIZE rows.
-        const perProfileWaitMs = (mode === 'check_status')
+        // open (perProfileWaitMs = 0) to avoid 30s of close+relaunch overhead.
+        // 2.8.34: message_only does the same.
+        const perProfileWaitMs = (mode === 'check_status' || mode === 'message_only')
           ? 0
           : computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
 
@@ -1680,8 +1682,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       // round took longer than the target, no sleep.
       // 2.8.29: skipped entirely for check_status — no rate-limit risk, just
       // burn through every pending invite as fast as the browser allows.
+      // 2.8.34: message_only mirrors this — no end-of-round sleep.
       if (campaign._abort || leadsExhausted) break outer;
-      const roundTargetMs = (mode === 'check_status') ? 0 : (3600 / batchesPerHour) * 1000;
+      const roundTargetMs = (mode === 'check_status' || mode === 'message_only') ? 0 : (3600 / batchesPerHour) * 1000;
       const roundElapsed = Date.now() - roundStart;
       const roundSleepMs = Math.max(0, roundTargetMs - roundElapsed);
       if (roundSleepMs > 0) {
