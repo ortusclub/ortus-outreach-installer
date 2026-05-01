@@ -72,12 +72,15 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       }
     }
 
-    // ── URL transform: /sales/lead/{memberId} → /in/{memberId} for Connect ──
+    // ── URL transform: /sales/lead/{memberId} → /in/{memberId} for Connect / Message ──
     // Sales Nav pages don't expose the Connect button the same way /in/ pages
     // do, and the /in/-shaped status check false-positives "already connected"
     // on Sales Nav DOM → lead gets skipped. For connection campaigns, reverse
     // the transform: extract the URN and rebuild as /in/{urn}.
-    if (modeHint === 'force_connect') {
+    // 2.8.36: also for force_message — sendMessage parses publicId from
+    // /in/<id> in the URL, so a Sales Nav URL would throw "could not parse
+    // publicId" without this rewrite.
+    if (modeHint === 'force_connect' || modeHint === 'force_message') {
       if (SALES_NAV_URL_RE.test(url)) {
         const m = url.match(SALES_MEMBER_URN_RE);
         if (!m) {
