@@ -134,7 +134,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     // 2.8.29: skip the entire dwell block for check_only — read-only mode,
     // no LinkedIn-visible action that could be flagged. The dwell is pure
     // anti-detection padding for sends, not reads. Saves 5-30s per check.
-    if (modeHint !== 'check_only') {
+    // 2.8.35: also skip for force_message — DMing 1st-degree connections is
+    // low-risk; no need to scroll the profile before navigating to compose.
+    if (modeHint !== 'check_only' && modeHint !== 'force_message') {
       // ~20% chance of a "deep read" (20-30s) to mimic genuinely interested browsing
       const isDeepRead = Math.random() < 0.2;
       const dwellTime = isDeepRead

@@ -315,7 +315,13 @@ async function typeIntoField(page, text) {
       }
       if (!el) return '';
       if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el.value || '';
-      return el.textContent || el.innerText || '';
+      // 2.8.35: prefer innerText over textContent for contenteditable. Quill
+      // renders multi-line as <p>line</p><p>line</p>; textContent strips the
+      // tags AND the implicit newlines between blocks ("line1line2"), but
+      // innerText respects block layout and emits "line1\nline2". Without
+      // this the verification below fails on every multi-line template,
+      // returning false and leaving the message un-sent in the composer.
+      return el.innerText || el.textContent || '';
     }, SELECTORS, [...PICK_LAST_SELECTORS]);
 
     // Verification: strict equality for textareas (connect-note modal),
@@ -324,8 +330,16 @@ async function typeIntoField(page, text) {
     const expected = text.replace(/\r\n/g, '\n');
     const got = fieldContent.replace(/\r\n/g, '\n');
     const normalize = s => s.replace(/\s+/g, ' ').trim();
+    // 2.8.35: third compare — strip ALL whitespace. Belt-and-suspenders for
+    // edge cases where Quill emits a different whitespace pattern than the
+    // template (e.g. drops a blank line between paragraphs).
+    const stripWs = s => s.replace(/\s+/g, '');
 
-    if (got === expected || normalize(got) === normalize(expected)) {
+    if (
+      got === expected ||
+      normalize(got) === normalize(expected) ||
+      stripWs(got) === stripWs(expected)
+    ) {
       if (attempt > 1) console.log(`[actions] Note verified on attempt ${attempt}.`);
       return true;
     }
