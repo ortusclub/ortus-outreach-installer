@@ -323,29 +323,14 @@ export async function getConnectionStatus(page) {
         }
       }
 
-      // ── 4. Message — last resort, only if no Connect and no degree badge ──
-      //    "Message X" aria on profile action button (NOT navbar)
-      for (const el of els) {
-        const aria = el.getAttribute('aria-label') || '';
-        if (aria.startsWith('Message ') && aria.length > 10) {
-          const inNav = el.closest('nav, header, [role="navigation"]');
-          if (!inNav) {
-            return { status: 'message', debug: actionEls, profileName, degree };
-          }
-        }
-      }
-      // Fallback: text is exactly "Message" on a profile action button
-      for (const el of els) {
-        const t = (el.textContent || '').trim();
-        const aria = (el.getAttribute('aria-label') || '');
-        if (t === 'Message' && aria !== 'Messaging' && !aria.includes('new notification')) {
-          const inNav = el.closest('nav, header, [role="navigation"]');
-          if (!inNav) {
-            return { status: 'message', debug: actionEls, profileName, degree };
-          }
-        }
-      }
-
+      // 2.8.38: "Message" button as a positive signal of being connected
+      // is REMOVED. A profile can have a Message button without being
+      // 1st-degree (existing conversation thread, Open Profile, premium
+      // InMail). The ONLY trustworthy signal of "accepted" is the degree
+      // badge ("1st" near the name) — handled at step 0 above. If we got
+      // this far and didn't find a 1st badge, pending, connect, or follow,
+      // return 'unknown' so the caller can decide (typically: leave the
+      // sheet untouched rather than risk a false positive).
       return { status: 'unknown', debug: actionEls, profileName, degree };
     });
 
