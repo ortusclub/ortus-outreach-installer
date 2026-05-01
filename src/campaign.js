@@ -748,12 +748,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       if (mode === 'message_only') {
         // 2.8.31: messageable = Voyager-confirmed connection (CC ends with " Y")
-        // AND no message/OP sent yet AND not already processed.
+        // AND no message/OP sent yet.
         // Status="Check Done." rows are EXPLICITLY allowed — they're the only
         // rows that have ever been verified. The status==='done' filter below
         // would otherwise reject every accepted invite.
         if (msgSent) return false;
-        if (state.processed[url]) return false;
+        // 2.8.33: only block on state.processed when action proves a DM was
+        // actually sent in a prior run (P-04 safety net for the case where the
+        // LinkedIn send succeeded but the Sheets write failed). status_accepted
+        // / connection_sent etc. are NOT blockers — they're exactly the rows we
+        // want to message. The inner-loop lead picker (line ~1154) already
+        // exempts message_only from the blanket state.processed skip; the
+        // pre-filter must match.
+        const prev = state.processed[url];
+        if (prev && (prev.action === 'message_sent' || prev.action === 'op_message_sent')) return false;
         const ccRaw = (row['CC'] || row['cc'] || '').toString();
         if (!/\sY\s*$/.test(ccRaw)) return false;
         return true;
