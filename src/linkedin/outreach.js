@@ -54,6 +54,10 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
   try {
     let url = targetUrl.trim();
     if (!url.startsWith('http')) url = 'https://' + url;
+    // 2.8.37: force HTTPS. Sheets often have legacy http:// LinkedIn URLs;
+    // Chromium in automation mode shows a "site doesn't support secure
+    // connection" interstitial for http:// linkedin.com instead of upgrading.
+    if (url.startsWith('http://')) url = 'https://' + url.slice(7);
 
     // ── URL transform: /in/{memberId} → /sales/lead/{memberId} for OP/InMail ──
     // Routes campaigns that need the Sales Nav composer (positive
