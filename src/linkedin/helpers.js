@@ -173,6 +173,97 @@ export async function getVoyagerDegree(page) {
 }
 
 /**
+ * 2.8.40 — Read the connection-degree badge ("1st" / "2nd" / "3rd" / "3rd+")
+ * shown next to the profile name. This is the ONE AND ONLY trustworthy signal
+ * of connection state per user directive. No Message-button heuristic, no
+ * pending-button heuristic, no fallbacks beyond different ways of finding
+ * the badge.
+ *
+ * Returns: '1st' | '2nd' | '3rd' | '3rd+' | null
+ *
+ * Waits up to 10s for the badge to render before reading. Tries multiple
+ * selector strategies because LinkedIn frequently renames CSS classes.
+ */
+export async function getDegreeBadge(page) {
+  try {
+    // Wait for any "1st"/"2nd"/"3rd" text to appear anywhere on the page —
+    // ensures we don't read the DOM before the profile header has rendered.
+    await page.waitForFunction(() => {
+      const text = document.body?.innerText || '';
+      return /\b(1st|2nd|3rd\+?)\b/.test(text);
+    }, { timeout: 10000 }).catch(() => { /* fall through; selectors below
+                                            handle the not-found case */ });
+
+    const badge = await page.evaluate(() => {
+      const isVisible = el => el && el.offsetWidth > 0 && el.offsetHeight > 0;
+
+      // Strategy 1: aria-label like "Xst degree connection". Most stable
+      // signal — survives class-name churn.
+      const ariaEls = document.querySelectorAll(
+        '[aria-label*="1st degree"], [aria-label*="2nd degree"], ' +
+        '[aria-label*="3rd degree"], [aria-label*="degree connection"]'
+      );
+      for (const el of ariaEls) {
+        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+        if (aria.includes('1st degree')) return '1st';
+        if (aria.includes('2nd degree')) return '2nd';
+        if (aria.includes('3rd+ degree') || aria.includes('3rd degree+')) return '3rd+';
+        if (aria.includes('3rd degree')) return '3rd';
+      }
+
+      // Strategy 2: legacy / current class names that historically held the
+      // degree text.
+      const classCandidates = document.querySelectorAll(
+        '.dist-value, .distance-badge, ' +
+        'span[class*="degree"], span[class*="distance"]'
+      );
+      for (const el of classCandidates) {
+        const m = (el.textContent || '').match(/\b(1st|2nd|3rd\+?)\b/);
+        if (m) return m[1];
+      }
+
+      // Strategy 3: profile-header region. LinkedIn renders the badge as a
+      // small span inside the top section of <main>. Scan all spans there.
+      const topRegions = document.querySelectorAll(
+        'main [class*="top-card"], main .pv-text-details__left-panel, ' +
+        'main section[class*="profile-section"], ' +
+        'main section.artdeco-card, .scaffold-layout__main'
+      );
+      for (const region of topRegions) {
+        const spans = region.querySelectorAll('span');
+        for (const s of spans) {
+          const t = s.textContent.trim();
+          if ((t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') && isVisible(s)) {
+            return t;
+          }
+        }
+      }
+
+      // Strategy 4: any visible small span on the page whose entire text is
+      // just the degree token. Last resort — broader sweep that still rejects
+      // hidden fragments and very wide elements (which would mean the text
+      // is part of a sentence, not a badge).
+      const allSpans = document.querySelectorAll('span');
+      for (const s of allSpans) {
+        const t = s.textContent.trim();
+        if ((t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') &&
+            isVisible(s) && s.offsetWidth < 80) {
+          return t;
+        }
+      }
+
+      return null;
+    });
+
+    console.log(`[helpers] Degree badge: ${badge ?? 'NOT FOUND'}`);
+    return badge;
+  } catch (err) {
+    console.warn(`[helpers] getDegreeBadge error: ${err.message}`);
+    return null;
+  }
+}
+
+/**
  * Get connection status. Uses aria-label + text only.
  */
 export async function getConnectionStatus(page) {

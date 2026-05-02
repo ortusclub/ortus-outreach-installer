@@ -8,7 +8,7 @@
  *   4. Execute action via JS click (works regardless of element visibility)
  */
 
-import { randomDelay, getConnectionStatus, getVoyagerDegree, personalizeTemplate } from './helpers.js';
+import { randomDelay, getConnectionStatus, getVoyagerDegree, getDegreeBadge, personalizeTemplate } from './helpers.js';
 import { sendConnectionRequest, sendMessage, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
 
 // Matches Sales Navigator profile URLs (linkedin.com/sales/people/… or /sales/lead/…).
@@ -209,34 +209,37 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     let status;
 
     if (modeHint === 'check_only') {
-      // 2.8.39: two-state model. Either we can confirm 1st-degree (green)
-      // or we can't (yellow). No more red/declined — that distinction was
-      // unreliable (Voyager 2/3 ≠ "they declined", it just means "not
-      // currently 1st-degree", which could be never-sent, withdrawn,
-      // accepted-then-removed, etc.). Per user directive: "scrap the entire
-      // logic for detecting declined ... let's just have yellow or green."
+      // 2.8.40: per user directive, ONLY the "1st"/"2nd"/"3rd" badge near
+      // the profile name decides connection state. No Message-button
+      // fallback, no Pending-button fallback, no other heuristic.
       //
-      // Trustworthy "1st-degree" signals (in priority order):
-      //   1. Voyager API: distance.value === 'DISTANCE_1'
-      //   2. DOM: the literal "1st" badge near the profile name
-      // Anything else → status_pending (yellow).
+      // Voyager's distance.value is the SAME data source LinkedIn uses to
+      // render that badge (DISTANCE_1 ↔ "1st", DISTANCE_2 ↔ "2nd",
+      // DISTANCE_3 ↔ "3rd"), just accessed via API instead of DOM. So
+      // Voyager IS the badge, not a fallback. Try API first (faster, no
+      // DOM-render race); fall back to reading the badge from the DOM only
+      // if Voyager fails.
+      //
+      // Outcomes are exhaustive — there is no "skipped" or "unknown":
+      //   1st          → status_accepted (green, Y kept)
+      //   2nd / 3rd / not found → status_pending (yellow, Y stripped)
       if (voyagerDegree === 1) {
-        console.log('[outreach] Voyager: degree=1 → accepted');
+        console.log('[outreach] Voyager: DISTANCE_1 → 1st badge → accepted');
         return { action: 'status_accepted' };
       }
-      // Voyager said 2/3 OR API failed. Check the DOM degree badge as a
-      // secondary confirmation source. helpers.js getConnectionStatus
-      // returns 'message' iff degree badge === '1st' (since 2.8.38, the
-      // Message-button-as-evidence-of-connection rule is gone).
-      await waitForDomSettle(page, { settleMs: 1000, maxWait: 8000 });
-      status = await getConnectionStatus(page);
-      console.log(`[outreach] DOM status: ${status} (Voyager degree: ${voyagerDegree ?? 'null'})`);
-      if (status === 'message') {
-        console.log('[outreach] DOM degree badge: 1st → accepted');
+      if (voyagerDegree === 2 || voyagerDegree === 3) {
+        console.log(`[outreach] Voyager: DISTANCE_${voyagerDegree} → not 1st → pending`);
+        return { action: 'status_pending' };
+      }
+
+      // Voyager API failed. Read the badge from the DOM directly.
+      await waitForDomSettle(page, { settleMs: 1500, maxWait: 10000 });
+      const badge = await getDegreeBadge(page);
+      if (badge === '1st') {
+        console.log('[outreach] DOM badge: 1st → accepted');
         return { action: 'status_accepted' };
       }
-      // Anything else (Voyager 2/3, DOM pending/connect/follow/unknown,
-      // both signals null) → not confirmed connected → yellow.
+      console.log(`[outreach] DOM badge: ${badge ?? 'not found'} → pending`);
       return { action: 'status_pending' };
     } else if (modeHint === 'force_connect') {
       // Voyager fast-path: if already connected, skip immediately
