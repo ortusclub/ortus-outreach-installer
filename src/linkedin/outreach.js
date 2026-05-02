@@ -13,11 +13,16 @@ import { sendConnectionRequest, sendMessage, sendInMail, sendViaSalesNav, resolv
 import { dataPath } from '../paths.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-// 2.8.41: When badge detection fails (the very thing we're trying to fix
-// honestly), dump the page state so the next iteration of selectors can be
-// based on the real DOM rather than guesses. Files land in
-// data/diagnostics/<publicId>-<timestamp>.{html,png}.
+// 2.8.42: HTML-only diagnostic, capped per process. The 2.8.41 version
+// took a screenshot, which on macOS Chromium can pop the GoLogin window
+// to the foreground every fire — and for accounts where Voyager fails on
+// every lead, the diagnostic fires on every lead. Both are gone now:
+// no screenshot, and a 3-dump-per-process cap so a broken session can't
+// flood disk or stall the campaign.
+let _diagnosticBudget = 3;
 async function dumpBadgeDiagnostic(page, publicId, reason) {
+  if (_diagnosticBudget <= 0) return;
+  _diagnosticBudget--;
   try {
     const dir = dataPath('diagnostics');
     await mkdir(dir, { recursive: true });
@@ -40,11 +45,7 @@ async function dumpBadgeDiagnostic(page, publicId, reason) {
     ].join('\n');
     await writeFile(`${base}.html`, header + html);
 
-    // Screenshot of the visible viewport — usually shows the profile header
-    // where the badge lives.
-    try { await page.screenshot({ path: `${base}.png`, fullPage: false }); } catch { /* */ }
-
-    console.log(`[outreach] Diagnostic dumped → ${base}.{html,png}`);
+    console.log(`[outreach] Diagnostic dumped → ${base}.html (${_diagnosticBudget} remaining this run)`);
   } catch (err) {
     console.warn(`[outreach] Diagnostic dump failed: ${err.message}`);
   }
