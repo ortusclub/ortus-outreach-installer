@@ -10,6 +10,45 @@
 
 import { randomDelay, getConnectionStatus, getVoyagerDegree, getDegreeBadge, personalizeTemplate } from './helpers.js';
 import { sendConnectionRequest, sendMessage, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
+import { dataPath } from '../paths.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+
+// 2.8.41: When badge detection fails (the very thing we're trying to fix
+// honestly), dump the page state so the next iteration of selectors can be
+// based on the real DOM rather than guesses. Files land in
+// data/diagnostics/<publicId>-<timestamp>.{html,png}.
+async function dumpBadgeDiagnostic(page, publicId, reason) {
+  try {
+    const dir = dataPath('diagnostics');
+    await mkdir(dir, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeId = (publicId || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 80);
+    const base = `${dir}/${safeId}-${ts}`;
+
+    // Capture <main> outerHTML — the profile header lives inside main, and
+    // capping at 300KB keeps the file small enough to read quickly.
+    const html = await page.evaluate(() => {
+      const main = document.querySelector('main') || document.body;
+      return (main?.outerHTML || '').substring(0, 300000);
+    });
+    const url = page.url();
+    const header = [
+      `<!-- diagnostic dump: ${reason} -->`,
+      `<!-- url: ${url} -->`,
+      `<!-- timestamp: ${new Date().toISOString()} -->`,
+      '',
+    ].join('\n');
+    await writeFile(`${base}.html`, header + html);
+
+    // Screenshot of the visible viewport — usually shows the profile header
+    // where the badge lives.
+    try { await page.screenshot({ path: `${base}.png`, fullPage: false }); } catch { /* */ }
+
+    console.log(`[outreach] Diagnostic dumped → ${base}.{html,png}`);
+  } catch (err) {
+    console.warn(`[outreach] Diagnostic dump failed: ${err.message}`);
+  }
+}
 
 // Matches Sales Navigator profile URLs (linkedin.com/sales/people/… or /sales/lead/…).
 // Used to short-circuit the /in/-shaped status check for sheets whose rows are
@@ -238,6 +277,13 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (badge === '1st') {
         console.log('[outreach] DOM badge: 1st → accepted');
         return { action: 'status_accepted' };
+      }
+      // 2.8.41: when badge detection fails, capture the DOM + a screenshot
+      // so we can write selectors against ground truth instead of guesses.
+      // Fires when Voyager null AND DOM didn't return a recognizable badge.
+      if (badge === null) {
+        const publicId = page.url().match(/\/in\/([^/?#]+)/)?.[1] || null;
+        await dumpBadgeDiagnostic(page, publicId, 'Voyager null + getDegreeBadge null');
       }
       console.log(`[outreach] DOM badge: ${badge ?? 'not found'} → pending`);
       return { action: 'status_pending' };
