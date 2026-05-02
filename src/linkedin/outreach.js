@@ -76,7 +76,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       }
     }
 
-    // ── URL transform: /sales/lead/{memberId} → /in/{memberId} for Connect / Message ──
+    // ── URL transform: /sales/lead/{memberId} → /in/{memberId} for Connect / Message / Check ──
     // Sales Nav pages don't expose the Connect button the same way /in/ pages
     // do, and the /in/-shaped status check false-positives "already connected"
     // on Sales Nav DOM → lead gets skipped. For connection campaigns, reverse
@@ -84,7 +84,11 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     // 2.8.36: also for force_message — sendMessage parses publicId from
     // /in/<id> in the URL, so a Sales Nav URL would throw "could not parse
     // publicId" without this rewrite.
-    if (modeHint === 'force_connect' || modeHint === 'force_message') {
+    // 2.8.39: also for check_only — Voyager's /voyager/api/.../profiles/<id>
+    // endpoint requires the /in/ URL format. Without the rewrite, every Sales
+    // Nav row in Check Status gets skipped instead of evaluated, leaving its
+    // CC stuck at the previous (potentially wrong) state.
+    if (modeHint === 'force_connect' || modeHint === 'force_message' || modeHint === 'check_only') {
       if (SALES_NAV_URL_RE.test(url)) {
         const m = url.match(SALES_MEMBER_URN_RE);
         if (!m) {
@@ -205,37 +209,35 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     let status;
 
     if (modeHint === 'check_only') {
-      // Voyager fast-path: same source as the 1st-degree badge LinkedIn renders.
+      // 2.8.39: two-state model. Either we can confirm 1st-degree (green)
+      // or we can't (yellow). No more red/declined — that distinction was
+      // unreliable (Voyager 2/3 ≠ "they declined", it just means "not
+      // currently 1st-degree", which could be never-sent, withdrawn,
+      // accepted-then-removed, etc.). Per user directive: "scrap the entire
+      // logic for detecting declined ... let's just have yellow or green."
+      //
+      // Trustworthy "1st-degree" signals (in priority order):
+      //   1. Voyager API: distance.value === 'DISTANCE_1'
+      //   2. DOM: the literal "1st" badge near the profile name
+      // Anything else → status_pending (yellow).
       if (voyagerDegree === 1) {
         console.log('[outreach] Voyager: degree=1 → accepted');
         return { action: 'status_accepted' };
       }
-      // 2.8.38: Voyager 2/3 is AUTHORITATIVE — the lead is definitely not
-      // connected. Previously the code fell through to DOM detection, which
-      // could see a "Message" button (existing conversation thread, OP,
-      // premium InMail history) and incorrectly promote to status_accepted.
-      // Real-world false positive: Erwin V was stamped "Y" for iliya because
-      // iliya had an existing message thread with him despite never having
-      // accepted the connection. Voyager said degree=2; DOM said "message";
-      // old code trusted DOM. Now we use DOM only to discriminate pending vs
-      // declined when Voyager has already ruled out degree-1.
-      if (voyagerDegree === 2 || voyagerDegree === 3) {
-        console.log(`[outreach] Voyager: degree=${voyagerDegree} → not connected (authoritative)`);
-        await waitForDomSettle(page, { settleMs: 1000, maxWait: 8000 });
-        status = await getConnectionStatus(page);
-        console.log(`[outreach] DOM status (for pending/declined refinement): ${status}`);
-        if (status === 'pending') return { action: 'status_pending' };
-        return { action: 'status_declined' };
-      }
-      // Voyager returned null (API failed / private profile / unauthenticated
-      // session). Fall back to DOM detection as a best guess.
+      // Voyager said 2/3 OR API failed. Check the DOM degree badge as a
+      // secondary confirmation source. helpers.js getConnectionStatus
+      // returns 'message' iff degree badge === '1st' (since 2.8.38, the
+      // Message-button-as-evidence-of-connection rule is gone).
       await waitForDomSettle(page, { settleMs: 1000, maxWait: 8000 });
       status = await getConnectionStatus(page);
-      console.log(`[outreach] Voyager unavailable; DOM status: ${status}`);
-      if (status === 'message') return { action: 'status_accepted' };
-      if (status === 'pending') return { action: 'status_pending' };
-      if (status === 'connect' || status === 'follow') return { action: 'status_declined' };
-      return { action: 'status_unknown', error: `Status: ${status}` };
+      console.log(`[outreach] DOM status: ${status} (Voyager degree: ${voyagerDegree ?? 'null'})`);
+      if (status === 'message') {
+        console.log('[outreach] DOM degree badge: 1st → accepted');
+        return { action: 'status_accepted' };
+      }
+      // Anything else (Voyager 2/3, DOM pending/connect/follow/unknown,
+      // both signals null) → not confirmed connected → yellow.
+      return { action: 'status_pending' };
     } else if (modeHint === 'force_connect') {
       // Voyager fast-path: if already connected, skip immediately
       if (voyagerDegree === 1) {

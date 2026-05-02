@@ -1429,10 +1429,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.connected = false;
               sheetData.auditAction = 'Still pending';
             } else if (result.action === 'status_declined') {
+              // 2.8.39: outreach.js no longer emits status_declined — Check
+              // Status is now two-state (accepted/pending). This branch is
+              // kept as defensive fallback in case anything downstream still
+              // emits the old action. Render as yellow to match the new
+              // "no red" rule.
               sheetData.status = 'Check Done.';
-              sheetData.ccColor = 'red';
+              sheetData.ccColor = 'yellow';
               sheetData.connected = false;
-              sheetData.auditAction = 'No longer pending';
+              sheetData.auditAction = 'Not confirmed connected';
             }
             // status_unknown: no connected field — leave CC text alone
             await updateSheetRow(sheetUrl, url, sheetData, linkedinColumn).catch(() => {});
