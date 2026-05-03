@@ -57,6 +57,10 @@ function gatherCampaignFormState() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    // 2.8.50: Introduction Messages sub-mode of message_only
+    introMode: mode === 'message_only' && localStorage.getItem('ortus-intro-mode') === '1',
+    introName: document.getElementById('intro-name')?.value?.trim() || '',
+    introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
   };
 
   const senderFirstNames = {};
@@ -1782,6 +1786,10 @@ async function startCampaign() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    // 2.8.50: Introduction Messages sub-mode (active only when mode is message_only)
+    introMode: mode === 'message_only' && localStorage.getItem('ortus-intro-mode') === '1',
+    introName: document.getElementById('intro-name')?.value?.trim() || '',
+    introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
   };
 
   // Show account queue
@@ -4203,3 +4211,38 @@ function renderDiskBanner(disk) {
   banner.hidden = false;
   text.textContent = `Disk: ${_formatBytesClient(disk.freeBytes)} free — clear space before launching.`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2.8.50: Introduction Messages — sub-mode of Message Only
+// Toggle the segment switcher, persist to localStorage, restore on load.
+// ─────────────────────────────────────────────────────────────────────────
+function setIntroMode(active) {
+  localStorage.setItem('ortus-intro-mode', active ? '1' : '0');
+  const stdBtn   = document.getElementById('intro-seg-standard');
+  const introBtn = document.getElementById('intro-seg-intro');
+  const fields   = document.getElementById('intro-mode-fields');
+  if (stdBtn) {
+    stdBtn.style.background = active ? 'transparent' : 'var(--ink)';
+    stdBtn.style.color      = active ? 'var(--gray)' : 'var(--bg)';
+  }
+  if (introBtn) {
+    introBtn.style.background = active ? 'var(--ink)' : 'transparent';
+    introBtn.style.color      = active ? 'var(--bg)' : 'var(--gray)';
+  }
+  if (fields) fields.style.display = active ? '' : 'none';
+}
+function saveIntroFields() {
+  const name  = document.getElementById('intro-name')?.value || '';
+  const title = document.getElementById('intro-title')?.value || '';
+  localStorage.setItem('ortus-intro-name', name);
+  localStorage.setItem('ortus-intro-title', title);
+}
+function restoreIntroState() {
+  const nameEl  = document.getElementById('intro-name');
+  const titleEl = document.getElementById('intro-title');
+  if (nameEl)  nameEl.value  = localStorage.getItem('ortus-intro-name')  || nameEl.value;
+  if (titleEl) titleEl.value = localStorage.getItem('ortus-intro-title') || titleEl.value;
+  const active = localStorage.getItem('ortus-intro-mode') === '1';
+  setIntroMode(active);
+}
+document.addEventListener('DOMContentLoaded', restoreIntroState);

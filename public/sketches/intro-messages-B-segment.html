@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sketch B — Segment switcher in Message Only</title>
+<style>
+:root {
+  --bg: #0a0a0a; --ink: #fafafa; --gray: #999;
+  --hairline: rgba(255,255,255,0.15);
+  --hairline-soft: rgba(255,255,255,0.06);
+  --gold: #F7BE68;
+  --display: 'Bebas Neue','Arial Narrow',sans-serif;
+  --body: 'Hanken Grotesk',-apple-system,sans-serif;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--body); margin: 0; padding: 40px; }
+.wrap { max-width: 720px; margin: 0 auto; }
+h1 { font-family: var(--display); font-weight: 400; font-size: 2rem; letter-spacing: 0.04em; margin: 0 0 8px; }
+.caption { color: var(--gray); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 32px; }
+.section { border-top: 1px solid var(--hairline); padding: 24px 0; }
+.section h2 { font-family: var(--display); font-weight: 400; font-size: 1.4rem; letter-spacing: 0.05em; margin: 0 0 16px; }
+.mode-pill { display: inline-block; padding: 4px 12px; border: 1px solid var(--hairline); border-radius: 9999px; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); margin-bottom: 20px; }
+.mode-pill.active { color: var(--ink); border-color: var(--ink); }
+
+/* Segment switcher */
+.segment { display: flex; border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px; gap: 4px; margin-bottom: 24px; }
+.segment button { flex: 1; background: transparent; border: 0; color: var(--gray); padding: 8px 16px; border-radius: 9999px; font-family: var(--body); font-size: 0.85rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.segment button.active { background: var(--ink); color: var(--bg); }
+
+.field { margin-bottom: 18px; }
+.field label { display: block; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+.field input, .field textarea { width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--hairline); color: var(--ink); padding: 8px 0; font-family: var(--body); font-size: 0.95rem; outline: none; }
+.field input:focus, .field textarea:focus { border-bottom-color: var(--gold); }
+.field textarea { min-height: 90px; resize: vertical; }
+.placeholder-hint { font-size: 0.7rem; color: var(--gray); margin-top: 6px; }
+.subtitle { font-size: 0.85rem; color: var(--gray); margin-bottom: 16px; }
+.code { font-family: ui-monospace, monospace; color: var(--gold); font-size: 0.85rem; }
+.callout { padding: 12px 14px; border-left: 2px solid var(--gold); font-size: 0.78rem; color: var(--gray); margin: 16px 0 24px; }
+.note { font-size: 0.78rem; color: var(--gray); margin-top: -8px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sketch B — Segment switcher</h1>
+  <p class="caption">Two-tab feel: pick "Standard" vs "Introduction" inside Message Only</p>
+
+  <div class="section">
+    <span class="mode-pill active">3 / 6  · Message Only (follow-ups)</span>
+    <h2>3. Choose a campaign</h2>
+    <div class="subtitle">Drains every accepted lead. Auto-routed: only the account that connected the lead can DM.</div>
+
+    <div style="margin: 16px 0 8px; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray);">Send as</div>
+    <div class="segment">
+      <button class="active">Standard DM</button>
+      <button>Introduction (3-way group)</button>
+    </div>
+
+    <div class="callout">
+      Introduction mode adds a third person to a group thread before sending — mirrors the LinkedIn DM Assistant's Option+I flow. Sheet stamp becomes <span class="code">sent IC</span> in the DM column.
+    </div>
+
+    <div class="field">
+      <label for="intro-name-b">Intro person — full LinkedIn name</label>
+      <input type="text" id="intro-name-b" placeholder="e.g. Antonio Varlese" value="Antonio Varlese">
+      <div class="placeholder-hint">Typed into LinkedIn's recipient typeahead. Must be a 1st-deg connection of every sender.</div>
+    </div>
+
+    <div class="field">
+      <label for="intro-title-b">Group conversation title</label>
+      <input type="text" id="intro-title-b" value="Introduction: {first name} <> {intro name}">
+      <div class="placeholder-hint">Placeholders: <span class="code">{first name}</span>, <span class="code">{intro name}</span>, sheet columns.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>5. Message templates</h2>
+    <div class="note">Body re-used for both Standard and Introduction. The <span class="code">{intro name}</span> placeholder only resolves when Introduction is selected above.</div>
+    <div class="field">
+      <label>Follow-up message body</label>
+      <textarea>Hi {first name}, introducing you to {intro name}.
+
+{intro name}, meet {first name}, {title} at {company}.
+
+I thought it made sense for you both to connect.</textarea>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -671,6 +671,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     },
     openProfileSubject: templates.openProfileSubject || templates.opSubject || '',
     openProfileBody: templates.openProfileBody || templates.opBody || '',
+    // 2.8.50: Introduction Messages — sub-mode of message_only. When introMode
+    // is true, sendMessage routes to sendIntroMessage which adds introName as
+    // a second recipient and sets a group title. Sheet stamp becomes "sent IC".
+    introMode: !!templates.introMode,
+    introName: (templates.introName || '').trim(),
+    introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
   };
 
   const campaignStartTime = Date.now();
@@ -1376,7 +1382,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             const sheetData = (mode === 'check_status')
               ? { dateLastAction: now }
               : { dateLastAction: now, accountUsed: pName };
-            const hyperSent = `=HYPERLINK("${url}","sent")`;
+            // 2.8.50: when Introduction Messages mode is active, stamp the DM
+            // column with "sent IC" instead of "sent" so introductions are
+            // visually distinct from standard DMs in the sheet.
+            const sentLabel = (tpl.introMode && mode === 'message_only') ? 'sent IC' : 'sent';
+            const hyperSent = `=HYPERLINK("${url}","${sentLabel}")`;
 
             if (result.action === 'connection_sent') {
               sheetData.status = 'Done';

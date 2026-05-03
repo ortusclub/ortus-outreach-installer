@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sketch A — Inline Intro toggle in Message Only</title>
+<style>
+:root {
+  --bg: #0a0a0a; --ink: #fafafa; --gray: #999;
+  --hairline: rgba(255,255,255,0.15);
+  --hairline-soft: rgba(255,255,255,0.06);
+  --gold: #F7BE68;
+  --display: 'Bebas Neue','Arial Narrow',sans-serif;
+  --body: 'Hanken Grotesk',-apple-system,sans-serif;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--body); margin: 0; padding: 40px; }
+.wrap { max-width: 720px; margin: 0 auto; }
+h1 { font-family: var(--display); font-weight: 400; font-size: 2rem; letter-spacing: 0.04em; margin: 0 0 8px; }
+.caption { color: var(--gray); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 32px; }
+.section { border-top: 1px solid var(--hairline); padding: 24px 0; }
+.section h2 { font-family: var(--display); font-weight: 400; font-size: 1.4rem; letter-spacing: 0.05em; margin: 0 0 16px; }
+.mode-pill { display: inline-block; padding: 4px 12px; border: 1px solid var(--hairline); border-radius: 9999px; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); margin-bottom: 20px; }
+.mode-pill.active { color: var(--ink); border-color: var(--ink); }
+.intro-toggle-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--hairline-soft); }
+.intro-toggle-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--gold); }
+.intro-toggle-row label { font-size: 0.92rem; cursor: pointer; }
+.intro-toggle-row .desc { font-size: 0.72rem; color: var(--gray); margin-left: auto; max-width: 360px; text-align: right; }
+.intro-fields { display: none; padding: 16px 0 4px; border-top: 1px solid var(--hairline-soft); }
+.intro-fields.visible { display: block; }
+.field { margin-bottom: 18px; }
+.field label { display: block; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+.field input, .field textarea { width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--hairline); color: var(--ink); padding: 8px 0; font-family: var(--body); font-size: 0.95rem; outline: none; }
+.field input:focus, .field textarea:focus { border-bottom-color: var(--gold); }
+.field textarea { min-height: 90px; resize: vertical; }
+.placeholder-hint { font-size: 0.7rem; color: var(--gray); margin-top: 6px; }
+.body-hint { padding: 14px; border: 1px dashed var(--hairline); border-radius: 4px; font-size: 0.78rem; color: var(--gray); margin-top: 12px; }
+.label-toggle { display: flex; align-items: center; gap: 10px; }
+.subtitle { font-size: 0.85rem; color: var(--gray); margin-bottom: 12px; }
+.code { font-family: ui-monospace, monospace; color: var(--gold); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sketch A — Inline toggle</h1>
+  <p class="caption">Compact: a single checkbox extends Message Only mode</p>
+
+  <div class="section">
+    <span class="mode-pill active">3 / 6  · Message Only (follow-ups)</span>
+    <h2>3. Choose a campaign</h2>
+    <div class="subtitle">Drains every accepted lead by sending the body template. Auto-routed: only the account that connected the lead can DM.</div>
+
+    <div class="intro-toggle-row">
+      <div class="label-toggle">
+        <input type="checkbox" id="intro-toggle" onchange="document.getElementById('intro-fields').classList.toggle('visible', this.checked)">
+        <label for="intro-toggle"><strong>Send as introduction</strong> — adds a third person to a group thread</label>
+      </div>
+      <div class="desc">Mirrors the LinkedIn DM Assistant's Option+I flow.</div>
+    </div>
+
+    <div class="intro-fields" id="intro-fields">
+      <div class="field">
+        <label for="intro-name">Intro person — full LinkedIn name</label>
+        <input type="text" id="intro-name" placeholder="e.g. Antonio Varlese" value="Antonio Varlese">
+        <div class="placeholder-hint">Typed into LinkedIn's recipient typeahead. Must be a 1st-deg connection of every sender that runs this campaign.</div>
+      </div>
+      <div class="field">
+        <label for="intro-title">Group conversation title</label>
+        <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}">
+        <div class="placeholder-hint">Placeholders: <span class="code">{first name}</span>, <span class="code">{intro name}</span>, plus any sheet column.</div>
+      </div>
+      <div class="body-hint">Body template uses the existing Message Only field below — same placeholders, plus <span class="code">{intro name}</span>.</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>5. Message templates</h2>
+    <div class="field">
+      <label>Follow-up message body</label>
+      <textarea>Hi {first name}, introducing you to {intro name}.
+
+{intro name}, meet {first name}, {title} at {company}.
+
+I thought it made sense for you both to connect.</textarea>
+    </div>
+  </div>
+</div>
+</body>
+</html>

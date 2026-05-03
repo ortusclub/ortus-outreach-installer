@@ -320,6 +320,30 @@
           <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
             <strong style="color:var(--gray)">Profile picker / Throughput / Daily limit</strong> — not used in Message Only. Auto-routed per row (only the account that connected the lead can DM); drains every accepted lead back-to-back. <strong style="color:var(--gray)">Templates</strong> below are required.
           </div>
+
+          <!-- 2.8.50: Introduction Messages — sub-mode of Message Only. -->
+          <div id="intro-mode-block" style="margin-top:24px;">
+            <div style="margin:0 0 8px; font-family:var(--display); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray);">Send as</div>
+            <div style="display:flex; border:1px solid var(--hairline); border-radius:9999px; padding:4px; gap:4px; max-width:520px;">
+              <button type="button" id="intro-seg-standard" onclick="setIntroMode(false)" style="flex:1; background:var(--ink); color:var(--bg); border:0; padding:8px 16px; border-radius:9999px; font-family:var(--body); font-size:0.85rem; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer;">Standard DM</button>
+              <button type="button" id="intro-seg-intro" onclick="setIntroMode(true)" style="flex:1; background:transparent; color:var(--gray); border:0; padding:8px 16px; border-radius:9999px; font-family:var(--body); font-size:0.85rem; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer;">Introduction (3-way group)</button>
+            </div>
+            <div id="intro-mode-fields" style="display:none; margin-top:16px; max-width:520px;">
+              <div style="padding:10px 14px; border-left:2px solid var(--gold, #F7BE68); font-size:12px; color:var(--gray); margin-bottom:14px;">
+                Adds a third person to a group thread before sending — mirrors the LinkedIn DM Assistant's Option+I flow. Sheet stamp becomes <code style="color:var(--gold,#F7BE68)">sent IC</code> in the DM column. Status still becomes <code style="color:var(--gold,#F7BE68)">DM Sent</code>.
+              </div>
+              <div style="margin-bottom:14px">
+                <label for="intro-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro person — full LinkedIn name</label>
+                <input type="text" id="intro-name" placeholder="e.g. Antonio Varlese" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
+                <div style="font-size:11px; color:var(--gray); margin-top:4px">Typed into LinkedIn's recipient typeahead. Must be a 1st-degree connection of every sender that runs this campaign.</div>
+              </div>
+              <div>
+                <label for="intro-title" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Group conversation title</label>
+                <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
+                <div style="font-size:11px; color:var(--gray); margin-top:4px">Placeholders: <code>{first name}</code>, <code>{intro name}</code>, plus any sheet column.</div>
+              </div>
+            </div>
+          </div>
         </div>
         <div id="mo-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">
           No connections ready to message yet (no rows with <code>Y</code> in CC). Run <strong>Check Status</strong> first to confirm acceptances.

@@ -1118,6 +1118,305 @@ export async function sendMessage(page, message) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// sendIntroMessage — 2.8.50
+// ═════════════════════════════════════════════════════════════════════════════
+// Mirrors LinkedIn DM Assistant's Option+I flow. Same /messaging/compose/
+// landing as sendMessage, plus:
+//   1. Add the intro person as a second recipient (typeahead → exact match)
+//   2. Fill the conversation title (group thread)
+//   3. Type the body
+//   4. Send (Send button → plain Enter fallback)
+//
+// Helper functions are ports of the DM Assistant's content.js
+// (getRecipientSearchInputTarget, selectExactRecipientResult,
+// getConversationTitleInputTarget, hasSelectedRecipient).
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function sendIntroMessage(page, body, introName, groupTitle) {
+  if (!introName) throw new Error('MESSAGE_SEND_FAILED: introName required');
+
+  const currentUrl = page.url();
+  const publicIdMatch = currentUrl.match(/\/in\/([^/?#]+)/);
+  if (!publicIdMatch) {
+    throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${currentUrl})`);
+  }
+  const publicId = publicIdMatch[1];
+
+  const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
+  console.log(`[actions:intro] Navigating to ${composeUrl}`);
+  try {
+    await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (e) {
+    console.warn(`[actions:intro] Compose navigation warning: ${e.message}`);
+  }
+  await new Promise(r => setTimeout(r, 1500));
+
+  // Wait for compose textbox.
+  const composeSelectors = [
+    'div[role="textbox"][aria-label*="Write a message" i]',
+    '.msg-form__contenteditable',
+    'div[class*="msg-form__contenteditable"]',
+  ];
+  let composerReady = false;
+  for (const sel of composeSelectors) {
+    try {
+      await page.waitForSelector(sel, { timeout: 5000 });
+      composerReady = true;
+      break;
+    } catch { /* try next */ }
+  }
+  if (!composerReady) throw new Error('MESSAGE_SEND_FAILED: compose textbox did not appear');
+
+  // ── Step 1: add intro person as second recipient ──
+  const recipientResult = await page.evaluate(async (name) => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const isVisible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+    };
+    const activate = (el) => {
+      el.scrollIntoView?.({ block: 'center' });
+      el.focus?.();
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+      el.click();
+      return true;
+    };
+    const normalizeName = (v) => (v || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/^remove\s+/, '')
+      .replace(/[^a-z0-9\s'-]/g, ' ').replace(/\s+/g, ' ').trim();
+    const target = (() => {
+      // DM Assistant's getRecipientSearchInputTarget: any visible input/textarea
+      // whose aria/placeholder/class hints at "enter message recipients" or
+      // "msg-connections-typeahead__search-field".
+      const inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"][role="textbox"]'))
+        .filter(isVisible);
+      for (const el of inputs) {
+        const text = [
+          el.getAttribute('aria-label'),
+          el.getAttribute('placeholder'),
+          el.getAttribute('class'),
+          el.getAttribute('id'),
+        ].join(' ').toLowerCase();
+        if (text.includes('enter message recipients') || text.includes('msg-connections-typeahead__search-field')) {
+          return el;
+        }
+      }
+      return null;
+    })();
+    if (!target) return { ok: false, reason: 'recipient-input-not-found' };
+
+    // Already added? (DM Assistant's hasSelectedRecipient)
+    const normName = normalizeName(name);
+    const alreadyAdded = Array.from(document.querySelectorAll(
+      '.msg-connections-typeahead__added-recipients button[aria-label^="Remove"], button.artdeco-pill[aria-label^="Remove"]'
+    )).some((b) => normalizeName(b.getAttribute('aria-label')).includes(normName));
+    if (alreadyAdded) return { ok: true, alreadyAdded: true };
+
+    // Type the name (DM Assistant's fillTextTarget for INPUT path)
+    target.focus();
+    const proto = target.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+      setter.call(target, name);
+    } else if (target.isContentEditable) {
+      target.textContent = name;
+    } else {
+      target.value = name;
+    }
+    target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: name }));
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Wait for typeahead results, click exact match. (DM Assistant's selectExactRecipientResult)
+    let clicked = false;
+    for (let i = 0; i < 20; i++) {
+      await sleep(150);
+      const roots = Array.from(document.querySelectorAll(
+        '.msg-connections-typeahead__search-results, [role="listbox"], .reusable-search__entity-result-list'
+      ));
+      const searchRoots = roots.length ? roots : [document];
+      for (const root of searchRoots) {
+        const candidates = Array.from(root.querySelectorAll(
+          'li, [role="option"], button, .msg-connections-typeahead__search-result, .reusable-search__result-container'
+        )).filter(isVisible);
+        const exact = candidates.find((c) => {
+          const t = normalizeName(c.innerText || c.textContent);
+          return t === normName || t.startsWith(`${normName} `);
+        });
+        if (exact) { activate(exact); clicked = true; break; }
+      }
+      if (clicked) break;
+    }
+    if (!clicked) return { ok: false, reason: 'recipient-not-in-results' };
+
+    // Verify the pill appeared
+    await sleep(500);
+    const verified = Array.from(document.querySelectorAll(
+      '.msg-connections-typeahead__added-recipients button[aria-label^="Remove"], button.artdeco-pill[aria-label^="Remove"]'
+    )).some((b) => normalizeName(b.getAttribute('aria-label')).includes(normName));
+    if (!verified) return { ok: false, reason: 'recipient-pill-not-confirmed' };
+
+    return { ok: true, alreadyAdded: false };
+  }, introName);
+
+  if (!recipientResult.ok) {
+    throw new Error(`INTRO_RECIPIENT_NOT_FOUND: ${recipientResult.reason} (intro="${introName}")`);
+  }
+  console.log(`[actions:intro] Recipient added: ${introName} (alreadyAdded=${recipientResult.alreadyAdded})`);
+
+  // ── Step 2: fill the conversation title (group thread) ──
+  await new Promise(r => setTimeout(r, 600));
+  const titleResult = await page.evaluate((title) => {
+    const isVisible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+    };
+    // DM Assistant's getConversationTitleInputTarget
+    const candidates = Array.from(document.querySelectorAll('input, textarea')).filter(isVisible);
+    const target = candidates.find((c) => {
+      const text = [
+        c.getAttribute('aria-label'),
+        c.getAttribute('placeholder'),
+        c.getAttribute('name'),
+        c.getAttribute('id'),
+        c.getAttribute('title'),
+      ].join(' ').toLowerCase();
+      return text.includes('subject') || text.includes('group name') || text.includes('thread');
+    });
+    if (!target) return { ok: false, reason: 'title-input-not-found' };
+    target.focus();
+    const proto = target.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) setter.call(target, title); else target.value = title;
+    target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: title }));
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+    return { ok: true };
+  }, groupTitle);
+  if (!titleResult.ok) {
+    console.warn(`[actions:intro] Group title field not found (${titleResult.reason}) — proceeding without title`);
+  } else {
+    console.log(`[actions:intro] Group title set: ${groupTitle}`);
+  }
+
+  // ── Step 3: type body via existing typeIntoField (matches the regular composer) ──
+  await randomDelay(150, 300);
+  const typed = await typeIntoField(page, body);
+  if (!typed) throw new Error('MESSAGE_SEND_FAILED: could not type body');
+
+  await new Promise(r => setTimeout(r, 700));
+
+  // ── Step 4: try Send button, fall back to plain Enter (same as sendMessage) ──
+  const sentByButton = await page.evaluate(() => {
+    const isVisible = (el) => {
+      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+    };
+    const activate = (el) => {
+      el.scrollIntoView?.({ block: 'center' });
+      el.focus?.();
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+      el.click();
+      return true;
+    };
+    const icon = document.querySelector('[data-test-icon*="send"]');
+    const iconBtn = icon?.closest?.('button');
+    if (iconBtn && isVisible(iconBtn)) return activate(iconBtn);
+    for (const b of document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send message" i], button[aria-label="Send a message" i]')) {
+      if (isVisible(b)) return activate(b);
+    }
+    for (const b of document.querySelectorAll('button, [role="button"]')) {
+      const t = (b.textContent || '').trim();
+      if ((t === 'Send' || t === 'Send message') && isVisible(b)) return activate(b);
+    }
+    const legacy = document.querySelector('button.msg-form__send-button, .msg-form__send-button, button[type="submit"][class*="msg-form"]');
+    if (legacy && isVisible(legacy)) return activate(legacy);
+    return false;
+  });
+
+  if (!sentByButton) {
+    console.log('[actions:intro] No Send button — using plain Enter');
+    await page.evaluate(() => {
+      const composer = document.querySelector(
+        'div[role="textbox"][aria-label*="Write a message" i], ' +
+        '.msg-form__contenteditable, ' +
+        '.msg-form div[contenteditable="true"], ' +
+        '[role="textbox"][contenteditable="true"]'
+      );
+      if (!composer) return;
+      composer.focus();
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(composer);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch { /* */ }
+    });
+    await page.keyboard.press('Enter');
+    await new Promise(r => setTimeout(r, 250));
+    await page.keyboard.down('Meta');
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Meta');
+    await new Promise(r => setTimeout(r, 200));
+    await page.keyboard.down('Control');
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Control');
+  } else {
+    console.log('[actions:intro] Clicked Send button');
+  }
+
+  // ── Step 5: honest verification (same as sendMessage) ──
+  await new Promise(r => setTimeout(r, 2500));
+  const verified = await page.evaluate((sentText) => {
+    const editor = document.querySelector(
+      'div[role="textbox"][aria-label*="Write a message" i], ' +
+      '.msg-form__contenteditable, ' +
+      '.msg-form div[contenteditable="true"], ' +
+      'div[contenteditable="true"][aria-label*="message" i]'
+    );
+    let composerEmpty = null;
+    let editorText = '';
+    if (editor) {
+      editorText = (editor.textContent || editor.innerText || '').replace(/​/g, '').trim();
+      composerEmpty = editorText.length === 0;
+    }
+    let foundInThread = false;
+    const tail = (sentText || '').slice(-40).trim();
+    if (tail.length >= 8) {
+      const messages = document.querySelectorAll(
+        '.msg-s-event-listitem, [class*="msg-s-event"], ' +
+        '[class*="msg-event-listitem"], .msg-s-message-list-content li'
+      );
+      for (const m of messages) {
+        if ((m.textContent || '').includes(tail)) { foundInThread = true; break; }
+      }
+    }
+    return { composerEmpty, foundInThread, editorText: editorText.substring(0, 60), editorFound: !!editor };
+  }, body);
+
+  const success = verified.composerEmpty === true || verified.foundInThread === true;
+  if (!success) {
+    const why = verified.editorFound
+      ? `composer still has text: "${verified.editorText}"`
+      : 'composer not found and message not in thread';
+    throw new Error(`MESSAGE_SEND_FAILED: send not confirmed (${why})`);
+  }
+  console.log(`[actions:intro] ✓ Intro sent (composerEmpty=${verified.composerEmpty}, foundInThread=${verified.foundInThread})`);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // resolveSalesNavUrlFromInProfile
 // ═════════════════════════════════════════════════════════════════════════════
 // Pure helper: clicks the More dropdown on a /in/ profile and extracts the

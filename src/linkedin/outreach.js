@@ -9,7 +9,7 @@
  */
 
 import { randomDelay, getConnectionStatus, getVoyagerDegree, getDegreeBadge, personalizeTemplate } from './helpers.js';
-import { sendConnectionRequest, sendMessage, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
+import { sendConnectionRequest, sendMessage, sendIntroMessage, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
 import { dataPath } from '../paths.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 
@@ -433,7 +433,21 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         if (state.messageSent) return { action: 'already_processed' };
         if (!templates.followUpMessage) return { action: 'skipped', error: 'No message template' };
         try {
-          await sendMessage(page, personalizeTemplate(templates.followUpMessage, data));
+          // 2.8.50: Introduction Messages — when introMode is true, route to
+          // the 3-way group flow (add intro person, set group title, send body).
+          // Body placeholder substitution gets {intro name} on top of the
+          // existing data fields.
+          if (templates.introMode) {
+            if (!templates.introName) {
+              return { action: 'skipped', error: 'No intro person configured (introMode on but introName empty)' };
+            }
+            const introData = { ...data, 'intro name': templates.introName, 'introName': templates.introName, 'intro_name': templates.introName };
+            const body  = personalizeTemplate(templates.followUpMessage, introData);
+            const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
+            await sendIntroMessage(page, body, templates.introName, title);
+          } else {
+            await sendMessage(page, personalizeTemplate(templates.followUpMessage, data));
+          }
           return { action: 'message_sent' };
         } catch (err) {
           return { action: 'skipped', error: `Message failed: ${err.message}` };
