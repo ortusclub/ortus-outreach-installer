@@ -930,39 +930,69 @@ export async function sendConnectionRequest(page, noteArg) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export async function sendMessage(page, message) {
-  // ── Direct messaging compose flow ─────────────────────────────────────
-  // Instead of clicking the profile's "Message" button (which opens a
-  // floating bubble that can bleed into the previous lead), navigate
-  // straight to LinkedIn's dedicated compose page with the recipient's
-  // public identifier in the query string:
-  //
-  //   https://www.linkedin.com/messaging/compose/?recipient=<publicId>
-  //
-  // This gives a clean composer per lead, zero bubble reuse, zero URN
-  // lookups. Verified working 2026-04-15 by testing the URL directly.
-
-  // Step 1: extract the publicId from the current profile URL (/in/<publicId>)
+  // ── 2.8.46 — Profile bubble flow (matches LinkedIn DM Assistant) ──────
+  // The /messaging/compose/?recipient= page renders WITHOUT a Send button
+  // in Orbita-Browser (only an "Open send options" overflow). The floating
+  // bubble opened from the profile's "Message" button DOES render Send.
+  // So: click Message on profile → type into bubble → click Send / press
+  // Enter (LinkedIn's "Press Enter to send" setting) → close bubble.
   const currentUrl = page.url();
-  const publicIdMatch = currentUrl.match(/\/in\/([^/?#]+)/);
-  if (!publicIdMatch) {
-    throw new Error(`MESSAGE_SEND_FAILED: could not parse publicId from ${currentUrl}`);
+  if (!/\/in\/[^/?#]+/.test(currentUrl)) {
+    throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${currentUrl})`);
   }
-  const publicId = publicIdMatch[1];
-  console.log(`[actions] publicId: ${publicId}`);
+  console.log(`[actions] sendMessage on ${currentUrl}`);
 
-  // Step 2: navigate to the dedicated compose page
-  const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
-  console.log(`[actions] Navigating to ${composeUrl}`);
-  try {
-    await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  } catch (e) {
-    console.warn(`[actions] Compose navigation warning: ${e.message}`);
+  // Close any pre-existing message bubbles to prevent bleed from prior lead.
+  await page.evaluate(() => {
+    document.querySelectorAll(
+      '.msg-overlay-bubble-header__control--close, ' +
+      '.msg-overlay-conversation-bubble button[aria-label*="Close" i]'
+    ).forEach(b => { try { b.click(); } catch { /* */ } });
+  });
+  await new Promise(r => setTimeout(r, 400));
+
+  // Click profile's Message button to open the floating bubble (DM Assistant pattern).
+  const opened = await page.evaluate(() => {
+    const isVisible = (el) => {
+      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+    };
+    const activate = (el) => {
+      el.scrollIntoView?.({ block: 'center' });
+      el.focus?.();
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+      el.click();
+    };
+    const main = document.querySelector('main') || document.body;
+
+    // Tier 0: data-test-icon (most stable LinkedIn signal)
+    const icon = main.querySelector('[data-test-icon="send-privately-small"]');
+    let btn = icon?.closest?.('button');
+    if (btn && isVisible(btn)) { activate(btn); return { ok: true, method: 'data-test-icon' }; }
+
+    // Tier 1: aria-label starting with "Message "
+    btn = [...main.querySelectorAll('button[aria-label^="Message " i]')].find(isVisible);
+    if (btn) { activate(btn); return { ok: true, method: 'aria-label' }; }
+
+    // Tier 2: button text exactly "Message"
+    btn = [...main.querySelectorAll('button, [role="button"]')].find(b => {
+      const t = (b.textContent || '').trim();
+      return t === 'Message' && isVisible(b);
+    });
+    if (btn) { activate(btn); return { ok: true, method: 'text' }; }
+
+    return { ok: false };
+  });
+  if (!opened.ok) {
+    throw new Error('MESSAGE_SEND_FAILED: Message button not found on profile');
   }
-  // 2.8.34: 4s → 1.5s. DMs to 1st-degree connections are low-risk; the long
-  // dwell was anti-detection theater. waitForSelector below is the real gate.
-  await new Promise(r => setTimeout(r, 1500));
+  console.log(`[actions] Opened bubble via ${opened.method}`);
 
-  // Step 3: Wait for the compose textbox to be present
+  // Wait for the bubble's compose textbox.
   const composeSelectors = [
     'div[role="textbox"][aria-label*="Write a message"]',
     'div[role="textbox"][aria-label*="message" i]',
@@ -1089,11 +1119,35 @@ export async function sendMessage(page, message) {
     if (!focused) {
       throw new Error(`MESSAGE_SEND_FAILED: send-button-not-found (composer text: "${sendOutcome.composerText || ''}")`);
     }
-    // Cmd on Mac, Control on Windows/Linux. LinkedIn binds both.
+    // 2.8.46: move caret to end of composer so plain Enter sends instead of
+    // splitting the message in the middle.
+    await page.evaluate(() => {
+      const composer = document.querySelector(
+        'div[role="textbox"][aria-label*="Write a message" i], ' +
+        '.msg-form__contenteditable, ' +
+        '.msg-form div[contenteditable="true"], ' +
+        '[role="textbox"][contenteditable="true"]'
+      );
+      if (!composer) return;
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(composer);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch { /* */ }
+    });
+    // 2.8.46: PLAIN Enter first — Zhelena and other accounts have LinkedIn's
+    // "Press Enter to send message" setting enabled, which makes Enter alone
+    // send. This is what the user explicitly asked for.
+    await page.keyboard.press('Enter');
+    await new Promise(r => setTimeout(r, 250));
+    // Belt-and-suspenders: Cmd+Enter and Ctrl+Enter (for accounts with the
+    // setting OFF, where Cmd/Ctrl+Enter is the keyboard shortcut).
     await page.keyboard.down('Meta');
     await page.keyboard.press('Enter');
     await page.keyboard.up('Meta');
-    // Belt-and-suspenders: also try Ctrl+Enter (in case Orbita reports as Linux).
     await new Promise(r => setTimeout(r, 200));
     await page.keyboard.down('Control');
     await page.keyboard.press('Enter');
@@ -1105,24 +1159,42 @@ export async function sendMessage(page, message) {
   //   - Send button is disabled again (composer empty → button disabled)
   //   - conversation shows a "sent just now" / most-recent message bubble
   await new Promise(r => setTimeout(r, 2500));
-  const verified = await page.evaluate(() => {
-    const editor = document.querySelector('.msg-form__contenteditable, .msg-form div[contenteditable="true"]');
+  const verified = await page.evaluate((sentText) => {
+    const editor = document.querySelector(
+      'div[role="textbox"][aria-label*="Write a message" i], ' +
+      '.msg-form__contenteditable, ' +
+      '.msg-form div[contenteditable="true"], ' +
+      'div[contenteditable="true"][aria-label*="message" i]'
+    );
     const editorText = editor
       ? (editor.textContent || editor.innerText || '').replace(/\u200B/g, '').trim()
       : '';
     const composerEmpty = editorText.length === 0;
 
-    const sendBtn = document.querySelector('.msg-form__send-button, button.msg-form__send-button');
-    const sendDisabled = sendBtn ? (sendBtn.disabled || sendBtn.getAttribute('aria-disabled') === 'true') : true;
+    // 2.8.46: positive thread confirmation
+    let foundInThread = false;
+    const tail = (sentText || '').slice(-40).trim();
+    if (tail.length >= 8) {
+      const messages = document.querySelectorAll(
+        '.msg-s-event-listitem, [class*="msg-s-event"], ' +
+        '[class*="msg-event-listitem"], .msg-s-message-list-content li'
+      );
+      for (const m of messages) {
+        if ((m.textContent || '').includes(tail)) { foundInThread = true; break; }
+      }
+    }
+    return { composerEmpty: editor ? composerEmpty : null, foundInThread, editorText: editorText.substring(0, 60), editorFound: !!editor };
+  }, message);
 
-    return { composerEmpty, sendDisabled, editorText: editorText.substring(0, 60) };
-  });
-
-  if (!verified.composerEmpty && !verified.sendDisabled) {
-    throw new Error(`MESSAGE_SEND_FAILED: send not confirmed (composer: "${verified.editorText}")`);
+  const success = verified.composerEmpty === true || verified.foundInThread === true;
+  if (!success) {
+    const why = verified.editorFound
+      ? `composer still has text: "${verified.editorText}"`
+      : 'composer not found and message not in thread';
+    throw new Error(`MESSAGE_SEND_FAILED: send not confirmed (${why})`);
   }
 
-  console.log(`[actions] ✓ Message sent (composerEmpty=${verified.composerEmpty}, sendDisabled=${verified.sendDisabled}).`);
+  console.log(`[actions] ✓ Message sent (composerEmpty=${verified.composerEmpty}, foundInThread=${verified.foundInThread}).`);
 
   // Close the chat overlay so it doesn't stay floating on the page
   await page.evaluate(() => {
