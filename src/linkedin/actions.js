@@ -15,17 +15,6 @@
  */
 
 import { randomDelay, clickByAria, clickByText } from './helpers.js';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
-
-// 2.8.47: verbatim port of the LinkedIn DM Assistant content.js, injected
-// into the page so we can call its DOM helpers directly. Read once at
-// module load. Source-of-truth lives at src/linkedin/dm-assistant-injection.js.
-const _DM_ASSISTANT_SCRIPT = readFileSync(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), 'dm-assistant-injection.js'),
-  'utf8'
-);
 
 // Matches Sales Navigator profile URLs (/sales/people/… or /sales/lead/…).
 // Kept in sync with the identical constant in outreach.js — duplication here
@@ -941,100 +930,136 @@ export async function sendConnectionRequest(page, noteArg) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export async function sendMessage(page, message) {
-  // ── 2.8.47 — Inject DM Assistant content.js verbatim, call its functions ──
-  // The DM Assistant extension is proven to work on these LinkedIn profiles.
-  // We inject its full content.js (chrome.runtime listeners stripped) into
-  // the page, then call openMessageBox / fillTextTarget / clickSendMessageButton
-  // directly. This is the closest possible mirror of "what the extension does".
+  // ── 2.8.48 — Compose-page navigation + plain Enter to send ──────────
+  // History: tried injecting the LinkedIn DM Assistant content.js into the
+  // page via a <script> tag — LinkedIn's CSP blocks inline scripts, so the
+  // helpers never registered ("DM Assistant injection did not expose
+  // helpers"). Tried clicking the profile's Message button to open the
+  // floating bubble — getProfileMessageButton couldn't find it on every
+  // profile (probably profiles where the running account isn't connected,
+  // but unreliable either way).
+  //
+  // Going back to LinkedIn's dedicated compose URL and using plain Enter
+  // to send. The compose page in Orbita has NO Send button (the only "send"
+  // is an "Open send options" overflow), but pressing Enter on the
+  // composer triggers send because the Ortus accounts have LinkedIn's
+  // "Press Enter to send message" setting enabled.
+
   const currentUrl = page.url();
-  if (!/\/in\/[^/?#]+/.test(currentUrl)) {
+  const publicIdMatch = currentUrl.match(/\/in\/([^/?#]+)/);
+  if (!publicIdMatch) {
     throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${currentUrl})`);
   }
-  console.log(`[actions] sendMessage on ${currentUrl}`);
+  const publicId = publicIdMatch[1];
 
-  // Inject DM Assistant once per page. The script's own loaded-flag prevents
-  // duplicate execution.
-  await page.evaluate((script) => {
-    if (window.__ORTUS_DM_ASSISTANT_LOADED__) return;
-    const s = document.createElement('script');
-    s.textContent = script;
-    document.head.appendChild(s);
-  }, _DM_ASSISTANT_SCRIPT);
-
-  // Verify the helpers are exposed.
-  const ready = await page.evaluate(() => !!(window.__ortusDM && window.__ortusDM.openMessageBox));
-  if (!ready) {
-    throw new Error('MESSAGE_SEND_FAILED: DM Assistant injection did not expose helpers');
+  const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
+  console.log(`[actions] Navigating to ${composeUrl}`);
+  try {
+    await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (e) {
+    console.warn(`[actions] Compose navigation warning: ${e.message}`);
   }
+  await new Promise(r => setTimeout(r, 1500));
 
-  // Close any pre-existing bubbles to prevent bleed from a prior lead.
-  await page.evaluate(() => {
-    document.querySelectorAll(
-      '.msg-overlay-bubble-header__control--close, ' +
-      '.msg-overlay-conversation-bubble button[aria-label*="Close" i]'
-    ).forEach(b => { try { b.click(); } catch { /* */ } });
-  });
-  await new Promise(r => setTimeout(r, 400));
-
-  // Step 1 — call DM Assistant's openMessageBox (top-card → broad selectors → More dropdown).
-  const opened = await page.evaluate(async () => {
-    try { return !!(await window.__ortusDM.openMessageBox()); }
-    catch (e) { return false; }
-  });
-  if (!opened) {
-    throw new Error('MESSAGE_SEND_FAILED: openMessageBox returned false (Message button not found by DM Assistant)');
-  }
-
-  // Step 2 — wait for the composer to appear.
+  // Wait for the compose textbox.
+  const composeSelectors = [
+    'div[role="textbox"][aria-label*="Write a message" i]',
+    '.msg-form__contenteditable',
+    'div[class*="msg-form__contenteditable"]',
+  ];
   let composerReady = false;
-  for (let i = 0; i < 40; i++) {
-    await new Promise(r => setTimeout(r, 200));
-    const found = await page.evaluate(() =>
-      !!window.__ortusDM.getMessageInputTarget({ ignoreActive: true })
-    );
-    if (found) { composerReady = true; break; }
+  for (const sel of composeSelectors) {
+    try {
+      await page.waitForSelector(sel, { timeout: 5000 });
+      composerReady = true;
+      break;
+    } catch { /* try next */ }
   }
   if (!composerReady) {
-    throw new Error('MESSAGE_SEND_FAILED: composer did not appear after openMessageBox');
+    throw new Error('MESSAGE_SEND_FAILED: compose textbox did not appear');
   }
 
-  // Step 3 — fill text using DM Assistant's exact paste pipeline.
-  await page.evaluate((msg) => {
-    const t = window.__ortusDM.getMessageInputTarget({ ignoreActive: true });
-    if (!t) return;
-    window.__ortusDM.fillTextTarget(t, msg);
-  }, message);
-  console.log('[actions] Bubble opened and text filled (via DM Assistant)');
+  await randomDelay(150, 300);
+  const typed = await typeIntoField(page, message);
+  if (!typed) throw new Error('MESSAGE_SEND_FAILED: could not type message');
 
-  // Let React register the input event before looking for Send.
+  // Let React register the input event.
   await new Promise(r => setTimeout(r, 700));
 
-  // Step 4 — click Send via DM Assistant.
+  // Try Send button first (some account/layout combos do render it).
   const sentByButton = await page.evaluate(() => {
-    try { return !!window.__ortusDM.clickSendMessageButton(); }
-    catch { return false; }
+    const isVisible = (el) => {
+      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+    };
+    const activate = (el) => {
+      el.scrollIntoView?.({ block: 'center' });
+      el.focus?.();
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+      el.click();
+      return true;
+    };
+
+    // Tier 0 — data-test-icon
+    const icon = document.querySelector('[data-test-icon*="send"]');
+    const iconBtn = icon?.closest?.('button');
+    if (iconBtn && isVisible(iconBtn)) return activate(iconBtn);
+
+    // Tier 1 — aria-label
+    for (const b of document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send message" i], button[aria-label="Send a message" i]')) {
+      if (isVisible(b)) return activate(b);
+    }
+
+    // Tier 2 — exact text "Send" / "Send message"
+    for (const b of document.querySelectorAll('button, [role="button"]')) {
+      const t = (b.textContent || '').trim();
+      if ((t === 'Send' || t === 'Send message') && isVisible(b)) return activate(b);
+    }
+
+    // Tier 3 — legacy class
+    const legacy = document.querySelector(
+      'button.msg-form__send-button, .msg-form__send-button, ' +
+      'button[type="submit"][class*="msg-form"]'
+    );
+    if (legacy && isVisible(legacy)) return activate(legacy);
+
+    return false;
   });
 
-  // Step 5 — keyboard fallback if Send button isn't there (or click was a no-op).
   if (!sentByButton) {
-    console.log('[actions] DM Assistant Send not clickable — falling back to plain Enter');
-    await page.evaluate(() => {
-      const t = window.__ortusDM.getMessageInputTarget();
-      if (!t) return;
-      t.focus();
+    console.log('[actions] No Send button on compose page — using plain Enter');
+    // Focus composer and move caret to end before pressing Enter, so the
+    // shortcut sends instead of inserting a newline mid-message.
+    const focused = await page.evaluate(() => {
+      const composer = document.querySelector(
+        'div[role="textbox"][aria-label*="Write a message" i], ' +
+        '.msg-form__contenteditable, ' +
+        '.msg-form div[contenteditable="true"], ' +
+        '[role="textbox"][contenteditable="true"]'
+      );
+      if (!composer) return false;
+      composer.focus();
       try {
         const range = document.createRange();
-        range.selectNodeContents(t);
+        range.selectNodeContents(composer);
         range.collapse(false);
         const sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
       } catch { /* */ }
+      return true;
     });
-    // Plain Enter (LinkedIn's "Press Enter to send" setting).
+    if (!focused) {
+      throw new Error('MESSAGE_SEND_FAILED: composer not focusable for Enter shortcut');
+    }
+    // PLAIN Enter — Ortus accounts have "Press Enter to send message" enabled.
     await page.keyboard.press('Enter');
     await new Promise(r => setTimeout(r, 250));
-    // Belt-and-suspenders for accounts with the setting OFF.
+    // Cmd+Enter and Ctrl+Enter as belt-and-suspenders.
     await page.keyboard.down('Meta');
     await page.keyboard.press('Enter');
     await page.keyboard.up('Meta');
@@ -1043,10 +1068,12 @@ export async function sendMessage(page, message) {
     await page.keyboard.press('Enter');
     await page.keyboard.up('Control');
   } else {
-    console.log('[actions] Clicked Send via DM Assistant');
+    console.log('[actions] Clicked Send button on compose page');
   }
 
-  // Step 6 — honest verification (no more lying).
+  // ── Honest verification (preserved from 2.8.46) ──
+  // Old logic falsely returned "sent" whenever a class selector didn't
+  // match. Now we require positive proof.
   await new Promise(r => setTimeout(r, 2500));
   const verified = await page.evaluate((sentText) => {
     const editor = document.querySelector(
@@ -1088,22 +1115,6 @@ export async function sendMessage(page, message) {
     throw new Error(`MESSAGE_SEND_FAILED: send not confirmed (${why})`);
   }
   console.log(`[actions] ✓ Message sent (composerEmpty=${verified.composerEmpty}, foundInThread=${verified.foundInThread})`);
-
-  // Close the floating bubble.
-  await page.evaluate(() => {
-    const bubble = document.querySelector(
-      '.msg-overlay-conversation-bubble, [class*="msg-overlay-conversation"]'
-    );
-    if (!bubble) return;
-    const closeBtn = bubble.querySelector(
-      'button[aria-label*="Close your conversation" i], ' +
-      'button[aria-label="Close" i], ' +
-      '.msg-overlay-bubble-header__control--close, ' +
-      'button[aria-label*="Close" i]'
-    );
-    if (closeBtn) { try { closeBtn.click(); } catch { /* */ } }
-  });
-  await new Promise(r => setTimeout(r, 500));
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
