@@ -1386,11 +1386,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.cc = pName;
               sheetData.auditAction = 'Connection sent';
             } else if (result.action === 'message_sent') {
-              sheetData.status = 'Done';
+              // 2.8.49: status "DM Sent" (was "Done"). Keeps CC color (green
+              // from check_status) intact — the catch-all CC conditional-
+              // format rule excludes "Check Done." and "DM Sent".
+              sheetData.status = 'DM Sent';
               sheetData.message = hyperSent;
               sheetData.auditAction = 'Message sent';
             } else if (result.action === 'op_message_sent') {
-              sheetData.status = 'Done';
+              sheetData.status = 'DM Sent';
               sheetData.op = hyperSent;
               // Phase 2.8.17 (H-02): when this run was a Connect campaign that
               // routed a Free-to-Open-Profile lead via the OP path, also stamp
