@@ -276,6 +276,20 @@ async function typeIntoField(page, text) {
           });
           el.dispatchEvent(pasteEvent);
         } catch { /* */ }
+
+        // 2.8.45: dispatch InputEvent so React's onChange fires. Without this,
+        // LinkedIn's React state thinks the composer is empty and keeps the
+        // Send button disabled even though the text is visible. Mirrors what
+        // the LinkedIn DM Assistant extension does after paste.
+        try {
+          el.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            cancelable: false,
+            inputType: 'insertText',
+            data: value,
+          }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch { /* */ }
       }
 
       const got = isTextarea || isInput ? el.value : (el.textContent || el.innerText || '');
@@ -972,93 +986,119 @@ export async function sendMessage(page, message) {
   const typed = await typeIntoField(page, message);
   if (!typed) throw new Error('Could not type message');
 
-  // 2.8.44: rewrite Send finder to be class-rotation-proof. Orbita-Browser
-  // (GoLogin) is being served the 2026 LinkedIn redesign which has obfuscated
-  // every `msg-form*` class — the old chain matched nothing in Orbita. We
-  // now find Send by aria-label or text content "Send" (visible only),
-  // keeping the legacy classes as a defensive last-tier fallback.
-  const enabled = await page.evaluate(async () => {
+  // 2.8.45: rewrite Send finder using LinkedIn DM Assistant's proven pattern.
+  // The 2026 LinkedIn redesign obfuscates every `msg-form*` class, so we now:
+  //   - prefer `[data-test-icon*="send"]` (stable LinkedIn data attr)
+  //   - then aria-label="Send", then exact text "Send"
+  //   - activate via full event sequence (focus + mousedown + mouseup + click)
+  //     instead of bare .click() — LinkedIn's React handlers are bound to
+  //     pointer events, not the synthetic click.
+  // After click we verify the composer cleared. If it didn't, fall back to
+  // Cmd+Enter on the composer (LinkedIn's built-in keyboard shortcut for
+  // sending — works regardless of button rendering).
+  const sendOutcome = await page.evaluate(async () => {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const isVisible = (el) => {
+      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+    };
+
     const findBtn = () => {
-      const seen = new Set();
-      const out = [];
-      const push = (b, tier) => {
-        if (!b || seen.has(b)) return;
-        if (b.offsetWidth <= 0 || b.offsetHeight <= 0) return;
-        seen.add(b);
-        out.push({ b, tier });
-      };
-      // Tier 1 — aria-label "Send"
-      document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send a message" i]')
-        .forEach(b => push(b, 1));
-      // Tier 2 — button whose entire text is "Send"
-      document.querySelectorAll('button, [role="button"]').forEach(b => {
+      // Tier 0 — `[data-test-icon*="send"]` is LinkedIn's most stable signal
+      // for the Send button (used by the DM Assistant extension).
+      const sendIcon = document.querySelector('[data-test-icon*="send"]');
+      const iconBtn = sendIcon?.closest?.('button');
+      if (iconBtn && isVisible(iconBtn)) return iconBtn;
+
+      // Tier 1 — aria-label "Send" / "Send a message"
+      for (const b of document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send a message" i]')) {
+        if (isVisible(b)) return b;
+      }
+
+      // Tier 2 — button whose entire text is "Send" or "Send message"
+      for (const b of document.querySelectorAll('button, [role="button"]')) {
         const t = (b.textContent || '').trim();
-        if (t === 'Send') push(b, 2);
-      });
-      // Tier 3 — legacy class-based selectors (in case some layouts still use them)
-      document.querySelectorAll(
+        if ((t === 'Send' || t === 'Send message') && isVisible(b)) return b;
+      }
+
+      // Tier 3 — legacy class-based selectors (defensive fallback)
+      for (const b of document.querySelectorAll(
         'button[type="submit"][class*="msg-form"], ' +
         'button[class*="msg-form__send-button"], ' +
         '.msg-form__send-button'
-      ).forEach(b => push(b, 3));
-      out.sort((a, b) => a.tier - b.tier);
-      return out[0]?.b || null;
-    };
-    for (let i = 0; i < 20; i++) {
-      const btn = findBtn();
-      if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-        return { ok: true };
+      )) {
+        if (isVisible(b)) return b;
       }
+
+      return null;
+    };
+
+    // Wait up to 3s for an enabled button to appear.
+    let btn = null;
+    for (let i = 0; i < 20; i++) {
+      btn = findBtn();
+      if (btn) break;
       await sleep(150);
     }
-    const btn = findBtn();
-    if (!btn) return { ok: false, reason: 'send-button-not-found' };
-    return {
-      ok: false,
-      reason: 'send-button-disabled',
-      disabled: btn.disabled,
-      ariaDisabled: btn.getAttribute('aria-disabled'),
-      textContent: (document.querySelector(
+
+    if (!btn) {
+      const composerText = (document.querySelector(
         '[class*="msg-form__contenteditable"], [aria-label*="Write a message" i], [role="textbox"][contenteditable="true"]'
-      )?.textContent || '').substring(0, 40),
-    };
+      )?.textContent || '').substring(0, 40);
+      return { ok: false, reason: 'send-button-not-found', composerText };
+    }
+
+    // Activate via full pointer-event sequence (DM Assistant pattern).
+    try {
+      btn.scrollIntoView?.({ block: 'center' });
+      btn.focus?.();
+      btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      btn.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+      btn.click();
+    } catch (e) {
+      return { ok: false, reason: 'send-click-threw', error: e?.message };
+    }
+
+    return { ok: true };
   });
 
-  if (!enabled.ok) {
-    throw new Error(`MESSAGE_SEND_FAILED: ${enabled.reason}${enabled.textContent !== undefined ? ` (composer text: "${enabled.textContent}")` : ''}`);
+  if (!sendOutcome.ok && sendOutcome.reason !== 'send-button-not-found') {
+    throw new Error(`MESSAGE_SEND_FAILED: ${sendOutcome.reason}${sendOutcome.error ? ` (${sendOutcome.error})` : ''}`);
   }
 
-  // Click via the same finder (single source of truth).
-  const sendClicked = await page.evaluate(() => {
-    const seen = new Set();
-    const out = [];
-    const push = (b, tier) => {
-      if (!b || seen.has(b)) return;
-      if (b.offsetWidth <= 0 || b.offsetHeight <= 0) return;
-      seen.add(b);
-      out.push({ b, tier });
-    };
-    document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send a message" i]')
-      .forEach(b => push(b, 1));
-    document.querySelectorAll('button, [role="button"]').forEach(b => {
-      const t = (b.textContent || '').trim();
-      if (t === 'Send') push(b, 2);
-    });
-    document.querySelectorAll(
-      'button[type="submit"][class*="msg-form"], ' +
-      'button[class*="msg-form__send-button"], ' +
-      '.msg-form__send-button'
-    ).forEach(b => push(b, 3));
-    out.sort((a, b) => a.tier - b.tier);
-    const btn = out[0]?.b;
-    if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-      btn.click();
+  // If the button finder failed entirely, try the Cmd+Enter keyboard
+  // shortcut directly on the composer. Works even when the Send button
+  // isn't rendered (e.g., a layout where the button only appears on hover
+  // or when React state thinks the composer is empty but the user has typed).
+  if (!sendOutcome.ok) {
+    console.log('[actions] Send button not found — trying Cmd+Enter on composer');
+    const focused = await page.evaluate(() => {
+      const composer = document.querySelector(
+        '[role="textbox"][contenteditable="true"], ' +
+        '[aria-label*="Write a message" i], ' +
+        '.msg-form__contenteditable, ' +
+        '.msg-form div[contenteditable="true"]'
+      );
+      if (!composer) return false;
+      composer.focus();
       return true;
+    });
+    if (!focused) {
+      throw new Error(`MESSAGE_SEND_FAILED: send-button-not-found (composer text: "${sendOutcome.composerText || ''}")`);
     }
-    return false;
-  });
-  if (!sendClicked) throw new Error('MESSAGE_SEND_FAILED: could not click Send button');
+    // Cmd on Mac, Control on Windows/Linux. LinkedIn binds both.
+    await page.keyboard.down('Meta');
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Meta');
+    // Belt-and-suspenders: also try Ctrl+Enter (in case Orbita reports as Linux).
+    await new Promise(r => setTimeout(r, 200));
+    await page.keyboard.down('Control');
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Control');
+  }
 
   // Verify send via multiple signals — accept ANY of:
   //   - composer is now empty (LinkedIn clears on success)
