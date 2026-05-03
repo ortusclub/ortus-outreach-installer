@@ -15,6 +15,17 @@
  */
 
 import { randomDelay, clickByAria, clickByText } from './helpers.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+// 2.8.47: verbatim port of the LinkedIn DM Assistant content.js, injected
+// into the page so we can call its DOM helpers directly. Read once at
+// module load. Source-of-truth lives at src/linkedin/dm-assistant-injection.js.
+const _DM_ASSISTANT_SCRIPT = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'dm-assistant-injection.js'),
+  'utf8'
+);
 
 // Matches Sales Navigator profile URLs (/sales/people/… or /sales/lead/…).
 // Kept in sync with the identical constant in outreach.js — duplication here
@@ -930,18 +941,33 @@ export async function sendConnectionRequest(page, noteArg) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export async function sendMessage(page, message) {
-  // ── 2.8.47 — Mirror LinkedIn DM Assistant flow verbatim ──────────────
-  // All helpers below are direct ports of:
-  // /Users/antoniovarlese/Desktop/Projects/LinkedIn DM Assistant/content.js
-  // The DM Assistant works in Orbita; mirroring its DOM logic exactly is
-  // the surest way to make the bot work too.
+  // ── 2.8.47 — Inject DM Assistant content.js verbatim, call its functions ──
+  // The DM Assistant extension is proven to work on these LinkedIn profiles.
+  // We inject its full content.js (chrome.runtime listeners stripped) into
+  // the page, then call openMessageBox / fillTextTarget / clickSendMessageButton
+  // directly. This is the closest possible mirror of "what the extension does".
   const currentUrl = page.url();
   if (!/\/in\/[^/?#]+/.test(currentUrl)) {
     throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${currentUrl})`);
   }
   console.log(`[actions] sendMessage on ${currentUrl}`);
 
-  // Close any pre-existing message bubbles to prevent bleed from prior lead.
+  // Inject DM Assistant once per page. The script's own loaded-flag prevents
+  // duplicate execution.
+  await page.evaluate((script) => {
+    if (window.__ORTUS_DM_ASSISTANT_LOADED__) return;
+    const s = document.createElement('script');
+    s.textContent = script;
+    document.head.appendChild(s);
+  }, _DM_ASSISTANT_SCRIPT);
+
+  // Verify the helpers are exposed.
+  const ready = await page.evaluate(() => !!(window.__ortusDM && window.__ortusDM.openMessageBox));
+  if (!ready) {
+    throw new Error('MESSAGE_SEND_FAILED: DM Assistant injection did not expose helpers');
+  }
+
+  // Close any pre-existing bubbles to prevent bleed from a prior lead.
   await page.evaluate(() => {
     document.querySelectorAll(
       '.msg-overlay-bubble-header__control--close, ' +
@@ -950,305 +976,50 @@ export async function sendMessage(page, message) {
   });
   await new Promise(r => setTimeout(r, 400));
 
-  // ── Open + Fill: one big browser-side execution mirroring the DM Assistant ──
-  const opened = await page.evaluate(async (msg) => {
-    // ─── DM Assistant helpers (verbatim port) ───────────────────────────
-    const isActionCandidate = (el) => {
-      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return false;
-      const s = window.getComputedStyle(el);
-      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
-    };
-    const isVisibleElement = isActionCandidate;
-    const activateElement = (el) => {
-      if (!el) return false;
-      el.scrollIntoView?.({ block: 'center', inline: 'center' });
-      el.focus?.();
-      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
-      el.click();
-      return true;
-    };
-    const normalize = (v) => (v || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const isExactish = (v, t) => v === t || v.startsWith(`${t} `) || v.endsWith(` ${t}`);
-    const getTextValues = (el) => {
-      const root = el.getRootNode?.() || document;
-      const labelledBy = (el.getAttribute('aria-labelledby') || '')
-        .split(/\s+/)
-        .map((id) => root.getElementById?.(id)?.textContent || '')
-        .join(' ');
-      return [
-        el.innerText, el.textContent,
-        el.getAttribute('aria-label'), el.getAttribute('title'),
-        labelledBy,
-      ].map(normalize).filter(Boolean);
-    };
-    const doesMatch = (el, targets, opts = {}) => {
-      const values = getTextValues(el);
-      return targets.some((t) => values.some((v) => (
-        opts.exact ? isExactish(v, t) : v === t || v.includes(t)
-      )));
-    };
-    const querySelectorAllDeep = (root, sel) => {
-      if (!root?.querySelectorAll) return [];
-      const out = [], seen = new Set();
-      const visit = (r) => {
-        if (!r?.querySelectorAll) return;
-        r.querySelectorAll(sel).forEach((el) => { if (!seen.has(el)) { seen.add(el); out.push(el); } });
-        r.querySelectorAll('*').forEach((el) => { if (el.shadowRoot) visit(el.shadowRoot); });
-      };
-      visit(root);
-      return out;
-    };
-    const isSidebar = (el) => Boolean(el.closest?.('aside, [role="complementary"], .scaffold-layout__aside, .ad-banner-container'));
-    const isUnsafeRightPanel = (el) => {
-      if (!el) return true;
-      if (isSidebar(el)) return true;
-      const r = el.getBoundingClientRect();
-      const inRightRail = r.left >= Math.max(window.innerWidth * 0.58, 860);
-      if (el.closest?.('.scaffold-layout__aside, .scaffold-layout__sidebar, .pv-profile-sticky-header, .ad-banner-container, [aria-label*="People also viewed"], [aria-label*="People you may know"], [aria-label*="Similar profiles"]')) return true;
-      if (!inRightRail) return false;
-      const card = el.closest?.('section, article, aside, [role="complementary"]');
-      const txt = normalize(card?.innerText || card?.textContent);
-      return ['people also viewed', 'people you may know', 'similar profiles', 'more profiles for you', 'other profiles viewed']
-        .some((label) => txt.includes(label));
-    };
-    const findButtonInRoot = (root, texts, opts = {}) => {
-      if (!root) return null;
-      const targets = texts.map((t) => t.toLowerCase());
-      const cands = querySelectorAllDeep(root, 'button, [role="button"], a[role="button"]')
-        .filter((el) => isActionCandidate(el) && !isUnsafeRightPanel(el));
-      for (const el of cands) {
-        if (doesMatch(el, targets, opts)) return el;
-      }
-      return null;
-    };
-    const findTextActionInRoot = (root, texts, opts = {}) => {
-      if (!root) return null;
-      const targets = texts.map((t) => t.toLowerCase());
-      return querySelectorAllDeep(root, "button, [role='button'], a[role='button'], button *, [role='button'] *, a[role='button'] *")
-        .filter(isVisibleElement)
-        .filter((el) => {
-          const values = getTextValues(el);
-          return targets.some((t) => values.some((v) => (
-            opts.exact ? isExactish(v, t) : v === t || v.includes(t)
-          )));
-        })
-        .map((el) => el.closest('button, [role="button"], a[role="button"]') || el)
-        .filter((el, i, arr) => arr.indexOf(el) === i)
-        .find((el) => isActionCandidate(el) && !isUnsafeRightPanel(el)) || null;
-    };
-    const findProfileHeaderRoot = (heading, main) => {
-      const headingRect = heading.getBoundingClientRect();
-      const candidates = [];
-      let node = heading;
-      while (node && node !== document.body) {
-        if (node.nodeType === 1 && (node === main || node.matches?.('section, article, div'))) {
-          const r = node.getBoundingClientRect();
-          const hasNearbyAction = Array.from(node.querySelectorAll('button, [role="button"], a[role="button"]'))
-            .some((b) => isProfileHeaderAction(b, headingRect));
-          if (hasNearbyAction && r.height > 0 && r.height <= 760) {
-            candidates.push({ node, area: r.width * r.height });
-          }
-        }
-        if (node === main) break;
-        node = node.parentElement;
-      }
-      candidates.sort((a, b) => a.area - b.area);
-      return candidates[0]?.node || null;
-    };
-    const isProfileHeaderAction = (el, headingRect) => {
-      if (!isActionCandidate(el) || isUnsafeRightPanel(el)) return false;
-      const r = el.getBoundingClientRect();
-      const near = (
-        r.top >= headingRect.top - 80 &&
-        r.top <= headingRect.bottom + 520 &&
-        r.left < Math.max(window.innerWidth * 0.72, headingRect.left + 780)
-      );
-      const hasText = doesMatch(el, ['message', 'more', 'more actions', 'connect', 'follow'], { exact: false });
-      return near && hasText;
-    };
-    const getTopCardRoot = () => {
-      const main = document.querySelector('main');
-      // 2.8.47: also accept h2 — the 2026 redesign demoted profile name to h2.
-      const heading = main?.querySelector('h1, h2') ||
-                      document.querySelector('main .text-heading-xlarge, main h1, main h2');
-      if (heading) {
-        const root = findProfileHeaderRoot(heading, main);
-        if (root) return root;
-      }
-      for (const sel of ['main .pv-top-card', 'main .pv-top-card-v2-ctas__custom', 'main section.artdeco-card']) {
-        const root = document.querySelector(sel);
-        if (root) return root;
-      }
-      return main; // 2.8.47: fall back to the whole main, not null
-    };
-    const getProfileMessageButton = () => {
-      const topCard = getTopCardRoot();
-      const tcBtn = findTextActionInRoot(topCard, ['Message'], { exact: true }) ||
-                    findButtonInRoot(topCard, ['Message'], { exact: true });
-      if (tcBtn) return tcBtn;
-      const selectors = [
-        'main button[aria-label^="Message " i]',
-        'main button[aria-label*=" Message " i]',
-        'main button:has([data-test-icon="send-privately-small"])',
-        'button[aria-label^="Message " i]',
-        'button:has([data-test-icon="send-privately-small"])',
-      ];
-      for (const sel of selectors) {
-        try {
-          const b = document.querySelector(sel);
-          if (b && isActionCandidate(b) && !isUnsafeRightPanel(b)) return b;
-        } catch { /* :has unsupported */ }
-      }
-      const icon = document.querySelector('[data-test-icon="send-privately-small"]');
-      const btn = icon?.closest?.('button');
-      return (btn && isActionCandidate(btn) && !isUnsafeRightPanel(btn)) ? btn : null;
-    };
-
-    const isTypingTarget = (t) => {
-      if (!t) return false;
-      const tag = (t.tagName || '').toUpperCase();
-      return tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable === true ||
-        t.closest?.('[contenteditable="true"], [role="textbox"]');
-    };
-    const getComposeRoots = () => {
-      const dialog = document.querySelector('[role="dialog"], .artdeco-modal');
-      return dialog ? [dialog, document] : [document];
-    };
-    const getMessageInputTarget = (opts = {}) => {
-      const active = document.activeElement;
-      if (!opts.ignoreActive && isTypingTarget(active)) return active;
-      for (const root of getComposeRoots()) {
-        const t = root.querySelector(
-          'textarea, [contenteditable="true"][role="textbox"], [contenteditable="true"], .msg-form__contenteditable'
-        );
-        if (t) return t;
-      }
-      return null;
-    };
-    const fillTextTarget = (target, text) => {
-      target.focus();
-      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
-        const proto = target.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-        if (setter) setter.call(target, text); else target.value = text;
-        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-        target.dispatchEvent(new Event('change', { bubbles: true }));
-        return;
-      }
-      // contenteditable — DM Assistant's path verbatim.
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(target);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      let pasted = false;
-      try {
-        const dt = new DataTransfer();
-        dt.setData('text/plain', text);
-        const evt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-        pasted = !target.dispatchEvent(evt);
-      } catch { pasted = false; }
-      if (!pasted) {
-        document.execCommand('selectAll', false);
-        const ok = document.execCommand('insertText', false, text);
-        if (!ok) target.textContent = text;
-      }
-      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-    };
-
-    // ─── Step 1: open the message bubble ──────────────────────────────
-    const messageBtn = getProfileMessageButton();
-    if (!messageBtn) {
-      return { ok: false, step: 'open', reason: 'message-btn-not-found' };
-    }
-    activateElement(messageBtn);
-
-    // ─── Step 2: wait for composer ────────────────────────────────────
-    let target = null;
-    for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 200));
-      target = getMessageInputTarget({ ignoreActive: true });
-      if (target) break;
-    }
-    if (!target) {
-      return { ok: false, step: 'composer', reason: 'composer-not-found' };
-    }
-
-    // ─── Step 3: fill text using DM Assistant's exact paste path ──────
-    fillTextTarget(target, msg);
-
-    return { ok: true };
-  }, message);
-
-  if (!opened.ok) {
-    throw new Error(`MESSAGE_SEND_FAILED: ${opened.step} (${opened.reason})`);
+  // Step 1 — call DM Assistant's openMessageBox (top-card → broad selectors → More dropdown).
+  const opened = await page.evaluate(async () => {
+    try { return !!(await window.__ortusDM.openMessageBox()); }
+    catch (e) { return false; }
+  });
+  if (!opened) {
+    throw new Error('MESSAGE_SEND_FAILED: openMessageBox returned false (Message button not found by DM Assistant)');
   }
-  console.log('[actions] Bubble opened and message typed');
 
-  // Let React register the input.
+  // Step 2 — wait for the composer to appear.
+  let composerReady = false;
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 200));
+    const found = await page.evaluate(() =>
+      !!window.__ortusDM.getMessageInputTarget({ ignoreActive: true })
+    );
+    if (found) { composerReady = true; break; }
+  }
+  if (!composerReady) {
+    throw new Error('MESSAGE_SEND_FAILED: composer did not appear after openMessageBox');
+  }
+
+  // Step 3 — fill text using DM Assistant's exact paste pipeline.
+  await page.evaluate((msg) => {
+    const t = window.__ortusDM.getMessageInputTarget({ ignoreActive: true });
+    if (!t) return;
+    window.__ortusDM.fillTextTarget(t, msg);
+  }, message);
+  console.log('[actions] Bubble opened and text filled (via DM Assistant)');
+
+  // Let React register the input event before looking for Send.
   await new Promise(r => setTimeout(r, 700));
 
-  // ─── Step 4: click Send (DM Assistant's clickSendMessageButton, ported) ─
+  // Step 4 — click Send via DM Assistant.
   const sentByButton = await page.evaluate(() => {
-    const isActionCandidate = (el) => {
-      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return false;
-      const s = window.getComputedStyle(el);
-      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
-    };
-    const activateElement = (el) => {
-      if (!el) return false;
-      el.scrollIntoView?.({ block: 'center', inline: 'center' });
-      el.focus?.();
-      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
-      el.click();
-      return true;
-    };
-    const getComposeRoots = () => {
-      const dialog = document.querySelector('[role="dialog"], .artdeco-modal');
-      const overlays = [...document.querySelectorAll('.msg-overlay-conversation-bubble, [class*="msg-overlay-conversation"]')];
-      const roots = [];
-      if (dialog) roots.push(dialog);
-      roots.push(...overlays);
-      roots.push(document);
-      return roots;
-    };
-    const findSendInRoot = (root) => {
-      // Prefer text "Send message" / "Send" inside the root.
-      const cands = [...(root.querySelectorAll?.('button, [role="button"]') || [])];
-      for (const b of cands) {
-        if (!isActionCandidate(b)) continue;
-        const t = (b.textContent || '').trim().toLowerCase();
-        const a = (b.getAttribute('aria-label') || '').toLowerCase();
-        if (t === 'send message' || t === 'send' || a === 'send' || a === 'send message') return b;
-      }
-      return null;
-    };
-    for (const root of getComposeRoots()) {
-      const b = findSendInRoot(root);
-      if (b) return activateElement(b);
-    }
-    const icon = document.querySelector('[data-test-icon*="send"], .msg-form__send-button');
-    const btn = icon?.closest?.('button') || icon;
-    if (btn && isActionCandidate(btn)) return activateElement(btn);
-    return false;
+    try { return !!window.__ortusDM.clickSendMessageButton(); }
+    catch { return false; }
   });
 
-  // ─── Step 5: if button click failed, fall back to keyboard sending ──
+  // Step 5 — keyboard fallback if Send button isn't there (or click was a no-op).
   if (!sentByButton) {
-    console.log('[actions] Send button not found — falling back to plain Enter');
+    console.log('[actions] DM Assistant Send not clickable — falling back to plain Enter');
     await page.evaluate(() => {
-      const t = document.querySelector(
-        'div[role="textbox"][aria-label*="Write a message" i], ' +
-        '.msg-form__contenteditable, ' +
-        '.msg-form div[contenteditable="true"], ' +
-        '[role="textbox"][contenteditable="true"]'
-      );
+      const t = window.__ortusDM.getMessageInputTarget();
       if (!t) return;
       t.focus();
       try {
@@ -1260,10 +1031,10 @@ export async function sendMessage(page, message) {
         sel.addRange(range);
       } catch { /* */ }
     });
-    // Plain Enter — Zhelena and other accounts have "Press Enter to send".
+    // Plain Enter (LinkedIn's "Press Enter to send" setting).
     await page.keyboard.press('Enter');
     await new Promise(r => setTimeout(r, 250));
-    // Belt-and-suspenders.
+    // Belt-and-suspenders for accounts with the setting OFF.
     await page.keyboard.down('Meta');
     await page.keyboard.press('Enter');
     await page.keyboard.up('Meta');
@@ -1272,13 +1043,10 @@ export async function sendMessage(page, message) {
     await page.keyboard.press('Enter');
     await page.keyboard.up('Control');
   } else {
-    console.log('[actions] Clicked Send button');
+    console.log('[actions] Clicked Send via DM Assistant');
   }
 
-  // ─── Step 6: HONEST verification ────────────────────────────────────
-  // Old logic falsely returned "sent" whenever a class selector didn't
-  // match (null editor → '' → empty=true). New logic requires positive
-  // proof: composer found AND empty, OR our message tail is in the thread.
+  // Step 6 — honest verification (no more lying).
   await new Promise(r => setTimeout(r, 2500));
   const verified = await page.evaluate((sentText) => {
     const editor = document.querySelector(
@@ -1321,7 +1089,7 @@ export async function sendMessage(page, message) {
   }
   console.log(`[actions] ✓ Message sent (composerEmpty=${verified.composerEmpty}, foundInThread=${verified.foundInThread})`);
 
-  // Close the floating bubble cleanly.
+  // Close the floating bubble.
   await page.evaluate(() => {
     const bubble = document.querySelector(
       '.msg-overlay-conversation-bubble, [class*="msg-overlay-conversation"]'
