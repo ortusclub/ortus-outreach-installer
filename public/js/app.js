@@ -4246,3 +4246,12 @@ function restoreIntroState() {
   setIntroMode(active);
 }
 document.addEventListener('DOMContentLoaded', restoreIntroState);
+// app.js is loaded as <script type="module">, so top-level `function`
+// declarations are module-scoped. onclick="setIntroMode(true)" in the HTML
+// can't see them unless we explicitly attach to window. Same pattern as
+// applyPreset / setAddNote / toggleSection above.
+window.setIntroMode = setIntroMode;
+window.saveIntroFields = saveIntroFields;
+// If the script loads after DOMContentLoaded already fired (common with
+// type=module), the listener above won't fire — call once now too.
+if (document.readyState !== 'loading') restoreIntroState();
