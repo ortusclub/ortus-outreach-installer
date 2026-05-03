@@ -173,86 +173,96 @@ export async function getVoyagerDegree(page) {
 }
 
 /**
- * 2.8.40 — Read the connection-degree badge ("1st" / "2nd" / "3rd" / "3rd+")
- * shown next to the profile name. This is the ONE AND ONLY trustworthy signal
- * of connection state per user directive. No Message-button heuristic, no
- * pending-button heuristic, no fallbacks beyond different ways of finding
- * the badge.
+ * 2.8.43 — Read the connection-degree badge ("1st" / "2nd" / "3rd" / "3rd+")
+ * shown next to the profile name. ONLY trustworthy signal of connection state.
  *
  * Returns: '1st' | '2nd' | '3rd' | '3rd+' | null
  *
- * Waits up to 10s for the badge to render before reading. Tries multiple
- * selector strategies because LinkedIn frequently renames CSS classes.
+ * The 2026 LinkedIn redesign:
+ *   - rotated/obfuscated all CSS class names (`_9e348bbd ...`)
+ *   - dropped `dist-value`, `distance-badge`, and `*degree*` classes entirely
+ *   - dropped `aria-label*="degree connection"`
+ *   - moved the badge into a `<p>` tag (not `<span>`) with text `"· 1st"`
+ *   - demoted the profile name from `<h1>` to `<h2>`
+ *
+ * So we can't rely on tag, class, or aria. We TreeWalker the document for any
+ * text node whose trimmed value matches the badge pattern, prefer the one
+ * physically closest to the profile name heading, and ignore matches inside
+ * the "More profiles for you" sidebar / recommendation cards.
  */
 export async function getDegreeBadge(page) {
   try {
-    // Wait for any "1st"/"2nd"/"3rd" text to appear anywhere on the page —
-    // ensures we don't read the DOM before the profile header has rendered.
     await page.waitForFunction(() => {
       const text = document.body?.innerText || '';
-      return /\b(1st|2nd|3rd\+?)\b/.test(text);
-    }, { timeout: 10000 }).catch(() => { /* fall through; selectors below
-                                            handle the not-found case */ });
+      return /(?:^|[\s·])(1st|2nd|3rd\+?)(?:\s|$)/.test(text);
+    }, { timeout: 10000 }).catch(() => { /* fall through */ });
 
     const badge = await page.evaluate(() => {
+      const TOKEN_RE = /^(?:·\s*)?(1st|2nd|3rd\+?)(?:\s*degree)?(?:\s*connection)?$/i;
+      const norm = s => {
+        const t = s.toLowerCase();
+        return (t === '3rd+') ? '3rd+' : t;
+      };
       const isVisible = el => el && el.offsetWidth > 0 && el.offsetHeight > 0;
 
-      // Strategy 1: aria-label like "Xst degree connection". Most stable
-      // signal — survives class-name churn.
-      const ariaEls = document.querySelectorAll(
-        '[aria-label*="1st degree"], [aria-label*="2nd degree"], ' +
-        '[aria-label*="3rd degree"], [aria-label*="degree connection"]'
-      );
+      // Pull profile slug out of the URL so we can validate matches are tied
+      // to the actual profile (not a sidebar recommendation).
+      const slug = (window.location.pathname.match(/\/in\/([^/]+)/) || [])[1] || '';
+
+      // Strategy A — aria-label. Kept first as a defensive fallback in case
+      // LinkedIn restores it on some layouts.
+      const ariaEls = document.querySelectorAll('[aria-label*="degree" i]');
       for (const el of ariaEls) {
-        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-        if (aria.includes('1st degree')) return '1st';
-        if (aria.includes('2nd degree')) return '2nd';
-        if (aria.includes('3rd+ degree') || aria.includes('3rd degree+')) return '3rd+';
-        if (aria.includes('3rd degree')) return '3rd';
+        const a = (el.getAttribute('aria-label') || '').toLowerCase();
+        if (a.includes('1st degree')) return '1st';
+        if (a.includes('2nd degree')) return '2nd';
+        if (a.includes('3rd+ degree') || a.includes('3rd degree+')) return '3rd+';
+        if (a.includes('3rd degree')) return '3rd';
       }
 
-      // Strategy 2: legacy / current class names that historically held the
-      // degree text.
-      const classCandidates = document.querySelectorAll(
-        '.dist-value, .distance-badge, ' +
-        'span[class*="degree"], span[class*="distance"]'
-      );
-      for (const el of classCandidates) {
-        const m = (el.textContent || '').match(/\b(1st|2nd|3rd\+?)\b/);
-        if (m) return m[1];
+      // Strategy B — TreeWalker over text nodes. Collect every match, then
+      // pick the one inside the profile-name container.
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const matches = [];
+      let n;
+      while ((n = w.nextNode())) {
+        const raw = (n.nodeValue || '').trim();
+        const m = raw.match(TOKEN_RE);
+        if (!m) continue;
+        const parent = n.parentElement;
+        if (!parent || !isVisible(parent)) continue;
+        // Reject huge containers — that's a sentence, not a badge.
+        if (parent.offsetWidth > 240) continue;
+        matches.push({ token: norm(m[1]), node: n, parent });
       }
 
-      // Strategy 3: profile-header region. LinkedIn renders the badge as a
-      // small span inside the top section of <main>. Scan all spans there.
-      const topRegions = document.querySelectorAll(
-        'main [class*="top-card"], main .pv-text-details__left-panel, ' +
-        'main section[class*="profile-section"], ' +
-        'main section.artdeco-card, .scaffold-layout__main'
-      );
-      for (const region of topRegions) {
-        const spans = region.querySelectorAll('span');
-        for (const s of spans) {
-          const t = s.textContent.trim();
-          if ((t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') && isVisible(s)) {
-            return t;
+      if (matches.length === 0) return null;
+
+      // Score each match: prefer ones whose container also contains an h1/h2
+      // whose href links to /in/<slug>/ — i.e., the profile owner's name
+      // heading. Walk up to 6 ancestors looking for that anchor.
+      const scoreMatch = ({ parent }) => {
+        let cur = parent;
+        for (let i = 0; i < 6 && cur; i++, cur = cur.parentElement) {
+          // Look for an H1 or H2 inside this ancestor
+          const heading = cur.querySelector?.('h1, h2');
+          if (!heading) continue;
+          // Check for an anchor pointing back to this profile slug
+          const anchors = cur.querySelectorAll?.('a[href*="/in/"]');
+          for (const a of anchors || []) {
+            const href = a.getAttribute('href') || '';
+            if (slug && href.includes(`/in/${slug}`)) return 100 - i; // strong match
+            if (slug && href.includes('/in/') && cur.contains(heading)) return 50 - i;
           }
+          // Heading with no slug-matching anchor still beats nothing
+          return 10 - i;
         }
-      }
+        return 0;
+      };
 
-      // Strategy 4: any visible small span on the page whose entire text is
-      // just the degree token. Last resort — broader sweep that still rejects
-      // hidden fragments and very wide elements (which would mean the text
-      // is part of a sentence, not a badge).
-      const allSpans = document.querySelectorAll('span');
-      for (const s of allSpans) {
-        const t = s.textContent.trim();
-        if ((t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') &&
-            isVisible(s) && s.offsetWidth < 80) {
-          return t;
-        }
-      }
-
-      return null;
+      matches.forEach(m => { m.score = scoreMatch(m); });
+      matches.sort((a, b) => b.score - a.score);
+      return matches[0].token;
     });
 
     console.log(`[helpers] Degree badge: ${badge ?? 'NOT FOUND'}`);
@@ -312,40 +322,59 @@ export async function getConnectionStatus(page) {
       }
 
       // ── 0. Degree badge check — most reliable "already connected" signal ──
-      // "1st" badge means already connected. Present near the name on all profile layouts.
+      // 2.8.43: rewritten for the 2026 LinkedIn redesign. The badge now lives
+      // in a <p> tag (not <span>), text is "· 1st" with a leading bullet, all
+      // class names are obfuscated hashes that rotate. We walk text nodes and
+      // pick the match whose container is tied to the profile's slug heading.
       let degree = null;
-      const degreeEl = document.querySelector('.dist-value, .distance-badge, span[class*="degree"]');
-      if (degreeEl) {
-        const raw = degreeEl.textContent || '';
-        // Extract the actual "1st" / "2nd" / "3rd" / "3rd+" token from whatever
-        // text/aria-label the element contains (avoids strict-equality misses
-        // when the element wraps "1st degree connection ... 1st").
-        const m = raw.match(/\b(1st|2nd|3rd\+?)\b/);
-        if (m) degree = m[1];
-        else degree = raw.trim();
-      }
-      // Fallback: search for "1st", "2nd", "3rd" text near the h1 name
-      if (!degree) {
-        const nameSection = document.querySelector('main .pv-text-details__left-panel, main [class*="top-card"]');
-        if (nameSection) {
-          const spans = nameSection.querySelectorAll('span');
-          for (const s of spans) {
-            const t = s.textContent.trim();
-            if (t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') {
-              degree = t;
-              break;
-            }
-          }
+      {
+        const TOKEN_RE = /^(?:·\s*)?(1st|2nd|3rd\+?)(?:\s*degree)?(?:\s*connection)?$/i;
+        const isVisible = el => el && el.offsetWidth > 0 && el.offsetHeight > 0;
+        const slug = (window.location.pathname.match(/\/in\/([^/]+)/) || [])[1] || '';
+
+        // Aria-label first (defensive, in case LinkedIn brings it back).
+        const ariaEls = document.querySelectorAll('[aria-label*="degree" i]');
+        for (const el of ariaEls) {
+          const a = (el.getAttribute('aria-label') || '').toLowerCase();
+          if (a.includes('1st degree')) { degree = '1st'; break; }
+          if (a.includes('2nd degree')) { degree = '2nd'; break; }
+          if (a.includes('3rd+ degree') || a.includes('3rd degree+')) { degree = '3rd+'; break; }
+          if (a.includes('3rd degree')) { degree = '3rd'; break; }
         }
-      }
-      // Last resort: any small span on the page with just "1st"/"2nd"/"3rd"
-      if (!degree) {
-        const allSpans = document.querySelectorAll('span');
-        for (const s of allSpans) {
-          const t = s.textContent.trim();
-          if ((t === '1st' || t === '2nd' || t === '3rd' || t === '3rd+') && s.offsetWidth > 0 && s.offsetWidth < 50) {
-            degree = t;
-            break;
+
+        if (!degree) {
+          const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          const matches = [];
+          let tn;
+          while ((tn = w.nextNode())) {
+            const raw = (tn.nodeValue || '').trim();
+            const m = raw.match(TOKEN_RE);
+            if (!m) continue;
+            const parent = tn.parentElement;
+            if (!parent || !isVisible(parent)) continue;
+            if (parent.offsetWidth > 240) continue;
+            const tok = m[1].toLowerCase();
+            matches.push({ token: tok === '3rd+' ? '3rd+' : tok, parent });
+          }
+          if (matches.length > 0) {
+            const score = ({ parent }) => {
+              let cur = parent;
+              for (let i = 0; i < 6 && cur; i++, cur = cur.parentElement) {
+                const heading = cur.querySelector?.('h1, h2');
+                if (!heading) continue;
+                const anchors = cur.querySelectorAll?.('a[href*="/in/"]') || [];
+                for (const a of anchors) {
+                  const href = a.getAttribute('href') || '';
+                  if (slug && href.includes(`/in/${slug}`)) return 100 - i;
+                  if (slug && href.includes('/in/')) return 50 - i;
+                }
+                return 10 - i;
+              }
+              return 0;
+            };
+            matches.forEach(m => { m.score = score(m); });
+            matches.sort((a, b) => b.score - a.score);
+            degree = matches[0].token;
           }
         }
       }
