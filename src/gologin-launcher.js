@@ -118,6 +118,18 @@ export async function launchProfile(profileId, token) {
   page.setDefaultNavigationTimeout(30000);
   page.setDefaultTimeout(15000);
 
+  // 2.8.44: auto-handle browser dialogs. LinkedIn's compose page registers a
+  // beforeunload handler when the textarea has unsaved text — if a send fails
+  // and we navigate to the next lead, the dialog blocks Puppeteer until it
+  // times out (and is visible to the user as a "Leave site?" prompt). We're
+  // a bot: dialogs are never useful, always dismiss/accept.
+  page.on('dialog', async (dialog) => {
+    try {
+      if (dialog.type() === 'beforeunload') await dialog.accept();
+      else await dialog.dismiss();
+    } catch { /* already handled */ }
+  });
+
   // Phase 11.2 (D-16): minimize the Chromium window on macOS. Best-effort,
   // fire-and-forget so we don't stall the launch hot path.
   const pid = GL?.processSpawned?.pid;

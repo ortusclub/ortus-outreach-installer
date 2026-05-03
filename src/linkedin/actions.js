@@ -972,29 +972,43 @@ export async function sendMessage(page, message) {
   const typed = await typeIntoField(page, message);
   if (!typed) throw new Error('Could not type message');
 
-  // Wait for a Send button to become enabled. Uses OpenOutreach's
-  // semantic-first selector chain so it survives LinkedIn class renames.
+  // 2.8.44: rewrite Send finder to be class-rotation-proof. Orbita-Browser
+  // (GoLogin) is being served the 2026 LinkedIn redesign which has obfuscated
+  // every `msg-form*` class — the old chain matched nothing in Orbita. We
+  // now find Send by aria-label or text content "Send" (visible only),
+  // keeping the legacy classes as a defensive last-tier fallback.
   const enabled = await page.evaluate(async () => {
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    const selectorChain = [
-      'button[type="submit"][class*="msg-form"]',
-      'button[class*="msg-form__send-button"]',
-      '.msg-form__send-button',
-      'button[class*="send-btn"]',
-      'button[class*="send-button"]',
-      'form button[type="submit"]',
-    ];
     const findBtn = () => {
-      for (const sel of selectorChain) {
-        const b = document.querySelector(sel);
-        if (b) return b;
-      }
-      return null;
+      const seen = new Set();
+      const out = [];
+      const push = (b, tier) => {
+        if (!b || seen.has(b)) return;
+        if (b.offsetWidth <= 0 || b.offsetHeight <= 0) return;
+        seen.add(b);
+        out.push({ b, tier });
+      };
+      // Tier 1 — aria-label "Send"
+      document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send a message" i]')
+        .forEach(b => push(b, 1));
+      // Tier 2 — button whose entire text is "Send"
+      document.querySelectorAll('button, [role="button"]').forEach(b => {
+        const t = (b.textContent || '').trim();
+        if (t === 'Send') push(b, 2);
+      });
+      // Tier 3 — legacy class-based selectors (in case some layouts still use them)
+      document.querySelectorAll(
+        'button[type="submit"][class*="msg-form"], ' +
+        'button[class*="msg-form__send-button"], ' +
+        '.msg-form__send-button'
+      ).forEach(b => push(b, 3));
+      out.sort((a, b) => a.tier - b.tier);
+      return out[0]?.b || null;
     };
     for (let i = 0; i < 20; i++) {
       const btn = findBtn();
       if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-        return { ok: true, text: (btn.textContent || '').trim().substring(0, 30) };
+        return { ok: true };
       }
       await sleep(150);
     }
@@ -1005,7 +1019,9 @@ export async function sendMessage(page, message) {
       reason: 'send-button-disabled',
       disabled: btn.disabled,
       ariaDisabled: btn.getAttribute('aria-disabled'),
-      textContent: (document.querySelector('[class*="msg-form__contenteditable"]')?.textContent || '').substring(0, 40),
+      textContent: (document.querySelector(
+        '[class*="msg-form__contenteditable"], [aria-label*="Write a message" i], [role="textbox"][contenteditable="true"]'
+      )?.textContent || '').substring(0, 40),
     };
   });
 
@@ -1013,19 +1029,32 @@ export async function sendMessage(page, message) {
     throw new Error(`MESSAGE_SEND_FAILED: ${enabled.reason}${enabled.textContent !== undefined ? ` (composer text: "${enabled.textContent}")` : ''}`);
   }
 
-  // Click via the same selector chain
+  // Click via the same finder (single source of truth).
   const sendClicked = await page.evaluate(() => {
-    const selectorChain = [
-      'button[type="submit"][class*="msg-form"]',
-      'button[class*="msg-form__send-button"]',
-      '.msg-form__send-button',
-      'button[class*="send-btn"]',
-      'button[class*="send-button"]',
-      'form button[type="submit"]',
-    ];
-    for (const sel of selectorChain) {
-      const btn = document.querySelector(sel);
-      if (btn && !btn.disabled) { btn.click(); return true; }
+    const seen = new Set();
+    const out = [];
+    const push = (b, tier) => {
+      if (!b || seen.has(b)) return;
+      if (b.offsetWidth <= 0 || b.offsetHeight <= 0) return;
+      seen.add(b);
+      out.push({ b, tier });
+    };
+    document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send a message" i]')
+      .forEach(b => push(b, 1));
+    document.querySelectorAll('button, [role="button"]').forEach(b => {
+      const t = (b.textContent || '').trim();
+      if (t === 'Send') push(b, 2);
+    });
+    document.querySelectorAll(
+      'button[type="submit"][class*="msg-form"], ' +
+      'button[class*="msg-form__send-button"], ' +
+      '.msg-form__send-button'
+    ).forEach(b => push(b, 3));
+    out.sort((a, b) => a.tier - b.tier);
+    const btn = out[0]?.b;
+    if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+      btn.click();
+      return true;
     }
     return false;
   });
