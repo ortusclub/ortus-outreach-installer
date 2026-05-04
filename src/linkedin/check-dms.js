@@ -542,7 +542,11 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
       }
 
       try {
-        const composeUrl = `https://www.linkedin.com/messaging/thread/?recipient=${encodeURIComponent(publicId)}`;
+        // Same URL sendMessage uses (actions.js:955). /messaging/compose/
+        // opens the existing thread for that recipient if one exists, or a
+        // fresh compose pane otherwise — and the prior message history is
+        // visible in both cases.
+        const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
         if (typeof session.page.goto === 'function') {
           await session.page.goto(composeUrl, {
             waitUntil: 'domcontentloaded',
