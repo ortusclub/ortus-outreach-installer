@@ -734,10 +734,54 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     //   - connect_only: additionally require no prior CC history.
     //   - messaging modes (OP/DM/InMail): additionally skip rows where
     //     the campaign-specific column is already filled.
+    // 2.9.0: detect new schema. If the sheet has a Stage column, Stage is
+    // the single source of truth for filtering. Old sheets fall through to
+    // the legacy CC/OP/Message/InMail logic below — unchanged.
+    const hasStageSchema = rows.length > 0 && ('Stage' in rows[0] || 'stage' in rows[0]);
+
     const targets = rows.filter(row => {
       const url = extractLinkedInUrl(row, linkedinColumn);
       if (!url) return false;
 
+      // ── 2.9.0 Stage-based filtering ─────────────────────────────
+      if (hasStageSchema) {
+        const stage = (row['Stage'] || row['stage'] || '').toString().trim();
+        const TERMINAL = new Set(['DM Sent', 'IC Sent', 'InM Sent', 'OP Sent', 'Replied', 'Done', 'Skipped']);
+
+        if (mode === 'check_status') {
+          return stage === 'Connect Pending';
+        }
+        if (mode === 'message_only') {
+          // Standard DM and Introduction sub-mode both source from
+          // Connected · DM Now.
+          if (stage !== 'Connected · DM Now') return false;
+          const prev = state.processed[url];
+          if (prev && (prev.action === 'message_sent' || prev.action === 'op_message_sent')) return false;
+          return true;
+        }
+        if (mode === 'connect_only') {
+          // Cold targets: Stage empty (never touched) or 'Send Connect'.
+          if (stage !== '' && stage !== 'Send Connect') return false;
+          const prev = state.processed[url];
+          if (prev) return false;
+          return true;
+        }
+        if (mode === 'inmail_only' || mode === 'open_profile_only') {
+          // InMail and OP are Connect alternatives — same source.
+          if (stage !== '' && stage !== 'Send Connect') return false;
+          const prev = state.processed[url];
+          if (prev) return false;
+          return true;
+        }
+        // connect_and_message and other multi-step modes: terminal stages skip,
+        // everything else passes through.
+        if (TERMINAL.has(stage)) return false;
+        const prev = state.processed[url];
+        if (prev) return false;
+        return true;
+      }
+
+      // ── Legacy schema filtering (sheets without a Stage column) ──
       const status    = (row['Status']  || row['status']  || '').toString().toLowerCase().trim();
       const cc        = (row['CC']      || row['cc']      || '').toString().toLowerCase().trim();
       const opCell    = (row['OP']      || row['op']      || '').toString().toLowerCase().trim();
@@ -1388,6 +1432,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             const sentLabel = (tpl.introMode && mode === 'message_only') ? 'sent IC' : 'sent';
             const hyperSent = `=HYPERLINK("${url}","${sentLabel}")`;
 
+            // 2.9.0: every action also writes a Stage value (single
+            // source-of-truth column). On sheets without a Stage column,
+            // the bridge silently ignores unknown fields — old sheets
+            // keep working unchanged.
             if (result.action === 'connection_sent') {
               sheetData.status = 'Done';
               // Phase 2.8.10: write the sender's account name into CC instead
@@ -1395,6 +1443,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               // which profile sent each connection request.
               sheetData.cc = pName;
               sheetData.auditAction = 'Connection sent';
+              sheetData.stage  = 'Connect Pending';
+              sheetData.sender = pName;
             } else if (result.action === 'message_sent') {
               // 2.8.49: status "DM Sent" (was "Done"). Keeps CC color (green
               // from check_status) intact — the catch-all CC conditional-
@@ -1402,6 +1452,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.status = 'DM Sent';
               sheetData.message = hyperSent;
               sheetData.auditAction = 'Message sent';
+              sheetData.stage  = (tpl.introMode && mode === 'message_only') ? 'IC Sent' : 'DM Sent';
+              sheetData.sender = pName;
             } else if (result.action === 'op_message_sent') {
               sheetData.status = 'DM Sent';
               sheetData.op = hyperSent;
@@ -1417,10 +1469,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               } else {
                 sheetData.auditAction = 'Open Profile message sent';
               }
+              sheetData.stage  = 'OP Sent';
+              sheetData.sender = pName;
             } else if (result.action === 'inmail_sent') {
               sheetData.status = 'Done';
               sheetData.inmail = hyperSent;
               sheetData.auditAction = 'InMail sent';
+              sheetData.stage  = 'InM Sent';
+              sheetData.sender = pName;
               if (typeof result.creditsLeft === 'number') {
                 sheetData.auditNotes = `InMail credits left: ${result.creditsLeft}`;
                 log(`  💳 InMail credits left: ${result.creditsLeft}`);
@@ -1436,11 +1492,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.ccColor = 'green';
               sheetData.connected = true;
               sheetData.auditAction = 'Acceptance confirmed';
+              sheetData.stage = 'Connected · DM Now';
             } else if (result.action === 'status_pending') {
               sheetData.status = 'Check Done.';
               sheetData.ccColor = 'yellow';
               sheetData.connected = false;
               sheetData.auditAction = 'Still pending';
+              // No stage write — leave at 'Connect Pending' (where it already is).
             } else if (result.action === 'status_declined') {
               // 2.8.39: outreach.js no longer emits status_declined — Check
               // Status is now two-state (accepted/pending). This branch is
@@ -1484,7 +1542,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               });
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: 'Weekly invitation limit reached',
               }, linkedinColumn).catch(() => {});
@@ -1493,7 +1553,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               weeklyLimited.add(profileId);
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: 'InMail credits exhausted',
               }, linkedinColumn).catch(() => {});
@@ -1510,7 +1572,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: 'Done',
                 cc: 'Unreachable',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: 'Email required to connect',
               }, linkedinColumn).catch(() => {});
@@ -1519,6 +1583,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: 'Not yet connected',
               }, linkedinColumn).catch(() => {});
@@ -1528,7 +1593,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: 'Send not confirmed',
               }, linkedinColumn).catch(() => {});
@@ -1538,7 +1605,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: 'LinkedIn error toast',
               }, linkedinColumn).catch(() => {});
@@ -1548,7 +1617,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: 'Done',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: 'Not Open Profile',
               }, linkedinColumn).catch(() => {});
