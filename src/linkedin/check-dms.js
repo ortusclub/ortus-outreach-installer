@@ -18,7 +18,7 @@
  */
 
 import * as helpers from './helpers.js';
-import { updateSheetRow } from '../sheets-writer.js';
+import { updateSheetRow, appendReplyRow } from '../sheets-writer.js';
 import * as sheetsWriter from '../sheets-writer.js';
 import { launchProfile, closeProfile, getProfiles } from '../gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from '../local-launcher.js';
@@ -38,6 +38,9 @@ const _realDeps = {
   },
   async updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinColumn) {
     return updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinColumn);
+  },
+  async appendReplyRow(sheetUrl, reply) {
+    return appendReplyRow(sheetUrl, reply);
   },
   async ensureOpen(profileId) {
     if (profileId === 'local-browser') {
@@ -269,13 +272,45 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
       const linkedinUrl = match.match['Linkedin URL'] || match.match[linkedinColumn] || '';
       if (lastMessage && linkedinUrl) {
         try {
+          // 2.9.4: detect direction. The conversation has one participant
+          // (the lead). If lastMessage.actor matches that participant, the
+          // lead replied (inbound). Otherwise the bot/operator sent it (outbound).
+          const leadParticipant = (Array.isArray(conv.participants) && conv.participants[0]) || null;
+          const actor = lastMessage.actor || {};
+          const sameProfileUrl = leadParticipant?.profileUrl && actor?.profileUrl
+            && leadParticipant.profileUrl === actor.profileUrl;
+          const sameName = leadParticipant?.firstName && actor?.firstName
+            && normName(leadParticipant.firstName) === normName(actor.firstName)
+            && normName(leadParticipant.lastName || '') === normName(actor.lastName || '');
+          const direction = (sameProfileUrl || sameName) ? 'in' : 'out';
+          const senderName = [actor.firstName, actor.lastName].filter(Boolean).join(' ').trim()
+            || (direction === 'in' ? 'lead' : (session.pName || 'unknown'));
+          const tsIso = new Date(lastMessage.deliveredAt || startTime).toISOString();
+
+          // Append the full message body to the Replies tab. Bridge dedupes
+          // on (leadUrl, timestamp) so safe to call repeatedly.
+          await _deps.appendReplyRow(sheetUrl, {
+            leadUrl: linkedinUrl,
+            timestamp: tsIso,
+            direction,
+            sender: senderName,
+            body: String(lastMessage.text || ''),
+          });
+
+          // Legacy back-compat writes — Reply / ReplyAt / ReplyPreview.
+          // Plus bump Pipeline Stage to 'Replied' when the lead replied,
+          // regardless of prior stage (per user direction).
           const current = await _deps.getSheetRowStatus(sheetUrl, linkedinUrl, linkedinColumn);
           if (shouldWriteReply(current, lastMessage)) {
-            await _deps.updateSheetRow(sheetUrl, linkedinUrl, {
+            const tracking = {
               Reply: 'yes',
-              ReplyAt: new Date(lastMessage.deliveredAt || startTime).toISOString(),
+              ReplyAt: tsIso,
               ReplyPreview: String(lastMessage.text || '').slice(0, 100),
-            }, linkedinColumn);
+            };
+            if (direction === 'in') {
+              tracking.stage = 'Replied';
+            }
+            await _deps.updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinColumn);
           }
         } catch (e) {
           errors.push(`writeback failed for ${linkedinUrl}: ${e.message}`);

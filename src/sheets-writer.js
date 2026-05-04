@@ -163,6 +163,48 @@ export async function getSheetRowStatus(sheetUrl, linkedinUrl, linkedinColumn) {
 }
 
 /**
+ * 2.9.4: Append one message to the Replies tab. Bridge dedupes on
+ * (leadUrl, timestamp) so re-polls are idempotent. Direction is 'in'
+ * (inbound — the lead replied) or 'out' (outbound — we sent it).
+ *
+ * @param {string} sheetUrl
+ * @param {object} reply { leadUrl, timestamp, direction, sender, body }
+ * @returns {Promise<boolean>}
+ */
+export async function appendReplyRow(sheetUrl, reply) {
+  if (!getWebAppUrl()) {
+    console.log('[sheets-writer] No SHEETS_WEBAPP_URL — skipping Replies append');
+    return false;
+  }
+  if (!reply?.leadUrl || !reply?.timestamp) {
+    console.warn('[sheets-writer] appendReplyRow: leadUrl + timestamp required');
+    return false;
+  }
+  const sheetId = extractSheetId(sheetUrl);
+  const result = await postToWebApp({
+    action: 'appendReply',
+    sheetId,
+    leadUrl: reply.leadUrl,
+    timestamp: reply.timestamp,
+    direction: reply.direction || '',
+    sender: reply.sender || '',
+    body: reply.body || '',
+  });
+  if (result?.success) {
+    if (result.deduped) {
+      console.log(`[sheets-writer] Replies row already exists (deduped) for ${reply.leadUrl}`);
+    } else {
+      console.log(`[sheets-writer] ✓ Appended Replies row ${result.row} for ${reply.leadUrl}`);
+    }
+    return true;
+  }
+  if (result?.error) {
+    console.warn(`[sheets-writer] appendReply failed: ${result.error}`);
+  }
+  return false;
+}
+
+/**
  * Batch update multiple rows at once (more efficient for large campaigns).
  *
  * @param {string} sheetUrl - The Google Sheet URL
