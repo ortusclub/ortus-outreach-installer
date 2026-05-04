@@ -217,6 +217,36 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
       return { replies, ambiguous, errors: ['ensureOpen returned no session'] };
     }
 
+    // 2.9.6: Navigate to LinkedIn's messaging inbox so the Voyager
+    // messengerConversations XHR fires. getConversationsPage scrapes the URL
+    // from performance.getEntriesByType('resource') — without this navigation
+    // the entry list is empty and getConversationsPage returns null, ending
+    // the scan instantly with the browser flashing open and closed.
+    // Guarded with `typeof === 'function'` so unit-test mock pages (plain
+    // objects without puppeteer methods) don't crash the orchestrator.
+    if (typeof session.page.goto === 'function') {
+      try {
+        await session.page.goto('https://www.linkedin.com/messaging/', {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        });
+      } catch (e) {
+        return { replies, ambiguous, errors: [`navigation to /messaging/ failed: ${e.message}`] };
+      }
+      // Give the messenger XHR up to ~8s to fire. Re-poll the performance
+      // entries until we see one, then proceed. If it never fires,
+      // getConversationsPage will return null and we surface a clean error.
+      if (typeof session.page.waitForFunction === 'function') {
+        try {
+          await session.page.waitForFunction(
+            () => performance.getEntriesByType('resource')
+              .some(e => typeof e.name === 'string' && e.name.includes('queryId=messengerConversations')),
+            { timeout: 8000 },
+          );
+        } catch { /* fall through — getConversationsPage will return null */ }
+      }
+    }
+
     // Fetch the first page directly (avoids double-fetch). If the first page
     // isn't enough (oldest still newer than watermark AND total indicates more),
     // fetchNewConversations paginates from start=count using the same factory.
