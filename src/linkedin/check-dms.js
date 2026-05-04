@@ -483,9 +483,9 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
   const raw = await page.evaluate(({ meName, meSlug, leadPublicId }) => {
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
-    // Find the VISIBLE message-list container. There's typically one per
-    // recently-viewed thread cached in the DOM; only the active thread's
-    // container has non-zero dimensions.
+    // Find the VISIBLE message-list container. LinkedIn caches recently
+    // viewed threads in DOM as separate hidden containers; only the
+    // active one has non-zero dimensions.
     const containers = document.querySelectorAll(
       '.msg-s-message-list-content, [class*="msg-s-message-list-content"]'
     );
@@ -494,17 +494,54 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       const rect = c.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) { activeContainer = c; break; }
     }
-    // If none looked visible (rare), fall back to the first container.
     if (!activeContainer && containers.length > 0) {
       activeContainer = containers[0];
     }
-    const items = activeContainer
-      ? Array.from(activeContainer.querySelectorAll('.msg-s-event-listitem'))
-      : Array.from(document.querySelectorAll('.msg-s-event-listitem'));
+
+    // Pattern for date-marker text ("Apr 17", "TODAY", "Yesterday", etc.).
+    // We walk the children of the message list in DOM order, watching for
+    // any element whose text content matches this pattern — that becomes
+    // the "current date" stamped on every following message group until
+    // the next marker is seen.
+    const DATE_RE = /^(today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b/i;
+    const isDateMarker = (t) => {
+      const s = (t || '').trim();
+      if (!s || s.length > 30) return false;
+      return DATE_RE.test(s);
+    };
+
+    // Walk in DOM order so we visit date markers BEFORE the messages
+    // that follow them. activeContainer's direct children include both
+    // message items and date-line wrappers.
+    const walker = activeContainer
+      ? activeContainer.querySelectorAll('*')
+      : document.querySelectorAll('.msg-s-message-list-content *');
+
+    const items = [];
+    let currentDate = '';
+    let dateMarkersFound = 0;
+
+    for (const el of walker) {
+      // Date markers can be tiny <time> / <span> / <div> with month-day
+      // or weekday text. Detect by text pattern, ignoring elements that
+      // contain other elements (so we don't mistake a whole bubble for
+      // a date marker).
+      if (el.children.length === 0) {
+        const txt = norm(el.textContent);
+        if (isDateMarker(txt) && !el.closest('.msg-s-event-listitem')) {
+          currentDate = txt;
+          dateMarkersFound++;
+        }
+      }
+      if (el.matches && el.matches('.msg-s-event-listitem')) {
+        items.push({ el, date: currentDate });
+      }
+    }
 
     window.__ortusDebug = {
       itemsFound: items.length,
       containers: containers.length,
+      dateMarkersFound,
       meName: meName || null,
       meSlug: meSlug || null,
       leadPublicId: leadPublicId || null,
@@ -514,7 +551,7 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
     let lastSenderName = '';
     let lastDirection = null;
 
-    for (const item of items) {
+    for (const { el: item, date } of items) {
       // Body — strict: <p class="msg-s-event-listitem__body">.
       const bodyEl = item.querySelector('p.msg-s-event-listitem__body, .msg-s-event-listitem__body');
       if (!bodyEl) continue;
@@ -528,12 +565,22 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       if (nameEl) senderName = norm(nameEl.textContent);
       if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
-      // Time — visible text from a time-ish element. Often empty per-message.
-      let time = '';
-      const tEl = item.querySelector('time, .msg-s-message-group__timestamp, [class*="timestamp"]');
+      // Time — group-level <time class="msg-s-message-group__timestamp">,
+      // or a per-item time element if the group one is missing.
+      let timeOnly = '';
+      const tEl = item.querySelector('.msg-s-message-group__timestamp, time, [class*="timestamp"]');
       if (tEl) {
-        time = norm(tEl.getAttribute('datetime') || tEl.textContent || '');
+        timeOnly = norm(tEl.getAttribute('datetime') || tEl.textContent || '');
       }
+
+      // Combine date + time. Result examples:
+      //   "Apr 17, 6:01 PM"  (both present)
+      //   "6:01 PM"          (no date marker yet)
+      //   "Apr 17"           (no time)
+      let timestamp = '';
+      if (date && timeOnly) timestamp = `${date}, ${timeOnly}`;
+      else if (timeOnly) timestamp = timeOnly;
+      else if (date) timestamp = date;
 
       // Continuation: inherit previous sender if no name on this row.
       if (!senderName && lastSenderName) senderName = lastSenderName;
@@ -553,7 +600,7 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
         lastDirection = direction;
       }
 
-      out.push({ sender: senderName, direction, body, time });
+      out.push({ sender: senderName, direction, body, time: timestamp });
     }
     return out;
   }, { meName, meSlug, leadPublicId });
@@ -672,7 +719,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         } catch { /* */ }
         logLine(
           `[check-dms] ${linkedinUrl}: scraped ${thread.length} message(s) ` +
-          `(itemsFound=${dbg?.itemsFound ?? '?'} containers=${dbg?.containers ?? '?'} meName="${dbg?.meName || ''}" meSlug=${dbg?.meSlug || 'NULL'})`
+          `(itemsFound=${dbg?.itemsFound ?? '?'} dateMarkers=${dbg?.dateMarkersFound ?? '?'} meName="${dbg?.meName || ''}")`
         );
 
         // If we found NO items, dump a DOM sample so we can update selectors.
