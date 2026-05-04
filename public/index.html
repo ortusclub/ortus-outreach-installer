@@ -358,7 +358,8 @@
     <!-- ── Check DMs coverage (2.9.7) — visible only when mode = check_dms. ──
          Auto-derives the profile list from the sheet's Account Used column,
          scoped to rows whose Stage is in the Sent set. Per-lead targeted
-         scrape — no profile picker, no templates, no daily limit. -->
+         scrape — no profile picker, no templates, no daily limit. Mirrors
+         the Check Status panel layout. -->
     <div class="section" id="nav-check-dms" style="display:none">
       <h2 class="section-toggle"><span data-edit="h2-check-dms">2b. Check DMs — Coverage</span></h2>
       <div style="padding: 0 0 8px;">
@@ -368,12 +369,17 @@
           <div id="cd-coverage" style="border:1px solid var(--hairline)"></div>
           <div id="cd-unmatched" style="margin-top:12px; font-size:12px; color:var(--gray);"></div>
           <div id="cd-summary" style="display:flex; gap:24px; padding:16px 0; margin-top:16px; border-top:1px solid var(--hairline-soft); border-bottom:1px solid var(--hairline-soft)"></div>
+          <div style="display:flex; gap:20px; font-size:12px; margin-top:16px">
+            <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#16a34a;display:inline-block"></span> Inbound reply</div>
+            <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#eab308;display:inline-block"></span> Awaiting reply</div>
+            <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#dc2626;display:inline-block"></span> Could not scrape</div>
+          </div>
           <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
-            <strong style="color:var(--gray)">Profile picker / Templates / Daily limit</strong> — not used. Per-lead targeted scrape: opens each thread by recipient, scrapes the visible message list, appends to the Replies tab. Inbound messages bump <code>Stage</code> to <code>Replied</code>.
+            <strong style="color:var(--gray)">Templates / Daily limit / Profile picker</strong> — not used in Check DMs. Per-lead targeted scrape: opens each thread by recipient, dumps the visible message list to the Replies tab, bumps <code>Stage</code> to <code>Replied</code> on inbound. Profiles are auto-routed per row.
           </div>
         </div>
         <div id="cd-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">
-          No threads to check — no rows with <code>Stage</code> in DM Sent / IC Sent / OP Sent / InM Sent / Replied. Send some messages first.
+          No threads to check in this sheet (no rows with <code>Stage</code> in DM Sent / IC Sent / OP Sent / InM Sent / Replied). Send some messages first.
         </div>
         <div id="cd-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
       </div>
