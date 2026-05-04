@@ -414,13 +414,45 @@ function stableMessageKey(direction, body) {
 }
 
 /**
+ * Read the LEAD's actual /in/<slug> from the thread page header. Sales Nav
+ * URLs give us an encoded URN as publicId but in-thread anchors are human
+ * slugs — so we read the live slug from the DOM after navigation, not from
+ * the URL.
+ *
+ * Returns the slug string, or null if not found.
+ */
+async function getLiveLeadSlug(page) {
+  try {
+    return await page.evaluate(() => {
+      // Thread topcard / header area — typically holds the recipient's
+      // profile link. Cast a wide net across LinkedIn redesigns.
+      const sels = [
+        '.msg-thread-card__title a[href*="/in/"]',
+        '[class*="msg-thread__topcard"] a[href*="/in/"]',
+        '[class*="msg-thread-header"] a[href*="/in/"]',
+        '[class*="msg-overlay-bubble-header"] a[href*="/in/"]',
+        '[class*="msg-conversation-card__title"] a[href*="/in/"]',
+        // Header H1/H2 with profile link
+        'main header a[href*="/in/"]',
+        'h1 a[href*="/in/"]',
+        'h2 a[href*="/in/"]',
+      ];
+      for (const s of sels) {
+        const el = document.querySelector(s);
+        if (el) {
+          const m = (el.getAttribute('href') || '').match(/\/in\/([^/?#]+)/);
+          if (m) return m[1];
+        }
+      }
+      return null;
+    });
+  } catch { return null; }
+}
+
+/**
  * Read the running account's own profile slug from the LinkedIn global nav.
  * Tries many selectors because LinkedIn's nav DOM rotates classes — the
  * fallback walks every nav anchor and returns the first /in/ link.
- *
- * Used to classify each message's direction reliably regardless of URL
- * shape (Sales Nav URLs have an encoded URN as publicId, but in-thread
- * sender anchors use human slugs — comparing to "me" sidesteps that).
  *
  * Returns the slug string, or null if it can't be determined.
  */
@@ -456,19 +488,29 @@ async function getRunningAccountSlug(page) {
 /**
  * Scrape the visible message thread from a LinkedIn /messaging/compose page.
  *
- * Returns an array of { sender, direction, body, timestamp } in DOM order
- * (oldest → newest, matching LinkedIn's render order).
+ * Returns an array of { sender, direction, body } in DOM order (oldest →
+ * newest, matching LinkedIn's render order).
  *
- * Direction is determined by comparing each message sender's `/in/<slug>`
- * to the running account's own slug (`meSlug`). Sender == me → outbound;
- * sender != me → inbound. This is robust to Sales Nav URLs (where the
- * lead's publicId is an encoded URN that won't match the in-thread slug).
+ * Direction is computed by comparing each message sender's `/in/<slug>`
+ * against TWO known slugs:
+ *   - leadSlug: the live lead's slug (read from thread header DOM, falls
+ *     back to leadPublicId from URL)
+ *   - meSlug:   the running account's slug (read from global-nav)
+ *
+ * sender == leadSlug → 'in' (lead spoke, KEEP)
+ * sender == meSlug   → 'out' (we spoke, DROP downstream)
+ * else               → 'unknown' (group thread / 3rd party / DOM uncertainty)
+ *
  * Continuation messages (no sender anchor) inherit the previous direction.
  */
 export async function extractDmThreadFromPage(page, leadPublicId) {
   const meSlug = await getRunningAccountSlug(page);
+  const liveLeadSlug = await getLiveLeadSlug(page);
+  // Prefer the live slug from the page DOM — it's a real /in/<slug> regardless
+  // of whether the original URL was /in/ or /sales/lead/<URN>.
+  const leadSlug = liveLeadSlug || leadPublicId;
 
-  const raw = await page.evaluate(({ meSlug }) => {
+  const raw = await page.evaluate(({ meSlug, leadSlug }) => {
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
     const items = document.querySelectorAll(
       '.msg-s-event-listitem, [class*="event-listitem"]'
@@ -487,15 +529,23 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
         if (m) slug = m[1];
       }
 
-      // Sender display name: prefer the explicit __name element. The
-      // profile-pic anchor's textContent is the accessibility label
-      // ("View Antonio's profile") which is NOT the user's name.
-      const nameEl = item.querySelector(
-        '.msg-s-event-listitem__name, [class*="event-listitem__name"], [class*="message-bubble__name"]'
-      );
-      let senderName = norm(nameEl?.textContent || '');
-      // Drop any "View X's profile" leakage if the __name lookup failed
-      // and we fell back to the anchor textContent on a continuation row.
+      // Sender display name: try multiple selectors. LinkedIn's class
+      // names rotate, so cast a wide net.
+      let senderName = '';
+      const nameSels = [
+        '.msg-s-event-listitem__name',
+        '[class*="event-listitem__name"]',
+        '[class*="message-bubble__name"]',
+        '[class*="msg-event-listitem__name"]',
+      ];
+      for (const sel of nameSels) {
+        const el = item.querySelector(sel);
+        if (el) {
+          senderName = norm(el.textContent);
+          if (senderName) break;
+        }
+      }
+      // Drop any "View X's profile" leakage
       if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
       // Body: prefer the explicit message-body element
@@ -515,13 +565,19 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
 
       let direction = lastDirection;
       if (slug) {
-        if (meSlug) {
-          direction = (slug === meSlug) ? 'out' : 'in';
-        } else {
-          // meSlug unavailable — default to inbound. False-positive a
-          // 'Replied' bump on an outbound-only thread is a small annoyance;
-          // false-negative (missing real reply) is worse.
+        if (leadSlug && slug === leadSlug) {
           direction = 'in';
+        } else if (meSlug && slug === meSlug) {
+          direction = 'out';
+        } else if (leadSlug) {
+          // Slug doesn't match lead; if we know meSlug too, anything not-me
+          // is treated as inbound (handles group threads loosely). If we
+          // only know leadSlug, anything not-lead is outbound.
+          direction = meSlug ? 'in' : 'out';
+        } else {
+          // No reference slugs at all — uncertain. Tag 'unknown' so the
+          // orchestrator can decide whether to keep it.
+          direction = 'unknown';
         }
         lastSlug = slug;
         lastSender = senderName;
@@ -531,18 +587,17 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       out.push({ sender: senderName, direction, body });
     }
     return out;
-  }, { meSlug });
+  }, { meSlug, leadSlug });
 
   // Always derive timestamp from a stable content hash. LinkedIn's DOM
   // timestamps are inconsistent across runs (sometimes "6:44 PM",
   // sometimes empty) so using them would break dedup — bridge dedupes
-  // on (leadUrl, timestamp) and we'd get duplicate rows. The hash is
-  // body+direction-derived: same message → same key on every run.
+  // on (leadUrl, timestamp) and we'd get duplicate rows.
   return raw.map((m) => ({
     sender: m.sender,
-    direction: m.direction || 'in',
+    direction: m.direction || 'unknown',
     body: m.body,
-    timestamp: stableMessageKey(m.direction || 'in', m.body),
+    timestamp: stableMessageKey(m.direction || 'unknown', m.body),
   }));
 }
 
@@ -630,15 +685,28 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
 
         const thread = await extractDmThreadFromPage(session.page, publicId);
 
-        // Append each message to the Replies tab. Bridge dedupes on
+        // 2.9.7: only the lead's replies matter. Filter to inbound, then
+        // keep just the last 2 (oldest of the two first, newest second).
+        const inboundOnly = thread.filter(m => m.direction === 'in');
+        const lastTwo = inboundOnly.slice(-2);
+
+        // Pull lead's First / Last name from the row. Try several casings.
+        const firstName = String(
+          lead.firstName || lead['First Name'] || lead.first_name || ''
+        ).trim();
+        const lastName = String(
+          lead.lastName || lead['Last Name'] || lead.last_name || ''
+        ).trim();
+
+        // Append the last-two inbound messages. Bridge dedupes on
         // (leadUrl, timestamp) so re-runs are idempotent.
-        for (const msg of thread) {
+        for (const msg of lastTwo) {
           try {
             await _deps.appendReplyRow(sheetUrl, {
               leadUrl: linkedinUrl,
               timestamp: msg.timestamp,
-              direction: msg.direction,
-              sender: msg.sender,
+              firstName,
+              lastName,
               body: msg.body,
             });
           } catch (e) {
@@ -648,8 +716,8 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
 
         // Update legacy Reply tracking + bump Stage to 'Replied' when the
         // lead has at least one inbound message.
-        const lastInbound = [...thread].reverse().find(m => m.direction === 'in');
-        if (lastInbound) {
+        if (inboundOnly.length > 0) {
+          const lastInbound = inboundOnly[inboundOnly.length - 1];
           try {
             const tracking = {
               Reply: 'yes',
@@ -666,10 +734,10 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         replies.push({
           match: lead,
           leadUrl: linkedinUrl,
-          messages: thread,
-          snippet: thread[thread.length - 1]?.body || '',
-          inbound: !!lastInbound,
-          messageCount: thread.length,
+          messages: lastTwo,
+          snippet: inboundOnly[inboundOnly.length - 1]?.body || '',
+          inbound: inboundOnly.length > 0,
+          messageCount: inboundOnly.length,
         });
       } catch (e) {
         errors.push(`thread scrape failed for ${linkedinUrl}: ${e.message}`);

@@ -163,12 +163,12 @@ export async function getSheetRowStatus(sheetUrl, linkedinUrl, linkedinColumn) {
 }
 
 /**
- * 2.9.4: Append one message to the Replies tab. Bridge dedupes on
- * (leadUrl, timestamp) so re-polls are idempotent. Direction is 'in'
- * (inbound — the lead replied) or 'out' (outbound — we sent it).
+ * 2.9.7: Append one inbound message to the Replies tab. Bridge dedupes on
+ * (leadUrl, timestamp) so re-polls are idempotent. Schema columns are
+ * First Name | Last Name | Body (Lead URL + Timestamp hidden for dedup).
  *
  * @param {string} sheetUrl
- * @param {object} reply { leadUrl, timestamp, direction, sender, body }
+ * @param {object} reply { leadUrl, timestamp, firstName, lastName, body }
  * @returns {Promise<boolean>}
  */
 export async function appendReplyRow(sheetUrl, reply) {
@@ -186,8 +186,8 @@ export async function appendReplyRow(sheetUrl, reply) {
     sheetId,
     leadUrl: reply.leadUrl,
     timestamp: reply.timestamp,
-    direction: reply.direction || '',
-    sender: reply.sender || '',
+    firstName: reply.firstName || '',
+    lastName: reply.lastName || '',
     body: reply.body || '',
   });
   if (result?.success) {
