@@ -2089,6 +2089,7 @@ function formatMode(m) {
     inmail_only: 'InMail',
     open_profile_only: 'Open Profile',
     check_status: 'Check Status',
+    check_dms: 'Check DMs',
     connect_and_message: 'Connect + Message',
     auto: 'Auto',
   };
@@ -2268,6 +2269,35 @@ async function pollStatus() {
   try {
     const res = await fetch('/api/campaign/status');
     const s = await res.json();
+
+    // 2.9.7: Check DMs runs as a separate flow with its own state. When a
+    // Check DMs scan is active, overlay its status onto the cockpit so the
+    // operator sees Live progress instead of "No campaign running". Resolve
+    // the profile id → display name via the cached profileNameCache (filled
+    // by /api/profiles).
+    try {
+      const cdRes = await fetch('/api/check-dms/status');
+      if (cdRes.ok) {
+        const cd = await cdRes.json();
+        if (cd.running) {
+          const matched = (allProfilesData || []).find(p => p.id === cd.currentProfile);
+          const accountName = cd.currentProfile === 'local-browser'
+            ? 'You'
+            : (matched?.name || cd.currentProfile || '—');
+          s.running = true;
+          s.mode = 'check_dms';
+          s.currentProfile = accountName;
+          s.currentAction = {
+            label: `Scanning DMs — ${cd.repliesFound || 0} new repl${cd.repliesFound === 1 ? 'y' : 'ies'} found`,
+            account: accountName,
+            lead: '—',
+            mode: 'check_dms',
+            startedAt: cd.startedAt || Date.now(),
+          };
+        }
+      }
+    } catch { /* check-dms overlay is best-effort */ }
+
     // Phase 2.8.12: feed the cockpit panel with the latest status snapshot
     // (renderCockpit + tick handle the smooth countdown without re-polling).
     updateCockpit(s);

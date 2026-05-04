@@ -415,38 +415,38 @@ function stableMessageKey(direction, body) {
 
 /**
  * Read the running account's own profile slug from the LinkedIn global nav.
+ * Tries many selectors because LinkedIn's nav DOM rotates classes — the
+ * fallback walks every nav anchor and returns the first /in/ link.
+ *
  * Used to classify each message's direction reliably regardless of URL
  * shape (Sales Nav URLs have an encoded URN as publicId, but in-thread
  * sender anchors use human slugs — comparing to "me" sidesteps that).
  *
- * Returns the slug string, or null if the global nav isn't present.
+ * Returns the slug string, or null if it can't be determined.
  */
 async function getRunningAccountSlug(page) {
   try {
     return await page.evaluate(() => {
+      const collect = (sel) => Array.from(document.querySelectorAll(sel));
+      // Cast a wide net — every selector that LinkedIn has used for the
+      // nav profile link in the last few redesigns.
       const candidates = [
-        'a.global-nav__me-photo',
-        'a[class*="global-nav__me"]',
-        '[class*="global-nav__me"] a[href*="/in/"]',
-        'a[data-control-name="identity_welcome_message"]',
-        'a[href*="/in/"][class*="global-nav"]',
+        ...collect('a.global-nav__me-photo'),
+        ...collect('a[class*="global-nav__me"]'),
+        ...collect('[class*="global-nav__me"] a[href*="/in/"]'),
+        ...collect('a[data-control-name="identity_welcome_message"]'),
+        ...collect('a[data-control-name*="nav.settings_signout"]'),
+        ...collect('img[class*="global-nav__me"]'),
+        // Profile-menu trigger button often has aria-label "Me, …"
+        ...collect('[aria-label^="Me," i] a[href*="/in/"]'),
+        ...collect('header a[href*="/in/"]'),
+        ...collect('nav a[href*="/in/"]'),
       ];
-      for (const sel of candidates) {
-        const a = document.querySelector(sel);
-        if (a) {
-          const href = a.getAttribute('href') || '';
-          const m = href.match(/\/in\/([^/?#]+)/);
-          if (m) return m[1];
-        }
-      }
-      // Fallback: any visible nav-area link containing /in/
-      const navAreas = document.querySelectorAll('nav, header, [class*="global-nav"]');
-      for (const area of navAreas) {
-        const a = area.querySelector('a[href*="/in/"]');
-        if (a) {
-          const m = a.getAttribute('href').match(/\/in\/([^/?#]+)/);
-          if (m) return m[1];
-        }
+      for (const el of candidates) {
+        const a = el.tagName === 'A' ? el : el.closest('a[href*="/in/"]');
+        if (!a) continue;
+        const m = (a.getAttribute('href') || '').match(/\/in\/([^/?#]+)/);
+        if (m) return m[1];
       }
       return null;
     });
@@ -479,15 +479,24 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
     let lastDirection = null;
 
     for (const item of items) {
-      // Sender anchor: only present on the first message of a contiguous run
-      const a = item.querySelector('a[href*="/in/"]');
+      // Slug: any /in/<slug> anchor inside this item — used for direction.
+      const slugAnchor = item.querySelector('a[href*="/in/"]');
       let slug = null;
-      let senderName = '';
-      if (a) {
-        const m = a.getAttribute('href').match(/\/in\/([^/?#]+)/);
+      if (slugAnchor) {
+        const m = slugAnchor.getAttribute('href').match(/\/in\/([^/?#]+)/);
         if (m) slug = m[1];
-        senderName = norm(a.textContent);
       }
+
+      // Sender display name: prefer the explicit __name element. The
+      // profile-pic anchor's textContent is the accessibility label
+      // ("View Antonio's profile") which is NOT the user's name.
+      const nameEl = item.querySelector(
+        '.msg-s-event-listitem__name, [class*="event-listitem__name"], [class*="message-bubble__name"]'
+      );
+      let senderName = norm(nameEl?.textContent || '');
+      // Drop any "View X's profile" leakage if the __name lookup failed
+      // and we fell back to the anchor textContent on a continuation row.
+      if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
       // Body: prefer the explicit message-body element
       const bodyEl = item.querySelector(
@@ -498,45 +507,42 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       // (read receipt, "joined the chat", typing indicator). Skip it.
       if (!body) continue;
 
-      // Timestamp: try datetime attr first, then visible text
-      let timestamp = '';
-      const tsEl = item.querySelector('time, [class*="timestamp"]');
-      if (tsEl) {
-        timestamp = tsEl.getAttribute('datetime') || norm(tsEl.textContent || '');
-      }
-
       // Continuation: inherit previous sender if no anchor on this row
       if (!slug && lastSlug) {
         slug = lastSlug;
-        senderName = lastSender;
+        if (!senderName) senderName = lastSender;
       }
 
       let direction = lastDirection;
       if (slug) {
         if (meSlug) {
-          // Sender == running account → outbound; otherwise inbound.
           direction = (slug === meSlug) ? 'out' : 'in';
         } else {
-          // meSlug unavailable — default to outbound to avoid false-positive
-          // 'Replied' bumps. Operator can re-run after fix.
-          direction = 'out';
+          // meSlug unavailable — default to inbound. False-positive a
+          // 'Replied' bump on an outbound-only thread is a small annoyance;
+          // false-negative (missing real reply) is worse.
+          direction = 'in';
         }
         lastSlug = slug;
         lastSender = senderName;
         lastDirection = direction;
       }
 
-      out.push({ sender: senderName, direction, body, timestamp });
+      out.push({ sender: senderName, direction, body });
     }
     return out;
   }, { meSlug });
 
-  // Build stable per-message keys outside the page context so we can hash.
+  // Always derive timestamp from a stable content hash. LinkedIn's DOM
+  // timestamps are inconsistent across runs (sometimes "6:44 PM",
+  // sometimes empty) so using them would break dedup — bridge dedupes
+  // on (leadUrl, timestamp) and we'd get duplicate rows. The hash is
+  // body+direction-derived: same message → same key on every run.
   return raw.map((m) => ({
     sender: m.sender,
-    direction: m.direction || 'out',
+    direction: m.direction || 'in',
     body: m.body,
-    timestamp: m.timestamp || stableMessageKey(m.direction || 'out', m.body),
+    timestamp: stableMessageKey(m.direction || 'in', m.body),
   }));
 }
 

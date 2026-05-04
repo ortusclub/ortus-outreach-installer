@@ -1,148 +1,209 @@
 /**
- * Replies panel renderer — Phase 11.3.
+ * Replies panel renderer — Phase 11.3 / 2.9.7.
  *
  * Pure DOM function. Imported by app.js (which is ESM as of Phase 11.3) and
  * directly by Plan 11.3-05 UI tests. NEVER uses innerHTML for LinkedIn-sourced
  * text — participants can send arbitrary strings including `<script>` tags,
  * so everything is textContent or controlled element creation.
+ *
+ * 2.9.7 — entries now come from per-lead thread scrape:
+ *   { match, leadUrl, messages, snippet, inbound, messageCount }
+ * Old Voyager shape ({ snippet, threadId, timestamp }) still renders for
+ * back-compat with cached results.
  */
 
-/**
- * Render the Replies panel body.
- *
- * @param {HTMLElement} container — the panel body element (e.g. #replies-body)
- * @param {object} result
- *   - byProfile:  { [profileName]: [ { match, conversation, snippet, threadId, timestamp } ] }
- *   - ambiguous:  [ { conv, candidates, profileId } ]
- *   - completedAt: number (ms since epoch)  — null if not yet scanned
- *   - errors:     string[] (optional)
- */
 export function renderRepliesPanel(container, result) {
   if (!container) return;
-  // Wipe previous contents — never leak DOM between renders
   while (container.firstChild) container.removeChild(container.firstChild);
 
   if (!result || !result.completedAt) {
     const p = document.createElement('p');
     p.className = 'muted';
-    p.textContent = 'No scan yet — click "Check DMs" to start.';
+    p.textContent = 'No scan yet — click "Start Check DMs" to begin.';
     container.appendChild(p);
     return;
   }
 
   const { byProfile = {}, ambiguous = [], completedAt, errors = [] } = result;
 
+  // Headline summary
+  let totalThreads = 0;
+  let totalInbound = 0;
+  for (const replies of Object.values(byProfile)) {
+    if (!Array.isArray(replies)) continue;
+    totalThreads += replies.length;
+    totalInbound += replies.filter(r => r.inbound).length;
+  }
+
+  const summary = document.createElement('div');
+  summary.className = 'replies-summary';
+  summary.style.cssText = 'display:flex;gap:32px;padding:14px 0;margin-bottom:16px;border-bottom:1px solid var(--hairline-soft, #e6e6e6)';
+  summary.appendChild(makeStat(String(totalThreads), 'Threads scanned'));
+  summary.appendChild(makeStat(String(totalInbound), 'Inbound replies'));
+  summary.appendChild(makeStat(formatTime(completedAt), 'Last run'));
+  container.appendChild(summary);
+
   // Errors block (if any)
   if (Array.isArray(errors) && errors.length > 0) {
     const errWrap = document.createElement('div');
     errWrap.className = 'replies-errors';
+    errWrap.style.cssText = 'background:#fef2f2;border-left:2px solid #dc2626;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#7f1d1d';
     const h = document.createElement('strong');
     h.textContent = `${errors.length} error(s):`;
     errWrap.appendChild(h);
     const ul = document.createElement('ul');
-    for (const msg of errors) {
+    ul.style.cssText = 'margin:6px 0 0 16px;padding:0';
+    for (const msg of errors.slice(0, 8)) {
       const li = document.createElement('li');
+      li.style.cssText = 'margin:2px 0';
       li.textContent = String(msg);
+      ul.appendChild(li);
+    }
+    if (errors.length > 8) {
+      const li = document.createElement('li');
+      li.style.cssText = 'margin:2px 0;font-style:italic';
+      li.textContent = `…and ${errors.length - 8} more`;
       ul.appendChild(li);
     }
     errWrap.appendChild(ul);
     container.appendChild(errWrap);
   }
 
-  // Replies by profile
-  const totalReplies = Object.values(byProfile).reduce((n, arr) => n + (arr?.length || 0), 0);
-
-  if (totalReplies === 0 && ambiguous.length === 0 && errors.length === 0) {
+  if (totalThreads === 0 && ambiguous.length === 0 && errors.length === 0) {
     const p = document.createElement('p');
     p.className = 'muted';
-    p.textContent = `No new replies since ${formatTime(completedAt)}.`;
+    p.textContent = `No threads scanned at ${formatTime(completedAt)}.`;
     container.appendChild(p);
     return;
   }
 
+  // Replies by profile — inbound first, then outbound-only.
   for (const [profileName, replies] of Object.entries(byProfile)) {
-    if (!replies || replies.length === 0) continue;
-    const section = document.createElement('section');
-    section.className = 'replies-profile-section';
+    if (!Array.isArray(replies) || replies.length === 0) continue;
+    const inbound = replies.filter(r => r.inbound);
+    const waiting = replies.filter(r => !r.inbound);
 
-    const header = document.createElement('header');
-    header.className = 'replies-profile-header';
-    header.textContent = `${profileName} — ${replies.length} new reply${replies.length === 1 ? '' : 'ies'}`;
-    section.appendChild(header);
-
-    for (const reply of replies) {
-      section.appendChild(renderReplyRow(reply));
+    if (inbound.length > 0) {
+      container.appendChild(makeProfileSection(
+        profileName,
+        `${inbound.length} new repl${inbound.length === 1 ? 'y' : 'ies'}`,
+        '#16a34a',
+        inbound,
+      ));
     }
-    container.appendChild(section);
+    if (waiting.length > 0) {
+      container.appendChild(makeProfileSection(
+        profileName,
+        `${waiting.length} awaiting reply`,
+        '#9aa0a6',
+        waiting,
+      ));
+    }
   }
 
-  // Ambiguous matches
+  // Ambiguous (legacy)
   if (ambiguous.length > 0) {
     const section = document.createElement('section');
     section.className = 'replies-ambiguous-section';
-
+    section.style.cssText = 'margin-top:16px';
     const header = document.createElement('header');
-    header.className = 'replies-profile-header';
+    header.style.cssText = 'font-family:var(--display, inherit);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#9aa0a6;margin-bottom:8px';
     header.textContent = `⚠ Ambiguous — ${ambiguous.length} conversation(s) match multiple sheet rows`;
     section.appendChild(header);
-
-    for (const amb of ambiguous) {
-      section.appendChild(renderAmbiguousRow(amb));
-    }
+    for (const amb of ambiguous) section.appendChild(renderAmbiguousRow(amb));
     container.appendChild(section);
   }
-
-  // Footer
-  const footer = document.createElement('div');
-  footer.className = 'replies-footer muted';
-  footer.textContent = `Last checked: ${formatTime(completedAt)}`;
-  container.appendChild(footer);
 }
 
-function renderReplyRow(reply) {
-  const row = document.createElement('article');
-  row.className = 'reply-row';
+function makeStat(value, label) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:2px';
+  const v = document.createElement('div');
+  v.style.cssText = 'font-family:var(--display, inherit);font-size:24px;line-height:1';
+  v.textContent = value;
+  const l = document.createElement('div');
+  l.style.cssText = 'font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#9aa0a6';
+  l.textContent = label;
+  wrap.appendChild(v);
+  wrap.appendChild(l);
+  return wrap;
+}
 
-  const name = document.createElement('div');
-  name.className = 'reply-name';
+function makeProfileSection(profileName, headline, accent, replies) {
+  const section = document.createElement('section');
+  section.style.cssText = 'margin-bottom:20px';
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:baseline;gap:10px;margin-bottom:8px;font-size:13px';
+  const dot = document.createElement('span');
+  dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:9999px;background:${accent}`;
+  header.appendChild(dot);
+  const who = document.createElement('strong');
+  who.textContent = profileName;
+  header.appendChild(who);
+  const meta = document.createElement('span');
+  meta.style.cssText = 'color:#9aa0a6;font-size:12px';
+  meta.textContent = `· ${headline}`;
+  header.appendChild(meta);
+  section.appendChild(header);
+
+  for (const reply of replies) section.appendChild(renderReplyRow(reply, accent));
+  return section;
+}
+
+function renderReplyRow(reply, accent) {
+  const row = document.createElement('article');
+  row.style.cssText = `display:grid;grid-template-columns:200px 1fr auto;gap:16px;align-items:start;padding:10px 12px;border:1px solid #ececec;border-left:2px solid ${accent || '#9aa0a6'};margin-bottom:6px;font-size:13px`;
+
   const m = reply.match || {};
   const firstName = m.firstName || m['First Name'] || '';
   const lastName = m.lastName || m['Last Name'] || '';
+
+  const name = document.createElement('div');
+  name.style.cssText = 'font-weight:500';
   name.textContent = `${firstName} ${lastName}`.trim() || '(unknown)';
   row.appendChild(name);
 
   const snippet = document.createElement('div');
-  snippet.className = 'reply-snippet';
-  snippet.textContent = `"${String(reply.snippet || '').slice(0, 160)}"`;
+  snippet.style.cssText = 'color:#3a3a3a;line-height:1.4';
+  snippet.textContent = String(reply.snippet || '').slice(0, 240);
   row.appendChild(snippet);
 
-  const meta = document.createElement('div');
-  meta.className = 'reply-meta';
-  const time = document.createElement('span');
-  time.className = 'reply-time';
-  time.textContent = formatTime(reply.timestamp);
-  meta.appendChild(time);
-
-  if (reply.threadId) {
+  const right = document.createElement('div');
+  right.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:4px;color:#9aa0a6;font-size:11px';
+  if (reply.messageCount != null) {
+    const c = document.createElement('span');
+    c.textContent = `${reply.messageCount} msg${reply.messageCount === 1 ? '' : 's'}`;
+    right.appendChild(c);
+  }
+  // Open Thread link — uses leadUrl (new) or threadId (legacy)
+  if (reply.leadUrl) {
     const link = document.createElement('a');
-    link.className = 'reply-open-thread';
+    link.href = String(reply.leadUrl);
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'Open Profile →';
+    link.style.cssText = 'color:inherit;text-decoration:none;border-bottom:1px solid currentColor';
+    right.appendChild(link);
+  } else if (reply.threadId) {
+    const link = document.createElement('a');
     link.href = `https://www.linkedin.com/messaging/thread/${encodeURIComponent(reply.threadId)}/`;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    link.textContent = 'Open Thread';
-    meta.appendChild(link);
+    link.textContent = 'Open Thread →';
+    link.style.cssText = 'color:inherit;text-decoration:none;border-bottom:1px solid currentColor';
+    right.appendChild(link);
   }
-  row.appendChild(meta);
+  row.appendChild(right);
 
   return row;
 }
 
 function renderAmbiguousRow(amb) {
   const row = document.createElement('article');
-  row.className = 'reply-row reply-row--ambiguous';
-
+  row.style.cssText = 'display:grid;grid-template-columns:200px 1fr;gap:16px;padding:10px 12px;border:1px solid #f59e0b;border-left:2px solid #f59e0b;margin-bottom:6px;font-size:13px';
   const name = document.createElement('div');
-  name.className = 'reply-name';
+  name.style.cssText = 'font-weight:500';
   const participant = amb.conv?.participant
     ?? (Array.isArray(amb.conv?.participants) ? amb.conv.participants[0] : null);
   name.textContent = participant
@@ -151,11 +212,10 @@ function renderAmbiguousRow(amb) {
   row.appendChild(name);
 
   const note = document.createElement('div');
-  note.className = 'reply-snippet';
+  note.style.cssText = 'color:#3a3a3a;line-height:1.4';
   const count = Array.isArray(amb.candidates) ? amb.candidates.length : '?';
-  note.textContent = `Matches ${count} sheet rows — disambiguate manually before this reply can be written to the sheet.`;
+  note.textContent = `Matches ${count} sheet rows — disambiguate manually before this reply can be written.`;
   row.appendChild(note);
-
   return row;
 }
 
