@@ -414,261 +414,178 @@ function stableMessageKey(direction, body) {
 }
 
 /**
- * Read the LEAD's actual /in/<slug> from the thread page header. Sales Nav
- * URLs give us an encoded URN as publicId but in-thread anchors are human
- * slugs — so we read the live slug from the DOM after navigation, not from
- * the URL.
+ * Read the running account's own URN ("ACoAAByAI28B0aVPzIxcgtSKT7-z3X5vsOhq9J0")
+ * via Voyager /me. Returned URN is what data-event-urn embeds for outbound
+ * messages — comparing URN-to-URN sidesteps every DOM uncertainty.
  *
- * Returns the slug string, or null if not found.
+ * Returns { urn, slug } or { urn: null, slug: null } on failure.
  */
-async function getLiveLeadSlug(page) {
-  try {
-    return await page.evaluate(() => {
-      // Thread topcard / header area — typically holds the recipient's
-      // profile link. Cast a wide net across LinkedIn redesigns.
-      const sels = [
-        '.msg-thread-card__title a[href*="/in/"]',
-        '[class*="msg-thread__topcard"] a[href*="/in/"]',
-        '[class*="msg-thread-header"] a[href*="/in/"]',
-        '[class*="msg-overlay-bubble-header"] a[href*="/in/"]',
-        '[class*="msg-conversation-card__title"] a[href*="/in/"]',
-        // Header H1/H2 with profile link
-        'main header a[href*="/in/"]',
-        'h1 a[href*="/in/"]',
-        'h2 a[href*="/in/"]',
-      ];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el) {
-          const m = (el.getAttribute('href') || '').match(/\/in\/([^/?#]+)/);
-          if (m) return m[1];
-        }
-      }
-      return null;
-    });
-  } catch { return null; }
-}
-
-/**
- * Read the running account's own profile slug.
- *
- * Strategy: hit LinkedIn's own Voyager /me endpoint from inside the page
- * context (inherits cookies + CSRF). That returns the current user's
- * publicIdentifier directly — no DOM dependency, no class-rotation risk.
- * Falls back to global-nav DOM scraping if /me isn't available.
- *
- * Returns the slug string, or null if it can't be determined.
- */
-async function getRunningAccountSlug(page) {
+async function getRunningAccountIds(page) {
   try {
     return await page.evaluate(async () => {
-      // Step 1: Voyager /me API — most reliable.
       try {
         const csrfCookie = document.cookie.split(';')
           .map(c => c.trim())
           .find(c => c.startsWith('JSESSIONID='));
         const csrf = csrfCookie?.split('=')[1]?.replace(/"/g, '');
-        if (csrf) {
-          const resp = await fetch('/voyager/api/me', {
-            headers: {
-              'accept': 'application/vnd.linkedin.normalized+json+2.1',
-              'csrf-token': csrf,
-              'x-restli-protocol-version': '2.0.0',
-            },
-            credentials: 'include',
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            // publicIdentifier is at data.miniProfile.publicIdentifier OR
-            // in data.included[].publicIdentifier
-            const pid = data?.miniProfile?.publicIdentifier
-              ?? data?.data?.miniProfile?.publicIdentifier;
-            if (pid) return pid;
-            const inc = Array.isArray(data?.included) ? data.included : [];
-            for (const e of inc) {
-              if (e?.publicIdentifier) return e.publicIdentifier;
+        if (!csrf) return { urn: null, slug: null };
+        const resp = await fetch('/voyager/api/me', {
+          headers: {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': csrf,
+            'x-restli-protocol-version': '2.0.0',
+          },
+          credentials: 'include',
+        });
+        if (!resp.ok) return { urn: null, slug: null };
+        const data = await resp.json();
+        // Look at miniProfile.entityUrn (urn:li:fs_miniProfile:<URN>) and publicIdentifier.
+        const root = data?.miniProfile || data?.data?.miniProfile;
+        let urn = null, slug = null;
+        if (root) {
+          slug = root.publicIdentifier || null;
+          const urnStr = root.entityUrn || '';
+          const m = urnStr.match(/urn:li:fs_miniProfile:([A-Za-z0-9_-]+)/);
+          if (m) urn = m[1];
+        }
+        if ((!urn || !slug) && Array.isArray(data?.included)) {
+          for (const e of data.included) {
+            if (!slug && e?.publicIdentifier) slug = e.publicIdentifier;
+            if (!urn && typeof e?.entityUrn === 'string') {
+              const m = e.entityUrn.match(/urn:li:fs_miniProfile:([A-Za-z0-9_-]+)/);
+              if (m) urn = m[1];
             }
+            if (urn && slug) break;
           }
         }
-      } catch { /* fall through to DOM */ }
-
-      // Step 2: DOM fallback — walk every nav anchor that points to /in/.
-      const collect = (sel) => Array.from(document.querySelectorAll(sel));
-      const candidates = [
-        ...collect('a.global-nav__me-photo'),
-        ...collect('a[class*="global-nav__me"]'),
-        ...collect('[class*="global-nav__me"] a[href*="/in/"]'),
-        ...collect('a[data-control-name="identity_welcome_message"]'),
-        ...collect('a[data-control-name*="nav.settings_signout"]'),
-        ...collect('[aria-label^="Me," i] a[href*="/in/"]'),
-        ...collect('header a[href*="/in/"]'),
-        ...collect('nav a[href*="/in/"]'),
-      ];
-      for (const el of candidates) {
-        const a = el.tagName === 'A' ? el : el.closest('a[href*="/in/"]');
-        if (!a) continue;
-        const m = (a.getAttribute('href') || '').match(/\/in\/([^/?#]+)/);
-        if (m) return m[1];
+        return { urn, slug };
+      } catch {
+        return { urn: null, slug: null };
       }
-      return null;
     });
-  } catch { return null; }
+  } catch {
+    return { urn: null, slug: null };
+  }
 }
 
 /**
  * Scrape the visible message thread from a LinkedIn /messaging/compose page.
  *
- * Returns an array of { sender, direction, body } in DOM order (oldest →
- * newest, matching LinkedIn's render order).
+ * 2.9.7 v2 — uses URN-based direction detection. Each `.msg-s-event-listitem`
+ * has `data-event-urn="urn:li:msg_message:(urn:li:fsd_profile:<SENDER_URN>,...)"`.
+ * Comparing the SENDER_URN to the running account's URN gives us reliable
+ * direction tagging regardless of URL shape, anchor href quirks, or class
+ * rotations.
  *
- * Direction is computed by comparing each message sender's `/in/<slug>`
- * against TWO known slugs:
- *   - leadSlug: the live lead's slug (read from thread header DOM, falls
- *     back to leadPublicId from URL)
- *   - meSlug:   the running account's slug (read from global-nav)
+ * Body comes from `<p class="msg-s-event-listitem__body">` ONLY — no
+ * textContent fallback. Items without that <p> are not real messages
+ * (date boundaries, system events, etc.) and are silently skipped.
  *
- * sender == leadSlug → 'in' (lead spoke, KEEP)
- * sender == meSlug   → 'out' (we spoke, DROP downstream)
- * else               → 'unknown' (group thread / 3rd party / DOM uncertainty)
- *
- * Continuation messages (no sender anchor) inherit the previous direction.
+ * Returns { sender, direction, body, time } per message in DOM order.
  */
 export async function extractDmThreadFromPage(page, leadPublicId) {
-  const meSlug = await getRunningAccountSlug(page);
-  const liveLeadSlug = await getLiveLeadSlug(page);
-  // Prefer the live slug from the page DOM — it's a real /in/<slug> regardless
-  // of whether the original URL was /in/ or /sales/lead/<URN>.
-  const leadSlug = liveLeadSlug || leadPublicId;
+  const { urn: meUrn, slug: meSlug } = await getRunningAccountIds(page);
 
-  const raw = await page.evaluate(({ meSlug, leadSlug }) => {
+  const raw = await page.evaluate(({ meUrn, meSlug, leadPublicId }) => {
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-    // Cast a wide net — LinkedIn rotates class hashes constantly. Try
-    // every variant we've seen, then fall back to any list item that
-    // contains a /in/ anchor (heuristic: thread items always link to
-    // the sender's profile).
-    let items = document.querySelectorAll(
-      '.msg-s-event-listitem, [class*="event-listitem"], [class*="msg-event"]'
+    // Restrict to the active thread's message list. Falls back to the
+    // whole document if we can't find the container.
+    const listContainers = document.querySelectorAll(
+      '.msg-s-message-list-content, [class*="msg-s-message-list"]'
     );
-    if (items.length === 0) {
-      // Heuristic fallback: list items inside the message-list container
-      // that have an /in/ link inside them.
-      const lists = document.querySelectorAll('[class*="message-list"], [class*="msg-s-message-list"], main ul, main ol');
-      const collected = [];
-      for (const list of lists) {
-        for (const li of list.querySelectorAll('li')) {
-          if (li.querySelector('a[href*="/in/"]')) collected.push(li);
-        }
+    let items = [];
+    if (listContainers.length > 0) {
+      for (const c of listContainers) {
+        items.push(...c.querySelectorAll('.msg-s-event-listitem'));
       }
-      items = collected;
+    } else {
+      items = Array.from(document.querySelectorAll('.msg-s-event-listitem'));
     }
-    // Diagnostic: stamp counts on window so the orchestrator can read them.
+
     window.__ortusDebug = {
       itemsFound: items.length,
+      meUrn: meUrn || null,
       meSlug: meSlug || null,
-      leadSlug: leadSlug || null,
+      leadPublicId: leadPublicId || null,
     };
+
     const out = [];
-    let lastSlug = null;
-    let lastSender = '';
+    let lastSenderUrn = null;
+    let lastSenderName = '';
     let lastDirection = null;
 
     for (const item of items) {
-      // Slug: any /in/<slug> anchor inside this item — used for direction.
-      const slugAnchor = item.querySelector('a[href*="/in/"]');
-      let slug = null;
-      if (slugAnchor) {
-        const m = slugAnchor.getAttribute('href').match(/\/in\/([^/?#]+)/);
-        if (m) slug = m[1];
+      // Body — strict: <p class="msg-s-event-listitem__body">.
+      // No fallback. Items without this element aren't real messages.
+      const bodyEl = item.querySelector('p.msg-s-event-listitem__body, .msg-s-event-listitem__body');
+      if (!bodyEl) continue;
+      const body = norm(bodyEl.textContent || '');
+      if (!body) continue;
+
+      // Sender URN — pulled from data-event-urn on the item itself, or
+      // from the bubble's data-event-urn if it lives there. The URN
+      // payload is `urn:li:msg_message:(urn:li:fsd_profile:<SENDER>,…)`.
+      let urnAttr = item.getAttribute('data-event-urn') || '';
+      if (!urnAttr) {
+        const carrier = item.querySelector('[data-event-urn]');
+        if (carrier) urnAttr = carrier.getAttribute('data-event-urn') || '';
+      }
+      let senderUrn = null;
+      if (urnAttr) {
+        const m = urnAttr.match(/urn:li:fsd_profile:([A-Za-z0-9_-]+)/);
+        if (m) senderUrn = m[1];
       }
 
-      // Sender display name: try multiple selectors. LinkedIn's class
-      // names rotate, so cast a wide net.
+      // Sender display name — visible text on the bubble's name element.
       let senderName = '';
-      const nameSels = [
-        '.msg-s-event-listitem__name',
-        '[class*="event-listitem__name"]',
-        '[class*="message-bubble__name"]',
-        '[class*="msg-event-listitem__name"]',
-      ];
-      for (const sel of nameSels) {
-        const el = item.querySelector(sel);
-        if (el) {
-          senderName = norm(el.textContent);
-          if (senderName) break;
-        }
-      }
-      // Drop any "View X's profile" leakage
+      const nameEl = item.querySelector('.msg-s-message-group__name, .msg-s-event-listitem__name, [class*="event-listitem__name"]');
+      if (nameEl) senderName = norm(nameEl.textContent);
       if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
-      // Body: prefer explicit body element, else use textContent minus
-      // sender name. The strict body-only path missed too many real
-      // messages on rotated class hashes.
-      const bodyEl = item.querySelector(
-        '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message__body"], [class*="msg-event-listitem__body"], [class*="message-bubble__body"], [class*="msg-event-bubble"]'
-      );
-      let body = norm(bodyEl?.textContent || '');
-      if (!body) {
-        let txt = norm(item.textContent || '');
-        if (senderName && txt.startsWith(senderName)) {
-          txt = norm(txt.slice(senderName.length));
-        }
-        body = txt;
-      }
-      if (!body || body.length < 2) continue;
-      // Reject anything that looks like a LinkedIn UI / system row, not
-      // a real message body. These all match the bubble selector on some
-      // LinkedIn variants but aren't replies.
-      const lower = body.toLowerCase();
-      if (/^.+\s+sent the following messages?\s+at\s+/i.test(body)) continue;
-      if (/^(is\s+typing|delivered|read|seen)\b/i.test(body)) continue;
-      // Date separators ("APR 17", "MAY 1", "TODAY", "YESTERDAY")
-      if (/^(today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(body) && body.length < 30) continue;
-      // "View profile" / accessibility-label leakage
-      if (/^view .+'s? (profile|page)$/i.test(body)) continue;
-      if (/^reaction(s)?:\s/i.test(lower)) continue;
-
-      // Time: prefer <time datetime> for ISO, fall back to its visible text
-      // ("3:24 PM" / "Apr 17"). Stored as-is in the sheet.
+      // Time — from the bubble's timestamp element. Visible text only
+      // (e.g. "6:01 PM") since LinkedIn rarely emits a datetime= attr.
       let time = '';
-      const tEl = item.querySelector('time, [class*="timestamp"]');
+      const tEl = item.querySelector('time, .msg-s-message-group__timestamp, [class*="timestamp"]');
       if (tEl) {
         time = norm(tEl.getAttribute('datetime') || tEl.textContent || '');
       }
 
-      // Continuation: inherit previous sender if no anchor on this row
-      if (!slug && lastSlug) {
-        slug = lastSlug;
-        if (!senderName) senderName = lastSender;
+      // Continuation: inherit previous sender if this row didn't carry
+      // its own URN (LinkedIn often only stamps the first row of a
+      // contiguous group, but data-event-urn is per-message).
+      if (!senderUrn && lastSenderUrn) {
+        senderUrn = lastSenderUrn;
+        if (!senderName) senderName = lastSenderName;
       }
 
-      let direction = lastDirection;
-      if (slug) {
-        if (leadSlug && slug === leadSlug) {
-          direction = 'in';
-        } else if (meSlug && slug === meSlug) {
-          direction = 'out';
-        } else if (leadSlug) {
-          // Slug doesn't match lead; if we know meSlug too, anything not-me
-          // is treated as inbound (handles group threads loosely). If we
-          // only know leadSlug, anything not-lead is outbound.
-          direction = meSlug ? 'in' : 'out';
-        } else {
-          // No reference slugs at all — uncertain. Tag 'unknown' so the
-          // orchestrator can decide whether to keep it.
-          direction = 'unknown';
-        }
-        lastSlug = slug;
-        lastSender = senderName;
+      // Direction by URN comparison. meUrn is the most reliable.
+      // Fall back to slug compare via the lead's publicId if URN missing.
+      let direction;
+      if (senderUrn && meUrn && senderUrn === meUrn) {
+        direction = 'out';
+      } else if (senderUrn) {
+        direction = 'in';
+      } else {
+        // No URN at all — try one last heuristic: compare any /in/<slug>
+        // anchor inside the item to leadPublicId.
+        const a = item.querySelector('a[href*="/in/"]');
+        const m = a?.getAttribute('href')?.match(/\/in\/([^/?#]+)/);
+        if (m && leadPublicId && m[1] === leadPublicId) direction = 'in';
+        else if (m && meSlug && m[1] === meSlug) direction = 'out';
+        else direction = lastDirection || 'unknown';
+      }
+
+      if (senderUrn) {
+        lastSenderUrn = senderUrn;
+        lastSenderName = senderName;
         lastDirection = direction;
       }
 
       out.push({ sender: senderName, direction, body, time });
     }
     return out;
-  }, { meSlug, leadSlug });
+  }, { meUrn, meSlug, leadPublicId });
 
-  // 2.9.7: pass through the visible time. Bridge now dedupes on
-  // (leadUrl, body) so timestamp can be a human-readable display value.
   return raw.map((m) => ({
     sender: m.sender,
     direction: m.direction || 'unknown',
@@ -783,7 +700,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         } catch { /* */ }
         logLine(
           `[check-dms] ${linkedinUrl}: scraped ${thread.length} message(s) ` +
-          `(itemsFound=${dbg?.itemsFound ?? '?'} meSlug=${dbg?.meSlug || 'NULL'} leadSlug=${dbg?.leadSlug || 'NULL'})`
+          `(itemsFound=${dbg?.itemsFound ?? '?'} meUrn=${dbg?.meUrn || 'NULL'} meSlug=${dbg?.meSlug || 'NULL'} leadPublicId=${dbg?.leadPublicId || 'NULL'})`
         );
 
         // If we found NO items, dump a DOM sample so we can update selectors.
