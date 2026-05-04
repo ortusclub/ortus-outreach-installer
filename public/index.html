@@ -151,6 +151,7 @@
         <option value="message_only">Message Only (follow-ups)</option>
         <option value="inmail_only">InMail Only</option>
         <option value="open_profile_only">Open Profile Message (free)</option>
+        <option value="check_dms">Check DMs (scan inboxes for replies)</option>
       </select>
       <div id="open-profile-toggle" style="display:none; margin-top:8px">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer">
@@ -514,7 +515,12 @@
               <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
               <button id="btn-pause" class="btn btn-secondary" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open">Pause</button>
               <button id="btn-stop" class="btn btn-stop" onclick="confirmStopCampaign()" disabled>Stop Campaign</button>
-              <button id="btn-check-dms" class="btn btn-secondary" onclick="startCheckDms()" title="Scan LinkedIn inboxes for new replies">Check DMs</button>
+              <!-- 2.9.5: standalone Check DMs button removed. Check DMs is now
+                   a first-class option in the campaign mode dropdown — pick
+                   "Check DMs" and click Start Campaign. The btn-check-dms
+                   element is kept hidden so app.js mutex logic still no-ops
+                   safely (it guards with `if (btn)`). -->
+              <button id="btn-check-dms" style="display:none" onclick="startCheckDms()"></button>
             </div>
           </div>
 

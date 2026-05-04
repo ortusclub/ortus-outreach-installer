@@ -1297,19 +1297,27 @@ function onModeChange() {
   const navAccounts = document.getElementById('nav-accounts');
   const isCheckStatus = (mode === 'check_status');
   const isMessageOnly = (mode === 'message_only');
-  const isAutoRouted = isCheckStatus || isMessageOnly;
+  // 2.9.5: Check DMs is a separate flow (no templates, no targets — just
+  // scans inboxes per selected profile). Behaves like check_status visually.
+  const isCheckDms = (mode === 'check_dms');
+  const isAutoRouted = isCheckStatus || isMessageOnly || isCheckDms;
   if (csPanel) csPanel.style.display = isCheckStatus ? '' : 'none';
   if (moPanel) moPanel.style.display = isMessageOnly ? '' : 'none';
-  if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
-  // 2.8.34: Pace section hidden for both auto-routed modes. check_status is
-  // read-only; message_only DMs 1st-degree connections (low-risk) and now
-  // drains every accepted lead back-to-back like check_status — no rate
-  // limits, no daily cap, no inter-lead pause.
+  // Check DMs needs the profile picker visible — operator selects which
+  // accounts' inboxes to scan.
+  if (navAccounts) navAccounts.style.display = (isCheckStatus || isMessageOnly) ? 'none' : '';
+  // 2.8.34: Pace section hidden for auto-routed modes (no per-lead pacing).
   if (navPace) navPace.style.display = isAutoRouted ? 'none' : '';
   if (isCheckStatus) {
     refreshCheckStatusPreview();
   } else if (isMessageOnly) {
     refreshMessageOnlyPreview();
+  } else if (isCheckDms) {
+    // Update Start button label so it's obvious what's about to fire.
+    ['btn-start', 'btn-start-rb'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.textContent = 'Start Check DMs';
+    });
   } else {
     // Reset Start CTA back to default when leaving auto-routed modes.
     ['btn-start', 'btn-start-rb'].forEach(id => {
@@ -1351,6 +1359,10 @@ const MODE_LIST = [
   { value: 'message_only',        name: 'Message Only',        desc: 'Send follow-up messages to existing 1st-degree connections. Fast, low-risk.' },
   { value: 'inmail_only',         name: 'InMail Only',         desc: 'Premium InMail to targets. Consumes InMail credits; use during passover windows.' },
   { value: 'open_profile_only',   name: 'Open Profile Message', desc: 'Free direct message to Open Profiles. No credits used; no connection required.' },
+  // 2.9.5: Check DMs as a first-class campaign mode. Routes to /api/check-dms/start
+  // when started, not /api/campaign/start. Read-only: scans inbox, appends new
+  // messages to the Replies tab, bumps Stage to "Replied" on inbound replies.
+  { value: 'check_dms',           name: 'Check DMs',           desc: 'Scan LinkedIn inboxes for new replies. Appends every new message to the Replies tab and bumps Stage to "Replied".' },
 ];
 
 function renderModeSelector() {
@@ -1719,9 +1731,17 @@ function stepInput(inputId, delta) {
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
 async function startCampaign() {
+  // 2.9.5: when mode is check_dms, this is a separate flow with its own
+  // endpoint and no campaign templates. Delegate to startCheckDms() and
+  // return — the rest of this function only applies to outreach campaigns.
+  const _modeEarly = document.getElementById('campaign-mode').value;
+  if (_modeEarly === 'check_dms') {
+    return startCheckDms();
+  }
+
   // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
   // the sheet's Account Used column. UI selection ignored — skip validation.
-  const _modeForValidation = document.getElementById('campaign-mode').value;
+  const _modeForValidation = _modeEarly;
   if (_modeForValidation !== 'check_status' && _modeForValidation !== 'message_only' && selectedProfileIds.length === 0) {
     alert('Select at least one GoLogin profile.'); return;
   }
