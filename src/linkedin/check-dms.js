@@ -557,11 +557,12 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
  * Returns the same shape as checkProfileDms: { replies, ambiguous, errors,
  * newWatermark }. `replies[i].messages` holds the full scraped thread.
  */
-export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn }) {
+export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn, shouldAbort }) {
   const startTime = Date.now();
   const replies = [];
   const ambiguous = [];
   const errors = [];
+  const abortCheck = typeof shouldAbort === 'function' ? shouldAbort : () => false;
 
   let session = null;
   try {
@@ -571,6 +572,10 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
     }
 
     for (const lead of (leads || [])) {
+      if (abortCheck()) {
+        errors.push('Aborted by operator before completing all leads');
+        break;
+      }
       // Resolve LinkedIn URL from the row. Reads the user's configured column
       // first, then falls back to scanning every column for linkedin.com.
       let linkedinUrl = '';

@@ -701,6 +701,7 @@ app.post('/api/check-dms/start', async (req, res) => {
           const result = await checkProfileDmsPerLead(profileId, leads, {
             sheetUrl,
             linkedinColumn: linkedinColumn || 'Linkedin URL',
+            shouldAbort: () => checkDms._abort,
           });
           byProfile[profileId] = result.replies || [];
           // Inbound count drives the headline metric the operator sees.

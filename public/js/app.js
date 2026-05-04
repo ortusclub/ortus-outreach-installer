@@ -1917,7 +1917,10 @@ async function startCampaign() {
 }
 
 async function stopCampaign() {
+  // 2.9.7: Check DMs is a separate flow with its own stop endpoint. Stop
+  // both — only the running one will react, and double-stop is harmless.
   try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
+  try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
 }
 
 // Phase 2.8.9: Stop confirmation modal — guards against accidental clicks.
