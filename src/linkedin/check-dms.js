@@ -373,14 +373,31 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
 
 // ── 2.9.7 Per-lead targeted thread scrape ────────────────────────────────────
 
+// Sales Navigator URN encoding — same regex outreach.js uses for the
+// /sales/lead/<urn> ↔ /in/<urn> transform. We can recover the publicId
+// slug from any Sales Nav URL that has an encoded member URN; vanity
+// Sales Nav URLs (rare) cannot be converted without visiting the page.
+const SALES_MEMBER_URN_RE = /\/sales\/(?:lead|people)\/(AC[A-Za-z0-9_-]{10,})(?:[,/?#]|$)/;
+
 /**
- * Extract the publicId slug from a /in/<slug> LinkedIn URL.
- * Returns null for Sales Navigator URLs (caller should skip + log).
+ * Extract the publicId slug from a LinkedIn URL.
+ *
+ * Handles:
+ *   - /in/<slug>             → returns slug
+ *   - /sales/lead/<urn>      → returns urn (the encoded URN works as a
+ *                              recipient= value, identical to /in/<urn>)
+ *   - /sales/people/<urn>    → ditto
+ *
+ * Returns null for unrecognized shapes (caller should skip + log).
  */
 export function extractPublicIdFromUrl(linkedinUrl) {
   if (!linkedinUrl) return null;
-  const m = String(linkedinUrl).match(/\/in\/([^/?#]+)/);
-  return m ? m[1] : null;
+  const url = String(linkedinUrl);
+  const m1 = url.match(/\/in\/([^/?#]+)/);
+  if (m1) return m1[1];
+  const m2 = url.match(SALES_MEMBER_URN_RE);
+  if (m2) return m2[1];
+  return null;
 }
 
 /**
@@ -518,8 +535,9 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
 
       const publicId = extractPublicIdFromUrl(linkedinUrl);
       if (!publicId) {
-        // Sales Navigator URLs don't contain /in/<slug>. Skip with a clear note.
-        errors.push(`Sales Navigator URL — cannot scrape thread: ${linkedinUrl}`);
+        // Vanity Sales Nav URL with no encoded member URN — same skip
+        // condition outreach.js uses for force_connect/force_message.
+        errors.push(`URL not in member-URN format — cannot route to /in/: ${linkedinUrl}`);
         continue;
       }
 
