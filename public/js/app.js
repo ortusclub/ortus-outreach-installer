@@ -1383,6 +1383,10 @@ function onModeChange() {
   if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
   // 2.8.34: Pace section hidden for auto-routed modes (no per-lead pacing).
   if (navPace) navPace.style.display = isAutoRouted ? 'none' : '';
+  // 2.9.7: Check DMs has no templates (read-only mode). Hide the templates
+  // section entirely; other modes (incl. message_only) keep it visible.
+  const navTemplates = document.getElementById('nav-templates');
+  if (navTemplates) navTemplates.style.display = isCheckDms ? 'none' : '';
   if (isCheckStatus) {
     refreshCheckStatusPreview();
   } else if (isMessageOnly) {
