@@ -414,11 +414,15 @@ function stableMessageKey(direction, body) {
 }
 
 /**
- * Read the running account's own URN ("ACoAAByAI28B0aVPzIxcgtSKT7-z3X5vsOhq9J0")
- * via Voyager /me. Returned URN is what data-event-urn embeds for outbound
- * messages — comparing URN-to-URN sidesteps every DOM uncertainty.
+ * Read the running account's identity from Voyager /me.
  *
- * Returns { urn, slug } or { urn: null, slug: null } on failure.
+ * 2.9.7 v3: data-event-urn turned out to be the MAILBOX-OWNER URN, NOT
+ * the sender's URN. So URN-based direction detection doesn't work. We
+ * fall back to the most stable per-message signal: the operator's full
+ * NAME ("Antonio Varlese"), which appears in the name element of every
+ * outbound message bubble.
+ *
+ * Returns { fullName, slug } or { fullName: null, slug: null } on failure.
  */
 async function getRunningAccountIds(page) {
   try {
@@ -428,155 +432,123 @@ async function getRunningAccountIds(page) {
           .map(c => c.trim())
           .find(c => c.startsWith('JSESSIONID='));
         const csrf = csrfCookie?.split('=')[1]?.replace(/"/g, '');
-        if (!csrf) return { urn: null, slug: null };
+        if (!csrf) return { fullName: null, slug: null };
         const resp = await fetch('/voyager/api/me', {
-          headers: {
-            'accept': 'application/vnd.linkedin.normalized+json+2.1',
-            'csrf-token': csrf,
-            'x-restli-protocol-version': '2.0.0',
-          },
           credentials: 'include',
+          headers: { 'csrf-token': csrf },
         });
-        if (!resp.ok) return { urn: null, slug: null };
+        if (!resp.ok) return { fullName: null, slug: null };
         const data = await resp.json();
-        // Look at miniProfile.entityUrn (urn:li:fs_miniProfile:<URN>) and publicIdentifier.
-        const root = data?.miniProfile || data?.data?.miniProfile;
-        let urn = null, slug = null;
-        if (root) {
-          slug = root.publicIdentifier || null;
-          const urnStr = root.entityUrn || '';
-          const m = urnStr.match(/urn:li:fs_miniProfile:([A-Za-z0-9_-]+)/);
-          if (m) urn = m[1];
+        const mp = data?.miniProfile || data?.data?.miniProfile || null;
+        if (mp) {
+          const fn = (mp.firstName || '').trim();
+          const ln = (mp.lastName || '').trim();
+          const fullName = `${fn} ${ln}`.replace(/\s+/g, ' ').trim();
+          return { fullName: fullName || null, slug: mp.publicIdentifier || null };
         }
-        if ((!urn || !slug) && Array.isArray(data?.included)) {
-          for (const e of data.included) {
-            if (!slug && e?.publicIdentifier) slug = e.publicIdentifier;
-            if (!urn && typeof e?.entityUrn === 'string') {
-              const m = e.entityUrn.match(/urn:li:fs_miniProfile:([A-Za-z0-9_-]+)/);
-              if (m) urn = m[1];
-            }
-            if (urn && slug) break;
-          }
-        }
-        return { urn, slug };
+        return { fullName: null, slug: null };
       } catch {
-        return { urn: null, slug: null };
+        return { fullName: null, slug: null };
       }
     });
   } catch {
-    return { urn: null, slug: null };
+    return { fullName: null, slug: null };
   }
 }
 
 /**
  * Scrape the visible message thread from a LinkedIn /messaging/compose page.
  *
- * 2.9.7 v2 — uses URN-based direction detection. Each `.msg-s-event-listitem`
- * has `data-event-urn="urn:li:msg_message:(urn:li:fsd_profile:<SENDER_URN>,...)"`.
- * Comparing the SENDER_URN to the running account's URN gives us reliable
- * direction tagging regardless of URL shape, anchor href quirks, or class
- * rotations.
+ * 2.9.7 v3 — uses NAME-based direction detection.
  *
- * Body comes from `<p class="msg-s-event-listitem__body">` ONLY — no
- * textContent fallback. Items without that <p> are not real messages
- * (date boundaries, system events, etc.) and are silently skipped.
+ * Why not URN: data-event-urn carries the mailbox-owner URN (the running
+ * account, identical for every message in the thread), NOT the sender.
+ * Verified empirically: 5 messages from 3 different senders all had the
+ * same URN segment.
+ *
+ * Why name works: each outbound bubble has a name element containing the
+ * operator's display name ("Antonio Varlese"), and inbound bubbles have
+ * the lead's name. We pull the operator's full name from Voyager /me
+ * (firstName + lastName) and compare exact strings.
+ *
+ * Items are restricted to the VISIBLE message-list container. LinkedIn
+ * caches recent threads' DOM as separate hidden containers — without
+ * scoping we'd pick up messages from other (cached) conversations.
  *
  * Returns { sender, direction, body, time } per message in DOM order.
  */
 export async function extractDmThreadFromPage(page, leadPublicId) {
-  const { urn: meUrn, slug: meSlug } = await getRunningAccountIds(page);
+  const { fullName: meName, slug: meSlug } = await getRunningAccountIds(page);
 
-  const raw = await page.evaluate(({ meUrn, meSlug, leadPublicId }) => {
+  const raw = await page.evaluate(({ meName, meSlug, leadPublicId }) => {
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-    // Restrict to the active thread's message list. Falls back to the
-    // whole document if we can't find the container.
-    const listContainers = document.querySelectorAll(
-      '.msg-s-message-list-content, [class*="msg-s-message-list"]'
+
+    // Find the VISIBLE message-list container. There's typically one per
+    // recently-viewed thread cached in the DOM; only the active thread's
+    // container has non-zero dimensions.
+    const containers = document.querySelectorAll(
+      '.msg-s-message-list-content, [class*="msg-s-message-list-content"]'
     );
-    let items = [];
-    if (listContainers.length > 0) {
-      for (const c of listContainers) {
-        items.push(...c.querySelectorAll('.msg-s-event-listitem'));
-      }
-    } else {
-      items = Array.from(document.querySelectorAll('.msg-s-event-listitem'));
+    let activeContainer = null;
+    for (const c of containers) {
+      const rect = c.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) { activeContainer = c; break; }
     }
+    // If none looked visible (rare), fall back to the first container.
+    if (!activeContainer && containers.length > 0) {
+      activeContainer = containers[0];
+    }
+    const items = activeContainer
+      ? Array.from(activeContainer.querySelectorAll('.msg-s-event-listitem'))
+      : Array.from(document.querySelectorAll('.msg-s-event-listitem'));
 
     window.__ortusDebug = {
       itemsFound: items.length,
-      meUrn: meUrn || null,
+      containers: containers.length,
+      meName: meName || null,
       meSlug: meSlug || null,
       leadPublicId: leadPublicId || null,
     };
 
     const out = [];
-    let lastSenderUrn = null;
     let lastSenderName = '';
     let lastDirection = null;
 
     for (const item of items) {
       // Body — strict: <p class="msg-s-event-listitem__body">.
-      // No fallback. Items without this element aren't real messages.
       const bodyEl = item.querySelector('p.msg-s-event-listitem__body, .msg-s-event-listitem__body');
       if (!bodyEl) continue;
       const body = norm(bodyEl.textContent || '');
       if (!body) continue;
 
-      // Sender URN — pulled from data-event-urn on the item itself, or
-      // from the bubble's data-event-urn if it lives there. The URN
-      // payload is `urn:li:msg_message:(urn:li:fsd_profile:<SENDER>,…)`.
-      let urnAttr = item.getAttribute('data-event-urn') || '';
-      if (!urnAttr) {
-        const carrier = item.querySelector('[data-event-urn]');
-        if (carrier) urnAttr = carrier.getAttribute('data-event-urn') || '';
-      }
-      let senderUrn = null;
-      if (urnAttr) {
-        const m = urnAttr.match(/urn:li:fsd_profile:([A-Za-z0-9_-]+)/);
-        if (m) senderUrn = m[1];
-      }
-
-      // Sender display name — visible text on the bubble's name element.
+      // Sender display name — present on first message of a contiguous
+      // run from one sender. Continuation rows omit it.
       let senderName = '';
       const nameEl = item.querySelector('.msg-s-message-group__name, .msg-s-event-listitem__name, [class*="event-listitem__name"]');
       if (nameEl) senderName = norm(nameEl.textContent);
       if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
-      // Time — from the bubble's timestamp element. Visible text only
-      // (e.g. "6:01 PM") since LinkedIn rarely emits a datetime= attr.
+      // Time — visible text from a time-ish element. Often empty per-message.
       let time = '';
       const tEl = item.querySelector('time, .msg-s-message-group__timestamp, [class*="timestamp"]');
       if (tEl) {
         time = norm(tEl.getAttribute('datetime') || tEl.textContent || '');
       }
 
-      // Continuation: inherit previous sender if this row didn't carry
-      // its own URN (LinkedIn often only stamps the first row of a
-      // contiguous group, but data-event-urn is per-message).
-      if (!senderUrn && lastSenderUrn) {
-        senderUrn = lastSenderUrn;
-        if (!senderName) senderName = lastSenderName;
-      }
+      // Continuation: inherit previous sender if no name on this row.
+      if (!senderName && lastSenderName) senderName = lastSenderName;
 
-      // Direction by URN comparison. meUrn is the most reliable.
-      // Fall back to slug compare via the lead's publicId if URN missing.
+      // Direction = name match against the operator.
       let direction;
-      if (senderUrn && meUrn && senderUrn === meUrn) {
+      if (senderName && meName && senderName === meName) {
         direction = 'out';
-      } else if (senderUrn) {
+      } else if (senderName) {
         direction = 'in';
       } else {
-        // No URN at all — try one last heuristic: compare any /in/<slug>
-        // anchor inside the item to leadPublicId.
-        const a = item.querySelector('a[href*="/in/"]');
-        const m = a?.getAttribute('href')?.match(/\/in\/([^/?#]+)/);
-        if (m && leadPublicId && m[1] === leadPublicId) direction = 'in';
-        else if (m && meSlug && m[1] === meSlug) direction = 'out';
-        else direction = lastDirection || 'unknown';
+        direction = lastDirection || 'unknown';
       }
 
-      if (senderUrn) {
-        lastSenderUrn = senderUrn;
+      if (senderName) {
         lastSenderName = senderName;
         lastDirection = direction;
       }
@@ -584,7 +556,7 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       out.push({ sender: senderName, direction, body, time });
     }
     return out;
-  }, { meUrn, meSlug, leadPublicId });
+  }, { meName, meSlug, leadPublicId });
 
   return raw.map((m) => ({
     sender: m.sender,
@@ -700,7 +672,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         } catch { /* */ }
         logLine(
           `[check-dms] ${linkedinUrl}: scraped ${thread.length} message(s) ` +
-          `(itemsFound=${dbg?.itemsFound ?? '?'} meUrn=${dbg?.meUrn || 'NULL'} meSlug=${dbg?.meSlug || 'NULL'} leadPublicId=${dbg?.leadPublicId || 'NULL'})`
+          `(itemsFound=${dbg?.itemsFound ?? '?'} containers=${dbg?.containers ?? '?'} meName="${dbg?.meName || ''}" meSlug=${dbg?.meSlug || 'NULL'})`
         );
 
         // If we found NO items, dump a DOM sample so we can update selectors.

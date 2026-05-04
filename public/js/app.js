@@ -2195,6 +2195,11 @@ function startCheckDmsPolling() {
   if (checkDmsPollTimer) clearInterval(checkDmsPollTimer);
   checkDmsPollTimer = setInterval(pollCheckDmsStatus, 2000);
   pollCheckDmsStatus();
+  // 2.9.7: Check DMs orchestrator pushes diagnostic lines into
+  // campaign.logs so the Live Status log feed picks them up. That feed
+  // is updated by pollStatus() (separate from pollCheckDmsStatus), so
+  // we kick the campaign poller too. Both stop on their own when idle.
+  startPolling();
 }
 
 function stopCheckDmsPolling() {
