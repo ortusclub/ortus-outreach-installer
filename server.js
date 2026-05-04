@@ -639,11 +639,16 @@ app.post('/api/check-dms/start', async (req, res) => {
       return String(row.Message || '').trim().toLowerCase() === 'sent';
     });
 
-    // Group rows by Sender → profileId.
+    // Group rows by Sender → profileId. New schema (2.9.x) writes the
+    // canonical name to the 'Sender' column; legacy sheets use 'Account Used'.
+    // Read both — prefer Sender, fall back to Account Used.
     const leadsByProfile = new Map();
     const unmatched = new Map();
     for (const row of candidateRows) {
-      const acct = String(row['Account Used'] || row['account used'] || '').trim();
+      const acct = String(
+        row['Sender'] || row['sender'] ||
+        row['Account Used'] || row['account used'] || ''
+      ).trim();
       if (!acct) {
         unmatched.set('(blank)', (unmatched.get('(blank)') || 0) + 1);
         continue;
@@ -658,10 +663,18 @@ app.post('/api/check-dms/start', async (req, res) => {
     }
 
     if (leadsByProfile.size === 0) {
+      let msg;
+      if (candidateRows.length === 0) {
+        msg = 'No rows in Sent stage found — nothing to check.';
+      } else {
+        const names = [...unmatched.entries()]
+          .map(([n, c]) => `${n} (${c})`)
+          .slice(0, 5)
+          .join(', ');
+        msg = `Found ${candidateRows.length} row(s) in Sent stage, but no GoLogin profile in this workspace matches the sender(s): ${names}.`;
+      }
       return res.status(400).json({
-        error: candidateRows.length === 0
-          ? 'No rows in Sent stage found — nothing to check.'
-          : 'No matching GoLogin profiles for the senders in this sheet.',
+        error: msg,
         unmatched: Object.fromEntries(unmatched),
       });
     }
@@ -760,7 +773,10 @@ app.get('/api/check-dms/preview', async (req, res) => {
       } else {
         if (String(row.Message || '').trim().toLowerCase() !== 'sent') continue;
       }
-      const acct = String(row['Account Used'] || row['account used'] || '').trim();
+      const acct = String(
+        row['Sender'] || row['sender'] ||
+        row['Account Used'] || row['account used'] || ''
+      ).trim();
       if (!acct) continue;
       totalThreads++;
       if (LOCAL_BROWSER_NAMES.has(acct)) {
