@@ -259,6 +259,22 @@ function setAction(label, opts = {}) {
   };
 }
 
+// 2.9.2: format a Date in the operator's local timezone (the Electron app
+// runs on their machine, so new Date() already reflects their TZ — Philippines,
+// Europe, US, wherever). Output: "May 4th, 13:43" — month abbreviation, day
+// with ordinal suffix, 24h time, no seconds, no year.
+const _MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatLocalDate(d) {
+  const day = d.getDate();
+  const ord = (day % 100 >= 11 && day % 100 <= 13) ? 'th'
+            : (day % 10 === 1) ? 'st'
+            : (day % 10 === 2) ? 'nd'
+            : (day % 10 === 3) ? 'rd' : 'th';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${_MONTHS_SHORT[d.getMonth()]} ${day}${ord}, ${hh}:${mm}`;
+}
+
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
   console.log(line);
@@ -1012,7 +1028,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         return null;
       }
 
-      const pName = profileNameCache[profileId] || profileId;
+      // 2.9.2: never let the raw profileId 'local-browser' leak to the sheet
+      // (it bypasses profileNameCache when that's stale). Force 'You'.
+      const pName = profileNameCache[profileId] || (profileId === 'local-browser' ? 'You' : profileId);
       campaign.currentProfile = pName;
 
       try {
@@ -1415,7 +1433,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           }
           log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
 
-          const now = new Date().toISOString();
+          // 2.9.2: human-readable local time for the sheet ("May 4th, 13:43"),
+          // not the UTC ISO timestamp logs use.
+          const now = formatLocalDate(new Date());
 
           if (SUCCESS_ACTIONS.has(result.action)) {
             state.processed[url] = { profileId, profileName: pName, action: result.action, date: now };
@@ -1800,7 +1820,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // Log per-profile stats (from the sessions Map — covers both still-open
     // and already-closed profiles via campaignCounts).
     for (const profileId of profileIds) {
-      const pName = profileNameCache[profileId] || profileId;
+      // 2.9.2: never let the raw profileId 'local-browser' leak to the sheet
+      // (it bypasses profileNameCache when that's stale). Force 'You'.
+      const pName = profileNameCache[profileId] || (profileId === 'local-browser' ? 'You' : profileId);
       log(`■ ${pName}: ${getCampaignCount(profileId)} processed.`);
     }
 
