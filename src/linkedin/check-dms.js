@@ -570,24 +570,27 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       // Drop any "View X's profile" leakage
       if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
-      // Body: prefer the explicit message-body element. If selectors miss,
-      // fall back to the item's full textContent minus the sender display
-      // name (rough but better than dropping the message).
+      // Body: ONLY accept items with an explicit message-body element.
+      // Falling back to textContent captures system rows ("X sent the
+      // following message at HH:MM"), date separators, read receipts, etc.
       const bodyEl = item.querySelector(
         '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message__body"], [class*="msg-event-listitem__body"], [class*="message-bubble__body"], [class*="msg-event-bubble"]'
       );
-      let body = norm(bodyEl?.textContent || '');
-      if (!body) {
-        // Fallback: strip sender display name from full text
-        let txt = norm(item.textContent || '');
-        if (senderName && txt.startsWith(senderName)) {
-          txt = norm(txt.slice(senderName.length));
-        }
-        body = txt;
-      }
-      // If we still have nothing, the item is likely a system row (read
-      // receipt, "joined the chat", typing indicator). Skip it.
+      if (!bodyEl) continue; // not a real message bubble
+      const body = norm(bodyEl.textContent || '');
       if (!body || body.length < 2) continue;
+      // Skip LinkedIn system rows that match the body selector but aren't
+      // real messages (occasional UI variant).
+      if (/^.+\s+sent the following messages?\s+at\s+/i.test(body)) continue;
+      if (/^(is\s+typing|delivered|read|seen)\b/i.test(body)) continue;
+
+      // Time: prefer <time datetime> for ISO, fall back to its visible text
+      // ("3:24 PM" / "Apr 17"). Stored as-is in the sheet.
+      let time = '';
+      const tEl = item.querySelector('time, [class*="timestamp"]');
+      if (tEl) {
+        time = norm(tEl.getAttribute('datetime') || tEl.textContent || '');
+      }
 
       // Continuation: inherit previous sender if no anchor on this row
       if (!slug && lastSlug) {
@@ -616,20 +619,18 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
         lastDirection = direction;
       }
 
-      out.push({ sender: senderName, direction, body });
+      out.push({ sender: senderName, direction, body, time });
     }
     return out;
   }, { meSlug, leadSlug });
 
-  // Always derive timestamp from a stable content hash. LinkedIn's DOM
-  // timestamps are inconsistent across runs (sometimes "6:44 PM",
-  // sometimes empty) so using them would break dedup — bridge dedupes
-  // on (leadUrl, timestamp) and we'd get duplicate rows.
+  // 2.9.7: pass through the visible time. Bridge now dedupes on
+  // (leadUrl, body) so timestamp can be a human-readable display value.
   return raw.map((m) => ({
     sender: m.sender,
     direction: m.direction || 'unknown',
     body: m.body,
-    timestamp: stableMessageKey(m.direction || 'unknown', m.body),
+    time: m.time || '',
   }));
 }
 
@@ -783,12 +784,13 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         ).trim();
 
         // Append the last-two inbound messages. Bridge dedupes on
-        // (leadUrl, timestamp) so re-runs are idempotent.
+        // (leadUrl, body) so re-runs are idempotent regardless of how
+        // LinkedIn renders the timestamp.
         for (const msg of lastTwo) {
           try {
             await _deps.appendReplyRow(sheetUrl, {
               leadUrl: linkedinUrl,
-              timestamp: msg.timestamp,
+              timestamp: msg.time || '',
               firstName,
               lastName,
               body: msg.body,
