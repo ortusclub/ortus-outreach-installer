@@ -176,8 +176,11 @@ export async function appendReplyRow(sheetUrl, reply) {
     console.log('[sheets-writer] No SHEETS_WEBAPP_URL — skipping Replies append');
     return false;
   }
-  if (!reply?.leadUrl || !reply?.timestamp) {
-    console.warn('[sheets-writer] appendReplyRow: leadUrl + timestamp required');
+  // 2.9.7: dedup is now (leadUrl, body), not (leadUrl, timestamp).
+  // Timestamp can be empty when LinkedIn's DOM doesn't expose a <time>
+  // element for that message — that's fine, body is the dedup key.
+  if (!reply?.leadUrl || !reply?.body) {
+    console.warn('[sheets-writer] appendReplyRow: leadUrl + body required');
     return false;
   }
   const sheetId = extractSheetId(sheetUrl);

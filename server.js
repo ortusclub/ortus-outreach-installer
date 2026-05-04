@@ -702,9 +702,14 @@ app.post('/api/check-dms/start', async (req, res) => {
             sheetUrl,
             linkedinColumn: linkedinColumn || 'Linkedin URL',
             shouldAbort: () => checkDms._abort,
-            // 2.9.7: surface diagnostic lines to the operator-visible log.
-            // checkDms.errors[] is the only field already polled and shown.
-            log: (line) => { checkDms.errors.push(`[log] ${line}`); },
+            // 2.9.7: surface diagnostic lines to the Live Status log panel
+            // (which polls campaign.logs on /api/campaign/status). The
+            // check-dms vs campaign mutex makes mixing safe.
+            log: (line) => {
+              const stamped = `[${new Date().toISOString()}] ${line}`;
+              campaign.logs.push(stamped);
+              if (campaign.logs.length > 500) campaign.logs.shift();
+            },
           });
           byProfile[profileId] = result.replies || [];
           // Inbound count drives the headline metric the operator sees.
