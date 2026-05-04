@@ -869,7 +869,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const token = tokenNeeded ? getToken() : null;
     for (const pid of profileIds) {
       if (pid === 'local-browser') {
-        profileNameCache[pid] = 'Local Browser';
+        // 2.9.1: display name is "You" (was "Local Browser"). Sheet writeback
+        // and dashboard pick this up via profileNameCache.
+        profileNameCache[pid] = 'You';
       } else {
         await getProfileName(pid, token);
       }
@@ -901,8 +903,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       // 2.8.29: Local browser is a valid pseudo-profile. Sheets store its
       // Account Used as variants like "local-browser", "local-browser - manual",
       // or "Local Browser" — all map to the single 'local-browser' pseudo-id.
-      nameToId['Local Browser'] = 'local-browser';
-      nameToId['local-browser'] = 'local-browser';
+      // 2.9.1: keep all historical display names mapped back to the canonical
+      // 'local-browser' id so existing sheet rows still auto-route correctly.
+      nameToId['You']                    = 'local-browser';
+      nameToId['Local Browser']          = 'local-browser';
+      nameToId['local-browser']          = 'local-browser';
       nameToId['local-browser - manual'] = 'local-browser';
 
       const sendersInSheet = new Map(); // name -> count (uses display name)
@@ -914,8 +919,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           continue;
         }
         if (nameToId[acct]) {
-          // For local-browser variants, bucket under the canonical "Local Browser" label.
-          const displayName = (nameToId[acct] === 'local-browser') ? 'Local Browser' : acct;
+          // For local-browser variants, bucket under the canonical "You" label. (2.9.1)
+          const displayName = (nameToId[acct] === 'local-browser') ? 'You' : acct;
           sendersInSheet.set(displayName, (sendersInSheet.get(displayName) || 0) + 1);
         } else {
           unmatchedSenders.set(acct, (unmatchedSenders.get(acct) || 0) + 1);
@@ -949,7 +954,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       // 2.8.29: ensure local-browser has a display name in the cache even when
       // it came from auto-derivation rather than UI selection.
       if (derivedProfileIds.includes('local-browser') && !profileNameCache['local-browser']) {
-        profileNameCache['local-browser'] = 'Local Browser';
+        profileNameCache['local-browser'] = 'You'; // 2.9.1: was 'Local Browser'
       }
 
       // 2.8.28-P2: Build per-profile target lists. Without this, the shared
@@ -1636,7 +1641,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: errorMsg,
               }, linkedinColumn).catch(() => {});
@@ -1647,7 +1654,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: 'Skipped',
+                stage: 'Skipped',
                 accountUsed: pName,
+                sender: pName,
                 dateLastAction: now,
                 auditAction: errorMsg,
               }, linkedinColumn).catch(() => {});
