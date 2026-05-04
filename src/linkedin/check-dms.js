@@ -696,6 +696,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         // fresh compose pane otherwise — and the prior message history is
         // visible in both cases.
         const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
+        console.log(`[check-dms] → ${linkedinUrl}`);
         if (typeof session.page.goto === 'function') {
           await session.page.goto(composeUrl, {
             waitUntil: 'domcontentloaded',
@@ -703,19 +704,28 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
           });
         }
 
-        // Wait for thread DOM to populate. Cast a wide net across LinkedIn
-        // class rotations. If everything times out we still try to scrape
-        // — sometimes the items are there but just don't match selectors.
-        if (typeof session.page.waitForSelector === 'function') {
-          await session.page.waitForSelector(
-            '.msg-s-event-listitem, [class*="event-listitem"], [class*="msg-event"], [class*="message-list"] li',
-            { timeout: 12000 },
-          ).catch(() => { /* empty thread is OK */ });
+        // Poll for the message list to render. LinkedIn's messaging is
+        // slow to hydrate (heavy SPA + Voyager XHRs). Old fixed waits
+        // missed the list on slower networks.
+        if (typeof session.page.evaluate === 'function') {
+          await session.page.evaluate(async () => {
+            const sels = [
+              '.msg-s-event-listitem',
+              '[class*="event-listitem"]',
+              '[class*="msg-event"]',
+              '[class*="message-list"] li',
+              '[class*="msg-s-message-list"] li',
+            ];
+            for (let i = 0; i < 40; i++) {
+              for (const s of sels) {
+                if (document.querySelectorAll(s).length > 0) return;
+              }
+              await new Promise(r => setTimeout(r, 500));
+            }
+          }).catch(() => { /* */ });
         }
-        // 2.9.7: 3s settle (was 1.5s) — LinkedIn is slow to render the
-        // message list on first navigation, especially when prior history
-        // exists. Short waits dropped the tail of the list.
-        await new Promise(r => setTimeout(r, 3000));
+        // Final settle for late-render bubbles.
+        await new Promise(r => setTimeout(r, 1500));
 
         const thread = await extractDmThreadFromPage(session.page, publicId);
         // Pull debug info out of the page so we can see WHY scraping failed.
@@ -727,6 +737,30 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
           `[check-dms] ${linkedinUrl}: scraped ${thread.length} message(s) ` +
           `(itemsFound=${dbg?.itemsFound ?? '?'} meSlug=${dbg?.meSlug || 'NULL'} leadSlug=${dbg?.leadSlug || 'NULL'})`
         );
+
+        // If we found NO items, dump a DOM sample so we can update selectors.
+        if (thread.length === 0 && typeof session.page.evaluate === 'function') {
+          try {
+            const sample = await session.page.evaluate(() => {
+              const main = document.querySelector('main') || document.body;
+              const mainCls = main?.className?.toString().slice(0, 80) || '';
+              const inLinks = main?.querySelectorAll('a[href*="/in/"]').length || 0;
+              const liCount = main?.querySelectorAll('li').length || 0;
+              const url = window.location.href;
+              // Sample first 3 list items inside main with /in/ links
+              const samples = [];
+              const lis = main?.querySelectorAll('li') || [];
+              for (let i = 0; i < Math.min(lis.length, 3); i++) {
+                const li = lis[i];
+                if (li.querySelector('a[href*="/in/"]')) {
+                  samples.push((li.className || '').toString().slice(0, 90));
+                }
+              }
+              return { url, mainCls, inLinks, liCount, samples };
+            });
+            console.log(`[check-dms] DOM sample: url=${sample.url} mainCls="${sample.mainCls}" inLinks=${sample.inLinks} li=${sample.liCount} liCls=${JSON.stringify(sample.samples)}`);
+          } catch { /* */ }
+        }
 
         // 2.9.7: keep inbound only. Fall back to "everything except known
         // outbound" when meSlug detection fails (then 'unknown' is a stand-in
