@@ -702,6 +702,9 @@ app.post('/api/check-dms/start', async (req, res) => {
             sheetUrl,
             linkedinColumn: linkedinColumn || 'Linkedin URL',
             shouldAbort: () => checkDms._abort,
+            // 2.9.7: surface diagnostic lines to the operator-visible log.
+            // checkDms.errors[] is the only field already polled and shown.
+            log: (line) => { checkDms.errors.push(`[log] ${line}`); },
           });
           byProfile[profileId] = result.replies || [];
           // Inbound count drives the headline metric the operator sees.

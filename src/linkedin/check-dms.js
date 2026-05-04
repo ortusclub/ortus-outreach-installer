@@ -450,26 +450,56 @@ async function getLiveLeadSlug(page) {
 }
 
 /**
- * Read the running account's own profile slug from the LinkedIn global nav.
- * Tries many selectors because LinkedIn's nav DOM rotates classes — the
- * fallback walks every nav anchor and returns the first /in/ link.
+ * Read the running account's own profile slug.
+ *
+ * Strategy: hit LinkedIn's own Voyager /me endpoint from inside the page
+ * context (inherits cookies + CSRF). That returns the current user's
+ * publicIdentifier directly — no DOM dependency, no class-rotation risk.
+ * Falls back to global-nav DOM scraping if /me isn't available.
  *
  * Returns the slug string, or null if it can't be determined.
  */
 async function getRunningAccountSlug(page) {
   try {
-    return await page.evaluate(() => {
+    return await page.evaluate(async () => {
+      // Step 1: Voyager /me API — most reliable.
+      try {
+        const csrfCookie = document.cookie.split(';')
+          .map(c => c.trim())
+          .find(c => c.startsWith('JSESSIONID='));
+        const csrf = csrfCookie?.split('=')[1]?.replace(/"/g, '');
+        if (csrf) {
+          const resp = await fetch('/voyager/api/me', {
+            headers: {
+              'accept': 'application/vnd.linkedin.normalized+json+2.1',
+              'csrf-token': csrf,
+              'x-restli-protocol-version': '2.0.0',
+            },
+            credentials: 'include',
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            // publicIdentifier is at data.miniProfile.publicIdentifier OR
+            // in data.included[].publicIdentifier
+            const pid = data?.miniProfile?.publicIdentifier
+              ?? data?.data?.miniProfile?.publicIdentifier;
+            if (pid) return pid;
+            const inc = Array.isArray(data?.included) ? data.included : [];
+            for (const e of inc) {
+              if (e?.publicIdentifier) return e.publicIdentifier;
+            }
+          }
+        }
+      } catch { /* fall through to DOM */ }
+
+      // Step 2: DOM fallback — walk every nav anchor that points to /in/.
       const collect = (sel) => Array.from(document.querySelectorAll(sel));
-      // Cast a wide net — every selector that LinkedIn has used for the
-      // nav profile link in the last few redesigns.
       const candidates = [
         ...collect('a.global-nav__me-photo'),
         ...collect('a[class*="global-nav__me"]'),
         ...collect('[class*="global-nav__me"] a[href*="/in/"]'),
         ...collect('a[data-control-name="identity_welcome_message"]'),
         ...collect('a[data-control-name*="nav.settings_signout"]'),
-        ...collect('img[class*="global-nav__me"]'),
-        // Profile-menu trigger button often has aria-label "Me, …"
         ...collect('[aria-label^="Me," i] a[href*="/in/"]'),
         ...collect('header a[href*="/in/"]'),
         ...collect('nav a[href*="/in/"]'),
@@ -570,19 +600,32 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       // Drop any "View X's profile" leakage
       if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
-      // Body: ONLY accept items with an explicit message-body element.
-      // Falling back to textContent captures system rows ("X sent the
-      // following message at HH:MM"), date separators, read receipts, etc.
+      // Body: prefer explicit body element, else use textContent minus
+      // sender name. The strict body-only path missed too many real
+      // messages on rotated class hashes.
       const bodyEl = item.querySelector(
         '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message__body"], [class*="msg-event-listitem__body"], [class*="message-bubble__body"], [class*="msg-event-bubble"]'
       );
-      if (!bodyEl) continue; // not a real message bubble
-      const body = norm(bodyEl.textContent || '');
+      let body = norm(bodyEl?.textContent || '');
+      if (!body) {
+        let txt = norm(item.textContent || '');
+        if (senderName && txt.startsWith(senderName)) {
+          txt = norm(txt.slice(senderName.length));
+        }
+        body = txt;
+      }
       if (!body || body.length < 2) continue;
-      // Skip LinkedIn system rows that match the body selector but aren't
-      // real messages (occasional UI variant).
+      // Reject anything that looks like a LinkedIn UI / system row, not
+      // a real message body. These all match the bubble selector on some
+      // LinkedIn variants but aren't replies.
+      const lower = body.toLowerCase();
       if (/^.+\s+sent the following messages?\s+at\s+/i.test(body)) continue;
       if (/^(is\s+typing|delivered|read|seen)\b/i.test(body)) continue;
+      // Date separators ("APR 17", "MAY 1", "TODAY", "YESTERDAY")
+      if (/^(today|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(body) && body.length < 30) continue;
+      // "View profile" / accessibility-label leakage
+      if (/^view .+'s? (profile|page)$/i.test(body)) continue;
+      if (/^reaction(s)?:\s/i.test(lower)) continue;
 
       // Time: prefer <time datetime> for ISO, fall back to its visible text
       // ("3:24 PM" / "Apr 17"). Stored as-is in the sheet.
@@ -645,12 +688,16 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
  * Returns the same shape as checkProfileDms: { replies, ambiguous, errors,
  * newWatermark }. `replies[i].messages` holds the full scraped thread.
  */
-export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn, shouldAbort }) {
+export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn, shouldAbort, log }) {
   const startTime = Date.now();
   const replies = [];
   const ambiguous = [];
   const errors = [];
   const abortCheck = typeof shouldAbort === 'function' ? shouldAbort : () => false;
+  const logLine = (msg) => {
+    console.log(msg);
+    if (typeof log === 'function') { try { log(msg); } catch { /* */ } }
+  };
 
   let session = null;
   try {
@@ -697,7 +744,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         // fresh compose pane otherwise — and the prior message history is
         // visible in both cases.
         const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
-        console.log(`[check-dms] → ${linkedinUrl}`);
+        logLine(`[check-dms] → ${linkedinUrl}`);
         if (typeof session.page.goto === 'function') {
           await session.page.goto(composeUrl, {
             waitUntil: 'domcontentloaded',
@@ -734,7 +781,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         try {
           dbg = await session.page.evaluate(() => window.__ortusDebug || null);
         } catch { /* */ }
-        console.log(
+        logLine(
           `[check-dms] ${linkedinUrl}: scraped ${thread.length} message(s) ` +
           `(itemsFound=${dbg?.itemsFound ?? '?'} meSlug=${dbg?.meSlug || 'NULL'} leadSlug=${dbg?.leadSlug || 'NULL'})`
         );
@@ -759,7 +806,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
               }
               return { url, mainCls, inLinks, liCount, samples };
             });
-            console.log(`[check-dms] DOM sample: url=${sample.url} mainCls="${sample.mainCls}" inLinks=${sample.inLinks} li=${sample.liCount} liCls=${JSON.stringify(sample.samples)}`);
+            logLine(`[check-dms] DOM sample: url=${sample.url} mainCls="${sample.mainCls}" inLinks=${sample.inLinks} li=${sample.liCount} liCls=${JSON.stringify(sample.samples)}`);
           } catch { /* */ }
         }
 
@@ -772,7 +819,10 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         const lastTwo = filtered.slice(-2);
         const inboundOnly = filtered;
         if (thread.length > 0 && lastTwo.length === 0) {
-          console.log(`[check-dms] ${linkedinUrl}: ${thread.length} scraped but all 'out' — likely no reply yet`);
+          const inCount = thread.filter(m => m.direction === 'in').length;
+          const outCount = thread.filter(m => m.direction === 'out').length;
+          const unkCount = thread.filter(m => m.direction === 'unknown').length;
+          logLine(`[check-dms] ${linkedinUrl}: ${thread.length} scraped, in=${inCount} out=${outCount} unknown=${unkCount} — nothing to write`);
         }
 
         // Pull lead's First / Last name from the row. Try several casings.
