@@ -414,17 +414,61 @@ function stableMessageKey(direction, body) {
 }
 
 /**
+ * Read the running account's own profile slug from the LinkedIn global nav.
+ * Used to classify each message's direction reliably regardless of URL
+ * shape (Sales Nav URLs have an encoded URN as publicId, but in-thread
+ * sender anchors use human slugs — comparing to "me" sidesteps that).
+ *
+ * Returns the slug string, or null if the global nav isn't present.
+ */
+async function getRunningAccountSlug(page) {
+  try {
+    return await page.evaluate(() => {
+      const candidates = [
+        'a.global-nav__me-photo',
+        'a[class*="global-nav__me"]',
+        '[class*="global-nav__me"] a[href*="/in/"]',
+        'a[data-control-name="identity_welcome_message"]',
+        'a[href*="/in/"][class*="global-nav"]',
+      ];
+      for (const sel of candidates) {
+        const a = document.querySelector(sel);
+        if (a) {
+          const href = a.getAttribute('href') || '';
+          const m = href.match(/\/in\/([^/?#]+)/);
+          if (m) return m[1];
+        }
+      }
+      // Fallback: any visible nav-area link containing /in/
+      const navAreas = document.querySelectorAll('nav, header, [class*="global-nav"]');
+      for (const area of navAreas) {
+        const a = area.querySelector('a[href*="/in/"]');
+        if (a) {
+          const m = a.getAttribute('href').match(/\/in\/([^/?#]+)/);
+          if (m) return m[1];
+        }
+      }
+      return null;
+    });
+  } catch { return null; }
+}
+
+/**
  * Scrape the visible message thread from a LinkedIn /messaging/compose page.
  *
  * Returns an array of { sender, direction, body, timestamp } in DOM order
  * (oldest → newest, matching LinkedIn's render order).
  *
- * Direction is determined by comparing the inline sender anchor's /in/ slug
- * to the lead's publicId. Continuation messages (no sender shown) inherit
- * the previous direction.
+ * Direction is determined by comparing each message sender's `/in/<slug>`
+ * to the running account's own slug (`meSlug`). Sender == me → outbound;
+ * sender != me → inbound. This is robust to Sales Nav URLs (where the
+ * lead's publicId is an encoded URN that won't match the in-thread slug).
+ * Continuation messages (no sender anchor) inherit the previous direction.
  */
 export async function extractDmThreadFromPage(page, leadPublicId) {
-  const raw = await page.evaluate((leadSlug) => {
+  const meSlug = await getRunningAccountSlug(page);
+
+  const raw = await page.evaluate(({ meSlug }) => {
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
     const items = document.querySelectorAll(
       '.msg-s-event-listitem, [class*="event-listitem"]'
@@ -469,7 +513,14 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
 
       let direction = lastDirection;
       if (slug) {
-        direction = (slug === leadSlug) ? 'in' : 'out';
+        if (meSlug) {
+          // Sender == running account → outbound; otherwise inbound.
+          direction = (slug === meSlug) ? 'out' : 'in';
+        } else {
+          // meSlug unavailable — default to outbound to avoid false-positive
+          // 'Replied' bumps. Operator can re-run after fix.
+          direction = 'out';
+        }
         lastSlug = slug;
         lastSender = senderName;
         lastDirection = direction;
@@ -478,7 +529,7 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       out.push({ sender: senderName, direction, body, timestamp });
     }
     return out;
-  }, leadPublicId);
+  }, { meSlug });
 
   // Build stable per-message keys outside the page context so we can hash.
   return raw.map((m) => ({
