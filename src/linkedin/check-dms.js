@@ -512,9 +512,31 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
 
   const raw = await page.evaluate(({ meSlug, leadSlug }) => {
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
-    const items = document.querySelectorAll(
-      '.msg-s-event-listitem, [class*="event-listitem"]'
+    // Cast a wide net — LinkedIn rotates class hashes constantly. Try
+    // every variant we've seen, then fall back to any list item that
+    // contains a /in/ anchor (heuristic: thread items always link to
+    // the sender's profile).
+    let items = document.querySelectorAll(
+      '.msg-s-event-listitem, [class*="event-listitem"], [class*="msg-event"]'
     );
+    if (items.length === 0) {
+      // Heuristic fallback: list items inside the message-list container
+      // that have an /in/ link inside them.
+      const lists = document.querySelectorAll('[class*="message-list"], [class*="msg-s-message-list"], main ul, main ol');
+      const collected = [];
+      for (const list of lists) {
+        for (const li of list.querySelectorAll('li')) {
+          if (li.querySelector('a[href*="/in/"]')) collected.push(li);
+        }
+      }
+      items = collected;
+    }
+    // Diagnostic: stamp counts on window so the orchestrator can read them.
+    window.__ortusDebug = {
+      itemsFound: items.length,
+      meSlug: meSlug || null,
+      leadSlug: leadSlug || null,
+    };
     const out = [];
     let lastSlug = null;
     let lastSender = '';
@@ -548,14 +570,24 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
       // Drop any "View X's profile" leakage
       if (/^view .+'s? (profile|page)$/i.test(senderName)) senderName = '';
 
-      // Body: prefer the explicit message-body element
+      // Body: prefer the explicit message-body element. If selectors miss,
+      // fall back to the item's full textContent minus the sender display
+      // name (rough but better than dropping the message).
       const bodyEl = item.querySelector(
-        '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message__body"], [class*="msg-event-listitem__body"]'
+        '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message__body"], [class*="msg-event-listitem__body"], [class*="message-bubble__body"], [class*="msg-event-bubble"]'
       );
       let body = norm(bodyEl?.textContent || '');
-      // If we couldn't isolate the body, the item is likely a system row
-      // (read receipt, "joined the chat", typing indicator). Skip it.
-      if (!body) continue;
+      if (!body) {
+        // Fallback: strip sender display name from full text
+        let txt = norm(item.textContent || '');
+        if (senderName && txt.startsWith(senderName)) {
+          txt = norm(txt.slice(senderName.length));
+        }
+        body = txt;
+      }
+      // If we still have nothing, the item is likely a system row (read
+      // receipt, "joined the chat", typing indicator). Skip it.
+      if (!body || body.length < 2) continue;
 
       // Continuation: inherit previous sender if no anchor on this row
       if (!slug && lastSlug) {
@@ -671,24 +703,42 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
           });
         }
 
-        // Wait for thread DOM to populate. If LinkedIn renders an empty
-        // composer (no prior thread), waitForSelector times out — that's
-        // fine; we treat it as "no messages" and continue.
+        // Wait for thread DOM to populate. Cast a wide net across LinkedIn
+        // class rotations. If everything times out we still try to scrape
+        // — sometimes the items are there but just don't match selectors.
         if (typeof session.page.waitForSelector === 'function') {
           await session.page.waitForSelector(
-            '.msg-s-event-listitem, [class*="event-listitem"]',
-            { timeout: 8000 },
+            '.msg-s-event-listitem, [class*="event-listitem"], [class*="msg-event"], [class*="message-list"] li',
+            { timeout: 12000 },
           ).catch(() => { /* empty thread is OK */ });
         }
-        // Settle a beat for late-render bubbles.
-        await new Promise(r => setTimeout(r, 1500));
+        // 2.9.7: 3s settle (was 1.5s) — LinkedIn is slow to render the
+        // message list on first navigation, especially when prior history
+        // exists. Short waits dropped the tail of the list.
+        await new Promise(r => setTimeout(r, 3000));
 
         const thread = await extractDmThreadFromPage(session.page, publicId);
+        // Pull debug info out of the page so we can see WHY scraping failed.
+        let dbg = null;
+        try {
+          dbg = await session.page.evaluate(() => window.__ortusDebug || null);
+        } catch { /* */ }
+        console.log(
+          `[check-dms] ${linkedinUrl}: scraped ${thread.length} message(s) ` +
+          `(itemsFound=${dbg?.itemsFound ?? '?'} meSlug=${dbg?.meSlug || 'NULL'} leadSlug=${dbg?.leadSlug || 'NULL'})`
+        );
 
-        // 2.9.7: only the lead's replies matter. Filter to inbound, then
-        // keep just the last 2 (oldest of the two first, newest second).
-        const inboundOnly = thread.filter(m => m.direction === 'in');
-        const lastTwo = inboundOnly.slice(-2);
+        // 2.9.7: keep inbound only. Fall back to "everything except known
+        // outbound" when meSlug detection fails (then 'unknown' is a stand-in
+        // for "probably the lead since we couldn't id ourselves"). This way
+        // we never silently drop a whole thread because LinkedIn's class
+        // names rotated and we couldn't find the global-nav profile link.
+        const filtered = thread.filter(m => m.direction !== 'out');
+        const lastTwo = filtered.slice(-2);
+        const inboundOnly = filtered;
+        if (thread.length > 0 && lastTwo.length === 0) {
+          console.log(`[check-dms] ${linkedinUrl}: ${thread.length} scraped but all 'out' — likely no reply yet`);
+        }
 
         // Pull lead's First / Last name from the row. Try several casings.
         const firstName = String(
@@ -714,10 +764,13 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
           }
         }
 
-        // Update legacy Reply tracking + bump Stage to 'Replied' when the
-        // lead has at least one inbound message.
-        if (inboundOnly.length > 0) {
-          const lastInbound = inboundOnly[inboundOnly.length - 1];
+        // Update legacy Reply tracking + bump Stage to 'Replied' ONLY when
+        // we have a confirmed inbound message (direction === 'in'). Don't
+        // bump on 'unknown' to avoid false positives when slug detection
+        // fails on outbound-only threads.
+        const confirmedInbound = thread.filter(m => m.direction === 'in');
+        if (confirmedInbound.length > 0) {
+          const lastInbound = confirmedInbound[confirmedInbound.length - 1];
           try {
             const tracking = {
               Reply: 'yes',
@@ -735,9 +788,9 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
           match: lead,
           leadUrl: linkedinUrl,
           messages: lastTwo,
-          snippet: inboundOnly[inboundOnly.length - 1]?.body || '',
-          inbound: inboundOnly.length > 0,
-          messageCount: inboundOnly.length,
+          snippet: lastTwo[lastTwo.length - 1]?.body || '',
+          inbound: confirmedInbound.length > 0,
+          messageCount: lastTwo.length,
         });
       } catch (e) {
         errors.push(`thread scrape failed for ${linkedinUrl}: ${e.message}`);
