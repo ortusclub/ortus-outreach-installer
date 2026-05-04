@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, campaign, extractLinkedInUrl } from './src/campaign.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
-import { checkProfileDms } from './src/linkedin/check-dms.js';
+import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { fetchSheet } from './src/sheets.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
@@ -592,14 +592,79 @@ async function saveCheckDmsWatermarks(state) {
   }
 }
 
+// 2.9.7: Stages that mean "we've sent at least one outbound message and are
+// now waiting for / tracking a reply." Check DMs only scrapes these rows.
+const CHECK_DMS_STAGE_FILTER = new Set([
+  'DM Sent', 'IC Sent', 'OP Sent', 'InM Sent', 'Replied',
+]);
+
 app.post('/api/check-dms/start', async (req, res) => {
   try {
     if (campaign.running) return res.status(409).json({ error: 'Campaign is running — stop it first' });
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is already running' });
 
-    const { profileIds, sheetUrl, linkedinColumn } = req.body;
-    if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
+    const { sheetUrl, linkedinColumn } = req.body;
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    // 2.9.7: Auto-route from the sheet's Account Used column. Same logic as
+    // check_status / message_only — operator no longer picks profiles.
+    let rows;
+    try { rows = await fetchSheet(sheetUrl); }
+    catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}` }); }
+
+    let profiles = [];
+    try {
+      const token = process.env.GOLOGIN_API_TOKEN;
+      if (token) profiles = await getProfiles(token);
+    } catch (err) {
+      console.warn(`[check-dms] getProfiles failed: ${err.message}`);
+    }
+
+    const nameToId = {};
+    for (const p of profiles) nameToId[p.name] = p.id;
+    // Local browser pseudo-profile aliases (mirror campaign.js).
+    nameToId['You']                    = 'local-browser';
+    nameToId['Local Browser']          = 'local-browser';
+    nameToId['local-browser']          = 'local-browser';
+    nameToId['local-browser - manual'] = 'local-browser';
+
+    // Filter rows to Sent-stage rows. Fall back to legacy Message='sent' if
+    // the sheet doesn't have a Stage column yet.
+    const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
+    const candidateRows = rows.filter(row => {
+      if (hasStageSchema) {
+        const stage = String(row.Stage || '').trim();
+        return CHECK_DMS_STAGE_FILTER.has(stage);
+      }
+      return String(row.Message || '').trim().toLowerCase() === 'sent';
+    });
+
+    // Group rows by Sender → profileId.
+    const leadsByProfile = new Map();
+    const unmatched = new Map();
+    for (const row of candidateRows) {
+      const acct = String(row['Account Used'] || row['account used'] || '').trim();
+      if (!acct) {
+        unmatched.set('(blank)', (unmatched.get('(blank)') || 0) + 1);
+        continue;
+      }
+      const pid = nameToId[acct];
+      if (!pid) {
+        unmatched.set(acct, (unmatched.get(acct) || 0) + 1);
+        continue;
+      }
+      if (!leadsByProfile.has(pid)) leadsByProfile.set(pid, []);
+      leadsByProfile.get(pid).push(row);
+    }
+
+    if (leadsByProfile.size === 0) {
+      return res.status(400).json({
+        error: candidateRows.length === 0
+          ? 'No rows in Sent stage found — nothing to check.'
+          : 'No matching GoLogin profiles for the senders in this sheet.',
+        unmatched: Object.fromEntries(unmatched),
+      });
+    }
 
     checkDms.running = true;
     checkDms._abort = false;
@@ -614,33 +679,24 @@ app.post('/api/check-dms/start', async (req, res) => {
     preventSleep('check-dms');
     // Fire and forget
     (async () => {
-      const watermarks = await loadCheckDmsWatermarks();
       const byProfile = {};
       const ambiguous = [];
       try {
-        for (const profileId of profileIds) {
+        for (const [profileId, leads] of leadsByProfile.entries()) {
           if (checkDms._abort) break;
           checkDms.currentProfile = profileId;
-          const watermark = watermarks[profileId]?.last_check_at
-            ? Date.parse(watermarks[profileId].last_check_at) || 0
-            : 0;
-          const result = await checkProfileDms(profileId, {
-            watermark,
+          const result = await checkProfileDmsPerLead(profileId, leads, {
             sheetUrl,
             linkedinColumn: linkedinColumn || 'Linkedin URL',
           });
           byProfile[profileId] = result.replies || [];
-          checkDms.repliesFound += (result.replies || []).length;
+          // Inbound count drives the headline metric the operator sees.
+          checkDms.repliesFound += (result.replies || []).filter(r => r.inbound).length;
           if (Array.isArray(result.ambiguous)) ambiguous.push(...result.ambiguous.map(a => ({ ...a, profileId })));
           if (Array.isArray(result.errors) && result.errors.length) {
             checkDms.errors.push(...result.errors.map(e => `[${profileId}] ${e}`));
           }
-          // Advance watermark only on success (orchestrator returns newWatermark undefined on failure)
-          if (typeof result.newWatermark === 'number') {
-            watermarks[profileId] = { last_check_at: new Date(result.newWatermark).toISOString() };
-          }
         }
-        await saveCheckDmsWatermarks(watermarks);
         checkDms._lastResults = { byProfile, ambiguous, completedAt: Date.now() };
         notifyEmail(owner, {
           title: 'Check DMs finished',
@@ -657,10 +713,79 @@ app.post('/api/check-dms/start', async (req, res) => {
       }
     })();
 
-    res.json({ ok: true, message: 'Check DMs started' });
+    res.json({
+      ok: true,
+      message: 'Check DMs started',
+      profiles: leadsByProfile.size,
+      threads: candidateRows.length,
+      unmatched: Object.fromEntries(unmatched),
+    });
   } catch (err) {
     console.error('Check DMs start error:', err.message);
     checkDms.running = false;
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2.9.7: Preview endpoint — same shape as /api/check-status/preview so the
+// dashboard can render coverage bars before the operator clicks Start.
+app.get('/api/check-dms/preview', async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'url query param required' });
+
+    const [rows, profiles] = await Promise.all([
+      fetchSheet(url),
+      (async () => {
+        try {
+          const token = process.env.GOLOGIN_API_TOKEN;
+          if (!token) return [];
+          return await getProfiles(token);
+        } catch { return []; }
+      })(),
+    ]);
+
+    const knownNames = new Set(profiles.map(p => p.name));
+    const LOCAL_BROWSER_NAMES = new Set(['You', 'Local Browser', 'local-browser', 'local-browser - manual']);
+    const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
+
+    const byAccount = {};
+    const unmatched = {};
+    let totalThreads = 0;
+    for (const row of rows) {
+      // Same filter as the start route — only rows we have a thread for.
+      if (hasStageSchema) {
+        const stage = String(row.Stage || '').trim();
+        if (!CHECK_DMS_STAGE_FILTER.has(stage)) continue;
+      } else {
+        if (String(row.Message || '').trim().toLowerCase() !== 'sent') continue;
+      }
+      const acct = String(row['Account Used'] || row['account used'] || '').trim();
+      if (!acct) continue;
+      totalThreads++;
+      if (LOCAL_BROWSER_NAMES.has(acct)) {
+        byAccount['You'] = (byAccount['You'] || 0) + 1;
+      } else if (knownNames.has(acct)) {
+        byAccount[acct] = (byAccount[acct] || 0) + 1;
+      } else {
+        unmatched[acct] = (unmatched[acct] || 0) + 1;
+      }
+    }
+
+    // Rough estimate: ~12s per thread (nav + settle + scrape).
+    const runtimeSeconds = totalThreads * 12;
+
+    res.json({
+      totalPending: totalThreads,
+      byAccount: Object.entries(byAccount).map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+      unmatched: Object.entries(unmatched).map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+      accountsCount: Object.keys(byAccount).length,
+      runtimeSeconds,
+    });
+  } catch (err) {
+    console.error('Check DMs preview error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

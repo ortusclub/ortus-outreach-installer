@@ -1,20 +1,25 @@
 /**
- * Check DMs orchestrator + pure functions — Phase 11.3.
+ * Check DMs orchestrator + pure functions — Phase 11.3 / 2.9.7.
  *
- * Scans LinkedIn DMs via the Voyager GraphQL `messengerConversations` endpoint
- * (see 11.3-RESEARCH.md Finding 1) and surfaces new replies for matched sheet
- * rows. Per-profile watermarks gate "only new since last run" semantics.
+ * 2.9.7 rewrite — per-lead targeted thread scrape. The previous bulk-inbox
+ * Voyager scan (`checkProfileDms`) is preserved for back-compat + tests, but
+ * the production server route now uses `checkProfileDmsPerLead` which:
+ *   1. Receives a list of pre-filtered leads (Sender column → profileId)
+ *   2. Navigates to /messaging/compose/?recipient=<publicId> per lead
+ *   3. DOM-scrapes the visible thread
+ *   4. Appends every message to the Replies tab (bridge dedupes)
+ *   5. Bumps Stage to 'Replied' if any inbound message exists
  *
  * Public exports:
- *   - checkProfileDms(profileId, opts) — orchestrator
+ *   - checkProfileDms(profileId, opts) — legacy bulk-inbox Voyager scan
+ *   - checkProfileDmsPerLead(profileId, leads, opts) — 2.9.7 per-lead scrape
+ *   - extractDmThreadFromPage(page, leadPublicId) — DOM scraper
+ *   - extractPublicIdFromUrl(url) — utility
  *   - fetchNewConversations(pageFactory, watermark) — pagination
  *   - matchConversationToSheet(conv, rows) — pure match logic
  *   - shouldWriteReply(currentStatus, newReply) — non-destructive predicate
  *   - performWriteBack(sheetUrl, url, reply, linkedinColumn) — write to sheet
  *   - _setDeps(stubs | null) — test hook; null resets to production deps
- *
- * DOM-scrape fallback deferred — if Voyager returns null, the scan reports
- * errors and does NOT advance the watermark (operator retries).
  */
 
 import * as helpers from './helpers.js';
@@ -359,6 +364,237 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
     return { replies, ambiguous, errors, newWatermark: startTime };
   } catch (e) {
     return { replies, ambiguous, errors: [`checkProfileDms threw: ${e.message}`] };
+  } finally {
+    if (session) {
+      try { await _deps.closeSession(profileId); } catch { /* best-effort */ }
+    }
+  }
+}
+
+// ── 2.9.7 Per-lead targeted thread scrape ────────────────────────────────────
+
+/**
+ * Extract the publicId slug from a /in/<slug> LinkedIn URL.
+ * Returns null for Sales Navigator URLs (caller should skip + log).
+ */
+export function extractPublicIdFromUrl(linkedinUrl) {
+  if (!linkedinUrl) return null;
+  const m = String(linkedinUrl).match(/\/in\/([^/?#]+)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Stable content-derived dedup key. Bridge dedupes appendReply rows by
+ * (leadUrl, timestamp). DOM-scraped messages have no reliable timestamp,
+ * so we hash the body to produce a stable key — re-runs of the same
+ * thread produce the same keys, so the bridge silently dedupes.
+ */
+function stableMessageKey(direction, body) {
+  const s = `${direction}|${String(body || '').trim()}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return `msg-${Math.abs(h).toString(36)}`;
+}
+
+/**
+ * Scrape the visible message thread from a LinkedIn /messaging/compose page.
+ *
+ * Returns an array of { sender, direction, body, timestamp } in DOM order
+ * (oldest → newest, matching LinkedIn's render order).
+ *
+ * Direction is determined by comparing the inline sender anchor's /in/ slug
+ * to the lead's publicId. Continuation messages (no sender shown) inherit
+ * the previous direction.
+ */
+export async function extractDmThreadFromPage(page, leadPublicId) {
+  const raw = await page.evaluate((leadSlug) => {
+    const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+    const items = document.querySelectorAll(
+      '.msg-s-event-listitem, [class*="event-listitem"]'
+    );
+    const out = [];
+    let lastSlug = null;
+    let lastSender = '';
+    let lastDirection = null;
+
+    for (const item of items) {
+      // Sender anchor: only present on the first message of a contiguous run
+      const a = item.querySelector('a[href*="/in/"]');
+      let slug = null;
+      let senderName = '';
+      if (a) {
+        const m = a.getAttribute('href').match(/\/in\/([^/?#]+)/);
+        if (m) slug = m[1];
+        senderName = norm(a.textContent);
+      }
+
+      // Body: prefer the explicit message-body element
+      const bodyEl = item.querySelector(
+        '.msg-s-event-listitem__body, [class*="event-listitem__body"], [class*="message__body"], [class*="msg-event-listitem__body"]'
+      );
+      let body = norm(bodyEl?.textContent || '');
+      // If we couldn't isolate the body, the item is likely a system row
+      // (read receipt, "joined the chat", typing indicator). Skip it.
+      if (!body) continue;
+
+      // Timestamp: try datetime attr first, then visible text
+      let timestamp = '';
+      const tsEl = item.querySelector('time, [class*="timestamp"]');
+      if (tsEl) {
+        timestamp = tsEl.getAttribute('datetime') || norm(tsEl.textContent || '');
+      }
+
+      // Continuation: inherit previous sender if no anchor on this row
+      if (!slug && lastSlug) {
+        slug = lastSlug;
+        senderName = lastSender;
+      }
+
+      let direction = lastDirection;
+      if (slug) {
+        direction = (slug === leadSlug) ? 'in' : 'out';
+        lastSlug = slug;
+        lastSender = senderName;
+        lastDirection = direction;
+      }
+
+      out.push({ sender: senderName, direction, body, timestamp });
+    }
+    return out;
+  }, leadPublicId);
+
+  // Build stable per-message keys outside the page context so we can hash.
+  return raw.map((m) => ({
+    sender: m.sender,
+    direction: m.direction || 'out',
+    body: m.body,
+    timestamp: m.timestamp || stableMessageKey(m.direction || 'out', m.body),
+  }));
+}
+
+/**
+ * 2.9.7 — per-lead targeted Check DMs scan.
+ *
+ * Replaces the bulk-inbox Voyager scan for the production flow. Caller
+ * (server route) groups sheet rows by Sender → profileId and passes the
+ * lead list per profile. We open the profile's session ONCE, navigate
+ * per-lead, scrape, write back, then close.
+ *
+ * Returns the same shape as checkProfileDms: { replies, ambiguous, errors,
+ * newWatermark }. `replies[i].messages` holds the full scraped thread.
+ */
+export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn }) {
+  const startTime = Date.now();
+  const replies = [];
+  const ambiguous = [];
+  const errors = [];
+
+  let session = null;
+  try {
+    session = await _deps.ensureOpen(profileId);
+    if (!session || !session.page) {
+      return { replies, ambiguous, errors: ['ensureOpen returned no session'] };
+    }
+
+    for (const lead of (leads || [])) {
+      // Resolve LinkedIn URL from the row. Reads the user's configured column
+      // first, then falls back to scanning every column for linkedin.com.
+      let linkedinUrl = '';
+      if (linkedinColumn && lead[linkedinColumn]) {
+        linkedinUrl = String(lead[linkedinColumn]).trim();
+      } else {
+        for (const k of Object.keys(lead)) {
+          const v = String(lead[k] || '').trim();
+          if (v.includes('linkedin.com')) { linkedinUrl = v; break; }
+        }
+      }
+      if (linkedinUrl && !linkedinUrl.startsWith('http')) {
+        linkedinUrl = 'https://' + linkedinUrl;
+      }
+      if (!linkedinUrl) {
+        errors.push(`row missing LinkedIn URL: ${lead.firstName || lead['First Name'] || '(unknown)'}`);
+        continue;
+      }
+
+      const publicId = extractPublicIdFromUrl(linkedinUrl);
+      if (!publicId) {
+        // Sales Navigator URLs don't contain /in/<slug>. Skip with a clear note.
+        errors.push(`Sales Navigator URL — cannot scrape thread: ${linkedinUrl}`);
+        continue;
+      }
+
+      try {
+        const composeUrl = `https://www.linkedin.com/messaging/thread/?recipient=${encodeURIComponent(publicId)}`;
+        if (typeof session.page.goto === 'function') {
+          await session.page.goto(composeUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000,
+          });
+        }
+
+        // Wait for thread DOM to populate. If LinkedIn renders an empty
+        // composer (no prior thread), waitForSelector times out — that's
+        // fine; we treat it as "no messages" and continue.
+        if (typeof session.page.waitForSelector === 'function') {
+          await session.page.waitForSelector(
+            '.msg-s-event-listitem, [class*="event-listitem"]',
+            { timeout: 8000 },
+          ).catch(() => { /* empty thread is OK */ });
+        }
+        // Settle a beat for late-render bubbles.
+        await new Promise(r => setTimeout(r, 1500));
+
+        const thread = await extractDmThreadFromPage(session.page, publicId);
+
+        // Append each message to the Replies tab. Bridge dedupes on
+        // (leadUrl, timestamp) so re-runs are idempotent.
+        for (const msg of thread) {
+          try {
+            await _deps.appendReplyRow(sheetUrl, {
+              leadUrl: linkedinUrl,
+              timestamp: msg.timestamp,
+              direction: msg.direction,
+              sender: msg.sender,
+              body: msg.body,
+            });
+          } catch (e) {
+            errors.push(`appendReply failed for ${linkedinUrl}: ${e.message}`);
+          }
+        }
+
+        // Update legacy Reply tracking + bump Stage to 'Replied' when the
+        // lead has at least one inbound message.
+        const lastInbound = [...thread].reverse().find(m => m.direction === 'in');
+        if (lastInbound) {
+          try {
+            const tracking = {
+              Reply: 'yes',
+              ReplyAt: new Date(startTime).toISOString(),
+              ReplyPreview: String(lastInbound.body).slice(0, 100),
+              stage: 'Replied',
+            };
+            await _deps.updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinColumn);
+          } catch (e) {
+            errors.push(`updateSheetRow failed for ${linkedinUrl}: ${e.message}`);
+          }
+        }
+
+        replies.push({
+          match: lead,
+          leadUrl: linkedinUrl,
+          messages: thread,
+          snippet: thread[thread.length - 1]?.body || '',
+          inbound: !!lastInbound,
+          messageCount: thread.length,
+        });
+      } catch (e) {
+        errors.push(`thread scrape failed for ${linkedinUrl}: ${e.message}`);
+      }
+    }
+
+    return { replies, ambiguous, errors, newWatermark: startTime };
+  } catch (e) {
+    return { replies, ambiguous, errors: [`checkProfileDmsPerLead threw: ${e.message}`] };
   } finally {
     if (session) {
       try { await _deps.closeSession(profileId); } catch { /* best-effort */ }

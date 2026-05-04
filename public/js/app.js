@@ -1216,6 +1216,81 @@ async function refreshMessageOnlyPreview() {
   }
 }
 
+// 2.9.7: Check DMs preview — same shape as Check Status, filtered by Stage
+// in {DM Sent, IC Sent, OP Sent, InM Sent, Replied}.
+async function refreshCheckDmsPreview() {
+  const url = (document.getElementById('sheet-url')?.value || '').trim();
+  const loading = document.getElementById('cd-loading');
+  const content = document.getElementById('cd-content');
+  const empty = document.getElementById('cd-empty');
+  const errBox = document.getElementById('cd-error');
+  if (!loading || !content || !empty || !errBox) return;
+  loading.style.display = '';
+  content.style.display = 'none';
+  empty.style.display = 'none';
+  errBox.style.display = 'none';
+
+  if (!url) {
+    loading.style.display = 'none';
+    errBox.textContent = 'Enter a Google Sheet URL above first.';
+    errBox.style.display = '';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/check-dms/preview?url=' + encodeURIComponent(url));
+    const data = await r.json();
+    loading.style.display = 'none';
+    if (data.error) { errBox.textContent = data.error; errBox.style.display = ''; return; }
+    if (!data.totalPending) {
+      empty.style.display = '';
+      ['btn-start', 'btn-start-rb'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.textContent = 'Start Check DMs';
+      });
+      return;
+    }
+
+    const max = Math.max(1, ...data.byAccount.map(a => a.count));
+    const coverageHtml = data.byAccount.map(a => {
+      const pct = Math.round((a.count / max) * 100);
+      return `<div style="display:grid;grid-template-columns:220px 1fr 60px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px">
+        <div style="font-weight:500">${escHtml(a.name)}</div>
+        <div style="height:4px;background:var(--hairline-soft);position:relative"><div style="position:absolute;inset:0 auto 0 0;background:var(--ink);width:${pct}%"></div></div>
+        <div style="text-align:right;font-family:var(--display);font-size:18px;letter-spacing:0.04em">${a.count}</div>
+      </div>`;
+    }).join('');
+    document.getElementById('cd-coverage').innerHTML = coverageHtml;
+
+    if (data.unmatched && data.unmatched.length) {
+      const unmatchedTotal = data.unmatched.reduce((s, u) => s + u.count, 0);
+      document.getElementById('cd-unmatched').innerHTML =
+        `⚠ ${unmatchedTotal} row(s) will be skipped — Account Used doesn't match any GoLogin profile in this workspace: ` +
+        data.unmatched.map(u => `${escHtml(u.name)} (${u.count})`).join(', ');
+    } else {
+      document.getElementById('cd-unmatched').innerHTML = '';
+    }
+
+    const mins = Math.round(data.runtimeSeconds / 60);
+    const runtime = mins >= 60 ? `~${Math.floor(mins/60)}h ${mins%60}m` : `~${mins} min`;
+    document.getElementById('cd-summary').innerHTML = `
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${data.totalPending}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Threads to scrape</div></div>
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${data.accountsCount}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Accounts</div></div>
+      <div style="flex:1"><div style="font-family:var(--display);font-size:28px;line-height:1">${runtime}</div><div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-top:4px">Estimated runtime</div></div>
+    `;
+    content.style.display = '';
+
+    ['btn-start', 'btn-start-rb'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.textContent = `Start Check DMs (${data.totalPending} threads)`;
+    });
+  } catch (err) {
+    loading.style.display = 'none';
+    errBox.textContent = 'Could not load preview: ' + err.message;
+    errBox.style.display = '';
+  }
+}
+
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const connect = document.getElementById('tpl-connect-section');
@@ -1288,24 +1363,24 @@ function onModeChange() {
     if (wbMaxWrap) wbMaxWrap.style.display = '';
   }
 
-  // 2.8.29 / 2.8.32: Auto-routed modes (check_status, message_only) hide the
-  // profile picker and show a coverage panel. message_only KEEPS templates
-  // (you still need a message to send) but hides only the profile picker.
+  // 2.8.29 / 2.8.32 / 2.9.7: Auto-routed modes (check_status, message_only,
+  // check_dms) hide the profile picker and show a coverage panel. message_only
+  // KEEPS templates (you still need a message to send) but hides only the
+  // profile picker. check_dms hides everything except the coverage panel.
   const csPanel = document.getElementById('nav-check-status');
   const moPanel = document.getElementById('nav-message-only');
+  const cdPanel = document.getElementById('nav-check-dms');
   const navPace = document.getElementById('nav-pace');
   const navAccounts = document.getElementById('nav-accounts');
   const isCheckStatus = (mode === 'check_status');
   const isMessageOnly = (mode === 'message_only');
-  // 2.9.5: Check DMs is a separate flow (no templates, no targets — just
-  // scans inboxes per selected profile). Behaves like check_status visually.
   const isCheckDms = (mode === 'check_dms');
   const isAutoRouted = isCheckStatus || isMessageOnly || isCheckDms;
   if (csPanel) csPanel.style.display = isCheckStatus ? '' : 'none';
   if (moPanel) moPanel.style.display = isMessageOnly ? '' : 'none';
-  // Check DMs needs the profile picker visible — operator selects which
-  // accounts' inboxes to scan.
-  if (navAccounts) navAccounts.style.display = (isCheckStatus || isMessageOnly) ? 'none' : '';
+  if (cdPanel) cdPanel.style.display = isCheckDms ? '' : 'none';
+  // 2.9.7: Check DMs is now auto-routed too — hide the profile picker.
+  if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
   // 2.8.34: Pace section hidden for auto-routed modes (no per-lead pacing).
   if (navPace) navPace.style.display = isAutoRouted ? 'none' : '';
   if (isCheckStatus) {
@@ -1313,11 +1388,7 @@ function onModeChange() {
   } else if (isMessageOnly) {
     refreshMessageOnlyPreview();
   } else if (isCheckDms) {
-    // Update Start button label so it's obvious what's about to fire.
-    ['btn-start', 'btn-start-rb'].forEach(id => {
-      const b = document.getElementById(id);
-      if (b) b.textContent = 'Start Check DMs';
-    });
+    refreshCheckDmsPreview();
   } else {
     // Reset Start CTA back to default when leaving auto-routed modes.
     ['btn-start', 'btn-start-rb'].forEach(id => {
@@ -2076,10 +2147,9 @@ let checkDmsPollTimer = null;
 
 async function startCheckDms() {
   try {
-    if (!selectedProfileIds.length) {
-      alert('Select at least one profile before running Check DMs.');
-      return;
-    }
+    // 2.9.7: Auto-routed — no profile picker. Server reads the sheet,
+    // groups Sent-stage rows by Account Used, opens each sender's browser
+    // and per-lead navigates to /messaging/thread/?recipient=<publicId>.
     const sheetUrl = document.getElementById('sheet-url')?.value?.trim();
     if (!sheetUrl) {
       alert('Enter a Google Sheet URL first.');
@@ -2097,7 +2167,7 @@ async function startCheckDms() {
     const res = await fetch('/api/check-dms/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileIds: selectedProfileIds, sheetUrl, linkedinColumn }),
+      body: JSON.stringify({ sheetUrl, linkedinColumn }),
     });
     const data = await res.json();
     if (!res.ok) {
