@@ -1448,9 +1448,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // 2.8.28: For check_status, do NOT include accountUsed — preserving
             // the original sender attribution is essential. The audit log
             // append is also conditionally suppressed for check_status reads.
+            // 2.9.3: always stamp Sender on non-check-status writes. Without
+            // this, action paths that didn't explicitly set sender (like
+            // 'already_processed') left the Sender column empty even though
+            // the row WAS handled by an account.
             const sheetData = (mode === 'check_status')
               ? { dateLastAction: now }
-              : { dateLastAction: now, accountUsed: pName };
+              : { dateLastAction: now, accountUsed: pName, sender: pName };
             // 2.8.50: when Introduction Messages mode is active, stamp the DM
             // column with "sent IC" instead of "sent" so introductions are
             // visually distinct from standard DMs in the sheet.
@@ -1470,6 +1474,18 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.auditAction = 'Connection sent';
               sheetData.stage  = 'Connect Pending';
               sheetData.sender = pName;
+            } else if (result.action === 'already_processed') {
+              // 2.9.3: the lead is already in the state this campaign would
+              // produce (e.g., Connect Only saw the invite was already
+              // pending). Stamp Stage so empty-Stage rows don't stay empty
+              // after a re-run. Sender already in initial sheetData.
+              sheetData.auditAction = 'Already in target state';
+              if (mode === 'connect_only')      sheetData.stage = 'Connect Pending';
+              else if (mode === 'message_only') sheetData.stage = (tpl.introMode ? 'IC Sent' : 'DM Sent');
+              else if (mode === 'inmail_only')  sheetData.stage = 'InM Sent';
+              else if (mode === 'open_profile_only') sheetData.stage = 'OP Sent';
+              // For other/unknown modes leave Stage alone — overwriting
+              // with a guess could clobber a known-good prior state.
             } else if (result.action === 'message_sent') {
               // 2.8.49: status "DM Sent" (was "Done"). Keeps CC color (green
               // from check_status) intact — the catch-all CC conditional-
