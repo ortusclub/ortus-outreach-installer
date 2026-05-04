@@ -57,6 +57,11 @@ running even when individual accounts hit limits, sessions expire, or laptops ar
 
 ## Workflow
 
+**Ask-first protocol** — before touching code on any "build/fix" request, ask the user
+two concrete questions with how-to-answer instructions (DOM HTML, log paste, console
+output). Full rule: `.claude/ASK-FIRST.md`. The user can short-circuit me with the
+phrase "ask first" if I forget.
+
 This repo uses the superpowers plugin for Claude Code: brainstorming → writing-plans →
 subagent-driven-development. Specs live in `docs/superpowers/specs/`, plans in
 `docs/superpowers/plans/`. Each lens (operator UX, reliability, code health, etc.)
