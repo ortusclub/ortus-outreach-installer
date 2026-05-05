@@ -176,6 +176,37 @@ function bumpCampaignCount(profileId) {
   campaignCounts[profileId] = (campaignCounts[profileId] || 0) + 1;
 }
 
+// 2.9.8: normalize any skip/failure reason to a "Skipped: <reason>" form
+// for consistent display in the dashboard log and the Audit-Log "Action"
+// column. Success messages pass through untouched.
+function normalizeSkipReason(msg) {
+  if (!msg) return msg;
+  const s = String(msg);
+  if (s.startsWith('Skipped:')) return s;
+  // Success / non-skip cases — pass through untouched
+  if (/^(Connection sent|Message sent|InMail sent|Open Profile message sent|Acceptance confirmed|sent IC|Already in target state|Already connected|Still pending)/i.test(s)) {
+    return s;
+  }
+  const lower = s.toLowerCase();
+  if (lower.includes('profile not found') || lower.includes('url not found')) return 'Skipped: URL not found';
+  if (lower.includes('login page detected') || lower.includes('session expired')) return 'Skipped: Session expired';
+  if (lower.includes('email required')) return 'Skipped: Email required';
+  if (lower.includes('connect button not found')) return 'Skipped: Connect button not found';
+  if (lower.includes('send not confirmed') || lower.includes('send_not_confirmed')) return 'Skipped: Send not confirmed';
+  if (lower.includes('weekly invitation limit') || lower.includes('weekly_limit')) return 'Skipped: Weekly limit reached';
+  if (lower.includes('inmail credits') || lower.includes('inmail_no_credits')) return 'Skipped: InMail credits exhausted';
+  if (lower.includes('not yet connected')) return 'Skipped: Not yet connected';
+  if (lower.includes('not confirmed connected')) return 'Skipped: Not confirmed connected';
+  if (lower.includes('linkedin error toast') || lower.includes('linkedin_error_toast')) return 'Skipped: LinkedIn error toast';
+  if (lower.includes('not open profile') || lower.includes('not_open_profile')) return 'Skipped: Not Open Profile';
+  if (lower.includes('rate_limited') || lower.includes('rate-limit')) return 'Skipped: Rate limited';
+  if (lower.includes('lead_timeout_watchdog') || lower.includes('lead timeout')) return 'Skipped: Lead timed out';
+  if (lower.includes('no modal appeared')) return 'Skipped: Connect modal did not appear';
+  if (lower.includes('connect failed')) return 'Skipped: Connect failed';
+  // Fallback for unknown errors — still prefix
+  return `Skipped: ${s}`;
+}
+
 export function extractLinkedInUrl(row, linkedinColumn) {
   // 1. User-specified column takes priority
   if (linkedinColumn && row[linkedinColumn]) {
@@ -1438,7 +1469,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               session.page = page;
             } catch { /* */ }
           }
-          log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
+          // 2.9.8: surface a normalized "Skipped: <reason>" in the dashboard
+          // log too, so the operator sees the same wording the Audit Log uses.
+          if (result.action === 'skipped' && result.error) {
+            log(`  ${normalizeSkipReason(result.error)}`);
+          } else {
+            log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
+          }
 
           // 2.9.2: human-readable local time for the sheet ("May 4th, 13:43"),
           // not the UTC ISO timestamp logs use.
@@ -1594,7 +1631,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: 'Weekly invitation limit reached',
+                auditAction: normalizeSkipReason('Weekly invitation limit reached'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('INMAIL_NO_CREDITS')) {
               log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
@@ -1605,7 +1642,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: 'InMail credits exhausted',
+                auditAction: normalizeSkipReason('InMail credits exhausted'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('EMAIL_REQUIRED')) {
               log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead.`);
@@ -1624,7 +1661,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: 'Email required to connect',
+                auditAction: normalizeSkipReason('Email required to connect'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('Not yet connected')) {
               log('  ↷ Not yet connected — will retry after acceptance.');
@@ -1633,7 +1670,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: 'Not yet connected',
+                auditAction: normalizeSkipReason('Not yet connected'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('SEND_NOT_CONFIRMED')) {
               log(`  ⚠ Send clicked but Pending NOT confirmed for ${data.firstName || '?'}. LinkedIn may have silently dropped it.`);
@@ -1645,7 +1682,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: 'Send not confirmed',
+                auditAction: normalizeSkipReason('Send not confirmed'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('LINKEDIN_ERROR_TOAST')) {
               log(`  ⚠ LinkedIn showed an error toast for ${data.firstName || '?'}.`);
@@ -1657,7 +1694,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: 'LinkedIn error toast',
+                auditAction: normalizeSkipReason('LinkedIn error toast'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('NOT_OPEN_PROFILE')) {
               log('  ✗ Not an Open Profile — will skip in future runs.');
@@ -1669,7 +1706,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: 'Not Open Profile',
+                auditAction: normalizeSkipReason('Not Open Profile'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('rate_limited')) {
               pushSoftWarning(campaign, {
@@ -1688,7 +1725,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: errorMsg,
+                auditAction: normalizeSkipReason(errorMsg),
               }, linkedinColumn).catch(() => {});
             } else {
               log('  ✗ Retry next run.');
@@ -1701,7 +1738,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
-                auditAction: errorMsg,
+                auditAction: normalizeSkipReason(errorMsg),
               }, linkedinColumn).catch(() => {});
             }
           }

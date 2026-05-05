@@ -543,7 +543,46 @@ export async function sendConnectionRequest(page, noteArg) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
   }
 
-  if (!connectClicked) throw new Error('Connect button not found after 60s');
+  if (!connectClicked) {
+    // 2.9.8: capture a diagnostic snapshot of what was actually visible on
+    // the page when the finder timed out. Full snapshot goes to stdout
+    // (campaign.log via npm pipe). The thrown Error gets a short summary
+    // appended so the campaign log line itself shows the most useful
+    // breadcrumbs (URL host, errorpg flag, button names).
+    let summary = '';
+    try {
+      const snapshot = await page.evaluate(() => {
+        const main = document.querySelector('main');
+        const buttons = Array.from(document.querySelectorAll('button, a[role="button"]'))
+          .filter(b => b.offsetWidth > 0)
+          .slice(0, 20)
+          .map(b => ({
+            t: (b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50),
+            a: (b.getAttribute('aria-label') || '').slice(0, 50),
+          }));
+        return {
+          url: window.location.href,
+          mainCls: (main?.className || '').toString().slice(0, 80),
+          hasEmailField: !!document.querySelector('input[type=email]'),
+          hasErrorPg: /errorpg|error-page/i.test(main?.className || ''),
+          buttons,
+        };
+      });
+      console.error('[actions] Connect-not-found DIAGNOSTIC: ' + JSON.stringify(snapshot));
+      const btnNames = (snapshot.buttons || [])
+        .map(b => b.t || b.a)
+        .filter(Boolean)
+        .slice(0, 6)
+        .join(' | ');
+      const tags = [];
+      if (snapshot.hasErrorPg) tags.push('errorpg');
+      if (snapshot.hasEmailField) tags.push('emailField');
+      summary = ` [${tags.join(',') || 'no-tags'}; visible: ${btnNames || 'none'}]`;
+    } catch (e) {
+      console.error(`[actions] Connect-not-found DIAGNOSTIC failed: ${e.message}`);
+    }
+    throw new Error('Connect button not found after 60s' + summary);
+  }
 
   // ── Wait for modal, success toast, or Pending (8 attempts = ~24s max) ──
   for (let attempt = 1; attempt <= 8; attempt++) {
