@@ -216,6 +216,36 @@
               </div>
               <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
             </div>
+            <!-- 2.9.8: Daily limit becomes UI-controlled (was hardcoded 40). -->
+            <div id="daily-limit-knob">
+              <div class="alpha-knob-label">Daily limit, per account</div>
+              <div class="alpha-knob-row">
+                <input class="alpha-knob-input" type="number" id="daily-limit-input" value="40" min="1" max="200" oninput="alphaSyncDailyLimit()" />
+                <div class="step-col">
+                  <button type="button" class="step-btn" onclick="alphaStepDaily(5)">+</button>
+                  <button type="button" class="step-btn" onclick="alphaStepDaily(-5)">−</button>
+                </div>
+                <span class="alpha-knob-suffix">invites / day</span>
+              </div>
+              <div class="alpha-knob-help">LinkedIn caps invitations per account per day. 40 is the safe default; raise carefully.</div>
+            </div>
+          </div>
+
+          <!-- 2.9.8: Concurrency toggle. Visible only when ≥5 accounts are
+               selected (exposed by app.js based on selection count). When OFF
+               (default), behavior is the strict round-robin we've always had.
+               When ON, the campaign loop runs N accounts in parallel. -->
+          <div id="alpha-concurrency-row" class="alpha-concurrency" style="display:none; margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline-soft);">
+            <div class="alpha-knob-label">Parallel accounts</div>
+            <div class="alpha-knob-row" style="gap:14px;">
+              <label style="display:inline-flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+                <input type="checkbox" id="concurrency-toggle" onchange="alphaSyncConcurrency()" />
+                <span>Run accounts in parallel</span>
+              </label>
+              <input class="alpha-knob-input" type="number" id="concurrency-count" value="2" min="2" max="5" disabled oninput="updateCampaignSummary()" />
+              <span class="alpha-knob-suffix">at a time</span>
+            </div>
+            <div class="alpha-knob-help">Speeds up campaigns by running multiple GoLogin browsers simultaneously. Unlocked with 5+ accounts. If RAM gets tight, the bot drops back to one at a time automatically.</div>
           </div>
           <!-- Phase 2.8.15: Forecast row absorbed from the old standalone
                campaign-hero block. Same IDs (hero-actions / hero-duration /
@@ -245,7 +275,10 @@
 
         <!-- Hidden inputs preserve backend wire — backend reads rate-per-hour as
              batchesPerHour (1-6); alphaSyncRate keeps it in sync with the visible
-             leads/hour input. message-gap + daily-limit kept hidden for legacy code. -->
+             leads/hour input. message-gap kept hidden for legacy code.
+             2.9.8: daily-limit is now visible above (#daily-limit-input). The
+             hidden #daily-limit mirror is kept for backend compat — alphaSyncDailyLimit
+             writes the visible value into it on every change. -->
         <input type="hidden" id="rate-per-hour" value="2" />
         <input type="hidden" id="message-gap" value="60" />
         <input type="hidden" id="daily-limit" value="40" />

@@ -654,7 +654,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, batchesPerHour = 2, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {} }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, batchesPerHour = 2, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1 }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -702,7 +702,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log('=== Campaign starting ===');
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
-    log(`Daily limit: ${dailyLimit}`);
+    const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
+    log(`Daily limit: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
+    if (concurrency > 1) log(`Concurrency: ${concurrency} accounts running in parallel`);
     // Phase 11.2: clamp batchesPerHour to 1..6 and log the target throughput.
     batchesPerHour = Math.max(1, Math.min(6, Number(batchesPerHour) || 2));
     log(`Batches per hour: ${batchesPerHour} (→ ~${batchesPerHour * 5} leads/hour/profile target)`);

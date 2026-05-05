@@ -1387,6 +1387,11 @@ function onModeChange() {
   // section entirely; other modes (incl. message_only) keep it visible.
   const navTemplates = document.getElementById('nav-templates');
   if (navTemplates) navTemplates.style.display = isCheckDms ? 'none' : '';
+  // 2.9.8: Daily limit knob applies ONLY to Connect campaigns (LinkedIn caps
+  // invitations per account per day). DM/IC/OP/InMail are unlimited.
+  const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_message');
+  const dailyKnob = document.getElementById('daily-limit-knob');
+  if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
   if (isCheckStatus) {
     refreshCheckStatusPreview();
   } else if (isMessageOnly) {
@@ -1621,6 +1626,38 @@ function alphaStepLeads(delta) {
   alphaSyncRate();
 }
 
+// 2.9.8: Daily limit visible input. Mirrors to the legacy hidden #daily-limit
+// input so the existing campaign-start payload code keeps working unchanged.
+function alphaSyncDailyLimit() {
+  const visEl = document.getElementById('daily-limit-input');
+  const hidEl = document.getElementById('daily-limit');
+  if (!visEl || !hidEl) return;
+  let v = parseInt(visEl.value, 10);
+  if (!Number.isFinite(v) || v < 1) v = 40;
+  v = Math.max(1, Math.min(200, v));
+  if (parseInt(visEl.value, 10) !== v) visEl.value = String(v);
+  hidEl.value = String(v);
+  updateCampaignSummary();
+}
+
+function alphaStepDaily(delta) {
+  const visEl = document.getElementById('daily-limit-input');
+  if (!visEl) return;
+  const cur = parseInt(visEl.value, 10) || 40;
+  visEl.value = String(Math.max(1, Math.min(200, cur + delta)));
+  alphaSyncDailyLimit();
+}
+
+// 2.9.8: Concurrency toggle. Enables/disables the count input and updates
+// the campaign summary. Visibility (≥5 accounts) is handled in alphaRecalc.
+function alphaSyncConcurrency() {
+  const tog = document.getElementById('concurrency-toggle');
+  const cnt = document.getElementById('concurrency-count');
+  if (!tog || !cnt) return;
+  cnt.disabled = !tog.checked;
+  updateCampaignSummary();
+}
+
 function alphaRecalc() {
   const leadsEl = document.getElementById('alpha-leads-per-hour');
   const totalEl = document.getElementById('alpha-total-leads');
@@ -1657,6 +1694,12 @@ function alphaRecalc() {
   if (roundTimeEl) {
     const batches = Math.max(1, Math.round(leads / 5));
     roundTimeEl.textContent = '~' + Math.round(60 / batches);
+  }
+
+  // 2.9.8: Concurrency toggle is unlocked at ≥5 accounts. Hide otherwise.
+  const concurrencyRow = document.getElementById('alpha-concurrency-row');
+  if (concurrencyRow) {
+    concurrencyRow.style.display = numAccounts >= 5 ? '' : 'none';
   }
 }
 
@@ -1905,7 +1948,16 @@ async function startCampaign() {
         delayMin,
         delayMax,
         linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
-        senderFirstNames
+        senderFirstNames,
+        // 2.9.8: parallel-accounts knob. Server only honors it when ≥5
+        // accounts are selected and the toggle is on.
+        concurrency: (() => {
+          const tog = document.getElementById('concurrency-toggle');
+          const cnt = document.getElementById('concurrency-count');
+          if (!tog?.checked) return 1;
+          const n = parseInt(cnt?.value, 10);
+          return Number.isFinite(n) && n >= 2 ? Math.min(5, n) : 2;
+        })(),
       }),
     });
     const data = await res.json();
@@ -3805,6 +3857,9 @@ window.closeStopModal = closeStopModal;
 window.pauseOrResumeCampaign = pauseOrResumeCampaign;
 window.alphaSyncRate = alphaSyncRate;
 window.alphaStepLeads = alphaStepLeads;
+window.alphaSyncDailyLimit = alphaSyncDailyLimit;
+window.alphaStepDaily = alphaStepDaily;
+window.alphaSyncConcurrency = alphaSyncConcurrency;
 window.toggleSection = toggleSection;
 window.openUnifiedLog = openUnifiedLog;
 window.togglePresetPopover = togglePresetPopover;

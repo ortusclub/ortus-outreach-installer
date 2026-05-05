@@ -457,7 +457,7 @@ app.post('/api/campaign/start', (req, res) => {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
 
-    const { profileIds, sheetUrl, templates, dailyLimit, batchesPerHour, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames } = req.body;
+    const { profileIds, sheetUrl, templates, dailyLimit, batchesPerHour, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency } = req.body;
 
     // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
     // the sheet's Account Used column inside campaign.js (only the original
@@ -480,6 +480,14 @@ app.post('/api/campaign/start', (req, res) => {
     // it off gets the finish/failure notification.
     const owner = req.user;
     preventSleep('campaign');
+    // 2.9.8: clamp concurrency at the trust boundary. Server only honors
+    // values 2..5 AND only when ≥5 accounts selected. Falls through to 1
+    // (sequential) otherwise.
+    let concurrencyClean = 1;
+    if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
+      const n = Math.min(5, Number(concurrency));
+      if ((profileIds?.length || 0) >= 5) concurrencyClean = n;
+    }
     startCampaign({
       profileIds,
       sheetUrl,
@@ -492,6 +500,7 @@ app.post('/api/campaign/start', (req, res) => {
       delayMax: delayMax ? Number(delayMax) : undefined,
       linkedinColumn: linkedinColumn || '',
       senderFirstNames: senderFirstNames || {},
+      concurrency: concurrencyClean,
     }).then(() => {
       const status = getCampaignStatus();
       notifyEmail(owner, {
