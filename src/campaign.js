@@ -1148,14 +1148,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
 
+    // 2.9.8: modes that bypass the daily limit entirely.
+    //   - check_status: read-only Voyager fetch, zero LinkedIn-visible action
+    //   - message_only: DMs to 1st-degree connections, low risk
+    //   - inmail_only: paid InMail credits already gate volume
+    //   - open_profile_only: free Open-Profile messages, no connection req
+    // Connect campaigns (connect_only, connect_and_message) STILL respect
+    // the dailyLimit — those are the ones LinkedIn rate-limits aggressively.
+    const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
+    const skipsDailyLimit = NO_DAILY_LIMIT.has(mode);
+
     outer: while (!campaign._abort && !leadsExhausted) {
-      // 2.8.29: check_status ignores daily limit — read-only mode, no
-      // LinkedIn-visible action that could trip a rate limiter.
-      // 2.8.34: message_only mirrors this — DMing 1st-degree connections is
-      // low-risk; user-facing dailyLimit is still respected via UI input
-      // separately when desired.
       const activeProfiles = profileIds.filter(id =>
-        (mode === 'check_status' || mode === 'message_only' || getCampaignCount(id) < dailyLimit) && !weeklyLimited.has(id)
+        (skipsDailyLimit || getCampaignCount(id) < dailyLimit) && !weeklyLimited.has(id)
       );
       if (activeProfiles.length === 0) {
         log('All profiles reached their campaign limit or weekly limit.');
@@ -1716,7 +1721,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // Messaging existing 1st-degree connections is much lower risk than
             // sending new connection requests, so use a faster cadence and skip
             // the single-account slowdown.
+            // 2.9.8: extended unlimited-pacing set. Was only message_only;
+            // now also inmail_only + open_profile_only per user request
+            // (no daily/hourly caps for non-Connect sends).
             const isMessageMode = mode === 'message_only';
+            const isFastMode = isMessageMode || mode === 'inmail_only' || mode === 'open_profile_only';
             const delayMultiplier = computeDelayMultiplier({
               mode,
               profileCount: profileIds.length,
@@ -1725,23 +1734,21 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             });
 
             let waitMs;
-            if (mode === 'check_status' || isMessageMode) {
-              // 2.8.29: Check Status is read-only — no LinkedIn-visible action
-              // that could be flagged.
-              // 2.8.34: message_only mirrors this — DMs to 1st-degree
-              // connections are low-risk. Tiny 1-3s breath so we're not
-              // hammering the same profile back-to-back with zero pause.
+            if (mode === 'check_status' || isFastMode) {
+              // 2.8.29 / 2.9.8: read-only modes (check_status) and low-risk
+              // send modes (message_only, inmail_only, open_profile_only)
+              // use a tiny 1-3s breath instead of the 15-45s connect cadence.
               waitMs = (1 + Math.floor(Math.random() * 2)) * 1000;
               const label = (mode === 'check_status')
                 ? 'check-only — no rate limits apply'
-                : 'message — no rate limits apply';
+                : `${mode.replace('_only', '')} — no rate limits apply`;
               log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (${label})`);
             } else {
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
               waitMs = Math.floor(waitMs * delayMultiplier);
               if (delayMultiplier > 1) {
                 const parts = [];
-                if (!isMessageMode && profileIds.length === 1) parts.push('single-account 2x');
+                if (!isFastMode && profileIds.length === 1) parts.push('single-account 2x');
                 if (campaign._throttle?.active) parts.push(`throttled ${campaign._throttle.multiplier}x`);
                 log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (${parts.join(' + ')})`);
               } else {
@@ -1751,7 +1758,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
             // ~30% chance: browse the feed organically during the wait (looks like a real user).
             // Skip entirely in message mode AND check_status mode — both should move fast.
-            if (!isMessageMode && mode !== 'check_status' && Math.random() < 0.3 && !campaign._abort) {
+            if (!isFastMode && mode !== 'check_status' && Math.random() < 0.3 && !campaign._abort) {
               setAction('Organic browsing', { account: pName });
               await browseFeedOrganically(page, pName);
             }
