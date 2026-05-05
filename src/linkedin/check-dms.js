@@ -679,13 +679,65 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
         // opens the existing thread for that recipient if one exists, or a
         // fresh compose pane otherwise — and the prior message history is
         // visible in both cases.
-        const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
+        let recipientId = publicId;
+        const composeUrl = (id) => `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(id)}`;
         logLine(`[check-dms] → ${linkedinUrl}`);
         if (typeof session.page.goto === 'function') {
-          await session.page.goto(composeUrl, {
+          await session.page.goto(composeUrl(recipientId), {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
+        }
+
+        // 2.9.7: detect LinkedIn's "errorpg" page (vanity slug rejected by
+        // /messaging/compose/?recipient=<slug>). Fall back: navigate to
+        // /in/<slug>/ which redirects to the encoded URN form, capture
+        // that URN, then retry compose with the encoded URN.
+        let isErrorPage = false;
+        try {
+          isErrorPage = await session.page.evaluate(() => {
+            const m = document.querySelector('main');
+            const cls = (m?.className || '').toString().toLowerCase();
+            return cls.includes('errorpg') || cls.includes('error-page');
+          });
+        } catch { /* */ }
+
+        if (isErrorPage) {
+          logLine(`[check-dms] ${linkedinUrl}: vanity slug rejected, looking up canonical URN…`);
+          try {
+            await session.page.goto(`https://www.linkedin.com/in/${encodeURIComponent(publicId)}/`, {
+              waitUntil: 'domcontentloaded',
+              timeout: 20000,
+            });
+            // After redirect, the address bar (or canonical link in head)
+            // carries the encoded URN form for vanity-slug profiles.
+            await new Promise(r => setTimeout(r, 1500));
+            const canonical = await session.page.evaluate(() => {
+              const m1 = window.location.href.match(/\/in\/([^/?#]+)/);
+              if (m1 && /^AC[A-Za-z0-9_-]+$/.test(m1[1])) return m1[1];
+              // Canonical link in <head> sometimes carries the URN form
+              const link = document.querySelector('link[rel="canonical"]');
+              if (link) {
+                const m2 = (link.getAttribute('href') || '').match(/\/in\/([^/?#]+)/);
+                if (m2 && /^AC[A-Za-z0-9_-]+$/.test(m2[1])) return m2[1];
+              }
+              return null;
+            });
+            if (canonical && canonical !== publicId) {
+              recipientId = canonical;
+              logLine(`[check-dms] ${linkedinUrl}: retrying compose with canonical URN ${canonical}`);
+              await session.page.goto(composeUrl(recipientId), {
+                waitUntil: 'domcontentloaded',
+                timeout: 30000,
+              });
+            } else {
+              errors.push(`could not resolve canonical URN for ${linkedinUrl}`);
+              continue;
+            }
+          } catch (e) {
+            errors.push(`URN-lookup fallback failed for ${linkedinUrl}: ${e.message}`);
+            continue;
+          }
         }
 
         // Poll for the message list to render. LinkedIn's messaging is
