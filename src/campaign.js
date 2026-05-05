@@ -735,7 +735,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Profiles: ${profileIds.length} selected`);
     const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
     log(`Daily limit: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
-    if (concurrency > 1) log(`Concurrency: ${concurrency} accounts running in parallel`);
+    if (concurrency > 1) {
+      log(`⚠ Concurrency=${concurrency} requested. UI is wired but parallel loop ships next iteration — running sequentially this run.`);
+    }
     // Phase 11.2: clamp batchesPerHour to 1..6 and log the target throughput.
     batchesPerHour = Math.max(1, Math.min(6, Number(batchesPerHour) || 2));
     log(`Batches per hour: ${batchesPerHour} (→ ~${batchesPerHour * 5} leads/hour/profile target)`);
