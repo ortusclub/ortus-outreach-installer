@@ -36,6 +36,7 @@ import {
   computeDelayMultiplier,
   _resetSampleCache,
   getAmbient,
+  readAvailableMemory,
 } from './resource-monitor.js';
 
 const STATE_FILE = dataPath('state.json');
@@ -148,17 +149,23 @@ async function saveState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null
  * is already under heavy load so the caller can surface them to the
  * operator before opening any browsers.
  */
-function checkHostHealth() {
+async function checkHostHealth() {
   const warnings = [];
   const GB = 1024 * 1024 * 1024;
-  const freeGB = os.freemem() / GB;
-  const totalGB = os.totalmem() / GB;
+  // 2.9.8: use vm_stat-based "available" RAM on macOS instead of os.freemem(),
+  // which only counts strictly-free pages and ignores reclaimable inactive +
+  // file-cached pages. The strict-free metric is always tiny on a healthy
+  // Mac, which used to falsely warn "0.1GB free" on machines with 2-3 GB of
+  // actually-available RAM.
+  const mem = await readAvailableMemory();
+  const availableGB = mem.availableBytes / GB;
+  const totalGB = mem.totalBytes / GB;
   const load1 = os.loadavg()[0];
   const cpuCount = os.cpus().length;
   const loadThreshold = cpuCount * 0.8;
 
-  if (freeGB < 2) {
-    warnings.push(`Free RAM is ${freeGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB total — low.`);
+  if (availableGB < 2) {
+    warnings.push(`Available RAM is ${availableGB.toFixed(1)}GB / ${totalGB.toFixed(1)}GB total — low.`);
   }
   if (load1 > loadThreshold) {
     warnings.push(`1-min load average ${load1.toFixed(2)} exceeds ${loadThreshold.toFixed(2)} (${cpuCount} CPUs × 0.8).`);
@@ -747,7 +754,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
     // Preflight: warn if the host is already under heavy load.
     // Non-blocking — operator decides whether to continue.
-    const health = checkHostHealth();
+    const health = await checkHostHealth();
     if (!health.ok) {
       log('⚠ Your machine is under heavy load — close some apps or the campaign may fail.');
       for (const w of health.warnings) log(`   • ${w}`);
@@ -1628,7 +1635,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 message: 'Weekly invitation limit reached',
               });
               await updateSheetRow(sheetUrl, url, {
-                status: 'Skipped',
+                status: normalizeSkipReason('Weekly invitation limit reached'),
                 stage: 'Skipped',
                 accountUsed: pName,
                 sender: pName,
@@ -1639,7 +1646,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
               await updateSheetRow(sheetUrl, url, {
-                status: 'Skipped',
+                status: normalizeSkipReason('InMail credits exhausted'),
                 stage: 'Skipped',
                 accountUsed: pName,
                 sender: pName,
@@ -1657,7 +1664,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               state.processed[url] = { profileId, profileName: pName, action: 'email_required', date: now };
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                status: 'Done',
+                status: normalizeSkipReason('Email required to connect'),
                 cc: 'Unreachable',
                 stage: 'Skipped',
                 accountUsed: pName,
@@ -1668,7 +1675,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             } else if (errorMsg.includes('Not yet connected')) {
               log('  ↷ Not yet connected — will retry after acceptance.');
               await updateSheetRow(sheetUrl, url, {
-                status: 'Skipped',
+                status: normalizeSkipReason('Not yet connected'),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1679,7 +1686,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               delete state.processed[url];
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                status: 'Skipped',
+                status: normalizeSkipReason('Send not confirmed'),
                 stage: 'Skipped',
                 accountUsed: pName,
                 sender: pName,
@@ -1691,7 +1698,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               delete state.processed[url];
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                status: 'Skipped',
+                status: normalizeSkipReason('LinkedIn error toast'),
                 stage: 'Skipped',
                 accountUsed: pName,
                 sender: pName,
@@ -1703,7 +1710,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                status: 'Done',
+                status: normalizeSkipReason('Not Open Profile'),
                 stage: 'Skipped',
                 accountUsed: pName,
                 sender: pName,
@@ -1722,7 +1729,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               delete state.processed[url];
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                status: 'Skipped',
+                status: normalizeSkipReason(errorMsg),
                 stage: 'Skipped',
                 accountUsed: pName,
                 sender: pName,
@@ -1735,7 +1742,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               delete state.processed[url];
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                status: 'Skipped',
+                status: normalizeSkipReason(errorMsg),
                 stage: 'Skipped',
                 accountUsed: pName,
                 sender: pName,

@@ -24,11 +24,18 @@ import { promisify } from 'node:util';
 
 const execFile = promisify(execFileCb);
 
-// macOS-only: os.freemem() counts only truly-free pages and ignores inactive
-// and purgeable pages that the kernel will reclaim on demand. vm_stat gives
-// the same breakdown Activity Monitor uses. Falls back to os.freemem() on
-// parse failure.
-async function readMacRamPct() {
+// macOS-only: os.freemem() counts only truly-free pages and ignores inactive,
+// purgeable, speculative, and file-backed pages that the kernel will reclaim
+// on demand. vm_stat gives the same breakdown Activity Monitor uses.
+//
+// 2.9.8: extended "available" to include speculative + file-backed too,
+// matching Activity Monitor's pressure indicator more closely. On a healthy
+// Mac with lots of disk cache, the previous formula (free+inactive+purgeable)
+// underestimated available RAM by ~1 GB, which made the campaign-startup
+// banner cry "low RAM" on machines that were perfectly fine.
+//
+// Returns null on parse failure; callers fall back to os.freemem().
+async function readMacRamStats() {
   try {
     const { stdout } = await execFile('vm_stat');
     const pageSizeMatch = stdout.match(/page size of (\d+) bytes/);
@@ -38,16 +45,40 @@ async function readMacRamPct() {
       const m = stdout.match(new RegExp(`^${name}:\\s+(\\d+)`, 'm'));
       return m ? Number(m[1]) : 0;
     };
-    const free      = rowOf('Pages free');
-    const inactive  = rowOf('Pages inactive');
-    const purgeable = rowOf('Pages purgeable');
-    const availableBytes = (free + inactive + purgeable) * pageSize;
+    const free        = rowOf('Pages free');
+    const inactive    = rowOf('Pages inactive');
+    const purgeable   = rowOf('Pages purgeable');
+    const speculative = rowOf('Pages speculative');
+    const fileBacked  = rowOf('File-backed pages');
+    const availableBytes = (free + inactive + purgeable + speculative + fileBacked) * pageSize;
     const totalBytes = os.totalmem();
     if (totalBytes <= 0) return null;
-    return (1 - availableBytes / totalBytes) * 100;
+    return { availableBytes, totalBytes, pct: (1 - availableBytes / totalBytes) * 100 };
   } catch {
     return null;
   }
+}
+
+// Backwards-compat shim — still returns a single percentage number.
+async function readMacRamPct() {
+  const stats = await readMacRamStats();
+  return stats ? stats.pct : null;
+}
+
+// Cross-platform available memory. Returns { availableBytes, totalBytes, pct }.
+// On macOS uses vm_stat. On other platforms falls back to os.freemem().
+export async function readAvailableMemory() {
+  if (process.platform === 'darwin') {
+    const stats = await readMacRamStats();
+    if (stats) return stats;
+  }
+  const totalBytes = os.totalmem();
+  const availableBytes = os.freemem();
+  return {
+    availableBytes,
+    totalBytes,
+    pct: totalBytes > 0 ? (1 - availableBytes / totalBytes) * 100 : 0,
+  };
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
