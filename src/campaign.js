@@ -38,6 +38,7 @@ import {
   getAmbient,
   readAvailableMemory,
 } from './resource-monitor.js';
+import * as browserSemaphore from './browser-semaphore.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
@@ -57,10 +58,11 @@ export const BATCH_SIZE = 5;
  */
 const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 180000;
 
-// Concurrency cap (2.8.25): max simultaneously-open browser profiles. With queue-
-// and-rotate: if user selects more than this, the extras wait for a slot to free.
-// Default 3 fits ~1.5 GB on 8 GB machines. Override via .env if you have more RAM.
-const MAX_CONCURRENT_PROFILES = Number(process.env.MAX_CONCURRENT_PROFILES) || 3;
+// Hard cap on simultaneously-open browsers (Orbita + local Chromium combined).
+// 2.9.9: dropped from 3 → 2 per Q-protocol decision. Type-agnostic — every
+// launch (GoLogin or local) acquires a slot via browser-semaphore.js.
+// Override via .env only if you have ≥16GB RAM and know what you're doing.
+const MAX_CONCURRENT_PROFILES = Number(process.env.MAX_CONCURRENT_PROFILES) || 2;
 
 /** Phase 2.8.20 (W3-D1) — state.json `processed` retention window in days.
  *  Default 60. Entries older than this are dropped on next loadState; the
@@ -95,7 +97,7 @@ function getCloseGapMin() {
  * Applies a 60s floor. Exported for tests/batch-loop.test.js.
  */
 export function computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs = 0 }) {
-  const bph = Math.max(1, Math.min(6, Number(batchesPerHour) || 2));
+  const bph = Math.max(1, Math.min(12, Number(batchesPerHour) || 2));
   const targetMs = (3600 / bph) * 1000;
   return Math.max(MIN_BETWEEN_BATCHES_MS, targetMs - Math.max(0, batchDurationMs));
 }
@@ -711,6 +713,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
+  browserSemaphore._reset();     // 2.9.9: reset hard browser cap to default
+  browserSemaphore.setMax(MAX_CONCURRENT_PROFILES);
 
   // Reset campaign counts — allows reusing same accounts immediately
   for (const key of Object.keys(campaignCounts)) delete campaignCounts[key];
@@ -743,10 +747,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
     log(`Daily limit: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
     if (concurrency > 1) {
-      log(`⚠ Concurrency=${concurrency} requested. UI is wired but parallel loop ships next iteration — running sequentially this run.`);
+      log(`▶ Concurrency=${concurrency} workers (browser cap=${MAX_CONCURRENT_PROFILES}).`);
     }
     // Phase 11.2: clamp batchesPerHour to 1..6 and log the target throughput.
-    batchesPerHour = Math.max(1, Math.min(6, Number(batchesPerHour) || 2));
+    batchesPerHour = Math.max(1, Math.min(12, Number(batchesPerHour) || 2));
     log(`Batches per hour: ${batchesPerHour} (→ ~${batchesPerHour * 5} leads/hour/profile target)`);
     log(`Templates: note=${tpl.connectionNote ? '✓' : '—'} followUp=${tpl.followUpMessage ? '✓' : '—'} inmail=${tpl.inmail.subject ? '✓' : '—'}`);
     if (linkedinColumn) log(`LinkedIn column: "${linkedinColumn}"`);
@@ -1060,22 +1064,24 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       const cached = sessions.get(profileId);
       if (cached) return cached;
 
-      // Concurrency cap (2.8.25-P1): if we're already at MAX_CONCURRENT_PROFILES
-      // open browsers, this profile waits for a slot. Returning null here flows to
-      // the existing `if (!session) continue;` in the round-robin (line ~943).
-      // P2 forces a close at batch end if others are waiting, so the slot rotates.
-      if (sessions.size >= MAX_CONCURRENT_PROFILES) {
-        const waitingName = profileNameCache[profileId] || profileId;
-        log(`  ⏸ ${waitingName}: waiting for a slot (${sessions.size}/${MAX_CONCURRENT_PROFILES} open)`);
-        return null;
-      }
-
       // 2.9.2: never let the raw profileId 'local-browser' leak to the sheet
       // (it bypasses profileNameCache when that's stale). Force 'You'.
       const pName = profileNameCache[profileId] || (profileId === 'local-browser' ? 'You' : profileId);
       campaign.currentProfile = pName;
 
+      // 2.9.9: hard browser cap is now enforced by the global semaphore in
+      // browser-semaphore.js (replaces the old sessions.size >= cap check).
+      // acquire() blocks until a slot is free — workers naturally serialize
+      // when more want to launch than the cap allows.
+      const semStatusBefore = browserSemaphore.getStatus();
+      if (semStatusBefore.count >= semStatusBefore.max) {
+        log(`  ⏸ ${pName}: waiting for browser slot (${semStatusBefore.count}/${semStatusBefore.max} in use)`);
+      }
+      await browserSemaphore.acquire();
+
+      let success = false;
       try {
+        if (campaign._abort) return null;
         log(`▶ Opening ${pName}…`);
         setAction('Opening browser', { account: pName });
         let launched;
@@ -1131,11 +1137,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
         sessions.set(profileId, session);
+        success = true;
         return session;
       } catch (err) {
         log(`✗ ${pName}: failed to open — ${err.message}`);
         pushError(err);
         return null;
+      } finally {
+        // Release the slot if we didn't return a live session — closeSession()
+        // is responsible for releasing in the success path.
+        if (!success) browserSemaphore.release();
       }
     }
 
@@ -1162,11 +1173,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         const durationMs = Date.now() - t0;
         log(`✓ ${s.pName} browser closed. ⏱ close duration ${durationMs}ms`);
         sessions.delete(profileId);
+        browserSemaphore.release();
         return { durationMs };
       } catch (e) {
         const durationMs = Date.now() - t0;
         log(`Close ${s.pName}: ${e.message} (⏱ ${durationMs}ms)`);
         sessions.delete(profileId);
+        browserSemaphore.release();
         return { durationMs };
       }
     }
@@ -1200,28 +1213,71 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
     const skipsDailyLimit = NO_DAILY_LIMIT.has(mode);
 
-    outer: while (!campaign._abort && !leadsExhausted) {
-      const activeProfiles = profileIds.filter(id =>
-        (skipsDailyLimit || getCampaignCount(id) < dailyLimit) && !weeklyLimited.has(id)
-      );
-      if (activeProfiles.length === 0) {
-        log('All profiles reached their campaign limit or weekly limit.');
-        break;
+    // ═════════════════════════════════════════════════════════════════════
+    // 2.9.9 — Rotating-batch worker pool (replaces strict round-robin).
+    //
+    // Each worker pulls the next eligible profile from profileQueue, runs a
+    // turn (up to BATCH_SIZE attempts), then yields its slot. When the turn
+    // ends, the profile re-enqueues at the back and a per-profile cooldown
+    // is set. Browser semaphore caps total open browsers regardless of how
+    // many workers are spinning.
+    //
+    // pickNextProfile() filters out:
+    //   - profiles already mid-turn (no double-run)
+    //   - weeklyLimited / ejected profiles
+    //   - profiles at daily cap (Q9-a "skip and advance")
+    //   - profiles whose cooldown hasn't expired
+    // If nothing's available, the worker idles 5s and rechecks (Q9-b fallback).
+    // ═════════════════════════════════════════════════════════════════════
+    const profileQueue = [...profileIds];
+    const profilesBeingRun = new Set();
+    const profileCooldownUntil = new Map();
+    const cooldownMs = skipsDailyLimit ? 0 : Math.floor((3600 / batchesPerHour) * 1000);
+    if (concurrency > 1) {
+      log(`Concurrency: ${concurrency} workers, browser cap: ${MAX_CONCURRENT_PROFILES}`);
+    }
+    if (cooldownMs > 0) {
+      log(`Per-profile cooldown between turns: ${(cooldownMs / 60000).toFixed(1)}min (target ${batchesPerHour * BATCH_SIZE} leads/hr/profile)`);
+    }
+
+    function pickNextProfile() {
+      const now = Date.now();
+      for (let i = 0; i < profileQueue.length; i++) {
+        const candidate = profileQueue[i];
+        if (profilesBeingRun.has(candidate)) continue;
+        if (weeklyLimited.has(candidate)) continue;
+        if (!skipsDailyLimit && getCampaignCount(candidate) >= dailyLimit) continue;
+        if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
+        profileQueue.splice(i, 1);
+        profilesBeingRun.add(candidate);
+        return candidate;
       }
+      return null;
+    }
 
-      // Round-robin: every profile does ONE batch, then we sleep once at the
-      // end of the round. Per-profile rate is maintained by the round cadence
-      // (batchesPerHour × BATCH_SIZE leads/profile/hour), not by sleeping
-      // between individual profiles. With N profiles the total throughput is
-      // N × batchesPerHour × BATCH_SIZE leads/hour.
-      const roundStart = Date.now();
+    function noProfilesLeftEver() {
+      // True only when nobody can ever run again: nobody mid-turn AND every
+      // queued profile is permanently out (weekly-limited or daily-capped).
+      // Cooldown alone doesn't count as "out" — that's a wait, not exhaustion.
+      if (profilesBeingRun.size > 0) return false;
+      if (profileQueue.length === 0) return true;
+      return profileQueue.every(id =>
+        weeklyLimited.has(id) ||
+        (!skipsDailyLimit && getCampaignCount(id) >= dailyLimit)
+      );
+    }
 
-      for (const profileId of activeProfiles) {
-        if (campaign._abort) break outer;
-        if (leadsExhausted) break outer;
+    /**
+     * Run one turn for a single profile: open → up to BATCH_SIZE attempts → close/park.
+     * Returns nothing — side-effects via shared closures (state, sessions,
+     * weeklyLimited, consecutiveSkips, leadsExhausted).
+     */
+    async function runProfileTurn(profileId) {
+        if (campaign._abort) return;
+        if (leadsExhausted) return;
 
         const session = await ensureOpen(profileId);
-        if (!session) continue; // opened-but-unhealthy OR launch failed; try next profile
+        if (!session) return; // opened-but-unhealthy OR launch failed
 
         const { pName, browser } = session;
         let { page } = session;
@@ -1824,69 +1880,71 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         }
         }  // end inner BATCH_SIZE for-loop
 
-        // ── Between-batch decision (D-03, D-12, D-13) ──
-        if (campaign._abort || leadsExhausted) break outer;
+        // ── End-of-turn close ──
+        // 2.9.9: in the worker-pool model, profiles always close at end of
+        // turn. Their next turn is at the back of the queue, so the wait is
+        // longer than any "park and reuse" gap. Fast modes (check_status,
+        // message_only) skip cooldown so they re-enter immediately.
+        if (campaign._abort || leadsExhausted) {
+          if (sessions.has(profileId)) await closeSession(profileId);
+          return;
+        }
 
-        const batchDurationMs = Date.now() - batchStart;
-        // Per-profile close-vs-park decision — cheaper to close if we won't
-        // be back to this profile for a while. The round sleep below keeps
-        // the global cadence; this only decides whether the profile sits idle
-        // on about:blank or gets closed entirely between rounds.
-        // 2.8.29: in check_status mode batches happen back-to-back with no
-        // round sleep, so the profile is back almost immediately — keep it
-        // open (perProfileWaitMs = 0) to avoid 30s of close+relaunch overhead.
-        // 2.8.34: message_only does the same.
-        const perProfileWaitMs = (mode === 'check_status' || mode === 'message_only')
-          ? 0
-          : computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs });
+        const stayOpen = (mode === 'check_status' || mode === 'message_only')
+          && profileQueue.length === 0
+          && profilesBeingRun.size <= 1;
 
-        // Concurrency cap (2.8.25-P2): also close if others are waiting for a
-        // slot. Without this, the first N profiles hold their slots forever and
-        // profiles N+1, N+2, ... never get to run.
-        const othersWaiting = sessions.size >= MAX_CONCURRENT_PROFILES &&
-          profileIds.some(id =>
-            id !== profileId && !sessions.has(id) && !weeklyLimited.has(id)
-          );
-
-        if (shouldCloseBetweenBatches({ waitMs: perProfileWaitMs }) || othersWaiting) {
-          const reason = othersWaiting && !shouldCloseBetweenBatches({ waitMs: perProfileWaitMs })
-            ? `slot rotation (${sessions.size - 1}/${MAX_CONCURRENT_PROFILES} after close)`
-            : `gap ${(perProfileWaitMs / 60000).toFixed(1)}min > ${getCloseGapMin()}min`;
-          log(`  ⊗ ${pName}: ${reason} — closing browser.`);
-          await closeSession(profileId);
-        } else {
+        if (stayOpen) {
           if (rmCfg.IDLE_PARKING_ENABLED && !page.isClosed?.()) {
             await parkProfile(page, rmCfg.PARK_PAGE);
           }
-          log(`  ⏸ ${pName}: parked until next round.`);
+          log(`  ⏸ ${pName}: parked (sole runner this round).`);
+        } else {
+          log(`  ⊗ ${pName}: turn complete — closing browser.`);
+          await closeSession(profileId);
+        }
+    }  // end runProfileTurn
+
+    // ── Worker dispatcher: spawn N concurrent workers ──
+    async function worker(workerId) {
+      while (!campaign._abort && !leadsExhausted) {
+        // Adaptive RAM throttle: drop browser cap to 1 when throttle engages,
+        // restore on release (Q1=(a) "drain to 1").
+        const t = campaign._throttle;
+        if (t?.active) browserSemaphore.setMax(1);
+        else browserSemaphore.setMax(MAX_CONCURRENT_PROFILES);
+
+        const profileId = pickNextProfile();
+        if (!profileId) {
+          if (noProfilesLeftEver()) break;
+          // Eligible profiles exist but they're all in cooldown or mid-turn.
+          // Idle briefly and retry.
+          await new Promise(r => setTimeout(r, 5000));
+          continue;
         }
 
-        // No per-profile sleep — move to the next profile immediately so all
-        // N profiles do one batch each in the current round.
-      }  // end for-each profile in activeProfiles
-
-      // ── End-of-round sleep (D-03) ──
-      // Sleep until the round cadence target has elapsed. batchesPerHour sets
-      // the target — e.g. bph=2 means rounds should start every 30min. If the
-      // round took longer than the target, no sleep.
-      // 2.8.29: skipped entirely for check_status — no rate-limit risk, just
-      // burn through every pending invite as fast as the browser allows.
-      // 2.8.34: message_only mirrors this — no end-of-round sleep.
-      if (campaign._abort || leadsExhausted) break outer;
-      const roundTargetMs = (mode === 'check_status' || mode === 'message_only') ? 0 : (3600 / batchesPerHour) * 1000;
-      const roundElapsed = Date.now() - roundStart;
-      const roundSleepMs = Math.max(0, roundTargetMs - roundElapsed);
-      if (roundSleepMs > 0) {
-        log(`  ⏸ Round complete — sleeping ${(roundSleepMs / 60000).toFixed(1)}min until next round.`);
-        setAction('Round complete — next round in', { durationMs: roundSleepMs });
-        const gapEnd = Date.now() + roundSleepMs;
-        while (Date.now() < gapEnd && !campaign._abort) {
-          await new Promise(r => setTimeout(r, 2000));
+        try {
+          await runProfileTurn(profileId);
+        } catch (err) {
+          log(`✗ Worker ${workerId} crashed running ${profileId}: ${err.message}`);
+          pushError(err);
+        } finally {
+          profilesBeingRun.delete(profileId);
+          // Cooldown timestamp is set even on error, so a flapping profile
+          // doesn't get re-picked instantly by another worker.
+          profileCooldownUntil.set(profileId, Date.now() + cooldownMs);
+          // Re-enqueue at the back unless the profile got ejected mid-turn.
+          if (!weeklyLimited.has(profileId) && !campaign._abort && !leadsExhausted) {
+            profileQueue.push(profileId);
+          }
         }
-      } else {
-        log(`  ↻ Round took ${(roundElapsed / 60000).toFixed(1)}min (≥ ${(roundTargetMs / 60000).toFixed(0)}min target) — starting next round immediately.`);
       }
-    }  // end outer:while
+    }
+
+    const workerCount = Math.max(1, Number(concurrency) || 1);
+    await Promise.all(
+      Array.from({ length: workerCount }, (_, i) => worker(i))
+    );
 
     // Log per-profile stats (from the sessions Map — covers both still-open
     // and already-closed profiles via campaignCounts).

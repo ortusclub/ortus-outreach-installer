@@ -1611,8 +1611,8 @@ function alphaSyncRate() {
   if (!leadsEl || !batchesEl) return;
   let leads = parseInt(leadsEl.value, 10);
   if (!Number.isFinite(leads)) leads = 10;
-  // Snap to multiples of 5 within [5, 30]
-  leads = Math.max(5, Math.min(30, Math.round(leads / 5) * 5));
+  // 2.9.9: ceiling raised 30 → 60 (Q11). Snap to multiples of 5 within [5, 60].
+  leads = Math.max(5, Math.min(60, Math.round(leads / 5) * 5));
   if (parseInt(leadsEl.value, 10) !== leads) leadsEl.value = String(leads);
   batchesEl.value = String(leads / 5);
   updateCampaignSummary();
@@ -1622,19 +1622,20 @@ function alphaStepLeads(delta) {
   const leadsEl = document.getElementById('alpha-leads-per-hour');
   if (!leadsEl) return;
   const cur = parseInt(leadsEl.value, 10) || 10;
-  leadsEl.value = String(Math.max(5, Math.min(30, cur + delta)));
+  leadsEl.value = String(Math.max(5, Math.min(60, cur + delta)));
   alphaSyncRate();
 }
 
 // 2.9.8: Daily limit visible input. Mirrors to the legacy hidden #daily-limit
 // input so the existing campaign-start payload code keeps working unchanged.
+// 2.9.9: ceiling raised 200 → 500 (Q11).
 function alphaSyncDailyLimit() {
   const visEl = document.getElementById('daily-limit-input');
   const hidEl = document.getElementById('daily-limit');
   if (!visEl || !hidEl) return;
   let v = parseInt(visEl.value, 10);
   if (!Number.isFinite(v) || v < 1) v = 40;
-  v = Math.max(1, Math.min(200, v));
+  v = Math.max(1, Math.min(500, v));
   if (parseInt(visEl.value, 10) !== v) visEl.value = String(v);
   hidEl.value = String(v);
   updateCampaignSummary();
@@ -1644,7 +1645,7 @@ function alphaStepDaily(delta) {
   const visEl = document.getElementById('daily-limit-input');
   if (!visEl) return;
   const cur = parseInt(visEl.value, 10) || 40;
-  visEl.value = String(Math.max(1, Math.min(200, cur + delta)));
+  visEl.value = String(Math.max(1, Math.min(500, cur + delta)));
   alphaSyncDailyLimit();
 }
 
@@ -1912,7 +1913,7 @@ async function startCampaign() {
 
   // Phase 11.2 (D-06): batchesPerHour is the primary pacing knob (1..6), sourced
   // from the relabeled #rate-per-hour input. Clamp defensively before POST.
-  const batchesPerHour = Math.max(1, Math.min(6, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
+  const batchesPerHour = Math.max(1, Math.min(12, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
 
   // If the user answered "No" to the "add a note while connecting?" question,
   // drop the connection note regardless of what's in the textarea.
@@ -2797,7 +2798,7 @@ async function saveQuickSchedule() {
 
   // Phase 11.2 (D-06): persist batchesPerHour on the schedule so cron fires
   // honour the operator's pacing choice.
-  const batchesPerHour = Math.max(1, Math.min(6, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
+  const batchesPerHour = Math.max(1, Math.min(12, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
 
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {

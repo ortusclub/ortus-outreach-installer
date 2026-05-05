@@ -197,7 +197,7 @@
             <div>
               <div class="alpha-knob-label">Leads / hour, per account</div>
               <div class="alpha-knob-row">
-                <input class="alpha-knob-input" type="number" id="alpha-leads-per-hour" value="10" min="5" max="30" step="5" oninput="alphaSyncRate()" />
+                <input class="alpha-knob-input" type="number" id="alpha-leads-per-hour" value="10" min="5" max="60" step="5" oninput="alphaSyncRate()" />
                 <div class="step-col">
                   <button type="button" class="step-btn" onclick="alphaStepLeads(5)">+</button>
                   <button type="button" class="step-btn" onclick="alphaStepLeads(-5)">−</button>
@@ -220,7 +220,7 @@
             <div id="daily-limit-knob">
               <div class="alpha-knob-label">Daily limit, per account</div>
               <div class="alpha-knob-row">
-                <input class="alpha-knob-input" type="number" id="daily-limit-input" value="40" min="1" max="200" oninput="alphaSyncDailyLimit()" />
+                <input class="alpha-knob-input" type="number" id="daily-limit-input" value="40" min="1" max="500" oninput="alphaSyncDailyLimit()" />
                 <div class="step-col">
                   <button type="button" class="step-btn" onclick="alphaStepDaily(5)">+</button>
                   <button type="button" class="step-btn" onclick="alphaStepDaily(-5)">−</button>

@@ -33,14 +33,15 @@ test('returns 60s floor when batch duration exceeds slot', () => {
   assert.equal(ms, 60 * 1000, `expected 60s floor, got ${ms}`);
 });
 
-test('batchesPerHour is clamped to max 6 (10-minute slots)', () => {
-  // Passing 100 is treated as 6 due to Math.min(6, ...) clamp.
+test('batchesPerHour is clamped to max 12 (5-minute slots)', () => {
+  // 2.9.9: ceiling raised 6 → 12 to expose higher per-account rates in the UI.
+  // Passing 100 is treated as 12 due to Math.min(12, ...) clamp.
   const ms = computeBetweenBatchWaitMs({ batchesPerHour: 100, batchDurationMs: 0 });
-  assert.equal(ms, (3600 / 6) * 1000); // 600_000 ms = 10 minutes
+  assert.equal(ms, (3600 / 12) * 1000); // 300_000 ms = 5 minutes
 });
 
 test('batchesPerHour defaults to 2 when invalid (non-numeric string)', () => {
-  // Number('bad') = NaN, NaN || 2 = 2, Math.max(1, Math.min(6, 2)) = 2, slot = 30 min
+  // Number('bad') = NaN, NaN || 2 = 2, Math.max(1, Math.min(12, 2)) = 2, slot = 30 min
   const ms = computeBetweenBatchWaitMs({ batchesPerHour: 'bad', batchDurationMs: 0 });
   assert.equal(ms, 30 * 60 * 1000);
 });
