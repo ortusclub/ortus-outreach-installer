@@ -808,7 +808,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       // ── 2.9.0 Stage-based filtering ─────────────────────────────
       if (hasStageSchema) {
         const stage = (row['Stage'] || row['stage'] || '').toString().trim();
-        const TERMINAL = new Set(['DM Sent', 'IC Sent', 'InM Sent', 'OP Sent', 'Replied', 'Done', 'Skipped']);
+        const TERMINAL = new Set(['DM Sent', 'IC Sent', 'InM Sent', 'OP Sent', 'Replied', 'Done']);
+        // 2.9.10: Stage may now carry the full skip reason
+        // (e.g., "Skipped: URL not found"), not just bare "Skipped". Any value
+        // starting with "Skipped" is terminal.
+        const isSkipped = stage.startsWith('Skipped');
 
         if (mode === 'check_status') {
           return stage === 'Connect Pending';
@@ -823,6 +827,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         }
         if (mode === 'connect_only') {
           // Cold targets: Stage empty (never touched) or 'Send Connect'.
+          // Skipped (any reason) is terminal — exclude.
+          if (isSkipped) return false;
           if (stage !== '' && stage !== 'Send Connect') return false;
           const prev = state.processed[url];
           if (prev) return false;
@@ -830,6 +836,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         }
         if (mode === 'inmail_only' || mode === 'open_profile_only') {
           // InMail and OP are Connect alternatives — same source.
+          if (isSkipped) return false;
           if (stage !== '' && stage !== 'Send Connect') return false;
           const prev = state.processed[url];
           if (prev) return false;
@@ -837,7 +844,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         }
         // connect_and_message and other multi-step modes: terminal stages skip,
         // everything else passes through.
-        if (TERMINAL.has(stage)) return false;
+        if (TERMINAL.has(stage) || isSkipped) return false;
         const prev = state.processed[url];
         if (prev) return false;
         return true;
@@ -1692,7 +1699,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               });
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Weekly invitation limit reached'),
-                stage: 'Skipped',
+                stage:  normalizeSkipReason('Weekly invitation limit reached'),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1703,7 +1710,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               weeklyLimited.add(profileId);
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('InMail credits exhausted'),
-                stage: 'Skipped',
+                stage:  normalizeSkipReason('InMail credits exhausted'),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1722,7 +1729,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Email required to connect'),
                 cc: 'Unreachable',
-                stage: 'Skipped',
+                stage:  normalizeSkipReason('Email required to connect'),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1743,7 +1750,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Send not confirmed'),
-                stage: 'Skipped',
+                stage:  normalizeSkipReason('Send not confirmed'),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1755,7 +1762,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('LinkedIn error toast'),
-                stage: 'Skipped',
+                stage:  normalizeSkipReason('LinkedIn error toast'),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1767,7 +1774,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Not Open Profile'),
-                stage: 'Skipped',
+                stage:  normalizeSkipReason('Not Open Profile'),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1786,7 +1793,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason(errorMsg),
-                stage: 'Skipped',
+                stage:  normalizeSkipReason(errorMsg),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
@@ -1799,7 +1806,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason(errorMsg),
-                stage: 'Skipped',
+                stage:  normalizeSkipReason(errorMsg),
                 accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
