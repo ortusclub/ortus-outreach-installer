@@ -406,8 +406,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (status === 'message') return { action: 'skipped', error: 'Already connected' };
       if (status === 'pending') return { action: 'already_processed' };
       try {
-        await sendConnectionRequest(page, note);
-        return { action: 'connection_sent' };
+        const r = await sendConnectionRequest(page, note);
+        return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
       } catch (err) {
         return { action: 'skipped', error: `Connect failed: ${err.message}` };
       }
@@ -422,8 +422,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         if (state.connectionSent) return { action: 'already_processed' };
         const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
         try {
-          await sendConnectionRequest(page, note);
-          return { action: 'connection_sent' };
+          const r = await sendConnectionRequest(page, note);
+          return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
           return { action: 'skipped', error: `Connect failed: ${err.message}` };
         }
@@ -458,8 +458,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log('[outreach] Follow → trying Connect via More…');
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          await sendConnectionRequest(page, note);
-          return { action: 'connection_sent' };
+          const r = await sendConnectionRequest(page, note);
+          return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (e) {
           console.log(`[outreach] More Connect failed: ${e.message}`);
         }
@@ -484,8 +484,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         console.log(`[outreach] Unknown → trying Connect via More…`);
         try {
           const note = templates.connectionNote ? personalizeTemplate(templates.connectionNote, data) : '';
-          await sendConnectionRequest(page, note);
-          return { action: 'connection_sent' };
+          const r = await sendConnectionRequest(page, note);
+          return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
           return { action: 'skipped', error: `Unknown status, connect failed: ${err.message}` };
         }

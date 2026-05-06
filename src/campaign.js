@@ -202,6 +202,12 @@ function normalizeSkipReason(msg) {
   if (lower.includes('email required')) return 'Skipped: Email required';
   if (lower.includes('connect button not found')) return 'Skipped: Connect button not found';
   if (lower.includes('send not confirmed') || lower.includes('send_not_confirmed')) return 'Skipped: Send not confirmed';
+  // v2.10.0 — VOYAGER_REJECTED carries the HTTP status + LinkedIn's own error reason.
+  // Preserve the status code in the normalised stage so the user can see it at a glance.
+  if (lower.includes('voyager_rejected')) {
+    const statusMatch = s.match(/HTTP\s+(\d+)/i);
+    return statusMatch ? `Skipped: LinkedIn rejected (HTTP ${statusMatch[1]})` : 'Skipped: LinkedIn rejected';
+  }
   if (lower.includes('weekly invitation limit') || lower.includes('weekly_limit')) return 'Skipped: Weekly limit reached';
   if (lower.includes('inmail credits') || lower.includes('inmail_no_credits')) return 'Skipped: InMail credits exhausted';
   if (lower.includes('not yet connected')) return 'Skipped: Not yet connected';
@@ -1554,7 +1560,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           const now = formatLocalDate(new Date());
 
           if (SUCCESS_ACTIONS.has(result.action)) {
-            state.processed[url] = { profileId, profileName: pName, action: result.action, date: now };
+            // v2.10.0: stash the invitationUrn returned by Approach A's network
+            // listener so the start-of-run reconcile pass can match this row
+            // against Voyager's sent-invitations list later.
+            state.processed[url] = {
+              profileId,
+              profileName: pName,
+              action: result.action,
+              date: now,
+              ...(result.invitationUrn ? { invitationUrn: result.invitationUrn } : {}),
+            };
             bumpCampaignCount(profileId);
             totalDone++;
             campaign.processedToday++;

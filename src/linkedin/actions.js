@@ -169,6 +169,84 @@ async function isPending(page) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Voyager invitation-creation network listener (v2.10.0 — Approach A)
+//
+// Registers a page.on('response') hook that captures LinkedIn's own backend
+// response to the invitation POST. This is the gold-standard signal — it
+// bypasses toast races, profile-reload latency, and DOM selector drift.
+//
+// URL pattern matches both with-note and without-note sends; the decoration
+// `InvitationCreationResult` is shared across all variants.
+//
+// On 2xx → ok=true with invitationUrn extracted from data.value.invitationUrn.
+// On 4xx → ok=false with status + body parsed for finer-grained skip reason.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VOYAGER_INVITATION_RE = /voyagerRelationshipsDashMemberRelationships.*InvitationCreationResult/i;
+
+function attachVoyagerInvitationCapture(page) {
+  const captured = { fired: false, ok: null, status: null, urn: null, errorMessage: null };
+  const waiters = [];
+
+  const listener = async (response) => {
+    try {
+      if (!VOYAGER_INVITATION_RE.test(response.url())) return;
+      const status = response.status();
+      let body = null;
+      try { body = await response.json(); } catch { /* may not be JSON */ }
+
+      const ok = status >= 200 && status < 300;
+      const urn = body?.data?.value?.invitationUrn || body?.data?.invitationUrn || null;
+      const errorMessage = ok
+        ? null
+        : (body?.message || body?.errorDetails?.message || body?.errorMessage || `HTTP ${status}`);
+
+      captured.fired = true;
+      captured.ok = ok;
+      captured.status = status;
+      captured.urn = urn;
+      captured.errorMessage = errorMessage;
+
+      const result = { ok, status, urn, errorMessage };
+      const ws = waiters.splice(0);
+      for (const w of ws) w(result);
+    } catch (e) {
+      console.warn(`[voyager-capture] listener error: ${e.message}`);
+    }
+  };
+
+  page.on('response', listener);
+
+  return {
+    waitFor(timeoutMs) {
+      if (captured.fired) {
+        return Promise.resolve({
+          ok: captured.ok,
+          status: captured.status,
+          urn: captured.urn,
+          errorMessage: captured.errorMessage,
+        });
+      }
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          const i = waiters.indexOf(onFire);
+          if (i >= 0) waiters.splice(i, 1);
+          resolve(null);
+        }, timeoutMs);
+        const onFire = (result) => { clearTimeout(timer); resolve(result); };
+        waiters.push(onFire);
+      });
+    },
+    fired() { return captured.fired; },
+    detach() {
+      try { page.off('response', listener); } catch { /* page may be closed */ }
+      const ws = waiters.splice(0);
+      for (const w of ws) w(null);
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Type into message/note field
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -473,6 +551,11 @@ async function clickConnectFromMore(page) {
 
 export async function sendConnectionRequest(page, noteArg) {
   let note = noteArg;
+  // v2.10.0 (Approach A): register the Voyager invitation-create listener before
+  // any user interaction. Captures LinkedIn's own backend response, which is the
+  // definitive signal that an invitation actually landed (or was rejected).
+  const voyagerCapture = attachVoyagerInvitationCapture(page);
+  try {
   // Scroll to top
   await page.evaluate(() => window.scrollTo(0, 0));
   await randomDelay(300, 500);
@@ -597,7 +680,7 @@ export async function sendConnectionRequest(page, noteArg) {
     });
     if (successToast) {
       console.log(`[actions] ✓ Success toast: "${successToast}"`);
-      return;
+      return { invitationUrn: null };
     }
 
     // IMPORTANT: Check modal FIRST — if a modal is open, we MUST handle it.
@@ -610,7 +693,7 @@ export async function sendConnectionRequest(page, noteArg) {
       // No modal — safe to check Pending
       if (await isPending(page)) {
         console.log('[actions] ✓ Connection sent (Pending detected).');
-        return;
+        return { invitationUrn: null };
       }
     }
 
@@ -647,7 +730,7 @@ export async function sendConnectionRequest(page, noteArg) {
       if (modal.hasWithdraw) {
         await clickByText(page, 'cancel');
         console.log('[actions] Already pending (withdraw).');
-        return;
+        return { invitationUrn: null };
       }
 
       // Weekly/invitation limit → abort this profile
@@ -753,10 +836,20 @@ export async function sendConnectionRequest(page, noteArg) {
             }
           }
           console.log('[actions] ✓ Sent without a note (note typing fallback).');
-          // Jump straight to post-send verification
-          await new Promise(r => setTimeout(r, 2000));
+          // ── Approach A: Voyager network response (gold-standard signal) ──
+          await new Promise(r => setTimeout(r, 1500));
+          const voyagerA = await voyagerCapture.waitFor(10000);
+          if (voyagerA) {
+            if (voyagerA.ok) {
+              console.log(`[actions] ✓ Voyager confirmed (fallback): HTTP ${voyagerA.status}, urn=${voyagerA.urn || 'n/a'}`);
+              return { invitationUrn: voyagerA.urn };
+            }
+            console.error(`[actions] ✗ Voyager rejected (fallback): HTTP ${voyagerA.status} — ${voyagerA.errorMessage || ''}`);
+            throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerA.status} — ${voyagerA.errorMessage || 'unknown reason'}`);
+          }
+          console.log('[actions] Voyager did not fire — falling back to DOM-based verification.');
 
-          // Post-send verification: reload profile and confirm Pending
+          // Legacy fallback: post-send verification: reload profile and confirm Pending
           console.log('[actions] Verifying connection... waiting 30s for LinkedIn to process.');
           await new Promise(r => setTimeout(r, 30000));
           const currentUrl = page.url();
@@ -767,7 +860,7 @@ export async function sendConnectionRequest(page, noteArg) {
           await page.evaluate(() => { document.body.style.zoom = '75%'; });
           if (await isPending(page)) {
             console.log('[actions] ✓ Verified: Pending (fallback send).');
-            return;
+            return { invitationUrn: null };
           }
           console.log('[actions] Not Pending yet. Waiting another 30s...');
           await new Promise(r => setTimeout(r, 30000));
@@ -778,7 +871,7 @@ export async function sendConnectionRequest(page, noteArg) {
           await page.evaluate(() => { document.body.style.zoom = '75%'; });
           if (await isPending(page)) {
             console.log('[actions] ✓ Verified: Pending (fallback send, 2nd check).');
-            return;
+            return { invitationUrn: null };
           }
           throw new Error('SEND_NOT_CONFIRMED: fallback send without note did not land as Pending');
         }
@@ -845,9 +938,23 @@ export async function sendConnectionRequest(page, noteArg) {
         throw new Error('Send button not found in modal');
       }
 
-      // ── Immediate toast check — success or error ──
-      await new Promise(r => setTimeout(r, 2000));
+      // ── Approach A: Voyager network response (gold-standard signal) ──
+      // The instant LinkedIn's backend replies to the invitation POST, we know
+      // definitively whether it landed. This bypasses toast races and reload
+      // latency. Wait up to 10s for the listener to fire.
+      await new Promise(r => setTimeout(r, 1500));
+      const voyagerMain = await voyagerCapture.waitFor(10000);
+      if (voyagerMain) {
+        if (voyagerMain.ok) {
+          console.log(`[actions] ✓ Voyager confirmed: HTTP ${voyagerMain.status}, urn=${voyagerMain.urn || 'n/a'}`);
+          return { invitationUrn: voyagerMain.urn };
+        }
+        console.error(`[actions] ✗ Voyager rejected: HTTP ${voyagerMain.status} — ${voyagerMain.errorMessage || ''}`);
+        throw new Error(`VOYAGER_REJECTED: HTTP ${voyagerMain.status} — ${voyagerMain.errorMessage || 'unknown reason'}`);
+      }
+      console.log('[actions] Voyager listener did not fire in 10s — falling back to toast/Pending check.');
 
+      // ── Legacy fallback: toast check ──
       // Check for success toast first: "Invitation sent to X"
       const sentToast = await page.evaluate(() => {
         const toasts = document.querySelectorAll('.artdeco-toast-item, [data-test-artdeco-toast-item-type="success"]');
@@ -859,7 +966,7 @@ export async function sendConnectionRequest(page, noteArg) {
       });
       if (sentToast) {
         console.log(`[actions] ✓ Verified via toast: "${sentToast}"`);
-        return;
+        return { invitationUrn: null };
       }
       const errorToast = await page.evaluate(() => {
         const toast = document.querySelector(
@@ -890,44 +997,34 @@ export async function sendConnectionRequest(page, noteArg) {
         throw new Error(`LINKEDIN_ERROR_TOAST: ${errorToast}`);
       }
 
-      // Post-send verification: reload the profile and confirm Pending status
-      // Wait for modal to fully close and LinkedIn to process the request
+      // ── Legacy fallback: reload + isPending ──
       console.log('[actions] Verifying connection... waiting 30s for LinkedIn to process.');
       await new Promise(r => setTimeout(r, 30000));
-
-      // Navigate back to the same profile to get fresh status
       const currentUrl = page.url();
       try {
         await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       } catch { /* timeout OK — page still usable */ }
       await new Promise(r => setTimeout(r, 5000));
-      // Reapply zoom after reload so button positions match expectations
       await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
-      // Check 1: is it Pending now?
       if (await isPending(page)) {
         console.log('[actions] ✓ Verified: Pending.');
-        return;
+        return { invitationUrn: null };
       }
 
-      // Wait another 30s and try again — GoLogin is slow
       console.log('[actions] Not Pending yet. Waiting another 30s...');
       await new Promise(r => setTimeout(r, 30000));
-
-      // Reload again for fresh state
       try {
         await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       } catch { /* timeout OK */ }
       await new Promise(r => setTimeout(r, 5000));
       await page.evaluate(() => { document.body.style.zoom = '75%'; });
 
-      // Check 2
       if (await isPending(page)) {
         console.log('[actions] ✓ Verified: Pending (2nd check).');
-        return;
+        return { invitationUrn: null };
       }
 
-      // Not confirmed — LinkedIn silently dropped the request
       console.warn('[actions] ⚠ Send clicked but Pending NOT confirmed after 60s + 2 page reloads.');
       throw new Error('SEND_NOT_CONFIRMED: clicked Send but profile does not show Pending');
     }
@@ -962,6 +1059,9 @@ export async function sendConnectionRequest(page, noteArg) {
   });
   console.error('[actions] No modal after 8 attempts. Buttons:', JSON.stringify(btns));
   throw new Error('No modal appeared and connection not sent');
+  } finally {
+    voyagerCapture.detach();
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
