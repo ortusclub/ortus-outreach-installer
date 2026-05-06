@@ -725,6 +725,13 @@ function renderProfiles(profiles) {
   grid.appendChild(localItem);
 
   profiles.forEach((p) => {
+    // v2.11.4: keep selectedProfileNames in sync with whatever is currently
+    // selected. The change handler below only fires for user clicks, so any
+    // programmatic selection (preset load, schedule restore, etc.) was leaving
+    // the name map empty — the right pane then fell back to raw GoLogin IDs.
+    if (selectedProfileIds.includes(p.id)) {
+      selectedProfileNames[p.id] = p.name;
+    }
     const item = document.createElement('label');
     item.className = 'profile-item' + (selectedProfileIds.includes(p.id) ? ' selected' : '');
     item.dataset.profileId = p.id;
