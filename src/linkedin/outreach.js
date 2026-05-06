@@ -342,6 +342,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
       if (result.ok && result.kind === 'inmail_sent')     return { action: 'inmail_sent', creditsLeft: result.creditsLeft };
       if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
+      if (result.reason === 'inmail_no_credits_lead_not_op') return { action: 'skipped', error: 'INMAIL_NO_CREDITS_NOT_OP: account has 0 InMail credits and lead is not Open Profile' };
       if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
       if (result.reason === 'no_credits')                 return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
       if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
@@ -359,6 +360,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
       if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
       if (result.reason === 'not_open_profile')           return { action: 'skipped', error: 'NOT_OPEN_PROFILE: Free to Open Profile badge not present on Sales Nav panel' };
+      if (result.reason === 'inmail_no_credits_lead_not_op') return { action: 'skipped', error: 'INMAIL_NO_CREDITS_NOT_OP: account has 0 InMail credits and lead is not Open Profile' };
       if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
       if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
       return { action: 'skipped', error: 'Sales Nav: unknown result' };

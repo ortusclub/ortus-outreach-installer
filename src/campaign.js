@@ -1721,6 +1721,23 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Weekly invitation limit reached'),
               }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('INMAIL_NO_CREDITS_NOT_OP')) {
+              // v2.11.3: dual-fact signal — account is out of InMail credits
+              // (eject for run) AND lead is confirmed non-OP (mark in sheet).
+              // The lead-level fact takes precedence in the sheet write because
+              // it's permanent across runs; the account-level fact is run-only.
+              log(`  ⚠ ${pName}: 0 InMail credits + lead not Open Profile. Removing account from rotation, marking lead Not OP.`);
+              weeklyLimited.add(profileId);
+              state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                status: normalizeSkipReason('Not Open Profile'),
+                stage:  normalizeSkipReason('Not Open Profile'),
+                accountUsed: pName,
+                sender: pName,
+                dateLastAction: now,
+                auditAction: normalizeSkipReason('Not Open Profile'),
+              }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('INMAIL_NO_CREDITS')) {
               log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);

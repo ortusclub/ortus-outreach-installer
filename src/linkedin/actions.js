@@ -1731,7 +1731,16 @@ async function readSalesNavComposerState(page) {
       'textarea[aria-label*="type your message" i], ' +
       'form[data-x-conversation-widget="compose-form"] textarea'
     );
-    return { isFree, isFreeToOpenProfile, hasCreditCounter, creditsAvailable, hasSubject, hasCompose };
+    // v2.11.3: when an account has 0 InMail credits AND the lead is NOT
+    // Open Profile, Sales Nav renders the New-message panel without a
+    // textbox and shows the literal copy "Sorry, you've used up all your
+    // InMail credits" (body) and "No InMail credits left" (header). This
+    // is a dual-fact signal: account is out of credits (eject for run)
+    // AND the lead is confirmed non-OP (mark in sheet).
+    const noInMailCredits =
+      /sorry,?\s*you'?ve used up all your inmail credits/i.test(text) ||
+      /no inmail credits left/i.test(text);
+    return { isFree, isFreeToOpenProfile, hasCreditCounter, creditsAvailable, hasSubject, hasCompose, noInMailCredits };
   });
 }
 
@@ -1800,6 +1809,13 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
     await new Promise(r => setTimeout(r, 3500));
     panel = await readSalesNavComposerState(page);
     console.log(`[actions] SalesNavRouter panel: ${JSON.stringify(panel)}`);
+  }
+
+  // v2.11.3: dual-fact dialog detection — checked BEFORE the generic
+  // hasCompose check because in this state hasCompose is also false but
+  // the cause is specific and actionable (eject account + mark lead non-OP).
+  if (panel.noInMailCredits) {
+    return { ok: false, reason: 'inmail_no_credits_lead_not_op' };
   }
 
   // force_connect_op_fallback intentionally handles the no-composer case by
