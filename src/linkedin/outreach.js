@@ -70,6 +70,14 @@ const IN_MEMBER_URN_RE = /\/in\/(AC[A-Za-z0-9_-]{10,})(?:[/?#]|$)/;
 // Sales Nav pages don't expose the Connect button the same way).
 const SALES_MEMBER_URN_RE = /\/sales\/(?:lead|people)\/(AC[A-Za-z0-9_-]{10,})(?:[,/?#]|$)/;
 
+// v2.11.1: legacy Sales Nav profile URLs use a numeric LinkedIn member id
+// (`/sales/profile/2803628,rZnG,NAME_SEARCH`) instead of the AC-encoded URN.
+// These can't be mechanically converted to /in/ without scraping the page
+// itself, so for Connect / Message / Check Status modes we skip them with a
+// clear reason. OP and InMail modes are NOT affected — Sales Nav handles the
+// /sales/profile/ form natively for those flows.
+const LEGACY_SALES_NAV_RE = /\/sales\/profile\//;
+
 /**
  * Smart wait: resolves when the DOM stops changing for 1.5s OR after maxWait ms.
  * Much faster than a fixed 30s wait — typically resolves in 5-10s.
@@ -129,6 +137,14 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     // Nav row in Check Status gets skipped instead of evaluated, leaving its
     // CC stuck at the previous (potentially wrong) state.
     if (modeHint === 'force_connect' || modeHint === 'force_message' || modeHint === 'check_only') {
+      // v2.11.1: legacy /sales/profile/<numeric>,xxx,NAME_SEARCH has no encoded
+      // URN to extract — the bot would navigate, find the Sales Nav layout,
+      // and skip with a misleading "Connect button not found". Skip up-front
+      // with a clear reason so the operator can re-export with a vanity slug.
+      if (LEGACY_SALES_NAV_RE.test(url)) {
+        console.warn('[outreach] Legacy Sales Nav profile URL — cannot route to /in/');
+        return { action: 'skipped', error: 'Legacy Sales Nav URL — re-export with vanity slug or AC URN' };
+      }
       if (SALES_NAV_URL_RE.test(url)) {
         const m = url.match(SALES_MEMBER_URN_RE);
         if (!m) {

@@ -187,6 +187,7 @@ function normalizeSkipReason(msg) {
     return s;
   }
   const lower = s.toLowerCase();
+  if (lower.includes('legacy sales nav')) return 'Skipped: Legacy Sales Nav URL';
   if (lower.includes('profile not found') || lower.includes('url not found')) return 'Skipped: URL not found';
   if (lower.includes('login page detected') || lower.includes('session expired')) return 'Skipped: Session expired';
   if (lower.includes('email required')) return 'Skipped: Email required';
