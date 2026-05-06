@@ -1,30 +1,14 @@
-// Phase 11.2 — unit coverage for the pure helpers that drive the new batch loop.
+// Unit coverage for the pure helpers that drive the batch loop.
 // Does not launch browsers. Does not run a real campaign.
+//
+// v2.11.0: dropped batchesPerHour. The per-profile turn cooldown is now a
+// fixed 6-min floor inside startCampaign (not a pure helper), so there is
+// nothing left to unit-test for spacing math. Queue rotation is the primary
+// pacer and its correctness is covered by the worker-pool integration paths.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { computeBetweenBatchWaitMs, shouldCloseBetweenBatches } from '../src/campaign.js';
-
-test('computeBetweenBatchWaitMs: 2 bph, zero duration → 30min (1_800_000)', () => {
-  assert.equal(computeBetweenBatchWaitMs({ batchesPerHour: 2, batchDurationMs: 0 }), 1_800_000);
-});
-
-test('computeBetweenBatchWaitMs: 6 bph, zero duration → 10min (600_000)', () => {
-  assert.equal(computeBetweenBatchWaitMs({ batchesPerHour: 6, batchDurationMs: 0 }), 600_000);
-});
-
-test('computeBetweenBatchWaitMs: 3 bph, zero duration → 20min', () => {
-  assert.equal(computeBetweenBatchWaitMs({ batchesPerHour: 3, batchDurationMs: 0 }), 1_200_000);
-});
-
-test('computeBetweenBatchWaitMs: subtracts batch duration from target spacing', () => {
-  assert.equal(computeBetweenBatchWaitMs({ batchesPerHour: 2, batchDurationMs: 600_000 }), 1_200_000);
-});
-
-test('computeBetweenBatchWaitMs: applies 60s floor when target < duration', () => {
-  assert.equal(computeBetweenBatchWaitMs({ batchesPerHour: 2, batchDurationMs: 1_800_000 }), 60_000);
-  assert.equal(computeBetweenBatchWaitMs({ batchesPerHour: 6, batchDurationMs: 700_000 }), 60_000);
-});
+import { shouldCloseBetweenBatches } from '../src/campaign.js';
 
 test('shouldCloseBetweenBatches: 14min below default 15min → false', () => {
   assert.equal(shouldCloseBetweenBatches({ waitMs: 14 * 60_000 }), false);
@@ -53,4 +37,14 @@ test('campaign.js no longer contains the session-break branch (D-04 deletion)', 
 test('campaign.js no longer contains the batchModes Set (D-01 unification)', () => {
   const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /batchModes\s*=\s*new Set/);
+});
+
+test('v2.11.0: campaign.js declares fixed 6-min turn cooldown floor', () => {
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(src, /TURN_COOLDOWN_FLOOR_MS\s*=\s*6\s*\*\s*60\s*\*\s*1000/);
+});
+
+test('v2.11.0: campaign.js no longer reads batchesPerHour for cooldown math', () => {
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /3600\s*\/\s*batchesPerHour/);
 });

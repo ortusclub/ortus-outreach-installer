@@ -176,36 +176,24 @@
     <div class="section collapsible collapsed" id="nav-pace">
       <h2 class="section-toggle" onclick="toggleSection('nav-pace')"><span class="caret">▾</span> <span data-edit="h2-pace">4. Throughput</span> <span class="section-summary" id="summary-pace"></span></h2>
       <div class="collapsible-body">
-        <!-- Phase 2.8.14: Alpha throughput panel — sketches/rate-limits-rethink.html#α
-             Shows total leads/hour live as accounts get checked/unchecked.
-             Storage convention: rate-per-hour stays as batches/hour (1-6) for
-             backend compat; alpha-leads-per-hour is the visible value (5-30, step 5),
-             converted via leads = batches × 5. -->
+        <!-- v2.11.0: Throughput model rewritten. The arbitrary batchesPerHour
+             knob is gone. The campaign now runs as fast as the queue can rotate,
+             with a 6-min per-account turn floor (anti-eject-cascade). The only
+             knobs left here are: pause-between-leads (jitter) and the per-account
+             campaign limit. -->
         <div class="alpha-throughput">
           <div class="alpha-headline">
             <div>
               <div class="alpha-big" id="alpha-total-leads">—</div>
-              <div class="alpha-big-unit">leads / hour total</div>
+              <div class="alpha-big-unit">total invites this run</div>
             </div>
             <div class="alpha-eq">
               <b id="alpha-acct-count">0</b> accounts<br>
-              × <b id="alpha-per-acct">10</b> leads / hour each<br>
-              = <b id="alpha-eq-total" style="color:var(--gold)">0</b> leads / hour
+              × up to <b id="alpha-per-acct">50</b> invites each<br>
+              = <b id="alpha-eq-total" style="color:var(--gold)">0</b> max invites
             </div>
           </div>
           <div class="alpha-controls">
-            <div>
-              <div class="alpha-knob-label">Leads / hour, per account</div>
-              <div class="alpha-knob-row">
-                <input class="alpha-knob-input" type="number" id="alpha-leads-per-hour" value="10" min="5" max="60" step="5" oninput="alphaSyncRate()" />
-                <div class="step-col">
-                  <button type="button" class="step-btn" onclick="alphaStepLeads(5)">+</button>
-                  <button type="button" class="step-btn" onclick="alphaStepLeads(-5)">−</button>
-                </div>
-                <span class="alpha-knob-suffix">leads / hour</span>
-              </div>
-              <div class="alpha-knob-help">Each account processes leads in 5-lead batches. Adjust in increments of 5.</div>
-            </div>
             <div>
               <div class="alpha-knob-label">Pause between leads</div>
               <div class="alpha-knob-row">
@@ -216,18 +204,18 @@
               </div>
               <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
             </div>
-            <!-- 2.9.8: Daily limit becomes UI-controlled (was hardcoded 40). -->
+            <!-- v2.11.0: renamed from "Daily limit, per account" → "Campaign limit per account". Default 40 → 50. -->
             <div id="daily-limit-knob">
-              <div class="alpha-knob-label">Daily limit, per account</div>
+              <div class="alpha-knob-label">Campaign limit per account</div>
               <div class="alpha-knob-row">
-                <input class="alpha-knob-input" type="number" id="daily-limit-input" value="40" min="1" max="500" oninput="alphaSyncDailyLimit()" />
+                <input class="alpha-knob-input" type="number" id="daily-limit-input" value="50" min="1" max="500" oninput="alphaSyncDailyLimit()" />
                 <div class="step-col">
                   <button type="button" class="step-btn" onclick="alphaStepDaily(5)">+</button>
                   <button type="button" class="step-btn" onclick="alphaStepDaily(-5)">−</button>
                 </div>
-                <span class="alpha-knob-suffix">invites / day</span>
+                <span class="alpha-knob-suffix">invites / account</span>
               </div>
-              <div class="alpha-knob-help">LinkedIn caps invitations per account per day. 40 is the safe default; raise carefully.</div>
+              <div class="alpha-knob-help">Per-account cap for this run. LinkedIn enforces a weekly invitation limit (~100/week), so 50 is a safe daily default.</div>
             </div>
           </div>
 
@@ -259,7 +247,7 @@
             <div class="hero-cell">
               <div class="hero-k" data-edit="hero-duration-k">Duration</div>
               <div class="hero-v" id="hero-duration">—</div>
-              <div class="hero-sub" id="hero-duration-sub">at 2 batches / hour</div>
+              <div class="hero-sub" id="hero-duration-sub">approximate</div>
             </div>
             <div class="hero-cell">
               <div class="hero-k" data-edit="hero-finish-k">Finishes</div>
@@ -273,15 +261,13 @@
           <span id="alpha-round-time" style="display:none"></span>
         </div>
 
-        <!-- Hidden inputs preserve backend wire — backend reads rate-per-hour as
-             batchesPerHour (1-6); alphaSyncRate keeps it in sync with the visible
-             leads/hour input. message-gap kept hidden for legacy code.
-             2.9.8: daily-limit is now visible above (#daily-limit-input). The
-             hidden #daily-limit mirror is kept for backend compat — alphaSyncDailyLimit
-             writes the visible value into it on every change. -->
-        <input type="hidden" id="rate-per-hour" value="2" />
+        <!-- v2.11.0: rate-per-hour kept as a no-op hidden input only because some
+             legacy preset save/load paths still reference it; backend ignores it.
+             daily-limit hidden mirror is the value app.js submits to the backend;
+             alphaSyncDailyLimit writes the visible #daily-limit-input value into it. -->
+        <input type="hidden" id="rate-per-hour" value="12" />
         <input type="hidden" id="message-gap" value="60" />
-        <input type="hidden" id="daily-limit" value="40" />
+        <input type="hidden" id="daily-limit" value="50" />
 
         <!-- Legacy label/wrapper anchors so setLaunchMode and other readers don't crash -->
         <span id="rate-per-hour-label" style="display:none"></span>
@@ -329,7 +315,7 @@
             <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#dc2626;display:inline-block"></span> No longer pending</div>
           </div>
           <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
-            <strong style="color:var(--gray)">Templates / Daily limit / Profile picker</strong> — not used in Check Status. Read-only mode; no requests sent. Profiles are auto-routed per row.
+            <strong style="color:var(--gray)">Templates / Campaign limit / Profile picker</strong> — not used in Check Status. Read-only mode; no requests sent. Profiles are auto-routed per row.
           </div>
         </div>
         <div id="cs-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">
@@ -352,7 +338,7 @@
           <div id="mo-unmatched" style="margin-top:12px; font-size:12px; color:var(--gray);"></div>
           <div id="mo-summary" style="display:flex; gap:24px; padding:16px 0; margin-top:16px; border-top:1px solid var(--hairline-soft); border-bottom:1px solid var(--hairline-soft)"></div>
           <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
-            <strong style="color:var(--gray)">Profile picker / Throughput / Daily limit</strong> — not used in Message Only. Auto-routed per row (only the account that connected the lead can DM); drains every accepted lead back-to-back. <strong style="color:var(--gray)">Templates</strong> below are required.
+            <strong style="color:var(--gray)">Profile picker / Throughput / Campaign limit</strong> — not used in Message Only. Auto-routed per row (only the account that connected the lead can DM); drains every accepted lead back-to-back. <strong style="color:var(--gray)">Templates</strong> below are required.
           </div>
         </div>
         <div id="mo-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">
@@ -408,7 +394,7 @@
             <div style="display:flex; align-items:center; gap:6px"><span style="width:12px;height:12px;border-radius:9999px;background:#dc2626;display:inline-block"></span> Could not scrape</div>
           </div>
           <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
-            <strong style="color:var(--gray)">Templates / Daily limit / Profile picker</strong> — not used in Check DMs. Per-lead targeted scrape: opens each thread by recipient, dumps the visible message list to the Replies tab, bumps <code>Stage</code> to <code>Replied</code> on inbound. Profiles are auto-routed per row.
+            <strong style="color:var(--gray)">Templates / Campaign limit / Profile picker</strong> — not used in Check DMs. Per-lead targeted scrape: opens each thread by recipient, dumps the visible message list to the Replies tab, bumps <code>Stage</code> to <code>Replied</code> on inbound. Profiles are auto-routed per row.
           </div>
         </div>
         <div id="cd-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">

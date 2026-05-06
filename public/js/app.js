@@ -1387,8 +1387,8 @@ function onModeChange() {
   // section entirely; other modes (incl. message_only) keep it visible.
   const navTemplates = document.getElementById('nav-templates');
   if (navTemplates) navTemplates.style.display = isCheckDms ? 'none' : '';
-  // 2.9.8: Daily limit knob applies ONLY to Connect campaigns (LinkedIn caps
-  // invitations per account per day). DM/IC/OP/InMail are unlimited.
+  // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
+  // caps invitations per account per day). DM/IC/OP/InMail are unlimited.
   const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_message');
   const dailyKnob = document.getElementById('daily-limit-knob');
   if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
@@ -1600,41 +1600,24 @@ async function previewSheet() {
 // Campaign summary calculator
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────
-// Phase 2.8.14 — Alpha Throughput panel (replaces the old Rate & Limits steppers).
-// alpha-leads-per-hour is the visible knob (5-30, step 5). rate-per-hour stays
-// as the hidden source-of-truth for the backend (1-6 batches/hour). The two
-// are kept in sync via alphaSyncRate (leads = batches × 5).
-// ─────────────────────────────────────────────────────────────────────────
-function alphaSyncRate() {
-  const leadsEl = document.getElementById('alpha-leads-per-hour');
-  const batchesEl = document.getElementById('rate-per-hour');
-  if (!leadsEl || !batchesEl) return;
-  let leads = parseInt(leadsEl.value, 10);
-  if (!Number.isFinite(leads)) leads = 10;
-  // 2.9.9: ceiling raised 30 → 60 (Q11). Snap to multiples of 5 within [5, 60].
-  leads = Math.max(5, Math.min(60, Math.round(leads / 5) * 5));
-  if (parseInt(leadsEl.value, 10) !== leads) leadsEl.value = String(leads);
-  batchesEl.value = String(leads / 5);
-  updateCampaignSummary();
-}
+// v2.11.0 — Throughput panel. The leads/hour knob (alpha-leads-per-hour) has
+// been removed entirely. The campaign now runs as fast as the queue can rotate
+// with a 6-min per-account turn floor enforced server-side. Only the per-account
+// campaign limit remains user-tunable.
+// alphaSyncRate / alphaStepLeads kept as no-op stubs because some inline
+// onclick="" handlers and old presets still reference them; deletion would
+// surface ReferenceErrors in console without behavioral benefit.
+function alphaSyncRate() { updateCampaignSummary(); }
+function alphaStepLeads(_delta) { updateCampaignSummary(); }
 
-function alphaStepLeads(delta) {
-  const leadsEl = document.getElementById('alpha-leads-per-hour');
-  if (!leadsEl) return;
-  const cur = parseInt(leadsEl.value, 10) || 10;
-  leadsEl.value = String(Math.max(5, Math.min(60, cur + delta)));
-  alphaSyncRate();
-}
-
-// 2.9.8: Daily limit visible input. Mirrors to the legacy hidden #daily-limit
-// input so the existing campaign-start payload code keeps working unchanged.
-// 2.9.9: ceiling raised 200 → 500 (Q11).
+// Campaign-limit-per-account (was "Daily limit"). Mirrors the visible input to
+// the hidden #daily-limit input that app.js submits to the backend.
 function alphaSyncDailyLimit() {
   const visEl = document.getElementById('daily-limit-input');
   const hidEl = document.getElementById('daily-limit');
   if (!visEl || !hidEl) return;
   let v = parseInt(visEl.value, 10);
-  if (!Number.isFinite(v) || v < 1) v = 40;
+  if (!Number.isFinite(v) || v < 1) v = 50;
   v = Math.max(1, Math.min(500, v));
   if (parseInt(visEl.value, 10) !== v) visEl.value = String(v);
   hidEl.value = String(v);
@@ -1644,7 +1627,7 @@ function alphaSyncDailyLimit() {
 function alphaStepDaily(delta) {
   const visEl = document.getElementById('daily-limit-input');
   if (!visEl) return;
-  const cur = parseInt(visEl.value, 10) || 40;
+  const cur = parseInt(visEl.value, 10) || 50;
   visEl.value = String(Math.max(1, Math.min(500, cur + delta)));
   alphaSyncDailyLimit();
 }
@@ -1660,42 +1643,21 @@ function alphaSyncConcurrency() {
 }
 
 function alphaRecalc() {
-  const leadsEl = document.getElementById('alpha-leads-per-hour');
+  // v2.11.0: simpler model. Total max invites this run = N accounts × campaign limit.
   const totalEl = document.getElementById('alpha-total-leads');
   const acctCountEl = document.getElementById('alpha-acct-count');
   const perAcctEl = document.getElementById('alpha-per-acct');
   const eqTotalEl = document.getElementById('alpha-eq-total');
-  const dailyTargetEl = document.getElementById('alpha-daily-target');
-  const roundTimeEl = document.getElementById('alpha-round-time');
-  if (!leadsEl || !totalEl) return; // alpha panel not on page — nothing to do
+  if (!totalEl) return; // panel not on page — nothing to do
 
-  const leads = parseInt(leadsEl.value, 10) || 10;
   const numAccounts = Array.isArray(selectedProfileIds) ? selectedProfileIds.length : 0;
-  const total = leads * numAccounts;
+  const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 50;
+  const total = dailyLimit * numAccounts;
 
   totalEl.textContent = total > 0 ? String(total) : '—';
   if (acctCountEl) acctCountEl.textContent = String(numAccounts);
-  if (perAcctEl)   perAcctEl.textContent   = String(leads);
+  if (perAcctEl)   perAcctEl.textContent   = String(dailyLimit);
   if (eqTotalEl)   eqTotalEl.textContent   = String(total);
-
-  // Daily target: clamp at the per-account daily limit × accounts.
-  const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 40;
-  if (dailyTargetEl) {
-    if (numAccounts === 0) {
-      dailyTargetEl.textContent = '—';
-    } else {
-      // 10-hour working window approximation, capped by per-account daily limit
-      const tenHrCap = total * 10;
-      const safetyCap = dailyLimit * numAccounts;
-      dailyTargetEl.textContent = Math.min(tenHrCap, safetyCap) + ' leads / day';
-    }
-  }
-
-  // Round time: 60 / batchesPerHour minutes between rounds.
-  if (roundTimeEl) {
-    const batches = Math.max(1, Math.round(leads / 5));
-    roundTimeEl.textContent = '~' + Math.round(60 / batches);
-  }
 
   // 2.9.8: Concurrency toggle is unlocked at ≥5 accounts. Hide otherwise.
   const concurrencyRow = document.getElementById('alpha-concurrency-row');
@@ -1711,28 +1673,18 @@ function updateCampaignSummary() {
   alphaRecalc();
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
 
-  // Mode-specific vocabulary. Phase 11.2 (D-06..D-09): rate is ALWAYS "Batches
-  // per hour" — the rate input is the same batches-per-hour knob in every mode
-  // post-11.2. limitLabel is decorative (the #daily-limit-wrap is hidden) but
-  // still assigned so downstream setters don't crash.
+  // v2.11.0: vocabulary kept for hero copy. Rate/limit labels are gone from UI;
+  // these strings only feed the summary block.
   const MODE_WORDS = {
-    connect_only:        { action: 'connections',            actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
-    message_only:        { action: 'messages',               actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
-    inmail_only:         { action: 'InMails',                actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
-    open_profile_only:   { action: 'Open Profile messages',  actionVerb: 'sending',  rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
-    check_status:        { action: 'checks',                 actionVerb: 'checking', rateLabel: 'Batches per hour', limitLabel: 'Safety cap' },
+    connect_only:        { action: 'connections',            actionVerb: 'sending'  },
+    message_only:        { action: 'messages',               actionVerb: 'sending'  },
+    inmail_only:         { action: 'InMails',                actionVerb: 'sending'  },
+    open_profile_only:   { action: 'Open Profile messages',  actionVerb: 'sending'  },
+    check_status:        { action: 'checks',                 actionVerb: 'checking' },
   };
   const words = MODE_WORDS[mode] || MODE_WORDS.connect_only;
 
-  // Update field labels
-  const rateLabelEl = document.getElementById('rate-per-hour-label');
-  if (rateLabelEl) rateLabelEl.textContent = words.rateLabel;
-  const limitLabelEl = document.getElementById('daily-limit-label');
-  if (limitLabelEl) limitLabelEl.textContent = words.limitLabel;
-
-  // Cap the daily-limit input at the sheet row count once known. Note: the
-  // wrapper is hidden post-11.2 (D-08), but the input remains so its value
-  // still posts as the backend safety cap.
+  // Cap the daily-limit input at the sheet row count once known.
   const limitInput = document.getElementById('daily-limit');
   const rows = typeof window.sheetTotalRows === 'number' && window.sheetTotalRows > 0 ? window.sheetTotalRows : null;
   if (limitInput && rows) {
@@ -1741,59 +1693,45 @@ function updateCampaignSummary() {
     if (current > rows) limitInput.value = String(rows);
   }
 
-  const limit = parseInt(document.getElementById('daily-limit').value, 10) || 40;
-  // Phase 2.8.16: use REAL account count, no defensive Math.max(..., 1) — that
-  // was making the forecast tiles show numbers (e.g. 40 actions) when the
-  // operator hadn't selected any account yet. Downstream renders "—" if 0.
+  const limit = parseInt(document.getElementById('daily-limit').value, 10) || 50;
   const numAccounts = selectedProfileIds.length;
-  const numAccountsForMath = Math.max(numAccounts, 1); // for divisions / clamps only
 
-  // Phase 11.2: rate is batches/hour for every mode. In message_only we still
-  // derive a rate-ish value from the gap field for the summary text.
-  const MSG_OUTREACH_TIME = 25;
-
-  let rate;
-  if (mode === 'message_only') {
-    const gap = parseInt(document.getElementById('message-gap')?.value, 10) || 60;
-    rate = Math.max(1, Math.round(3600 / (MSG_OUTREACH_TIME + gap)));
-  } else {
-    rate = parseInt(document.getElementById('rate-per-hour').value, 10) || 2;
-  }
-
-  // Phase 11.2 (D-01): each batch = 5 leads. Approximate leads/hour from the
-  // batch rate for the hero copy. In message mode this is the rate (pure msgs).
+  // v2.11.0: throughput math — each account does up to 5 leads per turn with a
+  // 6-min minimum between turns → ceiling of ~50 leads/hr per active worker.
+  // With C concurrent workers, real throughput ≈ 50 × C leads/hr (capped by
+  // total invites = limit × numAccounts).
+  const concurrencyToggle = document.getElementById('concurrency-toggle');
+  const concurrencyCount = document.getElementById('concurrency-count');
+  const concurrency = (concurrencyToggle?.checked && numAccounts >= 5)
+    ? Math.max(1, Math.min(5, parseInt(concurrencyCount?.value, 10) || 2))
+    : 1;
+  const TURN_FLOOR_MIN = 6;
   const LEADS_PER_BATCH = 5;
-  const leadsPerHour = mode === 'message_only' ? rate : rate * LEADS_PER_BATCH;
-  const totalPerHour = leadsPerHour * numAccounts;
+  const perAccountLeadsPerHour = (60 / TURN_FLOOR_MIN) * LEADS_PER_BATCH; // 50
+  const effectiveLeadsPerHour = perAccountLeadsPerHour * concurrency;
+
   const totalActions = limit * numAccounts;
-  // Duration based on leads/hour (batches × 5), capped by the backend safety
-  // limit. Example: 2 bph × 1 account × 5 leads = 10 leads/hr. 40 cap ⇒ 240 min.
-  const effectiveRate = Math.max(1, leadsPerHour);
-  const minutesNeeded = Math.max(1, Math.ceil((limit / effectiveRate) * 60));
-  const durationStr = minutesNeeded < 60
-    ? `${minutesNeeded} min`
-    : `${Math.floor(minutesNeeded / 60)}h ${minutesNeeded % 60}m`;
+  const minutesNeeded = totalActions > 0
+    ? Math.max(1, Math.ceil((totalActions / effectiveLeadsPerHour) * 60))
+    : 0;
+  const durationStr = minutesNeeded === 0
+    ? '—'
+    : minutesNeeded < 60
+      ? `${minutesNeeded} min`
+      : `${Math.floor(minutesNeeded / 60)}h ${minutesNeeded % 60}m`;
 
   const now = new Date();
   const finishTime = new Date(now.getTime() + minutesNeeded * 60 * 1000);
-  const finishStr = finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const finishStr = minutesNeeded === 0 ? '—' : finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const el = document.getElementById('summary-stats');
   if (el) {
     const accountWord = numAccounts === 1 ? 'account' : 'accounts';
-    if (mode === 'message_only') {
-      el.innerHTML = `
-        <div><strong>${numAccounts} ${accountWord}</strong>, each ${words.actionVerb} <strong>${rate}</strong> ${words.action} per hour</div>
-        <div>= up to <strong>${totalActions}</strong> ${words.action} capped by the safety limit (${limit}/account)</div>
-        <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
-      `;
-    } else {
-      el.innerHTML = `
-        <div><strong>${numAccounts} ${accountWord}</strong>, each running <strong>${rate}</strong> batch${rate === 1 ? '' : 'es'} per hour (~${leadsPerHour} leads/hour per account)</div>
-        <div>= up to <strong>${totalActions}</strong> ${words.action} capped by the safety limit (${limit}/account)</div>
-        <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
-      `;
-    }
+    el.innerHTML = `
+      <div><strong>${numAccounts} ${accountWord}</strong>, up to <strong>${limit}</strong> ${words.action} per account</div>
+      <div>= up to <strong>${totalActions}</strong> total ${words.action} this run</div>
+      <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
+    `;
   }
 
   // Launch hero mirror
@@ -1822,11 +1760,7 @@ function updateCampaignSummary() {
     setText('hero-actions', String(totalActions));
     setText('hero-actions-sub', `${numAccounts} ${accountWord} · ${words.action}`);
     setText('hero-duration', durationStr);
-    if (mode === 'message_only') {
-      setText('hero-duration-sub', `${rate} ${words.action}/hr × ${numAccounts}`);
-    } else {
-      setText('hero-duration-sub', `${rate} batches/hr × ${numAccounts}`);
-    }
+    setText('hero-duration-sub', `~${effectiveLeadsPerHour} ${words.action}/hr (${concurrency} parallel)`);
     setText('hero-finish', finishStr);
     setText('hero-finish-sub', `from now · local time`);
   }
@@ -1911,9 +1845,8 @@ async function startCampaign() {
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
-  // Phase 11.2 (D-06): batchesPerHour is the primary pacing knob (1..6), sourced
-  // from the relabeled #rate-per-hour input. Clamp defensively before POST.
-  const batchesPerHour = Math.max(1, Math.min(12, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
+  // v2.11.0: batchesPerHour removed. Backend hardcodes a 6-min per-account
+  // turn floor and lets the queue rotation pace the rest.
 
   // If the user answered "No" to the "add a note while connecting?" question,
   // drop the connection note regardless of what's in the textarea.
@@ -1942,7 +1875,6 @@ async function startCampaign() {
         profileIds: selectedProfileIds,
         sheetUrl,
         templates,
-        batchesPerHour,
         dailyLimit,
         mode,
         messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
@@ -2699,7 +2631,7 @@ async function fetchHistory() {
       html += '<tr class="history-detail" data-detail-idx="' + idx + '">';
       html += '<td colspan="6"><dl>';
       html += '<dt>Templates</dt><dd>' + (tplDisplay || 'None') + '</dd>';
-      html += '<dt>Daily Limit</dt><dd>' + escHtml(String(c.dailyLimit || '--')) + '</dd>';
+      html += '<dt>Campaign limit per account</dt><dd>' + escHtml(String(c.dailyLimit || '--')) + '</dd>';
       html += '<dt>Total Processed</dt><dd>' + escHtml(String(c.totalProcessed || 0)) + '</dd>';
       html += '</dl></td></tr>';
     });
@@ -2779,7 +2711,7 @@ async function saveQuickSchedule() {
   const sheetUrl = document.getElementById('sheet-url').value.trim();
   if (!sheetUrl) { alert('Enter the Google Sheet URL on the page first.'); return; }
   const dailyLimit = parseInt(document.getElementById('daily-limit').value, 10);
-  if (!dailyLimit || dailyLimit < 1) { alert('Daily limit must be at least 1.'); return; }
+  if (!dailyLimit || dailyLimit < 1) { alert('Campaign limit per account must be at least 1.'); return; }
 
   const mode = document.getElementById('campaign-mode').value || 'connect_only';
 
@@ -2796,9 +2728,8 @@ async function saveQuickSchedule() {
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
-  // Phase 11.2 (D-06): persist batchesPerHour on the schedule so cron fires
-  // honour the operator's pacing choice.
-  const batchesPerHour = Math.max(1, Math.min(12, parseInt(document.getElementById('rate-per-hour').value, 10) || 2));
+  // v2.11.0: batchesPerHour removed from schedules too — pacing is now the
+  // 6-min turn floor + queue rotation, no per-schedule throughput knob.
 
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
@@ -2822,7 +2753,6 @@ async function saveQuickSchedule() {
         mode,
         templates,
         dailyLimit,
-        batchesPerHour,
         delayMin,
         delayMax,
         enabled: true,
@@ -3509,12 +3439,9 @@ function collectCurrentConfig() {
     mode: getV('campaign-mode') || 'connect_only',
     sheetUrl: getV('sheet-url').trim(),
     profileIds: [...selectedProfileIds],
-    // Phase 11.2: post-relabel, #rate-per-hour is batches/hour (1..6). Keep
-    // ratePerHour field for cross-version back-compat read; batchesPerHour is
-    // the 11.2+ canonical name.
-    ratePerHour: getN('rate-per-hour', 2),
-    batchesPerHour: getN('rate-per-hour', 2),
-    dailyLimit: getN('daily-limit', 40),
+    // v2.11.0: ratePerHour / batchesPerHour removed from saved presets. Old
+    // presets that still carry these fields are silently ignored on load.
+    dailyLimit: getN('daily-limit', 50),
     messageGap: getN('message-gap', 60),
     delayMin: getN('within-batch-min', 15),
     delayMax: getN('within-batch-max', 45),
@@ -3543,29 +3470,10 @@ function applyPresetConfig(config) {
   }
   setV('sheet-url', config.sheetUrl || '');
 
-  // Phase 11.2 (D-09): legacy presets saved before 11.2 carried a ratePerHour
-  // with connections-per-hour semantics (1..30). Post-11.2 the same input is
-  // batches-per-hour (1..6). If we detect a legacy preset (ratePerHour present,
-  // batchesPerHour absent), reset the input to the new default (2) and flash a
-  // one-time banner so the operator knows their old number did NOT survive.
-  const isLegacyPreset = config.ratePerHour !== undefined && config.batchesPerHour === undefined;
-  if (isLegacyPreset) {
-    setV('rate-per-hour', 2);
-    let banner = document.getElementById('legacy-preset-banner');
-    if (!banner) {
-      banner = document.createElement('div');
-      banner.id = 'legacy-preset-banner';
-      banner.style.cssText = 'padding:8px 12px; margin:8px 0; background:#3a2f1a; color:#ffd480; border-radius:6px; font-size:0.9rem;';
-      banner.textContent = "Pacing was redesigned: 'Batches per hour' replaces 'Connections per hour'. Your saved preset's rate was reset to the default (2 batches/hour). Adjust if needed.";
-      const main = document.querySelector('.main .container') || document.querySelector('main') || document.body;
-      main.insertBefore(banner, main.firstChild);
-    }
-    banner.style.display = 'block';
-    setTimeout(() => { if (banner) banner.style.display = 'none'; }, 20000);
-  } else {
-    setV('rate-per-hour', config.batchesPerHour ?? config.ratePerHour ?? 2);
-  }
-  setV('daily-limit', config.dailyLimit ?? 40);
+  // v2.11.0: pacing knobs (ratePerHour, batchesPerHour) removed. Old presets
+  // carrying these fields silently lose them on load — backend pacing is now
+  // a fixed 6-min per-account turn floor + queue rotation.
+  setV('daily-limit', config.dailyLimit ?? 50);
   setV('message-gap', config.messageGap ?? 60);
   setV('within-batch-min', config.delayMin ?? 15);
   setV('within-batch-max', config.delayMax ?? 45);

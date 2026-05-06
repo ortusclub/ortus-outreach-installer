@@ -457,7 +457,7 @@ app.post('/api/campaign/start', (req, res) => {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
 
-    const { profileIds, sheetUrl, templates, dailyLimit, batchesPerHour, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency } = req.body;
+    const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency } = req.body;
 
     // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
     // the sheet's Account Used column inside campaign.js (only the original
@@ -467,14 +467,6 @@ app.post('/api/campaign/start', (req, res) => {
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
-    // Phase 11.2 (T-11.2-09): clamp batchesPerHour at the trust boundary — the
-    // form clamps to 1..6 but a tampered body could send anything.
-    if (batchesPerHour !== undefined) {
-      const bph = Number(batchesPerHour);
-      if (!Number.isFinite(bph) || bph < 1 || bph > 6) {
-        return res.status(400).json({ error: 'batchesPerHour must be between 1 and 6' });
-      }
-    }
 
     // Fire and forget — campaign runs in background. The operator who kicked
     // it off gets the finish/failure notification.
@@ -493,7 +485,6 @@ app.post('/api/campaign/start', (req, res) => {
       sheetUrl,
       templates: templates || {},
       dailyLimit: Number(dailyLimit),
-      batchesPerHour: batchesPerHour !== undefined ? Number(batchesPerHour) : 2,
       mode: mode || 'auto',
       messageOpenProfiles: !!messageOpenProfiles,
       delayMin: delayMin ? Number(delayMin) : undefined,
@@ -1087,8 +1078,7 @@ function registerSchedule(schedule) {
         profileIds: schedule.profileIds,
         sheetUrl: schedule.sheetUrl,
         templates: schedule.templates || {},
-        dailyLimit: schedule.dailyLimit || 5,
-        batchesPerHour: schedule.batchesPerHour || 2,
+        dailyLimit: schedule.dailyLimit || 50,
         mode: schedule.mode || 'connect_only',
         delayMin: schedule.delayMin,
         delayMax: schedule.delayMax,
@@ -1125,18 +1115,11 @@ app.get('/api/schedules', async (_req, res) => {
 
 app.post('/api/schedules', async (req, res) => {
   try {
-    const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, batchesPerHour, delayMin, delayMax, enabled } = req.body;
+    const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, delayMin, delayMax, enabled } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     if (!cronExpr || !cron.validate(cronExpr)) return res.status(400).json({ error: 'valid cron expression required' });
     if (!profileIds?.length) return res.status(400).json({ error: 'profileIds required' });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
-    // Phase 11.2: same trust-boundary clamp as /api/campaign/start.
-    if (batchesPerHour !== undefined) {
-      const bph = Number(batchesPerHour);
-      if (!Number.isFinite(bph) || bph < 1 || bph > 6) {
-        return res.status(400).json({ error: 'batchesPerHour must be between 1 and 6' });
-      }
-    }
 
     const all = await loadSchedules();
     // P-06 fix (2.8.18): validate any client-supplied id against the expected
@@ -1157,8 +1140,7 @@ app.post('/api/schedules', async (req, res) => {
     const schedule = {
       id, name, cron: cronExpr, profileIds, sheetUrl,
       mode: mode || 'connect_only', templates: templates || {},
-      dailyLimit: dailyLimit || 5,
-      batchesPerHour: batchesPerHour !== undefined ? Number(batchesPerHour) : 2,
+      dailyLimit: dailyLimit || 50,
       delayMin, delayMax,
       enabled: enabled !== false, lastRun: null,
       // P-06 fix (2.8.18): never trust req.body.createdBy — that lets a

@@ -93,16 +93,6 @@ function getCloseGapMin() {
 }
 
 /**
- * Pure helper — between-batch wait in ms from batchesPerHour target spacing.
- * Applies a 60s floor. Exported for tests/batch-loop.test.js.
- */
-export function computeBetweenBatchWaitMs({ batchesPerHour, batchDurationMs = 0 }) {
-  const bph = Math.max(1, Math.min(12, Number(batchesPerHour) || 2));
-  const targetMs = (3600 / bph) * 1000;
-  return Math.max(MIN_BETWEEN_BATCHES_MS, targetMs - Math.max(0, batchDurationMs));
-}
-
-/**
  * Pure helper — close the profile between batches when the gap is long enough
  * that keeping Chromium warm costs more than the re-launch S3 round-trip.
  * Exported for tests/batch-loop.test.js.
@@ -700,7 +690,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 40, batchesPerHour = 2, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1 }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1 }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -751,13 +741,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
     const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
-    log(`Daily limit: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
+    log(`Campaign limit per account: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
     if (concurrency > 1) {
       log(`▶ Concurrency=${concurrency} workers (browser cap=${MAX_CONCURRENT_PROFILES}).`);
     }
-    // Phase 11.2: clamp batchesPerHour to 1..6 and log the target throughput.
-    batchesPerHour = Math.max(1, Math.min(12, Number(batchesPerHour) || 2));
-    log(`Batches per hour: ${batchesPerHour} (→ ~${batchesPerHour * 5} leads/hour/profile target)`);
     log(`Templates: note=${tpl.connectionNote ? '✓' : '—'} followUp=${tpl.followUpMessage ? '✓' : '—'} inmail=${tpl.inmail.subject ? '✓' : '—'}`);
     if (linkedinColumn) log(`LinkedIn column: "${linkedinColumn}"`);
     if (messageOpenProfiles) log('Open Profile messaging: ON');
@@ -1245,12 +1232,18 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const profileQueue = [...profileIds];
     const profilesBeingRun = new Set();
     const profileCooldownUntil = new Map();
-    const cooldownMs = skipsDailyLimit ? 0 : Math.floor((3600 / batchesPerHour) * 1000);
+    // v2.11.0: dropped batchesPerHour. Per-profile cooldown is now a fixed 6-min
+    // floor — protects the eject-cascade scenario (when most profiles drop out
+    // mid-run, the survivors would otherwise hammer LinkedIn at unsafe rates).
+    // For multi-profile pools the queue rotation is the natural pacer; this
+    // floor only kicks in when the pool shrinks.
+    const TURN_COOLDOWN_FLOOR_MS = 6 * 60 * 1000;
+    const cooldownMs = skipsDailyLimit ? 0 : TURN_COOLDOWN_FLOOR_MS;
     if (concurrency > 1) {
       log(`Concurrency: ${concurrency} workers, browser cap: ${MAX_CONCURRENT_PROFILES}`);
     }
     if (cooldownMs > 0) {
-      log(`Per-profile cooldown between turns: ${(cooldownMs / 60000).toFixed(1)}min (target ${batchesPerHour * BATCH_SIZE} leads/hr/profile)`);
+      log(`Per-profile turn floor: ${(cooldownMs / 60000).toFixed(0)}min (queue rotation is the primary pacer).`);
     }
 
     function pickNextProfile() {
@@ -2000,7 +1993,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         mode: campaign.mode,
         profiles: campaign.profileNames,
         dailyLimit: dailyLimit,
-        batchesPerHour: batchesPerHour,  // Phase 11.2 (D-06)
         totalProcessed: campaign.totalProcessed,
         successCount: campaign.processedToday,
         errorCount: campaign.errors.length,
