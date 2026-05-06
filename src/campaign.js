@@ -1196,10 +1196,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const _checkStatusCursorByProfile = {};
     const _checkStatusExhausted = new Set();
     const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
-    // Phase 2.8.8: silent-failure guard — if a profile produces BATCH_SIZE
+    // Phase 2.8.8: silent-failure guard — if a profile produces N
     // consecutive non-success outcomes, park it for the rest of the run.
     // Catches silent weekly-limit exhaustion and any other systemic per-account
     // failure pattern that our explicit detectors miss.
+    // v2.11.2: OP/InM use 15 instead of BATCH_SIZE. The lead-quality signal in
+    // these modes is unreliable (we only see Premium badge, not OP-eligibility;
+    // InMail credits running out makes the compose box silently fail to mount)
+    // so 5-in-a-row was triggering false parks on healthy accounts. 15 still
+    // catches genuinely-broken accounts (logged out, banned mid-run).
+    const SKIP_PARK_THRESHOLD =
+      (mode === 'open_profile_only' || mode === 'inmail_only') ? 15 : BATCH_SIZE;
     const consecutiveSkips = new Map();
 
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
@@ -1684,8 +1691,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           } else {
             const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
             consecutiveSkips.set(profileId, skipCount);
-            if (skipCount >= BATCH_SIZE && !weeklyLimited.has(profileId)) {
-              log(`  ⚠ ${pName}: ${BATCH_SIZE} consecutive non-success outcomes — parking account for rest of run.`);
+            if (skipCount >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+              log(`  ⚠ ${pName}: ${SKIP_PARK_THRESHOLD} consecutive non-success outcomes — parking account for rest of run.`);
               weeklyLimited.add(profileId);
               campaign.parkedProfiles.push({
                 profileId,
