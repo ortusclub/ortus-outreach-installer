@@ -21,17 +21,15 @@ git checkout source
 # 2. Install dependencies
 npm install
 
-# 3. Copy .env.example → .env and fill in the secrets
+# 3. Copy .env.example → .env (already populated with the company GoLogin token)
 cp .env.example .env
-# Open .env in your editor — see "Environment variables" below
 ```
 
 ### Environment variables
 
-Required in `.env`:
+`.env.example` already has the company-wide `GOLOGIN_API_TOKEN` baked in, so a plain `cp .env.example .env` is enough to start working. Other vars in the file have sensible defaults for development.
 
-- `GOLOGIN_TOKEN` — company-wide GoLogin API token. Ask Antonio (info@ortus.solutions) or check the shared password manager.
-- Other vars in `.env.example` have safe defaults for dev — leave as-is unless you know what you're doing.
+If you want to point the dashboard at a different Apps Script deployment (e.g. to test against your own sheet instead of production), edit `SHEETS_WEBAPP_URL` in `.env`.
 
 ### Verify it works
 
