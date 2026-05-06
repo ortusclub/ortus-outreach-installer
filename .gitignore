@@ -3,6 +3,23 @@ node_modules/
 # Secrets
 .env
 
-# Runtime state
+# Runtime state — per-installation, not source
 data/state.json
+data/templates.json
+data/schedules.json
+data/users.json
+data/history.json
+data/presets.json
+data/.session-secret
+data/campaign.log
+data/fatal-errors.log
+data/local-chrome/
+data/local-profile/
+
+# Build output
+dist/
 .vercel
+
+# Local junk
+.DS_Store
+.playwright-mcp/
