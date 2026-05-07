@@ -839,6 +839,11 @@ function renderSelectedPanel() {
       <button class="btn-remove" onclick="removeProfile('${id}')" title="Remove">&times;</button>
     </div>`;
   }).join('');
+
+  // v3.0: keep Post Amp engagement table in sync with profile selection.
+  if (typeof renderPostAmpEngagementTable === 'function') {
+    renderPostAmpEngagementTable();
+  }
 }
 
 function removeProfile(id) {
@@ -1414,25 +1419,34 @@ function onModeChange() {
   const moPanel = document.getElementById('nav-message-only');
   const cdPanel = document.getElementById('nav-check-dms');
   const ibPanel = document.getElementById('nav-introduce-back');
+  const paPanel = document.getElementById('nav-post-amplification');
   const navPace = document.getElementById('nav-pace');
   const navAccounts = document.getElementById('nav-accounts');
   const isCheckStatus = (mode === 'check_status');
   const isMessageOnly = (mode === 'message_only');
   const isCheckDms = (mode === 'check_dms');
   const isIntroduceBack = (mode === 'introduce_back');
+  const isPostAmp = (mode === 'post_amplification');
   const isAutoRouted = isCheckStatus || isMessageOnly || isCheckDms || isIntroduceBack;
   if (csPanel) csPanel.style.display = isCheckStatus ? '' : 'none';
   if (moPanel) moPanel.style.display = isMessageOnly ? '' : 'none';
   if (cdPanel) cdPanel.style.display = isCheckDms ? '' : 'none';
   if (ibPanel) ibPanel.style.display = isIntroduceBack ? '' : 'none';
+  if (paPanel) paPanel.style.display = isPostAmp ? '' : 'none';
   // 2.9.7: Check DMs is now auto-routed too — hide the profile picker.
+  // v3.0: Post Amp KEEPS the profile picker (operator selects participating accounts).
   if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
   // 2.8.34: Pace section hidden for auto-routed modes (no per-lead pacing).
-  if (navPace) navPace.style.display = isAutoRouted ? 'none' : '';
+  // v3.0: Post Amp has its own fixed pace (60-300s gap, baked in).
+  if (navPace) navPace.style.display = (isAutoRouted || isPostAmp) ? 'none' : '';
   // 2.9.7: Check DMs has no templates (read-only mode). Hide the templates
   // section entirely; other modes (incl. message_only / introduce_back) keep it visible.
+  // v3.0: Post Amp has no message templates — it has its own per-account comment fields.
   const navTemplates = document.getElementById('nav-templates');
-  if (navTemplates) navTemplates.style.display = isCheckDms ? 'none' : '';
+  if (navTemplates) navTemplates.style.display = (isCheckDms || isPostAmp) ? 'none' : '';
+  // v3.0: Post Amp doesn't read a sheet — hide the Sheet URL section.
+  const navSheet = document.getElementById('nav-sheet');
+  if (navSheet) navSheet.style.display = isPostAmp ? 'none' : '';
   // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
   // caps invitations per account per day). DM/IC/OP/InMail are unlimited.
   const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_message');
@@ -1445,6 +1459,11 @@ function onModeChange() {
     refreshMessageOnlyPreview();
   } else if (isCheckDms) {
     refreshCheckDmsPreview();
+  } else if (isPostAmp) {
+    // v3.0: render the per-account engagement table from currently selected
+    // GoLogin profiles, and load any saved comment templates.
+    renderPostAmpEngagementTable();
+    renderPostAmpTemplates();
   } else {
     // Reset Start CTA back to default when leaving auto-routed modes.
     ['btn-start', 'btn-start-rb'].forEach(id => {
@@ -1465,6 +1484,243 @@ function onModeChange() {
   // Keep kinetic picker in sync
   renderModeSelector();
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.0: Post Amplification (UI shell — Phase 1)
+// Per-account engagement table. Operator picks GoLogin profiles via the
+// existing nav-accounts picker; rows here mirror that selection. Each row
+// has Like / Comment toggles + a comment textarea (enabled only when
+// Comment is checked). Comment text can be filled from a hardcoded list of
+// suggestions OR from operator-saved templates (localStorage with in-memory
+// fallback per the localStorage-blocked rule).
+// Backend wiring (engagePost + sequential loop + dedup state) is Phase 2.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Per-profile engagement config: { [profileId]: { like, comment, commentText } }
+let postAmpAccountConfig = {};
+
+// Saved comment templates (operator-curated). Persisted to localStorage with
+// in-memory fallback when storage is blocked (e.g., Chrome enterprise policy).
+let postAmpSavedTemplates = [];
+const POST_AMP_TEMPLATES_KEY = 'ortus-post-amp-templates';
+
+// Hardcoded built-in suggestions. Short, reusable, low-effort. Operators can
+// extend with their own via "Save as template".
+const POST_AMP_BUILTIN_SUGGESTIONS = [
+  'Great insight 👏',
+  'Spot on',
+  'Really well put',
+  'Love this',
+  'Agreed — well said',
+  'This is the way',
+  'Excellent post',
+  'Couldn\'t agree more',
+];
+
+function loadPostAmpTemplates() {
+  try {
+    const raw = localStorage.getItem(POST_AMP_TEMPLATES_KEY);
+    postAmpSavedTemplates = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(postAmpSavedTemplates)) postAmpSavedTemplates = [];
+  } catch (_) {
+    // localStorage blocked — keep whatever's in memory.
+  }
+}
+
+function persistPostAmpTemplates() {
+  try {
+    localStorage.setItem(POST_AMP_TEMPLATES_KEY, JSON.stringify(postAmpSavedTemplates));
+  } catch (_) { /* blocked — silently keep in-memory only */ }
+}
+
+function renderPostAmpEngagementTable() {
+  const tbl = document.getElementById('pa-engagement-table');
+  const empty = document.getElementById('pa-engagement-empty');
+  const rows = document.getElementById('pa-engagement-rows');
+  if (!tbl || !empty || !rows) return;
+
+  // Post Amp is GoLogin-only — strip out 'local-browser' from the table.
+  const ids = selectedProfileIds.filter(id => id !== 'local-browser');
+
+  if (ids.length === 0) {
+    tbl.style.display = 'none';
+    empty.style.display = '';
+    return;
+  }
+  tbl.style.display = '';
+  empty.style.display = 'none';
+
+  rows.innerHTML = ids.map(id => {
+    const cfg = postAmpAccountConfig[id] || { like: true, comment: false, commentText: '' };
+    postAmpAccountConfig[id] = cfg;
+    const name = selectedProfileNames[id] || id;
+    const commentDisabled = cfg.comment ? '' : 'disabled';
+    const commentPlaceholder = cfg.comment ? '' : 'placeholder="(Comment off)"';
+    const linkClass = cfg.comment ? '' : 'class="disabled"';
+    return `<tr>
+      <td>
+        <div class="pa-name">${escHtml(name)}</div>
+        <div class="pa-id">${escHtml(id)}</div>
+      </td>
+      <td><label class="pa-toggle"><input type="checkbox" ${cfg.like ? 'checked' : ''} onchange="setPostAmpFlag('${id}','like',this.checked)"></label></td>
+      <td><label class="pa-toggle"><input type="checkbox" ${cfg.comment ? 'checked' : ''} onchange="setPostAmpFlag('${id}','comment',this.checked)"></label></td>
+      <td>
+        <textarea class="pa-comment" id="pa-comment-${id}" ${commentDisabled} ${commentPlaceholder} oninput="setPostAmpComment('${id}',this.value)">${escHtml(cfg.commentText || '')}</textarea>
+        <div class="pa-suggest-row">
+          <button type="button" ${linkClass} class="pa-suggest-link" onclick="openPostAmpSuggestions('${id}', event)">Suggestions ▾</button>
+          <span>·</span>
+          <button type="button" ${linkClass} class="pa-suggest-link" onclick="savePostAmpTemplate('${id}')">Save as template</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function setPostAmpFlag(profileId, flag, value) {
+  const cfg = postAmpAccountConfig[profileId] || { like: true, comment: false, commentText: '' };
+  cfg[flag] = !!value;
+  postAmpAccountConfig[profileId] = cfg;
+  // Re-render so the comment textarea / suggest links flip enabled state.
+  renderPostAmpEngagementTable();
+}
+
+function setPostAmpComment(profileId, text) {
+  const cfg = postAmpAccountConfig[profileId] || { like: true, comment: true, commentText: '' };
+  cfg.commentText = text;
+  postAmpAccountConfig[profileId] = cfg;
+}
+
+function onPostAmpUrlChange() {
+  // Placeholder for v1 — Phase 2 will validate format and surface a hint.
+  // No state to persist for now; the URL is read on Start.
+}
+
+// Suggestions popover — anchored under the trigger button, click outside to close.
+function openPostAmpSuggestions(profileId, evt) {
+  evt.stopPropagation();
+  closePostAmpSuggestions();
+  const trigger = evt.currentTarget;
+  const rect = trigger.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'pa-suggest-pop';
+  pop.id = 'pa-suggest-pop-active';
+  pop.style.top = `${window.scrollY + rect.bottom + 4}px`;
+  pop.style.left = `${window.scrollX + rect.left}px`;
+
+  const items = [
+    ...POST_AMP_BUILTIN_SUGGESTIONS.map(t => ({ text: t, tag: 'built-in' })),
+    ...postAmpSavedTemplates.map(t => ({ text: t, tag: 'saved' })),
+  ];
+  if (items.length === 0) {
+    pop.innerHTML = `<div class="pa-suggest-pop-item" style="cursor:default; color:var(--gray)">No suggestions yet.</div>`;
+  } else {
+    pop.innerHTML = items.map((it, i) => {
+      const safe = escHtml(it.text);
+      return `<div class="pa-suggest-pop-item" onclick="pickPostAmpSuggestion('${profileId}', ${i})"><span>${safe}</span><span class="pa-suggest-pop-tag">${it.tag}</span></div>`;
+    }).join('');
+    // Stash the items so pickPostAmpSuggestion can read by index without re-encoding.
+    pop._items = items;
+  }
+  document.body.appendChild(pop);
+  // Defer the outside-click handler so the click that opened us doesn't immediately close it.
+  setTimeout(() => document.addEventListener('click', closePostAmpSuggestions, { once: true }), 0);
+}
+
+function pickPostAmpSuggestion(profileId, idx) {
+  const pop = document.getElementById('pa-suggest-pop-active');
+  if (!pop || !pop._items || !pop._items[idx]) return;
+  const text = pop._items[idx].text;
+  // Append (not replace) so operators can stack suggestions if they want.
+  const ta = document.getElementById(`pa-comment-${profileId}`);
+  const cfg = postAmpAccountConfig[profileId] || { like: true, comment: true, commentText: '' };
+  cfg.comment = true; // picking a suggestion implies they want to comment
+  cfg.commentText = (cfg.commentText || '').trim();
+  cfg.commentText = cfg.commentText ? `${cfg.commentText} ${text}` : text;
+  postAmpAccountConfig[profileId] = cfg;
+  renderPostAmpEngagementTable();
+  closePostAmpSuggestions();
+  // Restore focus to the textarea after re-render.
+  setTimeout(() => {
+    const fresh = document.getElementById(`pa-comment-${profileId}`);
+    if (fresh) { fresh.focus(); fresh.setSelectionRange(fresh.value.length, fresh.value.length); }
+  }, 0);
+}
+
+function closePostAmpSuggestions() {
+  const pop = document.getElementById('pa-suggest-pop-active');
+  if (pop) pop.remove();
+}
+
+function savePostAmpTemplate(profileId) {
+  const cfg = postAmpAccountConfig[profileId];
+  const text = (cfg && cfg.commentText || '').trim();
+  if (!text) {
+    showCampaignToast('Type a comment first, then save it as a template.', 2500);
+    return;
+  }
+  if (postAmpSavedTemplates.includes(text)) {
+    showCampaignToast('Already saved.', 1800);
+    return;
+  }
+  postAmpSavedTemplates.push(text);
+  persistPostAmpTemplates();
+  renderPostAmpTemplates();
+  showCampaignToast('Template saved.', 1500);
+}
+
+function deletePostAmpTemplate(idx) {
+  if (idx < 0 || idx >= postAmpSavedTemplates.length) return;
+  postAmpSavedTemplates.splice(idx, 1);
+  persistPostAmpTemplates();
+  renderPostAmpTemplates();
+}
+
+function renderPostAmpTemplates() {
+  const list = document.getElementById('pa-templates-list');
+  const empty = document.getElementById('pa-templates-empty');
+  const count = document.getElementById('pa-templates-count');
+  if (!list || !empty || !count) return;
+  count.textContent = `(${postAmpSavedTemplates.length})`;
+  if (postAmpSavedTemplates.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = postAmpSavedTemplates.map((t, i) =>
+    `<li><span class="pa-tpl-text" title="${escHtml(t)}">${escHtml(t)}</span><button type="button" class="pa-tpl-del" onclick="deletePostAmpTemplate(${i})" title="Remove">×</button></li>`
+  ).join('');
+}
+
+// Validation helper used by startCampaign() short-circuit.
+function validatePostAmpStart() {
+  const url = (document.getElementById('pa-post-url')?.value || '').trim();
+  if (!url) return { ok: false, reason: 'Paste a LinkedIn post URL.' };
+  if (!/linkedin\.com\/posts\/[^/]+/.test(url)) {
+    return { ok: false, reason: 'URL must be a linkedin.com/posts/<slug>-<id> link.' };
+  }
+  const ids = selectedProfileIds.filter(id => id !== 'local-browser');
+  if (ids.length === 0) return { ok: false, reason: 'Select at least one GoLogin account.' };
+  const active = ids.filter(id => {
+    const cfg = postAmpAccountConfig[id] || {};
+    return cfg.like || (cfg.comment && (cfg.commentText || '').trim());
+  });
+  if (active.length === 0) {
+    return { ok: false, reason: 'At least one selected account must have Like or a non-empty Comment turned on.' };
+  }
+  return { ok: true, url, accounts: ids, active };
+}
+
+// Phase 1 startCampaign hook — validate and toast. Phase 2 replaces this
+// with the real POST /api/post-amplification/start call.
+function startPostAmpPhase1() {
+  const v = validatePostAmpStart();
+  if (!v.ok) { alert(v.reason); return; }
+  showCampaignToast(`Phase 1 — UI ready · ${v.active.length}/${v.accounts.length} account(s) configured · backend lands in Phase 2.`, 4500);
+}
+
+// Initialize templates on script load (idempotent, safe before DOM is ready).
+loadPostAmpTemplates();
 
 function restoreLastMode() {
   const select = document.getElementById('campaign-mode');
@@ -1550,17 +1806,18 @@ const MODE_LIST = [
       'Resumes from sheet\'s Connected · DM Now leads',
     ],
   },
-  // Stubs — not wired to any backend yet. Click shows a "Coming soon" toast
-  // and the cards stay unselected so the operator can't accidentally start them.
+  // v3.0: Post Amplification — paste a LinkedIn post URL, picked GoLogin
+  // accounts open it sequentially and react / comment per the operator's
+  // per-account config. 80% Like / 20% rotation across the 5 other reactions.
+  // 60-300s gap between accounts. Dedup state file prevents double-engaging.
   {
     value: 'post_amplification',
     name: 'Post Amplification',
     bullets: [
       'Paste a LinkedIn post URL',
-      'All Ortus accounts like, dwell, and engage',
-      'Coming soon',
+      'Per-account: Like + optional Comment',
+      '80% Like · 20% mixed reactions',
     ],
-    comingSoon: true,
   },
 ];
 
@@ -1890,6 +2147,11 @@ async function startCampaign() {
   const _modeEarly = document.getElementById('campaign-mode').value;
   if (_modeEarly === 'check_dms') {
     return startCheckDms();
+  }
+  // v3.0: Post Amp has its own flow — no sheet, no templates, no SoO sender
+  // resolution. Phase 1 = UI shell only; the real engine lands in Phase 2.
+  if (_modeEarly === 'post_amplification') {
+    return startPostAmpPhase1();
   }
 
   // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from

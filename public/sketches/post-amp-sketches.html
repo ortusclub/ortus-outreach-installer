@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Post Amplification — UI Sketches</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { padding: 48px 56px; overflow: auto; background: var(--bg); }
+    .intro { border-bottom: 1px solid var(--hairline); padding-bottom: 28px; margin-bottom: 40px; }
+    .intro h1 {
+      font-family: var(--display); font-size: 3.4rem;
+      line-height: 1; letter-spacing: 0.01em;
+      text-transform: uppercase; margin-bottom: 14px;
+    }
+    .intro p {
+      font-family: var(--mono); font-size: 0.7rem;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray);
+    }
+    .intro .legend {
+      font-family: var(--body); font-size: 0.85rem;
+      color: var(--gray); margin-top: 14px;
+      text-transform: none; letter-spacing: 0;
+    }
+
+    .sketch-block {
+      display: grid; grid-template-columns: 240px 1fr;
+      gap: 40px; padding: 48px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .sketch-block:last-child { border-bottom: none; }
+    .sk-meta .sk-num {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.24em; text-transform: uppercase;
+      color: var(--gray); margin-bottom: 12px;
+    }
+    .sk-meta .sk-name {
+      font-family: var(--display); font-size: 2rem;
+      line-height: 1; text-transform: uppercase; margin-bottom: 14px;
+    }
+    .sk-meta .sk-desc {
+      font-family: var(--body); font-size: 0.88rem;
+      color: var(--gray); line-height: 1.6;
+    }
+    .sk-meta .sk-pros, .sk-meta .sk-cons {
+      font-family: var(--body); font-size: 0.8rem;
+      color: var(--gray); line-height: 1.6; margin-top: 14px;
+    }
+    .sk-meta .sk-pros::before { content: '+ '; color: var(--green); }
+    .sk-meta .sk-cons::before { content: '− '; color: var(--red); }
+    .sk-frame {
+      border: 1px solid var(--hairline);
+      padding: 32px;
+      background: var(--bg);
+    }
+
+    /* Section header inside sketches */
+    .sk-section-h {
+      font-family: var(--display); font-size: 1.4rem;
+      line-height: 1; letter-spacing: 0.02em;
+      text-transform: uppercase; margin-bottom: 18px;
+      padding-bottom: 12px; border-bottom: 1px solid var(--hairline);
+    }
+    .sk-label {
+      font-family: var(--mono); font-size: 0.65rem;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--gray); margin-bottom: 8px; display: block;
+    }
+    .sk-input {
+      width: 100%; background: transparent; border: none;
+      border-bottom: 1px solid var(--hairline); color: var(--ink);
+      padding: 10px 0; font-family: var(--body); font-size: 0.95rem;
+      outline: none;
+    }
+    .sk-input::placeholder { color: var(--gray); }
+    .sk-helper {
+      font-family: var(--body); font-size: 0.75rem;
+      color: var(--gray); margin-top: 6px;
+    }
+
+    /* Reactions info strip */
+    .sk-reactions-info {
+      margin-top: 20px; padding: 14px 16px;
+      background: var(--hairline-soft);
+      border-left: 2px solid var(--gold, #F7BE68);
+      font-size: 0.8rem; color: var(--gray);
+      line-height: 1.6;
+    }
+    .sk-reactions-info strong { color: var(--ink); font-weight: 500; }
+
+    /* Account chips (mini account picker) */
+    .sk-chips {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 10px 0;
+    }
+    .sk-chip {
+      font-family: var(--body); font-size: 0.78rem;
+      padding: 6px 12px; border: 1px solid var(--hairline);
+      border-radius: 9999px; color: var(--ink);
+      background: transparent;
+    }
+    .sk-chip.selected { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+    /* Start button */
+    .sk-start {
+      margin-top: 28px;
+      font-family: var(--display); font-size: 1.6rem;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--gold, #F7BE68);
+      background: transparent;
+      border: 1px solid var(--hairline);
+      padding: 16px 36px; cursor: pointer;
+    }
+
+    /* ─── Variant A: Wide table ─── */
+    .va-table {
+      width: 100%; border: 1px solid var(--hairline); border-collapse: collapse;
+    }
+    .va-table th {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--gray); font-weight: 400;
+      text-align: left; padding: 12px 14px;
+      border-bottom: 1px solid var(--hairline);
+      background: var(--hairline-soft);
+    }
+    .va-table td {
+      padding: 14px; border-bottom: 1px solid var(--hairline-soft);
+      vertical-align: top;
+    }
+    .va-table tr:last-child td { border-bottom: none; }
+    .va-table .va-name { font-size: 0.92rem; font-weight: 500; }
+    .va-table .va-id { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em; color: var(--gray); text-transform: uppercase; margin-top: 2px; }
+    .va-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--body); font-size: 0.85rem;
+    }
+    .va-toggle input { accent-color: var(--ink); }
+    .va-comment {
+      width: 100%; min-height: 64px; resize: vertical;
+      background: var(--hairline-soft); border: 1px solid var(--hairline);
+      color: var(--ink); padding: 10px;
+      font-family: var(--body); font-size: 0.85rem;
+      outline: none;
+    }
+    .va-comment:disabled { opacity: 0.35; cursor: not-allowed; }
+    .va-suggest-row {
+      display: flex; gap: 8px; margin-top: 6px; align-items: center;
+      font-size: 0.72rem; color: var(--gray);
+    }
+    .va-suggest-link {
+      font-family: var(--mono); font-size: 0.65rem;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ink); cursor: pointer; text-decoration: underline;
+      text-decoration-color: var(--hairline);
+    }
+
+    /* ─── Variant B: Stacked cards ─── */
+    .vb-stack { display: flex; flex-direction: column; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); }
+    .vb-card { background: var(--bg); padding: 16px 20px; }
+    .vb-card-head { display: flex; justify-content: space-between; align-items: center; }
+    .vb-name-block .vb-name { font-size: 0.95rem; font-weight: 500; }
+    .vb-name-block .vb-id { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em; color: var(--gray); text-transform: uppercase; margin-top: 2px; }
+    .vb-toggles { display: flex; gap: 18px; }
+    .vb-toggle { display: inline-flex; align-items: center; gap: 6px; font-family: var(--body); font-size: 0.85rem; }
+    .vb-toggle input { accent-color: var(--ink); }
+    .vb-comment-block {
+      margin-top: 14px; padding-top: 14px;
+      border-top: 1px solid var(--hairline-soft);
+    }
+    .vb-comment-block.collapsed { display: none; }
+    .vb-comment {
+      width: 100%; min-height: 56px;
+      background: var(--hairline-soft); border: 1px solid var(--hairline);
+      color: var(--ink); padding: 10px;
+      font-family: var(--body); font-size: 0.85rem;
+      outline: none; resize: vertical;
+    }
+    .vb-suggest-bar {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;
+    }
+    .vb-suggest-pill {
+      font-family: var(--body); font-size: 0.72rem;
+      padding: 4px 10px; border: 1px solid var(--hairline);
+      border-radius: 9999px; color: var(--gray); cursor: pointer;
+      background: transparent;
+    }
+    .vb-suggest-pill:hover { color: var(--ink); border-color: var(--ink); }
+    .vb-save-link {
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); cursor: pointer;
+      margin-left: auto; padding: 4px 0;
+    }
+
+    /* ─── Variant C: Split — list left, detail right ─── */
+    .vc-split { display: grid; grid-template-columns: 280px 1fr; border: 1px solid var(--hairline); min-height: 420px; }
+    .vc-list { border-right: 1px solid var(--hairline); overflow-y: auto; }
+    .vc-list-item {
+      padding: 14px 16px; border-bottom: 1px solid var(--hairline-soft);
+      display: flex; justify-content: space-between; align-items: center;
+      cursor: pointer;
+    }
+    .vc-list-item.active { background: var(--hairline-soft); border-left: 2px solid var(--gold, #F7BE68); padding-left: 14px; }
+    .vc-list-item:last-child { border-bottom: none; }
+    .vc-list-name { font-size: 0.88rem; font-weight: 500; }
+    .vc-list-id { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; color: var(--gray); text-transform: uppercase; margin-top: 2px; }
+    .vc-list-tags { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.14em; color: var(--gray); text-transform: uppercase; }
+    .vc-list-tags .on { color: var(--ink); }
+    .vc-detail { padding: 24px 28px; }
+    .vc-detail-head { font-family: var(--display); font-size: 1.4rem; text-transform: uppercase; line-height: 1; margin-bottom: 14px; letter-spacing: 0.02em; }
+    .vc-detail-id { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.12em; color: var(--gray); text-transform: uppercase; margin-bottom: 22px; }
+    .vc-toggle-row { display: flex; gap: 24px; padding: 14px 0; border-top: 1px solid var(--hairline-soft); border-bottom: 1px solid var(--hairline-soft); }
+    .vc-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+    .vc-toggle input { accent-color: var(--ink); }
+    .vc-comment {
+      width: 100%; min-height: 100px; margin-top: 18px;
+      background: var(--hairline-soft); border: 1px solid var(--hairline);
+      color: var(--ink); padding: 12px;
+      font-family: var(--body); font-size: 0.9rem;
+      outline: none; resize: vertical;
+    }
+    .vc-suggest-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+    .vc-suggest-item {
+      padding: 8px 10px; border: 1px solid var(--hairline-soft);
+      font-size: 0.82rem; color: var(--gray); cursor: pointer;
+      display: flex; justify-content: space-between;
+    }
+    .vc-suggest-item:hover { color: var(--ink); border-color: var(--hairline); }
+    .vc-suggest-tag { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.16em; text-transform: uppercase; }
+
+    /* Saved templates panel (shared concept across all 3) */
+    .sk-templates {
+      margin-top: 28px; padding: 20px;
+      border: 1px dashed var(--hairline);
+    }
+    .sk-templates h3 {
+      font-family: var(--mono); font-size: 0.65rem;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--gray); margin-bottom: 14px; font-weight: 400;
+    }
+    .sk-templates ul { list-style: none; }
+    .sk-templates li {
+      padding: 8px 0; border-bottom: 1px solid var(--hairline-soft);
+      font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center;
+    }
+    .sk-templates li:last-child { border-bottom: none; }
+    .sk-templates .del { font-family: var(--mono); font-size: 0.65rem; color: var(--gray); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="intro">
+    <h1>Post Amplification — UI Sketches</h1>
+    <p>Three variants of the per-account engagement panel · v1 · 2026-05-07</p>
+    <div class="legend">
+      Page-level layout is the same across all 3 (Post URL → Account picker → Engagement panel → Start). Only the engagement panel changes. Pick one and I'll build phase 1.
+    </div>
+  </div>
+
+  <!-- ═══ VARIANT A — WIDE TABLE ═══ -->
+  <div class="sketch-block">
+    <div class="sk-meta">
+      <div class="sk-num">Sketch A</div>
+      <div class="sk-name">Wide Table</div>
+      <div class="sk-desc">One row per account · columns: Account · Like · Comment · Comment text · Suggestions. Inline.</div>
+      <div class="sk-pros">Densest. Scans at a glance. Good for 5-15 accounts.</div>
+      <div class="sk-cons">Comment textarea pinches at narrower widths. Suggestions live as a small ▾ link.</div>
+    </div>
+    <div class="sk-frame">
+      <div class="sk-section-h">3. Post Amplification</div>
+
+      <label class="sk-label">LinkedIn post URL</label>
+      <input class="sk-input" placeholder="https://www.linkedin.com/posts/antoniovarlese_..." value="https://www.linkedin.com/posts/antoniovarlese_operations-ai-7444767518818455552">
+      <div class="sk-helper">Format <code>linkedin.com/posts/&lt;slug&gt;-&lt;id&gt;</code></div>
+
+      <div style="margin-top: 24px;">
+        <label class="sk-label">Accounts to engage (5 selected of 12)</label>
+        <div class="sk-chips">
+          <span class="sk-chip selected">Antonio Varlese</span>
+          <span class="sk-chip selected">Samuel Adcock</span>
+          <span class="sk-chip selected">Apurba Mandal</span>
+          <span class="sk-chip selected">Mamun Sohag</span>
+          <span class="sk-chip selected">Jose Fajaniag</span>
+          <span class="sk-chip">+ 7 more</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 24px;">
+        <label class="sk-label">Per-account engagement</label>
+        <table class="va-table">
+          <thead>
+            <tr>
+              <th style="width:30%">Account</th>
+              <th style="width:8%">Like</th>
+              <th style="width:8%">Comment</th>
+              <th>Comment text</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <div class="va-name">Antonio Varlese</div>
+                <div class="va-id">antonio.varlese@ortus</div>
+              </td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td>
+                <textarea class="va-comment">Operations + AI is the duo every scaling firm needs. 👏</textarea>
+                <div class="va-suggest-row">
+                  <span class="va-suggest-link">Suggestions ▾</span>
+                  <span>·</span>
+                  <span class="va-suggest-link">Save as template</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <div class="va-name">Samuel Adcock</div>
+                <div class="va-id">samuel.adcock@ortus</div>
+              </td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td><label class="va-toggle"><input type="checkbox"></label></td>
+              <td>
+                <textarea class="va-comment" disabled placeholder="(Comment off)"></textarea>
+                <div class="va-suggest-row"><span class="va-suggest-link" style="opacity:0.4">Suggestions ▾</span></div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <div class="va-name">Apurba Mandal</div>
+                <div class="va-id">apurba.mandal@ortus</div>
+              </td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td>
+                <textarea class="va-comment">Spot on — really well put.</textarea>
+                <div class="va-suggest-row"><span class="va-suggest-link">Suggestions ▾</span><span>·</span><span class="va-suggest-link">Save as template</span></div>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <div class="va-name">Mamun Sohag</div>
+                <div class="va-id">mamun.sohag@ortus</div>
+              </td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td><label class="va-toggle"><input type="checkbox"></label></td>
+              <td>
+                <textarea class="va-comment" disabled placeholder="(Comment off)"></textarea>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <div class="va-name">Jose Fajaniag</div>
+                <div class="va-id">jose.fajanilag@ortus</div>
+              </td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td><label class="va-toggle"><input type="checkbox" checked></label></td>
+              <td>
+                <textarea class="va-comment">Great insight 👏</textarea>
+                <div class="va-suggest-row"><span class="va-suggest-link">Suggestions ▾</span><span>·</span><span class="va-suggest-link">Save as template</span></div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sk-reactions-info">
+        <strong>Reactions:</strong> 80% Like · 20% rotated across Celebrate / Support / Insightful / Funny / Love (chosen at runtime, per account).<br>
+        <strong>Pace:</strong> Sequential · 60–300s random gap between accounts · 1–3s between actions within an account.<br>
+        <strong>Dedup:</strong> If an account has already reacted to this post, it's skipped (no double-engage).
+      </div>
+
+      <button class="sk-start">▶ Start amplification</button>
+
+      <div class="sk-templates">
+        <h3>Saved comment templates (3)</h3>
+        <ul>
+          <li>Spot on — really well put. <span class="del">×</span></li>
+          <li>Operations + AI is the duo every scaling firm needs. 👏 <span class="del">×</span></li>
+          <li>Great insight 👏 <span class="del">×</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ VARIANT B — STACKED CARDS ═══ -->
+  <div class="sketch-block">
+    <div class="sk-meta">
+      <div class="sk-num">Sketch B</div>
+      <div class="sk-name">Stacked Cards</div>
+      <div class="sk-desc">One card per account · vertical · Comment editor expands inline · suggestions as inline pills.</div>
+      <div class="sk-pros">Roomier. Suggestions are visible as pills (one click → inserted). Easier on tired eyes.</div>
+      <div class="sk-cons">Tall. Scrolling required past ~6 accounts. Less scannable than the table.</div>
+    </div>
+    <div class="sk-frame">
+      <div class="sk-section-h">3. Post Amplification</div>
+
+      <label class="sk-label">LinkedIn post URL</label>
+      <input class="sk-input" value="https://www.linkedin.com/posts/antoniovarlese_operations-ai-7444767518818455552">
+
+      <div style="margin-top: 24px;">
+        <label class="sk-label">Per-account engagement (5 selected)</label>
+        <div class="vb-stack">
+
+          <div class="vb-card">
+            <div class="vb-card-head">
+              <div class="vb-name-block">
+                <div class="vb-name">Antonio Varlese</div>
+                <div class="vb-id">antonio.varlese@ortus</div>
+              </div>
+              <div class="vb-toggles">
+                <label class="vb-toggle"><input type="checkbox" checked> Like</label>
+                <label class="vb-toggle"><input type="checkbox" checked> Comment</label>
+              </div>
+            </div>
+            <div class="vb-comment-block">
+              <textarea class="vb-comment">Operations + AI is the duo every scaling firm needs. 👏</textarea>
+              <div class="vb-suggest-bar">
+                <button class="vb-suggest-pill">Great insight 👏</button>
+                <button class="vb-suggest-pill">Spot on</button>
+                <button class="vb-suggest-pill">Really well put</button>
+                <button class="vb-suggest-pill">Love this</button>
+                <button class="vb-suggest-pill">+ saved (3)</button>
+                <span class="vb-save-link">Save as template ↗</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vb-card">
+            <div class="vb-card-head">
+              <div class="vb-name-block">
+                <div class="vb-name">Samuel Adcock</div>
+                <div class="vb-id">samuel.adcock@ortus</div>
+              </div>
+              <div class="vb-toggles">
+                <label class="vb-toggle"><input type="checkbox" checked> Like</label>
+                <label class="vb-toggle"><input type="checkbox"> Comment</label>
+              </div>
+            </div>
+            <!-- collapsed: comment block hidden until Comment is checked -->
+          </div>
+
+          <div class="vb-card">
+            <div class="vb-card-head">
+              <div class="vb-name-block">
+                <div class="vb-name">Apurba Mandal</div>
+                <div class="vb-id">apurba.mandal@ortus</div>
+              </div>
+              <div class="vb-toggles">
+                <label class="vb-toggle"><input type="checkbox" checked> Like</label>
+                <label class="vb-toggle"><input type="checkbox" checked> Comment</label>
+              </div>
+            </div>
+            <div class="vb-comment-block">
+              <textarea class="vb-comment">Spot on — really well put.</textarea>
+              <div class="vb-suggest-bar">
+                <button class="vb-suggest-pill">Great insight 👏</button>
+                <button class="vb-suggest-pill">Spot on</button>
+                <button class="vb-suggest-pill">Really well put</button>
+                <button class="vb-suggest-pill">Love this</button>
+                <span class="vb-save-link">Save as template ↗</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vb-card">
+            <div class="vb-card-head">
+              <div class="vb-name-block">
+                <div class="vb-name">Mamun Sohag</div>
+                <div class="vb-id">mamun.sohag@ortus</div>
+              </div>
+              <div class="vb-toggles">
+                <label class="vb-toggle"><input type="checkbox" checked> Like</label>
+                <label class="vb-toggle"><input type="checkbox"> Comment</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="vb-card">
+            <div class="vb-card-head">
+              <div class="vb-name-block">
+                <div class="vb-name">Jose Fajaniag</div>
+                <div class="vb-id">jose.fajanilag@ortus</div>
+              </div>
+              <div class="vb-toggles">
+                <label class="vb-toggle"><input type="checkbox" checked> Like</label>
+                <label class="vb-toggle"><input type="checkbox" checked> Comment</label>
+              </div>
+            </div>
+            <div class="vb-comment-block">
+              <textarea class="vb-comment">Great insight 👏</textarea>
+              <div class="vb-suggest-bar">
+                <button class="vb-suggest-pill">Great insight 👏</button>
+                <button class="vb-suggest-pill">Spot on</button>
+                <button class="vb-suggest-pill">Really well put</button>
+                <span class="vb-save-link">Save as template ↗</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="sk-reactions-info">
+        <strong>Reactions:</strong> 80% Like · 20% rotated across Celebrate / Support / Insightful / Funny / Love.<br>
+        <strong>Pace:</strong> Sequential · 60–300s gap between accounts.
+      </div>
+
+      <button class="sk-start">▶ Start amplification</button>
+    </div>
+  </div>
+
+  <!-- ═══ VARIANT C — SPLIT VIEW ═══ -->
+  <div class="sketch-block">
+    <div class="sk-meta">
+      <div class="sk-num">Sketch C</div>
+      <div class="sk-name">Split — List + Detail</div>
+      <div class="sk-desc">Compact list on the left · click an account to edit its config in a roomy panel on the right.</div>
+      <div class="sk-pros">Scales to 30+ accounts. Most space for the comment editor + a real suggestions list. Cleanest for power use.</div>
+      <div class="sk-cons">Two clicks per account (select → edit). Easy to miss accounts you haven't reviewed.</div>
+    </div>
+    <div class="sk-frame">
+      <div class="sk-section-h">3. Post Amplification</div>
+
+      <label class="sk-label">LinkedIn post URL</label>
+      <input class="sk-input" value="https://www.linkedin.com/posts/antoniovarlese_operations-ai-7444767518818455552">
+
+      <div style="margin-top: 24px;">
+        <label class="sk-label">Accounts (5 of 12) — click to edit</label>
+        <div class="vc-split">
+          <div class="vc-list">
+            <div class="vc-list-item active">
+              <div>
+                <div class="vc-list-name">Antonio Varlese</div>
+                <div class="vc-list-id">antonio.varlese@ortus</div>
+              </div>
+              <div class="vc-list-tags"><span class="on">L</span> · <span class="on">C</span></div>
+            </div>
+            <div class="vc-list-item">
+              <div>
+                <div class="vc-list-name">Samuel Adcock</div>
+                <div class="vc-list-id">samuel.adcock@ortus</div>
+              </div>
+              <div class="vc-list-tags"><span class="on">L</span> · C</div>
+            </div>
+            <div class="vc-list-item">
+              <div>
+                <div class="vc-list-name">Apurba Mandal</div>
+                <div class="vc-list-id">apurba.mandal@ortus</div>
+              </div>
+              <div class="vc-list-tags"><span class="on">L</span> · <span class="on">C</span></div>
+            </div>
+            <div class="vc-list-item">
+              <div>
+                <div class="vc-list-name">Mamun Sohag</div>
+                <div class="vc-list-id">mamun.sohag@ortus</div>
+              </div>
+              <div class="vc-list-tags"><span class="on">L</span> · C</div>
+            </div>
+            <div class="vc-list-item">
+              <div>
+                <div class="vc-list-name">Jose Fajaniag</div>
+                <div class="vc-list-id">jose.fajanilag@ortus</div>
+              </div>
+              <div class="vc-list-tags"><span class="on">L</span> · <span class="on">C</span></div>
+            </div>
+          </div>
+
+          <div class="vc-detail">
+            <div class="vc-detail-head">Antonio Varlese</div>
+            <div class="vc-detail-id">antonio.varlese@ortus · GoLogin profile · 1st-degree to 412 in audience</div>
+
+            <div class="vc-toggle-row">
+              <label class="vc-toggle"><input type="checkbox" checked> Like (reaction picked at runtime)</label>
+              <label class="vc-toggle"><input type="checkbox" checked> Comment</label>
+            </div>
+
+            <label class="sk-label" style="margin-top:18px">Comment text</label>
+            <textarea class="vc-comment">Operations + AI is the duo every scaling firm needs. 👏</textarea>
+
+            <label class="sk-label" style="margin-top:18px">Suggestions — click to insert</label>
+            <div class="vc-suggest-list">
+              <div class="vc-suggest-item"><span>Great insight 👏</span><span class="vc-suggest-tag">built-in</span></div>
+              <div class="vc-suggest-item"><span>Really well put</span><span class="vc-suggest-tag">built-in</span></div>
+              <div class="vc-suggest-item"><span>Spot on</span><span class="vc-suggest-tag">built-in</span></div>
+              <div class="vc-suggest-item"><span>Love this — saved Friday's deep-dive thread.</span><span class="vc-suggest-tag">saved</span></div>
+              <div class="vc-suggest-item"><span>Operations + AI is the duo every scaling firm needs. 👏</span><span class="vc-suggest-tag">saved</span></div>
+            </div>
+
+            <div style="margin-top:14px"><span class="va-suggest-link">+ Save current text as template</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sk-reactions-info">
+        <strong>Reactions:</strong> 80% Like · 20% rotated · <strong>Pace:</strong> 60–300s between accounts · <strong>Dedup:</strong> already-reacted accounts auto-skipped.
+      </div>
+
+      <button class="sk-start">▶ Start amplification</button>
+    </div>
+  </div>
+
+</body>
+</html>

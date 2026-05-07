@@ -2947,3 +2947,143 @@ body.route-dashboard .sidebar-nav { display: none; }
 .nav-item-back .nav-num {
   font-family: var(--mono);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Post Amplification (v3.0) — wide-table variant
+   ───────────────────────────────────────────────────────────────────────── */
+.pa-label {
+  display: block;
+  font-family: var(--mono); font-size: 0.65rem;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--gray); margin-bottom: 8px;
+}
+.pa-input {
+  width: 100%; background: transparent; border: none;
+  border-bottom: 1px solid var(--hairline); color: var(--ink);
+  padding: 10px 0; font-family: var(--body); font-size: 0.95rem;
+  outline: none;
+}
+.pa-input::placeholder { color: var(--gray); }
+.pa-helper {
+  font-family: var(--body); font-size: 0.75rem;
+  color: var(--gray); margin-top: 6px;
+}
+.pa-helper code {
+  font-family: var(--mono); font-size: 0.7rem;
+  color: var(--gray);
+}
+
+.pa-table {
+  width: 100%; border: 1px solid var(--hairline); border-collapse: collapse;
+}
+.pa-table th {
+  font-family: var(--mono); font-size: 0.62rem;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--gray); font-weight: 400;
+  text-align: left; padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--hairline-soft);
+}
+.pa-table td {
+  padding: 14px;
+  border-bottom: 1px solid var(--hairline-soft);
+  vertical-align: top;
+}
+.pa-table tr:last-child td { border-bottom: none; }
+.pa-name { font-size: 0.92rem; font-weight: 500; color: var(--ink); }
+.pa-id {
+  font-family: var(--mono); font-size: 0.62rem;
+  letter-spacing: 0.1em; color: var(--gray); text-transform: uppercase;
+  margin-top: 2px;
+}
+.pa-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--body); font-size: 0.85rem; cursor: pointer;
+}
+.pa-toggle input { accent-color: var(--ink); width: 14px; height: 14px; }
+.pa-comment {
+  width: 100%; min-height: 56px; resize: vertical;
+  background: var(--hairline-soft); border: 1px solid var(--hairline);
+  color: var(--ink); padding: 10px;
+  font-family: var(--body); font-size: 0.85rem;
+  outline: none;
+}
+.pa-comment:disabled { opacity: 0.35; cursor: not-allowed; }
+.pa-suggest-row {
+  display: flex; gap: 8px; margin-top: 6px; align-items: center;
+  font-size: 0.72rem; color: var(--gray);
+}
+.pa-suggest-link {
+  font-family: var(--mono); font-size: 0.62rem;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink); cursor: pointer; background: none; border: none;
+  padding: 0; text-decoration: underline; text-decoration-color: var(--hairline);
+}
+.pa-suggest-link:hover { text-decoration-color: var(--ink); }
+.pa-suggest-link[disabled],
+.pa-suggest-link.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+/* Suggestions popover — positioned absolute relative to its trigger cell */
+.pa-suggest-pop {
+  position: absolute;
+  z-index: 200;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  min-width: 280px; max-width: 360px;
+  max-height: 280px; overflow-y: auto;
+}
+.pa-suggest-pop-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hairline-soft);
+  font-size: 0.84rem;
+  cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px;
+}
+.pa-suggest-pop-item:last-child { border-bottom: none; }
+.pa-suggest-pop-item:hover { background: var(--hairline-soft); }
+.pa-suggest-pop-tag {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--gray); flex-shrink: 0;
+}
+
+.pa-info-strip {
+  margin-top: 24px; padding: 14px 16px;
+  background: var(--hairline-soft);
+  border-left: 2px solid var(--gold, #F7BE68);
+  font-size: 0.8rem; color: var(--gray);
+  line-height: 1.65;
+}
+.pa-info-strip strong { color: var(--ink); font-weight: 500; }
+
+.pa-templates {
+  margin-top: 28px;
+  padding: 18px 20px;
+  border: 1px dashed var(--hairline);
+}
+.pa-templates h3 {
+  font-family: var(--mono); font-size: 0.65rem;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--gray); margin-bottom: 12px; font-weight: 400;
+}
+.pa-templates h3 span { color: var(--gray); }
+.pa-templates ul { list-style: none; padding: 0; margin: 0; }
+.pa-templates li {
+  padding: 8px 0; border-bottom: 1px solid var(--hairline-soft);
+  font-size: 0.85rem;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px;
+}
+.pa-templates li:last-child { border-bottom: none; }
+.pa-templates .pa-tpl-text {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--ink);
+}
+.pa-templates .pa-tpl-del {
+  font-family: var(--mono); font-size: 0.65rem;
+  color: var(--gray); cursor: pointer;
+  background: none; border: none; padding: 4px 8px;
+}
+.pa-templates .pa-tpl-del:hover { color: var(--red); }

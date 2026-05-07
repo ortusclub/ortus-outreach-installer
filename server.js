@@ -143,6 +143,7 @@ app.use((req, res, next) => {
 // ── Session gate ───────────────────────────────────────────────────
 app.use(async (req, res, next) => {
   if (PUBLIC_PATHS.has(req.path)) return next();
+  if (req.path.startsWith('/sketches/') || req.path === '/sketches.html') return next();
   const email = await readSessionFromRequest(req);
   if (!email) {
     // API calls get 401 JSON; page navigations get redirected to the right login page.
