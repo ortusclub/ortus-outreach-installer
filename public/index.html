@@ -140,8 +140,14 @@
 
       <section class="dashboard-section">
         <h2 class="dashboard-section-title">Past</h2>
+        <div class="past-search-row">
+          <input type="text" id="past-search" class="past-search-input" placeholder="Search by name, mode, or date…" oninput="onPastSearchInput()" />
+        </div>
         <div class="campaign-list" id="past-campaign-list">
           <p class="empty-state">No past campaigns yet.</p>
+        </div>
+        <div class="past-toggle-row" id="past-toggle-row" hidden>
+          <button type="button" class="past-toggle-btn" id="past-toggle-btn" onclick="togglePastExpanded()"></button>
         </div>
       </section>
 

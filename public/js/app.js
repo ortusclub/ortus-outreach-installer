@@ -3842,6 +3842,8 @@ window.alphaStepDaily = alphaStepDaily;
 window.alphaSyncConcurrency = alphaSyncConcurrency;
 window.toggleSection = toggleSection;
 window.openUnifiedLog = openUnifiedLog;
+window.onPastSearchInput = onPastSearchInput;
+window.togglePastExpanded = togglePastExpanded;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
 
@@ -4493,13 +4495,39 @@ async function refreshActiveCampaign() {
   }
 }
 
+// v2.11.5: collapse + search for the past-campaigns list.
+//   - Default state: show 3 newest. Toggle reveals all via "Show N more"
+//     where N is a live count of remaining rows.
+//   - Search box matches across name, mode label, and the formatted date
+//     string. While the search query is non-empty, ALL matches render
+//     (the 3-row cap doesn't apply) and the toggle hides.
+//   - State is module-scoped (resets on page reload) — pastExpanded
+//     deliberately doesn't persist; fresh dashboard load → 3 newest.
+const PAST_COLLAPSED_LIMIT = 3;
+let pastExpanded = false;
+let pastSearchQuery = '';
+
+function onPastSearchInput() {
+  const inp = document.getElementById('past-search');
+  pastSearchQuery = ((inp && inp.value) || '').trim().toLowerCase();
+  refreshPastCampaigns();
+}
+
+function togglePastExpanded() {
+  pastExpanded = !pastExpanded;
+  refreshPastCampaigns();
+}
+
 async function refreshPastCampaigns() {
   const list = document.getElementById('past-campaign-list');
+  const toggleRow = document.getElementById('past-toggle-row');
+  const toggleBtn = document.getElementById('past-toggle-btn');
   if (!list) return;
   try {
     const data = await fetch('/api/history').then((r) => r.json());
     if (!Array.isArray(data) || data.length === 0) {
       list.innerHTML = '<p class="empty-state">No past campaigns yet.</p>';
+      if (toggleRow) toggleRow.hidden = true;
       return;
     }
     // Preserve the on-disk index — that's what the PATCH endpoint addresses,
@@ -4510,7 +4538,29 @@ async function refreshPastCampaigns() {
       const tb = new Date(b.c.startedAt || b.c.date).getTime();
       return tb - ta;
     });
-    list.innerHTML = indexed.map(({ idx, c }) => {
+
+    // Search filter: matches name, mode label, or formatted date string.
+    const q = pastSearchQuery;
+    const filtered = q
+      ? indexed.filter(({ c }) => {
+          const name = (c.name || '').toLowerCase();
+          const mode = (dashboardModeLabel(c.mode) || '').toLowerCase();
+          const date = (dashboardFormatDate(c.startedAt || c.date) || '').toLowerCase();
+          return name.includes(q) || mode.includes(q) || date.includes(q);
+        })
+      : indexed;
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<p class="empty-state">No campaigns match "${escHtml(q)}".</p>`;
+      if (toggleRow) toggleRow.hidden = true;
+      return;
+    }
+
+    // Slice to PAST_COLLAPSED_LIMIT only when not searching and not expanded.
+    const showAll = !!q || pastExpanded;
+    const visible = showAll ? filtered : filtered.slice(0, PAST_COLLAPSED_LIMIT);
+
+    list.innerHTML = visible.map(({ idx, c }) => {
       const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
       const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
       const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
@@ -4523,8 +4573,21 @@ async function refreshPastCampaigns() {
         </div>
       `;
     }).join('');
+
+    // Toggle visibility + label. Hidden when searching (search shows all
+    // matches inherently) or when total ≤ limit (nothing to expand).
+    if (toggleRow && toggleBtn) {
+      const remaining = filtered.length - PAST_COLLAPSED_LIMIT;
+      if (q || filtered.length <= PAST_COLLAPSED_LIMIT) {
+        toggleRow.hidden = true;
+      } else {
+        toggleRow.hidden = false;
+        toggleBtn.textContent = pastExpanded ? 'Show fewer' : `Show ${remaining} more`;
+      }
+    }
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load history.</p>';
+    if (toggleRow) toggleRow.hidden = true;
   }
 }
 
