@@ -1414,8 +1414,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         const inmailCell= (row['InMail']  || row['inmail']  || '').toString().toLowerCase().trim();
         const msgSent   = msgCell === 'sent' || opCell === 'sent';
 
+        // v2.11.12: in-loop re-validation must mirror the pre-filter (line ~803)
+        // for both schemas. Pre-filter migrated to Stage in 2.9.x, but the
+        // in-loop checks here were left on the legacy CC " Y" / msgSent /
+        // inmailCell fields — fine on legacy sheets, but new-schema sheets
+        // don't populate those columns so every messageable row was silently
+        // skipped via `delete + continue` (no log). Detect new schema
+        // (Stage column present) and gate on Stage; old schema falls through
+        // to the legacy logic, unchanged.
+        const _stage = (row['Stage'] || row['stage'] || '').toString().trim();
+        const _hasStageHere = _stage.length > 0 || ('Stage' in row) || ('stage' in row);
+
         if (mode === 'check_status') {
-          // 2.8.29: criterion is Account Used filled, not CC=Sent.
+          // 2.8.29: criterion is Sender filled, not CC=Sent.
           const acct = getSenderName(row);
           if (!acct) { delete state.processed[url]; continue; }
           // 2.8.28-P2: routing guard removed. The per-profile target slices
@@ -1425,19 +1436,34 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // "local-browser", pName is "Local Browser") and broke an entire
           // legitimate code path. Slice-based filtering is sufficient.
         } else if (mode === 'message_only') {
-          // 2.8.31: re-validate Y suffix and msg-not-sent in case the sheet
-          // was updated between pre-filter and now.
-          const ccRaw = (row['CC'] || row['cc'] || '').toString();
-          if (!/\sY\s*$/.test(ccRaw)) { delete state.processed[url]; continue; }
-          if (msgSent) { delete state.processed[url]; continue; }
+          if (_hasStageHere) {
+            // New schema: Stage drives messageability. Pre-filter passed
+            // 'Connected · DM Now'; if it changed under us, skip.
+            if (_stage !== 'Connected · DM Now') { delete state.processed[url]; continue; }
+          } else {
+            // Legacy schema: re-validate CC " Y" suffix and msg-not-sent.
+            const ccRaw = (row['CC'] || row['cc'] || '').toString();
+            if (!/\sY\s*$/.test(ccRaw)) { delete state.processed[url]; continue; }
+            if (msgSent) { delete state.processed[url]; continue; }
+          }
+        } else if (mode === 'open_profile_only' || mode === 'inmail_only') {
+          if (_hasStageHere) {
+            // New schema: pre-filter required Stage in {'', 'Send Connect'}.
+            // If a concurrent run flipped it to anything else, skip.
+            if (_stage !== '' && _stage !== 'Send Connect') {
+              delete state.processed[url]; continue;
+            }
+          } else {
+            if (status === 'done') { delete state.processed[url]; continue; }
+            if (mode === 'open_profile_only' && msgSent) {
+              delete state.processed[url]; continue;
+            }
+            if (mode === 'inmail_only' && inmailCell === 'sent') {
+              delete state.processed[url]; continue;
+            }
+          }
         } else {
           if (status === 'done') { delete state.processed[url]; continue; }
-          if (mode === 'open_profile_only' && msgSent) {
-            delete state.processed[url]; continue;
-          }
-          if (mode === 'inmail_only' && inmailCell === 'sent') {
-            delete state.processed[url]; continue;
-          }
         }
 
         // Build template data
