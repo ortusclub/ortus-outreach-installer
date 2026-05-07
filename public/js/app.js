@@ -3764,6 +3764,7 @@ window.loadLastUsedPreset = loadLastUsedPreset;
 window.loadProfiles = loadProfiles;
 window.loadSelectedTemplate = loadSelectedTemplate;
 window.onModeChange = onModeChange;
+window.setModeByIndex = setModeByIndex;
 window.previewSheet = previewSheet;
 window.refreshSoO = refreshSoO;
 window.requestNotificationPermission = requestNotificationPermission;
