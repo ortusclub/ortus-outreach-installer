@@ -16,7 +16,7 @@ import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, campaign, extractLinkedInUrl } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, setCampaignName, campaign, extractLinkedInUrl } from './src/campaign.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
@@ -457,7 +457,7 @@ app.post('/api/campaign/start', (req, res) => {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
 
-    const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency } = req.body;
+    const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name } = req.body;
 
     // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
     // the sheet's Account Used column inside campaign.js (only the original
@@ -492,6 +492,7 @@ app.post('/api/campaign/start', (req, res) => {
       linkedinColumn: linkedinColumn || '',
       senderFirstNames: senderFirstNames || {},
       concurrency: concurrencyClean,
+      name: typeof name === 'string' ? name : '',
     }).then(() => {
       const status = getCampaignStatus();
       notifyEmail(owner, {
@@ -540,6 +541,18 @@ app.post('/api/campaign/resume', (_req, res) => {
 
 app.get('/api/campaign/status', (_req, res) => {
   res.json(getCampaignStatus());
+});
+
+// Rename the active campaign. No-op if nothing is running — front-end disables
+// the editable affordance in that case. Empty string clears the name.
+app.post('/api/campaign/name', (req, res) => {
+  try {
+    const { name } = req.body || {};
+    const updated = setCampaignName(typeof name === 'string' ? name : '');
+    res.json({ ok: true, name: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1195,6 +1208,29 @@ app.delete('/api/history', async (_req, res) => {
   try {
     await writeFile(HISTORY_PATH, '[]', 'utf-8');
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Rename a past-campaign entry by its index in history.json. Index, not id,
+// because legacy entries don't have ids. Sort order on the dashboard matches
+// the on-disk array so :idx maps cleanly to what the operator clicked.
+app.patch('/api/history/:idx/name', async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    if (!Number.isInteger(idx) || idx < 0) return res.status(400).json({ error: 'Invalid idx' });
+    const { name } = req.body || {};
+    if (typeof name !== 'string') return res.status(400).json({ error: 'name must be a string' });
+
+    let history = [];
+    try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf-8')); } catch { /* empty */ }
+    if (!Array.isArray(history) || idx >= history.length) {
+      return res.status(404).json({ error: 'No such history entry' });
+    }
+    history[idx].name = name.trim();
+    await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
+    res.json({ ok: true, name: history[idx].name });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -280,6 +280,7 @@ export const campaign = {
   errors: [],
   parkedProfiles: [],
   softWarnings: [],
+  name: '',
 };
 
 // Phase 2.8.12: tiny helper — sets the action shown in the dashboard cockpit.
@@ -691,7 +692,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1 }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '' }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -707,6 +708,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.errors = [];
   campaign.parkedProfiles = [];
   campaign.softWarnings = [];
+  campaign.name = (typeof name === 'string' ? name : '').trim();
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
@@ -2015,6 +2017,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     try {
       await appendHistory({
         date: new Date().toISOString(),
+        name: campaign.name || '',
         mode: campaign.mode,
         profiles: campaign.profileNames,
         dailyLimit: dailyLimit,
@@ -2032,6 +2035,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log('=== Campaign ended ===');
     campaign.currentAction = null; // clear cockpit
   }
+}
+
+// Rename the in-flight campaign. Called from POST /api/campaign/name. Empty
+// strings are allowed — operator can clear a name.
+export function setCampaignName(name) {
+  campaign.name = (typeof name === 'string' ? name : '').trim();
+  return campaign.name;
 }
 
 export function stopCampaign() {
@@ -2099,6 +2109,7 @@ export function getCampaignStatus() {
     totalProcessed: campaign.totalProcessed,
     totalTargets: campaign.totalTargets || 0,
     mode: campaign.mode || '',
+    name: campaign.name || '',
     profileNames: campaign.profileNames || [],
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),

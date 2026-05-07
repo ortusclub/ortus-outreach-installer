@@ -2650,3 +2650,42 @@ body.route-dashboard .sidebar-nav { display: none; }
   width: 100%;
   max-width: 360px;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Dashboard inline name edit
+   ───────────────────────────────────────────────────────────────────────── */
+.campaign-row-name-text {
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: text;
+  border-radius: 0;
+  transition: background-color 0.12s ease;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.campaign-row-name-text:hover { background-color: var(--hairline); }
+.campaign-row-name-text:focus-visible { outline: 1px dashed var(--gray); outline-offset: 2px; }
+.campaign-row-name-text.is-empty {
+  font-style: italic;
+  color: var(--gray);
+}
+
+.campaign-row-name-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--ink);
+  padding: 4px 6px;
+  margin: -5px -7px;
+  font: inherit;
+  color: var(--ink);
+  border-radius: 0;
+  outline: none;
+}
+.campaign-row-name-input.save-failed { border-color: #c0392b; }
