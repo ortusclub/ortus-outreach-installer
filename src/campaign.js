@@ -824,39 +824,40 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // starting with "Skipped" is terminal.
         const isSkipped = stage.startsWith('Skipped');
 
+        // v2.11.15: with the Stage schema, the Stage cell is the single
+        // source of truth for "is this row processable". The local
+        // state.processed file used to layer an extra block, but that
+        // meant a manual sheet edit (e.g. operator resets Stage to
+        // 'Connected · DM Now' to re-test) was silently overruled by a
+        // stale local marker. Drop the state.processed[url] checks here;
+        // Stage carries the same information from the bridge writeback,
+        // and the in-loop _in_progress marker (line ~1431) still
+        // prevents two workers from racing on the same lead within one
+        // run. Trade-off: if the sheet write fails after a successful
+        // send, the next run could re-send. Acceptable given the
+        // ergonomic win — and Stage writebacks have been reliable.
         if (mode === 'check_status') {
           return stage === 'Connect Pending';
         }
         if (mode === 'message_only') {
           // Standard DM and Introduction sub-mode both source from
           // Connected · DM Now.
-          if (stage !== 'Connected · DM Now') return false;
-          const prev = state.processed[url];
-          if (prev && (prev.action === 'message_sent' || prev.action === 'op_message_sent')) return false;
-          return true;
+          return stage === 'Connected · DM Now';
         }
         if (mode === 'connect_only') {
           // Cold targets: Stage empty (never touched) or 'Send Connect'.
           // Skipped (any reason) is terminal — exclude.
           if (isSkipped) return false;
-          if (stage !== '' && stage !== 'Send Connect') return false;
-          const prev = state.processed[url];
-          if (prev) return false;
-          return true;
+          return stage === '' || stage === 'Send Connect';
         }
         if (mode === 'inmail_only' || mode === 'open_profile_only') {
           // InMail and OP are Connect alternatives — same source.
           if (isSkipped) return false;
-          if (stage !== '' && stage !== 'Send Connect') return false;
-          const prev = state.processed[url];
-          if (prev) return false;
-          return true;
+          return stage === '' || stage === 'Send Connect';
         }
         // connect_and_message and other multi-step modes: terminal stages skip,
         // everything else passes through.
         if (TERMINAL.has(stage) || isSkipped) return false;
-        const prev = state.processed[url];
-        if (prev) return false;
         return true;
       }
 

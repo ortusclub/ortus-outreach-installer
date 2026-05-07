@@ -12,7 +12,21 @@ let allProfilesData = [];
 let localBrowserFirstName = (typeof localStorage !== 'undefined' && localStorage.getItem('localBrowserFirstName')) || '';
 
 function resolveSenderFirstName(profileId, profileName) {
-  if (profileId === 'local-browser') return (localBrowserFirstName || '').trim();
+  if (profileId === 'local-browser') {
+    // v2.11.15: manual override wins, but if the operator hasn't set
+    // localBrowserFirstName, auto-resolve to the SoO firstName for the
+    // signed-in user — same source the "Good morning, Antonio" greeting
+    // uses (app.js:3320). Operator no longer has to type their own name
+    // in two places.
+    const manual = (localBrowserFirstName || '').trim();
+    if (manual) return manual;
+    const emailEl = document.getElementById('user-chip-email');
+    const email = ((emailEl?.textContent) || '').trim().toLowerCase();
+    const sooEntry = email && sooData && sooData[email];
+    const raw = sooEntry && sooEntry.firstName ? sooEntry.firstName.trim() : '';
+    if (!raw) return '';
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
   const soo = findSoOForProfile(profileName);
   if (!soo) return '';
   return (soo['First Name'] || soo.firstName || '').toString().trim();
