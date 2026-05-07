@@ -1307,8 +1307,18 @@ export async function sendIntroMessage(page, body, introName, groupTitle) {
   if (!composerReady) throw new Error('MESSAGE_SEND_FAILED: compose textbox did not appear');
 
   // ── Step 1: add intro person as second recipient ──
-  const recipientResult = await page.evaluate(async (name) => {
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  // v2.11.16: previous version dispatched a single synthetic InputEvent
+  // after value-setting via the React-style native setter. That fires
+  // React's onChange but LinkedIn's typeahead listens for real keystroke
+  // events (keydown/keypress/input/keyup) with debounce — so the synthetic
+  // single-shot dispatch never triggered the search XHR and the dropdown
+  // never opened. Real-keystroke simulation via page.type fixes it.
+  //
+  // Strategy: tag the recipient input with a unique data-attribute inside
+  // page.evaluate, then exit evaluate to use page.type which simulates
+  // proper key sequences. Re-enter evaluate to wait for the dropdown and
+  // verify the pill.
+  const tagged = await page.evaluate(() => {
     const isVisible = (el) => {
       if (!el) return false;
       const r = el.getBoundingClientRect();
@@ -1316,96 +1326,147 @@ export async function sendIntroMessage(page, body, introName, groupTitle) {
       const s = window.getComputedStyle(el);
       return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
     };
-    const activate = (el) => {
-      el.scrollIntoView?.({ block: 'center' });
-      el.focus?.();
-      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
-      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
-      el.click();
-      return true;
-    };
+    const inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"][role="textbox"]'))
+      .filter(isVisible);
+    for (const el of inputs) {
+      const text = [
+        el.getAttribute('aria-label'),
+        el.getAttribute('placeholder'),
+        el.getAttribute('class'),
+        el.getAttribute('id'),
+      ].join(' ').toLowerCase();
+      if (text.includes('enter message recipients') || text.includes('msg-connections-typeahead__search-field')) {
+        el.setAttribute('data-ortus-recipient', '1');
+        return {
+          ok: true,
+          tag: el.tagName,
+          ariaLabel: el.getAttribute('aria-label') || '',
+          placeholder: el.getAttribute('placeholder') || '',
+          contentEditable: el.isContentEditable || false,
+        };
+      }
+    }
+    return { ok: false };
+  });
+
+  if (!tagged.ok) {
+    throw new Error('INTRO_RECIPIENT_NOT_FOUND: recipient-input-not-found');
+  }
+  console.log(`[actions:intro] Recipient input found: ${tagged.tag} aria="${tagged.ariaLabel}" placeholder="${tagged.placeholder}" CE=${tagged.contentEditable}`);
+
+  // Check if intro person is already added (idempotent)
+  const alreadyAdded = await page.evaluate((name) => {
     const normalizeName = (v) => (v || '')
       .normalize('NFD').replace(/[̀-ͯ]/g, '')
       .toLowerCase().replace(/^remove\s+/, '')
       .replace(/[^a-z0-9\s'-]/g, ' ').replace(/\s+/g, ' ').trim();
-    const target = (() => {
-      // DM Assistant's getRecipientSearchInputTarget: any visible input/textarea
-      // whose aria/placeholder/class hints at "enter message recipients" or
-      // "msg-connections-typeahead__search-field".
-      const inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"][role="textbox"]'))
-        .filter(isVisible);
-      for (const el of inputs) {
-        const text = [
-          el.getAttribute('aria-label'),
-          el.getAttribute('placeholder'),
-          el.getAttribute('class'),
-          el.getAttribute('id'),
-        ].join(' ').toLowerCase();
-        if (text.includes('enter message recipients') || text.includes('msg-connections-typeahead__search-field')) {
-          return el;
-        }
-      }
-      return null;
-    })();
-    if (!target) return { ok: false, reason: 'recipient-input-not-found' };
-
-    // Already added? (DM Assistant's hasSelectedRecipient)
-    const normName = normalizeName(name);
-    const alreadyAdded = Array.from(document.querySelectorAll(
+    const norm = normalizeName(name);
+    return Array.from(document.querySelectorAll(
       '.msg-connections-typeahead__added-recipients button[aria-label^="Remove"], button.artdeco-pill[aria-label^="Remove"]'
-    )).some((b) => normalizeName(b.getAttribute('aria-label')).includes(normName));
-    if (alreadyAdded) return { ok: true, alreadyAdded: true };
-
-    // Type the name (DM Assistant's fillTextTarget for INPUT path)
-    target.focus();
-    const proto = target.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    if (setter && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
-      setter.call(target, name);
-    } else if (target.isContentEditable) {
-      target.textContent = name;
-    } else {
-      target.value = name;
-    }
-    target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: name }));
-    target.dispatchEvent(new Event('change', { bubbles: true }));
-
-    // Wait for typeahead results, click exact match. (DM Assistant's selectExactRecipientResult)
-    let clicked = false;
-    for (let i = 0; i < 20; i++) {
-      await sleep(150);
-      const roots = Array.from(document.querySelectorAll(
-        '.msg-connections-typeahead__search-results, [role="listbox"], .reusable-search__entity-result-list'
-      ));
-      const searchRoots = roots.length ? roots : [document];
-      for (const root of searchRoots) {
-        const candidates = Array.from(root.querySelectorAll(
-          'li, [role="option"], button, .msg-connections-typeahead__search-result, .reusable-search__result-container'
-        )).filter(isVisible);
-        const exact = candidates.find((c) => {
-          const t = normalizeName(c.innerText || c.textContent);
-          return t === normName || t.startsWith(`${normName} `);
-        });
-        if (exact) { activate(exact); clicked = true; break; }
-      }
-      if (clicked) break;
-    }
-    if (!clicked) return { ok: false, reason: 'recipient-not-in-results' };
-
-    // Verify the pill appeared
-    await sleep(500);
-    const verified = Array.from(document.querySelectorAll(
-      '.msg-connections-typeahead__added-recipients button[aria-label^="Remove"], button.artdeco-pill[aria-label^="Remove"]'
-    )).some((b) => normalizeName(b.getAttribute('aria-label')).includes(normName));
-    if (!verified) return { ok: false, reason: 'recipient-pill-not-confirmed' };
-
-    return { ok: true, alreadyAdded: false };
+    )).some((b) => normalizeName(b.getAttribute('aria-label')).includes(norm));
   }, introName);
 
-  if (!recipientResult.ok) {
-    throw new Error(`INTRO_RECIPIENT_NOT_FOUND: ${recipientResult.reason} (intro="${introName}")`);
+  if (alreadyAdded) {
+    console.log('[actions:intro] Recipient already added — skipping typeahead');
+  } else {
+    // Real-keystroke typing. delay=60ms per char gives LinkedIn's debounce
+    // time to register each char as the user types — exactly what the
+    // typeahead listener expects.
+    const recipientSelector = '[data-ortus-recipient="1"]';
+    try {
+      await page.click(recipientSelector);
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.click(recipientSelector);
+    } catch { /* focus is best-effort */ }
+    await page.type(recipientSelector, introName, { delay: 60 });
+    console.log(`[actions:intro] Typed recipient name with real keystrokes: "${introName}"`);
+
+    // Wait for typeahead dropdown, click exact match.
+    const clickResult = await page.evaluate(async (name) => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const isVisible = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        const s = window.getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+      };
+      const activate = (el) => {
+        el.scrollIntoView?.({ block: 'center' });
+        el.focus?.();
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+        el.click();
+        return true;
+      };
+      const normalizeName = (v) => (v || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/^remove\s+/, '')
+        .replace(/[^a-z0-9\s'-]/g, ' ').replace(/\s+/g, ' ').trim();
+      const norm = normalizeName(name);
+
+      let lastCandidateCount = 0;
+      let lastCandidatePreview = '';
+      for (let i = 0; i < 30; i++) {
+        await sleep(200);
+        const roots = Array.from(document.querySelectorAll(
+          '.msg-connections-typeahead__search-results, [role="listbox"], .reusable-search__entity-result-list'
+        ));
+        const searchRoots = roots.length ? roots : [document];
+        for (const root of searchRoots) {
+          const candidates = Array.from(root.querySelectorAll(
+            'li, [role="option"], button, .msg-connections-typeahead__search-result, .reusable-search__result-container'
+          )).filter(isVisible);
+          if (candidates.length > lastCandidateCount) {
+            lastCandidateCount = candidates.length;
+            lastCandidatePreview = candidates.slice(0, 3).map(c => (c.innerText || '').trim().split('\n')[0]).join(' | ');
+          }
+          const exact = candidates.find((c) => {
+            const t = normalizeName(c.innerText || c.textContent);
+            return t === norm || t.startsWith(`${norm} `);
+          });
+          if (exact) {
+            activate(exact);
+            return { ok: true, candidateCount: candidates.length, preview: lastCandidatePreview };
+          }
+        }
+      }
+      return { ok: false, candidateCount: lastCandidateCount, preview: lastCandidatePreview };
+    }, introName);
+
+    console.log(`[actions:intro] Dropdown poll result: ok=${clickResult.ok} candidates=${clickResult.candidateCount} preview="${clickResult.preview}"`);
+
+    if (!clickResult.ok) {
+      // Clean up the attribute before throwing
+      await page.evaluate(() => document.querySelector('[data-ortus-recipient="1"]')?.removeAttribute('data-ortus-recipient'));
+      const detail = clickResult.candidateCount === 0
+        ? 'recipient-not-in-results (dropdown never opened — confirm 1st-degree connection)'
+        : `recipient-not-in-results (${clickResult.candidateCount} suggestions but no exact match; saw: ${clickResult.preview})`;
+      throw new Error(`INTRO_RECIPIENT_NOT_FOUND: ${detail}`);
+    }
+
+    // Verify the pill appeared
+    await new Promise(r => setTimeout(r, 600));
+    const verified = await page.evaluate((name) => {
+      const normalizeName = (v) => (v || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/^remove\s+/, '')
+        .replace(/[^a-z0-9\s'-]/g, ' ').replace(/\s+/g, ' ').trim();
+      const norm = normalizeName(name);
+      return Array.from(document.querySelectorAll(
+        '.msg-connections-typeahead__added-recipients button[aria-label^="Remove"], button.artdeco-pill[aria-label^="Remove"]'
+      )).some((b) => normalizeName(b.getAttribute('aria-label')).includes(norm));
+    }, introName);
+
+    if (!verified) {
+      await page.evaluate(() => document.querySelector('[data-ortus-recipient="1"]')?.removeAttribute('data-ortus-recipient'));
+      throw new Error('INTRO_RECIPIENT_NOT_FOUND: recipient-pill-not-confirmed (clicked dropdown match but pill never appeared)');
+    }
   }
-  console.log(`[actions:intro] Recipient added: ${introName} (alreadyAdded=${recipientResult.alreadyAdded})`);
+
+  // Clean up the temporary tag attribute.
+  await page.evaluate(() => document.querySelector('[data-ortus-recipient="1"]')?.removeAttribute('data-ortus-recipient'));
+  console.log(`[actions:intro] Recipient added: ${introName} (alreadyAdded=${alreadyAdded})`);
 
   // ── Step 2: fill the conversation title (group thread) ──
   await new Promise(r => setTimeout(r, 600));
