@@ -2592,3 +2592,61 @@ body.route-dashboard .sidebar-nav { display: none; }
   }
   .campaign-row-status { justify-self: start; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Local Browser tile — separate from the GoLogin profile grid
+   Sits above the accounts-browser. The first-name input only appears
+   after the operator ticks the checkbox.
+   ───────────────────────────────────────────────────────────────────────── */
+.local-browser-host { margin: 8px 0 24px; }
+
+.local-browser-tile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 18px;
+  border: 1px solid var(--hairline);
+  border-radius: 0;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  background: transparent;
+}
+.local-browser-tile:hover { border-color: var(--gray); }
+.local-browser-tile.selected { border-color: var(--ink); }
+
+.local-browser-tile > input[type="checkbox"] {
+  margin-top: 4px;
+  width: 16px; height: 16px;
+}
+
+.local-browser-tile .local-browser-body { min-width: 0; }
+.local-browser-tile .name {
+  font-family: var(--display);
+  font-size: 1rem;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.local-browser-tile .id {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  color: var(--gray);
+  text-transform: none;
+}
+
+.local-browser-name-row { margin-top: 12px; }
+.local-browser-name-row[hidden] { display: none; }
+.local-browser-name-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+  margin-bottom: 6px;
+}
+.local-browser-name-row input {
+  width: 100%;
+  max-width: 360px;
+}
