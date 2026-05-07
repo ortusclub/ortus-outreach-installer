@@ -465,53 +465,6 @@
       </div>
     </div>
 
-    <!-- ── Post Amplification (v3.0): paste a LinkedIn post URL, all selected
-         GoLogin accounts open it sequentially and react / comment per the
-         operator's per-account config. No sheet, no templates section, no
-         daily limit — own pacing (60-300s gap between accounts), own dedup
-         state file. Visible only when mode = post_amplification. -->
-    <div class="section" id="nav-post-amplification" style="display:none">
-      <h2 class="section-toggle"><span data-edit="h2-post-amp">2d. Post Amplification</span></h2>
-
-      <div style="padding:0 0 8px;">
-        <div style="margin-bottom:14px;">
-          <label for="pa-post-url" class="pa-label">LinkedIn post URL</label>
-          <input type="text" id="pa-post-url" class="pa-input" placeholder="https://www.linkedin.com/posts/&lt;slug&gt;-&lt;id&gt;" oninput="onPostAmpUrlChange()">
-          <div class="pa-helper">Format <code>linkedin.com/posts/&lt;slug&gt;-&lt;id&gt;</code></div>
-        </div>
-
-        <div id="pa-engagement-block" style="margin-top:24px;">
-          <label class="pa-label" id="pa-engagement-label">Per-account engagement</label>
-          <div id="pa-engagement-empty" style="color:var(--gray); font-size:13px; padding:14px 16px; border:1px dashed var(--hairline);">
-            Pick GoLogin accounts in section 3 below — they'll appear here as rows you can configure (Like / Comment / comment text).
-          </div>
-          <table id="pa-engagement-table" class="pa-table" style="display:none;">
-            <thead>
-              <tr>
-                <th style="width:30%">Account</th>
-                <th style="width:8%">Like</th>
-                <th style="width:8%">Comment</th>
-                <th>Comment text</th>
-              </tr>
-            </thead>
-            <tbody id="pa-engagement-rows"></tbody>
-          </table>
-        </div>
-
-        <div class="pa-info-strip">
-          <strong>Reactions:</strong> 80% Like · 20% rotated across Celebrate / Support / Insightful / Funny / Love (chosen at runtime, per account).<br>
-          <strong>Pace:</strong> Sequential · 60–300s random gap between accounts · 1–3s between actions within an account.<br>
-          <strong>Dedup:</strong> Accounts that already reacted to this post are skipped automatically.
-        </div>
-
-        <div class="pa-templates" id="pa-templates-block">
-          <h3>Saved comment templates <span id="pa-templates-count">(0)</span></h3>
-          <ul id="pa-templates-list"></ul>
-          <div id="pa-templates-empty" style="font-size:12px; color:var(--gray);">No saved templates yet. Use "Save as template" next to any comment text.</div>
-        </div>
-      </div>
-    </div>
-
     <!-- ── GoLogin Profiles ── -->
     <div class="section collapsible collapsed" id="nav-accounts">
       <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>
@@ -590,6 +543,53 @@
         <div id="selected-list"></div>
       </div>
       </div><!-- /.collapsible-body -->
+    </div>
+
+    <!-- ── Post Amplification (v3.0): URL + per-account engagement table.
+         Sits AFTER nav-accounts so the operator picks participating profiles
+         first, then configures Like/Comment per row. Visible only when
+         mode = post_amplification. No sheet, no templates section, no daily
+         limit — own pacing (60-300s gap between accounts), own dedup file. -->
+    <div class="section" id="nav-post-amplification" style="display:none">
+      <h2 class="section-toggle"><span data-edit="h2-post-amp">4. Post Amplification</span></h2>
+
+      <div style="padding:0 0 8px;">
+        <div style="margin-bottom:14px;">
+          <label for="pa-post-url" class="pa-label">LinkedIn post URL</label>
+          <input type="text" id="pa-post-url" class="pa-input" placeholder="https://www.linkedin.com/posts/&lt;slug&gt;-&lt;id&gt;" oninput="onPostAmpUrlChange()">
+          <div class="pa-helper">Format <code>linkedin.com/posts/&lt;slug&gt;-&lt;id&gt;</code></div>
+        </div>
+
+        <div id="pa-engagement-block" style="margin-top:24px;">
+          <label class="pa-label" id="pa-engagement-label">Per-account engagement</label>
+          <div id="pa-engagement-empty" style="color:var(--gray); font-size:13px; padding:14px 16px; border:1px dashed var(--hairline);">
+            Pick GoLogin accounts in section 3 above — they'll appear here as rows you can configure (Like / Comment / comment text).
+          </div>
+          <table id="pa-engagement-table" class="pa-table" style="display:none;">
+            <thead>
+              <tr>
+                <th style="width:30%">Account</th>
+                <th style="width:8%">Like</th>
+                <th style="width:8%">Comment</th>
+                <th>Comment text</th>
+              </tr>
+            </thead>
+            <tbody id="pa-engagement-rows"></tbody>
+          </table>
+        </div>
+
+        <div class="pa-info-strip">
+          <strong>Reactions:</strong> 80% Like · 20% rotated across Celebrate / Support / Insightful / Funny / Love (chosen at runtime, per account).<br>
+          <strong>Pace:</strong> Sequential · 60–300s random gap between accounts · 1–3s between actions within an account.<br>
+          <strong>Dedup:</strong> Accounts that already reacted to this post are skipped automatically.
+        </div>
+
+        <div class="pa-templates" id="pa-templates-block">
+          <h3>Saved comment templates <span id="pa-templates-count">(0)</span></h3>
+          <ul id="pa-templates-list"></ul>
+          <div id="pa-templates-empty" style="font-size:12px; color:var(--gray);">No saved templates yet. Use "Save as template" next to any comment text.</div>
+        </div>
+      </div>
     </div>
 
     <!-- ── Template Management (wraps the 4 tpl-* sections below) ── -->

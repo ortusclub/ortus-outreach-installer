@@ -1556,7 +1556,7 @@ function renderPostAmpEngagementTable() {
     const name = selectedProfileNames[id] || id;
     const commentDisabled = cfg.comment ? '' : 'disabled';
     const commentPlaceholder = cfg.comment ? '' : 'placeholder="(Comment off)"';
-    const linkClass = cfg.comment ? '' : 'class="disabled"';
+    const linkCls = `pa-suggest-link${cfg.comment ? '' : ' disabled'}`;
     return `<tr>
       <td>
         <div class="pa-name">${escHtml(name)}</div>
@@ -1567,9 +1567,9 @@ function renderPostAmpEngagementTable() {
       <td>
         <textarea class="pa-comment" id="pa-comment-${id}" ${commentDisabled} ${commentPlaceholder} oninput="setPostAmpComment('${id}',this.value)">${escHtml(cfg.commentText || '')}</textarea>
         <div class="pa-suggest-row">
-          <button type="button" ${linkClass} class="pa-suggest-link" onclick="openPostAmpSuggestions('${id}', event)">Suggestions ▾</button>
+          <button type="button" class="${linkCls}" onclick="openPostAmpSuggestions('${id}', event)">Suggestions ▾</button>
           <span>·</span>
-          <button type="button" ${linkClass} class="pa-suggest-link" onclick="savePostAmpTemplate('${id}')">Save as template</button>
+          <button type="button" class="${linkCls}" onclick="savePostAmpTemplate('${id}')">Save as template</button>
         </div>
       </td>
     </tr>`;
