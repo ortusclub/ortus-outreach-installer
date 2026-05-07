@@ -2559,6 +2559,55 @@ body.route-dashboard .sidebar-nav { display: none; }
   border-color: var(--ink);
 }
 
+/* v2.11.7: clickable past-campaign rows + endReason badge variants */
+.campaign-row-clickable { cursor: pointer; }
+.campaign-row-status.is-stopped { color: var(--gray); border-color: var(--hairline); }
+.campaign-row-status.is-errored { color: #b00020; border-color: #b00020; }
+
+/* Past-campaign details modal — read-only summary + Re-run CTA */
+.past-campaign-modal-card {
+  position: relative;
+  max-width: 560px;
+  width: 92%;
+}
+.past-campaign-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--gray);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.past-campaign-modal-close:hover { color: var(--ink); }
+.past-campaign-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 16px;
+}
+.past-detail-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.85rem;
+}
+.past-detail-row:last-child { border-bottom: none; }
+.past-detail-key {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+.past-detail-val { color: var(--ink); word-break: break-word; }
+.past-detail-val .campaign-row-status { font-size: 0.55rem; }
+
 .campaign-row {
   display: grid;
   grid-template-columns: 2fr 1.4fr 1.4fr auto;

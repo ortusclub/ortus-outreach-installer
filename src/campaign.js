@@ -737,6 +737,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   };
 
   const campaignStartTime = Date.now();
+  // v2.11.7: track how the run ended so the dashboard badge can say
+  // "completed" / "stopped" / "errored" instead of always "completed".
+  // Resolved once in finally — catch sets 'errored', operator-stop sets
+  // 'stopped' from campaign._abort, otherwise stays 'completed'.
+  let endReason = 'completed';
 
   try {
     rotateCampaignLogIfBig();
@@ -2012,7 +2017,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   } catch (err) {
     log(`Fatal: ${err.message}`);
     pushError(err);
+    endReason = 'errored';
   } finally {
+    // v2.11.7: if neither catch nor a fatal error fired, but operator hit
+    // Stop, mark accordingly. campaign._abort is set by stopCampaign().
+    if (endReason !== 'errored' && campaign._abort) endReason = 'stopped';
+
     // Save campaign history (D-10)
     try {
       await appendHistory({
@@ -2026,6 +2036,33 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         errorCount: campaign.errors.length,
         duration: Math.round((Date.now() - campaignStartTime) / 1000),
         templateNames: Object.entries(tpl).filter(([_, v]) => v && (typeof v === 'string' ? v : v.subject)).map(([k]) => k),
+        // v2.11.7: badge state in the dashboard's Past list.
+        endReason,
+        // v2.11.7: settings snapshot for the "Re-run with same settings" CTA.
+        // Operator already trusts this machine with the templates (they're
+        // typed into the wizard), and the file is in the user-only data
+        // dir. Future privacy hardening can hash/encrypt these later.
+        settings: {
+          profileIds: Array.isArray(profileIds) ? [...profileIds] : [],
+          sheetUrl: sheetUrl || '',
+          templates: {
+            connectionNote: tpl.connectionNote || '',
+            followUpMessage: tpl.followUpMessage || '',
+            inmailSubject: tpl.inmail?.subject || '',
+            inmailBody: tpl.inmail?.message || '',
+            openProfileSubject: tpl.openProfileSubject || '',
+            openProfileBody: tpl.openProfileBody || '',
+            introMode: !!tpl.introMode,
+            introName: tpl.introName || '',
+            introTitle: tpl.introTitle || '',
+          },
+          dailyLimit,
+          messageOpenProfiles: !!messageOpenProfiles,
+          delayMin,
+          delayMax,
+          linkedinColumn: linkedinColumn || '',
+          concurrency: concurrency || 1,
+        },
       });
     } catch (histErr) {
       console.error('Failed to save campaign history:', histErr.message);

@@ -3848,6 +3848,9 @@ window.toggleSection = toggleSection;
 window.openUnifiedLog = openUnifiedLog;
 window.onPastSearchInput = onPastSearchInput;
 window.togglePastExpanded = togglePastExpanded;
+window.openPastCampaignModal = openPastCampaignModal;
+window.closePastCampaignModal = closePastCampaignModal;
+window.rerunPastCampaign = rerunPastCampaign;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
 
@@ -4510,6 +4513,9 @@ async function refreshActiveCampaign() {
 const PAST_COLLAPSED_LIMIT = 3;
 let pastExpanded = false;
 let pastSearchQuery = '';
+// v2.11.7: cache of the most-recently rendered filtered+sorted history so
+// the modal click-handler can resolve idx → entry without re-fetching.
+let pastCampaignsCache = [];
 
 function onPastSearchInput() {
   const inp = document.getElementById('past-search');
@@ -4520,6 +4526,123 @@ function onPastSearchInput() {
 function togglePastExpanded() {
   pastExpanded = !pastExpanded;
   refreshPastCampaigns();
+}
+
+// v2.11.7: past-campaign details modal. Reads from pastCampaignsCache so the
+// click handler doesn't re-hit /api/history.
+let pastCampaignModalEntry = null;
+
+function openPastCampaignModal(idx) {
+  // Inline name-edit clicks bubble up to the row; if an inline-edit input
+  // is currently focused we don't want a stray click to also open the modal.
+  if (document.activeElement && document.activeElement.classList.contains('campaign-row-name-input')) return;
+  const entry = pastCampaignsCache.find(e => e.idx === idx);
+  if (!entry) return;
+  pastCampaignModalEntry = entry;
+
+  const c = entry.c;
+  const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
+  const reason = c.endReason || 'completed';
+  const reasonLabel = reason === 'stopped' ? 'Stopped'
+                    : reason === 'errored' ? 'Errored'
+                    : 'Completed';
+  const reasonClass = reason === 'stopped' ? 'is-stopped'
+                    : reason === 'errored' ? 'is-errored'
+                    : 'is-done';
+  const profiles = Array.isArray(c.profiles) ? c.profiles : [];
+  const total = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
+  const success = c.successCount != null ? c.successCount : 0;
+  const errors = c.errorCount != null ? c.errorCount : 0;
+  const durationStr = c.duration != null ? formatDurationSeconds(c.duration) : '—';
+  const hasSettings = !!(c.settings && c.settings.profileIds);
+
+  const rowsHtml = [
+    ['Name', escHtml(c.name || '— unnamed —')],
+    ['Mode', escHtml(dashboardModeLabel(c.mode))],
+    ['Started', escHtml(dateStr)],
+    ['Duration', escHtml(durationStr)],
+    ['End reason', `<span class="campaign-row-status ${reasonClass}">${reasonLabel}</span>`],
+    ['Accounts used', profiles.length === 0 ? '—' : `<span>${profiles.map(p => escHtml(p)).join(', ')}</span>`],
+    ['Successes', escHtml(String(success))],
+    ['Total processed', escHtml(String(total))],
+    ['Errors', escHtml(String(errors))],
+  ];
+
+  const body = document.getElementById('past-campaign-modal-body');
+  if (body) {
+    body.innerHTML = rowsHtml.map(([k, v]) =>
+      `<div class="past-detail-row"><span class="past-detail-key">${escHtml(k)}</span><span class="past-detail-val">${v}</span></div>`
+    ).join('');
+  }
+
+  // Disable Re-run button if no settings snapshot (older entries from before
+  // v2.11.7 won't have it).
+  const rerunBtn = document.getElementById('past-campaign-rerun-btn');
+  if (rerunBtn) {
+    rerunBtn.disabled = !hasSettings;
+    rerunBtn.title = hasSettings ? '' : 'This campaign predates settings-snapshot persistence';
+  }
+
+  document.getElementById('past-campaign-modal').classList.remove('hidden');
+}
+
+function closePastCampaignModal() {
+  document.getElementById('past-campaign-modal').classList.add('hidden');
+  pastCampaignModalEntry = null;
+}
+
+// Pre-fill the wizard from the saved settings snapshot. Mode + accounts +
+// templates + sheet URL + delays are restored; the operator confirms (or
+// edits) before clicking Launch.
+function rerunPastCampaign() {
+  if (!pastCampaignModalEntry) return;
+  const c = pastCampaignModalEntry.c;
+  const s = c.settings;
+  if (!s) return;
+
+  // Build a preset-config-shaped object so we can reuse applyPresetConfig.
+  const config = {
+    mode: c.mode,
+    sheetUrl: s.sheetUrl || '',
+    dailyLimit: s.dailyLimit ?? 50,
+    delayMin: s.delayMin ?? 15,
+    delayMax: s.delayMax ?? 45,
+    linkedinColumn: s.linkedinColumn || '',
+    messageOpenProfiles: !!s.messageOpenProfiles,
+    addNote: !!(s.templates && s.templates.connectionNote),
+    templates: s.templates || {},
+    profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+  };
+
+  closePastCampaignModal();
+  goCreateCampaign();          // navigate to wizard at #/new
+  // Defer applyPresetConfig until the wizard view is mounted.
+  setTimeout(() => {
+    if (typeof applyPresetConfig === 'function') applyPresetConfig(config);
+    // Surface the campaign name (with "(re-run)" suffix) so the operator can
+    // tweak. The wizard's #campaign-name-input drives the new run.
+    const nameInput = document.getElementById('campaign-name-input');
+    if (nameInput) {
+      const base = (c.name || '').trim();
+      nameInput.value = base ? `${base} (re-run)` : '';
+    }
+    // Friendly toast — operator should at least eyeball before launching.
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast('Wizard pre-filled from past run — review before launching.');
+    }
+  }, 50);
+}
+
+// Format seconds → "1h 23m" / "12m 04s" / "45s". Used by the past modal.
+function formatDurationSeconds(s) {
+  const sec = Math.max(0, Math.round(Number(s) || 0));
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const r = sec % 60;
+  if (m < 60) return `${m}m ${String(r).padStart(2, '0')}s`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${h}h ${String(mm).padStart(2, '0')}m`;
 }
 
 async function refreshPastCampaigns() {
@@ -4564,16 +4687,28 @@ async function refreshPastCampaigns() {
     const showAll = !!q || pastExpanded;
     const visible = showAll ? filtered : filtered.slice(0, PAST_COLLAPSED_LIMIT);
 
+    // v2.11.7: cache the visible entries so the click-handler can pick the
+    // right one without re-fetching /api/history. Click on the row body opens
+    // the details modal; clicks inside the inline-edit name button bubble
+    // up but the name button calls stopPropagation in its own handler.
+    pastCampaignsCache = filtered;
     list.innerHTML = visible.map(({ idx, c }) => {
       const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
       const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
       const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
+      const reason = c.endReason || 'completed';
+      const reasonLabel = reason === 'stopped' ? 'Stopped'
+                        : reason === 'errored' ? 'Errored'
+                        : 'Completed';
+      const reasonClass = reason === 'stopped' ? 'is-stopped'
+                        : reason === 'errored' ? 'is-errored'
+                        : 'is-done';
       return `
-        <div class="campaign-row">
+        <div class="campaign-row campaign-row-clickable" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
           <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
           <span class="campaign-row-type">${escHtml(subtitle)}</span>
           <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
-          <span class="campaign-row-status is-done">Completed</span>
+          <span class="campaign-row-status ${reasonClass}">${reasonLabel}</span>
         </div>
       `;
     }).join('');
