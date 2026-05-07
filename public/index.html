@@ -124,6 +124,39 @@
       <span id="disk-warning-text">—</span>
     </div>
 
+    <!-- ── Dashboard view (default route #/) ── -->
+    <div id="dashboard-view" class="route-view">
+      <div class="dashboard-header">
+        <h1 class="dashboard-title">Campaigns</h1>
+      </div>
+
+      <section class="dashboard-section">
+        <h2 class="dashboard-section-title">Active</h2>
+        <div class="campaign-list" id="active-campaign-list">
+          <p class="empty-state">No active campaigns.</p>
+        </div>
+      </section>
+
+      <section class="dashboard-section">
+        <h2 class="dashboard-section-title">Past</h2>
+        <div class="campaign-list" id="past-campaign-list">
+          <p class="empty-state">No past campaigns yet.</p>
+        </div>
+      </section>
+
+      <div class="dashboard-actions">
+        <button type="button" class="btn btn-primary create-campaign-btn" onclick="goCreateCampaign()">
+          + Create Campaign
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Wizard view (route #/new) ── -->
+    <div id="wizard-view" class="route-view">
+      <div class="wizard-back-row">
+        <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+      </div>
+
     <!-- ── Settings (reordered to position 1) ── -->
     <div class="section" id="nav-settings">
       <h2 data-edit="h2-settings">1. Campaign Type <span class="section-summary" id="summary-settings"></span></h2>
@@ -688,6 +721,8 @@
         </div>
       </div>
     </div>
+
+    </div> <!-- /#wizard-view -->
 
     <p style="text-align:center; color:var(--gray); margin-top:48px; font-family:var(--mono); font-size:0.62rem; letter-spacing:0.2em; text-transform:uppercase">Ortus Club &copy; 2026</p>
     </div> <!-- /.container -->
