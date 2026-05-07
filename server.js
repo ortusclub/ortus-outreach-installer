@@ -576,7 +576,29 @@ app.post('/api/campaign/resume', (_req, res) => {
 });
 
 app.get('/api/campaign/status', (_req, res) => {
-  res.json(getCampaignStatus());
+  const base = getCampaignStatus();
+  // v2.12.x: when Post Amplification is running, surface its state through
+  // the same payload the Live Status panel already polls. Logs are already
+  // mirrored into campaign.logs by pushPostAmpLog, so the log rail shows
+  // them either way; this overlay just makes the headline tiles render.
+  if (postAmp.running) {
+    return res.json({
+      ...base,
+      running: true,
+      mode: 'post_amplification',
+      name: 'Post Amplification',
+      currentProfile: postAmp.currentProfile || '',
+      currentAction: postAmp.currentProfile
+        ? `Engaging ${postAmp.currentIndex}/${postAmp.total}`
+        : 'Starting…',
+      processedToday: postAmp.engaged,
+      totalProcessed: postAmp.completed,
+      totalTargets: postAmp.total,
+      profileNames: [],
+      errors: postAmp.errors.slice(-20),
+    });
+  }
+  res.json(base);
 });
 
 // Rename the active campaign. No-op if nothing is running — front-end disables
