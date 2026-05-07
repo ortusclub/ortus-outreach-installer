@@ -1213,6 +1213,52 @@ app.delete('/api/history', async (_req, res) => {
   }
 });
 
+// v2.11.8: delete a single past-campaign entry by index.
+app.delete('/api/history/:idx', async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    if (!Number.isInteger(idx) || idx < 0) return res.status(400).json({ error: 'Invalid idx' });
+    let history = [];
+    try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf-8')); } catch { /* empty */ }
+    if (!Array.isArray(history) || idx >= history.length) {
+      return res.status(404).json({ error: 'No such history entry' });
+    }
+    history.splice(idx, 1);
+    await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
+    res.json({ ok: true, remaining: history.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.11.8: batch delete. Accepts { indexes: [int, ...] }. Sorts descending
+// before splicing so removing earlier indexes doesn't shift later ones.
+// Single-shot replacement of history.json — no partial-state risk.
+app.post('/api/history/delete-batch', async (req, res) => {
+  try {
+    const { indexes } = req.body || {};
+    if (!Array.isArray(indexes) || indexes.some(n => !Number.isInteger(n) || n < 0)) {
+      return res.status(400).json({ error: 'indexes must be an array of non-negative integers' });
+    }
+    let history = [];
+    try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf-8')); } catch { /* empty */ }
+    if (!Array.isArray(history)) history = [];
+    // Dedupe + sort descending so each splice doesn't invalidate later targets.
+    const sorted = [...new Set(indexes)].sort((a, b) => b - a);
+    let deleted = 0;
+    for (const i of sorted) {
+      if (i < history.length) {
+        history.splice(i, 1);
+        deleted++;
+      }
+    }
+    await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
+    res.json({ ok: true, deleted, remaining: history.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Rename a past-campaign entry by its index in history.json. Index, not id,
 // because legacy entries don't have ids. Sort order on the dashboard matches
 // the on-disk array so :idx maps cleanly to what the operator clicked.

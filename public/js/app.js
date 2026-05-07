@@ -3851,6 +3851,11 @@ window.togglePastExpanded = togglePastExpanded;
 window.openPastCampaignModal = openPastCampaignModal;
 window.closePastCampaignModal = closePastCampaignModal;
 window.rerunPastCampaign = rerunPastCampaign;
+window.onPastRowCheckboxChange = onPastRowCheckboxChange;
+window.singleDeletePast = singleDeletePast;
+window.bulkDeletePastSelected = bulkDeletePastSelected;
+window.clearPastSelection = clearPastSelection;
+window.undoPendingDeletes = undoPendingDeletes;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
 
@@ -4511,11 +4516,20 @@ async function refreshActiveCampaign() {
 //   - State is module-scoped (resets on page reload) — pastExpanded
 //     deliberately doesn't persist; fresh dashboard load → 3 newest.
 const PAST_COLLAPSED_LIMIT = 3;
+const UNDO_WINDOW_MS = 5000;
 let pastExpanded = false;
 let pastSearchQuery = '';
 // v2.11.7: cache of the most-recently rendered filtered+sorted history so
 // the modal click-handler can resolve idx → entry without re-fetching.
 let pastCampaignsCache = [];
+// v2.11.8: bulk-select state for the past list. Stores history.json indexes
+// (not array positions) so multi-delete addresses the on-disk record.
+let pastSelectedIdxs = new Set();
+// v2.11.8: queue of indexes pending deletion. While the timer is alive the
+// rows are hidden client-side but the server hasn't been hit yet — Undo
+// cancels the timer and restores. Timer commit fires the batch DELETE.
+let pastPendingDeletes = [];
+let pastPendingTimer = null;
 
 function onPastSearchInput() {
   const inp = document.getElementById('past-search');
@@ -4526,6 +4540,147 @@ function onPastSearchInput() {
 function togglePastExpanded() {
   pastExpanded = !pastExpanded;
   refreshPastCampaigns();
+}
+
+// ─── v2.11.8: per-row delete + multi-select bulk + undo flow ──────────────
+//
+// Indexes throughout this section are history.json indexes (not array
+// positions in the sorted/filtered view). The server endpoints all address
+// the on-disk array, so handing the same idx through every layer keeps the
+// model consistent.
+//
+// Lifecycle:
+//   click X (single)        → singleDeletePast(idx)        → queue + start timer
+//   click "Delete N"        → bulkDeletePastSelected()     → queue + start timer
+//   click Undo              → undoPendingDeletes()         → cancel timer + restore
+//   timer fires             → commitPendingDeletes()       → POST /api/history/delete-batch
+//
+// While the timer is alive the rows are hidden client-side via
+// pastPendingDeletes; the server hasn't been touched yet, so closing
+// the app within the 5s window leaves history.json intact (data-safe).
+
+function onPastRowCheckboxChange(event, idx) {
+  event.stopPropagation();
+  if (event.target.checked) {
+    pastSelectedIdxs.add(idx);
+  } else {
+    pastSelectedIdxs.delete(idx);
+  }
+  renderPastBulkBar();
+}
+
+function clearPastSelection() {
+  pastSelectedIdxs.clear();
+  // Re-render to reset checkboxes (and the bar visibility).
+  refreshPastCampaigns();
+}
+
+function renderPastBulkBar() {
+  const bar = document.getElementById('past-bulk-bar');
+  const countEl = document.getElementById('past-bulk-count');
+  const btn = document.getElementById('past-bulk-delete-btn');
+  if (!bar || !countEl || !btn) return;
+  const n = pastSelectedIdxs.size;
+  if (n === 0) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  countEl.textContent = `${n} selected`;
+  btn.textContent = `Delete ${n}`;
+}
+
+function singleDeletePast(idx) {
+  // Drop from selection if it was selected (so the bulk bar doesn't keep
+  // counting an idx that's already in the pending-delete queue).
+  pastSelectedIdxs.delete(idx);
+  enqueuePendingDeletes([idx], 'Campaign deleted.');
+}
+
+function bulkDeletePastSelected() {
+  const idxs = [...pastSelectedIdxs];
+  if (idxs.length === 0) return;
+  pastSelectedIdxs.clear();
+  const label = idxs.length === 1 ? 'Campaign deleted.' : `${idxs.length} campaigns deleted.`;
+  enqueuePendingDeletes(idxs, label);
+}
+
+function enqueuePendingDeletes(newIdxs, baseLabel) {
+  // Merge with anything already queued — dedupe.
+  const merged = new Set([...pastPendingDeletes, ...newIdxs]);
+  pastPendingDeletes = [...merged];
+
+  // Reset the timer on every enqueue so the operator gets a fresh 5s
+  // after the most recent click (regardless of what was queued before).
+  if (pastPendingTimer) {
+    clearTimeout(pastPendingTimer);
+    pastPendingTimer = null;
+  }
+
+  // Surface the toast with the latest count (independent of baseLabel —
+  // if you queued 1, then queued 2 more, label should reflect total).
+  const total = pastPendingDeletes.length;
+  const message = total === 1 ? 'Campaign deleted.' : `${total} campaigns deleted.`;
+  showUndoToast(message);
+
+  pastPendingTimer = setTimeout(commitPendingDeletes, UNDO_WINDOW_MS);
+
+  // Re-render so the queued rows disappear immediately.
+  refreshPastCampaigns();
+  // baseLabel parameter retained for future per-batch labelling; merged
+  // count above replaces it for now.
+  void baseLabel;
+}
+
+function undoPendingDeletes() {
+  if (pastPendingTimer) {
+    clearTimeout(pastPendingTimer);
+    pastPendingTimer = null;
+  }
+  pastPendingDeletes = [];
+  hideUndoToast();
+  refreshPastCampaigns();
+}
+
+async function commitPendingDeletes() {
+  const idxs = [...pastPendingDeletes];
+  pastPendingDeletes = [];
+  pastPendingTimer = null;
+  hideUndoToast();
+  if (idxs.length === 0) return;
+  try {
+    const res = await fetch('/api/history/delete-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ indexes: idxs }),
+    });
+    if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+  } catch (err) {
+    // Server rejected — surface a brief failure toast and refresh from
+    // the source of truth. The deleted rows will reappear because the
+    // server still has them.
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`Delete failed: ${err.message}`, 5000);
+    }
+  } finally {
+    refreshPastCampaigns();
+  }
+}
+
+function showUndoToast(message) {
+  const toast = document.getElementById('undo-toast');
+  const msg = document.getElementById('undo-toast-message');
+  if (!toast || !msg) return;
+  msg.textContent = message;
+  toast.hidden = false;
+  toast.classList.add('visible');
+}
+
+function hideUndoToast() {
+  const toast = document.getElementById('undo-toast');
+  if (!toast) return;
+  toast.classList.remove('visible');
+  toast.hidden = true;
 }
 
 // v2.11.7: past-campaign details modal. Reads from pastCampaignsCache so the
@@ -4683,16 +4838,31 @@ async function refreshPastCampaigns() {
       return;
     }
 
-    // Slice to PAST_COLLAPSED_LIMIT only when not searching and not expanded.
-    const showAll = !!q || pastExpanded;
-    const visible = showAll ? filtered : filtered.slice(0, PAST_COLLAPSED_LIMIT);
-
     // v2.11.7: cache the visible entries so the click-handler can pick the
     // right one without re-fetching /api/history. Click on the row body opens
     // the details modal; clicks inside the inline-edit name button bubble
     // up but the name button calls stopPropagation in its own handler.
-    pastCampaignsCache = filtered;
-    list.innerHTML = visible.map(({ idx, c }) => {
+    // v2.11.8: skip rows in pastPendingDeletes — they're queued for deletion
+    // and shouldn't render until either the timer fires (server delete +
+    // re-fetch) or undo restores them.
+    const pendingSet = new Set(pastPendingDeletes);
+    const renderable = filtered.filter(({ idx }) => !pendingSet.has(idx));
+    pastCampaignsCache = renderable;
+
+    if (renderable.length === 0) {
+      // All filtered entries are queued for deletion → show empty/searching state.
+      list.innerHTML = q
+        ? `<p class="empty-state">No campaigns match "${escHtml(q)}".</p>`
+        : '<p class="empty-state">No past campaigns yet.</p>';
+      if (toggleRow) toggleRow.hidden = true;
+      renderPastBulkBar();
+      return;
+    }
+
+    const showAll2 = !!q || pastExpanded;
+    const visible2 = showAll2 ? renderable : renderable.slice(0, PAST_COLLAPSED_LIMIT);
+
+    list.innerHTML = visible2.map(({ idx, c }) => {
       const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
       const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
       const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
@@ -4703,21 +4873,28 @@ async function refreshPastCampaigns() {
       const reasonClass = reason === 'stopped' ? 'is-stopped'
                         : reason === 'errored' ? 'is-errored'
                         : 'is-done';
+      const checked = pastSelectedIdxs.has(idx) ? 'checked' : '';
       return `
         <div class="campaign-row campaign-row-clickable" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
+          <input type="checkbox" class="past-row-checkbox" data-past-idx="${idx}" ${checked} onclick="event.stopPropagation()" onchange="onPastRowCheckboxChange(event, ${idx})" aria-label="Select campaign" />
           <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
           <span class="campaign-row-type">${escHtml(subtitle)}</span>
           <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
           <span class="campaign-row-status ${reasonClass}">${reasonLabel}</span>
+          <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
         </div>
       `;
     }).join('');
 
+    renderPastBulkBar();
+
     // Toggle visibility + label. Hidden when searching (search shows all
     // matches inherently) or when total ≤ limit (nothing to expand).
+    // v2.11.8: count uses `renderable` so pending-deleted rows don't inflate
+    // the "Show N more" pill while they're awaiting their commit timer.
     if (toggleRow && toggleBtn) {
-      const remaining = filtered.length - PAST_COLLAPSED_LIMIT;
-      if (q || filtered.length <= PAST_COLLAPSED_LIMIT) {
+      const remaining = renderable.length - PAST_COLLAPSED_LIMIT;
+      if (q || renderable.length <= PAST_COLLAPSED_LIMIT) {
         toggleRow.hidden = true;
       } else {
         toggleRow.hidden = false;

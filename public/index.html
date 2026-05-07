@@ -143,6 +143,13 @@
         <div class="past-search-row">
           <input type="text" id="past-search" class="past-search-input" placeholder="Search by name, mode, or date…" oninput="onPastSearchInput()" />
         </div>
+        <div class="past-bulk-bar" id="past-bulk-bar" hidden>
+          <span class="past-bulk-count" id="past-bulk-count">0 selected</span>
+          <div class="past-bulk-actions">
+            <button type="button" class="btn btn-secondary" onclick="clearPastSelection()">Cancel</button>
+            <button type="button" class="btn btn-stop" id="past-bulk-delete-btn" onclick="bulkDeletePastSelected()">Delete</button>
+          </div>
+        </div>
         <div class="campaign-list" id="past-campaign-list">
           <p class="empty-state">No past campaigns yet.</p>
         </div>
@@ -869,6 +876,12 @@
 
   <!-- Phase 2.8.9: Inline toast for pause/resume status hints -->
   <div id="campaign-toast" class="campaign-toast" role="status" aria-live="polite"></div>
+
+  <!-- v2.11.8: undo toast for past-campaign deletions -->
+  <div id="undo-toast" class="undo-toast" role="status" aria-live="polite" hidden>
+    <span class="undo-toast-message" id="undo-toast-message"></span>
+    <button type="button" class="undo-toast-action" onclick="undoPendingDeletes()">Undo</button>
+  </div>
 
   <!-- Electron-safe replacement for window.prompt() — see promptModal() in app.js -->
   <div id="prompt-modal" class="prompt-modal" hidden>

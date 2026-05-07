@@ -2608,9 +2608,97 @@ body.route-dashboard .sidebar-nav { display: none; }
 .past-detail-val { color: var(--ink); word-break: break-word; }
 .past-detail-val .campaign-row-status { font-size: 0.55rem; }
 
+/* v2.11.8: per-row checkbox + delete-X + bulk action bar + undo toast */
+.past-row-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  margin: 0;
+}
+.past-row-delete {
+  background: transparent;
+  border: none;
+  color: var(--gray);
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.past-row-delete:hover {
+  color: #b00020;
+  background-color: rgba(176, 0, 32, 0.08);
+}
+
+.past-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  margin-bottom: 8px;
+  background: var(--hairline);
+  border-radius: 4px;
+}
+.past-bulk-count {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.past-bulk-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.undo-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  background: var(--ink, #1a1a1a);
+  color: #fafafa;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+  z-index: 2000;
+}
+.undo-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.undo-toast-action {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fafafa;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.undo-toast-action:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
 .campaign-row {
   display: grid;
-  grid-template-columns: 2fr 1.4fr 1.4fr auto;
+  /* v2.11.8: checkbox + name + type + progress + status + X-button (6 cols) */
+  grid-template-columns: auto 2fr 1.4fr 1.4fr auto auto;
   gap: 18px;
   align-items: center;
   padding: 16px 18px;
