@@ -58,7 +58,9 @@ function gatherCampaignFormState() {
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
     // 2.8.50: Introduction Messages sub-mode of message_only
-    introMode: mode === 'message_only' && localStorage.getItem('ortus-intro-mode') === '1',
+    // v2.11.13: read from introModeActive (in-memory) instead of localStorage
+    // because Chrome enterprise/privacy enforcement can block storage reads.
+    introMode: mode === 'message_only' && introModeActive,
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
   };
@@ -1931,7 +1933,8 @@ async function startCampaign() {
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
     // 2.8.50: Introduction Messages sub-mode (active only when mode is message_only)
-    introMode: mode === 'message_only' && localStorage.getItem('ortus-intro-mode') === '1',
+    // v2.11.13: in-memory state instead of localStorage (storage may be blocked).
+    introMode: mode === 'message_only' && introModeActive,
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
   };
@@ -4397,9 +4400,17 @@ function renderDiskBanner(disk) {
 // ─────────────────────────────────────────────────────────────────────────
 // 2.8.50: Introduction Messages — sub-mode of Message Only
 // Toggle the segment switcher, persist to localStorage, restore on load.
-// ─────────────────────────────────────────────────────────────────────────
+//
+// v2.11.13: Chrome enterprise/privacy enforcement may block localStorage
+// for unregistered keys (silent failure / undefined return). Source of
+// truth is now an in-memory variable; localStorage is best-effort and
+// every call wrapped in try/catch so a block does not crash the toggle
+// and the campaign payload assembler reads the in-memory state.
+let introModeActive = false;
+
 function setIntroMode(active) {
-  localStorage.setItem('ortus-intro-mode', active ? '1' : '0');
+  introModeActive = !!active;
+  try { localStorage.setItem('ortus-intro-mode', active ? '1' : '0'); } catch { /* storage blocked */ }
   const stdBtn   = document.getElementById('intro-seg-standard');
   const introBtn = document.getElementById('intro-seg-intro');
   const fields   = document.getElementById('intro-mode-fields');
@@ -4416,15 +4427,18 @@ function setIntroMode(active) {
 function saveIntroFields() {
   const name  = document.getElementById('intro-name')?.value || '';
   const title = document.getElementById('intro-title')?.value || '';
-  localStorage.setItem('ortus-intro-name', name);
-  localStorage.setItem('ortus-intro-title', title);
+  try { localStorage.setItem('ortus-intro-name', name); }   catch { /* storage blocked */ }
+  try { localStorage.setItem('ortus-intro-title', title); } catch { /* storage blocked */ }
 }
 function restoreIntroState() {
   const nameEl  = document.getElementById('intro-name');
   const titleEl = document.getElementById('intro-title');
-  if (nameEl)  nameEl.value  = localStorage.getItem('ortus-intro-name')  || nameEl.value;
-  if (titleEl) titleEl.value = localStorage.getItem('ortus-intro-title') || titleEl.value;
-  const active = localStorage.getItem('ortus-intro-mode') === '1';
+  try {
+    if (nameEl)  nameEl.value  = localStorage.getItem('ortus-intro-name')  || nameEl.value;
+    if (titleEl) titleEl.value = localStorage.getItem('ortus-intro-title') || titleEl.value;
+  } catch { /* storage blocked — DOM defaults stand */ }
+  let active = false;
+  try { active = localStorage.getItem('ortus-intro-mode') === '1'; } catch { /* */ }
   setIntroMode(active);
 }
 document.addEventListener('DOMContentLoaded', restoreIntroState);
