@@ -698,7 +698,7 @@ function renderProfiles(profiles) {
       <input type="checkbox" class="local-cb" value="local-browser" ${isSelected ? 'checked' : ''} />
       <div class="local-browser-body">
         <div class="name">Local Browser</div>
-        <div class="id">Your system Chrome. If this is your first time, you will have to log in to LinkedIn.</div>
+        <div class="id">Your system Chrome. If this is your first time, you will have to log in to LinkedIn when the Chrome browser pops up locally.</div>
         <div class="local-browser-name-row" ${isSelected ? '' : 'hidden'}>
           <label for="local-browser-first-name" class="local-browser-name-label">Your first name (used as {senderFirstName})</label>
           <input type="text" id="local-browser-first-name" placeholder="e.g. Antonio"
@@ -1929,6 +1929,9 @@ async function startCampaign() {
           const n = parseInt(cnt?.value, 10);
           return Number.isFinite(n) && n >= 2 ? Math.min(5, n) : 2;
         })(),
+        // Campaign Name from the wizard's top-of-page input. Empty string is
+        // valid — the dashboard row falls back to "Add name" inline-editable.
+        name: (document.getElementById('campaign-name-input')?.value || '').trim(),
       }),
     });
     const data = await res.json();
@@ -4424,6 +4427,13 @@ async function refreshDashboard() {
   await Promise.all([refreshActiveCampaign(), refreshPastCampaigns()]);
 }
 
+function dashboardNameButton(name, rowKind, rowKey) {
+  const trimmed = (name || '').trim();
+  const cls = trimmed ? 'campaign-row-name-text' : 'campaign-row-name-text is-empty';
+  const display = trimmed || 'Add name';
+  return `<button type="button" class="${cls}" data-row-kind="${rowKind}" data-row-key="${rowKey}" data-row-value="${escHtml(trimmed)}">${escHtml(display)}</button>`;
+}
+
 async function refreshActiveCampaign() {
   const list = document.getElementById('active-campaign-list');
   if (!list) return;
@@ -4440,15 +4450,13 @@ async function refreshActiveCampaign() {
     const statusLabel = status.paused ? 'Paused' : 'Running';
     const statusClass = status.paused ? 'is-paused' : 'is-running';
     const progress = total > 0 ? `${done} / ${total} · ${left} left` : `${done} processed`;
-    const accounts = (status.profileNames || []).length;
-    const name = `${dashboardModeLabel(status.mode)}${accounts ? ' · ' + accounts + ' account' + (accounts === 1 ? '' : 's') : ''}`;
     list.innerHTML = `
-      <button type="button" class="campaign-row" disabled aria-label="Edit campaign — coming soon">
-        <span class="campaign-row-name">${escHtml(name)}</span>
+      <div class="campaign-row">
+        <div class="campaign-row-name">${dashboardNameButton(status.name, 'active', 'active')}</div>
         <span class="campaign-row-type">${escHtml(dashboardModeLabel(status.mode))}</span>
         <span class="campaign-row-progress">${escHtml(progress)}</span>
         <span class="campaign-row-status ${statusClass}">${statusLabel}</span>
-      </button>
+      </div>
     `;
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load active campaign.</p>';
@@ -4464,28 +4472,103 @@ async function refreshPastCampaigns() {
       list.innerHTML = '<p class="empty-state">No past campaigns yet.</p>';
       return;
     }
-    const sorted = [...data].sort((a, b) => {
-      const ta = new Date(a.startedAt || a.date).getTime();
-      const tb = new Date(b.startedAt || b.date).getTime();
+    // Preserve the on-disk index — that's what the PATCH endpoint addresses,
+    // and sorting newest-first would otherwise lose the mapping.
+    const indexed = data.map((c, idx) => ({ idx, c }));
+    indexed.sort((a, b) => {
+      const ta = new Date(a.c.startedAt || a.c.date).getTime();
+      const tb = new Date(b.c.startedAt || b.c.date).getTime();
       return tb - ta;
     });
-    list.innerHTML = sorted.map((c) => {
+    list.innerHTML = indexed.map(({ idx, c }) => {
       const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
-      const name = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
+      const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
       const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
       return `
-        <button type="button" class="campaign-row" disabled aria-label="Edit campaign — coming soon">
-          <span class="campaign-row-name">${escHtml(name)}</span>
-          <span class="campaign-row-type">${escHtml(dashboardModeLabel(c.mode))}</span>
+        <div class="campaign-row">
+          <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
+          <span class="campaign-row-type">${escHtml(subtitle)}</span>
           <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
           <span class="campaign-row-status is-done">Completed</span>
-        </button>
+        </div>
       `;
     }).join('');
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load history.</p>';
   }
 }
+
+// Inline-edit a campaign name. Delegated click → input swap → save on Enter
+// or blur, cancel on Escape. Save hits POST /api/campaign/name for active or
+// PATCH /api/history/:idx/name for past, then re-renders the section.
+async function saveCampaignName(kind, key, value) {
+  const url = kind === 'active'
+    ? '/api/campaign/name'
+    : `/api/history/${encodeURIComponent(key)}/name`;
+  const method = kind === 'active' ? 'POST' : 'PATCH';
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: value }),
+  });
+  if (!res.ok) throw new Error(`Rename failed (${res.status})`);
+  return res.json();
+}
+
+function enterInlineEditCampaignName(btn) {
+  if (btn.dataset.editing === '1') return;
+  btn.dataset.editing = '1';
+  const kind = btn.dataset.rowKind;
+  const key = btn.dataset.rowKey;
+  const original = btn.dataset.rowValue || '';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = original;
+  input.className = 'campaign-row-name-input';
+  input.placeholder = 'Name this campaign';
+  input.maxLength = 120;
+  btn.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const restore = (newValue) => {
+    if (settled) return;
+    settled = true;
+    // Re-render the section so the row reflects whatever the server now holds.
+    if (kind === 'active') refreshActiveCampaign();
+    else refreshPastCampaigns();
+    void newValue;
+  };
+
+  const commit = async () => {
+    if (settled) return;
+    const next = input.value.trim();
+    if (next === original) { restore(original); return; }
+    try {
+      await saveCampaignName(kind, key, next);
+      restore(next);
+    } catch (err) {
+      input.classList.add('save-failed');
+      input.title = err.message || 'Save failed';
+      // Keep the input open so the operator can retry; don't settle.
+    }
+  };
+
+  const cancel = () => restore(original);
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', () => { commit(); });
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest && e.target.closest('.campaign-row-name-text');
+  if (btn) enterInlineEditCampaignName(btn);
+});
 
 window.addEventListener('hashchange', applyRoute);
 document.addEventListener('DOMContentLoaded', applyRoute);
