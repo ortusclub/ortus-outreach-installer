@@ -1711,12 +1711,76 @@ function validatePostAmpStart() {
   return { ok: true, url, accounts: ids, active };
 }
 
-// Phase 1 startCampaign hook — validate and toast. Phase 2 replaces this
-// with the real POST /api/post-amplification/start call.
-function startPostAmpPhase1() {
+// startCampaign hook — POST to /api/post-amplification/start, then poll
+// /status until it finishes. Live progress is mirrored into campaign.logs
+// on the server side, so the existing Live Status panel renders the run
+// without a parallel UI.
+let postAmpPollTimer = null;
+
+async function startPostAmplification() {
   const v = validatePostAmpStart();
   if (!v.ok) { alert(v.reason); return; }
-  showCampaignToast(`Phase 1 — UI ready · ${v.active.length}/${v.accounts.length} account(s) configured · backend lands in Phase 2.`, 4500);
+
+  const accountConfigs = v.accounts.map(id => {
+    const cfg = postAmpAccountConfig[id] || {};
+    return {
+      profileId: id,
+      profileName: selectedProfileNames[id] || id,
+      like: !!cfg.like,
+      comment: !!cfg.comment,
+      commentText: (cfg.commentText || '').trim(),
+    };
+  });
+
+  const summary = `Post Amplification\n\nPost: ${v.url}\nAccounts: ${accountConfigs.length}\n` +
+    `  • Like: ${accountConfigs.filter(c => c.like).length}\n` +
+    `  • Comment: ${accountConfigs.filter(c => c.comment && c.commentText).length}\n\n` +
+    `Pace: 60-300s between accounts (sequential).\nDedup: accounts that already reacted are skipped.\n\nStart?`;
+  if (!confirm(summary)) return;
+
+  let resp;
+  try {
+    resp = await fetch('/api/post-amplification/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ postUrl: v.url, accountConfigs, name: '' }),
+    });
+  } catch (err) {
+    alert(`Could not reach server: ${err.message}`);
+    return;
+  }
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    alert(`Could not start: ${body.error || resp.statusText}`);
+    return;
+  }
+  showCampaignToast(`Post Amplification started · ${body.total} account(s)`, 3500);
+  pollPostAmpStatus();
+}
+
+function pollPostAmpStatus() {
+  if (postAmpPollTimer) clearInterval(postAmpPollTimer);
+  postAmpPollTimer = setInterval(async () => {
+    let r;
+    try { r = await fetch('/api/post-amplification/status').then(x => x.json()); }
+    catch { return; }
+    if (!r) return;
+    if (!r.running) {
+      clearInterval(postAmpPollTimer);
+      postAmpPollTimer = null;
+      const msg = `Post Amplification finished · engaged ${r.engaged}/${r.total} · skipped-dedup ${r.skippedDedup} · errors ${r.errors?.length || 0}`;
+      showCampaignToast(msg, 5000);
+      // Refresh the past-campaigns list so the new entry shows up.
+      if (typeof refreshPastCampaigns === 'function') refreshPastCampaigns();
+    }
+  }, 2500);
+}
+
+async function stopPostAmplification() {
+  try {
+    const r = await fetch('/api/post-amplification/stop', { method: 'POST' });
+    if (r.ok) showCampaignToast('Stop requested', 1500);
+  } catch (_) { /* */ }
 }
 
 // Initialize templates on script load (idempotent, safe before DOM is ready).
@@ -2148,10 +2212,10 @@ async function startCampaign() {
   if (_modeEarly === 'check_dms') {
     return startCheckDms();
   }
-  // v3.0: Post Amp has its own flow — no sheet, no templates, no SoO sender
-  // resolution. Phase 1 = UI shell only; the real engine lands in Phase 2.
+  // v3.0 (Phase 2): Post Amp has its own flow — no sheet, no templates, no
+  // SoO sender resolution, own backend endpoint.
   if (_modeEarly === 'post_amplification') {
-    return startPostAmpPhase1();
+    return startPostAmplification();
   }
 
   // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from

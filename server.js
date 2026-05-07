@@ -20,6 +20,7 @@ import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaign
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
+import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet } from './src/sheets.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
@@ -490,6 +491,7 @@ app.post('/api/campaign/start', (req, res) => {
   try {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
+    if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
 
     const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name } = req.body;
 
@@ -649,6 +651,7 @@ app.post('/api/check-dms/start', async (req, res) => {
   try {
     if (campaign.running) return res.status(409).json({ error: 'Campaign is running — stop it first' });
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is already running' });
+    if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
 
     const { sheetUrl, linkedinColumn } = req.body;
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
@@ -879,6 +882,186 @@ app.get('/api/check-dms/status', (_req, res) => {
 
 app.get('/api/check-dms/replies', (_req, res) => {
   res.json(checkDms._lastResults || { byProfile: {}, ambiguous: [], completedAt: null });
+});
+
+// ---------------------------------------------------------------------------
+// Post Amplification (v2.12.x — Phase 2). Sequential per-account engagement
+// on a single LinkedIn post URL. Mutually exclusive with campaign + check-dms
+// (same Orbita process pool). Own dedup state at data/post-amplification-state.json.
+// ---------------------------------------------------------------------------
+const postAmp = {
+  running: false,
+  _abort: false,
+  startedAt: null,
+  completedAt: null,
+  postUrl: null,
+  total: 0,
+  completed: 0,
+  engaged: 0,
+  skippedDedup: 0,
+  errors: [],
+  currentIndex: 0,
+  currentProfile: null,
+  // Tail of log lines surfaced through the same /api/campaign/status payload
+  // the Live Status panel polls — so the operator sees progress without
+  // adding a second polling loop.
+  logs: [],
+};
+
+function pushPostAmpLog(line) {
+  const stamped = `[${new Date().toISOString()}] ${line}`;
+  postAmp.logs.push(stamped);
+  if (postAmp.logs.length > 300) postAmp.logs.shift();
+  // Mirror to campaign.logs so the existing Live Status panel renders it
+  // without extra UI plumbing — the campaign vs post-amp mutex makes this
+  // unambiguous (only one of them is running at a time).
+  campaign.logs.push(stamped);
+  if (campaign.logs.length > 500) campaign.logs.shift();
+}
+
+app.post('/api/post-amplification/start', async (req, res) => {
+  try {
+    if (campaign.running) return res.status(409).json({ error: 'Campaign is running — stop it first' });
+    if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
+    if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is already running' });
+
+    const { postUrl, accountConfigs, name } = req.body || {};
+    if (!postUrl || !/linkedin\.com\/posts\/[^/]+/.test(postUrl)) {
+      return res.status(400).json({ error: 'postUrl required (linkedin.com/posts/<slug>-<id>)' });
+    }
+    if (!Array.isArray(accountConfigs) || accountConfigs.length === 0) {
+      return res.status(400).json({ error: 'accountConfigs required' });
+    }
+    // Filter to actionable configs server-side so the engine doesn't waste
+    // browser launches on accounts the operator left fully unchecked.
+    const actionable = accountConfigs.filter(c => {
+      if (!c || !c.profileId) return false;
+      const hasComment = !!c.comment && (c.commentText || '').trim().length > 0;
+      return c.like || hasComment;
+    });
+    if (actionable.length === 0) {
+      return res.status(400).json({ error: 'No accounts have Like or a non-empty Comment configured.' });
+    }
+
+    // Reset state for this run.
+    postAmp.running = true;
+    postAmp._abort = false;
+    postAmp.startedAt = Date.now();
+    postAmp.completedAt = null;
+    postAmp.postUrl = postUrl;
+    postAmp.total = actionable.length;
+    postAmp.completed = 0;
+    postAmp.engaged = 0;
+    postAmp.skippedDedup = 0;
+    postAmp.errors = [];
+    postAmp.currentIndex = 0;
+    postAmp.currentProfile = null;
+    postAmp.logs = [];
+
+    const owner = req.user;
+    const startedAt = postAmp.startedAt;
+    const campaignName = (name || '').trim() || 'Post Amplification';
+
+    preventSleep('post-amplification');
+    pushPostAmpLog(`=== Post Amplification starting · ${actionable.length} account(s) · ${postUrl} ===`);
+
+    // Fire-and-forget so the HTTP request returns immediately.
+    (async () => {
+      let endReason = 'completed';
+      try {
+        await runPostAmplification({
+          postUrl,
+          accountConfigs: actionable,
+          status: postAmp,
+          shouldAbort: () => postAmp._abort,
+          log: pushPostAmpLog,
+        });
+        if (postAmp._abort) endReason = 'stopped';
+        else if (postAmp.errors.length > 0 && postAmp.engaged === 0) endReason = 'errored';
+      } catch (err) {
+        console.error('[post-amp] orchestrator threw:', err.message);
+        postAmp.errors.push(err.message);
+        endReason = 'errored';
+      } finally {
+        postAmp.completedAt = Date.now();
+        postAmp.running = false;
+        allowSleep();
+
+        // Append to history so it shows in the past-campaigns dashboard.
+        try {
+          let history = [];
+          try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf8')); } catch { /* */ }
+          history.push({
+            date: new Date(startedAt).toISOString(),
+            name: campaignName,
+            mode: 'post_amplification',
+            profiles: actionable.map(c => c.profileName || c.profileId),
+            dailyLimit: actionable.length,
+            totalProcessed: postAmp.completed,
+            successCount: postAmp.engaged,
+            errorCount: postAmp.errors.length,
+            duration: Math.round((postAmp.completedAt - startedAt) / 1000),
+            templateNames: [],
+            endReason,
+            settings: {
+              profileIds: actionable.map(c => c.profileId),
+              postAmplification: {
+                postUrl,
+                accountConfigs: actionable.map(c => ({
+                  profileId: c.profileId,
+                  profileName: c.profileName,
+                  like: !!c.like,
+                  comment: !!c.comment,
+                  commentText: c.commentText || '',
+                })),
+              },
+            },
+          });
+          await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2));
+        } catch (err) {
+          console.warn(`[post-amp] history append failed: ${err.message}`);
+        }
+
+        notifyEmail(owner, {
+          title: `Post Amplification ${endReason}`,
+          body: `Engaged ${postAmp.engaged}/${postAmp.total} · skipped ${postAmp.skippedDedup} · errors ${postAmp.errors.length}`,
+          link: '/',
+        }).catch(() => {});
+        pushPostAmpLog(`=== Post Amplification ${endReason} · engaged ${postAmp.engaged}/${postAmp.total} · skipped-dedup ${postAmp.skippedDedup} · errors ${postAmp.errors.length} ===`);
+      }
+    })();
+
+    res.json({
+      ok: true,
+      message: 'Post Amplification started',
+      total: actionable.length,
+    });
+  } catch (err) {
+    console.error('[post-amp] start error:', err.message);
+    postAmp.running = false;
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/post-amplification/stop', (_req, res) => {
+  postAmp._abort = true;
+  res.json({ ok: true, message: 'Abort requested' });
+});
+
+app.get('/api/post-amplification/status', (_req, res) => {
+  res.json({
+    running: postAmp.running,
+    postUrl: postAmp.postUrl,
+    total: postAmp.total,
+    completed: postAmp.completed,
+    engaged: postAmp.engaged,
+    skippedDedup: postAmp.skippedDedup,
+    errors: postAmp.errors,
+    currentIndex: postAmp.currentIndex,
+    currentProfile: postAmp.currentProfile,
+    startedAt: postAmp.startedAt,
+    completedAt: postAmp.completedAt,
+  });
 });
 
 // ---------------------------------------------------------------------------
