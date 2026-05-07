@@ -298,11 +298,12 @@ app.get('/api/check-status/preview', async (req, res) => {
     const unmatched = {};
     let totalPending = 0;
     for (const row of rows) {
-      const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+      // v2.11.11: Sender is canonical; Account Used is legacy.
+      const acct = (row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').toString().trim();
       if (!acct) continue;
       if (mode === 'message_only') {
         // Filter: CC ends with " Y" (Voyager-confirmed acceptance from a
-        // prior Check Status run). Account Used still drives routing.
+        // prior Check Status run). Sender drives routing.
         const ccRaw = (row['CC'] || row['cc'] || '').toString();
         if (!/\sY\s*$/.test(ccRaw)) continue;
       }

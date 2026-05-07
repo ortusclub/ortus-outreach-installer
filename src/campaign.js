@@ -165,6 +165,15 @@ async function checkHostHealth() {
   return { ok: warnings.length === 0, warnings };
 }
 
+// v2.11.11: "Sender" is the canonical sheet column for sender attribution.
+// Earlier versions of the bot wrote to both "Account Used" and "Sender";
+// the Apps Script bridge schema dropped "Account Used" and the bot's
+// writeback no longer fills it. This helper centralises the read so the
+// next column-name change is a one-line edit instead of a grep + 3 sites.
+function getSenderName(row) {
+  return (row?.Sender || row?.sender || '').toString().trim();
+}
+
 // Campaign-scoped counters — reset every time a campaign starts
 const campaignCounts = {};
 
@@ -770,7 +779,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const rows = await fetchSheetRows(sheetUrl);
     log(`${rows.length} row(s). Columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
-    // Ensure tracking columns exist (Status, OP, Message, InMail, Account Used, Date Last Action)
+    // Ensure tracking columns exist (Status, OP, Message, InMail, Sender, Date Last Action)
     await ensureTrackingColumns(sheetUrl).catch(err => {
       log(`⚠ Could not ensure tracking columns: ${err.message}`);
     });
@@ -862,7 +871,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       if (mode === 'check_status') {
         // 2.8.29: Account Used (column D) being filled = an invite was sent.
         // CC text is no longer the source of truth.
-        const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+        const acct = getSenderName(row);
         return acct.length > 0;
       }
 
@@ -983,7 +992,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       const sendersInSheet = new Map(); // name -> count (uses display name)
       const unmatchedSenders = new Map(); // name -> count
       for (const row of targets) {
-        const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+        const acct = getSenderName(row);
         if (!acct) {
           unmatchedSenders.set('(blank)', (unmatchedSenders.get('(blank)') || 0) + 1);
           continue;
@@ -1007,7 +1016,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       log(`${modeLabel} auto-routing → ${derivedProfileIds.length} sender(s) found in sheet`);
       sendersInSheet.forEach((count, name) => log(`  • ${name}: ${count} ${rowLabel}`));
       if (unmatchedSenders.size > 0) {
-        log(`⚠ Skipping ${[...unmatchedSenders.values()].reduce((a,b)=>a+b,0)} row(s) whose Account Used is unknown:`);
+        log(`⚠ Skipping ${[...unmatchedSenders.values()].reduce((a,b)=>a+b,0)} row(s) whose Sender is unknown:`);
         unmatchedSenders.forEach((count, name) => log(`  • ${name}: ${count} row(s) — no GoLogin profile matches`));
       }
 
@@ -1034,7 +1043,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       _checkStatusTargetsByProfile = {};
       for (const pid of derivedProfileIds) _checkStatusTargetsByProfile[pid] = [];
       for (const row of targets) {
-        const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+        const acct = getSenderName(row);
         const pid = nameToId[acct];
         if (pid && _checkStatusTargetsByProfile[pid]) {
           _checkStatusTargetsByProfile[pid].push(row);
@@ -1407,7 +1416,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         if (mode === 'check_status') {
           // 2.8.29: criterion is Account Used filled, not CC=Sent.
-          const acct = (row['Account Used'] || row['account used'] || '').toString().trim();
+          const acct = getSenderName(row);
           if (!acct) { delete state.processed[url]; continue; }
           // 2.8.28-P2: routing guard removed. The per-profile target slices
           // built at auto-derivation time already guarantee each profile sees
@@ -1584,16 +1593,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             campaign.totalProcessed = campaign.processedToday;
             await saveState(state);
 
-            // 2.8.28: For check_status, do NOT include accountUsed — preserving
+            // 2.8.28: For check_status, do NOT overwrite Sender — preserving
             // the original sender attribution is essential. The audit log
             // append is also conditionally suppressed for check_status reads.
-            // 2.9.3: always stamp Sender on non-check-status writes. Without
-            // this, action paths that didn't explicitly set sender (like
-            // 'already_processed') left the Sender column empty even though
-            // the row WAS handled by an account.
+            // 2.9.3 / v2.11.11: always stamp Sender on non-check-status writes.
+            // Without this, action paths that didn't explicitly set sender
+            // (like 'already_processed') left the Sender column empty even
+            // though the row WAS handled by an account.
             const sheetData = (mode === 'check_status')
               ? { dateLastAction: now }
-              : { dateLastAction: now, accountUsed: pName, sender: pName };
+              : { dateLastAction: now, sender: pName };
             // 2.8.50: when Introduction Messages mode is active, stamp the DM
             // column with "sent IC" instead of "sent" so introductions are
             // visually distinct from standard DMs in the sheet.
@@ -1723,7 +1732,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Weekly invitation limit reached'),
                 stage:  normalizeSkipReason('Weekly invitation limit reached'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Weekly invitation limit reached'),
@@ -1740,7 +1748,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Not Open Profile'),
                 stage:  normalizeSkipReason('Not Open Profile'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not Open Profile'),
@@ -1751,7 +1758,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('InMail credits exhausted'),
                 stage:  normalizeSkipReason('InMail credits exhausted'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('InMail credits exhausted'),
@@ -1770,7 +1776,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 status: normalizeSkipReason('Email required to connect'),
                 cc: 'Unreachable',
                 stage:  normalizeSkipReason('Email required to connect'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Email required to connect'),
@@ -1779,7 +1784,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               log('  ↷ Not yet connected — will retry after acceptance.');
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Not yet connected'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not yet connected'),
@@ -1791,7 +1795,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Send not confirmed'),
                 stage:  normalizeSkipReason('Send not confirmed'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Send not confirmed'),
@@ -1803,7 +1806,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('LinkedIn error toast'),
                 stage:  normalizeSkipReason('LinkedIn error toast'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('LinkedIn error toast'),
@@ -1815,7 +1817,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('Not Open Profile'),
                 stage:  normalizeSkipReason('Not Open Profile'),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not Open Profile'),
@@ -1834,7 +1835,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason(errorMsg),
                 stage:  normalizeSkipReason(errorMsg),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason(errorMsg),
@@ -1847,7 +1847,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason(errorMsg),
                 stage:  normalizeSkipReason(errorMsg),
-                accountUsed: pName,
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason(errorMsg),

@@ -73,13 +73,13 @@ const _realDeps = {
   },
   async getCandidateRows(profileName, sheetUrl) {
     // P-01 fix (2.8.18): filter by profile NAME, not profileId — see ensureOpen
-    // comment above. The "Account Used" column holds the value written by
-    // campaign.js, which is pName (e.g. "matt.adcock@ortus.solutions"), not
-    // the GoLogin internal profile id.
+    // comment above. The Sender column holds the value written by campaign.js,
+    // which is pName (e.g. "matt.adcock@ortus.solutions"), not the GoLogin
+    // internal profile id. v2.11.11: migrated from "Account Used" to "Sender".
     const rows = await fetchSheet(sheetUrl);
     return rows.filter(r =>
       (r.Message || '').toString().toLowerCase() === 'sent' &&
-      (r['Account Used'] || '').toString() === profileName
+      ((r.Sender || r.sender) || '').toString() === profileName
     );
   },
 };
