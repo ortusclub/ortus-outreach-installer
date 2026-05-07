@@ -4478,3 +4478,18 @@ if (document.readyState !== 'loading') applyRoute();
 
 window.goCreateCampaign = goCreateCampaign;
 window.goDashboard = goDashboard;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Campaign Name — top-of-wizard text input. Persisted to localStorage for now;
+// flowing it through /api/campaign/start → status → history is a Phase 2 task.
+// ─────────────────────────────────────────────────────────────────────────────
+function initCampaignNameInput() {
+  const input = document.getElementById('campaign-name-input');
+  if (!input) return;
+  try { input.value = localStorage.getItem('campaignName') || ''; } catch {}
+  input.addEventListener('input', () => {
+    try { localStorage.setItem('campaignName', input.value); } catch {}
+  });
+}
+document.addEventListener('DOMContentLoaded', initCampaignNameInput);
+if (document.readyState !== 'loading') initCampaignNameInput();
