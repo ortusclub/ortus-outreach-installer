@@ -30,6 +30,7 @@ const CHAR_LIMITS = {
   inmailBody: 1900,
   opProfileSubject: undefined,
   opProfileBody: undefined,
+  introTitle: undefined,
 };
 
 // Display labels used in the modal card section headers.
@@ -40,6 +41,7 @@ const PREVIEW_FIELD_LABELS = {
   inmailBody: 'InMail Body',
   opProfileSubject: 'Open Profile Subject',
   opProfileBody: 'Open Profile Body',
+  introTitle: 'Group conversation title',
 };
 
 // Collects the same form state that startCampaign() sends to /api/campaign/start.

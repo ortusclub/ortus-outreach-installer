@@ -356,6 +356,8 @@ app.post('/api/templates/preview', async (req, res) => {
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
 
     // Mirror campaign.js:280-289 template normalization so legacy aliases work.
+    // v2.11.14: introTitle joins as a 7th preview field so operators can
+    // sanity-check the LinkedIn group thread title before launching an IC run.
     const tpl = {
       connectionNote: templates.connectionNote || templates.note || '',
       followUpMessage: templates.followUpMessage || templates.followUp1 || '',
@@ -363,7 +365,16 @@ app.post('/api/templates/preview', async (req, res) => {
       inmailBody: templates.inmail?.message || templates.inmailBody || '',
       opProfileSubject: templates.openProfileSubject || templates.opSubject || '',
       opProfileBody: templates.openProfileBody || templates.opBody || '',
+      introTitle: templates.introTitle || '',
     };
+
+    // v2.11.14: extract intro-mode signals so the preview can mirror the
+    // runtime substitution in outreach.js (introData construction).
+    const introMode = !!templates.introMode;
+    const introName = (templates.introName || '').toString().trim();
+    const introTokens = introName.split(/\s+/);
+    const introFirst = introMode ? (introTokens[0] || '') : '';
+    const introLast  = introMode ? (introTokens.slice(1).join(' ')) : '';
 
     const anyFilled = Object.values(tpl).some(v => v && v.trim());
     if (!anyFilled) {
@@ -400,9 +411,29 @@ app.post('/api/templates/preview', async (req, res) => {
       data.title     = row['Title']      || row['title']     || row['Job Title']  || '';
       data.senderName = pName || '';
       const resolvedFirst = senderFirstNames[profileId];
-      data.senderFirstName = (resolvedFirst && resolvedFirst.trim())
-        || (pName || '').split(/\s+/)[0]
-        || '';
+      // v2.11.14: friendlier fallback for local-browser — if the operator
+      // hasn't set a localBrowserFirstName yet, prefer "You" over the raw
+      // profile id string so the preview reads naturally.
+      const fallbackFirst = (profileId === 'local-browser')
+        ? 'You'
+        : ((pName || '').split(/\s+/)[0] || '');
+      data.senderFirstName = (resolvedFirst && resolvedFirst.trim()) || fallbackFirst;
+
+      // v2.11.14: when intro mode is on, mirror outreach.js:462's introData
+      // injection so {intro name} / {intro first name} / {intro last name}
+      // resolve in the preview the same way they will at send time. Keys
+      // cover all three naming conventions used in the message templates.
+      if (introMode && introName) {
+        data['intro name']      = introName;
+        data['introName']       = introName;
+        data['intro_name']      = introName;
+        data['intro first name']  = introFirst;
+        data['introFirstName']    = introFirst;
+        data['intro_first_name']  = introFirst;
+        data['intro last name']   = introLast;
+        data['introLastName']     = introLast;
+        data['intro_last_name']   = introLast;
+      }
 
       // For each field, scan the raw template for {placeholders}, compute
       // unresolved ones, then render.
@@ -415,6 +446,7 @@ app.post('/api/templates/preview', async (req, res) => {
         inmailBody: 'InMail Body',
         opProfileSubject: 'Open Profile Subject',
         opProfileBody: 'Open Profile Body',
+        introTitle: 'Group conversation title',
       };
       for (const [key, raw] of Object.entries(tpl)) {
         if (!raw) { rendered[key] = ''; continue; }
