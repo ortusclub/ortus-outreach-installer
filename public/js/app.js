@@ -3856,6 +3856,7 @@ window.singleDeletePast = singleDeletePast;
 window.bulkDeletePastSelected = bulkDeletePastSelected;
 window.clearPastSelection = clearPastSelection;
 window.undoPendingDeletes = undoPendingDeletes;
+window.togglePastManageMode = togglePastManageMode;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
 
@@ -4522,6 +4523,10 @@ let pastSearchQuery = '';
 // v2.11.7: cache of the most-recently rendered filtered+sorted history so
 // the modal click-handler can resolve idx → entry without re-fetching.
 let pastCampaignsCache = [];
+// v2.11.9: manage-mode gate. Checkboxes, per-row X buttons, and the bulk
+// action bar are all hidden until the operator opts in via the trash-icon
+// toggle in the past-section header. Exiting clears selection.
+let pastManageMode = false;
 // v2.11.8: bulk-select state for the past list. Stores history.json indexes
 // (not array positions) so multi-delete addresses the on-disk record.
 let pastSelectedIdxs = new Set();
@@ -4571,8 +4576,10 @@ function onPastRowCheckboxChange(event, idx) {
 
 function clearPastSelection() {
   pastSelectedIdxs.clear();
-  // Re-render to reset checkboxes (and the bar visibility).
-  refreshPastCampaigns();
+  // v2.11.9: Cancel exits manage mode entirely (operator's signal that
+  // they're done managing, not just clearing selection mid-flow).
+  if (pastManageMode) togglePastManageMode();
+  else refreshPastCampaigns();
 }
 
 function renderPastBulkBar() {
@@ -4581,13 +4588,28 @@ function renderPastBulkBar() {
   const btn = document.getElementById('past-bulk-delete-btn');
   if (!bar || !countEl || !btn) return;
   const n = pastSelectedIdxs.size;
-  if (n === 0) {
+  // v2.11.9: bar is gated on manage-mode AND selection ≥ 1. Without
+  // manage-mode there are no checkboxes to drive selection anyway, so
+  // this is mostly defensive — keeps the bar invisible if pastSelectedIdxs
+  // ever lingers from a previous session.
+  if (!pastManageMode || n === 0) {
     bar.hidden = true;
     return;
   }
   bar.hidden = false;
   countEl.textContent = `${n} selected`;
   btn.textContent = `Delete ${n}`;
+}
+
+function togglePastManageMode() {
+  pastManageMode = !pastManageMode;
+  const section = document.getElementById('past-section');
+  const toggle = document.getElementById('past-manage-toggle');
+  if (section) section.classList.toggle('manage-mode', pastManageMode);
+  if (toggle) toggle.classList.toggle('active', pastManageMode);
+  // Exiting manage mode clears selection so the next entry starts clean.
+  if (!pastManageMode) pastSelectedIdxs.clear();
+  refreshPastCampaigns();
 }
 
 function singleDeletePast(idx) {

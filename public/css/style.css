@@ -2608,12 +2608,20 @@ body.route-dashboard .sidebar-nav { display: none; }
 .past-detail-val { color: var(--ink); word-break: break-word; }
 .past-detail-val .campaign-row-status { font-size: 0.55rem; }
 
-/* v2.11.8: per-row checkbox + delete-X + bulk action bar + undo toast */
+/* v2.11.8 + v2.11.9: per-row checkbox + delete-X. Hidden until the
+   past-section enters .manage-mode (via the trash-icon toggle in the
+   section header). Hiding via visibility:hidden + width:0 keeps the
+   grid columns but collapses their visible footprint, so the row
+   layout doesn't jump around when entering/exiting manage mode. */
 .past-row-checkbox {
   width: 16px;
   height: 16px;
   cursor: pointer;
   margin: 0;
+  visibility: hidden;
+}
+.past-section.manage-mode .past-row-checkbox {
+  visibility: visible;
 }
 .past-row-delete {
   background: transparent;
@@ -2625,10 +2633,53 @@ body.route-dashboard .sidebar-nav { display: none; }
   cursor: pointer;
   border-radius: 4px;
   transition: color 0.15s ease, background-color 0.15s ease;
+  visibility: hidden;
+}
+.past-section.manage-mode .past-row-delete {
+  visibility: visible;
 }
 .past-row-delete:hover {
   color: #b00020;
   background-color: rgba(176, 0, 32, 0.08);
+}
+
+/* Past section header: title + trash-icon toggle */
+.past-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+.past-section-header .dashboard-section-title {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.past-manage-toggle {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--gray);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.past-manage-toggle:hover {
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+.past-manage-toggle.active {
+  color: var(--ink);
+  border-color: var(--ink);
+  background-color: var(--hairline);
 }
 
 .past-bulk-bar {
