@@ -1379,6 +1379,26 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 }
 .mode-card:hover { border-color: var(--gray); }
 .mode-card.active { border-color: var(--ink); }
+.mode-card.is-coming-soon {
+  position: relative;
+  cursor: not-allowed;
+  opacity: 0.65;
+  border-style: dashed;
+}
+.mode-card.is-coming-soon:hover { border-color: var(--hairline); }
+.mode-card-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-family: var(--mono);
+  font-size: 0.52rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+  border: 1px solid var(--hairline);
+  padding: 3px 8px;
+  border-radius: 9999px;
+}
 .mode-card-title {
   font-family: var(--display);
   font-weight: 400;

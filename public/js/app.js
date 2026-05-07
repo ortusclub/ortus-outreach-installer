@@ -1512,6 +1512,28 @@ const MODE_LIST = [
       'Bump lead Stage to "Replied" on inbound',
     ],
   },
+  // Stubs — not wired to any backend yet. Click shows a "Coming soon" toast
+  // and the cards stay unselected so the operator can't accidentally start them.
+  {
+    value: 'connect_introduce_back',
+    name: 'Connect and Introduce Back',
+    bullets: [
+      'Send a connection request',
+      'Once accepted, introduce them to the team',
+      'Coming soon',
+    ],
+    comingSoon: true,
+  },
+  {
+    value: 'post_amplification',
+    name: 'Post Amplification',
+    bullets: [
+      'Paste a LinkedIn post URL',
+      'All Ortus accounts like, dwell, and engage',
+      'Coming soon',
+    ],
+    comingSoon: true,
+  },
 ];
 
 function renderModeSelector() {
@@ -1531,11 +1553,15 @@ function renderModeSelector() {
     const bullets = m.bullets
       .map((b) => `<li>${escHtml(b)}</li>`)
       .join('');
+    const isActive = i === activeIdx && !m.comingSoon;
+    const stateClass = m.comingSoon ? 'is-coming-soon' : (isActive ? 'active' : '');
+    const badge = m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>' : '';
     return `
       <button type="button"
-        class="mode-card ${i === activeIdx ? 'active' : ''}"
+        class="mode-card ${stateClass}"
         onclick="setModeByIndex(${i})"
-        aria-pressed="${i === activeIdx}">
+        aria-pressed="${isActive}">
+        ${badge}
         <div class="mode-card-title" data-edit="mode-name-${m.value}">${escHtml(nameFor(m))}</div>
         <ul class="mode-card-bullets">${bullets}</ul>
       </button>
@@ -1545,6 +1571,10 @@ function renderModeSelector() {
 
 function setModeByIndex(i) {
   const mode = MODE_LIST[(i + MODE_LIST.length) % MODE_LIST.length];
+  if (mode.comingSoon) {
+    showCampaignToast(`${mode.name} — coming soon.`, 3000);
+    return;
+  }
   const select = document.getElementById('campaign-mode');
   if (!select) return;
   select.value = mode.value;
