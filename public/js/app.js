@@ -4373,3 +4373,107 @@ window.saveIntroFields = saveIntroFields;
 // If the script loads after DOMContentLoaded already fired (common with
 // type=module), the listener above won't fire — call once now too.
 if (document.readyState !== 'loading') restoreIntroState();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard route — landing view at #/, lists active + past campaigns
+// ─────────────────────────────────────────────────────────────────────────────
+const DASHBOARD_MODE_LABELS = {
+  connect_only: 'Connect Only',
+  check_status: 'Check Status',
+  message_only: 'Message Only',
+  inmail_only: 'InMail Only',
+  open_profile_only: 'Open Profile Message',
+  check_dms: 'Check DMs',
+};
+function dashboardModeLabel(value) {
+  return DASHBOARD_MODE_LABELS[value] || value || '—';
+}
+function dashboardFormatDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function applyRoute() {
+  const isWizard = (window.location.hash || '#/').startsWith('#/new');
+  document.body.classList.toggle('route-wizard', isWizard);
+  document.body.classList.toggle('route-dashboard', !isWizard);
+  if (!isWizard) refreshDashboard();
+}
+function goCreateCampaign() { window.location.hash = '#/new'; }
+function goDashboard()      { window.location.hash = '#/'; }
+
+async function refreshDashboard() {
+  await Promise.all([refreshActiveCampaign(), refreshPastCampaigns()]);
+}
+
+async function refreshActiveCampaign() {
+  const list = document.getElementById('active-campaign-list');
+  if (!list) return;
+  try {
+    const status = await fetch('/api/campaign/status').then((r) => r.json());
+    const isActive = status && (status.running || status.paused);
+    if (!isActive) {
+      list.innerHTML = '<p class="empty-state">No active campaigns.</p>';
+      return;
+    }
+    const total = Number(status.totalTargets) || 0;
+    const done = Number(status.totalProcessed) || 0;
+    const left = Math.max(0, total - done);
+    const statusLabel = status.paused ? 'Paused' : 'Running';
+    const statusClass = status.paused ? 'is-paused' : 'is-running';
+    const progress = total > 0 ? `${done} / ${total} · ${left} left` : `${done} processed`;
+    const accounts = (status.profileNames || []).length;
+    const name = `${dashboardModeLabel(status.mode)}${accounts ? ' · ' + accounts + ' account' + (accounts === 1 ? '' : 's') : ''}`;
+    list.innerHTML = `
+      <button type="button" class="campaign-row" disabled aria-label="Edit campaign — coming soon">
+        <span class="campaign-row-name">${escHtml(name)}</span>
+        <span class="campaign-row-type">${escHtml(dashboardModeLabel(status.mode))}</span>
+        <span class="campaign-row-progress">${escHtml(progress)}</span>
+        <span class="campaign-row-status ${statusClass}">${statusLabel}</span>
+      </button>
+    `;
+  } catch {
+    list.innerHTML = '<p class="empty-state">Failed to load active campaign.</p>';
+  }
+}
+
+async function refreshPastCampaigns() {
+  const list = document.getElementById('past-campaign-list');
+  if (!list) return;
+  try {
+    const data = await fetch('/api/history').then((r) => r.json());
+    if (!Array.isArray(data) || data.length === 0) {
+      list.innerHTML = '<p class="empty-state">No past campaigns yet.</p>';
+      return;
+    }
+    const sorted = [...data].sort((a, b) => {
+      const ta = new Date(a.startedAt || a.date).getTime();
+      const tb = new Date(b.startedAt || b.date).getTime();
+      return tb - ta;
+    });
+    list.innerHTML = sorted.map((c) => {
+      const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
+      const name = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
+      const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
+      return `
+        <button type="button" class="campaign-row" disabled aria-label="Edit campaign — coming soon">
+          <span class="campaign-row-name">${escHtml(name)}</span>
+          <span class="campaign-row-type">${escHtml(dashboardModeLabel(c.mode))}</span>
+          <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
+          <span class="campaign-row-status is-done">Completed</span>
+        </button>
+      `;
+    }).join('');
+  } catch {
+    list.innerHTML = '<p class="empty-state">Failed to load history.</p>';
+  }
+}
+
+window.addEventListener('hashchange', applyRoute);
+document.addEventListener('DOMContentLoaded', applyRoute);
+if (document.readyState !== 'loading') applyRoute();
+
+window.goCreateCampaign = goCreateCampaign;
+window.goDashboard = goDashboard;
