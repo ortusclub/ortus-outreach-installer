@@ -76,7 +76,7 @@ function gatherCampaignFormState() {
     // 2.8.50: Introduction Messages sub-mode of message_only
     // v2.11.13: read from introModeActive (in-memory) instead of localStorage
     // because Chrome enterprise/privacy enforcement can block storage reads.
-    introMode: mode === 'message_only' && introModeActive,
+    introMode: mode === 'introduce_back',
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
   };
@@ -1372,7 +1372,9 @@ function onModeChange() {
     if (addNoteOn) connect.style.display = '';
     else connect.style.display = 'none';
     openToggle.style.display = '';
-  } else if (mode === 'message_only') {
+  } else if (mode === 'message_only' || mode === 'introduce_back') {
+    // v2.11.17: introduce_back uses the same Follow-up Message template
+    // as message_only; the template is the body of the 3-way DM.
     message.style.display = '';
   } else if (mode === 'inmail_only') {
     inmail.style.display = '';
@@ -1404,27 +1406,31 @@ function onModeChange() {
   }
 
   // 2.8.29 / 2.8.32 / 2.9.7: Auto-routed modes (check_status, message_only,
-  // check_dms) hide the profile picker and show a coverage panel. message_only
-  // KEEPS templates (you still need a message to send) but hides only the
-  // profile picker. check_dms hides everything except the coverage panel.
+  // check_dms, introduce_back) hide the profile picker and show a coverage
+  // panel. message_only / introduce_back KEEP templates (you still need a
+  // message to send) but hide only the profile picker. check_dms hides
+  // everything except the coverage panel.
   const csPanel = document.getElementById('nav-check-status');
   const moPanel = document.getElementById('nav-message-only');
   const cdPanel = document.getElementById('nav-check-dms');
+  const ibPanel = document.getElementById('nav-introduce-back');
   const navPace = document.getElementById('nav-pace');
   const navAccounts = document.getElementById('nav-accounts');
   const isCheckStatus = (mode === 'check_status');
   const isMessageOnly = (mode === 'message_only');
   const isCheckDms = (mode === 'check_dms');
-  const isAutoRouted = isCheckStatus || isMessageOnly || isCheckDms;
+  const isIntroduceBack = (mode === 'introduce_back');
+  const isAutoRouted = isCheckStatus || isMessageOnly || isCheckDms || isIntroduceBack;
   if (csPanel) csPanel.style.display = isCheckStatus ? '' : 'none';
   if (moPanel) moPanel.style.display = isMessageOnly ? '' : 'none';
   if (cdPanel) cdPanel.style.display = isCheckDms ? '' : 'none';
+  if (ibPanel) ibPanel.style.display = isIntroduceBack ? '' : 'none';
   // 2.9.7: Check DMs is now auto-routed too — hide the profile picker.
   if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
   // 2.8.34: Pace section hidden for auto-routed modes (no per-lead pacing).
   if (navPace) navPace.style.display = isAutoRouted ? 'none' : '';
   // 2.9.7: Check DMs has no templates (read-only mode). Hide the templates
-  // section entirely; other modes (incl. message_only) keep it visible.
+  // section entirely; other modes (incl. message_only / introduce_back) keep it visible.
   const navTemplates = document.getElementById('nav-templates');
   if (navTemplates) navTemplates.style.display = isCheckDms ? 'none' : '';
   // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
@@ -1434,7 +1440,8 @@ function onModeChange() {
   if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
   if (isCheckStatus) {
     refreshCheckStatusPreview();
-  } else if (isMessageOnly) {
+  } else if (isMessageOnly || isIntroduceBack) {
+    // v2.11.17: same coverage source as Message Only (Connected · DM Now leads).
     refreshMessageOnlyPreview();
   } else if (isCheckDms) {
     refreshCheckDmsPreview();
@@ -1530,18 +1537,21 @@ const MODE_LIST = [
       'Bump lead Stage to "Replied" on inbound',
     ],
   },
+  // v2.11.17: Introduce Back is now a first-class mode (was a coming-soon
+  // stub + a sub-toggle inside Message Only). Same lead source as
+  // Message Only (Stage === 'Connected · DM Now') but always sends as a
+  // 3-way intro group thread with the configured intro person.
+  {
+    value: 'introduce_back',
+    name: 'Introduce Back',
+    bullets: [
+      '3-way group DM',
+      'Adds your intro person automatically',
+      'Resumes from sheet\'s Connected · DM Now leads',
+    ],
+  },
   // Stubs — not wired to any backend yet. Click shows a "Coming soon" toast
   // and the cards stay unselected so the operator can't accidentally start them.
-  {
-    value: 'connect_introduce_back',
-    name: 'Connect and Introduce Back',
-    bullets: [
-      'Send a connection request',
-      'Once accepted, introduce them to the team',
-      'Coming soon',
-    ],
-    comingSoon: true,
-  },
   {
     value: 'post_amplification',
     name: 'Post Amplification',
@@ -1950,7 +1960,7 @@ async function startCampaign() {
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
     // 2.8.50: Introduction Messages sub-mode (active only when mode is message_only)
     // v2.11.13: in-memory state instead of localStorage (storage may be blocked).
-    introMode: mode === 'message_only' && introModeActive,
+    introMode: mode === 'introduce_back',
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
   };
@@ -3557,6 +3567,15 @@ function applyPresetConfig(config) {
   if (!config || typeof config !== 'object') return;
   const setV = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
 
+  // v2.11.17: legacy presets had `mode: 'message_only'` + a separate
+  // `templates.introMode: true` flag. The Introduce Back mode replaces
+  // that combo. Auto-migrate so old presets keep working: if the saved
+  // config carries the old shape, swap to the new mode here. Templates
+  // (incl. introName, introTitle) carry over unchanged.
+  if (config.mode === 'message_only' && config.templates && config.templates.introMode) {
+    config = { ...config, mode: 'introduce_back' };
+  }
+
   // Mode — triggers the rest of the mode-dependent UI
   if (config.mode) {
     setV('campaign-mode', config.mode);
@@ -4414,32 +4433,16 @@ function renderDiskBanner(disk) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 2.8.50: Introduction Messages — sub-mode of Message Only
-// Toggle the segment switcher, persist to localStorage, restore on load.
+// v2.11.17: Introduce Back is now a first-class mode; the previous
+// Standard DM / Introduction segment toggle inside Message Only is gone.
+// Selecting the introduce_back card IS the introMode signal.
 //
-// v2.11.13: Chrome enterprise/privacy enforcement may block localStorage
-// for unregistered keys (silent failure / undefined return). Source of
-// truth is now an in-memory variable; localStorage is best-effort and
-// every call wrapped in try/catch so a block does not crash the toggle
-// and the campaign payload assembler reads the in-memory state.
-let introModeActive = false;
-
-function setIntroMode(active) {
-  introModeActive = !!active;
-  try { localStorage.setItem('ortus-intro-mode', active ? '1' : '0'); } catch { /* storage blocked */ }
-  const stdBtn   = document.getElementById('intro-seg-standard');
-  const introBtn = document.getElementById('intro-seg-intro');
-  const fields   = document.getElementById('intro-mode-fields');
-  if (stdBtn) {
-    stdBtn.style.background = active ? 'transparent' : 'var(--ink)';
-    stdBtn.style.color      = active ? 'var(--gray)' : 'var(--bg)';
-  }
-  if (introBtn) {
-    introBtn.style.background = active ? 'var(--ink)' : 'transparent';
-    introBtn.style.color      = active ? 'var(--bg)' : 'var(--gray)';
-  }
-  if (fields) fields.style.display = active ? '' : 'none';
-}
+// What's retained: persistence of intro-name and intro-title across
+// reloads (best-effort via localStorage with try/catch, since some
+// Chromium / enterprise environments block storage). setIntroMode is
+// kept as a no-op shim so any cached HTML still calling it doesn't error.
+// ─────────────────────────────────────────────────────────────────────────
+function setIntroMode() { /* deprecated in v2.11.17 — segment toggle removed */ }
 function saveIntroFields() {
   const name  = document.getElementById('intro-name')?.value || '';
   const title = document.getElementById('intro-title')?.value || '';
@@ -4453,9 +4456,6 @@ function restoreIntroState() {
     if (nameEl)  nameEl.value  = localStorage.getItem('ortus-intro-name')  || nameEl.value;
     if (titleEl) titleEl.value = localStorage.getItem('ortus-intro-title') || titleEl.value;
   } catch { /* storage blocked — DOM defaults stand */ }
-  let active = false;
-  try { active = localStorage.getItem('ortus-intro-mode') === '1'; } catch { /* */ }
-  setIntroMode(active);
 }
 document.addEventListener('DOMContentLoaded', restoreIntroState);
 // app.js is loaded as <script type="module">, so top-level `function`

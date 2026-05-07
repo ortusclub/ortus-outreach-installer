@@ -249,7 +249,7 @@ export function extractLinkedInUrl(row, linkedinColumn) {
 
 export function getModeHint(mode, prevAction) {
   if (mode === 'connect_only') return 'force_connect';
-  if (mode === 'message_only') return 'force_message';
+  if (mode === 'message_only' || mode === 'introduce_back') return 'force_message';
   if (mode === 'check_status') return 'check_only';
   if (mode === 'inmail_only') return 'force_inmail';
   if (mode === 'open_profile_only') return 'force_open_profile';
@@ -737,10 +737,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     },
     openProfileSubject: templates.openProfileSubject || templates.opSubject || '',
     openProfileBody: templates.openProfileBody || templates.opBody || '',
-    // 2.8.50: Introduction Messages — sub-mode of message_only. When introMode
-    // is true, sendMessage routes to sendIntroMessage which adds introName as
-    // a second recipient and sets a group title. Sheet stamp becomes "sent IC".
-    introMode: !!templates.introMode,
+    // 2.8.50: Introduction Messages — when introMode is true, sendMessage
+    // routes to sendIntroMessage which adds introName as a second recipient
+    // and sets a group title. Sheet stamp becomes "sent IC".
+    // v2.11.17: introMode is now implied by mode === 'introduce_back'
+    // (separate first-class mode); legacy presets that set introMode on
+    // message_only still work because the client auto-migrates them, but
+    // we OR the flag here as a final safety net.
+    introMode: !!templates.introMode || mode === 'introduce_back',
     introName: (templates.introName || '').trim(),
     introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
   };
@@ -757,7 +761,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log('=== Campaign starting ===');
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
-    const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
+    const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
     log(`Campaign limit per account: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
     if (concurrency > 1) {
       log(`▶ Concurrency=${concurrency} workers (browser cap=${MAX_CONCURRENT_PROFILES}).`);
@@ -839,9 +843,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (mode === 'check_status') {
           return stage === 'Connect Pending';
         }
-        if (mode === 'message_only') {
-          // Standard DM and Introduction sub-mode both source from
-          // Connected · DM Now.
+        if (mode === 'message_only' || mode === 'introduce_back') {
+          // Standard DM (message_only) and 3-way intro (introduce_back)
+          // both source from Connected · DM Now.
           return stage === 'Connected · DM Now';
         }
         if (mode === 'connect_only') {
@@ -945,7 +949,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // 2.8.31: message_only also auto-derives profileIds from sheet (only the
     // sender that connected the lead can DM it), so we need the GoLogin token
     // even when the UI didn't pre-select profiles.
-    const tokenNeeded = hasGoLoginProfiles || mode === 'check_status' || mode === 'message_only';
+    const tokenNeeded = hasGoLoginProfiles || mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back';
     const token = tokenNeeded ? getToken() : null;
     for (const pid of profileIds) {
       if (pid === 'local-browser') {
@@ -967,7 +971,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // (check_status — only the sender knows; message_only — only the sender
     // is connected), ignore UI-selected profileIds and auto-derive from
     // Account Used. Using any other account silently fails Voyager checks.
-    if (mode === 'check_status' || mode === 'message_only') {
+    if (mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back') {
       // Refresh the cache to ensure newly-added profiles are visible.
       if (token) {
         try {
@@ -1012,7 +1016,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         derivedProfileIds.push(nameToId[name]);
       }
 
-      const modeLabel = (mode === 'check_status') ? 'Check Status' : 'Message Only';
+      const modeLabel = (mode === 'check_status') ? 'Check Status'
+                      : (mode === 'introduce_back') ? 'Introduce Back'
+                      : 'Message Only';
       const rowLabel = (mode === 'check_status') ? 'pending' : 'connected (Y)';
       log(`${modeLabel} auto-routing → ${derivedProfileIds.length} sender(s) found in sheet`);
       sendersInSheet.forEach((count, name) => log(`  • ${name}: ${count} ${rowLabel}`));
@@ -1235,7 +1241,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     //   - open_profile_only: free Open-Profile messages, no connection req
     // Connect campaigns (connect_only, connect_and_message) STILL respect
     // the dailyLimit — those are the ones LinkedIn rate-limits aggressively.
-    const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'inmail_only', 'open_profile_only']);
+    const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
     const skipsDailyLimit = NO_DAILY_LIMIT.has(mode);
 
     // ═════════════════════════════════════════════════════════════════════
@@ -1320,7 +1326,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // 2.8.29: check_status drains every row for this profile in one go.
         // 2.8.34: message_only does the same — open the browser, send to all
         // accepted connections back-to-back, close. No batching, no rotation.
-        const innerLimit = (mode === 'check_status' || mode === 'message_only') ? Infinity : BATCH_SIZE;
+        const innerLimit = (mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back') ? Infinity : BATCH_SIZE;
         for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort; leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause();
@@ -1352,7 +1358,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // message_only), use the per-profile target slice built at auto-
         // derivation time. Each profile only sees rows it originally sent.
         let row = null;
-        if ((mode === 'check_status' || mode === 'message_only') && _checkStatusTargetsByProfile) {
+        if ((mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back') && _checkStatusTargetsByProfile) {
           const slice = _checkStatusTargetsByProfile[profileId] || [];
           let cursor = _checkStatusCursorByProfile[profileId] || 0;
           while (cursor < slice.length) {
@@ -1370,7 +1376,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
             leadIndex++;
             if (!candidateUrl) continue;
-            if (mode !== 'message_only' && mode !== 'open_profile_only' && state.processed[candidateUrl]) continue;
+            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && state.processed[candidateUrl]) continue;
             const sheetStatus = (candidate['Status'] || candidate['status'] || '').toLowerCase();
             if (mode === 'connect_only') {
               if (sheetStatus) continue;
@@ -1383,10 +1389,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (!row) {
           // 2.8.28-P2 / 2.8.31: per-profile exhaustion is normal in auto-routed
           // modes — skip this profile, end only when ALL profiles have drained.
-          if ((mode === 'check_status' || mode === 'message_only') && _checkStatusTargetsByProfile) {
+          if ((mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back') && _checkStatusTargetsByProfile) {
             _checkStatusExhausted.add(profileId);
             if (_checkStatusExhausted.size >= profileIds.length) {
-              const label = (mode === 'check_status') ? 'Check Status' : 'Message Only';
+              const label = (mode === 'check_status') ? 'Check Status'
+                          : (mode === 'introduce_back') ? 'Introduce Back'
+                          : 'Message Only';
               log(`All ${label} profiles have completed.`);
               leadsExhausted = true;
             }
@@ -1436,7 +1444,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // check tripped on local-browser variants (e.g., row says
           // "local-browser", pName is "Local Browser") and broke an entire
           // legitimate code path. Slice-based filtering is sufficient.
-        } else if (mode === 'message_only') {
+        } else if (mode === 'message_only' || mode === 'introduce_back') {
           if (_hasStageHere) {
             // New schema: Stage drives messageability. Pre-filter passed
             // 'Connected · DM Now'; if it changed under us, skip.
@@ -1633,7 +1641,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // 2.8.50: when Introduction Messages mode is active, stamp the DM
             // column with "sent IC" instead of "sent" so introductions are
             // visually distinct from standard DMs in the sheet.
-            const sentLabel = (tpl.introMode && mode === 'message_only') ? 'sent IC' : 'sent';
+            // v2.11.17: introMode is implicit in introduce_back mode but
+            // tpl.introMode also carries it (set in template normalization).
+            const sentLabel = (tpl.introMode && (mode === 'message_only' || mode === 'introduce_back')) ? 'sent IC' : 'sent';
             const hyperSent = `=HYPERLINK("${url}","${sentLabel}")`;
 
             // 2.9.0: every action also writes a Stage value (single
@@ -1657,6 +1667,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.auditAction = 'Already in target state';
               if (mode === 'connect_only')      sheetData.stage = 'Connect Pending';
               else if (mode === 'message_only') sheetData.stage = (tpl.introMode ? 'IC Sent' : 'DM Sent');
+              else if (mode === 'introduce_back') sheetData.stage = 'IC Sent';
               else if (mode === 'inmail_only')  sheetData.stage = 'InM Sent';
               else if (mode === 'open_profile_only') sheetData.stage = 'OP Sent';
               // For other/unknown modes leave Stage alone — overwriting
@@ -1668,7 +1679,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               sheetData.status = 'DM Sent';
               sheetData.message = hyperSent;
               sheetData.auditAction = 'Message sent';
-              sheetData.stage  = (tpl.introMode && mode === 'message_only') ? 'IC Sent' : 'DM Sent';
+              sheetData.stage  = (tpl.introMode && (mode === 'message_only' || mode === 'introduce_back')) ? 'IC Sent' : 'DM Sent';
               sheetData.sender = pName;
             } else if (result.action === 'op_message_sent') {
               sheetData.status = 'DM Sent';

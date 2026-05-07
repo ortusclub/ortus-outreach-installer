@@ -495,7 +495,7 @@ app.post('/api/campaign/start', (req, res) => {
     // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
     // the sheet's Account Used column inside campaign.js (only the original
     // sender can check / message a given lead), so empty profileIds is valid.
-    if (mode !== 'check_status' && mode !== 'message_only' && !profileIds?.length) {
+    if (mode !== 'check_status' && mode !== 'message_only' && mode !== 'introduce_back' && !profileIds?.length) {
       return res.status(400).json({ error: 'profileIds required' });
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });

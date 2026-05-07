@@ -198,6 +198,7 @@
         <option value="connect_only">Connect Only</option>
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="message_only">Message Only (follow-ups)</option>
+        <option value="introduce_back">Introduce Back (3-way intro DM)</option>
         <option value="inmail_only">InMail Only</option>
         <option value="open_profile_only">Open Profile Message (free)</option>
         <option value="check_dms">Check DMs (scan inboxes for replies)</option>
@@ -387,16 +388,35 @@
         <div id="mo-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
       </div>
 
-      <!-- 2.8.50: Introduction Messages — sub-mode of Message Only.
-           Placed OUTSIDE #mo-content so it's visible whenever Message Only
-           is selected, regardless of whether the coverage data has loaded. -->
-      <div id="intro-mode-block" style="margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline);">
-        <div style="margin:0 0 8px; font-family:var(--display); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray);">Send as</div>
-        <div style="display:flex; border:1px solid var(--hairline); border-radius:9999px; padding:4px; gap:4px; max-width:520px;">
-          <button type="button" id="intro-seg-standard" onclick="setIntroMode(false)" style="flex:1; background:var(--ink); color:var(--bg); border:0; padding:8px 16px; border-radius:9999px; font-family:var(--body); font-size:0.85rem; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer;">Standard DM</button>
-          <button type="button" id="intro-seg-intro" onclick="setIntroMode(true)" style="flex:1; background:transparent; color:var(--gray); border:0; padding:8px 16px; border-radius:9999px; font-family:var(--body); font-size:0.85rem; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer;">Introduction (3-way group)</button>
+    </div>
+
+    <!-- v2.11.17: Introduce Back coverage — visible only when
+         mode = introduce_back. Same lead source as Message Only
+         (auto-routed by Sender) but always sends as a 3-way intro
+         group thread with the configured intro person. The
+         segment toggle that used to live inside Message Only is
+         gone — selecting this mode IS the introMode toggle. -->
+    <div class="section" id="nav-introduce-back" style="display:none">
+      <h2 class="section-toggle"><span data-edit="h2-introduce-back">2c. Introduce Back — Coverage</span></h2>
+      <div style="padding: 0 0 8px;">
+        <div id="ib-loading" style="color:var(--gray); font-size:12px; padding:14px 0;">Loading coverage from sheet…</div>
+        <div id="ib-content" style="display:none">
+          <div class="label-tag" style="font-family:var(--display);letter-spacing:0.08em;font-size:11px;color:var(--gray);text-transform:uppercase;margin-bottom:12px">Connections ready to be introduced · auto-derived from Connected · DM Now leads</div>
+          <div id="ib-coverage" style="border:1px solid var(--hairline)"></div>
+          <div id="ib-unmatched" style="margin-top:12px; font-size:12px; color:var(--gray);"></div>
+          <div id="ib-summary" style="display:flex; gap:24px; padding:16px 0; margin-top:16px; border-top:1px solid var(--hairline-soft); border-bottom:1px solid var(--hairline-soft)"></div>
+          <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
+            <strong style="color:var(--gray)">Profile picker / Throughput / Campaign limit</strong> — not used. Auto-routed per row (only the account that connected the lead can DM); drains every Connected · DM Now lead back-to-back. <strong style="color:var(--gray)">Templates</strong> below are required.
+          </div>
         </div>
-        <div id="intro-mode-fields" style="display:none; margin-top:16px; max-width:520px;">
+        <div id="ib-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">
+          No leads ready to introduce yet (no rows with <code>Connected · DM Now</code> in Stage). Run <strong>Check Status</strong> first to confirm acceptances.
+        </div>
+        <div id="ib-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
+      </div>
+
+      <div id="intro-mode-block" style="margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline);">
+        <div id="intro-mode-fields" style="max-width:520px;">
           <div style="padding:10px 14px; border-left:2px solid var(--gold, #F7BE68); font-size:12px; color:var(--gray); margin-bottom:14px;">
             Adds a third person to a group thread before sending — mirrors the LinkedIn DM Assistant's Option+I flow. Sheet stamp becomes <code style="color:var(--gold,#F7BE68)">sent IC</code> in the DM column. Status still becomes <code style="color:var(--gold,#F7BE68)">DM Sent</code>.
           </div>
