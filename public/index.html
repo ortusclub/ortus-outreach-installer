@@ -126,25 +126,8 @@
 
     <!-- ── Settings (reordered to position 1) ── -->
     <div class="section" id="nav-settings">
-      <h2 data-edit="h2-settings">1. Campaign Settings <span class="section-summary" id="summary-settings"></span></h2>
-      <label data-edit="label-campaign-mode">Campaign Mode</label>
-      <div class="mode-selector" id="mode-selector">
-        <button type="button" class="mode-side mode-prev" onclick="modeStep(-1)">
-          <div class="mode-side-label"><span data-edit="mode-prev-arrow">↑</span> <span data-edit="mode-prev-label">Previous</span></div>
-          <div class="mode-side-name" id="mode-prev-name">—</div>
-        </button>
-        <div class="mode-center">
-          <div class="mode-counter" id="mode-counter">01 / 07</div>
-          <div class="mode-title" id="mode-title">—</div>
-          <div class="mode-desc" id="mode-desc">—</div>
-          <div class="mode-progress"><div class="mode-progress-fill" id="mode-progress-fill"></div></div>
-        </div>
-        <button type="button" class="mode-side mode-next" onclick="modeStep(1)">
-          <div class="mode-side-label"><span data-edit="mode-next-label">Next</span> <span data-edit="mode-next-arrow">↓</span></div>
-          <div class="mode-side-name" id="mode-next-name">—</div>
-        </button>
-      </div>
-      <div class="mode-chips" id="mode-chips"></div>
+      <h2 data-edit="h2-settings">1. Campaign Type <span class="section-summary" id="summary-settings"></span></h2>
+      <div class="mode-grid" id="mode-grid"></div>
       <select id="campaign-mode" onchange="onModeChange()" style="display:none">
         <option value="connect_only">Connect Only</option>
         <option value="check_status">Check Status (verify acceptances)</option>
