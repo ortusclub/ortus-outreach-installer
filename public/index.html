@@ -24,7 +24,7 @@
         <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
         <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
         <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Templates<span class="nav-glyph" id="nav-glyph-templates"></span></button>
+        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
         <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
         <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
 
@@ -157,6 +157,14 @@
         <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
       </div>
 
+      <!-- Campaign Name — first thing the operator names. Persisted to
+           localStorage for now; backend wire-through (start → status → history)
+           is a Phase 2 follow-up. -->
+      <div class="section campaign-name-section">
+        <h2 data-edit="h2-campaign-name">Campaign Name</h2>
+        <input type="text" id="campaign-name-input" placeholder="e.g. May UK partner outreach" autocomplete="off" />
+      </div>
+
     <!-- ── Settings (reordered to position 1) ── -->
     <div class="section" id="nav-settings">
       <h2 data-edit="h2-settings">1. Campaign Type <span class="section-summary" id="summary-settings"></span></h2>
@@ -177,15 +185,6 @@
         <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 0 24px">Try a free OP message first; if not an Open Profile, send a connection request instead</p>
       </div>
 
-      <!-- Phase 2.8.19 (C3): Local browser name as a top-level setting.
-           Two-way binds with the per-profile-card #local-browser-first-name input
-           (rendered dynamically by renderProfiles); both write the same
-           localStorage.localBrowserFirstName key. -->
-      <div class="my-identity-row" style="margin-top:16px">
-        <label class="my-identity-label" for="settings-local-browser-name">Local browser name</label>
-        <input type="text" id="settings-local-browser-name" placeholder="Used as {senderFirstName} when running on the local browser" />
-        <div style="font-size:0.66rem; color:var(--gray); margin-top:4px; letter-spacing:0.04em">Applies when you tick the "Local browser" profile card.</div>
-      </div>
     </div>
 
     <!-- ── Rate & Limits (extracted from Choose a Campaign) ── -->
@@ -498,6 +497,18 @@
     <div class="section template-controls collapsible collapsed" id="nav-templates">
       <h2 class="section-toggle" onclick="toggleSection('nav-templates')"><span class="caret">▾</span> <span data-edit="h2-templates">5. Message Templates</span> <span class="section-summary" id="summary-templates"></span></h2>
       <div class="collapsible-body">
+
+      <!-- Local browser name — operator's first name, used as {senderFirstName}
+           on local-browser runs. Two-way binds with the per-profile-card
+           #local-browser-first-name input (rendered dynamically by
+           renderProfiles); both write the same localStorage.localBrowserFirstName
+           key. Originally lived in the Campaign Type section. -->
+      <div class="my-identity-row" style="margin-bottom:24px">
+        <label class="my-identity-label" for="settings-local-browser-name">Local browser name</label>
+        <input type="text" id="settings-local-browser-name" placeholder="Used as {senderFirstName} when running on the local browser" />
+        <div style="font-size:0.66rem; color:var(--gray); margin-top:4px; letter-spacing:0.04em">Applies when you tick the "Local browser" profile card.</div>
+      </div>
+
       <div class="templates-header">
         <div class="templates-question" id="templates-question" style="display:none">
           <span class="q-text" id="templates-q-text">Do you want to add a note while connecting?</span>
