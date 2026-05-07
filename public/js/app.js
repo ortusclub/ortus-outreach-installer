@@ -684,45 +684,60 @@ function renderProfiles(profiles) {
   const grid = document.getElementById('profiles-grid');
   grid.innerHTML = '';
 
-  // Add Local Browser option at the top
-  const localItem = document.createElement('label');
-  localItem.className = 'profile-item local-browser' + (selectedProfileIds.includes('local-browser') ? ' selected' : '');
-  localItem.dataset.profileId = 'local-browser';
-  localItem.innerHTML = `
-    <input type="checkbox" class="local-cb" value="local-browser" ${selectedProfileIds.includes('local-browser') ? 'checked' : ''} />
-    <div style="flex:1">
-      <div class="name">Local Browser</div>
-      <div class="id" style="color:#8b949e">Your system Chrome. If first time, please log into LinkedIn.</div>
-      <div style="margin-top:6px">
-        <input type="text" id="local-browser-first-name" placeholder="Your first name (used as {senderFirstName})"
-          value="${escHtml(localBrowserFirstName)}"
-          style="width:100%;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:4px 8px;border-radius:4px;font-size:12px" />
+  // Local Browser — rendered into a dedicated host above the GoLogin grid.
+  // It has unique semantics (local Chromium, not Orbita) and the first-name
+  // input is gated behind the checkbox: we only ask once the operator opts in.
+  const localHost = document.getElementById('local-browser-host');
+  if (localHost) {
+    const isSelected = selectedProfileIds.includes('local-browser');
+    localHost.innerHTML = '';
+    const localItem = document.createElement('label');
+    localItem.className = 'profile-item local-browser local-browser-tile' + (isSelected ? ' selected' : '');
+    localItem.dataset.profileId = 'local-browser';
+    localItem.innerHTML = `
+      <input type="checkbox" class="local-cb" value="local-browser" ${isSelected ? 'checked' : ''} />
+      <div class="local-browser-body">
+        <div class="name">Local Browser</div>
+        <div class="id">Your system Chrome. If first time, please log into LinkedIn.</div>
+        <div class="local-browser-name-row" ${isSelected ? '' : 'hidden'}>
+          <label for="local-browser-first-name" class="local-browser-name-label">Your first name (used as {senderFirstName})</label>
+          <input type="text" id="local-browser-first-name" placeholder="e.g. Antonio"
+            value="${escHtml(localBrowserFirstName)}" />
+        </div>
       </div>
-    </div>
-  `;
-  const localNameInput = localItem.querySelector('#local-browser-first-name');
-  localNameInput.addEventListener('click', (e) => e.stopPropagation());
-  localNameInput.addEventListener('input', (e) => {
-    localBrowserFirstName = e.target.value;
-    try { localStorage.setItem('localBrowserFirstName', localBrowserFirstName); } catch { /* */ }
-    renderSelectedPanel();
-  });
-  const localCb = localItem.querySelector('input.local-cb');
-  localCb.addEventListener('change', () => {
-    if (localCb.checked) {
-      if (!selectedProfileIds.includes('local-browser')) {
-        selectedProfileIds.push('local-browser');
-        selectedProfileNames['local-browser'] = 'Local Browser';
+    `;
+    const localNameRow = localItem.querySelector('.local-browser-name-row');
+    const localNameInput = localItem.querySelector('#local-browser-first-name');
+    localNameInput.addEventListener('click', (e) => e.stopPropagation());
+    localNameInput.addEventListener('input', (e) => {
+      localBrowserFirstName = e.target.value;
+      try { localStorage.setItem('localBrowserFirstName', localBrowserFirstName); } catch { /* */ }
+      renderSelectedPanel();
+    });
+    const localCb = localItem.querySelector('input.local-cb');
+    localCb.addEventListener('change', () => {
+      if (localCb.checked) {
+        if (!selectedProfileIds.includes('local-browser')) {
+          selectedProfileIds.push('local-browser');
+          selectedProfileNames['local-browser'] = 'Local Browser';
+        }
+        localItem.classList.add('selected');
+        if (localNameRow) {
+          localNameRow.hidden = false;
+          // Auto-focus the name input the first time someone ticks the box —
+          // makes the "now we need your name" interaction feel obvious.
+          if (!localNameInput.value) setTimeout(() => localNameInput.focus(), 0);
+        }
+      } else {
+        selectedProfileIds = selectedProfileIds.filter(id => id !== 'local-browser');
+        delete selectedProfileNames['local-browser'];
+        localItem.classList.remove('selected');
+        if (localNameRow) localNameRow.hidden = true;
       }
-      localItem.classList.add('selected');
-    } else {
-      selectedProfileIds = selectedProfileIds.filter(id => id !== 'local-browser');
-      delete selectedProfileNames['local-browser'];
-      localItem.classList.remove('selected');
-    }
-    renderSelectedPanel();
-  });
-  grid.appendChild(localItem);
+      renderSelectedPanel();
+    });
+    localHost.appendChild(localItem);
+  }
 
   profiles.forEach((p) => {
     // v2.11.4: keep selectedProfileNames in sync with whatever is currently

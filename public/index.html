@@ -457,6 +457,12 @@
                oninput="saveMyIdentifier()" />
       </div>
 
+      <!-- Local Browser tile — separate from the GoLogin profile grid because
+           it has unique semantics (uses local Chromium, not Orbita). Rendered
+           into this host by renderProfiles(). The first-name input is shown
+           only when the operator ticks the checkbox. -->
+      <div id="local-browser-host" class="local-browser-host"></div>
+
       <div class="accounts-browser collapsible" id="accounts-browser">
         <h3 class="section-toggle accounts-browser-toggle" onclick="toggleSection('accounts-browser')"><span class="caret">▾</span> <span data-edit="h3-browse">Browse Accounts</span></h3>
         <div class="collapsible-body">
@@ -497,18 +503,6 @@
     <div class="section template-controls collapsible collapsed" id="nav-templates">
       <h2 class="section-toggle" onclick="toggleSection('nav-templates')"><span class="caret">▾</span> <span data-edit="h2-templates">5. Message Templates</span> <span class="section-summary" id="summary-templates"></span></h2>
       <div class="collapsible-body">
-
-      <!-- Local browser name — operator's first name, used as {senderFirstName}
-           on local-browser runs. Two-way binds with the per-profile-card
-           #local-browser-first-name input (rendered dynamically by
-           renderProfiles); both write the same localStorage.localBrowserFirstName
-           key. Originally lived in the Campaign Type section. -->
-      <div class="my-identity-row" style="margin-bottom:24px">
-        <label class="my-identity-label" for="settings-local-browser-name">Local browser name</label>
-        <input type="text" id="settings-local-browser-name" placeholder="Used as {senderFirstName} when running on the local browser" />
-        <div style="font-size:0.66rem; color:var(--gray); margin-top:4px; letter-spacing:0.04em">Applies when you tick the "Local browser" profile card.</div>
-      </div>
-
       <div class="templates-header">
         <div class="templates-question" id="templates-question" style="display:none">
           <span class="q-text" id="templates-q-text">Do you want to add a note while connecting?</span>
