@@ -738,6 +738,11 @@ select {
   text-transform: uppercase; color: var(--gray);
   margin-bottom: 6px;
 }
+.my-identity-hint {
+  font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.06em;
+  text-transform: none; color: var(--gray);
+  margin-left: 6px; opacity: 0.85;
+}
 .my-identity-row input {
   width: 100%; max-width: 360px;
 }
