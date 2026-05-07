@@ -135,3 +135,6 @@ tests/                     node:test suite, runs in ~2s
 ## Questions
 
 Ask Antonio (info@ortus.solutions) directly, or open a draft PR with `[WIP]` in the title and discuss inline. Both work.
+
+Sam onboarded 2026-05-07
+
