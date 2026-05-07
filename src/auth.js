@@ -162,6 +162,18 @@ export async function fetchAllowedEmails() {
 export async function isEmailAllowed(email) {
   const normalized = (email || '').trim().toLowerCase();
   if (!normalized.includes('@')) return false;
+
+  // SOO_BYPASS_EMAILS — comma-separated allowlist that skips the SoO check.
+  // For dev / emergency access when the SoO sheet is unreachable or
+  // unconfigured. Listed emails are still subject to the per-user store.
+  const bypassRaw = (process.env.SOO_BYPASS_EMAILS || '').trim();
+  if (bypassRaw) {
+    const bypass = new Set(
+      bypassRaw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean)
+    );
+    if (bypass.has(normalized)) return true;
+  }
+
   const allowed = await fetchAllowedEmails();
   return allowed.has(normalized);
 }

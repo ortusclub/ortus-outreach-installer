@@ -1438,87 +1438,103 @@ function restoreLastMode() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Kinetic Campaign Mode picker
+// Campaign Mode picker — card grid
 // ─────────────────────────────────────────────────────────────────────────────
 const MODE_LIST = [
-  { value: 'connect_only',        name: 'Connect Only',        desc: 'Send connection requests only. Safest, highest-volume mode for top-of-funnel outreach.' },
-  { value: 'check_status',        name: 'Check Status',        desc: 'Verify which pending connection requests have been accepted. Updates the sheet.' },
-  { value: 'message_only',        name: 'Message Only',        desc: 'Send follow-up messages to existing 1st-degree connections. Fast, low-risk.' },
-  { value: 'inmail_only',         name: 'InMail Only',         desc: 'Premium InMail to targets. Consumes InMail credits; use during passover windows.' },
-  { value: 'open_profile_only',   name: 'Open Profile Message', desc: 'Free direct message to Open Profiles. No credits used; no connection required.' },
+  {
+    value: 'connect_only',
+    name: 'Connect Only',
+    bullets: [
+      'Send connection requests to new profiles',
+      'Optional personalised note',
+      'Safest, highest-volume top-of-funnel mode',
+    ],
+  },
+  {
+    value: 'check_status',
+    name: 'Check Status',
+    bullets: [
+      'Verify which pending requests were accepted',
+      'Updates the lead sheet automatically',
+      'Read-only — no messages sent',
+    ],
+  },
+  {
+    value: 'message_only',
+    name: 'Message Only',
+    bullets: [
+      'Follow-up messages to 1st-degree connections',
+      'Skips pending or not-yet-connected leads',
+      'Fast, low-risk after the connection step',
+    ],
+  },
+  {
+    value: 'inmail_only',
+    name: 'InMail Only',
+    bullets: [
+      'Premium InMail to non-connected targets',
+      'Consumes InMail credits per send',
+      'Use during passover windows',
+    ],
+  },
+  {
+    value: 'open_profile_only',
+    name: 'Open Profile Message',
+    bullets: [
+      'Free direct message to Open Profile members',
+      'No connection required, no credits used',
+      'Optional fallback to a connect request',
+    ],
+  },
   // 2.9.5: Check DMs as a first-class campaign mode. Routes to /api/check-dms/start
-  // when started, not /api/campaign/start. Read-only: scans inbox, appends new
-  // messages to the Replies tab, bumps Stage to "Replied" on inbound replies.
-  { value: 'check_dms',           name: 'Check DMs',           desc: 'Scan LinkedIn inboxes for new replies. Appends every new message to the Replies tab and bumps Stage to "Replied".' },
+  // when started, not /api/campaign/start. Read-only.
+  {
+    value: 'check_dms',
+    name: 'Check DMs',
+    bullets: [
+      'Scan LinkedIn inboxes for new replies',
+      'Append new messages to the Replies tab',
+      'Bump lead Stage to "Replied" on inbound',
+    ],
+  },
 ];
 
 function renderModeSelector() {
   const select = document.getElementById('campaign-mode');
-  if (!select) return;
+  const grid = document.getElementById('mode-grid');
+  if (!select || !grid) return;
+
   const current = select.value;
   let activeIdx = MODE_LIST.findIndex((m) => m.value === current);
   if (activeIdx < 0) activeIdx = 0;
 
-  const active = MODE_LIST[activeIdx];
-  const prev = MODE_LIST[(activeIdx - 1 + MODE_LIST.length) % MODE_LIST.length];
-  const next = MODE_LIST[(activeIdx + 1) % MODE_LIST.length];
-
-  // Saved label/description overrides (per-mode, keyed by mode value).
-  // This lets the generic "Edit labels" flow persist per-mode edits.
+  // Per-mode label overrides via the generic "Edit labels" flow.
   const saved = loadEditsFromStorage();
   const nameFor = (m) => saved[`mode-name-${m.value}`] || m.name;
-  const descFor = (m) => saved[`mode-desc-${m.value}`] || m.desc;
 
-  const set = (id, v, editKey) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    // Don't stomp on text the user is currently editing
-    if (!document.body.classList.contains('edit-mode')) el.textContent = v;
-    if (editKey) el.dataset.edit = editKey;
-  };
-  set('mode-prev-name', nameFor(prev), `mode-name-${prev.value}`);
-  set('mode-next-name', nameFor(next), `mode-name-${next.value}`);
-  set('mode-title',     nameFor(active), `mode-name-${active.value}`);
-  set('mode-desc',      descFor(active), `mode-desc-${active.value}`);
-  set('mode-counter', `${String(activeIdx + 1).padStart(2, '0')} / ${String(MODE_LIST.length).padStart(2, '0')}`);
-
-  const fill = document.getElementById('mode-progress-fill');
-  if (fill) fill.style.width = `${((activeIdx + 1) / MODE_LIST.length) * 100}%`;
-
-  const chips = document.getElementById('mode-chips');
-  if (chips) {
-    chips.innerHTML = MODE_LIST.map((m, i) =>
-      `<button type="button" class="mode-chip ${i === activeIdx ? 'active' : ''}" onclick="setModeByIndex(${i})">${escHtml(nameFor(m))}</button>`
-    ).join('');
-  }
+  grid.innerHTML = MODE_LIST.map((m, i) => {
+    const bullets = m.bullets
+      .map((b) => `<li>${escHtml(b)}</li>`)
+      .join('');
+    return `
+      <button type="button"
+        class="mode-card ${i === activeIdx ? 'active' : ''}"
+        onclick="setModeByIndex(${i})"
+        aria-pressed="${i === activeIdx}">
+        <div class="mode-card-title" data-edit="mode-name-${m.value}">${escHtml(nameFor(m))}</div>
+        <ul class="mode-card-bullets">${bullets}</ul>
+      </button>
+    `;
+  }).join('');
 }
 
 function setModeByIndex(i) {
   const mode = MODE_LIST[(i + MODE_LIST.length) % MODE_LIST.length];
   const select = document.getElementById('campaign-mode');
   if (!select) return;
-  const title = document.getElementById('mode-title');
-  const apply = () => {
-    select.value = mode.value;
-    onModeChange();
-    renderModeSelector();
-    if (title) title.classList.remove('switching');
-  };
-  if (title) {
-    title.classList.add('switching');
-    setTimeout(apply, 180);
-  } else {
-    apply();
-  }
-}
-
-function modeStep(direction) {
-  const select = document.getElementById('campaign-mode');
-  if (!select) return;
-  const idx = MODE_LIST.findIndex((m) => m.value === select.value);
-  const cur = idx < 0 ? 0 : idx;
-  const n = (cur + direction + MODE_LIST.length) % MODE_LIST.length;
-  setModeByIndex(n);
+  select.value = mode.value;
+  onModeChange();
+  renderModeSelector();
 }
 
 function updateOpenProfileVisibility() {
@@ -3747,8 +3763,8 @@ window.handlePreviewClick = handlePreviewClick;
 window.loadLastUsedPreset = loadLastUsedPreset;
 window.loadProfiles = loadProfiles;
 window.loadSelectedTemplate = loadSelectedTemplate;
-window.modeStep = modeStep;
 window.onModeChange = onModeChange;
+window.setModeByIndex = setModeByIndex;
 window.previewSheet = previewSheet;
 window.refreshSoO = refreshSoO;
 window.requestNotificationPermission = requestNotificationPermission;
