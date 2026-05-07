@@ -2541,6 +2541,7 @@ body.route-dashboard .sidebar-nav { display: none; }
   justify-content: center;
   padding: 14px 0 4px;
 }
+.past-toggle-row[hidden] { display: none; }
 .past-toggle-btn {
   font-family: var(--mono);
   font-size: 0.62rem;
@@ -2692,6 +2693,11 @@ body.route-dashboard .sidebar-nav { display: none; }
   background: var(--hairline);
   border-radius: 4px;
 }
+/* v2.11.10: explicit override — display:flex above outranks the user-agent
+   [hidden] { display:none } rule, so the bar would render at 0 selected
+   despite bar.hidden=true. Targeted fix here keeps the rest of the codebase's
+   `hidden` attribute usage working without touching unrelated elements. */
+.past-bulk-bar[hidden] { display: none; }
 .past-bulk-count {
   font-family: var(--mono);
   font-size: 0.65rem;
@@ -2728,6 +2734,7 @@ body.route-dashboard .sidebar-nav { display: none; }
   transform: translateX(-50%) translateY(0);
   pointer-events: auto;
 }
+.undo-toast[hidden] { display: none; }
 .undo-toast-action {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.4);
