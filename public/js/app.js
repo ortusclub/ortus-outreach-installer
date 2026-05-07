@@ -698,7 +698,7 @@ function renderProfiles(profiles) {
       <input type="checkbox" class="local-cb" value="local-browser" ${isSelected ? 'checked' : ''} />
       <div class="local-browser-body">
         <div class="name">Local Browser</div>
-        <div class="id">Your system Chrome. If first time, please log into LinkedIn.</div>
+        <div class="id">Your system Chrome. If this is your first time, you will have to log in to LinkedIn.</div>
         <div class="local-browser-name-row" ${isSelected ? '' : 'hidden'}>
           <label for="local-browser-first-name" class="local-browser-name-label">Your first name (used as {senderFirstName})</label>
           <input type="text" id="local-browser-first-name" placeholder="e.g. Antonio"
