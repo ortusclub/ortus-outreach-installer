@@ -2725,6 +2725,34 @@ async function pollStatus() {
       }
     } catch { /* check-dms overlay is best-effort */ }
 
+    // v2.12.x: same overlay pattern for Post Amplification — paint live
+    // progress (current account · index/total) into the cockpit using the
+    // shape renderCockpit expects.
+    try {
+      const paRes = await fetch('/api/post-amplification/status');
+      if (paRes.ok) {
+        const pa = await paRes.json();
+        if (pa.running) {
+          s.running = true;
+          s.mode = 'post_amplification';
+          s.currentProfile = pa.currentProfile || '';
+          s.processedToday = pa.engaged || 0;
+          s.totalProcessed = pa.completed || 0;
+          s.totalTargets = pa.total || 0;
+          s.currentAction = {
+            label: pa.currentProfile
+              ? `Engaging ${pa.currentIndex}/${pa.total} · ${pa.currentProfile}`
+              : 'Starting…',
+            account: pa.currentProfile || '—',
+            lead: pa.postUrl ? '(amplifying post)' : '—',
+            mode: 'post_amplification',
+            startedAt: pa.startedAt || Date.now(),
+          };
+          s.errors = (pa.errors || []).map(e => ({ message: e }));
+        }
+      }
+    } catch { /* post-amp overlay is best-effort */ }
+
     // Phase 2.8.12: feed the cockpit panel with the latest status snapshot
     // (renderCockpit + tick handle the smooth countdown without re-polling).
     updateCockpit(s);

@@ -588,14 +588,20 @@ app.get('/api/campaign/status', (_req, res) => {
       mode: 'post_amplification',
       name: 'Post Amplification',
       currentProfile: postAmp.currentProfile || '',
-      currentAction: postAmp.currentProfile
-        ? `Engaging ${postAmp.currentIndex}/${postAmp.total}`
-        : 'Starting…',
+      currentAction: {
+        label: postAmp.currentProfile
+          ? `Engaging ${postAmp.currentIndex}/${postAmp.total} · ${postAmp.currentProfile}`
+          : 'Starting…',
+        account: postAmp.currentProfile || '—',
+        lead: postAmp.postUrl ? '(amplifying post)' : '—',
+        mode: 'post_amplification',
+        startedAt: postAmp.startedAt || Date.now(),
+      },
       processedToday: postAmp.engaged,
       totalProcessed: postAmp.completed,
       totalTargets: postAmp.total,
       profileNames: [],
-      errors: postAmp.errors.slice(-20),
+      errors: postAmp.errors.slice(-20).map(e => ({ message: e })),
     });
   }
   res.json(base);
