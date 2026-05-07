@@ -459,7 +459,30 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
             if (!templates.introName) {
               return { action: 'skipped', error: 'No intro person configured (introMode on but introName empty)' };
             }
-            const introData = { ...data, 'intro name': templates.introName, 'introName': templates.introName, 'intro_name': templates.introName };
+            // v2.11.6: split introName into first/last on whitespace so
+            // operators can write more natural copy ("Hi {first name}, meet
+            // {intro first name}…"). Single-token input → first set, last
+            // empty (operator should adapt the template). Multi-token input
+            // → first token is first name, everything after is the last
+            // name (handles "Samuel Adcock Jr." → first="Samuel",
+            // last="Adcock Jr." correctly).
+            const introTokens = templates.introName.trim().split(/\s+/);
+            const introFirst = introTokens[0] || '';
+            const introLast  = introTokens.slice(1).join(' ');
+            const introData = {
+              ...data,
+              // Full name — back-compat, unchanged behaviour.
+              'intro name': templates.introName,
+              'introName': templates.introName,
+              'intro_name': templates.introName,
+              // New split placeholders (all naming variants accepted).
+              'intro first name': introFirst,
+              'introFirstName': introFirst,
+              'intro_first_name': introFirst,
+              'intro last name': introLast,
+              'introLastName': introLast,
+              'intro_last_name': introLast,
+            };
             const body  = personalizeTemplate(templates.followUpMessage, introData);
             const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
             await sendIntroMessage(page, body, templates.introName, title);

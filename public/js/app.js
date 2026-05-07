@@ -1597,7 +1597,11 @@ function updateOpenProfileVisibility() {
 // Placeholder tags
 // ─────────────────────────────────────────────────────────────────────────────
 function updatePlaceholderTags() {
-  const extras = ['senderFirstName', 'senderName'];
+  // v2.11.6: 'intro first name' / 'intro last name' join the existing
+  // sender chips. Always rendered (matches how senderFirstName/senderName
+  // already show in non-message-only modes); harmless in non-intro
+  // campaigns since they substitute to empty strings outside introMode.
+  const extras = ['senderFirstName', 'senderName', 'intro first name', 'intro last name'];
   document.querySelectorAll('.placeholder-tags').forEach(container => {
     const tags = [...sheetColumns, ...extras].map(col =>
       `<span class="tag" data-val="{${col}}">{${col}}</span>`
