@@ -2709,3 +2709,16 @@ body.route-dashboard .sidebar-nav { display: none; }
   outline: none;
 }
 .campaign-row-name-input.save-failed { border-color: #c0392b; }
+
+/* Sidebar "← Dashboard" item — sits above the Campaign section. Keeps the
+   nav-item shape so spacing/alignment matches the section items below, but
+   separated visually with a hairline so the operator reads it as escape,
+   not as another step. */
+.nav-item-back {
+  margin-bottom: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.nav-item-back .nav-num {
+  font-family: var(--mono);
+}
