@@ -4601,11 +4601,38 @@ function dashboardFormatDate(iso) {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+// Auto-refresh the active campaign row while the operator is on the dashboard.
+// 5s feels live for pause/resume transitions without being noisy. Stops when
+// the route changes to the wizard so we don't hit /api/campaign/status from
+// inside the campaign page (which already polls separately).
+let _dashboardPollTimer = null;
+function startDashboardPolling() {
+  if (_dashboardPollTimer) return;
+  _dashboardPollTimer = setInterval(() => {
+    if (document.body.classList.contains('route-dashboard')) {
+      refreshActiveCampaign();
+    } else {
+      stopDashboardPolling();
+    }
+  }, 5000);
+}
+function stopDashboardPolling() {
+  if (_dashboardPollTimer) {
+    clearInterval(_dashboardPollTimer);
+    _dashboardPollTimer = null;
+  }
+}
+
 function applyRoute() {
   const isWizard = (window.location.hash || '#/').startsWith('#/new');
   document.body.classList.toggle('route-wizard', isWizard);
   document.body.classList.toggle('route-dashboard', !isWizard);
-  if (!isWizard) refreshDashboard();
+  if (!isWizard) {
+    refreshDashboard();
+    startDashboardPolling();
+  } else {
+    stopDashboardPolling();
+  }
 }
 function goCreateCampaign() { window.location.hash = '#/new'; }
 function goDashboard()      { window.location.hash = '#/'; }
@@ -4676,8 +4703,21 @@ async function refreshActiveCampaign() {
     const total = Number(status.totalTargets) || 0;
     const done = Number(status.totalProcessed) || 0;
     const left = Math.max(0, total - done);
-    const statusLabel = status.paused ? 'Paused' : 'Running';
-    const statusClass = status.paused ? 'is-paused' : 'is-running';
+    // Three-state label matching the campaign module's two-flag pause model:
+    // _pauseRequested flips immediately on click; _paused only flips once the
+    // loop boundary acknowledges. Showing "Pausing…" while the gap closes
+    // tells the operator the click was received without lying about state.
+    let statusLabel, statusClass;
+    if (status.paused) {
+      statusLabel = 'Paused';
+      statusClass = 'is-paused';
+    } else if (status.pauseRequested) {
+      statusLabel = 'Pausing…';
+      statusClass = 'is-paused';
+    } else {
+      statusLabel = 'Running';
+      statusClass = 'is-running';
+    }
     const progress = total > 0 ? `${done} / ${total} · ${left} left` : `${done} processed`;
     list.innerHTML = `
       <div class="campaign-row campaign-row--with-edit">
