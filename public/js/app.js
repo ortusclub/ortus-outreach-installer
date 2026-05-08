@@ -2567,9 +2567,19 @@ async function fetchTemplateList() {
   }
 }
 
+// Enable/disable the Save (in-place) button based on whether a template is
+// selected — there's nothing to save TO when the dropdown is on the placeholder.
+function syncTemplateSaveButton() {
+  const sel = document.getElementById('tpl-select');
+  const btn = document.getElementById('btn-save-tpl');
+  if (!sel || !btn) return;
+  btn.disabled = !sel.value;
+}
+
 async function loadSelectedTemplate() {
   const sel = document.getElementById('tpl-select');
   const name = sel.value;
+  syncTemplateSaveButton();
   // Selecting the placeholder ("-- Select a template --") is a no-op now that
   // the dropdown auto-loads on change. No alert — that would fire every time
   // the operator deselects.
@@ -2589,6 +2599,38 @@ async function loadSelectedTemplate() {
     if (opBody) opBody.value = tpl.openProfileBody || '';
   } catch (err) {
     alert('Failed to load template: ' + err.message);
+  }
+}
+
+// Save in-place — overwrites the currently selected template with the form's
+// current values. POSTs to the same /api/templates endpoint that creates new
+// ones; server keys by name so a same-name POST overwrites.
+async function saveExistingTemplate() {
+  const sel = document.getElementById('tpl-select');
+  const name = sel.value;
+  if (!name) { alert('Select a template first to save changes.'); return; }
+  const templates = {
+    connectionNote: document.getElementById('tpl-note').value,
+    followUp1: document.getElementById('tpl-followup').value,
+    inmailSubject: document.getElementById('tpl-inmail-subject').value,
+    inmailBody: document.getElementById('tpl-inmail-body').value,
+    openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
+    openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+  };
+  try {
+    const res = await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, templates }),
+    });
+    const data = await res.json();
+    if (data.saved) {
+      showCampaignToast(`Saved changes to "${name}".`, 2500);
+    } else {
+      alert('Failed to save template.');
+    }
+  } catch (err) {
+    alert('Failed to save template: ' + err.message);
   }
 }
 
@@ -3821,6 +3863,7 @@ window.refreshSoO = refreshSoO;
 window.requestNotificationPermission = requestNotificationPermission;
 window.saveCurrentAsPreset = saveCurrentAsPreset;
 window.saveCurrentTemplate = saveCurrentTemplate;
+window.saveExistingTemplate = saveExistingTemplate;
 window.saveMyIdentifier = saveMyIdentifier;
 window.saveQuickSchedule = saveQuickSchedule;
 window.scrollToSection = scrollToSection;
