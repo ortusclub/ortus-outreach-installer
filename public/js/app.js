@@ -1843,7 +1843,10 @@ function updateCampaignSummary() {
     setText('hero-finish-sub', '—');
   } else {
     setText('hero-actions', String(totalActions));
-    setText('hero-actions-sub', `${numAccounts} ${accountWord} · ${words.action}`);
+    // Show the equation directly under Actions — replaces the old big-number
+    // headline at the top of the section. Operator gets "3 × 65 per day = 195"
+    // at a glance, in the forecast row where they already look for the math.
+    setText('hero-actions-sub', `${numAccounts} ${accountWord} × ${limit} per day`);
     setText('hero-duration', durationStr);
     setText('hero-duration-sub', `~${effectiveLeadsPerHour} ${words.action}/hr (${concurrency} parallel)`);
     setText('hero-finish', finishStr);
