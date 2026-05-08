@@ -1755,6 +1755,12 @@ async function startPostAmplification() {
     return;
   }
   showCampaignToast(`Post Amplification started · ${body.total} account(s)`, 3500);
+  // Kick off the cockpit poll loop. pollStatus() reads /api/campaign/status
+  // which now overlays Post Amp state when postAmp.running is true, AND it
+  // does its own client-side overlay from /api/post-amplification/status as
+  // defence in depth. Without this call, __cockpit never gets fed and the
+  // Live Status panel stays stuck in its initial IDLE state.
+  startPolling();
   pollPostAmpStatus();
 }
 
