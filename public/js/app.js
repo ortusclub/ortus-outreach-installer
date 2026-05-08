@@ -4528,11 +4528,12 @@ async function refreshPastCampaigns() {
       const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
       const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
       return `
-        <div class="campaign-row">
+        <div class="campaign-row campaign-row--with-edit">
           <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
           <span class="campaign-row-type">${escHtml(subtitle)}</span>
           <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
           <span class="campaign-row-status is-done">Completed</span>
+          <button type="button" class="campaign-row-edit" onclick="goCreateCampaign()" title="Open the campaign page">Edit</button>
         </div>
       `;
     }).join('');
