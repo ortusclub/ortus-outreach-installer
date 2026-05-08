@@ -546,94 +546,153 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
       log(`[post-amp] could not open comment editor — DIAG ${JSON.stringify(diag)}`);
     } else {
       try {
-        // Tiptap/ProseMirror editor — multiple selectors so we degrade
-        // gracefully if LinkedIn renames the aria-label on a variant.
-        const editorSelectors = [
-          'div[role="textbox"][aria-label="Text editor for creating comment"]',
-          'div[role="textbox"][aria-label*="comment" i]',
-          'div.ql-editor[contenteditable="true"]',
-          'div.tiptap[contenteditable="true"]',
-          'div[contenteditable="true"][role="textbox"]',
-        ];
-        let editorSel = null;
-        for (const sel of editorSelectors) {
-          try {
-            await page.waitForSelector(sel, { timeout: 3000 });
-            editorSel = sel;
-            break;
-          } catch { /* try next */ }
-        }
-        if (!editorSel) {
-          // Dump every contenteditable on the page so we know what selector
-          // to add next time.
+        // Find a VISIBLE comment editor in-page and tag it with a unique
+        // attribute so subsequent selectors (focus + read-back + submit
+        // scope) target the same element. Critical: page.click() against a
+        // greedy selector like 'div.ql-editor[contenteditable="true"]' can
+        // match a HIDDEN/pre-rendered Quill instance — the click then hangs
+        // for the full CDP timeout (180s) waiting for the hidden element to
+        // become clickable. Filtering to visible elements in-page avoids it.
+        const editorMatch = await page.evaluate(() => {
+          const editorSelectors = [
+            'div[role="textbox"][aria-label="Text editor for creating comment"]',
+            'div[role="textbox"][aria-label*="comment" i]',
+            'div.ql-editor[contenteditable="true"]',
+            'div.tiptap[contenteditable="true"]',
+            'div[contenteditable="true"][role="textbox"]',
+          ];
+          for (const sel of editorSelectors) {
+            const els = Array.from(document.querySelectorAll(sel));
+            for (const el of els) {
+              const rect = el.getBoundingClientRect();
+              const style = window.getComputedStyle(el);
+              const visible =
+                rect.width > 50 && rect.height > 20 &&
+                style.display !== 'none' && style.visibility !== 'hidden' &&
+                style.opacity !== '0';
+              if (visible) {
+                el.setAttribute('data-ortus-pa-editor', '1');
+                el.scrollIntoView({ block: 'center', behavior: 'instant' });
+                el.focus();
+                return {
+                  found: true,
+                  sel,
+                  tag: el.tagName,
+                  cls: (el.className || '').toString().slice(0, 80),
+                  aria: (el.getAttribute('aria-label') || '').slice(0, 80),
+                };
+              }
+            }
+          }
+          return { found: false };
+        }).catch((e) => ({ found: false, error: e.message }));
+
+        if (!editorMatch.found) {
           const ceDump = await page.evaluate(() => {
             return Array.from(document.querySelectorAll('[contenteditable="true"]'))
               .slice(0, 6)
-              .map(el => ({
-                tag: el.tagName,
-                role: el.getAttribute('role') || '',
-                aria: (el.getAttribute('aria-label') || '').slice(0, 80),
-                cls: (el.className || '').toString().slice(0, 100),
-              }));
+              .map(el => {
+                const r = el.getBoundingClientRect();
+                return {
+                  tag: el.tagName,
+                  role: el.getAttribute('role') || '',
+                  aria: (el.getAttribute('aria-label') || '').slice(0, 80),
+                  cls: (el.className || '').toString().slice(0, 100),
+                  visible: r.width > 0 && r.height > 0,
+                };
+              });
           }).catch(() => []);
-          log(`[post-amp] comment editor never mounted — DIAG contenteditable dump: ${JSON.stringify(ceDump)}`);
+          log(`[post-amp] comment editor never mounted (no visible match) — DIAG: ${JSON.stringify(ceDump)}`);
         } else {
           if (abortIfRequested()) return abortIfRequested();
-          log(`[post-amp] comment editor mounted (sel: ${editorSel})`);
-          // Focus, type via keyboard so LinkedIn's keystroke listeners fire
-          // (page.type() doesn't work reliably on Tiptap/ProseMirror).
-          await page.click(editorSel);
+          log(`[post-amp] visible comment editor focused (sel: ${editorMatch.sel}, ${editorMatch.tag}.${editorMatch.cls})`);
+
+          // Editor is already focused via in-page el.focus(). Type via
+          // keyboard so LinkedIn's keystroke listeners fire (Tiptap/Quill
+          // both ignore programmatic value changes — they only respond to
+          // real keyboard events).
           await abortableSleep(jitter(300, 700));
           if (abortIfRequested()) return abortIfRequested();
 
-          // STEP-DIAG: confirm the editor actually has focus before typing.
-          const focusOk = await page.evaluate((sel) => {
-            const el = document.querySelector(sel);
+          // STEP-DIAG: confirm focus stuck.
+          const focusOk = await page.evaluate(() => {
+            const el = document.querySelector('[data-ortus-pa-editor="1"]');
             return el && document.activeElement === el;
-          }, editorSel).catch(() => false);
-          log(`[post-amp] editor focused after click: ${focusOk}`);
+          }).catch(() => false);
+          log(`[post-amp] editor focus retained: ${focusOk}`);
+          if (!focusOk) {
+            // Re-focus once if focus drifted.
+            await page.evaluate(() => {
+              const el = document.querySelector('[data-ortus-pa-editor="1"]');
+              if (el) el.focus();
+            }).catch(() => {});
+          }
 
           await page.keyboard.type(text, { delay: jitter(50, 120) });
           await abortableSleep(jitter(800, 1500));
 
           // STEP-DIAG: read back what's actually in the editor after typing.
-          const editorContent = await page.evaluate((sel) => {
-            const el = document.querySelector(sel);
+          const editorContent = await page.evaluate(() => {
+            const el = document.querySelector('[data-ortus-pa-editor="1"]');
             return el ? (el.textContent || '').trim() : '<editor-gone>';
-          }, editorSel).catch(() => '<error>');
+          }).catch(() => '<error>');
           log(`[post-amp] editor content after type (len=${editorContent.length}): "${editorContent.slice(0, 80)}${editorContent.length > 80 ? '…' : ''}"`);
 
           if (abortIfRequested()) return abortIfRequested();
-          // Submit — button is disabled until text is present.
-          // Removed the greedy 'aria-label*="Post" i' fallback; on
-          // post-detail pages it would match unrelated "Post" CTAs.
-          const submitSelectors = [
-            'button.comments-comment-box__submit-button:not([disabled])',
-            'button[data-control-name="submit_comment"]:not([disabled])',
-            'button[aria-label="Post comment"]:not([disabled])',
-          ];
+          // Submit — find a VISIBLE submit button in the same comment-box
+          // ancestor as our tagged editor. This avoids matching pre-rendered
+          // hidden submit buttons or unrelated "Post" CTAs elsewhere on the
+          // page (see editor-find rationale above).
+          const submitInfo = await page.evaluate(() => {
+            const editor = document.querySelector('[data-ortus-pa-editor="1"]');
+            if (!editor) return { found: false, reason: 'editor anchor lost' };
+            // Walk up to find the comment-box container.
+            let scope = editor;
+            for (let i = 0; i < 8 && scope && scope.tagName !== 'BODY'; i++) {
+              if (scope.matches('form.comments-comment-box, .comments-comment-box, .comments-comment-texteditor')) break;
+              scope = scope.parentElement;
+            }
+            if (!scope || scope.tagName === 'BODY') scope = editor.parentElement; // fallback
+            const submitSelectors = [
+              'button.comments-comment-box__submit-button',
+              'button[data-control-name="submit_comment"]',
+              'button[aria-label="Post comment"]',
+              'button[type="submit"]',
+            ];
+            for (const sel of submitSelectors) {
+              const btns = Array.from(scope.querySelectorAll(sel));
+              for (const b of btns) {
+                const r = b.getBoundingClientRect();
+                const visible = r.width > 10 && r.height > 10;
+                const disabled = b.disabled || b.getAttribute('aria-disabled') === 'true';
+                if (visible && !disabled) {
+                  b.setAttribute('data-ortus-pa-submit', '1');
+                  return {
+                    found: true,
+                    sel,
+                    aria: (b.getAttribute('aria-label') || '').slice(0, 80),
+                    cls:  (b.className || '').toString().slice(0, 100),
+                    txt:  (b.textContent || '').trim().slice(0, 40),
+                  };
+                }
+              }
+            }
+            return { found: false, reason: 'no visible+enabled submit in scope' };
+          }).catch((e) => ({ found: false, reason: e.message }));
+
           let submitClicked = false;
           let matchedSel = '';
-          let clickedButtonInfo = null;
-          for (const sel of submitSelectors) {
+          let clickedButtonInfo = submitInfo.found ? submitInfo : null;
+          if (submitInfo.found) {
             try {
-              await page.waitForSelector(sel, { timeout: 3000 });
-              // STEP-DIAG: capture exactly which button we're about to click.
-              clickedButtonInfo = await page.evaluate((s) => {
-                const b = document.querySelector(s);
-                if (!b) return null;
-                return {
-                  aria: (b.getAttribute('aria-label') || '').slice(0, 80),
-                  cls:  (b.className || '').toString().slice(0, 100),
-                  txt:  (b.textContent || '').trim().slice(0, 40),
-                  disabled: b.disabled || b.getAttribute('aria-disabled') === 'true',
-                };
-              }, sel).catch(() => null);
-              await page.click(sel);
+              await page.click('[data-ortus-pa-submit="1"]');
               submitClicked = true;
-              matchedSel = sel;
-              break;
-            } catch { /* try next */ }
+              matchedSel = submitInfo.sel;
+            } catch (e) {
+              log(`[post-amp] submit click threw: ${e.message}`);
+            }
+          } else {
+            log(`[post-amp] submit button search failed (${submitInfo.reason})`);
           }
           if (submitClicked) {
             log(`[post-amp] submit clicked (sel: ${matchedSel}) → button ${JSON.stringify(clickedButtonInfo)}`);
@@ -643,12 +702,12 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
             // editor cleared. LinkedIn clears the editor after a successful
             // submit and re-shows an empty Add-a-comment input. If our text
             // is still in there, the "click" did something but did NOT post.
-            const postSubmit = await page.evaluate((sel, expected) => {
-              const el = document.querySelector(sel);
+            const postSubmit = await page.evaluate((expected) => {
+              const el = document.querySelector('[data-ortus-pa-editor="1"]');
               if (!el) return { editorGone: true, content: '' };
               const content = (el.textContent || '').trim();
               return { editorGone: false, content, stillContainsText: expected && content.includes(expected.slice(0, Math.min(20, expected.length))) };
-            }, editorSel, text).catch(() => ({ error: true }));
+            }, text).catch(() => ({ error: true }));
             log(`[post-amp] post-submit editor state: ${JSON.stringify(postSubmit)}`);
 
             if (postSubmit.error || postSubmit.editorGone || !postSubmit.stillContainsText) {
