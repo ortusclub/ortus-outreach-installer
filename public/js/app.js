@@ -4621,3 +4621,31 @@ function initCampaignNameInput() {
 }
 document.addEventListener('DOMContentLoaded', initCampaignNameInput);
 if (document.readyState !== 'loading') initCampaignNameInput();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sheet tab URL — warn when the operator pastes a URL with no #gid= so the
+// campaign doesn't silently pull from the first tab. Non-blocking.
+// ─────────────────────────────────────────────────────────────────────────────
+function updateSheetTabHint() {
+  const input = document.getElementById('sheet-url');
+  const hint = document.getElementById('sheet-tab-hint');
+  if (!input || !hint) return;
+  const v = input.value.trim();
+  if (!v) {
+    hint.classList.remove('is-warning');
+    hint.innerHTML = 'Open the specific tab inside the sheet, then copy the URL from your browser address bar — it should include <code>#gid=…</code>.';
+    return;
+  }
+  // Match #gid=, ?gid=, or &gid= — same shapes extractSheetGid recognises.
+  const hasGid = /[#&?]gid=\d+/.test(v);
+  if (hasGid) {
+    hint.classList.remove('is-warning');
+    hint.innerHTML = 'Specific tab detected — campaign will pull from this tab.';
+  } else {
+    hint.classList.add('is-warning');
+    hint.innerHTML = 'No tab selector found — open the specific tab and re-copy the URL, otherwise the campaign reads the first tab in the sheet.';
+  }
+}
+document.addEventListener('DOMContentLoaded', updateSheetTabHint);
+if (document.readyState !== 'loading') updateSheetTabHint();
+window.updateSheetTabHint = updateSheetTabHint;
