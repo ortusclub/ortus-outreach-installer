@@ -402,18 +402,18 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
       reactionAlreadyExisted = true;
     }
   } else {
-    // Picker-fallback variant: detect prior reaction by checking if any of
-    // the React-X buttons are aria-pressed=true BEFORE we click anything.
+    // Picker-fallback variant. The 2026-05-08 action-bar dump on gwyneth's
+    // already-liked account showed:
+    //   {"aria":"Unreact Like","cls":"...","txt":"Like"}
+    // So the dedup signal on this variant is the aria-label flipping from
+    // "React <X>" (unreacted) to "Unreact <X>" (currently reacted as X).
+    // No aria-pressed swap involved.
     const existing = await page.evaluate(() => {
-      const buttons = document.querySelectorAll('button[aria-label^="React "]');
-      for (const b of buttons) {
-        if ((b.getAttribute('aria-pressed') || '').toLowerCase() === 'true') {
-          const label = b.getAttribute('aria-label') || '';
-          const m = label.match(/^React\s+(.+)$/);
-          return m ? m[1].trim() : 'Unknown';
-        }
-      }
-      return null;
+      const btn = document.querySelector('button[aria-label^="Unreact "]');
+      if (!btn) return null;
+      const label = btn.getAttribute('aria-label') || '';
+      const m = label.match(/^Unreact\s+(.+)$/);
+      return m ? m[1].trim() : null;
     }).catch(() => null);
     if (existing) {
       log(`[post-amp] picker fallback: reaction already present (${existing}) — skipping reaction step, continuing to comment`);
@@ -579,38 +579,88 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
           log(`[post-amp] comment editor never mounted — DIAG contenteditable dump: ${JSON.stringify(ceDump)}`);
         } else {
           if (abortIfRequested()) return abortIfRequested();
+          log(`[post-amp] comment editor mounted (sel: ${editorSel})`);
           // Focus, type via keyboard so LinkedIn's keystroke listeners fire
           // (page.type() doesn't work reliably on Tiptap/ProseMirror).
           await page.click(editorSel);
           await abortableSleep(jitter(300, 700));
           if (abortIfRequested()) return abortIfRequested();
+
+          // STEP-DIAG: confirm the editor actually has focus before typing.
+          const focusOk = await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            return el && document.activeElement === el;
+          }, editorSel).catch(() => false);
+          log(`[post-amp] editor focused after click: ${focusOk}`);
+
           await page.keyboard.type(text, { delay: jitter(50, 120) });
           await abortableSleep(jitter(800, 1500));
 
+          // STEP-DIAG: read back what's actually in the editor after typing.
+          const editorContent = await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            return el ? (el.textContent || '').trim() : '<editor-gone>';
+          }, editorSel).catch(() => '<error>');
+          log(`[post-amp] editor content after type (len=${editorContent.length}): "${editorContent.slice(0, 80)}${editorContent.length > 80 ? '…' : ''}"`);
+
           if (abortIfRequested()) return abortIfRequested();
           // Submit — button is disabled until text is present.
+          // Removed the greedy 'aria-label*="Post" i' fallback; on
+          // post-detail pages it would match unrelated "Post" CTAs.
           const submitSelectors = [
             'button.comments-comment-box__submit-button:not([disabled])',
             'button[data-control-name="submit_comment"]:not([disabled])',
             'button[aria-label="Post comment"]:not([disabled])',
-            'button[aria-label*="Post" i]:not([disabled])',
           ];
           let submitClicked = false;
-          let lastErr = '';
+          let matchedSel = '';
+          let clickedButtonInfo = null;
           for (const sel of submitSelectors) {
             try {
               await page.waitForSelector(sel, { timeout: 3000 });
+              // STEP-DIAG: capture exactly which button we're about to click.
+              clickedButtonInfo = await page.evaluate((s) => {
+                const b = document.querySelector(s);
+                if (!b) return null;
+                return {
+                  aria: (b.getAttribute('aria-label') || '').slice(0, 80),
+                  cls:  (b.className || '').toString().slice(0, 100),
+                  txt:  (b.textContent || '').trim().slice(0, 40),
+                  disabled: b.disabled || b.getAttribute('aria-disabled') === 'true',
+                };
+              }, sel).catch(() => null);
               await page.click(sel);
               submitClicked = true;
+              matchedSel = sel;
               break;
-            } catch (e) { lastErr = e.message; }
+            } catch { /* try next */ }
           }
           if (submitClicked) {
+            log(`[post-amp] submit clicked (sel: ${matchedSel}) → button ${JSON.stringify(clickedButtonInfo)}`);
             await abortableSleep(jitter(1500, 2500));
-            commented = true;
-            log(`[post-amp] commented: "${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+
+            // STEP-DIAG: verify the comment actually posted by checking the
+            // editor cleared. LinkedIn clears the editor after a successful
+            // submit and re-shows an empty Add-a-comment input. If our text
+            // is still in there, the "click" did something but did NOT post.
+            const postSubmit = await page.evaluate((sel, expected) => {
+              const el = document.querySelector(sel);
+              if (!el) return { editorGone: true, content: '' };
+              const content = (el.textContent || '').trim();
+              return { editorGone: false, content, stillContainsText: expected && content.includes(expected.slice(0, Math.min(20, expected.length))) };
+            }, editorSel, text).catch(() => ({ error: true }));
+            log(`[post-amp] post-submit editor state: ${JSON.stringify(postSubmit)}`);
+
+            if (postSubmit.error || postSubmit.editorGone || !postSubmit.stillContainsText) {
+              commented = true;
+              log(`[post-amp] commented: "${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+            } else {
+              // Submit click was acknowledged by the page but the comment
+              // didn't actually post — the editor still has our text. Could
+              // be a wrong-button click or LinkedIn rejected it silently.
+              log(`[post-amp] submit appeared to click but editor still contains text — comment did NOT post`);
+            }
           } else {
-            // Diagnostic: what submit-shaped buttons ARE present?
             const submitDump = await page.evaluate(() => {
               return Array.from(document.querySelectorAll('button'))
                 .filter(b => /post|submit|reply/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.className || '') + ' ' + (b.textContent || '')))
