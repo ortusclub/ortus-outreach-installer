@@ -173,16 +173,63 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
   // suspicious activity. We don't try to solve it; just bail early so the
   // operator can intervene.
   const finalUrl = page.url();
-  if (/\/checkpoint\//.test(finalUrl) || /\/uas\/login/.test(finalUrl)) {
+  if (/\/checkpoint\//.test(finalUrl) || /\/uas\/login/.test(finalUrl) || /\/login/.test(finalUrl)) {
     return { ok: false, error: `account hit checkpoint/login redirect (${finalUrl})` };
   }
 
-  // Wait for the reaction button to render. Linkedin posts hydrate quickly
-  // on /posts/ URLs, but networks vary — give it up to 12s.
-  try {
-    await page.waitForSelector('button[aria-label^="Reaction button state:"]', { timeout: 12000 });
-  } catch {
-    return { ok: false, error: 'reaction button never rendered (post may be gated, deleted, or login required)' };
+  // Wait for the reaction button to render. Strategy: poll up to 5 times with
+  // a small scroll between attempts. LinkedIn lazy-mounts the social action
+  // bar on intersection observer; if the post body is tall (carousel + long
+  // copy + media) the bar can be off-screen at initial load and never mounts
+  // until something scrolls it into view. We saw 2/3 accounts fail on a long
+  // post in 2026-05-08 testing — a scroll-then-retry pattern fixes that and
+  // is harmless when the bar was going to render anyway.
+  const RETRY_ATTEMPTS = 5;
+  let buttonFound = false;
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS && !buttonFound; attempt++) {
+    try {
+      await page.waitForSelector('button[aria-label^="Reaction button state:"]', { timeout: 4000 });
+      buttonFound = true;
+      break;
+    } catch { /* not yet — try scrolling */ }
+
+    // Scroll progressively further down on each retry to bring the action
+    // bar into view (and trigger any lazy-mount observers).
+    const scrollY = attempt * 600;
+    log(`[post-amp] reaction button not yet rendered (attempt ${attempt}/${RETRY_ATTEMPTS}) — scrolling ${scrollY}px and retrying`);
+    await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'instant' }), scrollY).catch(() => {});
+    await sleep(800);
+  }
+
+  if (!buttonFound) {
+    // Diagnostic snapshot — capture WHY the button is missing so the operator
+    // can see whether it's a session/login problem (theory A) vs a layout/
+    // lazy-render problem (theory B) vs a gated post (theory C).
+    const diag = await page.evaluate(() => {
+      const findText = (s) => Array.from(document.querySelectorAll('h1,h2,p,button,span'))
+        .map(e => (e.textContent || '').trim())
+        .find(t => t.toLowerCase().includes(s.toLowerCase())) || '';
+      return {
+        url: window.location.href,
+        title: document.title || '',
+        hasLoginForm: !!document.querySelector('input[type="password"]') ||
+                      !!document.querySelector('input[name="session_password"]'),
+        hasJoinCta: !!findText('Join now') || !!findText('Sign in') || !!findText('Sign up'),
+        hasPostContainer: !!document.querySelector('div.feed-shared-update-v2, article, .fie-impression-container'),
+        hasOpenReactionsMenu: !!document.querySelector('button[aria-label="Open reactions menu"]'),
+        documentReadyState: document.readyState,
+      };
+    }).catch(() => ({ error: 'diagnostic snapshot failed' }));
+    log(`[post-amp] DIAG ${JSON.stringify(diag)}`);
+
+    // Translate the diagnostic into an actionable error message.
+    if (diag.hasLoginForm || diag.hasJoinCta) {
+      return { ok: false, error: `account is logged out (LinkedIn served the public/login page at ${diag.url})` };
+    }
+    if (!diag.hasPostContainer) {
+      return { ok: false, error: `post body never rendered — post may be deleted, private, or geo-blocked (final url: ${diag.url})` };
+    }
+    return { ok: false, error: `reaction button never rendered after ${RETRY_ATTEMPTS} scroll-retries; post body present but social bar missing (final url: ${diag.url})` };
   }
 
   // Scroll the post into the centre of the viewport so impression tracking
