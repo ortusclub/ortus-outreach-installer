@@ -1795,35 +1795,67 @@ function updateCampaignSummary() {
   const perAccountLeadsPerHour = (60 / TURN_FLOOR_MIN) * LEADS_PER_BATCH; // 50
   const effectiveLeadsPerHour = perAccountLeadsPerHour * concurrency;
 
-  const totalActions = limit * numAccounts;
-  const minutesNeeded = totalActions > 0
-    ? Math.max(1, Math.ceil((totalActions / effectiveLeadsPerHour) * 60))
-    : 0;
-  const durationStr = minutesNeeded === 0
-    ? '—'
-    : minutesNeeded < 60
-      ? `${minutesNeeded} min`
-      : `${Math.floor(minutesNeeded / 60)}h ${minutesNeeded % 60}m`;
+  const dailyTotal = limit * numAccounts;
+  // Total leads to process — only known once the operator has previewed the
+  // sheet. Falls back to today's batch (dailyTotal) when unknown so the
+  // "select accounts to see forecast" path keeps working.
+  const leadsInSheet = (typeof window.sheetTotalRows === 'number' && window.sheetTotalRows > 0)
+    ? window.sheetTotalRows
+    : null;
+  const isMultiDay = leadsInSheet !== null && leadsInSheet > dailyTotal && dailyTotal > 0;
 
-  const now = new Date();
-  const finishTime = new Date(now.getTime() + minutesNeeded * 60 * 1000);
-  const finishStr = minutesNeeded === 0 ? '—' : finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // "Actions" cell shows total leads to process when the campaign spans more
+  // than today; otherwise today's batch.
+  const totalActions = isMultiDay ? leadsInSheet : dailyTotal;
+
+  // Duration:
+  // - single-day:  totalActions / leadsPerHour, expressed in minutes
+  // - multi-day:   ceil(leadsInSheet / dailyTotal) days, expressed in days/weeks
+  let durationStr, finishStr, minutesNeededSingleDay = 0;
+  if (isMultiDay) {
+    const daysNeeded = Math.ceil(leadsInSheet / dailyTotal);
+    durationStr = daysNeeded < 7
+      ? `${daysNeeded} day${daysNeeded === 1 ? '' : 's'}`
+      : daysNeeded < 14
+        ? `${daysNeeded} days · ~${Math.round(daysNeeded / 7)} week`
+        : `${daysNeeded} days · ~${Math.round(daysNeeded / 7)} weeks`;
+    const finishDate = new Date(Date.now() + daysNeeded * 86400000);
+    finishStr = finishDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } else {
+    minutesNeededSingleDay = totalActions > 0
+      ? Math.max(1, Math.ceil((totalActions / effectiveLeadsPerHour) * 60))
+      : 0;
+    durationStr = minutesNeededSingleDay === 0
+      ? '—'
+      : minutesNeededSingleDay < 60
+        ? `${minutesNeededSingleDay} min`
+        : `${Math.floor(minutesNeededSingleDay / 60)}h ${minutesNeededSingleDay % 60}m`;
+    const finishTime = new Date(Date.now() + minutesNeededSingleDay * 60 * 1000);
+    finishStr = minutesNeededSingleDay === 0
+      ? '—'
+      : finishTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
 
   const el = document.getElementById('summary-stats');
   if (el) {
     const accountWord = numAccounts === 1 ? 'account' : 'accounts';
+    const summaryFinish = isMultiDay ? `around ${finishStr}` : finishStr;
     el.innerHTML = `
-      <div><strong>${numAccounts} ${accountWord}</strong>, up to <strong>${limit}</strong> ${words.action} per account</div>
-      <div>= up to <strong>${totalActions}</strong> total ${words.action} this run</div>
-      <div style="margin-top:6px">&#9200; Starts now &#8594; finishes around <strong>${finishStr}</strong></div>
+      <div><strong>${numAccounts} ${accountWord}</strong>, up to <strong>${limit}</strong> ${words.action} per account per day</div>
+      <div>= up to <strong>${dailyTotal}</strong> ${words.action}/day · <strong>${leadsInSheet ?? '?'}</strong> in sheet</div>
+      <div style="margin-top:6px">&#9200; Starts now &#8594; ${isMultiDay ? `finishes ~<strong>${finishStr}</strong>` : `finishes ~<strong>${summaryFinish}</strong>`}</div>
     `;
   }
 
   // Launch hero mirror
   const ln = document.getElementById('launch-number');
-  if (ln) ln.textContent = String(totalActions);
+  if (ln) ln.textContent = String(dailyTotal); // big number = daily rate
   const lc = document.getElementById('launch-connections');
-  if (lc) lc.textContent = `${totalActions} ${words.action}`;
+  if (lc) {
+    lc.textContent = leadsInSheet
+      ? `${dailyTotal}/day · ${leadsInSheet} in sheet`
+      : `${dailyTotal} ${words.action}/day`;
+  }
   const la = document.getElementById('launch-accounts');
   if (la) la.textContent = String(numAccounts);
   const le = document.getElementById('launch-eta');
@@ -1843,14 +1875,21 @@ function updateCampaignSummary() {
     setText('hero-finish-sub', '—');
   } else {
     setText('hero-actions', String(totalActions));
-    // Show the equation directly under Actions — replaces the old big-number
-    // headline at the top of the section. Operator gets "3 × 65 per day = 195"
-    // at a glance, in the forecast row where they already look for the math.
-    setText('hero-actions-sub', `${numAccounts} ${accountWord} × ${limit} per day`);
+    setText(
+      'hero-actions-sub',
+      isMultiDay
+        ? `leads to process · ${dailyTotal}/day cap`
+        : `${numAccounts} ${accountWord} × ${limit} per day`,
+    );
     setText('hero-duration', durationStr);
-    setText('hero-duration-sub', `~${effectiveLeadsPerHour} ${words.action}/hr (${concurrency} parallel)`);
+    setText(
+      'hero-duration-sub',
+      isMultiDay
+        ? `~${effectiveLeadsPerHour} ${words.action}/hr active`
+        : `~${effectiveLeadsPerHour} ${words.action}/hr (${concurrency} parallel)`,
+    );
     setText('hero-finish', finishStr);
-    setText('hero-finish-sub', `from now · local time`);
+    setText('hero-finish-sub', isMultiDay ? `estimated · LinkedIn caps may slow this` : `from now · local time`);
   }
 }
 
