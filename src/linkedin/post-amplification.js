@@ -554,8 +554,12 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
         // for the full CDP timeout (180s) waiting for the hidden element to
         // become clickable. Filtering to visible elements in-page avoids it.
         const editorMatch = await page.evaluate(() => {
+          // 2026-05-08 evidence: gwyneth's variant labels the comment editor
+          // 'Text editor for creating content' (not '...comment'). The 'creating'
+          // partial covers both wordings. Empty Quill editors render at ~18-20px
+          // height so the visibility threshold was lowered (width > 30, height > 10).
           const editorSelectors = [
-            'div[role="textbox"][aria-label="Text editor for creating comment"]',
+            'div[role="textbox"][aria-label*="text editor for creating" i]',
             'div[role="textbox"][aria-label*="comment" i]',
             'div.ql-editor[contenteditable="true"]',
             'div.tiptap[contenteditable="true"]',
@@ -567,7 +571,7 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
               const rect = el.getBoundingClientRect();
               const style = window.getComputedStyle(el);
               const visible =
-                rect.width > 50 && rect.height > 20 &&
+                rect.width > 30 && rect.height > 10 &&
                 style.display !== 'none' && style.visibility !== 'hidden' &&
                 style.opacity !== '0';
               if (visible) {
@@ -580,6 +584,7 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
                   tag: el.tagName,
                   cls: (el.className || '').toString().slice(0, 80),
                   aria: (el.getAttribute('aria-label') || '').slice(0, 80),
+                  rect: { w: Math.round(rect.width), h: Math.round(rect.height) },
                 };
               }
             }
@@ -605,7 +610,7 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
           log(`[post-amp] comment editor never mounted (no visible match) — DIAG: ${JSON.stringify(ceDump)}`);
         } else {
           if (abortIfRequested()) return abortIfRequested();
-          log(`[post-amp] visible comment editor focused (sel: ${editorMatch.sel}, ${editorMatch.tag}.${editorMatch.cls})`);
+          log(`[post-amp] visible comment editor focused (sel: ${editorMatch.sel}, ${editorMatch.tag}.${editorMatch.cls}, aria="${editorMatch.aria}", ${editorMatch.rect?.w}x${editorMatch.rect?.h})`);
 
           // Editor is already focused via in-page el.focus(). Type via
           // keyboard so LinkedIn's keystroke listeners fire (Tiptap/Quill
