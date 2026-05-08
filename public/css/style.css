@@ -2790,3 +2790,23 @@ body.route-dashboard .sidebar-nav { display: none; }
   font-size: 0.7rem;
   letter-spacing: 0.22em;
 }
+
+/* Edit button on the active dashboard row — quick jump to the wizard for the
+   running campaign. Sits to the right of the status pill. */
+.campaign-row--with-edit {
+  grid-template-columns: 2fr 1.4fr 1.4fr auto auto;
+}
+.campaign-row-edit {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--gray);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.campaign-row-edit:hover { border-color: var(--ink); color: var(--ink); }
