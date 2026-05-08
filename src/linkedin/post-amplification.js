@@ -159,8 +159,26 @@ async function openCommentEditor(page) {
  *   { ok: true, alreadyReacted: true }                       — dedup hit
  *   { ok: false, error }                                     — failure
  */
-export async function engagePost(page, postUrl, { reaction, commentText, log = () => {} } = {}) {
+export async function engagePost(page, postUrl, { reaction, commentText, log = () => {}, shouldAbort = () => false } = {}) {
   const reactionToUse = reaction || pickReaction();
+  // Helper: return an abort result if the operator hit Stop. Sprinkled at
+  // every major step boundary so /api/post-amplification/stop responds
+  // within ~200ms instead of waiting for the entire engagePost flow.
+  const abortIfRequested = () => shouldAbort()
+    ? { ok: false, error: 'aborted by operator' }
+    : null;
+  // Chunked sleep — same total duration as plain sleep() but checks abort
+  // every 200ms so dwell windows don't block stop for 15s.
+  const abortableSleep = async (totalMs) => {
+    const tick = 200;
+    for (let elapsed = 0; elapsed < totalMs; elapsed += tick) {
+      if (shouldAbort()) return false;
+      await sleep(Math.min(tick, totalMs - elapsed));
+    }
+    return true;
+  };
+
+  if (abortIfRequested()) return abortIfRequested();
   log(`[post-amp] navigating to ${postUrl}`);
 
   try {
@@ -168,6 +186,7 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
   } catch (err) {
     return { ok: false, error: `navigation failed: ${err.message}` };
   }
+  if (abortIfRequested()) return abortIfRequested();
 
   // Checkpoint detection — LinkedIn redirects to /checkpoint/challenge/ on
   // suspicious activity. We don't try to solve it; just bail early so the
@@ -193,12 +212,13 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
       break;
     } catch { /* not yet — try scrolling */ }
 
+    if (shouldAbort()) return { ok: false, error: 'aborted by operator' };
     // Scroll progressively further down on each retry to bring the action
     // bar into view (and trigger any lazy-mount observers).
     const scrollY = attempt * 600;
     log(`[post-amp] reaction button not yet rendered (attempt ${attempt}/${RETRY_ATTEMPTS}) — scrolling ${scrollY}px and retrying`);
     await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'instant' }), scrollY).catch(() => {});
-    await sleep(800);
+    await abortableSleep(800);
   }
 
   // Track whether we're on the picker-fallback path. When the primary
@@ -271,7 +291,8 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
   }, usePickerFallback);
   const dwellMs = jitter(5000, 15000);
   log(`[post-amp] dwelling ${Math.round(dwellMs / 1000)}s`);
-  await sleep(dwellMs);
+  const dwellOk = await abortableSleep(dwellMs);
+  if (!dwellOk) return { ok: false, error: 'aborted by operator' };
 
   // Dedup gate: in the primary path, the "Reaction button state:" aria-label
   // tells us whether this account has already reacted. In the picker-fallback
@@ -502,6 +523,7 @@ export async function runAmplification({
         reaction: cfg.like ? reactionPlan : null,
         commentText: commentPlan,
         log,
+        shouldAbort,
       });
 
       if (result.ok) {
@@ -534,15 +556,16 @@ export async function runAmplification({
       status.completed++;
     }
 
-    // Inter-account gap. Skip after the last one.
+    // Inter-account gap. Skip after the last one. Chunk at 200ms so an
+    // operator's Stop press is honored within ~200ms instead of waiting up
+    // to 2s as before.
     if (i < accountConfigs.length - 1 && !shouldAbort()) {
       const gapMs = jitter(60000, 300000);
       log(`[post-amp] sleeping ${Math.round(gapMs / 1000)}s before next account…`);
-      // Sleep in small chunks so abort responds quickly.
-      const chunks = Math.ceil(gapMs / 2000);
-      for (let c = 0; c < chunks; c++) {
+      const tick = 200;
+      for (let elapsed = 0; elapsed < gapMs; elapsed += tick) {
         if (shouldAbort()) break;
-        await sleep(Math.min(2000, gapMs - c * 2000));
+        await sleep(Math.min(tick, gapMs - elapsed));
       }
     }
   }
