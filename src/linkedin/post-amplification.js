@@ -383,25 +383,51 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
     log(`[post-amp] could not scrape poster name — placeholder substitutions will be empty`);
   }
 
-  // Dedup gate: in the primary path, the "Reaction button state:" aria-label
-  // tells us whether this account has already reacted. In the picker-fallback
-  // path, we don't have that signal — fall through to local-state-only dedup
-  // (already gated upstream in runAmplification).
+  // Probe existing reaction state. If the account already reacted in a prior
+  // run (or via the LinkedIn UI manually), we skip the reaction click — but
+  // we DO NOT skip the rest of the engagement. Comments are not idempotent;
+  // operators want to be free to add a new comment in a follow-up campaign
+  // even if a previous campaign already liked.
+  let reactionApplied = '';
+  let reactionAlreadyExisted = false;
+
   if (!usePickerFallback) {
     const initial = await getReactionButtonState(page);
     if (!initial.found) {
       return { ok: false, error: 'reaction button disappeared after dwell' };
     }
     if (initial.alreadyReacted) {
-      log(`[post-amp] already reacted (${initial.state}) — skipping`);
-      return { ok: true, alreadyReacted: true, reaction: initial.state, commented: false };
+      log(`[post-amp] reaction already present (${initial.state}) — skipping reaction step, continuing to comment`);
+      reactionApplied = initial.state;
+      reactionAlreadyExisted = true;
+    }
+  } else {
+    // Picker-fallback variant: detect prior reaction by checking if any of
+    // the React-X buttons are aria-pressed=true BEFORE we click anything.
+    const existing = await page.evaluate(() => {
+      const buttons = document.querySelectorAll('button[aria-label^="React "]');
+      for (const b of buttons) {
+        if ((b.getAttribute('aria-pressed') || '').toLowerCase() === 'true') {
+          const label = b.getAttribute('aria-label') || '';
+          const m = label.match(/^React\s+(.+)$/);
+          return m ? m[1].trim() : 'Unknown';
+        }
+      }
+      return null;
+    }).catch(() => null);
+    if (existing) {
+      log(`[post-amp] picker fallback: reaction already present (${existing}) — skipping reaction step, continuing to comment`);
+      reactionApplied = existing;
+      reactionAlreadyExisted = true;
     }
   }
 
-  // ─── React ──────────────────────────────────────────────────────────────
-  let reactionApplied = '';
+  // ─── React (only if no prior reaction exists) ──────────────────────────
 
-  if (usePickerFallback) {
+  if (reactionAlreadyExisted) {
+    // Skip the reaction click entirely. reactionApplied was set above to the
+    // existing reaction so the return payload is still meaningful.
+  } else if (usePickerFallback) {
     // Variant where the default Like-button selector is missing but the
     // reactions menu IS present — open the menu and click the chosen
     // reaction (or React Like if reactionToUse is 'Like').
@@ -457,17 +483,17 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
 
   // Confirm the reaction stuck. Primary path reads "Reaction button state:";
   // picker-fallback path reads aria-pressed on the React-X buttons since the
-  // primary state label isn't there.
-  if (usePickerFallback) {
+  // primary state label isn't there. Skip the entire confirmation step when
+  // reactionAlreadyExisted because we didn't click anything to confirm.
+  if (reactionAlreadyExisted) {
+    // Already-reacted path: nothing to confirm. Fall through to comment.
+  } else if (usePickerFallback) {
     const stuck = await page.evaluate((target) => {
-      // After clicking React X, that button typically becomes aria-pressed=true.
       const btn = document.querySelector(`button[aria-label="React ${target}"]`);
       if (!btn) return false;
       return (btn.getAttribute('aria-pressed') || '').toLowerCase() === 'true';
     }, reactionApplied || reactionToUse || 'Like').catch(() => false);
     if (!stuck) {
-      // Best-effort confirmation — not all LinkedIn variants set aria-pressed.
-      // Don't fail the run; just log and continue.
       log(`[post-amp] picker fallback: could not confirm reaction stuck via aria-pressed (proceeding anyway)`);
     }
     log(`[post-amp] reacted (picker fallback): ${reactionApplied}`);
@@ -607,8 +633,8 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
 
   return {
     ok: true,
-    alreadyReacted: false,
     reaction: reactionApplied,
+    reactionAlreadyExisted,
     commented,
   };
 }
@@ -651,14 +677,14 @@ export async function runAmplification({
     status.currentIndex = i + 1;
     status.currentProfile = cfg.profileName || cfg.profileId;
 
-    // Dedup short-circuit — local state file. The in-page aria-label check
-    // inside engagePost() is the second line of defence (catches the case
-    // where the operator engaged via the LinkedIn UI manually).
+    // Dedup is enforced per-action inside engagePost(), not by short-circuiting
+    // the whole account here. Reactions are idempotent (LinkedIn allows only
+    // one per account) so a prior react means "skip the reaction step", but
+    // commenting is NOT idempotent — every campaign should be free to add a
+    // fresh comment even if the account already liked the post in a previous
+    // campaign. The state file is updated for visibility but no longer blocks.
     if (isAlreadyEngaged(dedup, postUrl, cfg.profileId)) {
-      log(`[post-amp] ${cfg.profileName} already engaged with this post (state file) — skipping`);
-      status.skippedDedup++;
-      status.completed++;
-      continue;
+      log(`[post-amp] ${cfg.profileName} previously engaged with this post — proceeding (reaction will skip if duplicate, comment will still go through)`);
     }
 
     if (!cfg.like && !(cfg.comment && (cfg.commentText || '').trim())) {
@@ -690,21 +716,20 @@ export async function runAmplification({
       });
 
       if (result.ok) {
-        if (result.alreadyReacted) {
-          status.skippedDedup++;
-          recordEngagement(dedup, postUrl, cfg.profileId, {
-            reaction: result.reaction,
-            commented: false,
-            source: 'pre-existing',
-          });
-        } else {
+        // An ok result with neither a fresh reaction nor a comment means the
+        // account already had a reaction and the operator didn't configure a
+        // comment — nothing actually happened this run. Otherwise count it.
+        const didSomethingNew = !result.reactionAlreadyExisted || result.commented;
+        if (didSomethingNew) {
           status.engaged++;
-          recordEngagement(dedup, postUrl, cfg.profileId, {
-            reaction: result.reaction,
-            commented: result.commented,
-            source: 'campaign',
-          });
+        } else {
+          status.skippedDedup++;
         }
+        recordEngagement(dedup, postUrl, cfg.profileId, {
+          reaction: result.reaction || null,
+          reactionAlreadyExisted: !!result.reactionAlreadyExisted,
+          commented: !!result.commented,
+        });
         await saveDedupState(dedup);
       } else {
         status.errors.push(`[${cfg.profileName}] ${result.error}`);
