@@ -280,8 +280,30 @@ export const campaign = {
   errors: [],
   parkedProfiles: [],
   softWarnings: [],
+  // Plan B: per-profile end reasons — populated when an account is removed
+  // from the rotation (weekly cap, parked, ejected, completed quota, etc.).
+  // Read by the dashboard's account-queue table to explain why a row reads
+  // "Done". Reset at startCampaign so each run starts clean.
+  profileEndReasons: [],
   name: '',
 };
+
+// Record why a profile finished its turn in this run. Idempotent: if the
+// profile already has an entry, the first reason wins (so "weekly limit hit"
+// isn't overwritten by a downstream "consecutive skips" trip-wire firing on
+// the same loop iteration). Called everywhere weeklyLimited.add(profileId)
+// fires.
+function recordProfileEnd(profileId, profileName, reason) {
+  if (!profileId || !reason) return;
+  const existing = campaign.profileEndReasons.find((e) => e.profileId === profileId);
+  if (existing) return;
+  campaign.profileEndReasons.push({
+    profileId,
+    profileName: profileName || '',
+    reason,
+    at: Date.now(),
+  });
+}
 
 // Phase 2.8.12: tiny helper — sets the action shown in the dashboard cockpit.
 // durationMs > 0 = timed wait (countdown); durationMs null = indeterminate.
@@ -708,6 +730,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.errors = [];
   campaign.parkedProfiles = [];
   campaign.softWarnings = [];
+  campaign.profileEndReasons = [];
   campaign.name = (typeof name === 'string' ? name : '').trim();
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
@@ -1111,6 +1134,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // Phase 2.8.20 (W2-A2): drop this profile from the round-robin and
           // surface in the right pane via parkedProfiles (W1-B1's mechanism).
           weeklyLimited.add(profileId);
+          recordProfileEnd(profileId, pName, 'Session expired — log in again');
           campaign.parkedProfiles.push({
             profileId,
             pName,
@@ -1658,6 +1682,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 if (result.creditsLeft <= 0) {
                   log(`  ⚠ ${pName} has 0 InMail credits — removing from InMail rotation.`);
                   weeklyLimited.add(profileId);
+                  recordProfileEnd(profileId, pName, 'No InMail credits left');
                 }
               }
             } else if (result.action === 'status_accepted') {
@@ -1690,12 +1715,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
+            // Record end reason when an account completes its per-run quota.
+            // The candidate filter at line ~1289 will silently exclude it
+            // from the next round; this gives operators a visible "why" on
+            // the dashboard's Done row.
+            if (!skipsDailyLimit && getCampaignCount(profileId) >= dailyLimit) {
+              recordProfileEnd(profileId, pName, `Reached daily limit (${dailyLimit})`);
+            }
           } else {
             const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
             consecutiveSkips.set(profileId, skipCount);
             if (skipCount >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
               log(`  ⚠ ${pName}: ${SKIP_PARK_THRESHOLD} consecutive non-success outcomes — parking account for rest of run.`);
               weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, `Parked after ${skipCount} consecutive skips`);
               campaign.parkedProfiles.push({
                 profileId,
                 pName,
@@ -1709,6 +1742,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             if (errorMsg.includes('WEEKLY_LIMIT')) {
               log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, 'Weekly invitation limit hit (~100/week)');
               pushSoftWarning(campaign, {
                 profileId,
                 pName,
@@ -1730,6 +1764,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               // it's permanent across runs; the account-level fact is run-only.
               log(`  ⚠ ${pName}: 0 InMail credits + lead not Open Profile. Removing account from rotation, marking lead Not OP.`);
               weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, 'No InMail credits left');
               state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
@@ -1743,6 +1778,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             } else if (errorMsg.includes('INMAIL_NO_CREDITS')) {
               log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, 'InMail credits exhausted');
               await updateSheetRow(sheetUrl, url, {
                 status: normalizeSkipReason('InMail credits exhausted'),
                 stage:  normalizeSkipReason('InMail credits exhausted'),
@@ -2115,6 +2151,7 @@ export function getCampaignStatus() {
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),
     softWarnings: campaign.softWarnings.slice(),
+    profileEndReasons: campaign.profileEndReasons.slice(),
     disk: { ..._diskStatusCache },
     resources: smp ? {
       ramPct:            smp.ramPct,
