@@ -94,7 +94,25 @@ function doPost(e) {
 
     // Open the TARGET sheet (not the central one)
     var spreadsheet = SpreadsheetApp.openById(data.sheetId);
-    var sheet = spreadsheet.getActiveSheet();
+
+    // Honor the operator's chosen tab when a gid is supplied (matches the
+    // `#gid=` in the sheet URL the operator pasted). Falls back to the
+    // active sheet for legacy payloads that don't include a gid, so existing
+    // single-tab callers keep working unchanged.
+    var sheet;
+    if (data.gid !== undefined && data.gid !== null && data.gid !== '') {
+      var allSheets = spreadsheet.getSheets();
+      var match = null;
+      for (var i = 0; i < allSheets.length; i++) {
+        if (String(allSheets[i].getSheetId()) === String(data.gid)) {
+          match = allSheets[i];
+          break;
+        }
+      }
+      sheet = match || spreadsheet.getActiveSheet();
+    } else {
+      sheet = spreadsheet.getActiveSheet();
+    }
 
     // Route to the right handler
     switch (data.action) {

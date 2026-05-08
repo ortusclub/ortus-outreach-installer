@@ -8,7 +8,7 @@
  * The sheetId is extracted from whatever Google Sheet URL the campaign uses.
  */
 
-import { extractSheetId } from './utils.js';
+import { extractSheetId, extractSheetGid } from './utils.js';
 
 const getWebAppUrl = () => process.env.SHEETS_WEBAPP_URL || '';
 
@@ -72,11 +72,13 @@ export async function ensureTrackingColumns(sheetUrl) {
   if (!getWebAppUrl()) return false;
 
   const sheetId = extractSheetId(sheetUrl);
+  const gid = extractSheetGid(sheetUrl);
   console.log(`[sheets-writer] Ensuring tracking columns on sheet ${sheetId}…`);
 
   const result = await postToWebApp({
     action: 'ensureColumns',
     sheetId,
+    gid: gid || '',
   });
 
   if (result?.success) {
@@ -104,10 +106,12 @@ export async function updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinCo
   }
 
   const sheetId = extractSheetId(sheetUrl);
+  const gid = extractSheetGid(sheetUrl);
 
   const result = await postToWebApp({
     action: 'updateRow',
     sheetId,
+    gid: gid || '',
     linkedinUrl,
     urlColumnName: linkedinColumn || '',
     ...tracking,
@@ -142,10 +146,12 @@ export async function getSheetRowStatus(sheetUrl, linkedinUrl, linkedinColumn) {
   if (!getWebAppUrl()) return null;
 
   const sheetId = extractSheetId(sheetUrl);
+  const gid = extractSheetGid(sheetUrl);
 
   const result = await postToWebApp({
     action: 'getRowStatus',
     sheetId,
+    gid: gid || '',
     linkedinUrl,
     urlColumnName: linkedinColumn || '',
   });
@@ -184,9 +190,11 @@ export async function appendReplyRow(sheetUrl, reply) {
     return false;
   }
   const sheetId = extractSheetId(sheetUrl);
+  const gid = extractSheetGid(sheetUrl);
   const result = await postToWebApp({
     action: 'appendReply',
     sheetId,
+    gid: gid || '',
     leadUrl: reply.leadUrl,
     timestamp: reply.timestamp,
     firstName: reply.firstName || '',
@@ -217,10 +225,12 @@ export async function batchUpdateSheet(sheetUrl, updates) {
   if (!getWebAppUrl() || !updates.length) return false;
 
   const sheetId = extractSheetId(sheetUrl);
+  const gid = extractSheetGid(sheetUrl);
 
   const result = await postToWebApp({
     action: 'batchUpdate',
     sheetId,
+    gid: gid || '',
     updates,
   });
 
