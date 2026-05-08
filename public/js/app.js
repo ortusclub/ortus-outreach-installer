@@ -4323,6 +4323,14 @@ window.undoPendingDeletes = undoPendingDeletes;
 window.togglePastManageMode = togglePastManageMode;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
+// v2.12.x — Post Amplification inline handlers in index.html.
+window.onPostAmpUrlChange = onPostAmpUrlChange;
+window.setPostAmpFlag = setPostAmpFlag;
+window.setPostAmpComment = setPostAmpComment;
+window.openPostAmpSuggestions = openPostAmpSuggestions;
+window.pickPostAmpSuggestion = pickPostAmpSuggestion;
+window.savePostAmpTemplate = savePostAmpTemplate;
+window.deletePostAmpTemplate = deletePostAmpTemplate;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 2.8.19 (A2/A3) — section readiness, summaries, and sidebar glyphs
