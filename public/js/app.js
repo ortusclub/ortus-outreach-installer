@@ -1577,9 +1577,11 @@ function renderPostAmpEngagementTable() {
     const cfg = postAmpAccountConfig[id] || { like: true, comment: false, commentText: '' };
     postAmpAccountConfig[id] = cfg;
     const name = selectedProfileNames[id] || id;
-    const commentDisabled = cfg.comment ? '' : 'disabled';
-    const commentPlaceholder = cfg.comment ? '' : 'placeholder="(Comment off)"';
-    const linkCls = `pa-suggest-link${cfg.comment ? '' : ' disabled'}`;
+    // Textarea is ALWAYS enabled and uses a stable placeholder. The dim
+    // "comment off" visual state comes from a CSS class, and auto-enables
+    // Comment if the operator starts typing — fewer moving attributes,
+    // no chance of disabled/placeholder going stale across re-renders.
+    const offCls = cfg.comment ? '' : ' is-comment-off';
     return `<tr>
       <td>
         <div class="pa-name">${escHtml(name)}</div>
@@ -1588,11 +1590,11 @@ function renderPostAmpEngagementTable() {
       <td><label class="pa-toggle"><input type="checkbox" ${cfg.like ? 'checked' : ''} onchange="setPostAmpFlag('${id}','like',this.checked)"></label></td>
       <td><label class="pa-toggle"><input type="checkbox" ${cfg.comment ? 'checked' : ''} onchange="setPostAmpFlag('${id}','comment',this.checked)"></label></td>
       <td>
-        <textarea class="pa-comment" id="pa-comment-${id}" ${commentDisabled} ${commentPlaceholder} oninput="setPostAmpComment('${id}',this.value)">${escHtml(cfg.commentText || '')}</textarea>
+        <textarea class="pa-comment${offCls}" id="pa-comment-${id}" placeholder="Comment text…" oninput="setPostAmpComment('${id}',this.value)">${escHtml(cfg.commentText || '')}</textarea>
         <div class="pa-suggest-row">
-          <button type="button" class="${linkCls}" onclick="openPostAmpSuggestions('${id}', event)">Suggestions ▾</button>
+          <button type="button" class="pa-suggest-link" onclick="openPostAmpSuggestions('${id}', event)">Suggestions ▾</button>
           <span>·</span>
-          <button type="button" class="${linkCls}" onclick="savePostAmpTemplate('${id}')">Save as template</button>
+          <button type="button" class="pa-suggest-link" onclick="savePostAmpTemplate('${id}')">Save as template</button>
         </div>
       </td>
     </tr>`;
@@ -1608,9 +1610,24 @@ function setPostAmpFlag(profileId, flag, value) {
 }
 
 function setPostAmpComment(profileId, text) {
-  const cfg = postAmpAccountConfig[profileId] || { like: true, comment: true, commentText: '' };
+  const cfg = postAmpAccountConfig[profileId] || { like: true, comment: false, commentText: '' };
   cfg.commentText = text;
+  // Auto-enable Comment when the operator starts typing — typing IS intent.
+  // If they later clear the field and uncheck Comment, that's fine; this
+  // only flips off→on, never on→off.
+  const wasOff = !cfg.comment;
+  if (text.trim() && !cfg.comment) cfg.comment = true;
   postAmpAccountConfig[profileId] = cfg;
+  if (wasOff && cfg.comment) {
+    // Re-render the row so the Comment checkbox visually flips and the
+    // dim CSS lifts.
+    renderPostAmpEngagementTable();
+    // Restore focus + caret position after the re-render.
+    setTimeout(() => {
+      const ta = document.getElementById(`pa-comment-${profileId}`);
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }, 0);
+  }
 }
 
 function onPostAmpUrlChange() {

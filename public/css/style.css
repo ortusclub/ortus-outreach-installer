@@ -3007,8 +3007,13 @@ body.route-dashboard .sidebar-nav { display: none; }
   color: var(--ink); padding: 10px;
   font-family: var(--body); font-size: 0.85rem;
   outline: none;
+  transition: opacity 0.15s ease;
 }
-.pa-comment:disabled { opacity: 0.35; cursor: not-allowed; }
+/* "comment off" — purely visual; the textarea remains usable and typing
+   into it auto-enables Comment via setPostAmpComment(). */
+.pa-comment.is-comment-off { opacity: 0.45; }
+.pa-comment.is-comment-off::placeholder { color: var(--gray); font-style: italic; }
+.pa-comment:focus { opacity: 1; border-color: var(--ink); }
 .pa-suggest-row {
   display: flex; gap: 8px; margin-top: 6px; align-items: center;
   font-size: 0.72rem; color: var(--gray);
