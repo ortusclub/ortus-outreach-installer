@@ -2242,8 +2242,8 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .alpha-eq b { color: var(--ink); font-weight: 500; }
 .alpha-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 28px;
+  grid-template-columns: 1fr;
+  gap: 18px;
   margin-top: 22px;
 }
 .alpha-knob-label {
