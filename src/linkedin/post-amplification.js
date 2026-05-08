@@ -644,31 +644,28 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
           log(`[post-amp] editor content after type (len=${editorContent.length}): "${editorContent.slice(0, 80)}${editorContent.length > 80 ? '…' : ''}"`);
 
           if (abortIfRequested()) return abortIfRequested();
-          // Submit — find a VISIBLE submit button in the same comment-box
-          // ancestor as our tagged editor. This avoids matching pre-rendered
-          // hidden submit buttons or unrelated "Post" CTAs elsewhere on the
-          // page (see editor-find rationale above).
+          // Submit — global search for any visible+enabled button matching
+          // [class*="comments-comment-box__submit-button"]. The 2026-05-08 log
+          // proved LinkedIn ships this class with a BEM modifier suffix on at
+          // least one variant ("...submit-button--cr"), without the base class
+          // present. A class-prefix substring match catches both the base
+          // ("submit-button") and any modifier ("submit-button--cr",
+          // "submit-button--xyz") in the future. We don't constrain to an
+          // ancestor — there's only one open comment box at a time, and the
+          // scope-walk approach is fragile when LinkedIn renames containers.
           const submitInfo = await page.evaluate(() => {
-            const editor = document.querySelector('[data-ortus-pa-editor="1"]');
-            if (!editor) return { found: false, reason: 'editor anchor lost' };
-            // Walk up to find the comment-box container.
-            let scope = editor;
-            for (let i = 0; i < 8 && scope && scope.tagName !== 'BODY'; i++) {
-              if (scope.matches('form.comments-comment-box, .comments-comment-box, .comments-comment-texteditor')) break;
-              scope = scope.parentElement;
-            }
-            if (!scope || scope.tagName === 'BODY') scope = editor.parentElement; // fallback
-            const submitSelectors = [
-              'button.comments-comment-box__submit-button',
+            const candidates = [
+              'button[class*="comments-comment-box__submit-button"]',
               'button[data-control-name="submit_comment"]',
               'button[aria-label="Post comment"]',
-              'button[type="submit"]',
             ];
-            for (const sel of submitSelectors) {
-              const btns = Array.from(scope.querySelectorAll(sel));
+            for (const sel of candidates) {
+              const btns = Array.from(document.querySelectorAll(sel));
               for (const b of btns) {
                 const r = b.getBoundingClientRect();
-                const visible = r.width > 10 && r.height > 10;
+                const style = window.getComputedStyle(b);
+                const visible = r.width > 10 && r.height > 10
+                  && style.display !== 'none' && style.visibility !== 'hidden';
                 const disabled = b.disabled || b.getAttribute('aria-disabled') === 'true';
                 if (visible && !disabled) {
                   b.setAttribute('data-ortus-pa-submit', '1');
@@ -676,13 +673,13 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
                     found: true,
                     sel,
                     aria: (b.getAttribute('aria-label') || '').slice(0, 80),
-                    cls:  (b.className || '').toString().slice(0, 100),
+                    cls:  (b.className || '').toString().slice(0, 120),
                     txt:  (b.textContent || '').trim().slice(0, 40),
                   };
                 }
               }
             }
-            return { found: false, reason: 'no visible+enabled submit in scope' };
+            return { found: false, reason: 'no visible+enabled submit on page' };
           }).catch((e) => ({ found: false, reason: e.message }));
 
           let submitClicked = false;
