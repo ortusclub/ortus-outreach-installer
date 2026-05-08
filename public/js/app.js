@@ -2363,15 +2363,55 @@ async function fetchCheckDmsReplies() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Account queue display
 // ─────────────────────────────────────────────────────────────────────────────
-function renderAccountQueue(names, currentName) {
+function renderAccountQueue(names, currentName, status) {
   const el = document.getElementById('account-queue');
   if (!names || names.length === 0) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
+
+  // Pull per-profile state out of the status payload when available. Both
+  // arrays are emitted by getCampaignStatus (parkedProfiles + softWarnings)
+  // and may carry profileName/name + a reason/kind we can surface.
+  const parked = (status && (status.parkedProfiles || status.parked)) || [];
+  const warnings = (status && status.softWarnings) || [];
+  const findIn = (arr, name) => {
+    if (!Array.isArray(arr)) return null;
+    return arr.find(x => (x?.profileName === name) || (x?.name === name) || (x?.account === name)) || null;
+  };
+
   el.innerHTML = names.map((name, i) => {
-    let cls = 'queue-item';
-    if (currentName && name === currentName) cls += ' active';
-    else if (currentName && names.indexOf(currentName) > i) cls += ' done';
-    return `<div class="${cls}"><span class="num">${i + 1}</span><span class="name">${escHtml(name)}</span></div>`;
+    const isActive = currentName && name === currentName;
+    const isPastCurrent = currentName && names.indexOf(currentName) > i;
+    const parkedHit = findIn(parked, name);
+    const warningHit = findIn(warnings, name);
+
+    let label, stateClass, detail = '';
+    if (isActive) {
+      label = 'Running';
+      stateClass = 'is-running';
+    } else if (parkedHit) {
+      label = 'Parked';
+      stateClass = 'is-parked';
+      detail = parkedHit.reason || parkedHit.kind || '';
+    } else if (warningHit) {
+      label = 'Warning';
+      stateClass = 'is-warning';
+      detail = warningHit.kind || warningHit.message || '';
+    } else if (isPastCurrent) {
+      label = 'Done';
+      stateClass = 'is-done';
+    } else {
+      label = 'Waiting';
+      stateClass = 'is-waiting';
+    }
+
+    return `
+      <div class="queue-row ${stateClass}">
+        <span class="queue-row-num">${i + 1}</span>
+        <span class="queue-row-name">${escHtml(name)}</span>
+        <span class="queue-row-status">${label}</span>
+        <span class="queue-row-detail">${detail ? escHtml(detail) : ''}</span>
+      </div>
+    `;
   }).join('');
 }
 
@@ -2488,7 +2528,7 @@ async function pollStatus() {
 
     // Update account queue if we have profile names
     if (s.profileNames && s.profileNames.length > 0) {
-      renderAccountQueue(s.profileNames, s.currentProfile);
+      renderAccountQueue(s.profileNames, s.currentProfile, s);
     }
 
     if (s.logs?.length > 0) {
