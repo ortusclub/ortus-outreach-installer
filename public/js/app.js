@@ -4454,7 +4454,49 @@ function goCreateCampaign() { window.location.hash = '#/new'; }
 function goDashboard()      { window.location.hash = '#/'; }
 
 async function refreshDashboard() {
-  await Promise.all([refreshActiveCampaign(), refreshPastCampaigns()]);
+  await Promise.all([refreshActiveCampaign(), refreshDashboardSchedules(), refreshPastCampaigns()]);
+}
+
+// Dashboard's Schedules section. Renders the same /api/schedules data the
+// wizard's hidden schedules-section uses, but in the campaign-row layout so
+// it lives alongside Active and Past.
+async function refreshDashboardSchedules() {
+  const list = document.getElementById('schedules-campaign-list');
+  if (!list) return;
+  try {
+    const data = await fetch('/api/schedules').then((r) => r.json());
+    if (!Array.isArray(data) || data.length === 0) {
+      list.innerHTML = '<p class="empty-state">No schedules yet. Create one from the Launch step → switch to Schedule.</p>';
+      return;
+    }
+    const dayMap = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
+    list.innerHTML = data.map((s) => {
+      const parts = (s.cron || '').split(' ');
+      let cronFriendly = s.cron || '';
+      if (parts.length === 5) {
+        const min = parts[0].padStart(2, '0');
+        const hr = parts[1].padStart(2, '0');
+        const days = parts[4] === '*'
+          ? 'Every day'
+          : parts[4].split(',').map(d => dayMap[d] || d).join(', ');
+        cronFriendly = `${hr}:${min} · ${days}`;
+      }
+      const lastRun = s.lastRun
+        ? dashboardFormatDate(s.lastRun)
+        : 'Never run';
+      const limit = s.dailyLimit != null ? `${s.dailyLimit}/day` : '';
+      return `
+        <div class="campaign-row">
+          <span class="campaign-row-name">${escHtml(s.name || 'Schedule')}</span>
+          <span class="campaign-row-type">${escHtml(dashboardModeLabel(s.mode))}</span>
+          <span class="campaign-row-progress">${escHtml(cronFriendly)}${limit ? ' · ' + escHtml(limit) : ''} · last ${escHtml(lastRun)}</span>
+          <span class="campaign-row-status">Scheduled</span>
+        </div>
+      `;
+    }).join('');
+  } catch {
+    list.innerHTML = '<p class="empty-state">Failed to load schedules.</p>';
+  }
 }
 
 function dashboardNameButton(name, rowKind, rowKey) {
