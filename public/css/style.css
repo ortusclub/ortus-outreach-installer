@@ -2722,3 +2722,34 @@ body.route-dashboard .sidebar-nav { display: none; }
 .nav-item-back .nav-num {
   font-family: var(--mono);
 }
+
+/* Advanced disclosure inside Section 4. Keeps the secondary knob (pause
+   between leads) reachable without making it the first thing the operator
+   sees. Closed by default. */
+.alpha-advanced {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+}
+.alpha-advanced > summary {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: 4px 0;
+}
+.alpha-advanced > summary::-webkit-details-marker { display: none; }
+.alpha-advanced > summary::before {
+  content: '+';
+  display: inline-block;
+  width: 14px;
+  font-family: var(--mono);
+  color: var(--gray);
+}
+.alpha-advanced[open] > summary::before { content: '−'; }
+.alpha-advanced > summary:hover { color: var(--ink); }
+.alpha-advanced-body { padding-top: 16px; }
