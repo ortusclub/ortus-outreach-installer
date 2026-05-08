@@ -2722,3 +2722,25 @@ body.route-dashboard .sidebar-nav { display: none; }
 .nav-item-back .nav-num {
   font-family: var(--mono);
 }
+
+/* Sheet tab URL hint — green/neutral on entry, red-ish when the operator
+   pasted a sheet URL that doesn't point at a specific tab. Non-blocking; the
+   campaign still runs (and falls back to the first tab) if they ignore it. */
+.sheet-tab-hint {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: var(--gray);
+  margin: 6px 0 12px 0;
+  line-height: 1.5;
+}
+.sheet-tab-hint code {
+  font-family: var(--mono);
+  background: var(--hairline);
+  padding: 1px 4px;
+  font-size: 0.95em;
+}
+.sheet-tab-hint.is-warning {
+  color: #c0392b;
+}
+.sheet-tab-hint.is-warning code { background: rgba(192, 57, 43, 0.12); }
