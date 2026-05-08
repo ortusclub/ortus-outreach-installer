@@ -1636,16 +1636,24 @@ function onPostAmpUrlChange() {
 }
 
 // Suggestions popover — anchored under the trigger button, click outside to close.
+// Uses position:fixed so it's viewport-relative (no scrollY math, immune to
+// ancestor overflow clipping). Earlier absolute-positioned variant could end
+// up clipped or off-screen depending on the app shell's overflow settings.
 function openPostAmpSuggestions(profileId, evt) {
   evt.stopPropagation();
+  evt.preventDefault();
   closePostAmpSuggestions();
   const trigger = evt.currentTarget;
   const rect = trigger.getBoundingClientRect();
   const pop = document.createElement('div');
   pop.className = 'pa-suggest-pop';
   pop.id = 'pa-suggest-pop-active';
-  pop.style.top = `${window.scrollY + rect.bottom + 4}px`;
-  pop.style.left = `${window.scrollX + rect.left}px`;
+  // Anchor at the button's bottom-left in the viewport. If we're too close to
+  // the right edge the menu will still render visibly thanks to max-width.
+  pop.style.position = 'fixed';
+  pop.style.top = `${rect.bottom + 4}px`;
+  pop.style.left = `${rect.left}px`;
+  pop.style.zIndex = '9999';
 
   const items = [
     ...POST_AMP_BUILTIN_SUGGESTIONS.map(t => ({ text: t, tag: 'built-in' })),
