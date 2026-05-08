@@ -30,8 +30,6 @@
         <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
 
         <div class="nav-section-label">Review</div>
-        <button type="button" class="nav-item" data-nav="history-section" onclick="scrollToSection('history-section')">History</button>
-        <button type="button" class="nav-item" data-nav="schedules-section" onclick="scrollToSection('schedules-section')">Schedules</button>
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
       </nav>
 
@@ -698,8 +696,11 @@
       </div>
     </div>
 
-    <!-- Campaign History -->
-    <div class="section collapsible" id="history-section">
+    <!-- Campaign History — hidden in the wizard view; the dashboard shows
+         past campaigns. Kept in DOM (display:none) so existing renderers
+         (fetchHistory, populateHeroMetrics) can write into history-panel
+         without null-checking. Same for schedules-section below. -->
+    <div class="section collapsible" id="history-section" style="display:none">
       <div class="history-header">
         <h2 class="section-toggle" onclick="toggleSection('history-section')"><span class="caret">▾</span> <span data-edit="h2-history">Campaign History</span></h2>
         <div style="display:flex; gap:10px">
@@ -712,8 +713,7 @@
       </div>
     </div>
 
-    <!-- ── Campaign Schedules — list only, created from Launch section ── -->
-    <div class="section collapsible collapsed" id="schedules-section">
+    <div class="section collapsible collapsed" id="schedules-section" style="display:none">
       <div class="history-header">
         <h2 class="section-toggle" onclick="toggleSection('schedules-section')"><span class="caret">▾</span> <span data-edit="h2-schedules">Campaign Schedules</span></h2>
       </div>
@@ -723,6 +723,10 @@
           <p class="empty-state">Loading schedules...</p>
         </div>
       </div>
+    </div>
+
+    <div class="wizard-bottom-actions">
+      <button type="button" class="back-link wizard-bottom-back" onclick="goDashboard()">← Return to dashboard</button>
     </div>
 
     </div> <!-- /#wizard-view -->

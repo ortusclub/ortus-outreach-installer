@@ -2723,7 +2723,6 @@ body.route-dashboard .sidebar-nav { display: none; }
   font-family: var(--mono);
 }
 
-<<<<<<< HEAD
 /* Sheet tab URL hint — green/neutral on entry, red-ish when the operator
    pasted a sheet URL that doesn't point at a specific tab. Non-blocking; the
    campaign still runs (and falls back to the first tab) if they ignore it. */
@@ -2745,7 +2744,7 @@ body.route-dashboard .sidebar-nav { display: none; }
   color: #c0392b;
 }
 .sheet-tab-hint.is-warning code { background: rgba(192, 57, 43, 0.12); }
-=======
+
 /* Advanced disclosure inside Section 4. Keeps the secondary knob (pause
    between leads) reachable without making it the first thing the operator
    sees. Closed by default. */
@@ -2776,4 +2775,18 @@ body.route-dashboard .sidebar-nav { display: none; }
 .alpha-advanced[open] > summary::before { content: '−'; }
 .alpha-advanced > summary:hover { color: var(--ink); }
 .alpha-advanced-body { padding-top: 16px; }
->>>>>>> origin/sam/simplify-throughput
+
+/* Bottom-of-wizard back link — third return path (sidebar + top + here). The
+   wizard is long enough that operators who scrolled to Launch shouldn't have
+   to scroll back up or look left to escape. */
+.wizard-bottom-actions {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  justify-content: center;
+}
+.wizard-bottom-back {
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+}
