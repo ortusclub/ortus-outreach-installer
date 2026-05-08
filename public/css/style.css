@@ -3028,16 +3028,14 @@ body.route-dashboard .sidebar-nav { display: none; }
 .pa-suggest-link[disabled],
 .pa-suggest-link.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
-/* Suggestions popover — position:fixed is set inline in openPostAmpSuggestions
-   so we don't have to fight ancestor overflow / transform stacking contexts. */
+/* Suggestions panel — rendered inline as a sibling of the suggest-row.
+   No positioning gymnastics: when open it pushes the next row down. */
 .pa-suggest-pop {
-  position: fixed;
-  z-index: 9999;
+  margin-top: 8px;
   background: var(--bg);
   border: 1px solid var(--ink);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  min-width: 280px; max-width: 360px;
-  max-height: 280px; overflow-y: auto;
+  max-height: 280px;
+  overflow-y: auto;
 }
 .pa-suggest-pop-item {
   padding: 10px 14px;

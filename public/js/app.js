@@ -1573,15 +1573,29 @@ function renderPostAmpEngagementTable() {
   tbl.style.display = '';
   empty.style.display = 'none';
 
+  // Build the suggestion list (built-in + saved). Reused per row when its
+  // panel is the currently-open one.
+  const allSuggestions = [
+    ...POST_AMP_BUILTIN_SUGGESTIONS.map(t => ({ text: t, tag: 'built-in' })),
+    ...postAmpSavedTemplates.map(t => ({ text: t, tag: 'saved' })),
+  ];
+
   rows.innerHTML = ids.map(id => {
     const cfg = postAmpAccountConfig[id] || { like: true, comment: false, commentText: '' };
     postAmpAccountConfig[id] = cfg;
     const name = selectedProfileNames[id] || id;
-    // Textarea is ALWAYS enabled and uses a stable placeholder. The dim
-    // "comment off" visual state comes from a CSS class, and auto-enables
-    // Comment if the operator starts typing — fewer moving attributes,
-    // no chance of disabled/placeholder going stale across re-renders.
     const offCls = cfg.comment ? '' : ' is-comment-off';
+    const isPanelOpen = postAmpSuggestionsOpenForId === id;
+    const panel = isPanelOpen
+      ? `<div class="pa-suggest-pop">
+           ${allSuggestions.length === 0
+             ? '<div class="pa-suggest-pop-item" style="cursor:default;color:var(--gray)">No suggestions yet — type a comment and Save as template.</div>'
+             : allSuggestions.map((it, i) =>
+                 `<div class="pa-suggest-pop-item" onclick="pickPostAmpSuggestion('${id}', ${i})"><span>${escHtml(it.text)}</span><span class="pa-suggest-pop-tag">${it.tag}</span></div>`
+               ).join('')
+           }
+         </div>`
+      : '';
     return `<tr>
       <td>
         <div class="pa-name">${escHtml(name)}</div>
@@ -1592,10 +1606,11 @@ function renderPostAmpEngagementTable() {
       <td>
         <textarea class="pa-comment${offCls}" id="pa-comment-${id}" placeholder="Comment text…" oninput="setPostAmpComment('${id}',this.value)">${escHtml(cfg.commentText || '')}</textarea>
         <div class="pa-suggest-row">
-          <button type="button" class="pa-suggest-link" onclick="openPostAmpSuggestions('${id}', event)">Suggestions ▾</button>
+          <button type="button" class="pa-suggest-link" onclick="openPostAmpSuggestions('${id}', event)">Suggestions ${isPanelOpen ? '▴' : '▾'}</button>
           <span>·</span>
           <button type="button" class="pa-suggest-link" onclick="savePostAmpTemplate('${id}')">Save as template</button>
         </div>
+        ${panel}
       </td>
     </tr>`;
   }).join('');
@@ -1635,58 +1650,66 @@ function onPostAmpUrlChange() {
   // No state to persist for now; the URL is read on Start.
 }
 
-// Suggestions popover — anchored under the trigger button, click outside to close.
-// Uses position:fixed so it's viewport-relative (no scrollY math, immune to
-// ancestor overflow clipping). Earlier absolute-positioned variant could end
-// up clipped or off-screen depending on the app shell's overflow settings.
-function openPostAmpSuggestions(profileId, evt) {
-  evt.stopPropagation();
-  evt.preventDefault();
-  closePostAmpSuggestions();
-  const trigger = evt.currentTarget;
-  const rect = trigger.getBoundingClientRect();
-  const pop = document.createElement('div');
-  pop.className = 'pa-suggest-pop';
-  pop.id = 'pa-suggest-pop-active';
-  // Anchor at the button's bottom-left in the viewport. If we're too close to
-  // the right edge the menu will still render visibly thanks to max-width.
-  pop.style.position = 'fixed';
-  pop.style.top = `${rect.bottom + 4}px`;
-  pop.style.left = `${rect.left}px`;
-  pop.style.zIndex = '9999';
+// Suggestions popover — rendered inline as a sibling of the suggest-row
+// (NOT appended to body, NOT absolutely positioned). v2.13.2 used
+// position:fixed + body-append; user reported "nothing opens up". Without
+// DevTools access we can't pin the exact reason, but inline rendering
+// removes every plausible failure mode (body-append timing, fixed-positioning
+// stacking-context bugs, document-level click eating the open click).
+//
+// Trade-off: when the panel opens it pushes the next row down. That's fine
+// — the operator opened it deliberately, and they close it with another
+// click on Suggestions or by picking an item.
+let postAmpSuggestionsOpenForId = null;
 
+function openPostAmpSuggestions(profileId, evt) {
+  if (evt) { evt.stopPropagation(); evt.preventDefault(); }
+  // Toggle: clicking Suggestions on the same row again closes the panel.
+  if (postAmpSuggestionsOpenForId === profileId) {
+    closePostAmpSuggestions();
+    return;
+  }
+  closePostAmpSuggestions(); // close any previously-open panel
+  postAmpSuggestionsOpenForId = profileId;
+  renderPostAmpEngagementTable();
+  // Outside-click closer (deferred so this very click doesn't immediately fire it).
+  setTimeout(() => {
+    document.addEventListener('click', handlePostAmpOutsideClick, { capture: true });
+  }, 0);
+}
+
+function handlePostAmpOutsideClick(e) {
+  // Don't close if the click landed inside an open suggestions panel or on
+  // a Suggestions trigger button. Otherwise close.
+  if (e.target.closest && (e.target.closest('.pa-suggest-pop') || e.target.closest('.pa-suggest-link'))) {
+    return;
+  }
+  closePostAmpSuggestions();
+}
+
+function closePostAmpSuggestions() {
+  document.removeEventListener('click', handlePostAmpOutsideClick, { capture: true });
+  if (postAmpSuggestionsOpenForId !== null) {
+    postAmpSuggestionsOpenForId = null;
+    renderPostAmpEngagementTable();
+  }
+}
+
+function pickPostAmpSuggestion(profileId, idx) {
+  // Rebuild the suggestion list the same way renderPostAmpEngagementTable
+  // does, then index into it. Source of truth is the constant + saved list.
   const items = [
     ...POST_AMP_BUILTIN_SUGGESTIONS.map(t => ({ text: t, tag: 'built-in' })),
     ...postAmpSavedTemplates.map(t => ({ text: t, tag: 'saved' })),
   ];
-  if (items.length === 0) {
-    pop.innerHTML = `<div class="pa-suggest-pop-item" style="cursor:default; color:var(--gray)">No suggestions yet.</div>`;
-  } else {
-    pop.innerHTML = items.map((it, i) => {
-      const safe = escHtml(it.text);
-      return `<div class="pa-suggest-pop-item" onclick="pickPostAmpSuggestion('${profileId}', ${i})"><span>${safe}</span><span class="pa-suggest-pop-tag">${it.tag}</span></div>`;
-    }).join('');
-    // Stash the items so pickPostAmpSuggestion can read by index without re-encoding.
-    pop._items = items;
-  }
-  document.body.appendChild(pop);
-  // Defer the outside-click handler so the click that opened us doesn't immediately close it.
-  setTimeout(() => document.addEventListener('click', closePostAmpSuggestions, { once: true }), 0);
-}
-
-function pickPostAmpSuggestion(profileId, idx) {
-  const pop = document.getElementById('pa-suggest-pop-active');
-  if (!pop || !pop._items || !pop._items[idx]) return;
-  const text = pop._items[idx].text;
-  // Append (not replace) so operators can stack suggestions if they want.
-  const ta = document.getElementById(`pa-comment-${profileId}`);
+  const pick = items[idx];
+  if (!pick) return;
   const cfg = postAmpAccountConfig[profileId] || { like: true, comment: true, commentText: '' };
-  cfg.comment = true; // picking a suggestion implies they want to comment
+  cfg.comment = true; // picking a suggestion implies intent to comment
   cfg.commentText = (cfg.commentText || '').trim();
-  cfg.commentText = cfg.commentText ? `${cfg.commentText} ${text}` : text;
+  cfg.commentText = cfg.commentText ? `${cfg.commentText} ${pick.text}` : pick.text;
   postAmpAccountConfig[profileId] = cfg;
-  renderPostAmpEngagementTable();
-  closePostAmpSuggestions();
+  closePostAmpSuggestions(); // also re-renders
   // Restore focus to the textarea after re-render.
   setTimeout(() => {
     const fresh = document.getElementById(`pa-comment-${profileId}`);
