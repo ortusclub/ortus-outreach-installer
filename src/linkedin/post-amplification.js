@@ -201,10 +201,15 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
     await sleep(800);
   }
 
+  // Track whether we're on the picker-fallback path. When the primary
+  // "Reaction button state:" selector is missing but the picker IS present
+  // (seen on Robert's account 2026-05-08 — LinkedIn variant), use the picker
+  // for reactions. Skip the in-page dedup check in that path; the local
+  // state file remains the primary dedup mechanism.
+  let usePickerFallback = false;
+
   if (!buttonFound) {
-    // Diagnostic snapshot — capture WHY the button is missing so the operator
-    // can see whether it's a session/login problem (theory A) vs a layout/
-    // lazy-render problem (theory B) vs a gated post (theory C).
+    // Diagnostic snapshot — capture WHY the button is missing.
     const diag = await page.evaluate(() => {
       const findText = (s) => Array.from(document.querySelectorAll('h1,h2,p,button,span'))
         .map(e => (e.textContent || '').trim())
@@ -222,40 +227,91 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
     }).catch(() => ({ error: 'diagnostic snapshot failed' }));
     log(`[post-amp] DIAG ${JSON.stringify(diag)}`);
 
-    // Translate the diagnostic into an actionable error message.
     if (diag.hasLoginForm || diag.hasJoinCta) {
       return { ok: false, error: `account is logged out (LinkedIn served the public/login page at ${diag.url})` };
     }
     if (!diag.hasPostContainer) {
       return { ok: false, error: `post body never rendered — post may be deleted, private, or geo-blocked (final url: ${diag.url})` };
     }
-    return { ok: false, error: `reaction button never rendered after ${RETRY_ATTEMPTS} scroll-retries; post body present but social bar missing (final url: ${diag.url})` };
+    if (diag.hasOpenReactionsMenu) {
+      // Picker fallback path. Dump action-bar buttons so we eventually learn
+      // the variant's primary Like-button selector for future direct clicks.
+      const buttonsDump = await page.evaluate(() => {
+        const trigger = document.querySelector('button[aria-label="Open reactions menu"]');
+        if (!trigger) return [];
+        // Climb to the action bar container — typically 2-3 levels up.
+        let parent = trigger.parentElement;
+        for (let i = 0; i < 4 && parent && parent.tagName !== 'BODY'; i++) {
+          if (parent.querySelectorAll('button').length >= 3) break;
+          parent = parent.parentElement;
+        }
+        if (!parent) return [];
+        return Array.from(parent.querySelectorAll('button')).slice(0, 8).map(b => ({
+          aria: (b.getAttribute('aria-label') || '').slice(0, 80),
+          cls: (b.className || '').toString().slice(0, 80),
+          txt: (b.textContent || '').trim().slice(0, 40),
+        }));
+      }).catch(() => []);
+      log(`[post-amp] action-bar buttons: ${JSON.stringify(buttonsDump)}`);
+      log(`[post-amp] using picker fallback (Open reactions menu present, default Like button selector failed to match)`);
+      usePickerFallback = true;
+    } else {
+      return { ok: false, error: `reaction button never rendered after ${RETRY_ATTEMPTS} scroll-retries; post body present but neither the default Like button nor the reactions menu were found (final url: ${diag.url})` };
+    }
   }
 
-  // Scroll the post into the centre of the viewport so impression tracking
-  // counts a real view, then dwell 5–15s.
-  await page.evaluate(() => {
-    const btn = document.querySelector('button[aria-label^="Reaction button state:"]');
+  // Scroll the relevant anchor into centre of viewport so impression tracking
+  // counts a real view. Use whichever element we found.
+  await page.evaluate((useFallback) => {
+    const sel = useFallback
+      ? 'button[aria-label="Open reactions menu"]'
+      : 'button[aria-label^="Reaction button state:"]';
+    const btn = document.querySelector(sel);
     if (btn) btn.scrollIntoView({ block: 'center', behavior: 'instant' });
-  });
+  }, usePickerFallback);
   const dwellMs = jitter(5000, 15000);
   log(`[post-amp] dwelling ${Math.round(dwellMs / 1000)}s`);
   await sleep(dwellMs);
 
-  // Dedup gate: if this account has already reacted, we skip both the
-  // reaction step AND the comment (commenting twice would also look bot-y).
-  const initial = await getReactionButtonState(page);
-  if (!initial.found) {
-    return { ok: false, error: 'reaction button disappeared after dwell' };
-  }
-  if (initial.alreadyReacted) {
-    log(`[post-amp] already reacted (${initial.state}) — skipping`);
-    return { ok: true, alreadyReacted: true, reaction: initial.state, commented: false };
+  // Dedup gate: in the primary path, the "Reaction button state:" aria-label
+  // tells us whether this account has already reacted. In the picker-fallback
+  // path, we don't have that signal — fall through to local-state-only dedup
+  // (already gated upstream in runAmplification).
+  if (!usePickerFallback) {
+    const initial = await getReactionButtonState(page);
+    if (!initial.found) {
+      return { ok: false, error: 'reaction button disappeared after dwell' };
+    }
+    if (initial.alreadyReacted) {
+      log(`[post-amp] already reacted (${initial.state}) — skipping`);
+      return { ok: true, alreadyReacted: true, reaction: initial.state, commented: false };
+    }
   }
 
   // ─── React ──────────────────────────────────────────────────────────────
   let reactionApplied = '';
-  if (reactionToUse === 'Like') {
+
+  if (usePickerFallback) {
+    // Variant where the default Like-button selector is missing but the
+    // reactions menu IS present — open the menu and click the chosen
+    // reaction (or React Like if reactionToUse is 'Like').
+    const opened = await openReactionsMenu(page);
+    if (!opened) {
+      return { ok: false, error: 'picker fallback: Open reactions menu suddenly missing' };
+    }
+    const target = reactionToUse || 'Like';
+    try {
+      await page.waitForSelector(`button[aria-label="React ${target}"]`, { timeout: 4000 });
+    } catch {
+      return { ok: false, error: `picker fallback: React ${target} option did not render after opening menu` };
+    }
+    const picked = await clickReactionOption(page, target);
+    if (!picked) {
+      return { ok: false, error: `picker fallback: React ${target} click failed` };
+    }
+    reactionApplied = target;
+    await sleep(jitter(800, 1500));
+  } else if (reactionToUse === 'Like') {
     const clicked = await clickReactionButton(page);
     if (!clicked) return { ok: false, error: 'Like button not clickable' };
     await sleep(jitter(800, 1500));
@@ -289,17 +345,31 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
     await sleep(jitter(800, 1500));
   }
 
-  // Confirm the reaction stuck by re-reading the aria-label state.
-  const after = await getReactionButtonState(page);
-  if (after.found && after.alreadyReacted) {
-    reactionApplied = reactionApplied || after.state || reactionToUse;
+  // Confirm the reaction stuck. Primary path reads "Reaction button state:";
+  // picker-fallback path reads aria-pressed on the React-X buttons since the
+  // primary state label isn't there.
+  if (usePickerFallback) {
+    const stuck = await page.evaluate((target) => {
+      // After clicking React X, that button typically becomes aria-pressed=true.
+      const btn = document.querySelector(`button[aria-label="React ${target}"]`);
+      if (!btn) return false;
+      return (btn.getAttribute('aria-pressed') || '').toLowerCase() === 'true';
+    }, reactionApplied || reactionToUse || 'Like').catch(() => false);
+    if (!stuck) {
+      // Best-effort confirmation — not all LinkedIn variants set aria-pressed.
+      // Don't fail the run; just log and continue.
+      log(`[post-amp] picker fallback: could not confirm reaction stuck via aria-pressed (proceeding anyway)`);
+    }
+    log(`[post-amp] reacted (picker fallback): ${reactionApplied}`);
   } else {
-    // Reaction click didn't register — common when LinkedIn flashes a
-    // momentary "verifying you're human" interstitial. Bail out so the
-    // operator sees this in errors rather than us silently claiming success.
-    return { ok: false, error: 'reaction click did not register (state did not flip)' };
+    const after = await getReactionButtonState(page);
+    if (after.found && after.alreadyReacted) {
+      reactionApplied = reactionApplied || after.state || reactionToUse;
+    } else {
+      return { ok: false, error: 'reaction click did not register (state did not flip)' };
+    }
+    log(`[post-amp] reacted: ${reactionApplied}`);
   }
-  log(`[post-amp] reacted: ${reactionApplied}`);
 
   // ─── Comment (optional) ─────────────────────────────────────────────────
   let commented = false;
