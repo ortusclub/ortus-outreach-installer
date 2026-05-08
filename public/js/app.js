@@ -1717,11 +1717,6 @@ function pickPostAmpSuggestion(profileId, idx) {
   }, 0);
 }
 
-function closePostAmpSuggestions() {
-  const pop = document.getElementById('pa-suggest-pop-active');
-  if (pop) pop.remove();
-}
-
 function savePostAmpTemplate(profileId) {
   const cfg = postAmpAccountConfig[profileId];
   const text = (cfg && cfg.commentText || '').trim();
