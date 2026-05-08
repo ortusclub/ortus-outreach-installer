@@ -150,6 +150,85 @@ async function openCommentEditor(page) {
   });
 }
 
+// Scrape the post author's name from the post page. Tries several stable
+// selectors and falls back to <meta property="og:title"> parsing. Returns
+// { first, last, full } — empty strings if scraping fails completely.
+async function scrapePosterName(page) {
+  return page.evaluate(() => {
+    const tryText = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return '';
+      // The actor name often sits inside a "visually hidden" sibling span,
+      // with a screenreader-only duplicate. Either is fine — we strip and
+      // collapse whitespace at the end.
+      return (el.textContent || '').trim().replace(/\s+/g, ' ');
+    };
+
+    // Selectors observed in current LinkedIn /posts/ pages, ordered by
+    // specificity. We accept the first non-empty hit.
+    const candidates = [
+      '.update-components-actor__title a span[aria-hidden="true"]',
+      '.update-components-actor__title span[aria-hidden="true"]',
+      '.update-components-actor__name a',
+      '.update-components-actor__name',
+      '.feed-shared-actor__name a',
+      '.feed-shared-actor__name',
+      'a[data-control-name="actor"]',
+    ];
+    let full = '';
+    for (const sel of candidates) {
+      full = tryText(sel);
+      if (full) break;
+    }
+
+    // Fallback: og:title — format is usually "<post snippet> | <Author Name>"
+    if (!full) {
+      const og = document.querySelector('meta[property="og:title"]');
+      const content = og?.getAttribute('content') || '';
+      // Take the trailing segment after the last pipe.
+      const parts = content.split('|').map(s => s.trim()).filter(Boolean);
+      if (parts.length >= 2) full = parts[parts.length - 1];
+    }
+
+    // Strip badges / suffixes that LinkedIn appends to the actor name.
+    // Examples: "Antonio Varlese 1st", "Antonio Varlese, MBA", "Antonio Varlese · 3rd+".
+    full = full.replace(/\s*[·•]\s*\d+(?:st|nd|rd|th)\+?\s*$/i, '');
+    full = full.replace(/\s+\d+(?:st|nd|rd|th)\+?\s*$/i, '');
+
+    if (!full) return { first: '', last: '', full: '' };
+    const tokens = full.split(/\s+/).filter(Boolean);
+    return {
+      first: tokens[0] || '',
+      last: tokens.length > 1 ? tokens.slice(1).join(' ') : '',
+      full,
+    };
+  }).catch(() => ({ first: '', last: '', full: '' }));
+}
+
+// Resolve {poster first name} / {poster name} / {poster last name} (and
+// their camelCase / snake_case variants) in a comment template. Empty
+// poster fields collapse to '' and any leading/trailing whitespace from a
+// missing placeholder is trimmed so we don't end up with awkward double
+// spaces.
+function resolveCommentPlaceholders(template, poster) {
+  if (!template) return '';
+  const map = {
+    'poster first name': poster.first || '',
+    'posterFirstName':   poster.first || '',
+    'poster_first_name': poster.first || '',
+    'poster last name':  poster.last || '',
+    'posterLastName':    poster.last || '',
+    'poster_last_name':  poster.last || '',
+    'poster name':       poster.full || '',
+    'posterName':        poster.full || '',
+    'poster_name':       poster.full || '',
+  };
+  return template.replace(/\{([^}]+)\}/g, (whole, key) => {
+    const k = key.trim();
+    return Object.prototype.hasOwnProperty.call(map, k) ? map[k] : whole;
+  }).replace(/[ \t]{2,}/g, ' ').trim();
+}
+
 // ─── Core action ──────────────────────────────────────────────────────────
 /**
  * Engage with a single post on a single profile.
@@ -294,6 +373,16 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
   const dwellOk = await abortableSleep(dwellMs);
   if (!dwellOk) return { ok: false, error: 'aborted by operator' };
 
+  // Scrape poster name once per engagement so {poster first name} / {poster
+  // name} placeholders in the comment template resolve. Done after the dwell
+  // because the actor block hydrates with the rest of the post.
+  const poster = await scrapePosterName(page);
+  if (poster.full) {
+    log(`[post-amp] poster: ${poster.full} (first: ${poster.first})`);
+  } else {
+    log(`[post-amp] could not scrape poster name — placeholder substitutions will be empty`);
+  }
+
   // Dedup gate: in the primary path, the "Reaction button state:" aria-label
   // tells us whether this account has already reacted. In the picker-fallback
   // path, we don't have that signal — fall through to local-state-only dedup
@@ -394,47 +483,121 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
 
   // ─── Comment (optional) ─────────────────────────────────────────────────
   let commented = false;
-  const text = (commentText || '').trim();
+  const rawText = (commentText || '').trim();
+  // Resolve {poster first name} / {poster name} / {poster last name} now
+  // that we've scraped the actor block. Trim again because a missing
+  // placeholder might leave dangling whitespace.
+  const text = resolveCommentPlaceholders(rawText, poster);
+  if (rawText && rawText !== text) {
+    log(`[post-amp] comment after placeholder substitution: "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
+  }
+
   if (text) {
-    await sleep(jitter(1000, 3000));
+    if (abortIfRequested()) return abortIfRequested();
+    await abortableSleep(jitter(1000, 3000));
+    if (abortIfRequested()) return abortIfRequested();
+
     const opened = await openCommentEditor(page);
     if (!opened) {
-      log(`[post-amp] could not open comment editor — skipping comment`);
+      // Diagnostic dump: what comment-related buttons / containers ARE
+      // present? Tells us whether the Comment button has a different
+      // selector on this variant.
+      const diag = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button')).slice(0, 30);
+        const candidates = buttons
+          .filter(b => /comment/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.className || '') + ' ' + (b.textContent || '')))
+          .slice(0, 6)
+          .map(b => ({
+            aria: (b.getAttribute('aria-label') || '').slice(0, 80),
+            cls:  (b.className || '').toString().slice(0, 80),
+            txt:  (b.textContent || '').trim().slice(0, 40),
+          }));
+        return {
+          url: window.location.href,
+          commentLikeButtons: candidates,
+        };
+      }).catch(() => ({}));
+      log(`[post-amp] could not open comment editor — DIAG ${JSON.stringify(diag)}`);
     } else {
       try {
-        // Wait for the Tiptap/ProseMirror editor to mount.
-        await page.waitForSelector(
+        // Tiptap/ProseMirror editor — multiple selectors so we degrade
+        // gracefully if LinkedIn renames the aria-label on a variant.
+        const editorSelectors = [
           'div[role="textbox"][aria-label="Text editor for creating comment"]',
-          { timeout: 6000 }
-        );
-        // Focus the editor, then type via keyboard so LinkedIn's keystroke
-        // listeners fire (page.type() doesn't work reliably on contenteditable).
-        await page.click('div[role="textbox"][aria-label="Text editor for creating comment"]');
-        await sleep(jitter(300, 700));
-        await page.keyboard.type(text, { delay: jitter(50, 120) });
-        await sleep(jitter(800, 1500));
-
-        // Submit. The button is disabled until text is present, so wait for
-        // its enabled state before clicking.
-        const submitSelectors = [
-          'button.comments-comment-box__submit-button:not([disabled])',
-          'button[data-control-name="submit_comment"]:not([disabled])',
+          'div[role="textbox"][aria-label*="comment" i]',
+          'div.ql-editor[contenteditable="true"]',
+          'div.tiptap[contenteditable="true"]',
+          'div[contenteditable="true"][role="textbox"]',
         ];
-        let submitClicked = false;
-        for (const sel of submitSelectors) {
+        let editorSel = null;
+        for (const sel of editorSelectors) {
           try {
             await page.waitForSelector(sel, { timeout: 3000 });
-            await page.click(sel);
-            submitClicked = true;
+            editorSel = sel;
             break;
           } catch { /* try next */ }
         }
-        if (submitClicked) {
-          await sleep(jitter(1500, 2500));
-          commented = true;
-          log(`[post-amp] commented: "${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+        if (!editorSel) {
+          // Dump every contenteditable on the page so we know what selector
+          // to add next time.
+          const ceDump = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('[contenteditable="true"]'))
+              .slice(0, 6)
+              .map(el => ({
+                tag: el.tagName,
+                role: el.getAttribute('role') || '',
+                aria: (el.getAttribute('aria-label') || '').slice(0, 80),
+                cls: (el.className || '').toString().slice(0, 100),
+              }));
+          }).catch(() => []);
+          log(`[post-amp] comment editor never mounted — DIAG contenteditable dump: ${JSON.stringify(ceDump)}`);
         } else {
-          log(`[post-amp] comment text typed but submit button never enabled — skipping`);
+          if (abortIfRequested()) return abortIfRequested();
+          // Focus, type via keyboard so LinkedIn's keystroke listeners fire
+          // (page.type() doesn't work reliably on Tiptap/ProseMirror).
+          await page.click(editorSel);
+          await abortableSleep(jitter(300, 700));
+          if (abortIfRequested()) return abortIfRequested();
+          await page.keyboard.type(text, { delay: jitter(50, 120) });
+          await abortableSleep(jitter(800, 1500));
+
+          if (abortIfRequested()) return abortIfRequested();
+          // Submit — button is disabled until text is present.
+          const submitSelectors = [
+            'button.comments-comment-box__submit-button:not([disabled])',
+            'button[data-control-name="submit_comment"]:not([disabled])',
+            'button[aria-label="Post comment"]:not([disabled])',
+            'button[aria-label*="Post" i]:not([disabled])',
+          ];
+          let submitClicked = false;
+          let lastErr = '';
+          for (const sel of submitSelectors) {
+            try {
+              await page.waitForSelector(sel, { timeout: 3000 });
+              await page.click(sel);
+              submitClicked = true;
+              break;
+            } catch (e) { lastErr = e.message; }
+          }
+          if (submitClicked) {
+            await abortableSleep(jitter(1500, 2500));
+            commented = true;
+            log(`[post-amp] commented: "${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`);
+          } else {
+            // Diagnostic: what submit-shaped buttons ARE present?
+            const submitDump = await page.evaluate(() => {
+              return Array.from(document.querySelectorAll('button'))
+                .filter(b => /post|submit|reply/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.className || '') + ' ' + (b.textContent || '')))
+                .slice(0, 8)
+                .map(b => ({
+                  aria: (b.getAttribute('aria-label') || '').slice(0, 60),
+                  cls:  (b.className || '').toString().slice(0, 80),
+                  txt:  (b.textContent || '').trim().slice(0, 30),
+                  disabled: b.disabled || b.getAttribute('aria-disabled') === 'true',
+                }));
+            }).catch(() => []);
+            log(`[post-amp] comment text typed but submit button never enabled — DIAG submit candidates: ${JSON.stringify(submitDump)}`);
+          }
         }
       } catch (err) {
         log(`[post-amp] comment failed: ${err.message}`);

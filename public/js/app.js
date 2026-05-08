@@ -1504,17 +1504,40 @@ let postAmpAccountConfig = {};
 let postAmpSavedTemplates = [];
 const POST_AMP_TEMPLATES_KEY = 'ortus-post-amp-templates';
 
-// Hardcoded built-in suggestions. Short, reusable, low-effort. Operators can
-// extend with their own via "Save as template".
+// Hardcoded built-in suggestions. Short, reusable, low-effort. Operators
+// can extend with their own via "Save as template" and reference the post
+// author with {poster first name} / {poster name} placeholders — these are
+// resolved per-account at runtime by scraping the actor block from the post.
 const POST_AMP_BUILTIN_SUGGESTIONS = [
+  // — short reactions
   'Great insight 👏',
   'Spot on',
   'Really well put',
   'Love this',
+  'On point',
+  '100%',
+  'Sharp take',
+  'Exactly this',
+  // — gratitude / appreciation
+  'Thanks for sharing this, {poster first name}',
+  'Genuinely useful — thank you',
+  'Worth re-reading. Saving for later',
+  'Massive value here',
+  // — agreement
+  'Couldn\'t agree more',
   'Agreed — well said',
   'This is the way',
+  // — addressed to author
+  '{poster first name} this is brilliant',
+  'Always insightful, {poster first name}',
+  'Great perspective, {poster first name}',
+  // — engagement bait (light)
+  'Bookmarking this',
+  'Sending this to the team',
+  'Gold 🥇',
+  'Pivotal observation',
+  'Sharp + useful — rare combo',
   'Excellent post',
-  'Couldn\'t agree more',
 ];
 
 function loadPostAmpTemplates() {
