@@ -2570,7 +2570,10 @@ async function fetchTemplateList() {
 async function loadSelectedTemplate() {
   const sel = document.getElementById('tpl-select');
   const name = sel.value;
-  if (!name) { alert('Select a template first.'); return; }
+  // Selecting the placeholder ("-- Select a template --") is a no-op now that
+  // the dropdown auto-loads on change. No alert — that would fire every time
+  // the operator deselects.
+  if (!name) return;
   try {
     const res = await fetch('/api/templates');
     const data = await res.json();

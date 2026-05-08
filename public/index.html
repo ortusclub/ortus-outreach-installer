@@ -515,12 +515,11 @@
         <button type="button" id="btn-preview-messages" class="btn btn-secondary" onclick="handlePreviewClick()" title="Enter a sheet URL and at least one template to preview">Preview Messages</button>
       </div>
       <div class="template-bar" id="template-bar" style="display:none">
-        <select id="tpl-select">
+        <select id="tpl-select" onchange="loadSelectedTemplate()">
           <option value="">-- Select a template --</option>
         </select>
-        <button class="btn btn-secondary" onclick="loadSelectedTemplate()">Load</button>
         <button class="btn btn-secondary" onclick="deleteSelectedTemplate()">Delete</button>
-        <button class="btn btn-secondary btn-save-tpl" onclick="saveCurrentTemplate()">Save As&#8230;</button>
+        <button class="btn btn-secondary btn-save-tpl" onclick="saveCurrentTemplate()">Create new</button>
       </div>
 
     <!-- ── Connection Note (connect_only, connect_and_message, auto) ── -->
