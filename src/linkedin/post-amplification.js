@@ -613,11 +613,17 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
           log(`[post-amp] visible comment editor focused (sel: ${editorMatch.sel}, ${editorMatch.tag}.${editorMatch.cls}, aria="${editorMatch.aria}", ${editorMatch.rect?.w}x${editorMatch.rect?.h})`);
 
           // Editor is already focused via in-page el.focus(). Insert text
-          // via clipboard paste instead of page.keyboard.type — the latter
-          // dropped 5 of 7 chars in the 2026-05-08 emoji run (only "🥇"
-          // landed from "Gold 🥇"). Pasting submits the full string in a
-          // single input event, sidestepping surrogate-pair race conditions
-          // and emoji-picker autocomplete interception.
+          // via CDP Input.insertText (accessed through the public Puppeteer
+          // API page.keyboard.sendCharacter, which in v22+ is a one-line
+          // wrapper around that exact CDP call — see node_modules/puppeteer-
+          // core/lib/cjs/puppeteer/cdp/Input.js line 121-123). This:
+          //   - Sends the entire string as a single input event (no per-
+          //     character race, no surrogate-pair split, no emoji-picker
+          //     interception that broke page.keyboard.type on 2026-05-08).
+          //   - Doesn't need OS-level window focus (Option B's blocker — the
+          //     offscreen GoLogin window can't satisfy navigator.clipboard's
+          //     focus requirement).
+          //   - Uses public API, no _client() reach-through.
           await abortableSleep(jitter(300, 700));
           if (abortIfRequested()) return abortIfRequested();
 
@@ -634,48 +640,23 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
             }).catch(() => {});
           }
 
-          // Grant clipboard permission for linkedin.com (idempotent — Chrome
-          // restricts navigator.clipboard.writeText to focused, permitted
-          // contexts; explicit grant via the browser context unblocks it).
+          // Single-shot insert via CDP Input.insertText.
+          let insertOk = false;
           try {
-            const ctx = page.browser().defaultBrowserContext();
-            await ctx.overridePermissions('https://www.linkedin.com', ['clipboard-read', 'clipboard-write']);
+            await page.keyboard.sendCharacter(text);
+            insertOk = true;
           } catch (e) {
-            log(`[post-amp] clipboard permission grant warning: ${e.message}`);
+            log(`[post-amp] insertText threw: ${e.message}`);
           }
+          if (insertOk) await abortableSleep(jitter(500, 900));
+          log(`[post-amp] insertText sent (len=${text.length})`);
 
-          // Write the text to the clipboard and verify it landed before pasting.
-          const clipboardResult = await page.evaluate(async (t) => {
-            try {
-              await navigator.clipboard.writeText(t);
-              const verify = await navigator.clipboard.readText();
-              return { ok: true, verified: verify === t, verifyLen: verify.length };
-            } catch (e) {
-              return { ok: false, error: e.message };
-            }
-          }, text).catch((e) => ({ ok: false, error: e.message }));
-          log(`[post-amp] clipboard write: ${JSON.stringify(clipboardResult)}`);
-
-          if (!clipboardResult.ok || !clipboardResult.verified) {
-            log(`[post-amp] clipboard write failed/unverified — aborting comment (no paste fallback yet, user picked Option B)`);
-          } else {
-            // Paste. Use platform-appropriate modifier (Cmd on macOS, Ctrl
-            // elsewhere). Use keyboard.down/up so the modifier is properly
-            // held while V is pressed — page.keyboard.press('Meta+V') is
-            // not the right API shape for combinations in Puppeteer.
-            const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
-            await page.keyboard.down(modifier);
-            await page.keyboard.press('KeyV');
-            await page.keyboard.up(modifier);
-            await abortableSleep(jitter(700, 1200));
-          }
-
-          // STEP-DIAG: read back what's actually in the editor after paste.
+          // STEP-DIAG: read back what's actually in the editor.
           const editorContent = await page.evaluate(() => {
             const el = document.querySelector('[data-ortus-pa-editor="1"]');
             return el ? (el.textContent || '').trim() : '<editor-gone>';
           }).catch(() => '<error>');
-          log(`[post-amp] editor content after paste (len=${editorContent.length}): "${editorContent.slice(0, 80)}${editorContent.length > 80 ? '…' : ''}"`);
+          log(`[post-amp] editor content after insert (len=${editorContent.length}): "${editorContent.slice(0, 80)}${editorContent.length > 80 ? '…' : ''}"`);
 
           if (abortIfRequested()) return abortIfRequested();
           // Submit — global search for any visible+enabled button matching
