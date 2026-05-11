@@ -1370,24 +1370,29 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         sessions.set(profileId, session);
         success = true;
 
-        // Pre-flight Check Status: when message_only / introduce_back has the
-        // toggle on, sweep this profile's connections list at first launch so
-        // newly-accepted leads bump Stage → 'Connected · DM Now' and become
-        // eligible for follow-up DMs in this same run. Errors are non-fatal
-        // — the campaign proceeds even if the sweep fails. Bypasses the 6h
-        // cooldown (it's an explicit operator opt-in for this run), then
-        // refreshes the cooldown timestamp so the post-campaign sweep doesn't
-        // immediately re-fire on top of this one.
-        if (preflightCheckStatus
-            && (mode === 'message_only' || mode === 'introduce_back')) {
+        // Pre-flight / standalone Check Status. Three trigger paths:
+        //   1. preflightCheckStatus toggle on message_only / introduce_back
+        //   2. mode === 'check_status' — bulk-first, per-lead fallback on
+        //      failure (Sam's bulk approach; falls back to existing per-lead
+        //      navigation if Voyager fetch errors out).
+        // Errors are non-fatal — campaign proceeds either way. Bypasses the
+        // 6h cooldown (explicit operator action for this run), then refreshes
+        // the cooldown timestamp so back-to-back sweeps don't pile up.
+        const isCheckStatusMode = mode === 'check_status';
+        const isPreflightMode = preflightCheckStatus
+          && (mode === 'message_only' || mode === 'introduce_back');
+        if (isCheckStatusMode || isPreflightMode) {
+          let bulkSucceeded = false;
           try {
-            log(`  📡 [${pName}] Pre-flight Check Status sweep…`);
+            const label = isCheckStatusMode ? 'Check Status (bulk)' : 'Pre-flight Check Status';
+            log(`  📡 [${pName}] ${label} sweep…`);
             const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
             if (r.error) {
-              log(`  ⚠ [${pName}] Pre-flight bulk check: ${r.error}`);
+              log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
             } else {
               const stamped = r.stamped || 0;
-              log(`  ✓ [${pName}] Pre-flight: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} fetched)`);
+              log(`  ✓ [${pName}] Bulk: ${r.matched} Connected, ${stamped} Still Pending (of ${r.fetched} fetched)`);
+              bulkSucceeded = true;
             }
             try {
               const _sheetId = _extractSheetIdFromUrl(sheetUrl);
@@ -1396,7 +1401,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               await writeBulkCheckCooldown(cooldown);
             } catch { /* cooldown bookkeeping is best-effort */ }
           } catch (err) {
-            log(`  ⚠ [${pName}] Pre-flight bulk check threw: ${err.message}`);
+            log(`  ⚠ [${pName}] Bulk check threw: ${err.message}`);
+          }
+
+          // check_status: bulk handles ALL of this account's pending leads in
+          // one Voyager call (marks Connected for matches, Still Pending for
+          // unmatched-but-invited). When bulk succeeds, the per-lead loop
+          // would just re-do work the bulk already did — close the profile so
+          // the account rotation moves on. When bulk FAILS, fall through to
+          // the existing per-lead navigation (Sam's approach failed → ours).
+          if (isCheckStatusMode && bulkSucceeded) {
+            log(`  ✓ [${pName}] check_status complete via bulk — closing profile`);
+            recordProfileEnd(profileId, pName, 'Check Status complete (bulk)');
+            weeklyLimited.add(profileId);
           }
         }
 
