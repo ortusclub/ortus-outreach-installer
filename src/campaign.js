@@ -25,7 +25,7 @@ import os from 'node:os';
 import { launchProfile, closeProfile, getProfiles, getProfilePid } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
-import { updateSheetRow, ensureTrackingColumns } from './sheets-writer.js';
+import { updateSheetRow, ensureTrackingColumns, prepareSheet } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
@@ -976,13 +976,23 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const rows = await fetchSheetRows(sheetUrl);
     log(`${rows.length} row(s). Columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
-    // Ensure tracking columns exist for THIS mode. Apps Script picks the
-    // mode-specific subset (e.g. connect_only writes Connection Status / CC,
-    // inmail_only writes Connection Status / InMail). Multi-mode sheets
-    // accumulate columns across runs.
-    await ensureTrackingColumns(sheetUrl, mode).catch(err => {
-      log(`⚠ Could not ensure tracking columns: ${err.message}`);
+    // v2 schema: prepareSheet provisions only this mode's columns and hides
+    // every other mode's columns. Apps Script returns BAD_MODE only on
+    // unknown modes — known modes always provision/hide. Fall back to the
+    // legacy ensureTrackingColumns path when prepareSheet doesn't confirm
+    // (e.g. SHEETS_WEBAPP_URL not set, or bridge not redeployed yet).
+    const prep = await prepareSheet(sheetUrl, mode).catch(err => {
+      log(`⚠ prepareSheet failed: ${err.message}`);
+      return { ok: false };
     });
+    if (!prep.ok) {
+      log('  ⚠ prepareSheet didn\'t confirm — falling back to legacy ensureTrackingColumns');
+      await ensureTrackingColumns(sheetUrl, mode).catch(err => {
+        log(`⚠ Could not ensure tracking columns: ${err.message}`);
+      });
+    } else if (prep.hidden?.length) {
+      log(`  ℹ Hidden columns from prior modes: ${prep.hidden.join(', ')}`);
+    }
 
     const state = await loadState();
 
