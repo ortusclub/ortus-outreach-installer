@@ -51,7 +51,7 @@ var TRACKING_COLUMNS = [
 // unhide manually when they need to inspect.
 var ALWAYS_PROVISIONED_V2 = [
   'Stage',
-  'Status',
+  'Last Action',
   'Sender',
   'Date of Last Action',
   'Time of Last Action',
@@ -62,7 +62,7 @@ var ALWAYS_PROVISIONED_V2 = [
 // Columns within ALWAYS_PROVISIONED_V2 that prepareSheet hides on every run
 // (operator can unhide manually — they just don't show up by default).
 var ALWAYS_HIDDEN_BY_DEFAULT_V2 = [
-  'Status',
+  'Last Action',
   'LinkedIn URN',
   'LinkedIn Membership ID'
 ];
@@ -949,15 +949,15 @@ function writeFields(sheet, headers, row, data) {
       var colName = FIELD_MAP[field];
       var colIndex = headers.indexOf(colName);
       // v2 fallback: when the legacy 'Connection Request Status' column
-      // doesn't exist on this sheet but 'Status' does (a v2 prepareSheet
-      // sheet), route `data.status` to 'Status' instead. Likewise the new
-      // v2-first field name `status` → 'Status' wins on v2 sheets when both
-      // columns are present.
+      // doesn't exist on this sheet but 'Last Action' does (a v2 prepareSheet
+      // sheet), route `data.status` to 'Last Action' instead. Likewise the
+      // v2-first field name `status` → 'Last Action' wins on v2 sheets when
+      // both columns are present.
       if (field === 'status' && colIndex === -1) {
-        var altIdx = headers.indexOf('Status');
+        var altIdx = headers.indexOf('Last Action');
         if (altIdx !== -1) {
           colIndex = altIdx;
-          colName  = 'Status';
+          colName  = 'Last Action';
         }
       }
       // Skip writes for columns that don't exist on this sheet — keeps the
