@@ -224,31 +224,10 @@
              knobs left here are: pause-between-leads (jitter) and the per-account
              campaign limit. -->
         <div class="alpha-throughput">
-          <div class="alpha-headline">
-            <div>
-              <div class="alpha-big" id="alpha-total-leads">—</div>
-              <div class="alpha-big-unit">total invites this run</div>
-            </div>
-            <div class="alpha-eq">
-              <b id="alpha-acct-count">0</b> accounts<br>
-              × up to <b id="alpha-per-acct">50</b> invites each<br>
-              = <b id="alpha-eq-total" style="color:var(--gold)">0</b> max invites
-            </div>
-          </div>
           <div class="alpha-controls">
-            <div>
-              <div class="alpha-knob-label">Pause between leads</div>
-              <div class="alpha-knob-row">
-                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="15" min="5" max="120" oninput="updateCampaignSummary()" />
-                <span class="alpha-pause-sep">to</span>
-                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
-                <span class="alpha-knob-suffix">seconds</span>
-              </div>
-              <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
-            </div>
-            <!-- v2.11.0: renamed from "Daily limit, per account" → "Campaign limit per account". Default 40 → 50. -->
+            <!-- Primary knob — the only thing most operators need to think about. -->
             <div id="daily-limit-knob">
-              <div class="alpha-knob-label">Campaign limit per account</div>
+              <div class="alpha-knob-label">Connections per account per day</div>
               <div class="alpha-knob-row">
                 <input class="alpha-knob-input" type="number" id="daily-limit-input" value="50" min="1" max="500" oninput="alphaSyncDailyLimit()" />
                 <div class="step-col">
@@ -257,8 +236,25 @@
                 </div>
                 <span class="alpha-knob-suffix">invites / account</span>
               </div>
-              <div class="alpha-knob-help">Per-account cap for this run. LinkedIn enforces a weekly invitation limit (~100/week), so 50 is a safe daily default.</div>
+              <div class="alpha-knob-help">LinkedIn caps invites at ~100/account/week. <b>50</b> is a safe daily default — runs back-to-back for 2 days before LinkedIn starts throttling. Today this is enforced per-run only; daily/weekly tracking is on the roadmap.</div>
             </div>
+
+            <!-- Advanced — pause-between-leads is rarely changed; tucked behind
+                 a disclosure so the section reads as "one knob, done". IDs
+                 preserved so alphaRecalc / updateCampaignSummary still work. -->
+            <details class="alpha-advanced">
+              <summary>Advanced</summary>
+              <div class="alpha-advanced-body">
+                <div class="alpha-knob-label">Pause between leads</div>
+                <div class="alpha-knob-row">
+                  <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="15" min="5" max="120" oninput="updateCampaignSummary()" />
+                  <span class="alpha-pause-sep">to</span>
+                  <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
+                  <span class="alpha-knob-suffix">seconds</span>
+                </div>
+                <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
+              </div>
+            </details>
           </div>
 
           <!-- 2.9.8: Concurrency toggle. Visible only when ≥5 accounts are
