@@ -94,6 +94,51 @@ export async function ensureTrackingColumns(sheetUrl, mode) {
 }
 
 /**
+ * v2 schema: provision per-mode columns and hide non-relevant mode columns.
+ * Called once at campaign start (replaces ensureTrackingColumns for v2 sheets).
+ *
+ * @param {string} sheetUrl - any Google Sheet URL
+ * @param {string} mode - one of connect_only | check_status | message_only |
+ *                        introduce_back | open_profile_only | inmail_only
+ * @returns {Promise<{ ok: boolean, added: string[], hidden: string[], shown: string[] }>}
+ *          ok=true when the bridge confirmed the prepareSheet call.
+ *          Returns { ok: false } silently if SHEETS_WEBAPP_URL isn't set so
+ *          local-dev runs without bridge config continue to work.
+ */
+export async function prepareSheet(sheetUrl, mode) {
+  if (!getWebAppUrl()) {
+    console.log('[sheets-writer] No SHEETS_WEBAPP_URL configured — prepareSheet skipped');
+    return { ok: false, added: [], hidden: [], shown: [] };
+  }
+
+  const sheetId = extractSheetId(sheetUrl);
+  const gid = extractSheetGid(sheetUrl);
+  console.log(`[sheets-writer] prepareSheet(${mode}) on sheet ${sheetId}…`);
+
+  const result = await postToWebApp({
+    action: 'prepareSheet',
+    sheetId,
+    gid: gid || '',
+    mode: mode || ''
+  });
+
+  if (result?.success) {
+    if (result.added?.length) {
+      console.log(`[sheets-writer] ✓ prepareSheet added: ${result.added.join(', ')}`);
+    }
+    if (result.hidden?.length) {
+      console.log(`[sheets-writer] ✓ prepareSheet hidden: ${result.hidden.join(', ')}`);
+    }
+    return { ok: true, added: result.added || [], hidden: result.hidden || [], shown: result.shown || [] };
+  }
+
+  if (result?.error) {
+    console.warn(`[sheets-writer] prepareSheet failed: ${result.error}`);
+  }
+  return { ok: false, added: [], hidden: [], shown: [] };
+}
+
+/**
  * Updates a single row's tracking data in the target sheet.
  *
  * @param {string} sheetUrl - The Google Sheet URL (any sheet)
