@@ -2029,9 +2029,11 @@ app.listen(PORT, async () => {
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);
 
-  // Post-campaign acceptance tracking — sweeps run in the background while
-  // the bot is open, scoped to the per-campaign window the operator chose.
-  startPostCampaignScheduler();
+  // Post-campaign acceptance tracking sweeps are disabled. Operators run
+  // the dedicated Check Status campaign manually when they want to refresh
+  // Connected status. The scheduler module is left in the codebase but not
+  // started — existing `data/post-campaign-bulk-check.json` schedules will
+  // simply sit idle (no harm).
 
   // Load and register saved schedules (D-05)
   loadSchedules().then(schedules => {

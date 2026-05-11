@@ -2453,12 +2453,6 @@ async function startCampaign() {
         // Campaign Name from the wizard's top-of-page input. Empty string is
         // valid — the dashboard row falls back to "Add name" inline-editable.
         name: (document.getElementById('campaign-name-input')?.value || '').trim(),
-        // Post-campaign acceptance tracking window (days). Server clamps to
-        // 0..30. Only honoured for connect modes.
-        acceptanceTrackingDays: (() => {
-          const v = parseInt(document.getElementById('acceptance-tracking-days')?.value, 10);
-          return Number.isFinite(v) && v >= 0 ? v : 0;
-        })(),
         // Pre-flight Check Status sweep. Toggle lives inside each mode's
         // coverage section (Section 2b for message_only, 2c for
         // introduce_back). Only one is visible at a time — read whichever

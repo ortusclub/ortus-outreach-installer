@@ -292,29 +292,6 @@
                 </div>
                 <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
 
-                <!-- Post-campaign acceptance tracking. Only meaningful for
-                     connect modes; app.js hides the row when irrelevant. -->
-                <div id="acceptance-tracking-row" style="margin-top:18px;">
-                  <div class="alpha-knob-label">Track acceptances after campaign ends</div>
-                  <div class="alpha-knob-row">
-                    <input class="alpha-knob-input" type="number" id="acceptance-tracking-days" value="7" min="0" max="30" />
-                    <span class="alpha-knob-suffix">days</span>
-                  </div>
-                  <div class="alpha-knob-help">After the campaign ends, the bot keeps sweeping LinkedIn every 6h to update Connected Status as people accept your invites. Set to <b>0</b> to disable. Bot must be running for sweeps to fire.</div>
-                </div>
-
-                <!-- Manual on-demand bulk check. Refuses while a campaign is
-                     running; uses the first selected account. Updates the
-                     Connected Status column with Connected / Still Pending. -->
-                <div style="margin-top:18px;">
-                  <div class="alpha-knob-label">Run a bulk Connection Status check now</div>
-                  <div class="alpha-knob-row">
-                    <button type="button" id="btn-bulk-check-now" class="btn btn-secondary" onclick="bulkCheckNow()">Bulk check connections</button>
-                    <span class="bulk-check-status-msg alpha-knob-suffix" style="font-style: italic;"></span>
-                  </div>
-                  <div class="alpha-knob-help">On-demand sweep using the first selected account. Bypasses the 6h cooldown. Won't run while a campaign is in progress.</div>
-                </div>
-
               </div>
             </details>
           </div>
