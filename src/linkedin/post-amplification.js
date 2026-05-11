@@ -612,6 +612,20 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
           if (abortIfRequested()) return abortIfRequested();
           log(`[post-amp] visible comment editor focused (sel: ${editorMatch.sel}, ${editorMatch.tag}.${editorMatch.cls}, aria="${editorMatch.aria}", ${editorMatch.rect?.w}x${editorMatch.rect?.h})`);
 
+          // 2026-05-11 evidence: clicking the action-bar Comment button opens
+          // the composer in a COLLAPSED state — placeholder + emoji/image
+          // icons render, but the "Comment" submit button is NOT mounted to
+          // DOM until the user clicks INTO the textbox (focus alone isn't
+          // enough; LinkedIn wires the expand to pointerdown/click). Without
+          // this click the submit-button search returns zero matches even
+          // though the editor is focused and ready to receive text.
+          try {
+            await page.click('[data-ortus-pa-editor="1"]');
+            log(`[post-amp] editor clicked to expand composer`);
+          } catch (e) {
+            log(`[post-amp] editor click failed: ${e.message}`);
+          }
+
           // Editor is already focused via in-page el.focus(). Insert text
           // via CDP Input.insertText (accessed through the public Puppeteer
           // API page.keyboard.sendCharacter, which in v22+ is a one-line
@@ -674,6 +688,12 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
               'button[data-control-name="submit_comment"]',
               'button[aria-label="Post comment"]',
             ];
+            // Track disabled matches separately so the log distinguishes
+            // "not in DOM" (Theory A: composer didn't expand) from "in DOM
+            // but disabled" (Theory B: Quill model didn't see Input.insertText
+            // → submit stays disabled because button state is derived from
+            // Quill's internal model, not DOM textContent).
+            const disabledMatches = [];
             for (const sel of candidates) {
               const btns = Array.from(document.querySelectorAll(sel));
               for (const b of btns) {
@@ -692,9 +712,21 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
                     txt:  (b.textContent || '').trim().slice(0, 40),
                   };
                 }
+                if (visible && disabled) {
+                  disabledMatches.push({
+                    sel,
+                    cls: (b.className || '').toString().slice(0, 120),
+                    txt: (b.textContent || '').trim().slice(0, 40),
+                    disabledAttr: b.disabled,
+                    ariaDisabled: b.getAttribute('aria-disabled'),
+                  });
+                }
               }
             }
-            return { found: false, reason: 'no visible+enabled submit on page' };
+            const reason = disabledMatches.length
+              ? `submit button(s) mounted but disabled (${disabledMatches.length} match) — likely Quill model didn't see Input.insertText`
+              : 'no submit button on page (composer likely still collapsed)';
+            return { found: false, reason, disabledMatches };
           }).catch((e) => ({ found: false, reason: e.message }));
 
           let submitClicked = false;
@@ -710,6 +742,9 @@ export async function engagePost(page, postUrl, { reaction, commentText, log = (
             }
           } else {
             log(`[post-amp] submit button search failed (${submitInfo.reason})`);
+            if (submitInfo.disabledMatches?.length) {
+              log(`[post-amp] disabled-submit DIAG: ${JSON.stringify(submitInfo.disabledMatches)}`);
+            }
           }
           if (submitClicked) {
             log(`[post-amp] submit clicked (sel: ${matchedSel}) → button ${JSON.stringify(clickedButtonInfo)}`);
