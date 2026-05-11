@@ -109,6 +109,622 @@ export async function findButtonByText(page, text) {
  * This is much more reliable than DOM scraping for degree detection.
  * Falls back gracefully — callers should still use getConnectionStatus() as backup.
  */
+/**
+ * Fetch the account's recent connections via Voyager. One paginated API call
+ * per page (up to MAX_PAGES) — far cheaper than checking N pending invites
+ * individually. Returns an array of { urn, publicId, firstName, lastName,
+ * connectedAt } objects sorted recent-first. Empty array on any failure
+ * (caller should fall back to per-lead checks if needed).
+ *
+ * The page must already be on a LinkedIn URL so JSESSIONID is available.
+ * If you're not sure, navigate to /mynetwork/invite-connect/connections/
+ * before calling this. We intentionally do NOT navigate inside the helper
+ * so the caller can decide pacing.
+ *
+ * @param {puppeteer.Page} page
+ * @param {number} sinceMs - Only return connections with connectedAt >= this
+ *   (epoch ms). Pass 0 to fetch all pages up to MAX_PAGES.
+ */
+export async function getRecentConnections(page, sinceMs = 0) {
+  try {
+    const result = await page.evaluate(async (since) => {
+      try {
+        const csrf = document.cookie.split(';').map((c) => c.trim())
+          .find((c) => c.startsWith('JSESSIONID='));
+        if (!csrf) return { error: 'no-csrf' };
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        const headers = {
+          'accept': 'application/vnd.linkedin.normalized+json+2.1',
+          'csrf-token': token,
+          'x-restli-protocol-version': '2.0.0',
+        };
+
+        const PAGE_SIZE = 40;
+        // Cap at the 80 most-recent connections — covers ~2-3 days of
+        // acceptances at the steady-state pace, plenty for the 6h
+        // bulk-check cadence. Old caps (8 pages × 40 = 320) pulled too
+        // much history each sweep and made the sidecar tab churn a lot.
+        const MAX_PAGES = 2;
+
+        // Try endpoints in priority order. LinkedIn has shipped multiple
+        // connection-list endpoints over the years; the /relationshipsDash/
+        // and legacy /relationships/connections variants are still around
+        // on different account types. We probe each on page 0 to see which
+        // one returns 200, then settle on it for the remaining pages.
+        const endpointFactories = [
+          (start) => `https://www.linkedin.com/voyager/api/relationships/dash/connections`
+            + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
+          (start) => `https://www.linkedin.com/voyager/api/relationships/connections`
+            + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
+          (start) => `https://www.linkedin.com/voyager/api/relationships/connectionsV2`
+            + `?count=${PAGE_SIZE}&start=${start}&q=search&sortType=RECENTLY_ADDED`,
+        ];
+
+        let chosenFactory = null;
+        let probeStatus = null;
+        let probeBodySample = '';
+        for (const factory of endpointFactories) {
+          const probe = await fetch(factory(0), { headers, credentials: 'include' });
+          probeStatus = probe.status;
+          if (probe.ok) {
+            // Sample the first ~400 chars in case this returns a non-JSON
+            // gateway page (Cloudflare interstitial, login redirect HTML).
+            const text = await probe.clone().text();
+            probeBodySample = text.slice(0, 400);
+            // Quick sanity: must look like JSON, not an HTML login page.
+            if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+              chosenFactory = factory;
+              break;
+            }
+          }
+        }
+        if (!chosenFactory) {
+          return { error: `no-endpoint-ok (last status: ${probeStatus}, sample: ${probeBodySample.slice(0, 120)})` };
+        }
+
+        const out = [];
+        let stoppedEarly = false;
+        let firstPageKeys = '';
+
+        for (let p = 0; p < MAX_PAGES && !stoppedEarly; p++) {
+          const start = p * PAGE_SIZE;
+          const resp = await fetch(chosenFactory(start), { headers, credentials: 'include' });
+          if (!resp.ok) {
+            if (p === 0) return { error: `http-${resp.status}` };
+            break;
+          }
+
+          const data = await resp.json();
+          if (p === 0) firstPageKeys = Object.keys(data || {}).join(',');
+
+          // Build a urn → entity map from `included` once per page so any
+          // strategy can resolve member references in O(1).
+          const includedById = {};
+          // ALSO build a memberId-portion → entity map. LinkedIn often stores
+          // Profile entities under `urn:li:fs_miniProfile:ACoAA...` while the
+          // Connection's connectedMember references `urn:li:fsd_profile:ACoAA...`
+          // (different prefix for the same person). This second index lets us
+          // match by the ACoAA portion regardless of prefix differences.
+          const includedByMemberId = {};
+          // Helper extracts ACoAA / ACwAA from any URN-like string.
+          const _midOf = (s) => {
+            if (!s) return '';
+            const m = String(s).match(/(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/);
+            return m ? m[1] : '';
+          };
+          if (Array.isArray(data.included)) {
+            for (const item of data.included) {
+              if (!item) continue;
+              if (item.entityUrn) includedById[item.entityUrn] = item;
+              const mid = _midOf(item.entityUrn);
+              if (mid && (item.publicIdentifier || item.firstName || item.lastName)) {
+                // Prefer entries that have actual name/slug data — overwrite
+                // a stub if a fuller entry comes along later in `included`.
+                const existing = includedByMemberId[mid];
+                if (!existing || (!existing.publicIdentifier && !existing.firstName)) {
+                  includedByMemberId[mid] = item;
+                }
+              }
+            }
+          }
+          // Resolve a connectedMember URN (or any URN) to its richest profile
+          // entity by trying direct match first, then ACoAA-portion match.
+          const _resolveMember = (memberUrn) => {
+            if (typeof memberUrn !== 'string' || !memberUrn) return {};
+            const direct = includedById[memberUrn];
+            if (direct && (direct.publicIdentifier || direct.firstName)) return direct;
+            const mid = _midOf(memberUrn);
+            const byMid = mid ? includedByMemberId[mid] : null;
+            return byMid || direct || {};
+          };
+
+          let pageOut = 0;
+
+          // Strategy A — direct elements array (older Voyager endpoints).
+          const directElements = data?.elements || data?.data?.elements || [];
+          if (directElements.length) {
+            for (const el of directElements) {
+              const createdAt = el.createdAt || el.connectedAt || 0;
+              if (since && createdAt && createdAt < since) { stoppedEarly = true; break; }
+              const memberUrn = el.connectedMember || el['*connectedMember'] || el.miniProfile || '';
+              const member = (typeof memberUrn === 'string' ? _resolveMember(memberUrn) : el.connectedMember) || {};
+              out.push({
+                urn: typeof memberUrn === 'string' ? memberUrn : (member.entityUrn || ''),
+                publicId: member.publicIdentifier || '',
+                firstName: member.firstName || '',
+                lastName: member.lastName || '',
+                memberNumber: (member.objectUrn && typeof member.objectUrn === 'string'
+                  && (member.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
+                connectedAt: createdAt || 0,
+              });
+              pageOut++;
+            }
+          }
+
+          // Strategy B — normalized JSON: data["*elements"] is an array of
+          // URN refs, resolved against `included`. The newer connections
+          // endpoint returns this shape.
+          if (pageOut === 0) {
+            const elementUrns = data?.data?.['*elements'] || data?.['*elements'] || [];
+            if (Array.isArray(elementUrns) && elementUrns.length) {
+              for (const connectionUrn of elementUrns) {
+                const conn = includedById[connectionUrn];
+                if (!conn) continue;
+                const createdAt = conn.createdAt || conn.connectedAt || 0;
+                if (since && createdAt && createdAt < since) { stoppedEarly = true; break; }
+                const memberUrn = conn.connectedMember || conn['*connectedMember'] || '';
+                const member = _resolveMember(memberUrn);
+                out.push({
+                  urn: typeof memberUrn === 'string' ? memberUrn : (member.entityUrn || ''),
+                  publicId: member.publicIdentifier || '',
+                  firstName: member.firstName || '',
+                  lastName: member.lastName || '',
+                  connectedAt: createdAt || 0,
+                });
+                pageOut++;
+              }
+            }
+          }
+
+          // Strategy C — fallback: scan `included` for any profile-shaped
+          // entity. Match risk: same response can include "people you may
+          // know" suggestions, but we'll filter strictly by URN/publicId
+          // matching against the sheet later, so non-connections that
+          // happen to live here won't false-positive someone who's actually
+          // pending. Worst case: they'd be marked Connected when they're
+          // really a strong-signal suggestion. Acceptable for the operator's
+          // workflow given Voyager's shape variance.
+          if (pageOut === 0 && Array.isArray(data.included)) {
+            for (const item of data.included) {
+              if (!item) continue;
+              const urn = item.entityUrn || '';
+              const isProfileUrn = urn.indexOf('urn:li:fsd_profile:') === 0
+                || urn.indexOf('urn:li:fs_miniProfile:') === 0
+                || urn.indexOf('urn:li:fsd_lazyLoadedActions:') === 0;
+              if (!isProfileUrn) continue;
+              if (!item.publicIdentifier && !item.firstName) continue;
+              out.push({
+                urn,
+                publicId: item.publicIdentifier || '',
+                firstName: item.firstName || '',
+                lastName: item.lastName || '',
+                memberNumber: (item.objectUrn && typeof item.objectUrn === 'string'
+                  && (item.objectUrn.match(/urn:li:member:(\d+)/) || [])[1]) || '',
+                connectedAt: 0,
+              });
+              pageOut++;
+            }
+          }
+
+          if (pageOut === 0) {
+            if (p === 0) return { error: `empty-after-3-strategies (keys: ${firstPageKeys}, included.len: ${(data.included || []).length})` };
+            break;
+          }
+          if (pageOut < PAGE_SIZE) break;
+        }
+
+        return { connections: out, firstPageKeys };
+      } catch (err) {
+        return { error: err.message };
+      }
+    }, sinceMs);
+
+    if (result?.error) {
+      console.log(`[helpers] getRecentConnections error: ${result.error}`);
+      // Return a special sentinel so callers can surface the exact reason
+      // upward (instead of just an empty array meaning "nothing found").
+      const empty = [];
+      empty.error = result.error;
+      return empty;
+    }
+    let conns = result?.connections || [];
+    console.log(`[helpers] Voyager bulk: ${conns.length} recent connections fetched (keys: ${result?.firstPageKeys || ''})`);
+
+    // Enrichment pass — when the connections list returns URNs only (no
+    // publicIdentifier or firstName), do a follow-up bulk lookup against
+    // /voyager/api/identity/dash/profiles to fill in those fields. Lets
+    // matching by slug or name work even when the slim connections payload
+    // doesn't carry them.
+    const needsEnrich = conns.filter((c) => c.urn && !c.publicId && !c.firstName);
+    if (needsEnrich.length > 0) {
+      try {
+        const enriched = await _enrichProfilesByUrn(page, needsEnrich.map((c) => c.urn));
+        if (enriched && enriched.size > 0) {
+          conns = conns.map((c) => {
+            const e = enriched.get(c.urn);
+            if (!e) return c;
+            return {
+              ...c,
+              publicId: c.publicId || e.publicId || '',
+              firstName: c.firstName || e.firstName || '',
+              lastName: c.lastName || e.lastName || '',
+            };
+          });
+          const filledSlugs = conns.filter((c) => c.publicId).length;
+          const filledNames = conns.filter((c) => c.firstName || c.lastName).length;
+          console.log(`[helpers] Profile enrichment: ${filledSlugs} slugs, ${filledNames} names filled (of ${conns.length})`);
+        }
+      } catch (err) {
+        console.log(`[helpers] Profile enrichment threw: ${err.message}`);
+      }
+    }
+
+    return conns;
+  } catch (err) {
+    console.log(`[helpers] getRecentConnections threw: ${err.message}`);
+    const empty = [];
+    empty.error = err.message;
+    return empty;
+  }
+}
+
+/**
+ * Bulk-resolve URN → {publicId, firstName, lastName} via Voyager's identity
+ * profiles batch endpoint. Used to enrich the connections list when its
+ * primary endpoint returns slim entities (URNs only). Batches in groups of
+ * 25 to keep URLs under typical proxy length limits.
+ *
+ * Returns a Map keyed by the FULL URN string (e.g. urn:li:fsd_profile:ACoAA…).
+ */
+async function _enrichProfilesByUrn(page, urns) {
+  const out = new Map();
+  if (!Array.isArray(urns) || urns.length === 0) return out;
+
+  // Dedup + filter to URNs that look right.
+  const unique = [...new Set(urns.filter((u) => typeof u === 'string' && u.includes('urn:li:fsd_profile:')))];
+  if (unique.length === 0) return out;
+
+  const BATCH = 25;
+  for (let i = 0; i < unique.length; i += BATCH) {
+    const slice = unique.slice(i, i + BATCH);
+    const batchOut = await page.evaluate(async (urnBatch) => {
+      try {
+        const csrf = document.cookie.split(';').map((c) => c.trim())
+          .find((c) => c.startsWith('JSESSIONID='));
+        if (!csrf) return { error: 'no-csrf' };
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        // Voyager's List(...) format with each URN URL-encoded individually.
+        const idsParam = 'List(' + urnBatch.map((u) => encodeURIComponent(u)).join(',') + ')';
+        const url = `https://www.linkedin.com/voyager/api/identity/dash/profiles?ids=${idsParam}`;
+
+        const resp = await fetch(url, {
+          headers: {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': token,
+            'x-restli-protocol-version': '2.0.0',
+          },
+          credentials: 'include',
+        });
+        if (!resp.ok) return { error: `http-${resp.status}` };
+
+        const data = await resp.json();
+        // Walk both `results` (newer) and `included` (normalized) for profile
+        // entities — different decorations land them in different places.
+        const profiles = [];
+        if (data?.results && typeof data.results === 'object') {
+          for (const u of urnBatch) {
+            const p = data.results[u];
+            if (p) profiles.push({ urn: u, ...p });
+          }
+        }
+        if (Array.isArray(data?.included)) {
+          for (const item of data.included) {
+            if (item && item.entityUrn && (item.publicIdentifier || item.firstName)) {
+              profiles.push({
+                urn: item.entityUrn,
+                publicId: item.publicIdentifier || '',
+                firstName: item.firstName || '',
+                lastName: item.lastName || '',
+              });
+            }
+          }
+        }
+        return { profiles };
+      } catch (err) {
+        return { error: err.message };
+      }
+    }, slice);
+
+    if (batchOut?.error) {
+      console.log(`[helpers] Profile enrich batch error: ${batchOut.error}`);
+      continue; // try the next batch — partial results are still useful
+    }
+    for (const p of (batchOut?.profiles || [])) {
+      // Index by both the original requested URN and any URN we found in
+      // included (they may differ slightly in prefix). The bulk-check
+      // matcher already handles ACoAA-portion fallback.
+      out.set(p.urn, {
+        publicId: p.publicId || p.publicIdentifier || '',
+        firstName: p.firstName || '',
+        lastName: p.lastName || '',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Capture the current profile page's URN + member ID so the campaign can
+ * stamp it into the sheet alongside the connect action. Future bulk-check
+ * sweeps then have a precise (URN-format) identifier to match against —
+ * no more relying on slugs vs URNs vs names.
+ *
+ * Runs from a logged-in profile page. Returns { urn, memberId } where:
+ *   - `urn`      = full string like "urn:li:fs_profile:ACoAA…"
+ *   - `memberId` = the ACoAA / ACwAA portion (what bulk-check uses)
+ * Either field may be empty if Voyager refuses or the page isn't loaded.
+ *
+ * Kept as a thin wrapper over captureProfileMeta for backward compatibility.
+ */
+export async function getProfileUrn(page) {
+  const meta = await captureProfileMeta(page);
+  return { urn: meta.urn || '', memberId: meta.memberId || '' };
+}
+
+/**
+ * Capture URN + member ID + Open Profile flag + connection degree in one
+ * pass from the current profile page. Used immediately after a connect
+ * action so the campaign can stamp all four columns at once.
+ *
+ * Returns { urn, memberId, isOpenProfile, connectionDegree } where:
+ *   - `urn`              = full URN string or '' if not found
+ *   - `memberId`         = the ACoAA / ACwAA portion of the URN or ''
+ *   - `isOpenProfile`    = true | false | null (null = couldn't tell)
+ *   - `connectionDegree` = 1 | 2 | 3 | null
+ *
+ * Defensive: tries Voyager profile endpoint, then dash variant, then
+ * scans the rendered HTML for a URN pattern. Network info (degree) is
+ * a separate Voyager call and falls back to the existing helper.
+ */
+export async function captureProfileMeta(page) {
+  const out = { urn: '', memberId: '', memberNumber: '', isOpenProfile: null, connectionDegree: null };
+
+  // ── Voyager calls (URN + openProfile + numeric member number) ──
+  try {
+    const voyResult = await page.evaluate(async () => {
+      function extractMemberId(urnStr) {
+        const m = urnStr && urnStr.match(/(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/);
+        return m ? m[1] : '';
+      }
+      // Find the numeric member ID OF THE TARGET PROFILE (not the
+      // requesting account, whose URN is also present in many fields).
+      // Strategy: walk `included` for the entity whose entityUrn's ACoAA
+      // portion matches the target's ACoAA portion, then read its
+      // `objectUrn` (LinkedIn convention: `urn:li:member:NNN`).
+      function extractTargetMemberNumber(data, targetUrn) {
+        const targetMidM = targetUrn && targetUrn.match(/(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/);
+        const targetMid = targetMidM ? targetMidM[1] : '';
+        if (!targetMid || !Array.isArray(data?.included)) return '';
+        for (const item of data.included) {
+          if (!item || typeof item.entityUrn !== 'string') continue;
+          if (item.entityUrn.indexOf(targetMid) === -1) continue;
+          const obj = item.objectUrn || '';
+          const m = typeof obj === 'string' && obj.match(/urn:li:member:(\d+)/);
+          if (m) return m[1];
+        }
+        return '';
+      }
+      function findOpenProfileFlag(obj, depth) {
+        if (!obj || depth > 6 || typeof obj !== 'object') return null;
+        // Common LinkedIn field names indicating Open Profile membership.
+        const keys = ['openLink', 'openProfile', 'openProfileMember', 'isOpenProfile', 'openLinkSettings'];
+        for (const k of keys) {
+          if (k in obj) {
+            const v = obj[k];
+            if (v === true || v === false) return v;
+            if (v && typeof v === 'object') return true; // settings present = enabled
+          }
+        }
+        for (const k of Object.keys(obj)) {
+          const v = obj[k];
+          if (v && typeof v === 'object') {
+            const r = findOpenProfileFlag(v, depth + 1);
+            if (r !== null) return r;
+          }
+        }
+        return null;
+      }
+      try {
+        const m = window.location.pathname.match(/\/in\/([^/]+)/);
+        if (!m) return { reason: 'not-on-profile-url', url: window.location.href };
+        const publicId = m[1];
+
+        const csrf = document.cookie.split(';').map((c) => c.trim())
+          .find((c) => c.startsWith('JSESSIONID='));
+        if (!csrf) return { reason: 'no-csrf' };
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        const endpoints = [
+          `https://www.linkedin.com/voyager/api/identity/profiles/${publicId}`,
+          `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${publicId}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-7`,
+        ];
+        let data = null;
+        let lastStatus = 0;
+        for (const url of endpoints) {
+          try {
+            const resp = await fetch(url, {
+              headers: {
+                'accept': 'application/vnd.linkedin.normalized+json+2.1',
+                'csrf-token': token,
+                'x-restli-protocol-version': '2.0.0',
+              },
+              credentials: 'include',
+            });
+            lastStatus = resp.status;
+            if (resp.ok) { data = await resp.json(); break; }
+          } catch { /* try next */ }
+        }
+        if (!data) return { reason: 'voyager-failed', lastStatus };
+
+        // Only accept profile-typed URNs. The dash endpoint's top-level
+        // entityUrn is `urn:li:collectionResponse:…` (the response envelope
+        // itself), which is NOT what we want — we need the entity inside.
+        function isProfileUrn(s) {
+          return typeof s === 'string'
+            && (s.indexOf('urn:li:fsd_profile:') === 0
+                || s.indexOf('urn:li:fs_miniProfile:') === 0
+                || s.indexOf('urn:li:fs_profile:') === 0);
+        }
+        const urnCandidates = [];
+        for (const cand of [data?.entityUrn, data?.data?.entityUrn,
+                            data?.profile?.entityUrn, data?.miniProfile?.entityUrn]) {
+          if (isProfileUrn(cand)) urnCandidates.push(cand);
+        }
+        // Scan the `included` array (collection responses put the actual
+        // profile entity here) AND `data["*elements"]` (URN references).
+        if (Array.isArray(data?.included)) {
+          for (const item of data.included) {
+            if (item && isProfileUrn(item.entityUrn)) urnCandidates.push(item.entityUrn);
+          }
+        }
+        if (Array.isArray(data?.data?.['*elements'])) {
+          for (const ref of data.data['*elements']) {
+            if (isProfileUrn(ref)) urnCandidates.push(ref);
+          }
+        }
+        const urn = urnCandidates[0] || '';
+        const memberId = extractMemberId(urn);
+        const memberNumber = extractTargetMemberNumber(data, urn);
+        const openProfile = findOpenProfileFlag(data, 0); // true | null
+        return { urn, memberId, memberNumber, openProfile, reason: 'ok' };
+      } catch (err) {
+        return { reason: 'evaluate-threw', message: String(err && err.message || err) };
+      }
+    });
+    if (voyResult && voyResult.urn) out.urn = voyResult.urn;
+    if (voyResult && voyResult.memberId) out.memberId = voyResult.memberId;
+    if (voyResult && voyResult.memberNumber) out.memberNumber = voyResult.memberNumber;
+    if (voyResult && voyResult.openProfile === true) out.isOpenProfile = true;
+    // Track whether Voyager actually returned data — used at the end to
+    // default isOpenProfile to false (definitive negative) only when we
+    // successfully fetched the profile data and saw no OP signals.
+    if (voyResult && voyResult.reason === 'ok') out._voyagerSucceeded = true;
+    if (voyResult && voyResult.reason && voyResult.reason !== 'ok') {
+      console.log(`[helpers] captureProfileMeta voyager: ${voyResult.reason}${voyResult.lastStatus ? ' (status=' + voyResult.lastStatus + ')' : ''}${voyResult.url ? ' (url=' + voyResult.url + ')' : ''}`);
+    }
+  } catch (err) {
+    console.log(`[helpers] captureProfileMeta voyager threw: ${err.message}`);
+  }
+
+  // ── HTML-scan fallback for URN + numeric member number ──
+  // For memberNumber: pick the most-frequent `urn:li:member:NNN` in the
+  // page — the target profile is referenced dozens of times (profile
+  // card, work history, sidebar mentions) while the viewing account
+  // appears only in auth/nav context. Most-frequent ≈ target.
+  if (!out.urn || !out.memberNumber) {
+    try {
+      const scanResult = await page.evaluate(() => {
+        try {
+          const html = document.documentElement.outerHTML;
+          const urnM = html.match(/urn:li:fsd_profile:(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/)
+                    || html.match(/urn:li:fs_miniProfile:(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/)
+                    || html.match(/urn:li:fs_profile:(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/);
+          const counts = new Map();
+          const re = /urn:li:member:(\d+)/g;
+          let m;
+          while ((m = re.exec(html)) !== null) {
+            counts.set(m[1], (counts.get(m[1]) || 0) + 1);
+          }
+          let bestId = '';
+          let bestCount = 0;
+          for (const [id, c] of counts) {
+            if (c > bestCount) { bestCount = c; bestId = id; }
+          }
+          return {
+            urn: urnM ? urnM[0] : '',
+            memberId: urnM ? urnM[1] : '',
+            memberNumber: bestId,
+          };
+        } catch { return null; }
+      });
+      if (scanResult) {
+        if (!out.urn && scanResult.urn) {
+          out.urn = scanResult.urn;
+          out.memberId = scanResult.memberId || out.memberId;
+          console.log(`[helpers] captureProfileMeta HTML-scan recovered URN`);
+        }
+        if (!out.memberNumber && scanResult.memberNumber) {
+          out.memberNumber = scanResult.memberNumber;
+          console.log(`[helpers] captureProfileMeta HTML-scan recovered member number (most-frequent)`);
+        }
+      }
+    } catch { /* best-effort */ }
+  }
+
+  // ── Connection degree: Voyager networkinfo, then DOM badge fallback ──
+  try {
+    const deg = await getVoyagerDegree(page);
+    if (typeof deg === 'number') out.connectionDegree = deg;
+  } catch { /* best-effort */ }
+  if (out.connectionDegree === null) {
+    try {
+      const badge = await getDegreeBadge(page);
+      if (badge === '1st') out.connectionDegree = 1;
+      else if (badge === '2nd') out.connectionDegree = 2;
+      else if (badge === '3rd' || badge === '3rd+') out.connectionDegree = 3;
+    } catch { /* best-effort */ }
+  }
+
+  // ── Open Profile fallback: scan rendered HTML for the badge text ──
+  // LinkedIn shows "Open to" / "Open Profile" labels in several spots on
+  // premium-with-Open-Profile members. If the Voyager scan above didn't
+  // yield a boolean, we look for the visible badge as a last resort.
+  if (out.isOpenProfile === null) {
+    try {
+      const opScan = await page.evaluate(() => {
+        try {
+          const html = document.documentElement.outerHTML || '';
+          // Strong signals — these only appear on Open Profile members.
+          if (/"openLink"\s*:\s*\{/.test(html)) return true;
+          if (/"openProfile"\s*:\s*true/.test(html)) return true;
+          if (/openProfileMember"?\s*:\s*true/.test(html)) return true;
+          // Visible-text fallback: the "Message" button reads
+          // "Send Open Profile message" on OP members.
+          if (/Send Open Profile message/i.test(html)) return true;
+          return null; // unknown — don't write false on negative
+        } catch { return null; }
+      });
+      if (opScan === true) out.isOpenProfile = true;
+    } catch { /* best-effort */ }
+  }
+
+  // If Voyager fetched cleanly and the HTML scan also found no OP signal,
+  // record a definitive 'No' rather than leaving the column blank.
+  if (out.isOpenProfile === null && out._voyagerSucceeded) {
+    out.isOpenProfile = false;
+  }
+  delete out._voyagerSucceeded;
+
+  if (out.urn || out.memberId || out.memberNumber || out.isOpenProfile !== null || out.connectionDegree !== null) {
+    console.log(`[helpers] captureProfileMeta: urn=${out.urn ? out.urn.slice(0, 40) + '…' : '(none)'}, memberId=${out.memberId || '(none)'}, memberNumber=${out.memberNumber || '(none)'}, openProfile=${out.isOpenProfile === null ? '(unknown)' : out.isOpenProfile}, degree=${out.connectionDegree === null ? '(unknown)' : out.connectionDegree}`);
+  } else {
+    console.log(`[helpers] captureProfileMeta: nothing captured`);
+  }
+  return out;
+}
+
 export async function getVoyagerDegree(page) {
   try {
     const degree = await page.evaluate(async () => {

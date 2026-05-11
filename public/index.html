@@ -127,6 +127,7 @@
     <div id="dashboard-view" class="route-view">
       <div class="dashboard-header">
         <h1 class="dashboard-title">Campaigns</h1>
+        <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ Start new campaign</button>
       </div>
 
       <section class="dashboard-section">
@@ -137,9 +138,23 @@
       </section>
 
       <section class="dashboard-section">
+        <h2 class="dashboard-section-title">Queued</h2>
+        <div class="campaign-list" id="queued-campaign-list">
+          <p class="empty-state">No queued campaigns.</p>
+        </div>
+      </section>
+
+      <section class="dashboard-section">
         <h2 class="dashboard-section-title">Schedules</h2>
         <div class="campaign-list" id="schedules-campaign-list">
           <p class="empty-state">No schedules yet.</p>
+        </div>
+      </section>
+
+      <section class="dashboard-section">
+        <h2 class="dashboard-section-title">Drafts</h2>
+        <div class="campaign-list" id="drafts-campaign-list">
+          <p class="empty-state">No drafts yet.</p>
         </div>
       </section>
 
@@ -162,13 +177,22 @@
       <div class="wizard-back-row">
         <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
       </div>
+      <!-- Visible only when a campaign is already running. Tells the operator
+           the new build will be queued (not edit the running one). -->
+      <div id="wizard-queue-banner" class="wizard-queue-banner" style="display:none">
+        <strong>Building a queued campaign.</strong>
+        <span id="wizard-queue-banner-detail">A campaign is currently running — this one will be added to the queue and start automatically when there's a free slot.</span>
+      </div>
 
       <!-- Campaign Name — first thing the operator names. Persisted to
            localStorage for now; backend wire-through (start → status → history)
            is a Phase 2 follow-up. -->
       <div class="section campaign-name-section">
         <h2 data-edit="h2-campaign-name">Campaign Name</h2>
-        <input type="text" id="campaign-name-input" placeholder="e.g. May UK partner outreach" autocomplete="off" />
+        <div class="campaign-name-row">
+          <input type="text" id="campaign-name-input" placeholder="e.g. May UK partner outreach" autocomplete="off" />
+          <button type="button" id="btn-save-name" class="btn btn-secondary" onclick="saveDraftName()">Save Name</button>
+        </div>
       </div>
 
     <!-- ── Settings (reordered to position 1) ── -->
@@ -177,6 +201,8 @@
       <div class="mode-grid" id="mode-grid"></div>
       <select id="campaign-mode" onchange="onModeChange()" style="display:none">
         <option value="connect_only">Connect Only</option>
+        <option value="connect_and_check_status">Connect + Check Connection Status</option>
+        <option value="connect_and_introduce">Connect + Introduce Back</option>
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="message_only">Message Only (follow-ups)</option>
         <option value="inmail_only">InMail Only</option>
@@ -189,6 +215,29 @@
           <span style="font-size:0.9rem; color:#c9d1d9">Message Open Profiles directly</span>
         </label>
         <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 0 24px">Try a free OP message first; if not an Open Profile, send a connection request instead</p>
+      </div>
+
+      <!-- Connect + Introduce Back: primary person to introduce the lead to.
+           Visible only when this mode is selected. The bot sends a connection
+           request first; once the lead accepts (verified by bulk-check), the
+           same sender sends an intro DM that references the primary person. -->
+      <div id="primary-person-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
+        <div style="font-family:var(--display); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:14px;">Primary Person — who the lead gets introduced to</div>
+        <div style="margin-bottom:14px">
+          <label for="primary-person-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Full name</label>
+          <input type="text" id="primary-person-name" placeholder="e.g. Sam Adcock" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
+          <div style="font-size:11px; color:var(--gray); margin-top:4px">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
+        </div>
+        <div style="margin-bottom:14px">
+          <label for="primary-person-url" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--gray)">(optional)</span></label>
+          <input type="text" id="primary-person-url" placeholder="https://www.linkedin.com/in/..." style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
+          <div style="font-size:11px; color:var(--gray); margin-top:4px">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
+        </div>
+        <div>
+          <label for="primary-intro-body" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro DM body</label>
+          <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." style="width:100%; background:transparent; border:1px solid var(--hairline); border-radius:4px; color:var(--ink); padding:8px; font-family:var(--body); font-size:0.95rem; outline:none; resize:vertical;" oninput="savePrimaryPersonFields()"></textarea>
+          <div style="font-size:11px; color:var(--gray); margin-top:4px">Placeholders: <code>{first name}</code>, <code>{primary name}</code>, <code>{primary url}</code>, plus any sheet column.</div>
+        </div>
       </div>
 
     </div>
@@ -232,6 +281,29 @@
                   <span class="alpha-knob-suffix">seconds</span>
                 </div>
                 <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
+
+                <!-- Post-campaign acceptance tracking. Only meaningful for
+                     connect modes; app.js hides the row when irrelevant. -->
+                <div id="acceptance-tracking-row" style="margin-top:18px;">
+                  <div class="alpha-knob-label">Track acceptances after campaign ends</div>
+                  <div class="alpha-knob-row">
+                    <input class="alpha-knob-input" type="number" id="acceptance-tracking-days" value="7" min="0" max="30" />
+                    <span class="alpha-knob-suffix">days</span>
+                  </div>
+                  <div class="alpha-knob-help">After the campaign ends, the bot keeps sweeping LinkedIn every 6h to update Connected Status as people accept your invites. Set to <b>0</b> to disable. Bot must be running for sweeps to fire.</div>
+                </div>
+
+                <!-- Manual on-demand bulk check. Refuses while a campaign is
+                     running; uses the first selected account. Updates the
+                     Connected Status column with Connected / Still Pending. -->
+                <div style="margin-top:18px;">
+                  <div class="alpha-knob-label">Run a bulk Connection Status check now</div>
+                  <div class="alpha-knob-row">
+                    <button type="button" id="btn-bulk-check-now" class="btn btn-secondary" onclick="bulkCheckNow()">Bulk check connections</button>
+                    <span class="bulk-check-status-msg alpha-knob-suffix" style="font-style: italic;"></span>
+                  </div>
+                  <div class="alpha-knob-help">On-demand sweep using the first selected account. Bypasses the 6h cooldown. Won't run while a campaign is in progress.</div>
+                </div>
               </div>
             </details>
           </div>
@@ -674,6 +746,10 @@
         </div>
       </div>
       <div id="account-queue" class="account-queue hidden"></div>
+      <div class="live-bulk-check-row" style="display:flex; align-items:center; gap:12px; margin: 12px 0;">
+        <button type="button" id="btn-bulk-check-live" class="btn btn-secondary btn-sm" onclick="bulkCheckNow()">Bulk check connections</button>
+        <span class="bulk-check-status-msg" style="font-style: italic; color: var(--gray); font-size: 0.85rem;"></span>
+      </div>
       <div id="campaign-warnings" style="display:none">
         <div>&#9888; Keep your laptop open — closing the lid stops the campaign</div>
         <div>&#9888; Do not close the browser windows that open — they run the campaign</div>
@@ -808,13 +884,19 @@
         <span class="state-dot"></span>
         <span id="run-bar-text">Idle</span>
       </div>
-      <div style="display:flex; gap:10px; align-items:center">
+      <div class="run-bar-actions">
         <button type="button" class="btn btn-sm" onclick="scrollToSection('nav-status')">View Status</button>
 
-        <!-- Preset pill — opens popover upward with the list + actions -->
+        <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start Campaign</button>
+        <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
+        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers. No resume — Start launches a fresh run.">Stop Campaign</button>
+
+        <!-- Saved configs — pushed to the far right, smaller. Stores the
+             whole wizard form (mode/accounts/sheet/templates/limits) under
+             a name you can re-load later. -->
         <div class="preset-pill" id="preset-pill">
-          <button type="button" class="btn btn-sm preset-pill-btn" onclick="togglePresetPopover()">
-            <span>Presets</span>
+          <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, daily limit).">
+            <span>Saved configs</span>
             <span class="preset-pill-count" id="preset-pill-count">0</span>
             <span class="preset-pill-caret">▾</span>
           </button>
@@ -827,7 +909,7 @@
             <div class="preset-pop-divider"></div>
             <div class="preset-pop-label">Saved</div>
             <div id="preset-pop-list">
-              <div class="preset-pop-empty">No saved presets yet</div>
+              <div class="preset-pop-empty">No saved configs yet</div>
             </div>
             <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
               <span>+ Save current as…</span>
@@ -835,10 +917,6 @@
             </div>
           </div>
         </div>
-
-        <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start Campaign</button>
-        <button type="button" id="btn-pause-rb" class="btn btn-sm btn-secondary" onclick="pauseOrResumeCampaign()" disabled>Pause</button>
-        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled>Stop Campaign</button>
       </div>
     </div>
 

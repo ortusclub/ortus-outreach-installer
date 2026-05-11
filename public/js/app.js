@@ -51,7 +51,7 @@ function gatherCampaignFormState() {
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
 
   const templates = {
-    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -827,6 +827,7 @@ function removeProfile(id) {
   if (cb) { cb.checked = false; cb.closest('.profile-item')?.classList.remove('selected'); }
   renderSelectedPanel();
 }
+window.removeProfile = removeProfile;
 
 let activeAccountFilter = 'all';
 
@@ -1095,7 +1096,7 @@ function applyTemplateUIVisibility(mode, addNoteOn) {
   const previewBtn = document.getElementById('btn-preview-messages');
   const hide =
     mode === 'check_status' ||
-    (mode === 'connect_only' && !addNoteOn);
+    ((mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') && !addNoteOn);
   const display = hide ? 'none' : '';
   if (tplBar) tplBar.style.display = display;
   if (previewBtn) previewBtn.style.display = display;
@@ -1336,12 +1337,14 @@ function onModeChange() {
   const op = document.getElementById('tpl-op-section');
   const openToggle = document.getElementById('open-profile-toggle');
   const tplMgmt = document.getElementById('nav-templates');
+  const primaryBlock = document.getElementById('primary-person-block');
 
   connect.style.display = 'none';
   message.style.display = 'none';
   inmail.style.display = 'none';
   if (op) op.style.display = 'none';
   openToggle.style.display = 'none';
+  if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -1355,7 +1358,7 @@ function onModeChange() {
   const qText = document.getElementById('templates-q-text');
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   if (question && qText) {
-    if (mode === 'connect_only') {
+    if (mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') {
       question.style.display = '';
       qText.textContent = 'Do you want to add a note while connecting?';
       syncAddNoteUI(addNoteOn);
@@ -1364,10 +1367,13 @@ function onModeChange() {
     }
   }
 
-  if (mode === 'connect_only') {
+  if (mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') {
     if (addNoteOn) connect.style.display = '';
     else connect.style.display = 'none';
-    openToggle.style.display = '';
+    // 'Message Open Profiles Directly' toggle hidden for now — may
+    // come back later. Keep the DOM element so the form payload still
+    // includes messageOpenProfiles=false (current default).
+    if (openToggle) openToggle.style.display = 'none';
   } else if (mode === 'message_only') {
     message.style.display = '';
   } else if (mode === 'inmail_only') {
@@ -1425,7 +1431,7 @@ function onModeChange() {
   if (navTemplates) navTemplates.style.display = isCheckDms ? 'none' : '';
   // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
   // caps invitations per account per day). DM/IC/OP/InMail are unlimited.
-  const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_message');
+  const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_message' || mode === 'connect_and_check_status');
   const dailyKnob = document.getElementById('daily-limit-knob');
   if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
   if (isCheckStatus) {
@@ -1489,6 +1495,24 @@ const MODE_LIST = [
     ],
   },
   {
+    value: 'connect_and_check_status',
+    name: 'Connect + Check Connection Status',
+    bullets: [
+      'Send connection requests to new profiles',
+      'Each profile turn also checks one prior pending invite',
+      'Top-of-funnel + verification in a single run',
+    ],
+  },
+  {
+    value: 'connect_and_introduce',
+    name: 'Connect + Introduce Back',
+    bullets: [
+      'Send connection requests to new profiles',
+      'Once accepted, auto-send an introduction DM',
+      'DM introduces the lead to a primary person you specify',
+    ],
+  },
+  {
     value: 'message_only',
     name: 'Message Only',
     bullets: [
@@ -1528,16 +1552,7 @@ const MODE_LIST = [
   },
   // Stubs — not wired to any backend yet. Click shows a "Coming soon" toast
   // and the cards stay unselected so the operator can't accidentally start them.
-  {
-    value: 'connect_introduce_back',
-    name: 'Connect and Introduce Back',
-    bullets: [
-      'Send a connection request',
-      'Once accepted, introduce them to the team',
-      'Coming soon',
-    ],
-    comingSoon: true,
-  },
+  // (connect_introduce_back stub removed — the live version is connect_and_introduce.)
   {
     value: 'post_amplification',
     name: 'Post Amplification',
@@ -1976,7 +1991,7 @@ async function startCampaign() {
   // drop the connection note regardless of what's in the textarea.
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
-    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -1986,6 +2001,12 @@ async function startCampaign() {
     introMode: mode === 'message_only' && localStorage.getItem('ortus-intro-mode') === '1',
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
+    // Connect + Introduce Back: primary person + intro DM body. The
+    // backend stores these on the campaign config; auto-send-after-acceptance
+    // is wired in the next iteration.
+    primaryName: document.getElementById('primary-person-name')?.value?.trim() || '',
+    primaryUrl:  document.getElementById('primary-person-url')?.value?.trim() || '',
+    primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
   };
 
   // Show account queue
@@ -2018,11 +2039,34 @@ async function startCampaign() {
         // Campaign Name from the wizard's top-of-page input. Empty string is
         // valid — the dashboard row falls back to "Add name" inline-editable.
         name: (document.getElementById('campaign-name-input')?.value || '').trim(),
+        // Post-campaign acceptance tracking window (days). Server clamps to
+        // 0..30. Only honoured for connect modes.
+        acceptanceTrackingDays: (() => {
+          const v = parseInt(document.getElementById('acceptance-tracking-days')?.value, 10);
+          return Number.isFinite(v) && v >= 0 ? v : 0;
+        })(),
       }),
     });
     const data = await res.json();
     if (data.error) { alert(`Error: ${data.error}`); return; }
     if (!data.ok) { alert(data.message || 'Could not start campaign.'); return; }
+    // Whether the campaign starts now or gets queued, the draft has been
+    // consumed. Drop it from the Drafts list and clear the active id.
+    try {
+      const draftId = localStorage.getItem('currentDraftId') || '';
+      if (draftId) {
+        await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
+        localStorage.removeItem('currentDraftId');
+      }
+    } catch {}
+    // Server queued the campaign because another one is already running.
+    // Pop back to the dashboard and tell the operator what happened.
+    if (data.queued) {
+      alert(data.message || 'Added to queue.');
+      if (typeof saveLastUsedPreset === 'function') saveLastUsedPreset();
+      goDashboard();
+      return;
+    }
     setCampaignButtons(true);
     // Snapshot the configuration so "Load Last Used" can restore it next time.
     if (typeof saveLastUsedPreset === 'function') saveLastUsedPreset();
@@ -2235,7 +2279,24 @@ async function showBrowsers() {
 }
 
 function setCampaignButtons(running, paused = false, pauseRequested = false) {
-  ['btn-start', 'btn-start-rb'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = running; });
+  // Queue mode: wizard's btn-start is repurposed as "Add to Queue" — keep
+  // it enabled even when a campaign runs, so the operator can stage the
+  // queued one. Detected by the visible queue banner (set by
+  // updateWizardQueueState).
+  const queueBanner = document.getElementById('wizard-queue-banner');
+  const inQueueMode = queueBanner && queueBanner.style.display !== 'none';
+  ['btn-start', 'btn-start-rb'].forEach(id => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    // btn-start in the wizard becomes Add to Queue in queue mode → don't
+    // disable. btn-start-rb is in the persistent run-bar and represents
+    // starting the *active* campaign, so keep the original disable rule.
+    if (id === 'btn-start' && inQueueMode) {
+      b.disabled = false;
+    } else {
+      b.disabled = running;
+    }
+  });
   ['btn-stop',  'btn-stop-rb' ].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !running; });
   // Disable Check DMs while a campaign runs (mutex — both need the same browsers)
   const btnCheck = document.getElementById('btn-check-dms');
@@ -2363,19 +2424,34 @@ async function fetchCheckDmsReplies() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Account queue display
 // ─────────────────────────────────────────────────────────────────────────────
-function renderAccountQueue(names, currentName, status) {
+function renderAccountQueue(names, currentName, status, profileIds) {
   const el = document.getElementById('account-queue');
   if (!names || names.length === 0) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
+  // Per-row Open Browser / Try Again buttons need profile IDs. Fall back to
+  // the IDs in status when not passed (poll path), and to selectedProfileIds
+  // in scope when no status (wizard preview path).
+  const ids = profileIds
+    || (status && Array.isArray(status.profileIds) ? status.profileIds : null)
+    || (Array.isArray(selectedProfileIds) ? selectedProfileIds : null)
+    || [];
 
   // Pull per-profile state out of the status payload when available. Both
   // arrays are emitted by getCampaignStatus (parkedProfiles + softWarnings)
   // and may carry profileName/name + a reason/kind we can surface.
   const parked = (status && (status.parkedProfiles || status.parked)) || [];
   const warnings = (status && status.softWarnings) || [];
+  const endReasons = (status && status.profileEndReasons) || [];
+  // pName is the key parkedProfiles uses; profileName / name / account cover
+  // softWarnings + profileEndReasons + future shapes.
   const findIn = (arr, name) => {
     if (!Array.isArray(arr)) return null;
-    return arr.find(x => (x?.profileName === name) || (x?.name === name) || (x?.account === name)) || null;
+    return arr.find(x => (
+      x?.profileName === name ||
+      x?.pName === name ||
+      x?.name === name ||
+      x?.account === name
+    )) || null;
   };
 
   el.innerHTML = names.map((name, i) => {
@@ -2383,6 +2459,19 @@ function renderAccountQueue(names, currentName, status) {
     const isPastCurrent = currentName && names.indexOf(currentName) > i;
     const parkedHit = findIn(parked, name);
     const warningHit = findIn(warnings, name);
+    const endHit = findIn(endReasons, name);
+
+    // Translate the bot's machine-readable park reason into a human-readable
+    // sentence so the row tells the operator what to do next.
+    const parkReasonLabel = (r) => {
+      if (!r) return '';
+      const map = {
+        session_expired: 'Session expired — log in again',
+        consecutive_skips: 'Parked after consecutive skips',
+        weekly_limit_429: 'Weekly invitation limit reached',
+      };
+      return map[r] || r;
+    };
 
     let label, stateClass, detail = '';
     if (isActive) {
@@ -2391,11 +2480,17 @@ function renderAccountQueue(names, currentName, status) {
     } else if (parkedHit) {
       label = 'Parked';
       stateClass = 'is-parked';
-      detail = parkedHit.reason || parkedHit.kind || '';
+      detail = parkedHit.reason ? parkReasonLabel(parkedHit.reason) : (parkedHit.kind || '');
     } else if (warningHit) {
       label = 'Warning';
       stateClass = 'is-warning';
       detail = warningHit.kind || warningHit.message || '';
+    } else if (endHit) {
+      // Surface end reason regardless of queue position — needed post-campaign
+      // when currentName is null and isPastCurrent never trips.
+      label = 'Done';
+      stateClass = 'is-done';
+      detail = endHit.reason || endHit.kind || '';
     } else if (isPastCurrent) {
       label = 'Done';
       stateClass = 'is-done';
@@ -2404,16 +2499,56 @@ function renderAccountQueue(names, currentName, status) {
       stateClass = 'is-waiting';
     }
 
+    const profileId = ids[i] || '';
+    // Try Again only for parked rows; Open Browser is always available so
+    // the operator can manually inspect a profile mid-run.
+    const tryAgainBtn = (parkedHit && profileId)
+      ? `<button type="button" class="queue-row-btn" onclick="tryAgainProfile('${escHtml(profileId)}')" title="Clear the parked state and reopen this profile's browser so you can log in / fix the issue">Try again</button>`
+      : '';
+    const openBtn = profileId
+      ? `<button type="button" class="queue-row-btn queue-row-btn--ghost" onclick="openProfileBrowser('${escHtml(profileId)}')" title="Open or focus the GoLogin browser for this profile">Open browser</button>`
+      : '';
     return `
       <div class="queue-row ${stateClass}">
         <span class="queue-row-num">${i + 1}</span>
         <span class="queue-row-name">${escHtml(name)}</span>
         <span class="queue-row-status">${label}</span>
         <span class="queue-row-detail">${detail ? escHtml(detail) : ''}</span>
+        <span class="queue-row-actions">${tryAgainBtn}${openBtn}</span>
       </div>
     `;
   }).join('');
 }
+
+async function openProfileBrowser(profileId) {
+  if (!profileId) return;
+  try {
+    const r = await fetch(`/api/profile/${encodeURIComponent(profileId)}/open-browser`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    const verb = data.action === 'launched' ? 'Opening' : 'Focused';
+    showCampaignToast(`${verb} browser for this profile.`, 4000);
+  } catch (err) {
+    showCampaignToast(`Could not open browser: ${err.message}`, 6000);
+  }
+}
+window.openProfileBrowser = openProfileBrowser;
+
+async function tryAgainProfile(profileId) {
+  if (!profileId) return;
+  try {
+    const r = await fetch(`/api/campaign/profile/${encodeURIComponent(profileId)}/retry`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    const browserNote = data.browser?.action === 'launched'
+      ? ' Browser opening — log in there.'
+      : (data.browser?.action === 'focused-existing' ? ' Browser focused.' : '');
+    showCampaignToast(`Retrying ${data.profileName || 'profile'} on next rotation.${browserNote}`, 6000);
+  } catch (err) {
+    showCampaignToast(`Could not retry: ${err.message}`, 6000);
+  }
+}
+window.tryAgainProfile = tryAgainProfile;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Status polling
@@ -2528,7 +2663,7 @@ async function pollStatus() {
 
     // Update account queue if we have profile names
     if (s.profileNames && s.profileNames.length > 0) {
-      renderAccountQueue(s.profileNames, s.currentProfile, s);
+      renderAccountQueue(s.profileNames, s.currentProfile, s, s.profileIds);
     }
 
     if (s.logs?.length > 0) {
@@ -2945,7 +3080,7 @@ async function saveQuickSchedule() {
 
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
-    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -3056,11 +3191,15 @@ async function deleteSchedule(id) {
   try {
     const res = await fetch('/api/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
     const data = await res.json();
-    if (data.deleted) await fetchSchedules();
+    if (data.deleted) {
+      if (typeof fetchSchedules === 'function') await fetchSchedules();
+      if (typeof refreshDashboardSchedules === 'function') await refreshDashboardSchedules();
+    }
   } catch (err) {
     alert('Failed to delete schedule: ' + err.message);
   }
 }
+window.deleteSchedule = deleteSchedule;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Collapsible sections
@@ -4561,6 +4700,28 @@ function saveIntroFields() {
   localStorage.setItem('ortus-intro-name', name);
   localStorage.setItem('ortus-intro-title', title);
 }
+
+// Connect + Introduce Back fields (mode-specific to connect_and_introduce).
+// Persisted to localStorage so the wizard repopulates after navigation.
+function savePrimaryPersonFields() {
+  const name = document.getElementById('primary-person-name')?.value || '';
+  const url  = document.getElementById('primary-person-url')?.value || '';
+  const body = document.getElementById('primary-intro-body')?.value || '';
+  localStorage.setItem('ortus-primary-name', name);
+  localStorage.setItem('ortus-primary-url',  url);
+  localStorage.setItem('ortus-primary-body', body);
+}
+function restorePrimaryPersonState() {
+  const nameEl = document.getElementById('primary-person-name');
+  const urlEl  = document.getElementById('primary-person-url');
+  const bodyEl = document.getElementById('primary-intro-body');
+  if (nameEl) nameEl.value = localStorage.getItem('ortus-primary-name') || nameEl.value;
+  if (urlEl)  urlEl.value  = localStorage.getItem('ortus-primary-url')  || urlEl.value;
+  if (bodyEl) bodyEl.value = localStorage.getItem('ortus-primary-body') || bodyEl.value;
+}
+window.savePrimaryPersonFields = savePrimaryPersonFields;
+document.addEventListener('DOMContentLoaded', restorePrimaryPersonState);
+if (document.readyState !== 'loading') restorePrimaryPersonState();
 function restoreIntroState() {
   const nameEl  = document.getElementById('intro-name');
   const titleEl = document.getElementById('intro-title');
@@ -4623,6 +4784,27 @@ function stopDashboardPolling() {
   }
 }
 
+// While the wizard is open, poll campaign status so the Add to Queue /
+// Start Campaign label flips the moment the running campaign finishes
+// (no need to navigate away and back).
+let _wizardPollTimer = null;
+function startWizardPolling() {
+  if (_wizardPollTimer) return;
+  _wizardPollTimer = setInterval(() => {
+    if (document.body.classList.contains('route-wizard')) {
+      if (typeof updateWizardQueueState === 'function') updateWizardQueueState();
+    } else {
+      stopWizardPolling();
+    }
+  }, 5000);
+}
+function stopWizardPolling() {
+  if (_wizardPollTimer) {
+    clearInterval(_wizardPollTimer);
+    _wizardPollTimer = null;
+  }
+}
+
 function applyRoute() {
   const isWizard = (window.location.hash || '#/').startsWith('#/new');
   document.body.classList.toggle('route-wizard', isWizard);
@@ -4630,16 +4812,253 @@ function applyRoute() {
   if (!isWizard) {
     refreshDashboard();
     startDashboardPolling();
+    stopWizardPolling();
   } else {
     stopDashboardPolling();
+    // Pull the latest name on entry so a rename done from the dashboard (or
+    // from another tab) is reflected in the wizard input. No-op if nothing
+    // has changed.
+    if (typeof syncCampaignNameInput === 'function') syncCampaignNameInput();
+    if (typeof updateWizardQueueState === 'function') updateWizardQueueState();
+    startWizardPolling();
   }
 }
+
+// Updates the wizard's banner + Start button label based on whether a
+// campaign is currently running. When running, this build will be queued
+// (server already enforces this) — say so out loud so the operator knows
+// they're not editing the active campaign.
+async function updateWizardQueueState() {
+  const banner = document.getElementById('wizard-queue-banner');
+  const startBtn = document.getElementById('btn-start');
+  if (!banner && !startBtn) return;
+  let isRunning = false;
+  let runningName = '';
+  try {
+    const r = await fetch('/api/campaign/status');
+    if (r.ok) {
+      const status = await r.json();
+      isRunning = !!(status.running || status.paused);
+      runningName = status.name || '';
+    }
+  } catch {}
+  if (banner) {
+    banner.style.display = isRunning ? '' : 'none';
+    const detail = document.getElementById('wizard-queue-banner-detail');
+    if (detail && isRunning) {
+      const ref = runningName ? `"${runningName}"` : 'A campaign';
+      detail.textContent = `${ref} is currently running — this one will be added to the queue and start automatically when there's a free slot.`;
+    }
+  }
+  if (startBtn) {
+    if (isRunning) {
+      startBtn.textContent = 'Add to Queue';
+      startBtn.classList.add('btn-queue');
+      // Force-enable: setCampaignButtons disables btn-start while a
+      // campaign runs (correct for the "single-campaign" world). In queue
+      // mode the operator IS clicking it intentionally to enqueue, so we
+      // override that disable.
+      startBtn.disabled = false;
+    } else {
+      startBtn.textContent = 'Start Campaign';
+      startBtn.classList.remove('btn-queue');
+      // Don't touch disabled here — let setCampaignButtons own it when
+      // we're back to single-campaign mode.
+    }
+  }
+  // Live Status section shows the running campaign's data. When the wizard
+  // is being used to stage a queued campaign, that data is from a DIFFERENT
+  // campaign — confusing. Hide the section to keep the wizard focused on
+  // the build-in-progress.
+  const liveStatusSection = document.getElementById('nav-status');
+  if (liveStatusSection) {
+    liveStatusSection.style.display = isRunning ? 'none' : '';
+  }
+}
+window.updateWizardQueueState = updateWizardQueueState;
 function goCreateCampaign() { window.location.hash = '#/new'; }
 function goDashboard()      { window.location.hash = '#/'; }
 
 async function refreshDashboard() {
-  await Promise.all([refreshActiveCampaign(), refreshDashboardSchedules(), refreshPastCampaigns()]);
+  await Promise.all([refreshActiveCampaign(), refreshDashboardQueue(), refreshDashboardSchedules(), refreshDashboardDrafts(), refreshPastCampaigns()]);
 }
+
+// Dashboard's Drafts section. Multi-draft store backs this — operator can
+// stage multiple campaigns in parallel, queue or delete any of them.
+async function refreshDashboardDrafts() {
+  const list = document.getElementById('drafts-campaign-list');
+  if (!list) return;
+  try {
+    const data = await fetch('/api/drafts').then((r) => r.json());
+    const drafts = Array.isArray(data?.drafts) ? data.drafts : [];
+    if (drafts.length === 0) {
+      list.innerHTML = '<p class="empty-state">No drafts yet.</p>';
+      return;
+    }
+    drafts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    list.innerHTML = drafts.map((d) => {
+      const name = d.name || '(unnamed draft)';
+      const created = dashboardFormatDate(d.createdAt) || '—';
+      return `
+        <div class="campaign-row campaign-row--with-edit">
+          <span class="campaign-row-name">${escHtml(name)}</span>
+          <span class="campaign-row-type">Draft</span>
+          <span class="campaign-row-progress">Created ${escHtml(created)}</span>
+          <span class="campaign-row-status">Draft</span>
+          <span class="campaign-row-actions">
+            <button type="button" class="campaign-row-edit" onclick="editDraft('${escHtml(d.id)}')" title="Open in wizard">Edit</button>
+            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="deleteDraft('${escHtml(d.id)}')" title="Delete this draft" aria-label="Delete draft">×</button>
+          </span>
+        </div>
+      `;
+    }).join('');
+  } catch {
+    list.innerHTML = '<p class="empty-state">Failed to load drafts.</p>';
+  }
+}
+
+async function deleteDraft(id) {
+  if (!id) return;
+  if (!confirm('Delete this draft?')) return;
+  try {
+    await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
+  } catch (err) {
+    alert('Failed: ' + err.message);
+    return;
+  }
+  // If the wizard is currently editing this draft, drop the reference.
+  try {
+    if (localStorage.getItem('currentDraftId') === id) {
+      localStorage.removeItem('currentDraftId');
+    }
+  } catch {}
+  refreshDashboardDrafts();
+}
+window.deleteDraft = deleteDraft;
+
+async function editDraft(id) {
+  if (!id) return;
+  try { localStorage.setItem('currentDraftId', id); } catch {}
+  // Pre-fill the wizard's name input from the draft so the user sees it
+  // immediately (syncCampaignNameInput will pick up currentDraftId on
+  // wizard entry too, but setting it here avoids a flicker).
+  try {
+    const r = await fetch('/api/drafts/' + encodeURIComponent(id));
+    if (r.ok) {
+      const d = await r.json();
+      const input = document.getElementById('campaign-name-input');
+      if (input && d) input.value = d.name || '';
+    }
+  } catch {}
+  goCreateCampaign();
+}
+window.editDraft = editDraft;
+
+// Dashboard's Queued section. Lists campaigns waiting for the running
+// one to finish so they can auto-launch in FIFO order. Cancel button
+// removes an entry before its slot comes up.
+async function refreshDashboardQueue() {
+  const list = document.getElementById('queued-campaign-list');
+  if (!list) return;
+  try {
+    const data = await fetch('/api/queue').then((r) => r.json());
+    const queue = Array.isArray(data?.queue) ? data.queue : [];
+    if (queue.length === 0) {
+      list.innerHTML = '<p class="empty-state">No queued campaigns.</p>';
+      return;
+    }
+    list.innerHTML = queue.map((q, idx) => {
+      const name = q.name || '(unnamed)';
+      const modeLabel = dashboardModeLabel(q.mode || '');
+      const accountCount = (q.profileIds || []).length;
+      const accountLabel = accountCount ? `${accountCount} account${accountCount === 1 ? '' : 's'}` : '';
+      const positionLabel = idx === 0 ? 'Next up' : `Position ${idx + 1}`;
+      const isFirst = idx === 0;
+      const isLast = idx === queue.length - 1;
+      return `
+        <div class="campaign-row campaign-row--with-edit">
+          <span class="campaign-row-name">${escHtml(name)}</span>
+          <span class="campaign-row-type">${escHtml(modeLabel)}${accountLabel ? ' · ' + accountLabel : ''}</span>
+          <span class="campaign-row-progress">${escHtml(positionLabel)}</span>
+          <span class="campaign-row-status">Queued</span>
+          <span class="campaign-row-actions">
+            <button type="button" class="campaign-row-edit" onclick="editQueuedCampaign('${escHtml(q.id)}')" title="Edit this queued campaign">Edit</button>
+            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="moveQueuedCampaign('${escHtml(q.id)}','up')" title="Move up" aria-label="Move up" ${isFirst ? 'disabled' : ''}>↑</button>
+            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="moveQueuedCampaign('${escHtml(q.id)}','down')" title="Move down" aria-label="Move down" ${isLast ? 'disabled' : ''}>↓</button>
+            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="cancelQueuedCampaign('${escHtml(q.id)}')" title="Remove from queue" aria-label="Remove from queue">×</button>
+          </span>
+        </div>
+      `;
+    }).join('');
+  } catch {
+    list.innerHTML = '<p class="empty-state">Failed to load queue.</p>';
+  }
+}
+
+async function cancelQueuedCampaign(id) {
+  if (!id) return;
+  if (!confirm('Remove this campaign from the queue?')) return;
+  try {
+    await fetch('/api/queue/' + encodeURIComponent(id), { method: 'DELETE' });
+  } catch {}
+  refreshDashboardQueue();
+}
+window.cancelQueuedCampaign = cancelQueuedCampaign;
+
+// Edit a queued campaign: pulls full config, removes the entry from the
+// queue (so it doesn't auto-fire mid-edit), creates a draft from it, and
+// opens the wizard hydrated. Re-queueing happens when the operator hits
+// Add to Queue at the bottom of the wizard.
+async function editQueuedCampaign(id) {
+  if (!id) return;
+  let entry = null;
+  try {
+    const r = await fetch('/api/queue/' + encodeURIComponent(id));
+    if (!r.ok) { alert('Could not load queued campaign.'); return; }
+    entry = await r.json();
+  } catch (err) { alert('Failed: ' + err.message); return; }
+  if (!entry || !entry.config) { alert('Queue entry has no config to edit.'); return; }
+
+  // Remove from queue so we don't have a duplicate when the user re-saves.
+  try { await fetch('/api/queue/' + encodeURIComponent(id), { method: 'DELETE' }); } catch {}
+
+  // Stage as a draft so the same wizard plumbing the multi-draft store uses
+  // applies (Save Name updates the draft, launching consumes it).
+  let draftId = '';
+  try {
+    const r = await fetch('/api/drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: entry.name || '', config: entry.config }),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      draftId = data?.draft?.id || '';
+    }
+  } catch {}
+  if (draftId) {
+    try { localStorage.setItem('currentDraftId', draftId); } catch {}
+  }
+
+  const nameInput = document.getElementById('campaign-name-input');
+  if (nameInput) nameInput.value = entry.name || '';
+  if (typeof applyPresetConfig === 'function') applyPresetConfig(entry.config);
+  goCreateCampaign();
+}
+window.editQueuedCampaign = editQueuedCampaign;
+
+async function moveQueuedCampaign(id, direction) {
+  if (!id || (direction !== 'up' && direction !== 'down')) return;
+  try {
+    await fetch('/api/queue/' + encodeURIComponent(id) + '/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction }),
+    });
+  } catch {}
+  refreshDashboardQueue();
+}
+window.moveQueuedCampaign = moveQueuedCampaign;
 
 // Dashboard's Schedules section. Renders the same /api/schedules data the
 // wizard's hidden schedules-section uses, but in the campaign-row layout so
@@ -4670,11 +5089,15 @@ async function refreshDashboardSchedules() {
         : 'Never run';
       const limit = s.dailyLimit != null ? `${s.dailyLimit}/day` : '';
       return `
-        <div class="campaign-row">
+        <div class="campaign-row campaign-row--with-edit">
           <span class="campaign-row-name">${escHtml(s.name || 'Schedule')}</span>
           <span class="campaign-row-type">${escHtml(dashboardModeLabel(s.mode))}</span>
           <span class="campaign-row-progress">${escHtml(cronFriendly)}${limit ? ' · ' + escHtml(limit) : ''} · last ${escHtml(lastRun)}</span>
           <span class="campaign-row-status">Scheduled</span>
+          <span class="campaign-row-actions">
+            <button type="button" class="campaign-row-edit" onclick="queueScheduleNow('${escHtml(s.id)}')" title="Queue this schedule to run as soon as a slot opens">Run now</button>
+            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="deleteSchedule('${escHtml(s.id)}')" title="Delete this schedule" aria-label="Delete schedule">×</button>
+          </span>
         </div>
       `;
     }).join('');
@@ -4682,6 +5105,40 @@ async function refreshDashboardSchedules() {
     list.innerHTML = '<p class="empty-state">Failed to load schedules.</p>';
   }
 }
+
+// "Run now" on a schedule: post its config to /api/campaign/start. Server
+// queues it if a campaign is already running, otherwise starts immediately.
+// Schedule itself stays put (next cron tick will fire it again). Use Delete
+// if you want it gone.
+async function queueScheduleNow(id) {
+  if (!id) return;
+  try {
+    const all = await fetch('/api/schedules').then((r) => r.json());
+    const sched = Array.isArray(all) ? all.find((s) => s.id === id) : null;
+    if (!sched) { alert('Schedule not found.'); return; }
+    const r = await fetch('/api/campaign/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        profileIds: sched.profileIds,
+        sheetUrl: sched.sheetUrl,
+        templates: sched.templates || {},
+        dailyLimit: sched.dailyLimit,
+        mode: sched.mode,
+        delayMin: sched.delayMin,
+        delayMax: sched.delayMax,
+        name: sched.name,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) { alert('Failed: ' + (data.error || r.status)); return; }
+    alert(data.queued ? (data.message || 'Added to queue.') : 'Started immediately.');
+    refreshDashboard();
+  } catch (err) {
+    alert('Failed: ' + err.message);
+  }
+}
+window.queueScheduleNow = queueScheduleNow;
 
 function dashboardNameButton(name, rowKind, rowKey) {
   const trimmed = (name || '').trim();
@@ -4697,7 +5154,29 @@ async function refreshActiveCampaign() {
     const status = await fetch('/api/campaign/status').then((r) => r.json());
     const isActive = status && (status.running || status.paused);
     if (!isActive) {
-      list.innerHTML = '<p class="empty-state">No active campaigns.</p>';
+      // Surface a saved draft name so the operator can see what they staged in
+      // the wizard before clicking Start. Cleared via the row's × button.
+      let draftName = '';
+      try {
+        const r = await fetch('/api/draft-name');
+        if (r.ok) draftName = (await r.json())?.name || '';
+      } catch {}
+      if (draftName) {
+        list.innerHTML = `
+          <div class="campaign-row campaign-row--with-edit">
+            <div class="campaign-row-name">${dashboardNameButton(draftName, 'draft', 'draft')}</div>
+            <span class="campaign-row-type">Draft</span>
+            <span class="campaign-row-progress">Not started</span>
+            <span class="campaign-row-status is-paused">Draft</span>
+            <div class="campaign-row-actions">
+              <button type="button" class="campaign-row-edit" onclick="goCreateCampaign()" title="Open the campaign page">Edit</button>
+              <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="clearDraftName()" title="Discard draft" aria-label="Discard draft">×</button>
+            </div>
+          </div>
+        `;
+      } else {
+        list.innerHTML = '<p class="empty-state">No active campaigns.</p>';
+      }
       return;
     }
     const total = Number(status.totalTargets) || 0;
@@ -4754,13 +5233,25 @@ async function refreshPastCampaigns() {
       const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
       const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
       const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
+      const wasStopped = c.status === 'stopped';
+      const statusLabel = wasStopped ? 'Stopped' : 'Completed';
+      // Restart shown only on stopped entries — completed campaigns can still
+      // be reopened via Edit, but auto-rerun-suggesting "Restart" is reserved
+      // for runs the operator interrupted.
+      const restartBtn = wasStopped
+        ? `<button type="button" class="campaign-row-edit" onclick="restartPastCampaign(${idx})" title="Reopen and prepare to start again">Start again</button>`
+        : '';
       return `
         <div class="campaign-row campaign-row--with-edit">
           <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
           <span class="campaign-row-type">${escHtml(subtitle)}</span>
           <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
-          <span class="campaign-row-status is-done">Completed</span>
-          <button type="button" class="campaign-row-edit" onclick="goCreateCampaign()" title="Open the campaign page">Edit</button>
+          <span class="campaign-row-status is-done">${statusLabel}</span>
+          <div class="campaign-row-actions">
+            ${restartBtn}
+            <button type="button" class="campaign-row-edit" onclick="editPastCampaign(${idx})" title="Reopen this campaign in the wizard">Edit</button>
+            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="deletePastCampaign(${idx})" title="Delete this campaign from history" aria-label="Delete">×</button>
+          </div>
         </div>
       `;
     }).join('');
@@ -4769,20 +5260,238 @@ async function refreshPastCampaigns() {
   }
 }
 
+async function deletePastCampaign(idx) {
+  if (!confirm('Delete this past campaign from history? This cannot be undone.')) return;
+  try {
+    const r = await fetch('/api/history/' + idx, { method: 'DELETE' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      alert('Failed to delete: ' + (err.error || r.status));
+      return;
+    }
+  } catch (err) {
+    alert('Failed: ' + err.message);
+    return;
+  }
+  refreshPastCampaigns();
+}
+window.deletePastCampaign = deletePastCampaign;
+
+// Hydrate the wizard from a past-campaign history entry, then navigate. Pulls
+// from history.json by index — entry.config carries the original start payload
+// (added 2026-05). Older entries (pre-config-snapshot) only restore name + the
+// few legacy fields that were stored.
+async function editPastCampaign(idx) {
+  try {
+    const data = await fetch('/api/history').then(r => r.json());
+    if (!Array.isArray(data) || !data[idx]) {
+      alert('Could not find that campaign in history.');
+      return;
+    }
+    const entry = data[idx];
+    // Name → restore via the wizard's input + persist as the current draft so
+    // the dashboard's draft row stays consistent.
+    const name = entry.name || '';
+    const nameInput = document.getElementById('campaign-name-input');
+    if (nameInput) nameInput.value = name;
+    try { localStorage.setItem('campaignName', name); } catch {}
+    fetch('/api/draft-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).catch(() => {});
+    // Full restore from the snapshot config when present. Older history rows
+    // without `config` only restore what little was stored at the top level.
+    if (entry.config) {
+      applyPresetConfig(entry.config);
+    } else {
+      applyPresetConfig({
+        mode: entry.mode,
+        dailyLimit: entry.dailyLimit,
+      });
+    }
+    goCreateCampaign();
+  } catch (err) {
+    alert(`Failed to open campaign: ${err.message}`);
+  }
+}
+window.editPastCampaign = editPastCampaign;
+
+// Restart a past campaign: hydrate the wizard from its saved config (same
+// as Edit), then nudge the operator to click Start. Doesn't auto-start —
+// safer because the operator can review accounts/limits before relaunching.
+async function restartPastCampaign(idx) {
+  await editPastCampaign(idx);
+  if (typeof showCampaignToast === 'function') {
+    showCampaignToast('Campaign config restored — review and click Start Campaign to relaunch.', 6000);
+  }
+}
+window.restartPastCampaign = restartPastCampaign;
+
+// Dashboard "+ Start new campaign" — creates a brand-new draft entry and
+// opens the wizard with empty inputs. Other drafts are preserved (visible
+// in the Dashboard's Drafts section), so the operator can stage multiple
+// campaigns in parallel without losing any.
+async function startNewCampaign() {
+  // Spawn a fresh draft on the server; remember its id so saveDraftName
+  // updates this specific entry rather than colliding with an existing one.
+  try {
+    const r = await fetch('/api/drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '' }),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      try { localStorage.setItem('currentDraftId', data?.draft?.id || ''); } catch {}
+    }
+  } catch { /* fall through; wizard still works without a draft id */ }
+  try { localStorage.removeItem('campaignName'); } catch {}
+  const input = document.getElementById('campaign-name-input');
+  if (input) input.value = '';
+  goCreateCampaign();
+}
+window.startNewCampaign = startNewCampaign;
+
+// On-demand bulk Connection Status check, triggered by the wizard's
+// "Bulk check connections" button. Uses the first selected account
+// (selectedProfileIds[0]) and the current sheet URL. Server enforces the
+// "no campaign running" guard.
+async function bulkCheckNow() {
+  // Two buttons exist (wizard Advanced + live status panel) and two status
+  // spans share the .bulk-check-status-msg class. Update all instances.
+  const btns = document.querySelectorAll('#btn-bulk-check-now, #btn-bulk-check-live');
+  const statusEls = document.querySelectorAll('.bulk-check-status-msg');
+  const setStatus = (txt) => { statusEls.forEach((el) => { el.textContent = txt; }); };
+  const setBtnDisabled = (b) => { btns.forEach((el) => { el.disabled = b; }); };
+
+  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
+  const linkedinColumn = document.getElementById('linkedin-col-select')?.value || '';
+  const profileId = (Array.isArray(selectedProfileIds) && selectedProfileIds[0]) || '';
+
+  if (!sheetUrl) { setStatus('Paste a sheet URL first.'); return; }
+
+  setBtnDisabled(true);
+  // Live log streaming: poll campaign.logs every 2s while the sweep runs and
+  // mirror new lines into the status display. Same source the in-campaign
+  // log panel uses, so the bulk-check shows up wherever the operator clicked
+  // it (dashboard or wizard) without needing to navigate away.
+  const startedAt = Date.now();
+  const seenLines = new Set();
+  let liveLines = [];
+  const renderLive = (footer = '') => {
+    const tail = liveLines.slice(-8).join('\n');
+    setStatus(tail + (footer ? '\n\n' + footer : ''));
+  };
+  const livePoll = setInterval(async () => {
+    try {
+      const r = await fetch('/api/campaign/status');
+      if (!r.ok) return;
+      const s = await r.json();
+      const logs = Array.isArray(s.logs) ? s.logs : [];
+      for (const line of logs) {
+        if (seenLines.has(line)) continue;
+        // Only stream bulk-check-related lines (📡 / ⏭ / Bulk check / Sweep).
+        if (!/📡|⏭|Bulk check|Sweep|Manual bulk/.test(line)) continue;
+        const m = line.match(/^\[(.*?)\]/);
+        if (m) {
+          const t = new Date(m[1]).getTime();
+          if (!isNaN(t) && t < startedAt) continue;
+        }
+        seenLines.add(line);
+        liveLines.push(line.replace(/^\[.*?\]\s*/, ''));
+      }
+      if (liveLines.length > 0) renderLive('(running…)');
+    } catch { /* swallow */ }
+  }, 2000);
+  setStatus(profileId
+    ? 'Launching browser + sweeping…'
+    : 'No accounts selected — checking sheet for previously-used accounts…');
+
+  try {
+    // Send profileId only when explicitly selected; server falls back to
+    // deriving from the sheet's Account Used column otherwise.
+    const body = { sheetUrl, linkedinColumn };
+    if (profileId) body.profileId = profileId;
+    const r = await fetch('/api/bulk-check-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    const result = data.result || {};
+    const perProfile = Array.isArray(data.perProfile) ? data.perProfile : [];
+    const skippedParked = Array.isArray(data.skippedParked) ? data.skippedParked : [];
+    const profilesSweep = data.profilesSweep || 0;
+    const sourceTag = data.derivedFromSheet ? ` (across ${profilesSweep} accounts from the sheet)` : '';
+
+    // All candidates skipped because they were parked from a recent campaign.
+    if (profilesSweep === 0 && skippedParked.length > 0) {
+      const list = skippedParked.map((s) => `${s.profileName || s.profileId} (${s.reason})`).join(', ');
+      setStatus(`Skipped ${skippedParked.length} parked account(s) — none left to sweep: ${list}`);
+      return;
+    }
+    const matched = result.matched || 0;
+    const stamped = result.stamped || 0;
+    const fetched = result.fetched || 0;
+    // Aggregate fetched=0 = nothing happened. Surface per-profile errors so
+    // the operator sees "session-expired" / "no-endpoint-ok" / etc. instead
+    // of the misleading "0 of 0 connections fetched" success line.
+    const failures = perProfile.filter((p) => p && p.error);
+    if (fetched === 0 && failures.length > 0) {
+      const summary = failures.map((p) => {
+        const who = p.profileName || p.profileId || 'profile';
+        return `${who}: ${p.error}`;
+      }).join('  •  ');
+      setStatus(`Sweep failed on ${failures.length} of ${profilesSweep} account(s) — ${summary}`);
+    } else if (result.error) {
+      setStatus(`Sweep error: ${result.error}`);
+    } else {
+      const msg = `${matched} marked Connected, ${stamped} marked Still Pending (of ${fetched} recent connections fetched)${sourceTag}`;
+      const partial = failures.length > 0 ? ` — ${failures.length} account(s) failed: ${failures.map((p) => p.profileName || p.profileId).join(', ')}` : '';
+      const skippedNote = skippedParked.length > 0 ? ` — skipped ${skippedParked.length} parked account(s): ${skippedParked.map((s) => s.profileName || s.profileId).join(', ')}` : '';
+      setStatus(msg + partial + skippedNote);
+      if (typeof showCampaignToast === 'function') showCampaignToast(`Bulk check: ${msg}`, 6000);
+    }
+  } catch (err) {
+    setStatus(`Failed: ${err.message}`);
+  } finally {
+    clearInterval(livePoll);
+    setBtnDisabled(false);
+  }
+}
+window.bulkCheckNow = bulkCheckNow;
+
 // Inline-edit a campaign name. Delegated click → input swap → save on Enter
 // or blur, cancel on Escape. Save hits POST /api/campaign/name for active or
 // PATCH /api/history/:idx/name for past, then re-renders the section.
 async function saveCampaignName(kind, key, value) {
-  const url = kind === 'active'
-    ? '/api/campaign/name'
-    : `/api/history/${encodeURIComponent(key)}/name`;
-  const method = kind === 'active' ? 'POST' : 'PATCH';
+  let url, method;
+  if (kind === 'active') {
+    url = '/api/campaign/name';
+    method = 'POST';
+  } else if (kind === 'draft') {
+    // Draft row uses the persistent draft-name file. Empty string clears it.
+    url = '/api/draft-name';
+    method = 'POST';
+  } else {
+    url = `/api/history/${encodeURIComponent(key)}/name`;
+    method = 'PATCH';
+  }
   const res = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: value }),
   });
   if (!res.ok) throw new Error(`Rename failed (${res.status})`);
+  // Keep the wizard input + localStorage in sync so a follow-up wizard visit
+  // shows the renamed draft, not the old value.
+  if (kind === 'draft') {
+    try { localStorage.setItem('campaignName', value); } catch {}
+    const input = document.getElementById('campaign-name-input');
+    if (input) input.value = value;
+  }
   return res.json();
 }
 
@@ -4849,19 +5558,156 @@ window.goCreateCampaign = goCreateCampaign;
 window.goDashboard = goDashboard;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Campaign Name — top-of-wizard text input. Persisted to localStorage for now;
-// flowing it through /api/campaign/start → status → history is a Phase 2 task.
+// Campaign Name — top-of-wizard text input. Source-of-truth precedence on
+// every wizard view: running campaign's live name → backend draft-name (set
+// by Save Name) → localStorage (in-progress draft so half-typed names survive
+// Cmd+R).
 // ─────────────────────────────────────────────────────────────────────────────
-function initCampaignNameInput() {
+async function syncCampaignNameInput() {
   const input = document.getElementById('campaign-name-input');
   if (!input) return;
-  try { input.value = localStorage.getItem('campaignName') || ''; } catch {}
+  let value = '';
+  let isRunning = false;
+  let draftId = '';
+  try { draftId = localStorage.getItem('currentDraftId') || ''; } catch {}
+  // Active draft (multi-draft store) wins — that's the entry the wizard
+  // is currently editing. Fall back to the running campaign name (only
+  // when no campaign is running, so we don't make the wizard look like an
+  // edit form for the active run), then to legacy single-draft, then to
+  // localStorage.
+  if (draftId) {
+    try {
+      const r = await fetch('/api/drafts/' + encodeURIComponent(draftId));
+      if (r.ok) value = (await r.json())?.name || '';
+      else if (r.status === 404) {
+        // Draft was deleted from the dashboard while wizard was open.
+        try { localStorage.removeItem('currentDraftId'); } catch {}
+      }
+    } catch {}
+  }
+  try {
+    const sRes = await fetch('/api/campaign/status');
+    if (sRes.ok) {
+      const status = await sRes.json();
+      isRunning = !!(status.running || status.paused);
+      if (!value && !isRunning && status.name) value = status.name;
+    }
+  } catch {}
+  if (!value) {
+    try {
+      const r = await fetch('/api/draft-name');
+      if (r.ok) value = (await r.json())?.name || '';
+    } catch {}
+  }
+  if (!value && !isRunning) {
+    try { value = localStorage.getItem('campaignName') || ''; } catch {}
+  }
+  input.value = value;
+}
+
+async function initCampaignNameInput() {
+  const input = document.getElementById('campaign-name-input');
+  if (!input) return;
+  await syncCampaignNameInput();
   input.addEventListener('input', () => {
     try { localStorage.setItem('campaignName', input.value); } catch {}
   });
 }
 document.addEventListener('DOMContentLoaded', initCampaignNameInput);
 if (document.readyState !== 'loading') initCampaignNameInput();
+window.syncCampaignNameInput = syncCampaignNameInput;
+
+async function saveDraftName() {
+  const input = document.getElementById('campaign-name-input');
+  const btn = document.getElementById('btn-save-name');
+  if (!input) return;
+  const name = (input.value || '').trim();
+  const original = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    // Always save to the draft slot. ALSO rename the running campaign IFF
+    // there isn't one — i.e., we're staging a single campaign about to
+    // launch. When a campaign IS running, this wizard is for a queued
+    // build; renaming the active campaign here would clobber it (which
+    // is exactly what was happening before this guard).
+    let isRunning = false;
+    try {
+      const sRes = await fetch('/api/campaign/status');
+      if (sRes.ok) {
+        const status = await sRes.json();
+        isRunning = !!(status.running || status.paused);
+      }
+    } catch {}
+
+    // Persist to the new multi-draft store under the wizard's current
+    // draft id (set by startNewCampaign or editDraft). If somehow there
+    // isn't one (legacy state), spin one up so this Save sticks.
+    let draftId = '';
+    try { draftId = localStorage.getItem('currentDraftId') || ''; } catch {}
+    if (draftId) {
+      try {
+        const r = await fetch('/api/drafts/' + encodeURIComponent(draftId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (r.status === 404) {
+          // Draft was deleted out from under us — recreate.
+          draftId = '';
+        }
+      } catch { /* fall through to legacy save */ }
+    }
+    if (!draftId) {
+      try {
+        const r = await fetch('/api/drafts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (r.ok) {
+          const data = await r.json();
+          try { localStorage.setItem('currentDraftId', data?.draft?.id || ''); } catch {}
+        }
+      } catch {}
+    }
+    // Keep legacy single-draft endpoint in sync so syncCampaignNameInput's
+    // back-compat fallback still picks up the right name.
+    await fetch('/api/draft-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!isRunning) {
+      await fetch('/api/campaign/name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+    }
+    const toast = name
+      ? (isRunning ? `Saved as draft (queued campaign): ${name}` : `Saved name: ${name}`)
+      : 'Cleared draft name';
+    showCampaignToast(toast, 3000);
+  } catch (err) {
+    showCampaignToast(`Failed to save name: ${err.message}`, 5000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original || 'Save Name'; }
+  }
+}
+window.saveDraftName = saveDraftName;
+
+async function clearDraftName() {
+  try {
+    await fetch('/api/draft-name', { method: 'DELETE' });
+    const input = document.getElementById('campaign-name-input');
+    if (input) input.value = '';
+    try { localStorage.removeItem('campaignName'); } catch {}
+    if (typeof refreshDashboard === 'function') refreshDashboard();
+  } catch (err) {
+    showCampaignToast(`Failed to clear draft: ${err.message}`, 5000);
+  }
+}
+window.clearDraftName = clearDraftName;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sheet tab URL — warn when the operator pastes a URL with no #gid= so the

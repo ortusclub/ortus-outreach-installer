@@ -27,6 +27,9 @@ import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, ensureTrackingColumns } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
+import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
+import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
+import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
 import { dataPath } from './paths.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -42,7 +45,12 @@ import * as browserSemaphore from './browser-semaphore.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
-const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined']);
+// Per-(profileId, sheetId) timestamp of the last bulk Connection Status
+// check. Used to gate the bulk-check to once every BULK_CHECK_INTERVAL_MS
+// per profile per sheet, avoiding redundant Voyager hits.
+const BULK_CHECK_FILE = dataPath('bulk-check-cooldown.json');
+const BULK_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined', 'already_connected']);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 11.2: batch-loop constants + pure helpers
@@ -135,6 +143,23 @@ async function loadState() {
   return s;
 }
 async function saveState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
+
+// Bulk-check cooldown helpers. Stored as { "<sheetId>|<profileId>": timestamp }
+// so different sheets don't share a single profile's cooldown.
+async function readBulkCheckCooldown() {
+  try { return JSON.parse(await readFile(BULK_CHECK_FILE, 'utf8')); }
+  catch { return {}; }
+}
+async function writeBulkCheckCooldown(map) {
+  try { await writeFile(BULK_CHECK_FILE, JSON.stringify(map, null, 2)); }
+  catch (err) { console.warn(`[bulk-check] cooldown write failed: ${err.message}`); }
+}
+function bulkCheckKey(sheetId, profileId) { return `${sheetId}|${profileId}`; }
+// Extract spreadsheet ID from a Google Sheet URL.
+function _extractSheetIdFromUrl(url) {
+  const m = (url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
 
 /**
  * Host-resource preflight — non-blocking. Returns warnings if the host
@@ -335,7 +360,7 @@ function formatLocalDate(d) {
   return `${_MONTHS_SHORT[d.getMonth()]} ${day}${ord}, ${hh}:${mm}`;
 }
 
-function log(msg) {
+export function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
   console.log(line);
   campaign.logs.push(line);
@@ -714,11 +739,12 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '' }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0 }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
   campaign._abort = false;
+  campaign._stoppedManually = false;
   campaign._paused = false;
   campaign._pauseRequested = false;
   campaign.currentProfile = null;
@@ -788,8 +814,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const rows = await fetchSheetRows(sheetUrl);
     log(`${rows.length} row(s). Columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
-    // Ensure tracking columns exist (Status, OP, Message, InMail, Account Used, Date Last Action)
-    await ensureTrackingColumns(sheetUrl).catch(err => {
+    // Ensure tracking columns exist for THIS mode. Apps Script picks the
+    // mode-specific subset (e.g. connect_only writes Connection Status / CC,
+    // inmail_only writes Connection Status / InMail). Multi-mode sheets
+    // accumulate columns across runs.
+    await ensureTrackingColumns(sheetUrl, mode).catch(err => {
       log(`⚠ Could not ensure tracking columns: ${err.message}`);
     });
 
@@ -847,30 +876,26 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (mode === 'connect_only') {
           // Cold targets: Stage empty (never touched) or 'Send Connect'.
           // Skipped (any reason) is terminal — exclude.
+          // Per-tab source of truth: if Stage is blank, try to process even if
+          // state.processed remembers the URL from another sheet/run.
           if (isSkipped) return false;
           if (stage !== '' && stage !== 'Send Connect') return false;
-          const prev = state.processed[url];
-          if (prev) return false;
           return true;
         }
         if (mode === 'inmail_only' || mode === 'open_profile_only') {
           // InMail and OP are Connect alternatives — same source.
           if (isSkipped) return false;
           if (stage !== '' && stage !== 'Send Connect') return false;
-          const prev = state.processed[url];
-          if (prev) return false;
           return true;
         }
         // connect_and_message and other multi-step modes: terminal stages skip,
         // everything else passes through.
         if (TERMINAL.has(stage) || isSkipped) return false;
-        const prev = state.processed[url];
-        if (prev) return false;
         return true;
       }
 
       // ── Legacy schema filtering (sheets without a Stage column) ──
-      const status    = (row['Status']  || row['status']  || '').toString().toLowerCase().trim();
+      const status    = (row['Connection Status'] || row['connection status'] || row['Status']  || row['status']  || '').toString().toLowerCase().trim();
       const cc        = (row['CC']      || row['cc']      || '').toString().toLowerCase().trim();
       const opCell    = (row['OP']      || row['op']      || '').toString().toLowerCase().trim();
       const msgCell   = (row['Message'] || row['message'] || '').toString().toLowerCase().trim();
@@ -900,45 +925,43 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // pre-filter must match.
         const prev = state.processed[url];
         if (prev && (prev.action === 'message_sent' || prev.action === 'op_message_sent')) return false;
-        const ccRaw = (row['CC'] || row['cc'] || '').toString();
-        if (!/\sY\s*$/.test(ccRaw)) return false;
+        // Connected Status (was CC) = 'Connected' is the new
+        // verified-acceptance signal, replacing the legacy " Y" suffix.
+        // Tolerate both for sheets mid-migration.
+        const ccRaw = (row['Connected Status'] || row['connected status'] || row['CC'] || row['cc'] || '').toString().trim();
+        const isConnected = ccRaw === 'Connected' || /\sY\s*$/.test(ccRaw);
+        if (!isConnected) return false;
         return true;
       }
 
       if (status === 'done') return false;
 
-      if (mode === 'connect_only') {
-        if (cc) return false;
-        // Phase 2.8.17 (H-04): if messageOpenProfiles routed this lead via the
-        // OP path on a previous run, OP="sent" — don't re-message. Belt-and-
-        // suspenders with the H-02 CC stamp; either alone closes the loophole
-        // but checking both makes the rule robust to manual sheet edits.
+      // 2026-05-10: connect_and_check_status currently shares the connect_only
+      // pre-filter (cold leads only). True per-action interleaving with
+      // Check Status will require splitting the picker into two queues per
+      // profile (cold + this-profile's-pending) — scheduled as a follow-up.
+      if (mode === 'connect_only' || mode === 'connect_and_check_status') {
+        // Per-tab source of truth: only the Status column gates re-processing.
+        // CC may carry residual data from past attempts (sender name, status
+        // colours, "—" placeholder) and is no longer a blocker on its own.
+        // Status is checked at line 908 above (== 'done') and broadened here
+        // to catch the new 'Connection Request Sent' value plus any other
+        // non-blank value the operator may have filled in.
+        if (status) return false;
         if (messageOpenProfiles && opCell === 'sent') return false;
-        const prev = state.processed[url];
-        if (prev) return false;
         return true;
       }
 
       if (mode === 'open_profile_only') {
         if (msgSent) return false;
-        // P-04 fix (2.8.18): the in-loop sheet write is best-effort
-        // (.catch(()=>{}) on every updateSheetRow). A transient Sheets API
-        // outage immediately after a successful send leaves the sheet
-        // un-stamped — but state.processed[url] WAS updated. Without this
-        // check, the next campaign run re-sends the same message to the
-        // same 1st-degree connection.
-        if (state.processed[url]) return false;
         return true;
       }
 
       if (mode === 'inmail_only') {
         if (inmailCell === 'sent') return false;
-        if (state.processed[url]) return false;
         return true;
       }
 
-      const prev = state.processed[url];
-      if (prev) return false;
       return true;
     });
     log(`Pre-filter → ${targets.length} to process, ${rows.length - targets.length} skipped (mode: ${mode})`);
@@ -1061,6 +1084,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     }
 
     campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
+    // Mirror the IDs alongside the names so the dashboard's per-row Open
+    // Browser / Try Again buttons can call profile-specific endpoints.
+    campaign.profileIds = profileIds.slice();
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
 
     // ── Phase 11.2: LAZY-LAUNCH BATCH LOOP ──
@@ -1234,6 +1260,21 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const SKIP_PARK_THRESHOLD =
       (mode === 'open_profile_only' || mode === 'inmail_only') ? 15 : BATCH_SIZE;
     const consecutiveSkips = new Map();
+    // 429-specific consecutive counter. LinkedIn's Voyager API returns HTTP
+    // 429 overwhelmingly for the weekly invitation cap (rather than transient
+    // throttle, which the 6-min per-profile turn floor already prevents).
+    // Three strikes is treated as weekly-limit-reached — park the profile and
+    // rotate to the next.
+    const consecutive429s = new Map();
+    const HTTP_429_PARK_THRESHOLD = 3;
+    // Expose a closure that retryParkedProfile() can call to clear all the
+    // local skip counters + drop the profile from weeklyLimited so the next
+    // rotation considers it again. Cleared in the finally block at end-of-run.
+    campaign._unparkProfile = (profileId) => {
+      weeklyLimited.delete(profileId);
+      consecutiveSkips.set(profileId, 0);
+      consecutive429s.set(profileId, 0);
+    };
 
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
 
@@ -1379,9 +1420,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
             leadIndex++;
             if (!candidateUrl) continue;
-            if (mode !== 'message_only' && mode !== 'open_profile_only' && state.processed[candidateUrl]) continue;
-            const sheetStatus = (candidate['Status'] || candidate['status'] || '').toLowerCase();
-            if (mode === 'connect_only') {
+            // Per-tab source of truth: state.processed no longer skips here
+            // for connect_only / inmail_only — sheet state (Status column) is
+            // the only gate. The pre-filter already enforces the same rule.
+            const sheetStatus = (candidate['Connection Status'] || candidate['connection status'] || candidate['Status'] || candidate['status'] || '').toLowerCase();
+            if (mode === 'connect_only' || mode === 'connect_and_check_status') {
               if (sheetStatus) continue;
             }
             row = candidate;
@@ -1401,6 +1444,29 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             }
             break;
           }
+          // End-of-list final bulk-check for connect_and_check_status. The
+          // cooldown is bypassed here because this is the campaign's last
+          // chance to record the closing acceptance state. We need a live
+          // page (the profile must already be launched) to call Voyager;
+          // skip silently if `page` is not in scope (defensive).
+          if (mode === 'connect_and_check_status' && typeof page !== 'undefined' && page) {
+            try {
+              log(`  📡 [${pName}] End-of-list bulk Connection Status check…`);
+              const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
+              if (r.error) {
+                log(`  ⚠ [${pName}] Closing bulk check: ${r.error}`);
+              } else {
+                const stamped = r.stamped || 0;
+                log(`  📡 [${pName}] Closing bulk check: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} recent connections fetched)`);
+              }
+              const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+              const cooldown = await readBulkCheckCooldown();
+              cooldown[bulkCheckKey(_sheetId, profileId)] = Date.now();
+              await writeBulkCheckCooldown(cooldown);
+            } catch (err) {
+              log(`  ⚠ [${pName}] Closing bulk check threw: ${err.message}`);
+            }
+          }
           log('All leads processed or filtered out.');
           leadsExhausted = true;
           break;
@@ -1417,7 +1483,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // In-loop skip check. Mirrors the pre-filter rules; catches rows
         // that were updated between pre-filter and now (e.g. by a concurrent
         // campaign or a mid-run re-fetch).
-        const status    = (row['Status']  || row['status']  || '').toString().toLowerCase().trim();
+        const status    = (row['Connection Status'] || row['connection status'] || row['Status']  || row['status']  || '').toString().toLowerCase().trim();
         const cc        = (row['CC']      || row['cc']      || '').toString().toLowerCase().trim();
         const msgCell   = (row['Message'] || row['message'] || '').toString().toLowerCase().trim();
         const opCell    = (row['OP']      || row['op']      || '').toString().toLowerCase().trim();
@@ -1437,8 +1503,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         } else if (mode === 'message_only') {
           // 2.8.31: re-validate Y suffix and msg-not-sent in case the sheet
           // was updated between pre-filter and now.
-          const ccRaw = (row['CC'] || row['cc'] || '').toString();
-          if (!/\sY\s*$/.test(ccRaw)) { delete state.processed[url]; continue; }
+          const ccRaw = (row['Connected Status'] || row['connected status'] || row['CC'] || row['cc'] || '').toString().trim();
+          const isConnected = ccRaw === 'Connected' || /\sY\s*$/.test(ccRaw);
+          if (!isConnected) { delete state.processed[url]; continue; }
           if (msgSent) { delete state.processed[url]; continue; }
         } else {
           if (status === 'done') { delete state.processed[url]; continue; }
@@ -1582,6 +1649,31 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
           }
 
+          // Already-Connected detection: if the connect attempt was skipped
+          // but a Voyager network-info call shows the lead is 1st-degree,
+          // they're already in the account's network. Override the result
+          // to a synthetic 'already_connected' action so the success branch
+          // runs (stamps Already Connected + captures URN/openProfile).
+          // Only checked for connect-mode runs to avoid extra Voyager calls
+          // on message-only / inmail / check-status flows.
+          if (result.action === 'skipped'
+              && (mode === 'connect_only' || mode === 'connect_and_check_status')) {
+            try {
+              const meta = await captureProfileMeta(page);
+              if (meta.connectionDegree === 1) {
+                log(`  ↪ Already 1st-degree connection — recording as Already Connected.`);
+                result = {
+                  action: 'already_connected',
+                  _meta: meta,
+                };
+              } else if (meta.urn || meta.memberId) {
+                // Stash meta even on non-1st-degree skips so we don't
+                // re-fetch later (currently unused but cheap to keep).
+                result._meta = meta;
+              }
+            } catch { /* best-effort */ }
+          }
+
           // 2.9.2: human-readable local time for the sheet ("May 4th, 13:43"),
           // not the UTC ISO timestamp logs use.
           const now = formatLocalDate(new Date());
@@ -1624,14 +1716,47 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // the bridge silently ignores unknown fields — old sheets
             // keep working unchanged.
             if (result.action === 'connection_sent') {
-              sheetData.status = 'Done';
-              // Phase 2.8.10: write the sender's account name into CC instead
-              // of the generic "Sent" so the operator can see at a glance
-              // which profile sent each connection request.
-              sheetData.cc = pName;
+              sheetData.status = 'Connection Request Sent';
+              // CC (now "Connected Status") is no longer set on connect.
+              // Connected Status is populated only by Check Status mode
+              // when it verifies acceptance. Account Used carries the
+              // sender's email — Sender column was dropped 2026-05-10.
               sheetData.auditAction = 'Connection sent';
               sheetData.stage  = 'Connect Pending';
-              sheetData.sender = pName;
+              // Capture URN + member ID + Open Profile flag + connection
+              // degree in one pass. Stored on the row so future bulk-check
+              // sweeps have a precise URN-format ID to match against, and
+              // the operator can see at a glance who's an Open Profile
+              // (free DM) and what degree the lead was at connect time.
+              try {
+                const meta = await captureProfileMeta(page);
+                // LinkedIn URN column = the ACoAA… portion only (no
+                // `urn:li:fsd_profile:` prefix). LinkedIn Membership ID
+                // column = the numeric member number (e.g. 414892800).
+                if (meta.memberId)     sheetData.linkedinUrn       = meta.memberId;
+                if (meta.memberNumber) sheetData.linkedinMemberId  = meta.memberNumber;
+                if (meta.isOpenProfile !== null) sheetData.openProfile     = meta.isOpenProfile ? 'Yes' : 'No';
+                if (meta.connectionDegree !== null) sheetData.connectedAlready = meta.connectionDegree === 1 ? 'Yes' : 'No';
+              } catch { /* best-effort — meta is optional */ }
+            } else if (result.action === 'already_connected') {
+              // Synthetic action emitted by the post-flight degree check
+              // above when a connect-mode lead turns out to already be
+              // 1st-degree. Stamp the row with full meta + 'Already
+              // Connected' so the operator sees why the connect didn't
+              // fire and the lead is correctly marked as Connected.
+              sheetData.status = 'Already Connected';
+              sheetData.cc     = 'Connected';
+              sheetData.auditAction = 'Already 1st-degree connection';
+              sheetData.stage  = 'Connected';
+              const meta = result._meta || {};
+              // Same convention as connection_sent: ACoAA… in URN column,
+              // numeric in Membership ID column.
+              if (meta.memberId)     sheetData.linkedinUrn      = meta.memberId;
+              if (meta.memberNumber) sheetData.linkedinMemberId = meta.memberNumber;
+              if (meta.isOpenProfile !== null && meta.isOpenProfile !== undefined) {
+                sheetData.openProfile = meta.isOpenProfile ? 'Yes' : 'No';
+              }
+              sheetData.connectedAlready = 'Yes';
             } else if (result.action === 'already_processed') {
               // 2.9.3: the lead is already in the state this campaign would
               // produce (e.g., Connect Only saw the invite was already
@@ -1656,20 +1781,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             } else if (result.action === 'op_message_sent') {
               sheetData.status = 'DM Sent';
               sheetData.op = hyperSent;
-              // Phase 2.8.17 (H-02): when this run was a Connect campaign that
-              // routed a Free-to-Open-Profile lead via the OP path, also stamp
-              // CC with pName so the operator can see at a glance which Connect
-              // run touched the lead. Without this, OP-via-Connect leads look
-              // un-touched in the CC column and a re-run sends the OP message
-              // again (cf. H-04).
+              // CC (Connected Status) no longer stamped here. The OP="sent"
+              // hyperlink already records the action and the connect_only
+              // pre-filter checks OP="sent" to avoid re-messaging.
               if (mode === 'connect_only' && messageOpenProfiles) {
-                sheetData.cc = pName;
                 sheetData.auditAction = 'Open Profile message sent (via connect mode)';
               } else {
                 sheetData.auditAction = 'Open Profile message sent';
               }
               sheetData.stage  = 'OP Sent';
-              sheetData.sender = pName;
             } else if (result.action === 'inmail_sent') {
               sheetData.status = 'Done';
               sheetData.inmail = hyperSent;
@@ -1686,28 +1806,33 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 }
               }
             } else if (result.action === 'status_accepted') {
-              // 2.8.31: CC text gets " Y" suffix (Voyager-confirmed connection).
-              // The Y is what Message-Only filters on — only Y rows get DM'd.
+              // Check Status confirmed acceptance. Connected Status (was CC)
+              // now carries the verdict as plain text, replacing the earlier
+              // colour-coding + " Y" suffix scheme. Message-Only filters on
+              // Connected Status === 'Connected'. Connected column flips
+              // No → Yes so it tracks current connection state.
               sheetData.status = 'Check Done.';
-              sheetData.ccColor = 'green';
-              sheetData.connected = true;
+              sheetData.cc = 'Connected';
+              sheetData.connectedAlready = 'Yes';
               sheetData.auditAction = 'Acceptance confirmed';
               sheetData.stage = 'Connected · DM Now';
             } else if (result.action === 'status_pending') {
+              // Stamp Connected Status with a "Still Pending" label that
+              // includes the check timestamp so the operator can see when
+              // each row was last verified. Same format the bulk-check uses.
+              const _n = new Date();
+              const _pad = (n) => String(n).padStart(2, '0');
+              const _stamp = `${_n.getFullYear()}-${_pad(_n.getMonth() + 1)}-${_pad(_n.getDate())} ${_pad(_n.getHours())}:${_pad(_n.getMinutes())}`;
               sheetData.status = 'Check Done.';
-              sheetData.ccColor = 'yellow';
-              sheetData.connected = false;
+              sheetData.cc = `Still Pending (${_stamp})`;
               sheetData.auditAction = 'Still pending';
               // No stage write — leave at 'Connect Pending' (where it already is).
             } else if (result.action === 'status_declined') {
-              // 2.8.39: outreach.js no longer emits status_declined — Check
-              // Status is now two-state (accepted/pending). This branch is
-              // kept as defensive fallback in case anything downstream still
-              // emits the old action. Render as yellow to match the new
-              // "no red" rule.
+              // Defensive fallback — outreach.js no longer emits this since
+              // Check Status went two-state in 2.8.39. Treat as "Connection
+              // Declined" so the operator sees the explicit verdict.
               sheetData.status = 'Check Done.';
-              sheetData.ccColor = 'yellow';
-              sheetData.connected = false;
+              sheetData.cc = 'Connection Declined';
               sheetData.auditAction = 'Not confirmed connected';
             }
             // status_unknown: no connected field — leave CC text alone
@@ -1715,6 +1840,35 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
+            consecutive429s.set(profileId, 0);
+
+            // Connect + Check Connection Status: piggy-back a bulk acceptance
+            // sweep on this profile's turn, but only once every 6h per
+            // (sheetId, profileId). The sweep is one Voyager call, so it
+            // doesn't materially extend the turn or risk rate-limiting.
+            if (mode === 'connect_and_check_status' && result.action === 'connection_sent') {
+              try {
+                const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+                const cooldown = await readBulkCheckCooldown();
+                const key = bulkCheckKey(_sheetId, profileId);
+                const last = cooldown[key] || 0;
+                if (Date.now() - last >= BULK_CHECK_INTERVAL_MS) {
+                  log(`  📡 [${pName}] Bulk Connection Status check (cooldown elapsed)…`);
+                  const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
+                  if (r.error) {
+                    log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
+                  } else {
+                    const stamped = r.stamped || 0;
+                    log(`  📡 [${pName}] Bulk check: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} recent connections fetched)`);
+                  }
+                  if (r.diag) log(`  📡 [${pName}] diag: ${r.diag}`);
+                  cooldown[key] = Date.now();
+                  await writeBulkCheckCooldown(cooldown);
+                }
+              } catch (err) {
+                log(`  ⚠ [${pName}] Bulk check threw: ${err.message}`);
+              }
+            }
             // Record end reason when an account completes its per-run quota.
             // The candidate filter at line ~1289 will silently exclude it
             // from the next round; this gives operators a visible "why" on
@@ -1723,6 +1877,44 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               recordProfileEnd(profileId, pName, `Reached daily limit (${dailyLimit})`);
             }
           } else {
+            const errorMsg = result.error || result.action || '';
+            // Session expired = cookies are dead until the operator logs in
+            // again. No point waiting for SKIP_PARK_THRESHOLD strikes —
+            // every subsequent lead will fail the same way. Park on the
+            // first occurrence so the loop rotates to a healthier account.
+            const isSessionExpired = /session\s*expired/i.test(errorMsg);
+            if (isSessionExpired && !weeklyLimited.has(profileId)) {
+              log(`  ⚠ ${pName}: session expired — parking account for rest of run (re-login required).`);
+              weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, 'Session expired — log in again');
+              campaign.parkedProfiles.push({
+                profileId,
+                pName,
+                parkedAt: Date.now(),
+                reason: 'session_expired',
+              });
+            }
+            // 429-specific tracker. Three strikes = treat as weekly cap and
+            // park the profile, well before the generic SKIP_PARK_THRESHOLD
+            // would catch it (which can be 5+ and burns more API quota).
+            const is429 = /HTTP\s*429|VOYAGER_REJECTED.*429/i.test(errorMsg);
+            if (is429) {
+              const c429 = (consecutive429s.get(profileId) || 0) + 1;
+              consecutive429s.set(profileId, c429);
+              if (c429 >= HTTP_429_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ⚠ ${pName}: ${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s — assumed weekly invitation limit. Parking account.`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, `Weekly invitation limit reached (${HTTP_429_PARK_THRESHOLD}× HTTP 429)`);
+                campaign.parkedProfiles.push({
+                  profileId,
+                  pName,
+                  parkedAt: Date.now(),
+                  reason: 'weekly_limit_429',
+                });
+              }
+            } else {
+              consecutive429s.set(profileId, 0);
+            }
             const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
             consecutiveSkips.set(profileId, skipCount);
             if (skipCount >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
@@ -1737,7 +1929,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 skipCount,
               });
             }
-            const errorMsg = result.error || result.action;
 
             if (errorMsg.includes('WEEKLY_LIMIT')) {
               log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
@@ -2062,12 +2253,58 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         errorCount: campaign.errors.length,
         duration: Math.round((Date.now() - campaignStartTime) / 1000),
         templateNames: Object.entries(tpl).filter(([_, v]) => v && (typeof v === 'string' ? v : v.subject)).map(([k]) => k),
+        // 'stopped' means operator hit the Stop button before the loop drained
+        // its targets. 'completed' means leads ran out or every profile hit
+        // its limit naturally. Drives the Stopped/Completed badge + Restart
+        // button on the dashboard's Past section.
+        status: campaign._stoppedManually ? 'stopped' : 'completed',
+        // Snapshot the start config so the dashboard's Edit button can rehydrate
+        // the wizard. Templates are saved as the same shape applyPresetConfig
+        // expects so the existing preset-load path can restore them.
+        config: {
+          mode: campaign.mode,
+          sheetUrl,
+          profileIds,
+          dailyLimit,
+          delayMin,
+          delayMax,
+          linkedinColumn,
+          messageOpenProfiles,
+          templates: tpl,
+        },
       });
     } catch (histErr) {
       console.error('Failed to save campaign history:', histErr.message);
     }
+
+    // Register a post-campaign acceptance-tracking window for every profile
+    // that actually sent at least one connect (or was in the rotation for
+    // connect_and_check_status). Skipped when acceptanceTrackingDays is 0
+    // or for non-connect modes where the bulk-check doesn't make sense.
+    try {
+      const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_check_status');
+      if (trackingApplies && acceptanceTrackingDays > 0) {
+        const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+        for (let i = 0; i < (campaign.profileIds || []).length; i++) {
+          const pid = campaign.profileIds[i];
+          const pName = (campaign.profileNames || [])[i] || pid;
+          await registerPostCampaignSweep({
+            sheetId: _sheetId,
+            sheetUrl,
+            profileId: pid,
+            profileName: pName,
+            linkedinColumn,
+            days: acceptanceTrackingDays,
+          });
+        }
+      }
+    } catch (regErr) {
+      console.error('Failed to register post-campaign tracking:', regErr.message);
+    }
+
     campaign.running = false;
     campaign.currentProfile = null;
+    campaign._unparkProfile = null;
     log('=== Campaign ended ===');
     campaign.currentAction = null; // clear cockpit
   }
@@ -2080,8 +2317,39 @@ export function setCampaignName(name) {
   return campaign.name;
 }
 
+// Operator-initiated retry of a parked profile. Removes it from the in-run
+// "do not pick" sets so the next campaign rotation tries it again. Returns
+// the profile name (or null if not found / not currently running).
+//
+// Caller (server.js endpoint) is responsible for actually opening the
+// GoLogin browser so the operator can re-authenticate before the next
+// rotation hits.
+export function retryParkedProfile(profileId) {
+  if (!campaign.running) return { ok: false, reason: 'no-campaign-running' };
+  // Find profile name from the parked entry (preferred) or current name list.
+  const parkedEntry = campaign.parkedProfiles.find((p) => p.profileId === profileId);
+  const pName = parkedEntry?.pName || (campaign.profileNames || []).find(
+    (n) => n === profileId
+  ) || profileId;
+  // Remove all gating that would skip this profile next rotation.
+  campaign.parkedProfiles = campaign.parkedProfiles.filter((p) => p.profileId !== profileId);
+  campaign.profileEndReasons = campaign.profileEndReasons.filter((p) => p.profileId !== profileId);
+  // The internal weeklyLimited / consecutive429s / consecutiveSkips are
+  // local to the running campaign closure (see startCampaign body) — exposed
+  // here via a side-channel so retry can reset them mid-run.
+  if (typeof campaign._unparkProfile === 'function') {
+    campaign._unparkProfile(profileId);
+  }
+  log(`▶ Retry requested for ${pName} — will attempt again on next rotation.`);
+  return { ok: true, profileName: pName };
+}
+
 export function stopCampaign() {
   campaign._abort = true;
+  // Distinguish operator-initiated stop from natural completion so the
+  // dashboard can surface a "Stopped" badge + Restart button on the history
+  // entry that gets written when the loop unwinds.
+  campaign._stoppedManually = true;
   // Wake any in-flight awaitUnpause() so the loop can exit cleanly.
   campaign._paused = false;
   campaign._pauseRequested = false;
@@ -2147,6 +2415,7 @@ export function getCampaignStatus() {
     mode: campaign.mode || '',
     name: campaign.name || '',
     profileNames: campaign.profileNames || [],
+    profileIds: campaign.profileIds || [],
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),

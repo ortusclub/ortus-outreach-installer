@@ -886,12 +886,34 @@ select {
 }
 .queue-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto minmax(0, 1.4fr);
+  grid-template-columns: 28px minmax(0, 1fr) auto minmax(0, 1.4fr) auto;
   gap: 14px;
   align-items: center;
   padding: 10px 14px;
   border-bottom: 1px solid var(--hairline);
 }
+.queue-row-actions { display: flex; gap: 6px; align-items: center; }
+.queue-row-btn {
+  background: var(--ink);
+  color: var(--paper, #fff);
+  border: 1px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.queue-row-btn:hover { opacity: 0.85; }
+.queue-row-btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+.queue-row-btn--ghost:hover { border-color: var(--ink); opacity: 1; }
 .queue-row-num {
   font-family: var(--mono);
   font-size: 0.6rem;
@@ -907,7 +929,6 @@ select {
 }
 .queue-row.is-done .queue-row-name {
   color: var(--gray);
-  text-decoration: line-through;
 }
 .queue-row-status {
   font-family: var(--mono);
@@ -959,6 +980,11 @@ select {
 .btn-secondary { border-color: var(--hairline); color: var(--ink); }
 .btn-secondary:hover { opacity: 0.6; border-color: var(--ink); }
 
+/* Campaign Name row — input + Save Name button on a single line. */
+.campaign-name-row { display: flex; align-items: flex-end; gap: 16px; }
+.campaign-name-row > input { flex: 1; margin-bottom: 0; }
+.campaign-name-row > .btn { margin-bottom: 4px; white-space: nowrap; }
+
 /* Start CTA — transparent pill with 1px white border + GOLD label (the only gold in the UI) */
 .btn-start {
   color: var(--gold);
@@ -990,6 +1016,29 @@ body.theme-light .btn-stop {
 body.theme-light .btn-stop:hover { opacity: 0.9; }
 
 .btn-sm { padding: 8px 16px; font-size: 0.62rem; }
+.btn-xs { padding: 6px 12px; font-size: 0.55rem; }
+
+/* Pause matches Stop's filled-pill prominence so the two read as a paired
+   action set, but uses a neutral grey fill (vs Stop's red) to distinguish
+   "freeze" from "abort". */
+.btn-pause {
+  background: var(--ink);
+  color: var(--paper, #fff);
+  border-color: var(--ink);
+  font-weight: 500;
+}
+.btn-pause:hover { opacity: 0.85; }
+.btn-pause:disabled { background: transparent; color: var(--ink); opacity: 0.45; }
+
+/* Run bar actions row — Start/Pause/Stop cluster on the left, Saved configs
+   pushed to the far right via margin-left:auto on the preset pill. */
+.run-bar-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: 1;
+}
+.run-bar-actions .preset-pill { margin-left: auto; }
 
 /* ─────────────────────────────────────────────────────────────────────────
    Stats (live status)
@@ -2541,7 +2590,14 @@ body.route-wizard #wizard-view { display: block; }
    those nav items only make sense inside the wizard. */
 body.route-dashboard .sidebar-nav { display: none; }
 
-.dashboard-header { padding: 24px 0 12px; }
+.dashboard-header {
+  padding: 24px 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.dashboard-new-btn { font-size: 0.7rem; padding: 8px 18px; }
 .dashboard-title {
   font-family: var(--display);
   font-weight: 400;
@@ -2629,6 +2685,32 @@ body.route-dashboard .sidebar-nav { display: none; }
 }
 
 .wizard-back-row { padding: 16px 0 8px; }
+
+.wizard-queue-banner {
+  margin: 4px 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border, #d4d4d4);
+  border-radius: 6px;
+  background: var(--bg-soft, #f7f7f5);
+  font-size: 13px;
+  color: var(--text-secondary, #555);
+}
+.wizard-queue-banner strong { color: var(--text-primary, #111); margin-right: 8px; }
+
+/* Bulk-check status text: streams multi-line log output during a sweep,
+   so we need newline rendering and a monospace-friendly block. */
+.bulk-check-status-msg {
+  white-space: pre-line;
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #555);
+  margin-top: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .back-link {
   background: transparent;
   border: none;
@@ -2847,3 +2929,11 @@ body.route-dashboard .sidebar-nav { display: none; }
   transition: border-color 0.15s, color 0.15s;
 }
 .campaign-row-edit:hover { border-color: var(--ink); color: var(--ink); }
+.campaign-row-actions { display: flex; gap: 8px; align-items: center; }
+.campaign-row-edit--icon {
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 4px 10px;
+  min-width: 28px;
+}

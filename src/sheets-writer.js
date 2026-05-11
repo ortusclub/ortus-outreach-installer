@@ -68,17 +68,18 @@ async function postToWebApp(payload) {
  *
  * @param {string} sheetUrl - Any Google Sheet URL
  */
-export async function ensureTrackingColumns(sheetUrl) {
+export async function ensureTrackingColumns(sheetUrl, mode) {
   if (!getWebAppUrl()) return false;
 
   const sheetId = extractSheetId(sheetUrl);
   const gid = extractSheetGid(sheetUrl);
-  console.log(`[sheets-writer] Ensuring tracking columns on sheet ${sheetId}…`);
+  console.log(`[sheets-writer] Ensuring tracking columns on sheet ${sheetId}${mode ? ` (mode: ${mode})` : ''}…`);
 
   const result = await postToWebApp({
     action: 'ensureColumns',
     sheetId,
     gid: gid || '',
+    mode: mode || '',
   });
 
   if (result?.success) {
@@ -221,6 +222,33 @@ export async function appendReplyRow(sheetUrl, reply) {
  * @param {string} sheetUrl - The Google Sheet URL
  * @param {Array<{linkedinUrl: string, [key: string]: string}>} updates
  */
+/**
+ * Dump the bulk-check's fetched connections into a sidecar tab on the same
+ * sheet for transparency / manual matching. One tab per sender so multi-
+ * account sweeps don't overwrite each other.
+ */
+export async function writeRecentConnectionsTab(sheetUrl, sender, connections) {
+  if (!getWebAppUrl()) return false;
+  const sheetId = extractSheetId(sheetUrl);
+  try {
+    const result = await postToWebApp({
+      action: 'writeRecentConnections',
+      sheetId,
+      sender: sender || '',
+      connections: connections || [],
+    });
+    if (result?.ok) {
+      console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}"`);
+      return true;
+    }
+    if (result?.error) console.warn(`[sheets-writer] writeRecentConnections failed: ${result.error}`);
+    return false;
+  } catch (err) {
+    console.warn(`[sheets-writer] writeRecentConnections threw: ${err.message}`);
+    return false;
+  }
+}
+
 export async function batchUpdateSheet(sheetUrl, updates) {
   if (!getWebAppUrl() || !updates.length) return false;
 

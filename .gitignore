@@ -15,6 +15,12 @@ data/campaign.log
 data/fatal-errors.log
 data/local-chrome/
 data/local-profile/
+data/draft-name.json
+data/queued-campaigns.json
+data/drafts.json
+data/bulk-check-cooldown.json
+data/post-campaign-bulk-check.json
+data/errors.log.json
 
 # Build output
 dist/
