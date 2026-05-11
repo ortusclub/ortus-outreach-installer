@@ -3,7 +3,7 @@
  * The sheet must be set to "Anyone with the link can view".
  */
 
-import { extractSheetId } from './utils.js';
+import { extractSheetId, extractSheetGid } from './utils.js';
 
 /**
  * Parses a CSV string into an array of objects using the first row as headers.
@@ -92,7 +92,13 @@ function splitCSVLine(line) {
  */
 export async function fetchSheet(sheetUrl) {
   const sheetId = extractSheetId(sheetUrl);
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+  // Honor the tab the operator pasted. Google's CSV export defaults to the
+  // first sheet when no gid is given, which silently pulls the wrong data
+  // for any spreadsheet with multiple tabs.
+  const gid = extractSheetGid(sheetUrl);
+  const csvUrl = gid
+    ? `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`
+    : `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
 
   console.log(`[sheets] Fetching CSV from: ${csvUrl}`);
 
