@@ -44,6 +44,37 @@ var TRACKING_COLUMNS = [
   'Reply Preview'
 ];
 
+// ── v2 schema (multi-status) ──
+// Always-visible columns provisioned by every mode under prepareSheet.
+var ALWAYS_VISIBLE_V2 = [
+  'Stage',
+  'Status',
+  'Sender',
+  'Date of Last Action',
+  'Time of Last Action',
+  'LinkedIn URN',
+  'LinkedIn Membership ID',
+  'Open Profile',
+  'Connected'
+];
+
+// Per-mode columns added on top of ALWAYS_VISIBLE_V2 by prepareSheet.
+var MODE_COLUMNS_V2 = {
+  connect_only:      ['Connection Status'],
+  check_status:      ['Check Status'],
+  message_only:      ['DM Status', 'Check Status'],
+  introduce_back:    ['Intro Status', 'Check Status'],
+  open_profile_only: ['OP Status'],
+  inmail_only:       ['InM Status']
+};
+
+// Every per-mode column across every mode — used to compute the "hide
+// everything not in this run's set" list.
+var ALL_MODE_COLUMNS_V2 = [
+  'Connection Status', 'DM Status', 'OP Status',
+  'InM Status', 'Intro Status', 'Check Status'
+];
+
 // Rename pairs — old header → new header. ensureColumns copies values from
 // old to new before removing the old (see migrateColumnRenames + the new
 // names being added to OLD_COLUMNS_TO_REMOVE below).
@@ -115,6 +146,17 @@ var FIELD_MAP = {
   // unknown fields silently.
   // dateLastAction is handled specially in writeFields — split into
   // 'Date of Last Action' and 'Time of Last Action' instead of one cell.
+  // v2 multi-status fields. prepareSheet provisions these columns; writeFields
+  // routes the bot's sheetData fields to the matching header. Old single-Status
+  // field path (`status` → 'Connection Request Status') stays for legacy sheets.
+  stage:             'Stage',
+  sender:            'Sender',
+  connectionStatus:  'Connection Status',
+  dmStatus:          'DM Status',
+  opStatus:          'OP Status',
+  inmStatus:         'InM Status',
+  introStatus:       'Intro Status',
+  checkStatus:       'Check Status',
   // Phase 11.3 — Check DMs writeback
   Reply:           'Reply',
   ReplyAt:         'Reply At',
