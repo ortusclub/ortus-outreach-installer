@@ -30,16 +30,6 @@ test('open_profile_only mode returns "force_open_profile"', () => {
   assert.equal(hint, 'force_open_profile');
 });
 
-test('connect_and_message with no prior action returns "force_connect"', () => {
-  const hint = getModeHint('connect_and_message', null);
-  assert.equal(hint, 'force_connect');
-});
-
-test('connect_and_message after connection_sent returns "force_message"', () => {
-  const hint = getModeHint('connect_and_message', 'connection_sent');
-  assert.equal(hint, 'force_message');
-});
-
 test('unknown mode returns null (no throw)', () => {
   const hint = getModeHint('not_a_real_mode', null);
   assert.equal(hint, null);

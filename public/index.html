@@ -225,8 +225,6 @@
       <div class="mode-grid" id="mode-grid"></div>
       <select id="campaign-mode" onchange="onModeChange()" style="display:none">
         <option value="connect_only">Connect Only</option>
-        <option value="connect_and_check_status">Connect + Check Connection Status</option>
-        <option value="connect_and_introduce">Connect + Introduce Back</option>
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="message_only">Message Only (follow-ups)</option>
         <option value="introduce_back">Introduce Back (3-way intro DM)</option>
@@ -241,29 +239,6 @@
           <span style="font-size:0.9rem; color:#c9d1d9">Message Open Profiles directly</span>
         </label>
         <p style="font-size:0.75rem; color:#8b949e; margin:4px 0 0 24px">Try a free OP message first; if not an Open Profile, send a connection request instead</p>
-      </div>
-
-      <!-- Connect + Introduce Back: primary person to introduce the lead to.
-           Visible only when this mode is selected. The bot sends a connection
-           request first; once the lead accepts (verified by bulk-check), the
-           same sender sends an intro DM that references the primary person. -->
-      <div id="primary-person-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
-        <div style="font-family:var(--display); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:14px;">Primary Person — who the lead gets introduced to</div>
-        <div style="margin-bottom:14px">
-          <label for="primary-person-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Full name</label>
-          <input type="text" id="primary-person-name" placeholder="e.g. Sam Adcock" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
-          <div style="font-size:11px; color:var(--gray); margin-top:4px">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
-        </div>
-        <div style="margin-bottom:14px">
-          <label for="primary-person-url" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--gray)">(optional)</span></label>
-          <input type="text" id="primary-person-url" placeholder="https://www.linkedin.com/in/..." style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
-          <div style="font-size:11px; color:var(--gray); margin-top:4px">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
-        </div>
-        <div>
-          <label for="primary-intro-body" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro DM body</label>
-          <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." style="width:100%; background:transparent; border:1px solid var(--hairline); border-radius:4px; color:var(--ink); padding:8px; font-family:var(--body); font-size:0.95rem; outline:none; resize:vertical;" oninput="savePrimaryPersonFields()"></textarea>
-          <div style="font-size:11px; color:var(--gray); margin-top:4px">Placeholders: <code>{first name}</code>, <code>{primary name}</code>, <code>{primary url}</code>, plus any sheet column.</div>
-        </div>
       </div>
 
     </div>
@@ -692,14 +667,14 @@
         <button class="btn btn-secondary btn-save-tpl" onclick="saveCurrentTemplate()">Create new</button>
       </div>
 
-    <!-- ── Connection Note (connect_only, connect_and_message, auto) ── -->
+    <!-- ── Connection Note (connect_only) ── -->
     <div class="section tpl-section" id="tpl-connect-section">
       <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
       <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
       <div class="placeholder-tags" data-target="tpl-note"></div>
     </div>
 
-    <!-- ── Follow-up Message (message_only, connect_and_message, auto) ── -->
+    <!-- ── Follow-up Message (message_only, introduce_back) ── -->
     <div class="section tpl-section" id="tpl-message-section" style="display:none">
       <h2 data-edit="h2-followup">Follow-up Message</h2>
       <textarea id="tpl-followup" rows="3" placeholder="Thanks for connecting, {firstName}! I wanted to reach out because…"></textarea>

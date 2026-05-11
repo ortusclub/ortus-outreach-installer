@@ -67,7 +67,7 @@ function gatherCampaignFormState() {
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
 
   const templates = {
-    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -1360,14 +1360,12 @@ function onModeChange() {
   const op = document.getElementById('tpl-op-section');
   const openToggle = document.getElementById('open-profile-toggle');
   const tplMgmt = document.getElementById('nav-templates');
-  const primaryBlock = document.getElementById('primary-person-block');
 
   connect.style.display = 'none';
   message.style.display = 'none';
   inmail.style.display = 'none';
   if (op) op.style.display = 'none';
   openToggle.style.display = 'none';
-  if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -1381,7 +1379,7 @@ function onModeChange() {
   const qText = document.getElementById('templates-q-text');
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   if (question && qText) {
-    if (mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') {
+    if (mode === 'connect_only') {
       question.style.display = '';
       qText.textContent = 'Do you want to add a note while connecting?';
       syncAddNoteUI(addNoteOn);
@@ -1466,7 +1464,7 @@ function onModeChange() {
   if (navSheet) navSheet.style.display = isPostAmp ? 'none' : '';
   // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
   // caps invitations per account per day). DM/IC/OP/InMail are unlimited.
-  const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_message' || mode === 'connect_and_check_status');
+  const isConnectMode = (mode === 'connect_only');
   const dailyKnob = document.getElementById('daily-limit-knob');
   if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
   if (isCheckStatus) {
@@ -1906,24 +1904,6 @@ const MODE_LIST = [
       'Verify which pending requests were accepted',
       'Updates the lead sheet automatically',
       'Read-only — no messages sent',
-    ],
-  },
-  {
-    value: 'connect_and_check_status',
-    name: 'Connect + Check Connection Status',
-    bullets: [
-      'Send connection requests to new profiles',
-      'Each profile turn also checks one prior pending invite',
-      'Top-of-funnel + verification in a single run',
-    ],
-  },
-  {
-    value: 'connect_and_introduce',
-    name: 'Connect + Introduce Back',
-    bullets: [
-      'Send connection requests to new profiles',
-      'Once accepted, auto-send an introduction DM',
-      'DM introduces the lead to a primary person you specify',
     ],
   },
   {
@@ -2427,7 +2407,7 @@ async function startCampaign() {
   // drop the connection note regardless of what's in the textarea.
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
-    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -2438,12 +2418,6 @@ async function startCampaign() {
     introMode: mode === 'introduce_back',
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
-    // Connect + Introduce Back: primary person + intro DM body. The
-    // backend stores these on the campaign config; auto-send-after-acceptance
-    // is wired in the next iteration.
-    primaryName: document.getElementById('primary-person-name')?.value?.trim() || '',
-    primaryUrl:  document.getElementById('primary-person-url')?.value?.trim() || '',
-    primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
   };
 
   // Show account queue
@@ -2690,7 +2664,6 @@ function formatMode(m) {
     open_profile_only: 'Open Profile',
     check_status: 'Check Status',
     check_dms: 'Check DMs',
-    connect_and_message: 'Connect + Message',
     auto: 'Auto',
   };
   return map[m] || m;
@@ -3545,7 +3518,7 @@ async function saveQuickSchedule() {
 
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
-    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_check_status' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -4703,7 +4676,6 @@ function _prettyMode(mode) {
     case 'inmail_only': return 'InMail';
     case 'open_profile_only': return 'Open Profile';
     case 'check_status': return 'Check status';
-    case 'connect_and_message': return 'Connect + message';
     case 'auto': return 'Auto';
     default: return mode;
   }
@@ -5186,27 +5158,6 @@ function saveIntroFields() {
   try { localStorage.setItem('ortus-intro-title', title); } catch { /* storage blocked */ }
 }
 
-// Connect + Introduce Back fields (mode-specific to connect_and_introduce).
-// Persisted to localStorage so the wizard repopulates after navigation.
-function savePrimaryPersonFields() {
-  const name = document.getElementById('primary-person-name')?.value || '';
-  const url  = document.getElementById('primary-person-url')?.value || '';
-  const body = document.getElementById('primary-intro-body')?.value || '';
-  localStorage.setItem('ortus-primary-name', name);
-  localStorage.setItem('ortus-primary-url',  url);
-  localStorage.setItem('ortus-primary-body', body);
-}
-function restorePrimaryPersonState() {
-  const nameEl = document.getElementById('primary-person-name');
-  const urlEl  = document.getElementById('primary-person-url');
-  const bodyEl = document.getElementById('primary-intro-body');
-  if (nameEl) nameEl.value = localStorage.getItem('ortus-primary-name') || nameEl.value;
-  if (urlEl)  urlEl.value  = localStorage.getItem('ortus-primary-url')  || urlEl.value;
-  if (bodyEl) bodyEl.value = localStorage.getItem('ortus-primary-body') || bodyEl.value;
-}
-window.savePrimaryPersonFields = savePrimaryPersonFields;
-document.addEventListener('DOMContentLoaded', restorePrimaryPersonState);
-if (document.readyState !== 'loading') restorePrimaryPersonState();
 function restoreIntroState() {
   const nameEl  = document.getElementById('intro-name');
   const titleEl = document.getElementById('intro-title');

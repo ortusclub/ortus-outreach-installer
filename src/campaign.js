@@ -278,9 +278,6 @@ export function getModeHint(mode, prevAction) {
   if (mode === 'check_status') return 'check_only';
   if (mode === 'inmail_only') return 'force_inmail';
   if (mode === 'open_profile_only') return 'force_open_profile';
-  if (mode === 'connect_and_message') {
-    return prevAction === 'connection_sent' ? 'force_message' : 'force_connect';
-  }
   return null;
 }
 
@@ -913,8 +910,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           if (isSkipped) return false;
           return stage === '' || stage === 'Send Connect';
         }
-        // connect_and_message and other multi-step modes: terminal stages skip,
-        // everything else passes through.
+        // Other modes: terminal stages skip, everything else passes through.
         if (TERMINAL.has(stage) || isSkipped) return false;
         return true;
       }
@@ -961,11 +957,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       if (status === 'done') return false;
 
-      // 2026-05-10: connect_and_check_status currently shares the connect_only
-      // pre-filter (cold leads only). True per-action interleaving with
-      // Check Status will require splitting the picker into two queues per
-      // profile (cold + this-profile's-pending) — scheduled as a follow-up.
-      if (mode === 'connect_only' || mode === 'connect_and_check_status') {
+      if (mode === 'connect_only') {
         // Per-tab source of truth: only the Status column gates re-processing.
         // CC may carry residual data from past attempts (sender name, status
         // colours, "—" placeholder) and is no longer a blocker on its own.
@@ -1312,8 +1304,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     //   - message_only: DMs to 1st-degree connections, low risk
     //   - inmail_only: paid InMail credits already gate volume
     //   - open_profile_only: free Open-Profile messages, no connection req
-    // Connect campaigns (connect_only, connect_and_message) STILL respect
-    // the dailyLimit — those are the ones LinkedIn rate-limits aggressively.
+    // Connect campaigns (connect_only) STILL respect the dailyLimit —
+    // LinkedIn rate-limits connection requests aggressively.
     const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
     const skipsDailyLimit = NO_DAILY_LIMIT.has(mode);
 
@@ -1472,29 +1464,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               leadsExhausted = true;
             }
             break;
-          }
-          // End-of-list final bulk-check for connect_and_check_status. The
-          // cooldown is bypassed here because this is the campaign's last
-          // chance to record the closing acceptance state. We need a live
-          // page (the profile must already be launched) to call Voyager;
-          // skip silently if `page` is not in scope (defensive).
-          if (mode === 'connect_and_check_status' && typeof page !== 'undefined' && page) {
-            try {
-              log(`  📡 [${pName}] End-of-list bulk Connection Status check…`);
-              const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
-              if (r.error) {
-                log(`  ⚠ [${pName}] Closing bulk check: ${r.error}`);
-              } else {
-                const stamped = r.stamped || 0;
-                log(`  📡 [${pName}] Closing bulk check: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} recent connections fetched)`);
-              }
-              const _sheetId = _extractSheetIdFromUrl(sheetUrl);
-              const cooldown = await readBulkCheckCooldown();
-              cooldown[bulkCheckKey(_sheetId, profileId)] = Date.now();
-              await writeBulkCheckCooldown(cooldown);
-            } catch (err) {
-              log(`  ⚠ [${pName}] Closing bulk check threw: ${err.message}`);
-            }
           }
           log('All leads processed or filtered out.');
           leadsExhausted = true;
@@ -1713,8 +1682,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // runs (stamps Already Connected + captures URN/openProfile).
           // Only checked for connect-mode runs to avoid extra Voyager calls
           // on message-only / inmail / check-status flows.
-          if (result.action === 'skipped'
-              && (mode === 'connect_only' || mode === 'connect_and_check_status')) {
+          if (result.action === 'skipped' && mode === 'connect_only') {
             try {
               const meta = await captureProfileMeta(page);
               if (meta.connectionDegree === 1) {
@@ -1906,29 +1874,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // sweep on this profile's turn, but only once every 6h per
             // (sheetId, profileId). The sweep is one Voyager call, so it
             // doesn't materially extend the turn or risk rate-limiting.
-            if (mode === 'connect_and_check_status' && result.action === 'connection_sent') {
-              try {
-                const _sheetId = _extractSheetIdFromUrl(sheetUrl);
-                const cooldown = await readBulkCheckCooldown();
-                const key = bulkCheckKey(_sheetId, profileId);
-                const last = cooldown[key] || 0;
-                if (Date.now() - last >= BULK_CHECK_INTERVAL_MS) {
-                  log(`  📡 [${pName}] Bulk Connection Status check (cooldown elapsed)…`);
-                  const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
-                  if (r.error) {
-                    log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
-                  } else {
-                    const stamped = r.stamped || 0;
-                    log(`  📡 [${pName}] Bulk check: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} recent connections fetched)`);
-                  }
-                  if (r.diag) log(`  📡 [${pName}] diag: ${r.diag}`);
-                  cooldown[key] = Date.now();
-                  await writeBulkCheckCooldown(cooldown);
-                }
-              } catch (err) {
-                log(`  ⚠ [${pName}] Bulk check threw: ${err.message}`);
-              }
-            }
             // Record end reason when an account completes its per-run quota.
             // The candidate filter at line ~1289 will silently exclude it
             // from the next round; this gives operators a visible "why" on
@@ -2341,11 +2286,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     }
 
     // Register a post-campaign acceptance-tracking window for every profile
-    // that actually sent at least one connect (or was in the rotation for
-    // connect_and_check_status). Skipped when acceptanceTrackingDays is 0
-    // or for non-connect modes where the bulk-check doesn't make sense.
+    // that actually sent at least one connect. Skipped when
+    // acceptanceTrackingDays is 0 or for non-connect modes where the
+    // bulk-check doesn't make sense.
     try {
-      const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_check_status');
+      const trackingApplies = (mode === 'connect_only');
       if (trackingApplies && acceptanceTrackingDays > 0) {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
         for (let i = 0; i < (campaign.profileIds || []).length; i++) {
