@@ -45,34 +45,48 @@ var TRACKING_COLUMNS = [
 ];
 
 // ── v2 schema (multi-status) ──
-// Always-visible columns provisioned by every mode under prepareSheet.
-var ALWAYS_VISIBLE_V2 = [
+// Always-PROVISIONED columns — every prepareSheet call ensures these exist.
+// Three of these (Status / LinkedIn URN / LinkedIn Membership ID) are
+// metadata: provisioned every run but hidden by default — the operator can
+// unhide manually when they need to inspect.
+var ALWAYS_PROVISIONED_V2 = [
   'Stage',
   'Status',
   'Sender',
   'Date of Last Action',
   'Time of Last Action',
   'LinkedIn URN',
-  'LinkedIn Membership ID',
-  'Open Profile',
-  'Connected'
+  'LinkedIn Membership ID'
 ];
 
-// Per-mode columns added on top of ALWAYS_VISIBLE_V2 by prepareSheet.
+// Columns within ALWAYS_PROVISIONED_V2 that prepareSheet hides on every run
+// (operator can unhide manually — they just don't show up by default).
+var ALWAYS_HIDDEN_BY_DEFAULT_V2 = [
+  'Status',
+  'LinkedIn URN',
+  'LinkedIn Membership ID'
+];
+
+// Per-mode columns added on top of ALWAYS_PROVISIONED_V2 by prepareSheet.
+// 'Connected' shows during modes that READ the connection state (Check
+// Status — owns the column; Message Only + Introduce Back — pre-flight
+// sweeps the column). 'Open Profile' shows only during Open Profile mode.
 var MODE_COLUMNS_V2 = {
   connect_only:      ['Connection Status'],
-  check_status:      ['Check Status'],
-  message_only:      ['DM Status', 'Check Status'],
-  introduce_back:    ['Intro Status', 'Check Status'],
-  open_profile_only: ['OP Status'],
+  check_status:      ['Check Status', 'Connected'],
+  message_only:      ['DM Status', 'Check Status', 'Connected'],
+  introduce_back:    ['Intro Status', 'Check Status', 'Connected'],
+  open_profile_only: ['OP Status', 'Open Profile'],
   inmail_only:       ['InM Status']
 };
 
 // Every per-mode column across every mode — used to compute the "hide
-// everything not in this run's set" list.
+// everything not in this run's set" list. Open Profile + Connected join
+// this set so they get hidden when their relevant modes aren't running.
 var ALL_MODE_COLUMNS_V2 = [
   'Connection Status', 'DM Status', 'OP Status',
-  'InM Status', 'Intro Status', 'Check Status'
+  'InM Status', 'Intro Status', 'Check Status',
+  'Open Profile', 'Connected'
 ];
 
 // Rename pairs — old header → new header. ensureColumns copies values from
@@ -376,10 +390,12 @@ function handleEnsureColumns(sheet, data) {
 // Action: prepareSheet — v2 schema with per-mode column visibility
 // ═══════════════════════════════════════════════════════════════════════════
 // Idempotent. For data.mode:
-//   1) Provisions any missing column in ALWAYS_VISIBLE_V2 ∪ MODE_COLUMNS_V2[mode].
+//   1) Provisions any missing column in ALWAYS_PROVISIONED_V2 ∪ MODE_COLUMNS_V2[mode].
 //   2) Hides every column in ALL_MODE_COLUMNS_V2 that isn't in this mode's set.
 //   3) Shows (un-hides) every column in this mode's set.
-//   4) Re-applies conditional formatting to the new status columns.
+//   4) Hides every column in ALWAYS_HIDDEN_BY_DEFAULT_V2 (metadata like
+//      Status mirror, URN, Membership ID — operator unhides manually).
+//   5) Re-applies conditional formatting to the new status columns.
 // Returns { success, mode, added: [...], hidden: [...], shown: [...] }.
 
 function handlePrepareSheet(sheet, data) {
@@ -392,7 +408,7 @@ function handlePrepareSheet(sheet, data) {
   }
 
   var thisModeCols = MODE_COLUMNS_V2[modeKey];
-  var targetSet = ALWAYS_VISIBLE_V2.concat(thisModeCols);
+  var targetSet = ALWAYS_PROVISIONED_V2.concat(thisModeCols);
 
   var headers = getHeaders(sheet);
   var added = [];
@@ -424,14 +440,27 @@ function handlePrepareSheet(sheet, data) {
     }
   });
 
-  // Always-visible columns must always be shown (operator might have hidden
-  // one manually — re-show under prepareSheet).
-  ALWAYS_VISIBLE_V2.forEach(function(col) {
+  // Always-provisioned columns minus the by-default-hidden ones must always
+  // be shown (operator might have hidden one manually — re-show under
+  // prepareSheet).
+  ALWAYS_PROVISIONED_V2.forEach(function(col) {
+    if (ALWAYS_HIDDEN_BY_DEFAULT_V2.indexOf(col) !== -1) return;
     var idx = headers.indexOf(col);
     if (idx !== -1) sheet.showColumns(idx + 1);
   });
 
-  // 3) Re-apply conditional formatting to any newly-added per-mode status
+  // 3) Hide always-provisioned metadata columns (Status mirror, URN,
+  // Membership ID). Provisioned so the bot can write to them, hidden so the
+  // operator sees a clean primary view. Push them onto `hidden` so the
+  // caller's log surfaces them.
+  ALWAYS_HIDDEN_BY_DEFAULT_V2.forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx === -1) return;
+    sheet.hideColumns(idx + 1);
+    if (hidden.indexOf(col) === -1) hidden.push(col);
+  });
+
+  // 4) Re-apply conditional formatting to any newly-added per-mode status
   // columns. Same green/grey scheme used by applyStatusFormatting on the
   // legacy Status column.
   applyV2StatusFormatting(sheet, headers, thisModeCols);

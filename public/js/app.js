@@ -1358,14 +1358,12 @@ function onModeChange() {
   const message = document.getElementById('tpl-message-section');
   const inmail = document.getElementById('tpl-inmail-section');
   const op = document.getElementById('tpl-op-section');
-  const openToggle = document.getElementById('open-profile-toggle');
   const tplMgmt = document.getElementById('nav-templates');
 
   connect.style.display = 'none';
   message.style.display = 'none';
   inmail.style.display = 'none';
   if (op) op.style.display = 'none';
-  openToggle.style.display = 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -1391,7 +1389,6 @@ function onModeChange() {
   if (mode === 'connect_only') {
     if (addNoteOn) connect.style.display = '';
     else connect.style.display = 'none';
-    openToggle.style.display = '';
   } else if (mode === 'message_only' || mode === 'introduce_back') {
     // v2.11.17: introduce_back uses the same Follow-up Message template
     // as message_only; the template is the body of the 3-way DM.
