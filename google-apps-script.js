@@ -206,6 +206,9 @@ function doPost(e) {
 
     // Route to the right handler
     switch (data.action) {
+      case 'prepareSheet':
+        return handlePrepareSheet(sheet, data);
+
       case 'ensureColumns':
         return handleEnsureColumns(sheet, data);
 
@@ -367,6 +370,126 @@ function handleEnsureColumns(sheet, data) {
     removed: removed,
     message: 'ensureColumns complete. added=[' + added.join(', ') + '] removed=[' + removed.join(', ') + ']'
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: prepareSheet — v2 schema with per-mode column visibility
+// ═══════════════════════════════════════════════════════════════════════════
+// Idempotent. For data.mode:
+//   1) Provisions any missing column in ALWAYS_VISIBLE_V2 ∪ MODE_COLUMNS_V2[mode].
+//   2) Hides every column in ALL_MODE_COLUMNS_V2 that isn't in this mode's set.
+//   3) Shows (un-hides) every column in this mode's set.
+//   4) Re-applies conditional formatting to the new status columns.
+// Returns { success, mode, added: [...], hidden: [...], shown: [...] }.
+
+function handlePrepareSheet(sheet, data) {
+  var modeKey = data && data.mode ? String(data.mode) : '';
+  if (!MODE_COLUMNS_V2.hasOwnProperty(modeKey)) {
+    return jsonResponse({
+      error: 'Unknown mode for prepareSheet: ' + modeKey,
+      errorCode: 'BAD_MODE'
+    });
+  }
+
+  var thisModeCols = MODE_COLUMNS_V2[modeKey];
+  var targetSet = ALWAYS_VISIBLE_V2.concat(thisModeCols);
+
+  var headers = getHeaders(sheet);
+  var added = [];
+
+  // 1) Provision missing columns (always-visible first, then mode-specific).
+  targetSet.forEach(function(col) {
+    if (headers.indexOf(col) !== -1) return;
+    var newPos = headers.length;
+    sheet.getRange(1, newPos + 1).setValue(col).setFontWeight('bold');
+    headers.push(col);
+    added.push(col);
+  });
+
+  // 2) Compute hide/show lists. Any v2 mode column NOT in this mode's set
+  // gets hidden (even if it has data from a prior run). Always-visible
+  // columns stay visible. Operator columns (anything not in v2 inventory)
+  // are untouched.
+  var hidden = [];
+  var shown = [];
+  ALL_MODE_COLUMNS_V2.forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx === -1) return; // column not provisioned on this sheet — nothing to do
+    if (thisModeCols.indexOf(col) !== -1) {
+      sheet.showColumns(idx + 1);
+      shown.push(col);
+    } else {
+      sheet.hideColumns(idx + 1);
+      hidden.push(col);
+    }
+  });
+
+  // Always-visible columns must always be shown (operator might have hidden
+  // one manually — re-show under prepareSheet).
+  ALWAYS_VISIBLE_V2.forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx !== -1) sheet.showColumns(idx + 1);
+  });
+
+  // 3) Re-apply conditional formatting to any newly-added per-mode status
+  // columns. Same green/grey scheme used by applyStatusFormatting on the
+  // legacy Status column.
+  applyV2StatusFormatting(sheet, headers, thisModeCols);
+
+  return jsonResponse({
+    success: true,
+    mode: modeKey,
+    added: added,
+    hidden: hidden,
+    shown: shown
+  });
+}
+
+// Apply success-green / skip-grey conditional formatting to each v2 status
+// column. Idempotent — clears any prior rules on these column ranges and
+// re-applies. Called from handlePrepareSheet so freshly-provisioned columns
+// get formatting on first run.
+function applyV2StatusFormatting(sheet, headers, thisModeCols) {
+  if (!thisModeCols || thisModeCols.length === 0) return;
+  var lastRow = Math.max(sheet.getLastRow(), 2);
+  var existing = sheet.getConditionalFormatRules();
+  var targetColIdxs = [];
+  thisModeCols.forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx !== -1) targetColIdxs.push(idx + 1); // 1-based
+  });
+
+  // Drop any prior rules that touch our target columns; preserve others.
+  var preserved = existing.filter(function(rule) {
+    var ranges = rule.getRanges();
+    for (var i = 0; i < ranges.length; i++) {
+      if (targetColIdxs.indexOf(ranges[i].getColumn()) !== -1) return false;
+    }
+    return true;
+  });
+
+  // Build a rule pair (success-green and skip-grey) for each target column.
+  var newRules = [];
+  thisModeCols.forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx === -1) return;
+    var range = sheet.getRange(2, idx + 1, lastRow - 1, 1);
+    // "Sent" / "Done" / "Connected" / "Still Pending" / "Already Connected"
+    // all share the success treatment. The skip rule is a formula because
+    // skip values carry a free-text reason after the prefix.
+    var successRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextDoesNotContain('Skipped:')
+      .setBackground('#f0f9f1').setFontColor('#4a7a54')
+      .setRanges([range]).build();
+    var skipRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextStartsWith('Skipped:')
+      .setBackground('#f5f5f5').setFontColor('#888888')
+      .setRanges([range]).build();
+    // Skip rule must be listed FIRST so it wins for "Skipped: …" values.
+    newRules.push(skipRule, successRule);
+  });
+
+  sheet.setConditionalFormatRules(preserved.concat(newRules));
 }
 
 function migrateOldStatusValues(sheet, headers, lastRow) {
@@ -796,6 +919,18 @@ function writeFields(sheet, headers, row, data) {
     if (data[field] !== undefined && data[field] !== null && data[field] !== '') {
       var colName = FIELD_MAP[field];
       var colIndex = headers.indexOf(colName);
+      // v2 fallback: when the legacy 'Connection Request Status' column
+      // doesn't exist on this sheet but 'Status' does (a v2 prepareSheet
+      // sheet), route `data.status` to 'Status' instead. Likewise the new
+      // v2-first field name `status` → 'Status' wins on v2 sheets when both
+      // columns are present.
+      if (field === 'status' && colIndex === -1) {
+        var altIdx = headers.indexOf('Status');
+        if (altIdx !== -1) {
+          colIndex = altIdx;
+          colName  = 'Status';
+        }
+      }
       // Skip writes for columns that don't exist on this sheet — keeps the
       // mode-specific column sets honest. ensureColumns is the source of
       // truth for which columns get added; writeFields no longer auto-
