@@ -1467,10 +1467,6 @@ function onModeChange() {
   const isConnectMode = (mode === 'connect_only');
   const dailyKnob = document.getElementById('daily-limit-knob');
   if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
-  // Pre-flight Check Status row: only meaningful for message_only / introduce_back.
-  // Operator opts in (default ON) to sweep newly-accepted leads at campaign start.
-  const preflightRow = document.getElementById('preflight-check-row');
-  if (preflightRow) preflightRow.style.display = (isMessageOnly || isIntroduceBack) ? '' : 'none';
   if (isCheckStatus) {
     refreshCheckStatusPreview();
   } else if (isMessageOnly || isIntroduceBack) {
@@ -2460,9 +2456,14 @@ async function startCampaign() {
           const v = parseInt(document.getElementById('acceptance-tracking-days')?.value, 10);
           return Number.isFinite(v) && v >= 0 ? v : 0;
         })(),
-        // Pre-flight Check Status sweep. Only honoured server-side when mode
-        // is message_only or introduce_back; ignored for everything else.
-        preflightCheckStatus: !!document.getElementById('preflight-check-toggle')?.checked,
+        // Pre-flight Check Status sweep. Toggle lives inside each mode's
+        // coverage section (Section 2b for message_only, 2c for
+        // introduce_back). Only one is visible at a time — read whichever
+        // is checked. Server-side gated to the two modes anyway.
+        preflightCheckStatus: !!(
+          document.getElementById('preflight-check-toggle-mo')?.checked ||
+          document.getElementById('preflight-check-toggle-ib')?.checked
+        ),
       }),
     });
     const data = await res.json();

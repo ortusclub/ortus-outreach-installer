@@ -306,22 +306,6 @@
                   <div class="alpha-knob-help">On-demand sweep using the first selected account. Bypasses the 6h cooldown. Won't run while a campaign is in progress.</div>
                 </div>
 
-                <!-- Pre-flight Check Status: Message Only / Introduce Back can
-                     run a bulk Connection Status check on every selected
-                     account BEFORE the campaign starts. Newly-accepted leads
-                     bump Stage → 'Connected · DM Now' and become eligible for
-                     follow-up DMs in this same run. Only visible when the
-                     mode is message_only or introduce_back. -->
-                <div id="preflight-check-row" style="margin-top:18px; display:none;">
-                  <div class="alpha-knob-label">Run Check Status before sending follow-ups</div>
-                  <div class="alpha-knob-row">
-                    <label class="alpha-toggle" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
-                      <input type="checkbox" id="preflight-check-toggle" checked />
-                      <span style="font-size:0.85rem;">Sweep newly-accepted leads first</span>
-                    </label>
-                  </div>
-                  <div class="alpha-knob-help">Runs a one-shot bulk Connection Status check on every selected account at campaign start. Catches leads who accepted between your last Check Status run and now. Adds ~5–15 seconds per account to startup. Bypasses the 6h cooldown for this sweep.</div>
-                </div>
               </div>
             </details>
           </div>
@@ -455,6 +439,20 @@
         <div id="mo-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
       </div>
 
+      <!-- Pre-flight Check Status — opt-in (default ON). Runs a bulk
+           Connection Status sweep on each selected account BEFORE the
+           campaign begins. Newly-accepted leads bump Stage → 'Connected ·
+           DM Now' and become eligible for follow-ups in this same run. -->
+      <div style="margin-top:20px; padding:14px 18px; background:#f0f7f4; border-left:3px solid #34a853;">
+        <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+          <input type="checkbox" id="preflight-check-toggle-mo" checked style="margin-top:3px; width:16px; height:16px; flex-shrink:0; accent-color:#34a853;" />
+          <div>
+            <div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:0.95rem;">Run Check Status first</div>
+            <div style="color:var(--gray); font-size:12px; line-height:1.55;">Sweeps each account's recent connections at campaign start. Newly-accepted leads become eligible for follow-up DMs in this same run — no need to run a separate Check Status campaign first. Adds ~5–15s per account to startup.</div>
+          </div>
+        </label>
+      </div>
+
     </div>
 
     <!-- v2.11.17: Introduce Back coverage — visible only when
@@ -480,6 +478,18 @@
           No leads ready to introduce yet (no rows with <code>Connected · DM Now</code> in Stage). Run <strong>Check Status</strong> first to confirm acceptances.
         </div>
         <div id="ib-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
+      </div>
+
+      <!-- Pre-flight Check Status — opt-in (default ON). Same behaviour as the
+           Message Only callout. -->
+      <div style="margin-top:20px; padding:14px 18px; background:#f0f7f4; border-left:3px solid #34a853;">
+        <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+          <input type="checkbox" id="preflight-check-toggle-ib" checked style="margin-top:3px; width:16px; height:16px; flex-shrink:0; accent-color:#34a853;" />
+          <div>
+            <div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:0.95rem;">Run Check Status first</div>
+            <div style="color:var(--gray); font-size:12px; line-height:1.55;">Sweeps each account's recent connections at campaign start. Newly-accepted leads become eligible for the 3-way intro DM in this same run — no need to run a separate Check Status campaign first. Adds ~5–15s per account to startup.</div>
+          </div>
+        </label>
       </div>
 
       <div id="intro-mode-block" style="margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline);">
