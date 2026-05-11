@@ -745,6 +745,153 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Pure helper: builds the sheetData payload for a given outreach action result.
+ * Routes the action to the right v2 mode-specific status column, mirrors the
+ * latest action into `Status`, and writes Stage when applicable.
+ *
+ * @param {object} args
+ * @param {string} args.action         - result.action ('connection_sent' | 'message_sent' | ...)
+ * @param {string} args.mode           - active campaign mode
+ * @param {string} args.profileName    - GoLogin profile display name (becomes Sender)
+ * @param {string} args.hyperSent      - HYPERLINK formula for "Sent" label (or '')
+ * @param {boolean} args.introMode     - tpl.introMode flag (relevant for message_sent)
+ * @param {boolean} args.messageOpenProfiles - tpl flag (relevant for op_message_sent audit)
+ * @param {number} [args.creditsLeft]  - inmail credits remaining (inmail_sent only)
+ * @returns {object} sheetData         - keys consumed by Apps Script FIELD_MAP
+ */
+export function buildSheetDataForAction({
+  action,
+  mode,
+  profileName = '',
+  hyperSent = '',
+  introMode = false,
+  messageOpenProfiles = false,
+  creditsLeft
+}) {
+  const out = { sender: profileName };
+
+  switch (action) {
+    case 'connection_sent':
+      out.status            = 'Connection Request Sent';
+      out.connectionStatus  = 'Connection Request Sent';
+      out.stage             = 'Connect Pending';
+      out.auditAction       = 'Connection sent';
+      return out;
+
+    case 'already_connected':
+      out.status            = 'Already Connected';
+      out.connectionStatus  = 'Already Connected';
+      out.cc                = 'Connected';
+      out.connectedAlready  = 'Yes';
+      out.stage             = 'Connected';
+      out.auditAction       = 'Already 1st-degree connection';
+      return out;
+
+    case 'message_sent':
+      if (introMode && (mode === 'message_only' || mode === 'introduce_back')) {
+        out.status      = 'IC Sent';
+        out.introStatus = 'IC Sent';
+        out.stage       = 'IC Sent';
+      } else {
+        out.status   = 'DM Sent';
+        out.dmStatus = 'DM Sent';
+        out.stage    = 'DM Sent';
+      }
+      out.message     = hyperSent;
+      out.auditAction = 'Message sent';
+      return out;
+
+    case 'op_message_sent':
+      // Legacy: Status mirrors 'DM Sent' for op_message_sent (preserved
+      // from src/campaign.js:1841 for back-compat with sheet conditional
+      // formatting rules that key on 'DM Sent').
+      out.status     = 'DM Sent';
+      out.opStatus   = 'OP Sent';
+      out.op         = hyperSent;
+      out.stage      = 'OP Sent';
+      out.auditAction = (mode === 'connect_only' && messageOpenProfiles)
+        ? 'Open Profile message sent (via connect mode)'
+        : 'Open Profile message sent';
+      return out;
+
+    case 'inmail_sent':
+      out.status     = 'Done';
+      out.inmStatus  = 'InM Sent';
+      out.inmail     = hyperSent;
+      out.stage      = 'InM Sent';
+      out.auditAction = 'InMail sent';
+      if (typeof creditsLeft === 'number') {
+        out.auditNotes = `InMail credits left: ${creditsLeft}`;
+      }
+      return out;
+
+    case 'status_accepted':
+      out.status           = 'Check Done.';
+      out.checkStatus      = 'Connected';
+      out.cc               = 'Connected';
+      out.connectedAlready = 'Yes';
+      out.stage            = 'Connected · DM Now';
+      out.auditAction      = 'Acceptance confirmed';
+      return out;
+
+    case 'status_pending':
+      // Stage left unchanged on pending (prior code: no stage write).
+      out.checkStatus = 'Still Pending';
+      out.auditAction = 'Check Status: still pending';
+      return out;
+
+    case 'already_processed': {
+      // Stamp Stage per mode so empty-Stage rows don't stay empty after
+      // a re-run. No status column write — the prior real action already
+      // populated it.
+      out.auditAction = 'Already in target state';
+      if (mode === 'connect_only')          out.stage = 'Connect Pending';
+      else if (mode === 'message_only')     out.stage = introMode ? 'IC Sent' : 'DM Sent';
+      else if (mode === 'introduce_back')   out.stage = 'IC Sent';
+      else if (mode === 'inmail_only')      out.stage = 'InM Sent';
+      else if (mode === 'open_profile_only') out.stage = 'OP Sent';
+      return out;
+    }
+
+    default:
+      // Unknown action — return minimal payload so the caller can still
+      // log audit info, no column writes.
+      return out;
+  }
+}
+
+/**
+ * Pure helper: routes a normalized skip reason to the mode-specific column
+ * + mirrors into Status + Stage. Used by every skip branch in the per-lead
+ * loop so skip reasons land in the right place under the v2 schema.
+ *
+ * @param {string} mode             - active campaign mode
+ * @param {string} normalizedReason - already passed through normalizeSkipReason()
+ * @param {string} profileName      - sender label
+ * @returns {object} sheetData
+ */
+export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
+  // normalizeSkipReason already produces "Skipped: <reason>" — Stage + Status
+  // mirror that verbatim. The mode-specific column also receives the prefix
+  // so the operator sees the skip reason in the column matching the campaign
+  // they ran.
+  const out = {
+    sender: profileName,
+    stage:  normalizedReason,
+    status: normalizedReason
+  };
+  switch (mode) {
+    case 'connect_only':       out.connectionStatus = normalizedReason; break;
+    case 'check_status':       out.checkStatus      = normalizedReason; break;
+    case 'message_only':       out.dmStatus         = normalizedReason; break;
+    case 'introduce_back':     out.introStatus      = normalizedReason; break;
+    case 'open_profile_only':  out.opStatus         = normalizedReason; break;
+    case 'inmail_only':        out.inmStatus        = normalizedReason; break;
+  }
+  return out;
+}
+
 export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false }) {
   if (campaign.running) throw new Error('Campaign already running');
 
