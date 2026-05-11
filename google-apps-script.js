@@ -89,6 +89,50 @@ var ALL_MODE_COLUMNS_V2 = [
   'Open Profile', 'Connected'
 ];
 
+// ── Status palette (legacy yellow / green / red / grey) ──
+// Applied as conditional format rules to Stage + every per-mode status
+// column on every prepareSheet call. Cells are bold + tinted bg + tinted
+// fg so the eye lands on the status at a glance.
+var STATE_PALETTE = {
+  pending:   { bg: '#fff4d6', fg: '#8a5a00' }, // yellow — invite / DM in flight
+  sent:      { bg: '#f0f9f1', fg: '#4a7a54' }, // light green — action completed
+  connected: { bg: '#d9f1da', fg: '#0a6b27' }, // deep green — connection confirmed
+  declined:  { bg: '#fce4e4', fg: '#a1252b' }, // red — decline / unreachable
+  skipped:   { bg: '#f5f5f5', fg: '#888888' }  // grey — skipped rows
+};
+
+// Exact-match values painted by applyStatePaletteToColumns. Values that
+// never appear in a given column are harmless — they simply never match.
+// "Skipped:" is handled separately as a startsWith rule (skip reasons
+// carry free-text after the prefix).
+var STATE_VALUES = [
+  // pending (yellow)
+  { val: 'Connect Pending',            state: 'pending' },
+  { val: 'Connection Request Sent',    state: 'pending' },
+  { val: 'Still Pending',              state: 'pending' },
+  { val: 'Not yet connected',          state: 'pending' },
+  // sent (light green)
+  { val: 'DM Sent',                    state: 'sent' },
+  { val: 'IC Sent',                    state: 'sent' },
+  { val: 'OP Sent',                    state: 'sent' },
+  { val: 'InM Sent',                   state: 'sent' },
+  { val: 'Sent',                       state: 'sent' },
+  { val: 'Done',                       state: 'sent' },
+  { val: 'Check Done.',                state: 'sent' },
+  // connected (deep green)
+  { val: 'Connected',                  state: 'connected' },
+  { val: 'Connected · DM Now',         state: 'connected' },
+  { val: 'Already Connected',          state: 'connected' },
+  { val: 'Accepted',                   state: 'connected' },
+  { val: 'Yes',                        state: 'connected' },
+  // declined (red)
+  { val: 'Declined',                   state: 'declined' },
+  { val: 'Unreachable',                state: 'declined' },
+  { val: 'Not OP',                     state: 'declined' },
+  { val: 'Not connectable',            state: 'declined' },
+  { val: 'No',                         state: 'declined' }
+];
+
 // Rename pairs — old header → new header. ensureColumns copies values from
 // old to new before removing the old (see migrateColumnRenames + the new
 // names being added to OLD_COLUMNS_TO_REMOVE below).
@@ -460,10 +504,18 @@ function handlePrepareSheet(sheet, data) {
     if (hidden.indexOf(col) === -1) hidden.push(col);
   });
 
-  // 4) Re-apply conditional formatting to any newly-added per-mode status
-  // columns. Same green/grey scheme used by applyStatusFormatting on the
-  // legacy Status column.
-  applyV2StatusFormatting(sheet, headers, thisModeCols);
+  // 4) Re-apply conditional formatting. Stage + every per-mode status
+  // column get the full state palette (yellow / green / red / grey, bold).
+  applyStatePaletteToColumns(sheet, headers, ['Stage'].concat(thisModeCols));
+
+  // 5) Bold + tint the header row so it reads as a header band. Freeze
+  // it so it stays put when the operator scrolls.
+  if (headers.length > 0) {
+    sheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight('bold')
+      .setBackground('#f1f3f4');
+    if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1);
+  }
 
   return jsonResponse({
     success: true,
@@ -474,48 +526,59 @@ function handlePrepareSheet(sheet, data) {
   });
 }
 
-// Apply success-green / skip-grey conditional formatting to each v2 status
-// column. Idempotent — clears any prior rules on these column ranges and
-// re-applies. Called from handlePrepareSheet so freshly-provisioned columns
-// get formatting on first run.
-function applyV2StatusFormatting(sheet, headers, thisModeCols) {
-  if (!thisModeCols || thisModeCols.length === 0) return;
+// Apply the full state palette (yellow / green / red / grey, bold) to a
+// set of columns. Used by handlePrepareSheet to style Stage + every
+// per-mode status column. Idempotent — clears existing rules on these
+// columns first. Each rule paints one value across ALL target columns at
+// once (multi-range), which keeps the rule count low (~21 rules total).
+function applyStatePaletteToColumns(sheet, headers, columnNames) {
+  if (!columnNames || columnNames.length === 0) return;
   var lastRow = Math.max(sheet.getLastRow(), 2);
-  var existing = sheet.getConditionalFormatRules();
+
+  var ranges = [];
   var targetColIdxs = [];
-  thisModeCols.forEach(function(col) {
+  columnNames.forEach(function(col) {
     var idx = headers.indexOf(col);
-    if (idx !== -1) targetColIdxs.push(idx + 1); // 1-based
+    if (idx === -1) return;
+    ranges.push(sheet.getRange(2, idx + 1, lastRow - 1, 1));
+    targetColIdxs.push(idx + 1);
   });
+  if (ranges.length === 0) return;
 
   // Drop any prior rules that touch our target columns; preserve others.
+  var existing = sheet.getConditionalFormatRules();
   var preserved = existing.filter(function(rule) {
-    var ranges = rule.getRanges();
-    for (var i = 0; i < ranges.length; i++) {
-      if (targetColIdxs.indexOf(ranges[i].getColumn()) !== -1) return false;
+    var ruleRanges = rule.getRanges();
+    for (var i = 0; i < ruleRanges.length; i++) {
+      if (targetColIdxs.indexOf(ruleRanges[i].getColumn()) !== -1) return false;
     }
     return true;
   });
 
-  // Build a rule pair (success-green and skip-grey) for each target column.
   var newRules = [];
-  thisModeCols.forEach(function(col) {
-    var idx = headers.indexOf(col);
-    if (idx === -1) return;
-    var range = sheet.getRange(2, idx + 1, lastRow - 1, 1);
-    // "Sent" / "Done" / "Connected" / "Still Pending" / "Already Connected"
-    // all share the success treatment. The skip rule is a formula because
-    // skip values carry a free-text reason after the prefix.
-    var successRule = SpreadsheetApp.newConditionalFormatRule()
-      .whenTextDoesNotContain('Skipped:')
-      .setBackground('#f0f9f1').setFontColor('#4a7a54')
-      .setRanges([range]).build();
-    var skipRule = SpreadsheetApp.newConditionalFormatRule()
-      .whenTextStartsWith('Skipped:')
-      .setBackground('#f5f5f5').setFontColor('#888888')
-      .setRanges([range]).build();
-    // Skip rule must be listed FIRST so it wins for "Skipped: …" values.
-    newRules.push(skipRule, successRule);
+  // Skip rule FIRST so it wins for "Skipped: …" values (which carry a
+  // free-text reason after the prefix).
+  var skipPal = STATE_PALETTE.skipped;
+  newRules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenTextStartsWith('Skipped:')
+    .setBackground(skipPal.bg)
+    .setFontColor(skipPal.fg)
+    .setBold(true)
+    .setRanges(ranges)
+    .build());
+
+  // One exact-match rule per value. Listed AFTER the skip rule so skip
+  // always wins for "Skipped: <reason>" cells.
+  STATE_VALUES.forEach(function(r) {
+    var pal = STATE_PALETTE[r.state];
+    if (!pal) return;
+    newRules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo(r.val)
+      .setBackground(pal.bg)
+      .setFontColor(pal.fg)
+      .setBold(true)
+      .setRanges(ranges)
+      .build());
   });
 
   sheet.setConditionalFormatRules(preserved.concat(newRules));
