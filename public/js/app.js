@@ -1448,6 +1448,10 @@ function onModeChange() {
   // 2.9.7: Check DMs is now auto-routed too — hide the profile picker.
   // v3.0: Post Amp KEEPS the profile picker (operator selects participating accounts).
   if (navAccounts) navAccounts.style.display = isAutoRouted ? 'none' : '';
+  // Replies section is Check DMs output only — hide for every other mode so
+  // the wizard isn't littered with an empty 'No scan yet' panel.
+  const repliesSection = document.getElementById('replies-section');
+  if (repliesSection) repliesSection.style.display = isCheckDms ? '' : 'none';
   // 2.8.34: Pace section hidden for auto-routed modes (no per-lead pacing).
   // v3.0: Post Amp has its own fixed pace (60-300s gap, baked in).
   if (navPace) navPace.style.display = (isAutoRouted || isPostAmp) ? 'none' : '';
@@ -2164,10 +2168,12 @@ function alphaRecalc() {
   if (perAcctEl)   perAcctEl.textContent   = String(dailyLimit);
   if (eqTotalEl)   eqTotalEl.textContent   = String(total);
 
-  // 2.9.8: Concurrency toggle is unlocked at ≥5 accounts. Hide otherwise.
+  // Concurrency toggle unlocked at ≥2 accounts (the mathematical minimum).
+  // Previous gate was ≥5 — too restrictive; concurrency is useful at 2-4
+  // accounts too. Hide entirely when only one account is selected.
   const concurrencyRow = document.getElementById('alpha-concurrency-row');
   if (concurrencyRow) {
-    concurrencyRow.style.display = numAccounts >= 5 ? '' : 'none';
+    concurrencyRow.style.display = numAccounts >= 2 ? '' : 'none';
   }
 }
 
@@ -5307,17 +5313,11 @@ async function updateWizardQueueState() {
       // we're back to single-campaign mode.
     }
   }
-  // Live Status section shows the running campaign's data. When the wizard
-  // is being used to stage a queued campaign, that data is from a DIFFERENT
-  // campaign — confusing. Hide the section to keep the wizard focused on
-  // the build-in-progress. Only hide on the wizard route — the dashboard
-  // route SHOWS the Live Status section during a run (the regression that
-  // wiped the dashboard's log/status panel mid-campaign).
-  const liveStatusSection = document.getElementById('nav-status');
-  if (liveStatusSection) {
-    const onWizard = (window.location.hash || '#/').startsWith('#/new');
-    liveStatusSection.style.display = (onWizard && isRunning) ? 'none' : '';
-  }
+  // Live Status section is always visible on the wizard route — that's where
+  // the log panel + Copy/Clear Log + Show Browsers buttons live. Prior
+  // attempts to hide it mid-run also hid those controls, which the operator
+  // needs even while a campaign is running. CSS already hides the section
+  // on the dashboard route via the #wizard-view parent.
 }
 window.updateWizardQueueState = updateWizardQueueState;
 function goCreateCampaign() { window.location.hash = '#/new'; }
