@@ -1058,7 +1058,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       }
     }
 
-    campaign.profileNames = profileIds.map(id => profileNameCache[id] || id);
+    campaign.profileNames = profileIds.map(id =>
+      profileNameCache[id] || (id === 'local-browser' ? 'You' : id)
+    );
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
 
     // ── Phase 11.2: LAZY-LAUNCH BATCH LOOP ──
