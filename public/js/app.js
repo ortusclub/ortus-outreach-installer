@@ -366,12 +366,9 @@ function promptModal({ label = 'Enter value:', defaultValue = '' } = {}) {
 // #server-log-panel was deleted; the sidebar "Open log" button now scrolls to
 // Live Status and expands it.
 function openUnifiedLog() {
-  const sec = document.getElementById('nav-status');
-  if (sec && sec.classList.contains('collapsible') && sec.classList.contains('collapsed')) {
-    sec.classList.remove('collapsed');
-    try { localStorage.setItem('section-collapsed:nav-status', '0'); } catch (_) {}
-  }
-  if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Re-uses scrollToSection so the dashboard → wizard route swap happens
+  // automatically when the operator clicks "Open log" from outside the wizard.
+  scrollToSection('nav-status');
 }
 
 async function refreshServerLines() {
@@ -3623,13 +3620,28 @@ function initTheme() {
 function scrollToSection(id) {
   const el = document.getElementById(id);
   if (!el) return;
-  // Auto-expand if collapsible+collapsed
-  if (el.classList.contains('collapsible') && el.classList.contains('collapsed')) {
-    el.classList.remove('collapsed');
-    try { localStorage.setItem(`section-collapsed:${id}`, '0'); } catch (_) {}
+
+  // If we're on the dashboard route, the wizard view is display:none — switching
+  // first (and waiting two RAF ticks for the route swap) makes scrollIntoView
+  // actually land somewhere visible. Without this, View Status / Open log were
+  // no-ops from the dashboard.
+  const wasDashboard = document.body.classList.contains('route-dashboard');
+  if (wasDashboard) window.location.hash = '#/new';
+
+  const doScroll = () => {
+    if (el.classList.contains('collapsible') && el.classList.contains('collapsed')) {
+      el.classList.remove('collapsed');
+      try { localStorage.setItem(`section-collapsed:${id}`, '0'); } catch (_) {}
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveNav(id);
+  };
+
+  if (wasDashboard) {
+    requestAnimationFrame(() => requestAnimationFrame(doScroll));
+  } else {
+    doScroll();
   }
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  setActiveNav(id);
 }
 
 function setActiveNav(id) {
@@ -5107,11 +5119,12 @@ async function refreshActiveCampaign() {
     const statusClass = status.paused ? 'is-paused' : 'is-running';
     const progress = total > 0 ? `${done} / ${total} · ${left} left` : `${done} processed`;
     list.innerHTML = `
-      <div class="campaign-row">
+      <div class="campaign-row campaign-row--with-edit">
         <div class="campaign-row-name">${dashboardNameButton(status.name, 'active', 'active')}</div>
         <span class="campaign-row-type">${escHtml(dashboardModeLabel(status.mode))}</span>
         <span class="campaign-row-progress">${escHtml(progress)}</span>
         <span class="campaign-row-status ${statusClass}">${statusLabel}</span>
+        <button type="button" class="campaign-row-edit" onclick="goCreateCampaign()" title="Open the campaign page">Edit</button>
       </div>
     `;
   } catch {
@@ -5508,12 +5521,13 @@ async function refreshPastCampaigns() {
                         : 'is-done';
       const checked = pastSelectedIdxs.has(idx) ? 'checked' : '';
       return `
-        <div class="campaign-row campaign-row-clickable" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
+        <div class="campaign-row campaign-row-clickable campaign-row--with-edit" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
           <input type="checkbox" class="past-row-checkbox" data-past-idx="${idx}" ${checked} onclick="event.stopPropagation()" onchange="onPastRowCheckboxChange(event, ${idx})" aria-label="Select campaign" />
           <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
           <span class="campaign-row-type">${escHtml(subtitle)}</span>
           <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
           <span class="campaign-row-status ${reasonClass}">${reasonLabel}</span>
+          <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the campaign page">Edit</button>
           <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
         </div>
       `;
