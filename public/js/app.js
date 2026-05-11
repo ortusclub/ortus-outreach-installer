@@ -1109,6 +1109,24 @@ function deselectAll() {
 // ─────────────────────────────────────────────────────────────────────────────
 // "Add a note while connecting?" toggle
 // ─────────────────────────────────────────────────────────────────────────────
+// Resolves visibility for the template management UI (Select / Load / Delete /
+// Save / Preview Messages). Hidden when:
+//   - mode is check_status (no template at all)
+//   - mode is connect_only AND the operator answered "No" to "add a note?"
+//     (no template = no reason to show the template bar or preview button)
+// Called from both onModeChange (mode change) and syncAddNoteUI (Yes/No toggle)
+// so both paths agree.
+function applyTemplateUIVisibility(mode, addNoteOn) {
+  const tplBar = document.getElementById('template-bar');
+  const previewBtn = document.getElementById('btn-preview-messages');
+  const hide =
+    mode === 'check_status' ||
+    (mode === 'connect_only' && !addNoteOn);
+  const display = hide ? 'none' : '';
+  if (tplBar) tplBar.style.display = display;
+  if (previewBtn) previewBtn.style.display = display;
+}
+
 function syncAddNoteUI(on) {
   const yesBtn = document.getElementById('add-note-yes');
   const noBtn = document.getElementById('add-note-no');
@@ -1116,8 +1134,8 @@ function syncAddNoteUI(on) {
   if (yesBtn) yesBtn.classList.toggle('active', on);
   if (noBtn) noBtn.classList.toggle('active', !on);
   if (connect) connect.style.display = on ? '' : 'none';
-  // Note: template-bar visibility is now driven by mode (see onModeChange),
-  // so GDs can save/load template bundles in every mode except Check Status.
+  const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
+  applyTemplateUIVisibility(mode, on);
 }
 
 function setAddNote(on) {
@@ -1352,10 +1370,9 @@ function onModeChange() {
   openToggle.style.display = 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
-  // Template bar (Select/Load/Delete/Save As…) is available for every mode
-  // that has a template to edit — i.e. everything except Check Status.
-  const tplBar = document.getElementById('template-bar');
-  if (tplBar) tplBar.style.display = (mode === 'check_status') ? 'none' : '';
+  // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
+  // the connect_only Yes/No toggle. See applyTemplateUIVisibility.
+  applyTemplateUIVisibility(mode, localStorage.getItem('ortus-add-note') === '1');
 
   // The "Add a note?" question only shows when a connection note is meaningful.
   // In connect_only mode it controls whether the Connection Note UI is revealed.
