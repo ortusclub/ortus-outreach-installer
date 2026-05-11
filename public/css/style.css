@@ -875,25 +875,62 @@ select {
 }
 .btn-remove:hover { opacity: 1; }
 
-/* Account queue (live status) */
-.account-queue { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
-.queue-item {
-  display: flex; align-items: center; gap: 8px; padding: 6px 14px;
-  border: 1px solid var(--hairline); background: transparent;
-  border-radius: 9999px;
-  font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--gray);
+/* Account queue (live status) — vertical table form. Each row shows the
+   profile name, a status pill (Running/Done/Waiting/Parked/Warning), and
+   a detail line when we have a reason. Old .queue-item pill styles are gone. */
+.account-queue {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--hairline);
+  margin-bottom: 20px;
 }
-.queue-item.active { color: var(--ink); border-color: var(--ink); }
-.queue-item.done { opacity: 0.35; text-decoration: line-through; }
-.queue-item .num {
-  width: 16px; height: 16px; border-radius: 9999px;
-  border: 1px solid var(--hairline); background: transparent;
+.queue-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto minmax(0, 1.4fr);
+  gap: 14px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.queue-row-num {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
   color: var(--gray);
-  font-size: 0.58rem;
-  display: flex; align-items: center; justify-content: center;
+  text-align: right;
 }
-.queue-item.active .num { border-color: var(--ink); color: var(--ink); }
+.queue-row-name {
+  font-family: var(--display);
+  font-size: 0.95rem;
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.queue-row.is-done .queue-row-name {
+  color: var(--gray);
+  text-decoration: line-through;
+}
+.queue-row-status {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  color: var(--gray);
+  white-space: nowrap;
+}
+.queue-row.is-running .queue-row-status { color: var(--ink); border-color: var(--ink); }
+.queue-row.is-parked  .queue-row-status { color: #c0392b; border-color: rgba(192, 57, 43, 0.45); }
+.queue-row.is-warning .queue-row-status { color: #b9770e; border-color: rgba(185, 119, 14, 0.45); }
+.queue-row-detail {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: var(--gray);
+  text-transform: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    Buttons — transparent pill, 1px white border, 9999 radius, mono caps
