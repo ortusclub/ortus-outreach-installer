@@ -330,10 +330,11 @@
 
     <!-- ── Google Sheet ── -->
     <div class="section collapsible collapsed" id="nav-sheet">
-      <h2 class="section-toggle" onclick="toggleSection('nav-sheet')"><span class="caret">▾</span> <span data-edit="h2-sheet">2. Google Sheet URL</span> <span class="section-summary" id="summary-sheet"></span></h2>
+      <h2 class="section-toggle" onclick="toggleSection('nav-sheet')"><span class="caret">▾</span> <span data-edit="h2-sheet">2. Google Sheet tab URL</span> <span class="section-summary" id="summary-sheet"></span></h2>
       <div class="collapsible-body">
         <label for="sheet-url">Public Google Sheet with LinkedIn URLs</label>
-        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." />
+        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=..." oninput="updateSheetTabHint()" />
+        <p class="sheet-tab-hint" id="sheet-tab-hint">Open the specific tab inside the sheet, then copy the URL from your browser address bar — it should include <code>#gid=…</code>.</p>
         <button class="btn btn-secondary" onclick="previewSheet()">Preview Sheet</button>
         <div id="sheet-preview" class="hidden" style="margin-top:12px"></div>
       </div>
