@@ -3145,3 +3145,18 @@ body.route-dashboard .sidebar-nav { display: none; }
 .alpha-advanced[open] > summary::before { content: '−'; }
 .alpha-advanced > summary:hover { color: var(--ink); }
 .alpha-advanced-body { padding-top: 16px; }
+
+/* Bottom-of-wizard back link — third return path (sidebar + top + here). The
+   wizard is long enough that operators who scrolled to Launch shouldn't have
+   to scroll back up or look left to escape. */
+.wizard-bottom-actions {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  justify-content: center;
+}
+.wizard-bottom-back {
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+}
