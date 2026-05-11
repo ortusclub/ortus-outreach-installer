@@ -305,6 +305,23 @@
                   </div>
                   <div class="alpha-knob-help">On-demand sweep using the first selected account. Bypasses the 6h cooldown. Won't run while a campaign is in progress.</div>
                 </div>
+
+                <!-- Pre-flight Check Status: Message Only / Introduce Back can
+                     run a bulk Connection Status check on every selected
+                     account BEFORE the campaign starts. Newly-accepted leads
+                     bump Stage → 'Connected · DM Now' and become eligible for
+                     follow-up DMs in this same run. Only visible when the
+                     mode is message_only or introduce_back. -->
+                <div id="preflight-check-row" style="margin-top:18px; display:none;">
+                  <div class="alpha-knob-label">Run Check Status before sending follow-ups</div>
+                  <div class="alpha-knob-row">
+                    <label class="alpha-toggle" style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+                      <input type="checkbox" id="preflight-check-toggle" checked />
+                      <span style="font-size:0.85rem;">Sweep newly-accepted leads first</span>
+                    </label>
+                  </div>
+                  <div class="alpha-knob-help">Runs a one-shot bulk Connection Status check on every selected account at campaign start. Catches leads who accepted between your last Check Status run and now. Adds ~5–15 seconds per account to startup. Bypasses the 6h cooldown for this sweep.</div>
+                </div>
               </div>
             </details>
           </div>

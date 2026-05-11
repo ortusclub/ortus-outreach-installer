@@ -496,7 +496,7 @@ app.post('/api/templates/preview', async (req, res) => {
 function buildCampaignConfig(body) {
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
           delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
-          acceptanceTrackingDays } = body || {};
+          acceptanceTrackingDays, preflightCheckStatus } = body || {};
   let concurrencyClean = 1;
   if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
     const n = Math.min(5, Number(concurrency));
@@ -516,6 +516,9 @@ function buildCampaignConfig(body) {
     concurrency: concurrencyClean,
     name: typeof name === 'string' ? name : '',
     acceptanceTrackingDays: Math.max(0, Math.min(30, Number(acceptanceTrackingDays) || 0)),
+    // Honoured only when mode is message_only or introduce_back. campaign.js
+    // gates further so other modes silently ignore the flag.
+    preflightCheckStatus: !!preflightCheckStatus,
   };
 }
 

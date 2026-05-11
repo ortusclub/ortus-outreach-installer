@@ -745,7 +745,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
 // Main campaign runner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0 }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
@@ -1212,6 +1212,37 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
         sessions.set(profileId, session);
         success = true;
+
+        // Pre-flight Check Status: when message_only / introduce_back has the
+        // toggle on, sweep this profile's connections list at first launch so
+        // newly-accepted leads bump Stage → 'Connected · DM Now' and become
+        // eligible for follow-up DMs in this same run. Errors are non-fatal
+        // — the campaign proceeds even if the sweep fails. Bypasses the 6h
+        // cooldown (it's an explicit operator opt-in for this run), then
+        // refreshes the cooldown timestamp so the post-campaign sweep doesn't
+        // immediately re-fire on top of this one.
+        if (preflightCheckStatus
+            && (mode === 'message_only' || mode === 'introduce_back')) {
+          try {
+            log(`  📡 [${pName}] Pre-flight Check Status sweep…`);
+            const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
+            if (r.error) {
+              log(`  ⚠ [${pName}] Pre-flight bulk check: ${r.error}`);
+            } else {
+              const stamped = r.stamped || 0;
+              log(`  ✓ [${pName}] Pre-flight: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} fetched)`);
+            }
+            try {
+              const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+              const cooldown = await readBulkCheckCooldown();
+              cooldown[bulkCheckKey(_sheetId, profileId)] = Date.now();
+              await writeBulkCheckCooldown(cooldown);
+            } catch { /* cooldown bookkeeping is best-effort */ }
+          } catch (err) {
+            log(`  ⚠ [${pName}] Pre-flight bulk check threw: ${err.message}`);
+          }
+        }
+
         return session;
       } catch (err) {
         log(`✗ ${pName}: failed to open — ${err.message}`);
