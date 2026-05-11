@@ -29,13 +29,14 @@
 
 // ── Tracking columns we manage (new schema) ──
 var TRACKING_COLUMNS = [
-  'Status',
-  'CC',
+  'Connection Request Status',
+  'Connected Status',
   'OP',
   'Message',
   'InMail',
   'Account Used',
-  'Date Last Action',
+  'Date of Last Action',
+  'Time of Last Action',
   // Phase 11.3 — Check DMs writeback columns. Non-destructive: updateRow
   // will not overwrite Reply="yes" if the operator manually edited the row.
   'Reply',
@@ -43,30 +44,77 @@ var TRACKING_COLUMNS = [
   'Reply Preview'
 ];
 
+// Rename pairs — old header → new header. ensureColumns copies values from
+// old to new before removing the old (see migrateColumnRenames + the new
+// names being added to OLD_COLUMNS_TO_REMOVE below).
+var COLUMN_RENAMES = [
+  { from: 'Status',            to: 'Connection Request Status' },
+  { from: 'Connection Status', to: 'Connection Request Status' },
+  { from: 'CC',                to: 'Connected Status' },
+  { from: 'Date',              to: 'Date of Last Action' },
+  { from: 'Time',              to: 'Time of Last Action' },
+  { from: 'Connected', to: 'Connected' },
+];
+
+// Mode-specific column subsets. ensureColumns picks the entry matching
+// data.mode and adds only those columns. Columns from previous modes are
+// NOT removed — running a second mode against the same sheet accumulates
+// columns. Account Used carries the sender's email in every mode (Sender
+// column dropped 2026-05-10 — info was redundant). Connected Status only
+// appears in check_status mode (it's that mode's output).
+var MODE_TRACKING_COLUMNS = {
+  connect_only:              ['Connection Request Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
+  connect_and_check_status:  ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
+  message_only:              ['Connection Request Status', 'Message',  'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  inmail_only:               ['Connection Request Status', 'InMail',   'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  open_profile_only:         ['Connection Request Status', 'OP',       'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  check_status:              ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  check_dms:                 ['Reply', 'Reply At', 'Reply Preview'],
+};
+
 // Action columns — get a dash "—" by default, HYPERLINK when the action happens.
 var ACTION_COLUMNS = ['OP', 'Message', 'InMail'];
 
 // Old tracking columns to REMOVE on ensureColumns (lossy cleanup)
 var OLD_COLUMNS_TO_REMOVE = [
-  'Connection Status',
   'Connection Date',
   'Connection By',
   'First Message Status',
   'First Message Date',
   'Follow-up Status',
   'Follow-up Date',
-  'InMail Credits Left'
+  'InMail Credits Left',
+  // Replaced by separate Date / Time of Last Action columns.
+  'Date Last Action',
+  // Renamed via COLUMN_RENAMES — values are migrated to the new names by
+  // migrateColumnRenames() before these are deleted.
+  'Status',
+  'Connection Status',
+  'CC',
+  'Date',
+  'Time',
+  // Sender column dropped 2026-05-10 — Account Used carries the same info,
+  // making Sender redundant.
+  'Sender'
 ];
 
 // ── Field name → Column header mapping ──
 var FIELD_MAP = {
-  status:          'Status',
-  cc:              'CC',
+  status:          'Connection Request Status',
+  cc:              'Connected Status',
   op:              'OP',
   message:         'Message',
   inmail:          'InMail',
   accountUsed:     'Account Used',
-  dateLastAction:  'Date Last Action',
+  linkedinUrn:     'LinkedIn URN',
+  linkedinMemberId:'LinkedIn Membership ID',
+  openProfile:     'Open Profile',
+  connectedAlready:'Connected',  // legacy field name, new column header
+  // 'sender' field intentionally omitted — column dropped 2026-05-10.
+  // Bot may still send sheetData.sender (back-compat); writeFields ignores
+  // unknown fields silently.
+  // dateLastAction is handled specially in writeFields — split into
+  // 'Date of Last Action' and 'Time of Last Action' instead of one cell.
   // Phase 11.3 — Check DMs writeback
   Reply:           'Reply',
   ReplyAt:         'Reply At',
@@ -94,12 +142,30 @@ function doPost(e) {
 
     // Open the TARGET sheet (not the central one)
     var spreadsheet = SpreadsheetApp.openById(data.sheetId);
-    var sheet = spreadsheet.getActiveSheet();
+
+    // Honor the operator's chosen tab when a gid is supplied (matches the
+    // `#gid=` in the sheet URL the operator pasted). Falls back to the
+    // active sheet for legacy payloads that don't include a gid, so existing
+    // single-tab callers keep working unchanged.
+    var sheet;
+    if (data.gid !== undefined && data.gid !== null && data.gid !== '') {
+      var allSheets = spreadsheet.getSheets();
+      var match = null;
+      for (var i = 0; i < allSheets.length; i++) {
+        if (String(allSheets[i].getSheetId()) === String(data.gid)) {
+          match = allSheets[i];
+          break;
+        }
+      }
+      sheet = match || spreadsheet.getActiveSheet();
+    } else {
+      sheet = spreadsheet.getActiveSheet();
+    }
 
     // Route to the right handler
     switch (data.action) {
       case 'ensureColumns':
-        return handleEnsureColumns(sheet);
+        return handleEnsureColumns(sheet, data);
 
       case 'updateRow':
       default:
@@ -113,6 +179,9 @@ function doPost(e) {
 
       case 'getSoO':
         return handleGetSoO(data);
+
+      case 'writeRecentConnections':
+        return handleWriteRecentConnections(spreadsheet, data);
 
       case 'getRowStatus':
         return handleGetRowStatus(sheet, data);
@@ -137,10 +206,35 @@ function doGet(e) {
 // Action: Ensure tracking columns exist
 // ═══════════════════════════════════════════════════════════════════════════
 
-function handleEnsureColumns(sheet) {
+function handleEnsureColumns(sheet, data) {
   var headers = getHeaders(sheet);
   var added = [];
   var removed = [];
+  var migrated = [];
+
+  // Pick the column set: mode-specific subset if data.mode is recognised,
+  // otherwise fall back to the full TRACKING_COLUMNS list (back-compat with
+  // callers that don't pass mode).
+  var modeKey = data && data.mode ? String(data.mode) : '';
+  var columnsForThisRun = MODE_TRACKING_COLUMNS[modeKey] || TRACKING_COLUMNS;
+
+  // 0) Migration — copy values from any old column header into its renamed
+  // counterpart BEFORE the OLD_COLUMNS_TO_REMOVE pass deletes the old name.
+  // Only runs when the new column doesn't already exist (idempotent).
+  COLUMN_RENAMES.forEach(function(r) {
+    var fromIdx = headers.indexOf(r.from);
+    if (fromIdx === -1) return;
+    if (headers.indexOf(r.to) !== -1) return;
+    var lastRowMig = sheet.getLastRow();
+    sheet.insertColumnAfter(fromIdx + 1);
+    sheet.getRange(1, fromIdx + 2).setValue(r.to).setFontWeight('bold');
+    if (lastRowMig >= 2) {
+      var oldVals = sheet.getRange(2, fromIdx + 1, lastRowMig - 1, 1).getValues();
+      sheet.getRange(2, fromIdx + 2, lastRowMig - 1, 1).setValues(oldVals);
+    }
+    headers.splice(fromIdx + 1, 0, r.to);
+    migrated.push(r.from + ' → ' + r.to);
+  });
 
   // 1) Remove old tracking columns (iterate right → left so indices stay valid)
   for (var i = headers.length - 1; i >= 0; i--) {
@@ -151,21 +245,21 @@ function handleEnsureColumns(sheet) {
     }
   }
 
-  // 2) Add missing tracking columns, each inserted right after the nearest
-  // preceding TRACKING_COLUMN that already exists. This keeps the on-sheet
-  // order aligned with TRACKING_COLUMNS even when columns are added later.
-  TRACKING_COLUMNS.forEach(function(col, idx) {
+  // 2) Add missing tracking columns for THIS mode. Existing columns from
+  // previous modes are preserved (so multi-mode sheets accumulate columns).
+  // Order on the sheet follows columnsForThisRun — each new column is
+  // inserted right after the nearest preceding sibling already on the sheet.
+  columnsForThisRun.forEach(function(col, idx) {
     if (headers.indexOf(col) !== -1) return;
 
     var insertAfter = -1;
     for (var k = idx - 1; k >= 0; k--) {
-      var prevIdx = headers.indexOf(TRACKING_COLUMNS[k]);
+      var prevIdx = headers.indexOf(columnsForThisRun[k]);
       if (prevIdx !== -1) { insertAfter = prevIdx; break; }
     }
 
     var newPos;
     if (insertAfter === -1) {
-      // No preceding tracking col exists — append at the end.
       newPos = headers.length;
       sheet.getRange(1, newPos + 1).setValue(col);
     } else {
@@ -177,6 +271,24 @@ function handleEnsureColumns(sheet) {
     headers.splice(newPos, 0, col);
     added.push(col);
   });
+
+  // 2.5) Reorder tracking columns so they sit at the end of the sheet
+  // in the canonical order defined by columnsForThisRun. Operator columns
+  // (anything not in columnsForThisRun) keep their original positions at
+  // the front. Iteration order matters: walking columnsForThisRun in order
+  // and moving each to the end leaves them in the correct relative order
+  // because subsequent moves push them back.
+  columnsForThisRun.forEach(function(col) {
+    var hdrs = getHeaders(sheet);
+    var idx = hdrs.indexOf(col);
+    if (idx === -1) return;
+    var lastCol = sheet.getLastColumn();
+    if (idx + 1 === lastCol) return; // already at the end
+    var sourceRange = sheet.getRange(1, idx + 1, sheet.getMaxRows(), 1);
+    sheet.moveColumns(sourceRange, lastCol + 1);
+  });
+  // Refresh local headers cache after the reorder dance.
+  headers = getHeaders(sheet);
 
   var lastRow = sheet.getLastRow();
 
@@ -256,7 +368,9 @@ function migrateOldStatusValues(sheet, headers, lastRow) {
 }
 
 function applyStatusFormatting(sheet, headers) {
-  var statusIdx = headers.indexOf('Status');
+  var statusIdx = headers.indexOf('Connection Request Status');
+  if (statusIdx === -1) statusIdx = headers.indexOf('Connection Status'); // back-compat
+  if (statusIdx === -1) statusIdx = headers.indexOf('Status'); // back-compat
   if (statusIdx === -1) return;
   var lastRow = Math.max(sheet.getLastRow(), 2);
   var range = sheet.getRange(2, statusIdx + 1, lastRow - 1, 1);
@@ -614,18 +728,37 @@ function normalizeUrl(url) {
 function writeFields(sheet, headers, row, data) {
   var updated = [];
 
+  // Split dateLastAction into separate 'Date' and 'Time' columns. Uses the
+  // script's timezone (Apps Script's clock) rather than the bot's local
+  // time so behaviour is consistent regardless of operator laptop locale.
+  if (data.dateLastAction !== undefined && data.dateLastAction !== null && data.dateLastAction !== '') {
+    var nowDt = new Date();
+    var tz = Session.getScriptTimeZone();
+    var dateStr = Utilities.formatDate(nowDt, tz, 'yyyy-MM-dd');
+    var timeStr = Utilities.formatDate(nowDt, tz, 'HH:mm:ss');
+    [['Date of Last Action', dateStr], ['Time of Last Action', timeStr]].forEach(function(pair) {
+      var colName = pair[0], v = pair[1];
+      var idx = headers.indexOf(colName);
+      if (idx === -1) {
+        idx = headers.length;
+        sheet.getRange(1, idx + 1).setValue(colName);
+        sheet.getRange(1, idx + 1).setFontWeight('bold');
+        headers.push(colName);
+      }
+      sheet.getRange(row, idx + 1).setValue(v);
+      updated.push(colName);
+    });
+  }
+
   for (var field in FIELD_MAP) {
     if (data[field] !== undefined && data[field] !== null && data[field] !== '') {
       var colName = FIELD_MAP[field];
       var colIndex = headers.indexOf(colName);
-
-      if (colIndex === -1) {
-        // Auto-create the column
-        colIndex = headers.length;
-        sheet.getRange(1, colIndex + 1).setValue(colName);
-        sheet.getRange(1, colIndex + 1).setFontWeight('bold');
-        headers.push(colName);
-      }
+      // Skip writes for columns that don't exist on this sheet — keeps the
+      // mode-specific column sets honest. ensureColumns is the source of
+      // truth for which columns get added; writeFields no longer auto-
+      // creates from incoming data.
+      if (colIndex === -1) continue;
 
       var cell = sheet.getRange(row, colIndex + 1);
       var value = data[field];
@@ -812,4 +945,86 @@ function handleGetSoO(data) {
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: writeRecentConnections — sidecar tab dump of Voyager's connections
+// ═══════════════════════════════════════════════════════════════════════════
+// The bot sends `data.connections` (array of {firstName, lastName, publicId,
+// urn, memberId, connectedAt, profileSentBy}) and the sender's email. ONE
+// shared "Recent Connections" tab holds all accounts' fetched connections,
+// distinguished by the leading 'Account' column. Each call refreshes only
+// the rows for THIS account (deletes existing rows where Account == sender,
+// then appends the new rows) so multi-account sweeps don't fight each other.
+var RECENT_TAB_NAME = 'Recent Connections';
+// 'LinkedIn URN' carries the bare ACoAA… portion (no `urn:li:fsd_profile:`
+// prefix) — same convention as the campaign tab. 'Member ID' is the
+// numeric member number (urn:li:member:NNN), blank when Voyager's
+// connections list didn't include the objectUrn for that entity.
+var RECENT_HEADERS = ['Account', 'First Name', 'Last Name', 'Public ID', 'LinkedIn URN', 'Member ID', 'Connected At', 'Fetched At'];
+
+function handleWriteRecentConnections(spreadsheet, data) {
+  var connections = Array.isArray(data.connections) ? data.connections : [];
+  var sender = (data.sender || '').toString().trim();
+
+  var sheet = spreadsheet.getSheetByName(RECENT_TAB_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(RECENT_TAB_NAME);
+  }
+
+  // Header row — write/refresh defensively in case columns drift.
+  var firstRow = sheet.getRange(1, 1, 1, RECENT_HEADERS.length).getValues()[0];
+  var headerNeedsWrite = false;
+  for (var h = 0; h < RECENT_HEADERS.length; h++) {
+    if (firstRow[h] !== RECENT_HEADERS[h]) { headerNeedsWrite = true; break; }
+  }
+  if (headerNeedsWrite) {
+    sheet.getRange(1, 1, 1, RECENT_HEADERS.length)
+      .setValues([RECENT_HEADERS])
+      .setFontWeight('bold')
+      .setBackground('#f1f3f4');
+    sheet.setFrozenRows(1);
+  }
+
+  // Refresh strategy: read everything, filter out rows for THIS sender,
+  // clear the data area, and re-write the kept rows + the new ones in
+  // a single pass. This avoids the visible per-row deleteRow churn that
+  // made the operator watch rows blink out one at a time.
+  var lastRow = sheet.getLastRow();
+  var keptRows = [];
+  if (lastRow >= 2) {
+    var existing = sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).getValues();
+    for (var r = 0; r < existing.length; r++) {
+      var rowSender = (existing[r][0] || '').toString().trim();
+      if (rowSender !== sender) keptRows.push(existing[r]);
+    }
+  }
+
+  var fetchedAt = new Date().toISOString();
+  var newRows = connections.map(function(c) {
+    return [
+      sender || (c.profileSentBy || ''),
+      c.firstName || '',
+      c.lastName || '',
+      c.publicId || '',
+      c.urn || '',           // ACoAA… portion only
+      c.memberNumber || '',  // numeric (urn:li:member:NNN), or blank
+      c.connectedAt ? new Date(c.connectedAt).toISOString() : '',
+      fetchedAt,
+    ];
+  });
+
+  var allRows = keptRows.concat(newRows);
+
+  // Clear old data area, then write the combined set. setValues is one
+  // network round-trip regardless of row count, so this is fast even with
+  // hundreds of rows from multiple accounts.
+  if (lastRow >= 2) {
+    sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
+  }
+  if (allRows.length > 0) {
+    sheet.getRange(2, 1, allRows.length, RECENT_HEADERS.length).setValues(allRows);
+  }
+
+  return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, rows: newRows.length });
 }

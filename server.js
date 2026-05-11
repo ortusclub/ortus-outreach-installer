@@ -16,13 +16,16 @@ import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, setCampaignName, campaign, extractLinkedInUrl } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog } from './src/campaign.js';
+import { getQueue, addToQueue, removeFromQueue, moveInQueue, popNext as popNextQueued } from './src/campaign-queue.js';
+import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
+import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet } from './src/sheets.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
@@ -487,13 +490,82 @@ app.post('/api/templates/preview', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Campaign control
 // ---------------------------------------------------------------------------
-app.post('/api/campaign/start', (req, res) => {
+// Build a clean campaign config from a request body. Shared between the
+// /api/campaign/start handler and the queue runner so a queued campaign
+// runs with exactly the same shape as a directly-launched one.
+function buildCampaignConfig(body) {
+  const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
+          delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
+          acceptanceTrackingDays } = body || {};
+  let concurrencyClean = 1;
+  if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
+    const n = Math.min(5, Number(concurrency));
+    if ((profileIds?.length || 0) >= 5) concurrencyClean = n;
+  }
+  return {
+    profileIds,
+    sheetUrl,
+    templates: templates || {},
+    dailyLimit: Number(dailyLimit),
+    mode: mode || 'auto',
+    messageOpenProfiles: !!messageOpenProfiles,
+    delayMin: delayMin ? Number(delayMin) : undefined,
+    delayMax: delayMax ? Number(delayMax) : undefined,
+    linkedinColumn: linkedinColumn || '',
+    senderFirstNames: senderFirstNames || {},
+    concurrency: concurrencyClean,
+    name: typeof name === 'string' ? name : '',
+    acceptanceTrackingDays: Math.max(0, Math.min(30, Number(acceptanceTrackingDays) || 0)),
+  };
+}
+
+// Launch a campaign and chain into the queue when it finishes. Calling
+// this while another campaign is still running will throw downstream from
+// startCampaign — callers must check campaign.running first and queue
+// instead if they want fire-and-forget semantics.
+function launchCampaign(config, owner) {
+  preventSleep('campaign');
+  startCampaign(config).then(() => {
+    const status = getCampaignStatus();
+    notifyEmail(owner, {
+      title: 'Campaign finished',
+      body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+      link: '/',
+    }).catch(() => {});
+  }).catch(err => {
+    console.error('Campaign error:', err.message);
+    notifyEmail(owner, {
+      title: 'Campaign failed',
+      body: `Your campaign failed: ${err.message}`,
+      link: '/',
+    }).catch(() => {});
+  }).finally(() => {
+    allowSleep();
+    // Chain into the queue. The next entry (if any) launches as soon as
+    // the previous one fully cleans up. Sequential by design — we don't
+    // run two campaigns in parallel.
+    runNextFromQueue().catch(err => {
+      console.error('Queue chain error:', err.message);
+    });
+  });
+}
+
+async function runNextFromQueue() {
+  if (campaign.running) return;
+  const next = await popNextQueued();
+  if (!next) return;
+  console.log(`[queue] Launching queued campaign "${next.name || '(unnamed)'}" (${next.id})`);
+  launchCampaign(next.config, next.owner);
+}
+
+app.post('/api/campaign/start', async (req, res) => {
   try {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
     if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
 
-    const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles, delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name } = req.body;
+    const body = req.body || {};
+    const { profileIds, sheetUrl, dailyLimit, mode } = body;
 
     // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
     // the sheet's Account Used column inside campaign.js (only the original
@@ -504,52 +576,105 @@ app.post('/api/campaign/start', (req, res) => {
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
 
-    // Fire and forget — campaign runs in background. The operator who kicked
-    // it off gets the finish/failure notification.
+    const config = buildCampaignConfig(body);
     const owner = req.user;
-    preventSleep('campaign');
-    // 2.9.8: clamp concurrency at the trust boundary. Server only honors
-    // values 2..5 AND only when ≥5 accounts selected. Falls through to 1
-    // (sequential) otherwise.
-    let concurrencyClean = 1;
-    if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
-      const n = Math.min(5, Number(concurrency));
-      if ((profileIds?.length || 0) >= 5) concurrencyClean = n;
-    }
-    startCampaign({
-      profileIds,
-      sheetUrl,
-      templates: templates || {},
-      dailyLimit: Number(dailyLimit),
-      mode: mode || 'auto',
-      messageOpenProfiles: !!messageOpenProfiles,
-      delayMin: delayMin ? Number(delayMin) : undefined,
-      delayMax: delayMax ? Number(delayMax) : undefined,
-      linkedinColumn: linkedinColumn || '',
-      senderFirstNames: senderFirstNames || {},
-      concurrency: concurrencyClean,
-      name: typeof name === 'string' ? name : '',
-    }).then(() => {
-      const status = getCampaignStatus();
-      notifyEmail(owner, {
-        title: 'Campaign finished',
-        body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
-        link: '/',
-      }).catch(() => {});
-    }).catch(err => {
-      console.error('Campaign error:', err.message);
-      notifyEmail(owner, {
-        title: 'Campaign failed',
-        body: `Your campaign failed: ${err.message}`,
-        link: '/',
-      }).catch(() => {});
-    }).finally(() => {
-      allowSleep();
-    });
 
+    // Clear the wizard draft name on launch so the next "+ Start new
+    // campaign" click opens an empty wizard rather than re-prompting
+    // about a now-stale draft with the same name.
+    try { await writeDraftName(''); } catch { /* non-fatal */ }
+
+    // If a campaign is already running, queue this one instead of erroring.
+    // The queue chain in launchCampaign's finally{} will pick it up when
+    // the current campaign finishes.
+    if (campaign.running) {
+      const entry = await addToQueue(config, owner);
+      const runningName = campaign.name || '(unnamed)';
+      return res.json({
+        ok: true,
+        queued: true,
+        queueId: entry.id,
+        message: `Added to queue. Will start when "${runningName}" finishes.`,
+      });
+    }
+    // Defensive: if nothing is running but there ARE items already in the
+    // queue, drain the queue's first item BEFORE starting this new one so
+    // FIFO order is preserved (would otherwise jump the line).
+    const existingQueue = await getQueue();
+    if (existingQueue.length > 0) {
+      const entry = await addToQueue(config, owner);
+      // Now drain the head of the queue (which will be the previously-first
+      // entry, not this newcomer).
+      runNextFromQueue().catch(err => console.error('Drain failed:', err.message));
+      return res.json({
+        ok: true,
+        queued: true,
+        queueId: entry.id,
+        message: `Added to queue (${existingQueue.length} ahead).`,
+      });
+    }
+
+    launchCampaign(config, owner);
     res.json({ ok: true, message: 'Campaign started' });
   } catch (err) {
     console.error('Campaign start error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get a single queued campaign's full config (used by the dashboard Edit
+// button — full payload, not the trimmed summary the list returns).
+app.get('/api/queue/:id', async (req, res) => {
+  try {
+    const all = await getQueue();
+    const entry = all.find((e) => e.id === req.params.id);
+    if (!entry) return res.status(404).json({ error: 'Not found' });
+    res.json(entry);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List queued campaigns for the dashboard's Queued section.
+app.get('/api/queue', async (_req, res) => {
+  try {
+    const queue = await getQueue();
+    // Strip large/sensitive fields the UI doesn't need (templates can be big).
+    const summary = queue.map(e => ({
+      id: e.id,
+      name: e.name,
+      queuedAt: e.queuedAt,
+      mode: e.config?.mode || '',
+      profileIds: e.config?.profileIds || [],
+      sheetUrl: e.config?.sheetUrl || '',
+    }));
+    res.json({ queue: summary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cancel a queued campaign before it starts.
+app.delete('/api/queue/:id', async (req, res) => {
+  try {
+    const ok = await removeFromQueue(req.params.id);
+    res.json({ ok });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reorder a queued campaign within the FIFO order. Body: { direction: 'up' | 'down' }
+app.post('/api/queue/:id/move', async (req, res) => {
+  try {
+    const dir = (req.body && req.body.direction) || '';
+    if (dir !== 'up' && dir !== 'down') {
+      return res.status(400).json({ error: 'direction must be "up" or "down"' });
+    }
+    const newIndex = await moveInQueue(req.params.id, dir);
+    if (newIndex === -1) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, newIndex });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -619,6 +744,254 @@ app.post('/api/campaign/name', (req, res) => {
   }
 });
 
+// Draft campaign name — persisted between sessions so the operator can stage a
+// name from the wizard without launching a campaign. Dashboard surfaces it as
+// a "Draft" row when nothing is running.
+const DRAFT_NAME_FILE = dataPath('draft-name.json');
+
+async function readDraftName() {
+  try {
+    const raw = await readFile(DRAFT_NAME_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.name === 'string' ? parsed.name : '';
+  } catch { return ''; }
+}
+
+async function writeDraftName(name) {
+  await mkdir(dirname(DRAFT_NAME_FILE), { recursive: true });
+  const tmp = `${DRAFT_NAME_FILE}.tmp`;
+  await writeFile(tmp, JSON.stringify({ name, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+  const { rename } = await import('node:fs/promises');
+  await rename(tmp, DRAFT_NAME_FILE);
+}
+
+app.get('/api/draft-name', async (_req, res) => {
+  res.json({ name: await readDraftName() });
+});
+
+app.post('/api/draft-name', async (req, res) => {
+  try {
+    const name = (typeof req.body?.name === 'string' ? req.body.name : '').trim();
+    await writeDraftName(name);
+    res.json({ ok: true, name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Active post-campaign acceptance-tracking windows. Used by the dashboard
+// (future) to show the operator which sheets are still being swept and when
+// they expire.
+app.get('/api/post-campaign-tracking', async (_req, res) => {
+  try {
+    const list = await listPostCampaignSchedule();
+    res.json({ windows: list });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manual bulk-check trigger from the wizard. Bypasses the 6h cooldown so
+// the operator can on-demand sweep their sheet for newly-accepted invites.
+// Refuses to run while a campaign is active to avoid GoLogin contention.
+app.post('/api/bulk-check-now', async (req, res) => {
+  try {
+    if (campaign.running) {
+      return res.status(409).json({ error: 'A campaign is currently running. Wait for it to finish or stop it first.' });
+    }
+    const { sheetUrl, linkedinColumn, profileId } = req.body || {};
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    const token = process.env.GOLOGIN_API_TOKEN;
+    const { bulkCheckConnections } = await import('./src/linkedin/bulk-check-connections.js');
+    const { closeProfile: _closeProfile } = await import('./src/gologin-launcher.js');
+
+    // Build the list of profiles to sweep. Explicit profileId wins; fallback
+    // is to derive unique account emails from the sheet's Account Used
+    // column, then map to profile IDs via the GoLogin profile cache.
+    let profileIdsToSweep = [];
+    let derivedFromSheet = false;
+    if (profileId) {
+      profileIdsToSweep = [profileId];
+    } else {
+      try {
+        const rows = await fetchSheet(sheetUrl);
+        const accountEmails = new Set();
+        for (const row of rows) {
+          const v = (row['Account Used'] || row['account used'] || '').toString().trim();
+          if (v && v.includes('@')) accountEmails.add(v.toLowerCase());
+        }
+        if (accountEmails.size === 0) {
+          return res.status(400).json({ error: 'No accounts selected and no Account Used values found on the sheet to derive from.' });
+        }
+        const allProfiles = await getProfiles(token);
+        const byName = new Map(allProfiles.map((p) => [String(p.name || '').toLowerCase(), p.id]));
+        for (const email of accountEmails) {
+          const pid = byName.get(email);
+          if (pid) profileIdsToSweep.push(pid);
+        }
+        derivedFromSheet = true;
+        if (profileIdsToSweep.length === 0) {
+          return res.status(400).json({ error: `Found ${accountEmails.size} account email(s) on the sheet but none matched a GoLogin profile.` });
+        }
+      } catch (err) {
+        return res.status(500).json({ error: `Could not derive accounts from sheet: ${err.message}` });
+      }
+    }
+
+    // Resolve profile IDs → human names (the email, for Ortus accounts) so
+    // the sidecar tab's Account column reads "rashank.khrera@ortus.solutions"
+    // instead of an opaque GoLogin profile id. The campaign loop already
+    // passes pName; the manual button used to skip this lookup.
+    let nameByProfileId = new Map();
+    try {
+      const allProfiles = await getProfiles(token);
+      nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
+    } catch { /* fall back to id-as-name if cache fetch fails */ }
+
+    // Filter out accounts the most-recent campaign parked. parkedProfiles is
+    // in-memory (not persisted across restarts) so this only catches the
+    // current/last-run session-dead accounts — but that's exactly the case
+    // the operator is hitting: ran a campaign, an account got parked for
+    // session-expired, then they hit Bulk Check and it tried that dead
+    // account anyway. Now skip it and tell them why in the response.
+    const parkedSet = new Set((campaign.parkedProfiles || []).map((p) => p.profileId));
+    const skippedParked = [];
+    profileIdsToSweep = profileIdsToSweep.filter((pid) => {
+      if (parkedSet.has(pid)) {
+        const reason = (campaign.parkedProfiles.find((p) => p.profileId === pid) || {}).reason || 'parked';
+        const pName = nameByProfileId.get(pid) || pid;
+        skippedParked.push({ profileId: pid, profileName: pName, reason });
+        campaignLog(`⏭ Skipping ${pName} — parked from last campaign (${reason}).`);
+        return false;
+      }
+      return true;
+    });
+    if (profileIdsToSweep.length === 0) {
+      return res.json({
+        ok: true,
+        derivedFromSheet,
+        profilesSweep: 0,
+        skippedParked,
+        result: { matched: 0, stamped: 0, fetched: 0 },
+        perProfile: [],
+      });
+    }
+
+    // Sweep each profile sequentially. Sequential because GoLogin browsers
+    // are RAM-heavy and parallel launches can OOM the laptop on weak hosts.
+    const perProfile = [];
+    let totalMatched = 0;
+    let totalStamped = 0;
+    let totalFetched = 0;
+    campaignLog(`📡 Manual bulk Connection Status check — sweeping ${profileIdsToSweep.length} account(s)…`);
+    for (const pid of profileIdsToSweep) {
+      const pName = nameByProfileId.get(pid) || pid;
+      const wasAlreadyRunning = !!getProfilePid(pid);
+      campaignLog(`📡 [${pName}] Launching browser…`);
+      let launched;
+      try {
+        launched = await launchProfile(pid, token);
+      } catch (err) {
+        const msg = `Launch failed: ${err.message}`;
+        campaignLog(`⚠ [${pName}] ${msg}`);
+        perProfile.push({ profileId: pid, profileName: pName, error: msg });
+        continue;
+      }
+      let r;
+      try {
+        campaignLog(`📡 [${pName}] Sweeping recent connections…`);
+        r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn || '', pName);
+      } catch (err) {
+        r = { error: `Sweep threw: ${err.message}` };
+      } finally {
+        if (!wasAlreadyRunning) {
+          try { await _closeProfile(pid); } catch { /* */ }
+        }
+      }
+      if (r.error) {
+        campaignLog(`⚠ [${pName}] Bulk check: ${r.error}`);
+      } else {
+        const stamped = r.stamped || 0;
+        campaignLog(`📡 [${pName}] Bulk check: ${r.matched || 0} marked Connected, ${stamped} marked Still Pending (of ${r.fetched || 0} recent connections fetched)`);
+      }
+      if (r.diag) campaignLog(`📡 [${pName}] diag: ${r.diag}`);
+      perProfile.push({ profileId: pid, profileName: pName, ...r });
+      if (!r.error) {
+        totalMatched += r.matched || 0;
+        totalStamped += r.stamped || 0;
+        totalFetched += r.fetched || 0;
+      }
+    }
+    campaignLog(`📡 Manual bulk check complete — ${totalMatched} Connected, ${totalStamped} Still Pending across ${profileIdsToSweep.length} account(s).`);
+
+    res.json({
+      ok: true,
+      derivedFromSheet,
+      profilesSweep: profileIdsToSweep.length,
+      skippedParked,
+      result: {
+        matched: totalMatched,
+        stamped: totalStamped,
+        fetched: totalFetched,
+      },
+      perProfile,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/draft-name', async (_req, res) => {
+  try {
+    await writeDraftName('');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Multi-draft endpoints ──
+// The single-draft /api/draft-name above is kept for back-compat (the
+// wizard's saveDraftName still hits it). These power the new dashboard
+// Drafts section and let the operator stage multiple campaigns in
+// parallel without losing any.
+app.get('/api/drafts', async (_req, res) => {
+  try { res.json({ drafts: await getDrafts() }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/drafts/:id', async (req, res) => {
+  try {
+    const d = await getDraft(req.params.id);
+    if (!d) return res.status(404).json({ error: 'Not found' });
+    res.json(d);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/drafts', async (req, res) => {
+  try {
+    const { name, config } = req.body || {};
+    const entry = await addDraft({ name, config });
+    res.json({ ok: true, draft: entry });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/drafts/:id', async (req, res) => {
+  try {
+    const updated = await updateDraft(req.params.id, req.body || {});
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, draft: updated });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/drafts/:id', async (req, res) => {
+  try {
+    const ok = await removeDraft(req.params.id);
+    res.json({ ok });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ---------------------------------------------------------------------------
 // Phase 11.2: Show Browsers — un-hide every active Chromium process (D-18).
 // Called by the dashboard "Show Browsers" button and the tray menu item.
@@ -632,6 +1005,72 @@ app.post('/api/browsers/show', async (_req, res) => {
     const { shown, skipped } = await unhideByPids(pids);
     res.json({ ok: true, shown, skipped, platform: 'darwin' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Open the GoLogin browser for a specific profile. If the profile is already
+// running (in activeProfiles), unhide its window and bring it onscreen.
+// If not, launch it. Used by the Account Queue's Open Browser + Try Again
+// buttons so the operator can manually intervene mid-run (e.g. log back in
+// after a session-expired park).
+app.post('/api/profile/:id/open-browser', async (req, res) => {
+  const profileId = req.params.id;
+  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  try {
+    const existingPid = getProfilePid(profileId);
+    if (existingPid) {
+      if (process.platform === 'darwin') {
+        await unhideByPids([existingPid]);
+      }
+      return res.json({ ok: true, action: 'focused-existing', pid: existingPid });
+    }
+    const token = process.env.GOLOGIN_API_TOKEN;
+    await launchProfile(profileId, token);
+    const newPid = getProfilePid(profileId);
+    if (process.platform === 'darwin' && newPid) {
+      await unhideByPids([newPid]);
+    }
+    res.json({ ok: true, action: 'launched', pid: newPid });
+  } catch (err) {
+    console.error(`[open-browser] ${profileId}: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Retry a parked profile mid-run: clears the campaign-side park state
+// (weeklyLimited, parkedProfiles, profileEndReasons, consecutive counters)
+// AND opens the GoLogin browser so the operator can re-authenticate. The
+// next campaign rotation picks the profile up again.
+app.post('/api/campaign/profile/:id/retry', async (req, res) => {
+  const profileId = req.params.id;
+  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  try {
+    const result = retryParkedProfile(profileId);
+    if (!result.ok) return res.status(409).json({ error: result.reason || 'retry-failed' });
+    // Same launch + unhide flow as /api/profile/:id/open-browser. We don't
+    // delegate so the response can carry both the unpark + launch outcome.
+    let launchInfo;
+    const existingPid = getProfilePid(profileId);
+    if (existingPid) {
+      if (process.platform === 'darwin') await unhideByPids([existingPid]);
+      launchInfo = { action: 'focused-existing', pid: existingPid };
+    } else {
+      const token = process.env.GOLOGIN_API_TOKEN;
+      try {
+        await launchProfile(profileId, token);
+        const newPid = getProfilePid(profileId);
+        if (process.platform === 'darwin' && newPid) await unhideByPids([newPid]);
+        launchInfo = { action: 'launched', pid: newPid };
+      } catch (launchErr) {
+        // Unpark already happened — campaign loop will try the launch itself
+        // on next rotation. Surface the failure but don't fail the whole call.
+        launchInfo = { action: 'launch-failed', error: launchErr.message };
+      }
+    }
+    res.json({ ok: true, profileName: result.profileName, browser: launchInfo });
+  } catch (err) {
+    console.error(`[retry] ${profileId}: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1458,7 +1897,9 @@ app.delete('/api/history', async (_req, res) => {
   }
 });
 
-// v2.11.8: delete a single past-campaign entry by index.
+// v2.11.8: delete a single past-campaign entry by index. :idx is the on-disk
+// index in history.json (the dashboard preserves it across the newest-first
+// sort), matching the convention the rename endpoint already uses.
 app.delete('/api/history/:idx', async (req, res) => {
   try {
     const idx = Number(req.params.idx);
@@ -1585,11 +2026,22 @@ app.listen(PORT, async () => {
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);
 
+  // Post-campaign acceptance tracking — sweeps run in the background while
+  // the bot is open, scoped to the per-campaign window the operator chose.
+  startPostCampaignScheduler();
+
   // Load and register saved schedules (D-05)
   loadSchedules().then(schedules => {
     for (const s of schedules) registerSchedule(s);
     if (schedules.length) console.log(`  ✦ Schedules: ${schedules.filter(s => s.enabled).length} active of ${schedules.length} total`);
   }).catch(err => console.error('Failed to load schedules:', err.message));
+
+  // Drain the campaign queue at startup. If the server crashed/restarted
+  // while items were queued, this auto-promotes the next one to active so
+  // the operator doesn't have to re-trigger anything.
+  setTimeout(() => {
+    runNextFromQueue().catch(err => console.error('Startup queue drain failed:', err.message));
+  }, 1000);
 });
 
 // ---------------------------------------------------------------------------
