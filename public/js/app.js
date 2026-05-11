@@ -5313,10 +5313,13 @@ async function updateWizardQueueState() {
   // Live Status section shows the running campaign's data. When the wizard
   // is being used to stage a queued campaign, that data is from a DIFFERENT
   // campaign — confusing. Hide the section to keep the wizard focused on
-  // the build-in-progress.
+  // the build-in-progress. Only hide on the wizard route — the dashboard
+  // route SHOWS the Live Status section during a run (the regression that
+  // wiped the dashboard's log/status panel mid-campaign).
   const liveStatusSection = document.getElementById('nav-status');
   if (liveStatusSection) {
-    liveStatusSection.style.display = isRunning ? 'none' : '';
+    const onWizard = (window.location.hash || '#/').startsWith('#/new');
+    liveStatusSection.style.display = (onWizard && isRunning) ? 'none' : '';
   }
 }
 window.updateWizardQueueState = updateWizardQueueState;
