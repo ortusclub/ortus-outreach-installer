@@ -29,6 +29,7 @@ import { updateSheetRow, ensureTrackingColumns, prepareSheet } from './sheets-wr
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
+import { runAutoIntros } from './linkedin/auto-intro.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
 import { dataPath } from './paths.js';
 import { checkDiskFree } from './disk-check.js';
@@ -274,6 +275,11 @@ export function extractLinkedInUrl(row, linkedinColumn) {
 
 export function getModeHint(mode, prevAction) {
   if (mode === 'connect_only') return 'force_connect';
+  // Phase 1 of connect_and_introduce is identical to connect_only — send the
+  // connection request. Phase 2 (the intro DM after acceptance) is handled
+  // by the bulk-check sweep + a follow-up pass; this mode hint just covers
+  // the per-lead connect step.
+  if (mode === 'connect_and_introduce') return 'force_connect';
   if (mode === 'message_only' || mode === 'introduce_back') return 'force_message';
   if (mode === 'check_status') return 'check_only';
   if (mode === 'inmail_only') return 'force_inmail';
@@ -769,7 +775,11 @@ export function buildSheetDataForAction({
   messageOpenProfiles = false,
   creditsLeft
 }) {
-  const out = { sender: profileName };
+  // Write to BOTH 'Sender' (v2 schema) and 'Account Used' (legacy column).
+  // Sheets that have only one of the two will silently ignore the missing
+  // field; sheets that have both stay in sync. This is what makes the
+  // "Account Used" column populate on legacy/migrated sheets.
+  const out = { sender: profileName, accountUsed: profileName };
 
   switch (action) {
     case 'connection_sent':
@@ -843,14 +853,25 @@ export function buildSheetDataForAction({
 
     case 'already_processed': {
       // Stamp Stage per mode so empty-Stage rows don't stay empty after
-      // a re-run. No status column write — the prior real action already
-      // populated it.
+      // a re-run. Also re-stamps the relevant status column — when the
+      // operator clears the sheet between runs, the prior status data is
+      // gone, so stamping here repopulates it (the LinkedIn-side state is
+      // the real source of truth: outreach.js returned already_processed
+      // because the connect/DM/InMail is actually in flight).
       out.auditAction = 'Already in target state';
-      if (mode === 'connect_only')          out.stage = 'Connect Pending';
-      else if (mode === 'message_only')     out.stage = introMode ? 'IC Sent' : 'DM Sent';
-      else if (mode === 'introduce_back')   out.stage = 'IC Sent';
-      else if (mode === 'inmail_only')      out.stage = 'InM Sent';
-      else if (mode === 'open_profile_only') out.stage = 'OP Sent';
+      if (mode === 'connect_only' || mode === 'connect_and_introduce') {
+        out.stage            = 'Connect Pending';
+        out.status           = 'Connection Request Sent';
+        out.connectionStatus = 'Connection Request Sent';
+      }
+      else if (mode === 'message_only')     {
+        out.stage = introMode ? 'IC Sent' : 'DM Sent';
+        out.status = out.stage;
+        out.dmStatus = out.stage;
+      }
+      else if (mode === 'introduce_back')   { out.stage = 'IC Sent'; out.status = 'IC Sent'; out.introStatus = 'IC Sent'; }
+      else if (mode === 'inmail_only')      { out.stage = 'InM Sent'; out.status = 'InM Sent'; out.inmStatus = 'InM Sent'; }
+      else if (mode === 'open_profile_only') { out.stage = 'OP Sent'; out.status = 'OP Sent'; out.opStatus = 'OP Sent'; }
       return out;
     }
 
@@ -1054,7 +1075,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // both source from Connected · DM Now.
           return stage === 'Connected · DM Now';
         }
-        if (mode === 'connect_only') {
+        if (mode === 'connect_only' || mode === 'connect_and_introduce') {
           // Cold targets: Stage empty (never touched) or 'Send Connect'.
           // Skipped (any reason) is terminal — exclude.
           // Per-tab source of truth: if Stage is blank, try to process even if
@@ -1114,7 +1135,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       if (status === 'done') return false;
 
-      if (mode === 'connect_only') {
+      if (mode === 'connect_only' || mode === 'connect_and_introduce') {
         // Per-tab source of truth: only the Status column gates re-processing.
         // CC may carry residual data from past attempts (sender name, status
         // colours, "—" placeholder) and is no longer a blocker on its own.
@@ -1646,9 +1667,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
             leadIndex++;
             if (!candidateUrl) continue;
-            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && state.processed[candidateUrl]) continue;
+            // Skip URLs already touched by THIS installation's local state,
+            // EXCEPT for modes where re-touching is intentional (message_only
+            // sends DMs after acceptance; open_profile_only is fire-and-forget;
+            // introduce_back fires from already-connected rows;
+            // connect_and_introduce trusts the sheet as source of truth so a
+            // cleared row gets re-processed even if the local state remembers it).
+            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && mode !== 'connect_and_introduce' && state.processed[candidateUrl]) continue;
             const sheetStatus = (candidate['Connection Status'] || candidate['connection status'] || candidate['Status'] || candidate['status'] || '').toLowerCase();
-            if (mode === 'connect_only') {
+            if (mode === 'connect_only' || mode === 'connect_and_introduce') {
               if (sheetStatus) continue;
             }
             row = candidate;
@@ -2007,10 +2034,50 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
 
-            // Connect + Check Connection Status: piggy-back a bulk acceptance
-            // sweep on this profile's turn, but only once every 6h per
+            // Connect + Introduce Back: piggy-back a bulk acceptance sweep
+            // on this profile's turn, but only once every 6h per
             // (sheetId, profileId). The sweep is one Voyager call, so it
             // doesn't materially extend the turn or risk rate-limiting.
+            // The Connected column flip in bulk-check is what later triggers
+            // the intro DM follow-up (separate pass — TODO).
+            if (mode === 'connect_and_introduce' && result.action === 'connection_sent') {
+              try {
+                const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+                const cooldown = await readBulkCheckCooldown();
+                const _key = bulkCheckKey(_sheetId, profileId);
+                const last = cooldown[_key] || 0;
+                if (Date.now() - last >= BULK_CHECK_INTERVAL_MS) {
+                  log(`  📡 [${pName}] Bulk Connection Status check (cooldown elapsed)…`);
+                  const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
+                  if (r.error) {
+                    log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
+                  } else {
+                    const stamped = r.stamped || 0;
+                    log(`  📡 [${pName}] Bulk check: ${r.matched} marked Connected, ${stamped} marked Still Pending (of ${r.fetched} recent connections fetched)`);
+                  }
+                  cooldown[_key] = Date.now();
+                  await writeBulkCheckCooldown(cooldown);
+
+                  // Auto-introduction pass via shared helper — same logic
+                  // the manual button + post-campaign scheduler use.
+                  await runAutoIntros({
+                    page,
+                    profileId,
+                    profileName: pName,
+                    sheetUrl,
+                    linkedinColumn,
+                    connectedUrls: r.connectedUrls,
+                    primaryName: (templates && templates.primaryName || '').trim(),
+                    primaryIntroBody: (templates && templates.primaryIntroBody || '').trim(),
+                    primaryUrl: (templates && templates.primaryUrl || '').trim(),
+                    introTitle: (templates && templates.introTitle) || 'Introduction: {first name} <> {intro name}',
+                    log,
+                  });
+                }
+              } catch (err) {
+                log(`  ⚠ [${pName}] Bulk check threw: ${err.message}`);
+              }
+            }
             // Record end reason when an account completes its per-run quota.
             // The candidate filter at line ~1289 will silently exclude it
             // from the next round; this gives operators a visible "why" on
@@ -2409,7 +2476,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // acceptanceTrackingDays is 0 or for non-connect modes where the
     // bulk-check doesn't make sense.
     try {
-      const trackingApplies = (mode === 'connect_only');
+      const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_introduce');
       if (trackingApplies && acceptanceTrackingDays > 0) {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
         for (let i = 0; i < (campaign.profileIds || []).length; i++) {
@@ -2422,6 +2489,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             profileName: pName,
             linkedinColumn,
             days: acceptanceTrackingDays,
+            // Persist Connect + Introduce Back primary fields so each
+            // post-campaign sweep can fire the auto-intro DM.
+            mode,
+            primaryName: (templates && templates.primaryName) || '',
+            primaryIntroBody: (templates && templates.primaryIntroBody) || '',
+            primaryUrl: (templates && templates.primaryUrl) || '',
+            introTitle: (templates && templates.introTitle) || '',
           });
         }
       }

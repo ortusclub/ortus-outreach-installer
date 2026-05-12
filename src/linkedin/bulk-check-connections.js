@@ -217,5 +217,9 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
 
   const matchedCount = updates.filter((u) => u.cc === 'Connected').length;
   const pendingCount = updates.length - matchedCount;
-  return { matched: matchedCount, fetched: conns.length, stamped: pendingCount, diag: diagSummary };
+  // List of leads that just flipped to Connected this sweep — the
+  // connect_and_introduce mode uses this to fire the auto-intro DM in the
+  // same browser session before the loop moves on.
+  const connectedUrls = updates.filter((u) => u.cc === 'Connected').map((u) => u.linkedinUrl);
+  return { matched: matchedCount, fetched: conns.length, stamped: pendingCount, diag: diagSummary, connectedUrls };
 }

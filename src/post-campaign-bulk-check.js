@@ -17,6 +17,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
+import { runAutoIntros } from './linkedin/auto-intro.js';
 
 const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
 const TICK_INTERVAL_MS = 30 * 60 * 1000; // 30 min between scheduler passes
@@ -52,7 +53,9 @@ async function isCampaignRunning() {
  * actually sent at least one invite. Re-registration extends the window
  * — the new expiry is `now + days`.
  */
-export async function registerSchedule({ sheetId, sheetUrl, profileId, profileName, linkedinColumn, days }) {
+export async function registerSchedule({ sheetId, sheetUrl, profileId, profileName, linkedinColumn, days,
+                                          mode = '', primaryName = '', primaryIntroBody = '',
+                                          primaryUrl = '', introTitle = '' }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
@@ -63,6 +66,14 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     profileId,
     profileName: profileName || profileId,
     linkedinColumn: linkedinColumn || '',
+    // Connect + Introduce Back: persist the primary fields so each
+    // post-campaign sweep can fire the auto-intro DM after the
+    // bulk-check stamps Connected.
+    mode: mode || '',
+    primaryName: primaryName || '',
+    primaryIntroBody: primaryIntroBody || '',
+    primaryUrl: primaryUrl || '',
+    introTitle: introTitle || '',
     registeredAt: (sched[k]?.registeredAt) || now,
     expiresAt: now + days * 86400000,
     // The campaign's own bulk-check just ran, so no need to immediately
@@ -120,6 +131,27 @@ async function tick() {
         console.warn(`[post-campaign] ${entry.profileName} sweep error: ${r.error}`);
       } else {
         console.log(`[post-campaign] ${entry.profileName}: ${r.matched} Connected, ${r.stamped || 0} Still Pending`);
+        // Auto-intro pass for connect_and_introduce campaigns whose
+        // primary fields were stored at registration time.
+        if (Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0
+            && entry.primaryName && entry.primaryIntroBody) {
+          try {
+            await runAutoIntros({
+              page: launched.page,
+              profileId: entry.profileId,
+              profileName: entry.profileName,
+              sheetUrl: entry.sheetUrl,
+              linkedinColumn: entry.linkedinColumn,
+              connectedUrls: r.connectedUrls,
+              primaryName: entry.primaryName,
+              primaryIntroBody: entry.primaryIntroBody,
+              primaryUrl: entry.primaryUrl || '',
+              introTitle: entry.introTitle || 'Introduction: {first name} <> {intro name}',
+            });
+          } catch (introErr) {
+            console.warn(`[post-campaign] ${entry.profileName} auto-intro threw: ${introErr.message}`);
+          }
+        }
       }
     } catch (err) {
       console.warn(`[post-campaign] ${entry.profileName} sweep threw: ${err.message}`);
