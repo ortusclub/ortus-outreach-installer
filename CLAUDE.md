@@ -57,10 +57,7 @@ running even when individual accounts hit limits, sessions expire, or laptops ar
 
 ## Workflow
 
-**Ask-first protocol** — before touching code on any "build/fix" request, ask the user
-two concrete questions with how-to-answer instructions (DOM HTML, log paste, console
-output). Full rule: `.claude/ASK-FIRST.md`. The user can short-circuit me with the
-phrase "ask first" if I forget.
+**Current version:** v2.13.13 (May 2026). Distributed as DMG via GitHub Releases.
 
 This repo uses the superpowers plugin for Claude Code: brainstorming → writing-plans →
 subagent-driven-development. Specs live in `docs/superpowers/specs/`, plans in
@@ -68,7 +65,91 @@ subagent-driven-development. Specs live in `docs/superpowers/specs/`, plans in
 ships as a feature branch (`<lens>-<version>`) with end-of-branch verification, then
 fast-forward merge to `main`.
 
-Recent lenses shipped:
-- 2.8.19 — operator UX paper-cuts (lens A)
-- 2.8.20 — reliability under stress (lens B)
-- 2.8.21 — code health & hygiene (lens C, this branch)
+## Operator rules (read this — these override defaults)
+
+These four rules apply to ALL work on this repo. They're durable, not session-specific.
+
+1. **Ask first** — before touching code on any "build/fix" request, respond with **two
+   concrete artefact-backed questions** (DOM HTML, log paste, console output,
+   screenshot reference). The user's short-circuit phrase is "ask first" — if they
+   say it, stop whatever you're doing and respond with two questions instead.
+
+2. **Auto-relaunch dev:app after every commit.** In this repo, after every commit
+   that touches runtime code, kill+restart `npm run dev:app` in the background so the
+   user can immediately verify the change. Pattern:
+   ```bash
+   pkill -f "npm.*dev:app" 2>/dev/null; pkill -f "Electron.*ortus" 2>/dev/null
+   npm run dev:app > /tmp/dev-app.log 2>&1 &
+   ```
+
+3. **Sheet mockups must be Sheets-realistic.** When mocking up Google Sheet visuals
+   (column layouts, conditional formatting, badges), use cell background + borders +
+   font sizes — NOT HTML-only pills, cards, or progress bars. The target medium is a
+   spreadsheet, the mockup should look like one.
+
+4. **Auto-send defaults OFF.** Any tool that sends emails/messages/notifications
+   externally must ship with the auto-send toggle **disabled by default**. The
+   operator opts in explicitly. (Example: post-campaign reminder emails default to
+   off in `data/notification-prefs.json`.)
+
+## Skills to invoke (superpowers plugin)
+
+Skills auto-trigger based on what you describe — you don't need slash commands. Names
+below are what fires under the hood, so you recognize them when they activate.
+
+| Skill | When | How to invoke |
+|---|---|---|
+| **brainstorming** | New feature, vague idea | "I want to build X" / "How should we approach Y" — produces a spec in `docs/superpowers/specs/` |
+| **writing-plans** | Have a spec, need an executable plan | "Write me a plan for `<spec-file>`" — produces commit-sized tasks in `docs/superpowers/plans/` |
+| **subagent-driven-development** | Plan exists, ready to build | "Execute the plan at `<plan-file>`" — runs task-by-task with isolated subagents + two-stage review |
+| **systematic-debugging** | Bug bit, root cause unclear | "Debug this: `<error or symptom>`" — forces Phase 1 (evidence) before any fix attempt |
+
+**The chain:** brainstorming → writing-plans → subagent-driven-development. That's
+the loop for any non-trivial feature. Skip the chain ONLY for tiny, one-file changes.
+
+## UI / visual work
+
+The UI is **vanilla HTML/CSS/JS** (no React, no bundler). Tokens at top of
+`public/css/style.css`. Bugatti command-deck design system: monochrome, hairlines,
+gold only on Start CTA, radii 0 or 9999.
+
+**Sketches & mockups** live in `public/sketches/` (free-standing HTML files
+prototyping new layouts before committing to changes in `index.html`). When you build
+a sketch, name it `<area>-<variant>.html` (e.g. `sheet-A-single-stage.html`) and
+index it from `public/sketches/index.html`.
+
+**Visual companion mode** of brainstorming — when a design question is genuinely
+visual (mockup comparisons, layout choices), brainstorming can open a local browser
+URL to show options. Token-intensive; the operator must explicitly accept the offer
+to use it.
+
+**Verifying UI changes** — `npm run dev:app` opens the Electron shell. Reload with
+Cmd+R. There's no test suite for UI — manual verification only. For Chrome-extension
+work or sheet-render verification, use the `claude-in-chrome` MCP tools to take
+screenshots and read console messages.
+
+## Recent shipped work (May 2026)
+
+- **v2.13.x — Multi-status sheet schema:** Per-mode column visibility, v2 Stage
+  palette, check_status bulk-first via Sam's Voyager endpoint.
+- **Connect + Introduce Back mode** (PR #16): full cold-lead pipeline — send connect
+  request, bulk-check for acceptance, auto-fire 3-way intro DM to a configured
+  primary person, stamp `Introduction Status` column. Intro DM body lives in
+  Section 5 Message Templates with the `{primary name}` / `{primary url}` /
+  `{first name}` variable buttons.
+- **Post-campaign notifications:** Per-operator opt-in reminder (email + desktop
+  popup) fires before each scheduled connection-check sweep. Toggle in
+  Sidebar → Notifications. Defaults OFF per the operator rule above.
+- **Apps Script:** `google-apps-script.js` is the shared source of truth for ALL
+  operators — same code for everyone. What differs per operator is just the
+  deployment URL (each Google account publishes the script and gets its own
+  `SHEETS_WEBAPP_URL` for the `.env`). When the repo's `.js` changes, every operator
+  must paste the new content into their Apps Script editor and redeploy.
+
+## GitHub housekeeping
+
+- Sam typically opens PRs against `source` instead of `main`. Always check the **base
+  branch** before merging — if it's not `main`, the PR won't actually ship even when
+  merged. Either rebase onto `main` or close + re-open with the right base.
+- PR backlog from PRs #6–#15 was cleaned up May 12 2026 (each closed with a SHA
+  pointer to where the code actually landed on `main`).
