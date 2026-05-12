@@ -64,3 +64,36 @@ test('back-compat: recognizes "Connection Accepted Status" as already-Connected 
   // Row already shows Connected via the NEW header — should be skipped (no re-stamp).
   assert.equal(connectedUrls.length, 0, 'rows already marked Connected via new header are skipped');
 });
+
+test('empty conns: pending rows still get Still Pending stamp; matched-set lookups yield no false matches', () => {
+  const rows = [baseRow()];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, [], linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
+  );
+  assert.equal(connectedUrls.length, 0, 'no connections → no matches');
+  // Row's request status IS "Connection Request Sent" → gets stamped Still Pending.
+  const stamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(stamp, 'row should be stamped Still Pending');
+  assert.equal(stamp.cc, stillPendingLabel);
+});
+
+test('empty rows: returns empty updates, empty connectedUrls, zero counters', () => {
+  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+    [], baseConns, linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
+  );
+  assert.equal(updates.length, 0);
+  assert.equal(connectedUrls.length, 0);
+  assert.equal(diag.rowsScanned, 0);
+  assert.equal(diag.withUrl, 0);
+});
+
+test('row with missing LinkedIn URL: silently skipped, doesn\'t throw', () => {
+  const rowWithoutUrl = { 'First Name': 'No', 'Last Name': 'URL' };
+  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+    [rowWithoutUrl], baseConns, linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
+  );
+  assert.equal(updates.length, 0, 'no URL → no stamp');
+  assert.equal(connectedUrls.length, 0);
+  assert.equal(diag.rowsScanned, 1, 'still counted as scanned');
+  assert.equal(diag.withUrl, 0, 'but withUrl=0 since URL was missing');
+});

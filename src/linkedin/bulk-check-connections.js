@@ -66,10 +66,19 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     if (nameKey && nameKey !== ' ') connectedNames.add(nameKey);
   }
 
+  // Snapshot a few extracted IDs from the connections list so we can
+  // eyeball-compare against what's in the sheet rows.
+  const sampleConnectedSlugs = [...connectedSlugs].slice(0, 3);
+  const sampleConnectedMemberIds = [...connectedMemberIds].slice(0, 3);
+  const sampleConnectedNames = [...connectedNames].slice(0, 3);
+
   const updates = [];
   const connectedUrls = [];
   let dbgRowsScanned = 0, dbgWithUrl = 0, dbgWithCRS = 0;
   let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
+  const sampleSheetSlugs = [];
+  const sampleSheetMemberIds = [];
+  const sampleCRSValues = new Set();
 
   for (const row of rows) {
     dbgRowsScanned++;
@@ -91,6 +100,9 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     const slug = publicIdFromUrl(url);
     const rowUrn = (row['LinkedIn URN'] || row['linkedin urn'] || '').toString();
     const memberId = memberIdFromAny(rowUrn) || memberIdFromAny(url);
+    if (sampleSheetSlugs.length < 3 && slug) sampleSheetSlugs.push(slug);
+    if (sampleSheetMemberIds.length < 3 && memberId) sampleSheetMemberIds.push(memberId);
+
     const firstName = (row['First Name'] || row['first name'] || row['firstName'] || '').toString().toLowerCase().trim();
     const lastName  = (row['Last Name']  || row['last name']  || row['lastName']  || '').toString().toLowerCase().trim();
     const nameKey = `${firstName} ${lastName}`.trim();
@@ -115,6 +127,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       || row['Connection Status']        || row['connection status']
       || row['Status'] || row['status'] || ''
     ).toString().trim();
+    if (sampleCRSValues.size < 5 && requestStatus) sampleCRSValues.add(requestStatus);
     if (requestStatus !== 'Connection Request Sent') continue;
     dbgWithCRS++;
     updates.push({ linkedinUrl: url, cc: stillPendingLabel });
@@ -133,6 +146,12 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       slugs: connectedSlugs.size,
       memberIds: connectedMemberIds.size,
       names: connectedNames.size,
+      sampleSheetSlugs,
+      sampleSheetMemberIds,
+      sampleConnectedSlugs,
+      sampleConnectedMemberIds,
+      sampleConnectedNames,
+      sampleCRSValues,
     },
   };
 }
@@ -228,7 +247,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     { suppressAcceptedStamp: opts.suppressAcceptedStamp === true }
   );
 
-  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}`;
+  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);
