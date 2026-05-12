@@ -17,6 +17,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
+import { notifyEmail, enqueueDesktopNotification } from './notifier.js';
 
 const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
 const TICK_INTERVAL_MS = 30 * 60 * 1000; // 30 min between scheduler passes
@@ -75,6 +76,42 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
 }
 
 /**
+ * Reminder for the operator: "we're about to launch a connection check for
+ * accounts A, B, C." Fires both an email and a desktop popup. Groups by
+ * operatorEmail — each operator gets one bundled notification per tick
+ * listing only their own accounts. Entries with no operator (registered
+ * before the field existed) are bundled under a null key and broadcast.
+ */
+async function notifyDueSweeps(dueEntries) {
+  const byOwner = new Map();
+  for (const e of dueEntries) {
+    const key = e.operatorEmail || '__broadcast__';
+    if (!byOwner.has(key)) byOwner.set(key, []);
+    byOwner.get(key).push(e);
+  }
+
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  for (const [key, entries] of byOwner.entries()) {
+    const names = entries.map((e) => e.profileName).join(', ');
+    const title = `Launching connection check at ${time}`;
+    const body = entries.length === 1
+      ? `About to check connections for ${names}.`
+      : `About to check connections for ${entries.length} accounts: ${names}.`;
+
+    const audience = key === '__broadcast__' ? null : key;
+    enqueueDesktopNotification({ title, body, audience });
+
+    if (audience) {
+      try {
+        await notifyEmail(audience, { title, body });
+      } catch (err) {
+        console.warn(`[post-campaign] notifyEmail failed for ${audience}: ${err.message}`);
+      }
+    }
+  }
+}
+
+/**
  * One scheduler pass. Skips entirely if a foreground campaign is running.
  * Sweeps each due entry sequentially (not in parallel — keeps GoLogin
  * resource use predictable on weak laptops).
@@ -91,19 +128,31 @@ async function tick() {
   let changed = false;
   const token = process.env.GOLOGIN_API_TOKEN;
 
+  // First pass: expire-purge + identify due entries so we can fire a single
+  // bundled "about to launch checks" notification per operator before any
+  // sweep starts. Two-pass keeps the existing per-entry sweep semantics
+  // (sequential, foreground-yielding) intact below.
+  const dueKeys = [];
   for (const k of Object.keys(sched)) {
     const entry = sched[k];
-
-    // Expired? remove.
     if (now >= entry.expiresAt) {
       delete sched[k];
       changed = true;
       console.log(`[post-campaign] Schedule expired for ${entry.profileName} on sheet ${entry.sheetId}`);
       continue;
     }
-
-    // Cooldown not elapsed? skip this tick.
     if (now < (entry.lastCheckedAt || 0) + SWEEP_COOLDOWN_MS) continue;
+    dueKeys.push(k);
+  }
+
+  if (dueKeys.length > 0) {
+    await notifyDueSweeps(dueKeys.map((k) => sched[k]));
+  }
+
+  for (const k of dueKeys) {
+    const entry = sched[k];
+    // Entry may have been deleted above (expired) — guard.
+    if (!entry) continue;
 
     console.log(`[post-campaign] Sweeping ${entry.profileName} on sheet ${entry.sheetId}…`);
     let launched;

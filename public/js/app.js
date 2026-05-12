@@ -4172,6 +4172,39 @@ function initScheduleNotifier() {
   setInterval(pollScheduleNotifications, 30 * 1000);
 }
 
+// Pull server-side desktop notifications (e.g. "about to launch connection
+// check") and surface them as browser-push popups. Audience filtering is
+// done server-side via req.user, so we just receive items meant for us.
+let _lastDesktopNotifTs = (() => {
+  try { return Number.parseInt(localStorage.getItem('ortus-last-notif-ts') || '0', 10) || 0; }
+  catch { return 0; }
+})();
+async function pollServerDesktopNotifications() {
+  try {
+    const res = await fetch(`/api/notifications/recent?since=${_lastDesktopNotifTs}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    for (const item of items) {
+      notify(item.title, item.body);
+    }
+    if (items.length > 0) {
+      _lastDesktopNotifTs = items[items.length - 1].ts;
+      try { localStorage.setItem('ortus-last-notif-ts', String(_lastDesktopNotifTs)); } catch { /* */ }
+    } else if (typeof data?.now === 'number' && data.now > _lastDesktopNotifTs) {
+      _lastDesktopNotifTs = data.now;
+      try { localStorage.setItem('ortus-last-notif-ts', String(_lastDesktopNotifTs)); } catch { /* */ }
+    }
+  } catch { /* */ }
+}
+function initServerDesktopNotifier() {
+  // Poll every 60s — the post-campaign scheduler ticks every 30 min, so a
+  // minute of latency on a popup is well within the user's tolerance and
+  // doesn't add meaningful network load.
+  pollServerDesktopNotifications();
+  setInterval(pollServerDesktopNotifications, 60 * 1000);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4200,6 +4233,7 @@ if ('Notification' in window && Notification.permission === 'granted') {
   notificationsEnabled = true;
 }
 initScheduleNotifier();
+initServerDesktopNotifier();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {

@@ -29,7 +29,7 @@ import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, lau
 import { closeLocalBrowser } from './src/local-launcher.js';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
-import { initNotifier, notifyAll, notifyEmail } from './src/notifier.js';
+import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { checkDiskFree } from './src/disk-check.js';
@@ -2093,6 +2093,15 @@ app.get('/api/warnings', async (_req, res) => {
 // ---------------------------------------------------------------------------
 app.get('/api/notify/status', (_req, res) => {
   res.json({ smtpConfigured: !!process.env.SMTP_HOST });
+});
+
+// Renderer poll: pull recent desktop notifications since the last poll.
+// Filters by the signed-in operator so other operators' personal reminders
+// don't appear in this user's tab. Items with audience=null are broadcast.
+app.get('/api/notifications/recent', (req, res) => {
+  const since = Number.parseInt(req.query.since, 10) || 0;
+  const items = getRecentNotifications({ sinceTs: since, audience: req.user });
+  res.json({ items, now: Date.now() });
 });
 
 // ---------------------------------------------------------------------------

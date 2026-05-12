@@ -73,3 +73,32 @@ export async function notifyEmail(to, { title, body, link }) {
     ? { sent: 1, total: 1 }
     : { sent: 0, total: 1, error: result.error };
 }
+
+// In-memory ring buffer of recent notifications, polled by the renderer to
+// fire native browser-push (desktop) notifications. Server-side state only —
+// not persisted; on restart the renderer just starts watching from "now".
+const DESKTOP_BUFFER_CAP = 50;
+const desktopBuffer = [];
+let _nextId = 1;
+
+export function enqueueDesktopNotification({ title, body, link, audience }) {
+  const item = {
+    id: _nextId++,
+    ts: Date.now(),
+    title: title || '',
+    body: body || '',
+    link: link || '',
+    audience: audience || null, // null = broadcast (all signed-in users see it)
+  };
+  desktopBuffer.push(item);
+  if (desktopBuffer.length > DESKTOP_BUFFER_CAP) desktopBuffer.shift();
+  return item;
+}
+
+export function getRecentNotifications({ sinceTs = 0, audience = null } = {}) {
+  return desktopBuffer.filter((n) => {
+    if (n.ts <= sinceTs) return false;
+    if (n.audience && audience && n.audience !== audience) return false;
+    return true;
+  });
+}
