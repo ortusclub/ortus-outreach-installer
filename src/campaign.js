@@ -123,6 +123,30 @@ export function shouldCloseBetweenBatches({ waitMs, closeGapMin }) {
   return Number(waitMs) > threshold * 60 * 1000;
 }
 
+/**
+ * Pure predicate — should the idle bulk-check fire for this profile right now?
+ * All seven gates must pass. Exported for tests/idle-bulk-check.test.js.
+ *
+ * @param {object} ctx
+ * @param {string}  ctx.mode                  - campaign mode (only connect_and_introduce triggers idle checks)
+ * @param {number}  ctx.campaignStartTime     - epoch ms when campaign began
+ * @param {boolean} ctx.profileBrowserOpen    - is this profile's browser currently open? (in-batch trigger handles those)
+ * @param {boolean} ctx.profileWeeklyLimited  - is this profile parked permanently?
+ * @param {number}  ctx.semaphoreAvailable    - remaining browserSemaphore slots (0 = full)
+ * @param {number}  ctx.lastBulkCheckAt       - epoch ms of last bulk-check for this (sheet, profile); 0 if never
+ * @param {number}  ctx.now                   - epoch ms (current time — injected for testability)
+ * @returns {boolean}
+ */
+export function shouldFireIdleBulkCheck(ctx) {
+  if (ctx.mode !== 'connect_and_introduce') return false;
+  if (ctx.now - ctx.campaignStartTime < IDLE_CAMPAIGN_MIN_DURATION_MS) return false;
+  if (ctx.profileBrowserOpen) return false;
+  if (ctx.profileWeeklyLimited) return false;
+  if (ctx.semaphoreAvailable <= 0) return false;
+  if (ctx.now - ctx.lastBulkCheckAt < IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS) return false;
+  return true;
+}
+
 async function appendHistory(entry) {
   let history = [];
   try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf8')); } catch { /* first run */ }
@@ -1492,6 +1516,65 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         sessions.delete(profileId);
         browserSemaphore.release();
         return { durationMs };
+      }
+    }
+
+    /**
+     * v2.14 — idle bulk-check. Briefly reopens a parked profile, fires
+     * bulkCheck + runAutoIntros, closes. Respects browserSemaphore. Failures
+     * non-fatal. Called from the worker-pool loop when shouldFireIdleBulkCheck
+     * returns true for a profile.
+     */
+    async function runIdleBulkCheck(profileId, pName) {
+      await browserSemaphore.acquire();
+      let launched;
+      try {
+        log(`  📡 [${pName}] Idle bulk-check — briefly reopening profile…`);
+        launched = await launchProfile(profileId, token);
+
+        const willAutoIntro = !!(
+          templates && templates.primaryName && templates.primaryName.trim() &&
+          templates.primaryIntroBody && templates.primaryIntroBody.trim()
+        );
+        const r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn, pName, {
+          suppressAcceptedStamp: willAutoIntro,
+        });
+        if (r.error) {
+          log(`  ⚠ [${pName}] Idle bulk-check: ${r.error}`);
+        } else {
+          const stamped = r.stamped || 0;
+          log(`  📡 [${pName}] Idle bulk-check: ${r.matched} Connected, ${stamped} Still Pending (of ${r.fetched})`);
+        }
+
+        if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+          await runAutoIntros({
+            page: launched.page,
+            profileId,
+            profileName: pName,
+            sheetUrl,
+            linkedinColumn,
+            connectedUrls: r.connectedUrls,
+            primaryName: templates.primaryName.trim(),
+            primaryIntroBody: templates.primaryIntroBody.trim(),
+            primaryUrl: (templates.primaryUrl || '').trim(),
+            introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+            log,
+          });
+        }
+
+        // Update cooldown
+        const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+        const cooldown = await readBulkCheckCooldown();
+        cooldown[bulkCheckKey(_sheetId, profileId)] = Date.now();
+        await writeBulkCheckCooldown(cooldown);
+      } catch (err) {
+        log(`  ⚠ [${pName}] Idle bulk-check failed: ${err.message}`);
+      } finally {
+        try {
+          if (profileId === 'local-browser') await closeLocalBrowser();
+          else await closeProfile(profileId);
+        } catch { /* */ }
+        browserSemaphore.release();
       }
     }
 
