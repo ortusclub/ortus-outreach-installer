@@ -3294,6 +3294,11 @@ async function loadSelectedTemplate() {
     const opBody = document.getElementById('tpl-op-body');
     if (opSubj) opSubj.value = tpl.openProfileSubject || '';
     if (opBody) opBody.value = tpl.openProfileBody || '';
+    const introBody = document.getElementById('primary-intro-body');
+    if (introBody) {
+      introBody.value = tpl.primaryIntroBody || '';
+      if (typeof savePrimaryPersonFields === 'function') savePrimaryPersonFields();
+    }
   } catch (err) {
     alert('Failed to load template: ' + err.message);
   }
@@ -3313,6 +3318,7 @@ async function saveExistingTemplate() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
   };
   try {
     const res = await fetch('/api/templates', {
@@ -3343,6 +3349,7 @@ async function saveCurrentTemplate() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
   };
   try {
     const res = await fetch('/api/templates', {
