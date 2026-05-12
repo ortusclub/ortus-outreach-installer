@@ -18,6 +18,7 @@ import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { notifyEmail, enqueueDesktopNotification } from './notifier.js';
+import { getPrefs } from './notification-prefs.js';
 
 const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
 const TICK_INTERVAL_MS = 30 * 60 * 1000; // 30 min between scheduler passes
@@ -92,21 +93,25 @@ async function notifyDueSweeps(dueEntries) {
 
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   for (const [key, entries] of byOwner.entries()) {
+    const audience = key === '__broadcast__' ? null : key;
+
+    // Per-operator opt-in. Broadcast entries (no owner) skip the notification
+    // entirely — there's no way to honor a per-user pref without an owner.
+    if (!audience) continue;
+    const prefs = await getPrefs(audience);
+    if (!prefs.connectionCheckReminders) continue;
+
     const names = entries.map((e) => e.profileName).join(', ');
     const title = `Launching connection check at ${time}`;
     const body = entries.length === 1
       ? `About to check connections for ${names}.`
       : `About to check connections for ${entries.length} accounts: ${names}.`;
 
-    const audience = key === '__broadcast__' ? null : key;
     enqueueDesktopNotification({ title, body, audience });
-
-    if (audience) {
-      try {
-        await notifyEmail(audience, { title, body });
-      } catch (err) {
-        console.warn(`[post-campaign] notifyEmail failed for ${audience}: ${err.message}`);
-      }
+    try {
+      await notifyEmail(audience, { title, body });
+    } catch (err) {
+      console.warn(`[post-campaign] notifyEmail failed for ${audience}: ${err.message}`);
     }
   }
 }

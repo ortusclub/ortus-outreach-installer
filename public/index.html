@@ -56,6 +56,13 @@
             <span class="notif-row-k">Last test</span>
             <span id="notif-last-test" class="notif-row-v">never</span>
           </div>
+          <div class="notif-row notif-pref-row">
+            <span class="notif-row-k">Connection-check reminders</span>
+            <label class="notif-pref-toggle">
+              <input type="checkbox" id="notif-pref-conn-check" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
+              <span class="notif-pref-slider"></span>
+            </label>
+          </div>
           <div class="notif-actions">
             <button type="button" id="notif-enable-btn" class="btn btn-sm" onclick="requestNotificationPermission()" style="display:none">Enable</button>
             <button type="button" class="btn btn-sm" onclick="sendTestNotification()">Send test</button>

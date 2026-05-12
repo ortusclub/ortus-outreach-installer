@@ -4197,6 +4197,27 @@ async function pollServerDesktopNotifications() {
     }
   } catch { /* */ }
 }
+async function loadNotificationPrefs() {
+  try {
+    const res = await fetch('/api/notification-prefs');
+    if (!res.ok) return;
+    const data = await res.json();
+    const prefs = data?.prefs || {};
+    const cb = document.getElementById('notif-pref-conn-check');
+    if (cb) cb.checked = !!prefs.connectionCheckReminders;
+  } catch { /* */ }
+}
+async function onNotifPrefChange(key, value) {
+  try {
+    await fetch('/api/notification-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: !!value }),
+    });
+  } catch { /* */ }
+}
+window.onNotifPrefChange = onNotifPrefChange;
+
 function initServerDesktopNotifier() {
   // Poll every 60s — the post-campaign scheduler ticks every 30 min, so a
   // minute of latency on a popup is well within the user's tolerance and
@@ -4234,6 +4255,7 @@ if ('Notification' in window && Notification.permission === 'granted') {
 }
 initScheduleNotifier();
 initServerDesktopNotifier();
+loadNotificationPrefs();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {

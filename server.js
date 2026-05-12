@@ -30,6 +30,7 @@ import { closeLocalBrowser } from './src/local-launcher.js';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
+import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { checkDiskFree } from './src/disk-check.js';
@@ -2093,6 +2094,26 @@ app.get('/api/warnings', async (_req, res) => {
 // ---------------------------------------------------------------------------
 app.get('/api/notify/status', (_req, res) => {
   res.json({ smtpConfigured: !!process.env.SMTP_HOST });
+});
+
+// Per-operator notification preferences (sidebar toggles).
+app.get('/api/notification-prefs', async (req, res) => {
+  try {
+    const prefs = await getNotificationPrefs(req.user);
+    res.json({ ok: true, prefs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/notification-prefs', async (req, res) => {
+  try {
+    const patch = req.body || {};
+    const next = await setNotificationPrefs(req.user, patch);
+    res.json({ ok: true, prefs: next });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Renderer poll: pull recent desktop notifications since the last poll.
