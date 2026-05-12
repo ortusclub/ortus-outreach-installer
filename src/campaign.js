@@ -2466,6 +2466,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
     // ── Worker dispatcher: spawn N concurrent workers ──
     async function worker(workerId) {
+      // v2.14 idle-check cooldown cache — refresh every 2s to avoid disk thrash
+      let _idleCooldownCache = null;
+      let _idleCooldownCacheAt = 0;
+
       while (!campaign._abort && !leadsExhausted) {
         // Adaptive RAM throttle: drop browser cap to 1 when throttle engages,
         // restore on release (Q1=(a) "drain to 1").
@@ -2480,9 +2484,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // All seven gates live in shouldFireIdleBulkCheck (pure, unit-tested).
         if (mode === 'connect_and_introduce') {
           const _idleSheetId = _extractSheetIdFromUrl(sheetUrl);
-          const _idleCooldown = await readBulkCheckCooldown().catch(() => ({}));
+          // Refresh cooldown cache if stale (2s TTL)
+          if (!_idleCooldownCache || Date.now() - _idleCooldownCacheAt > 2000) {
+            _idleCooldownCache = await readBulkCheckCooldown();
+            _idleCooldownCacheAt = Date.now();
+          }
+          const _idleCooldown = _idleCooldownCache;
           const _semStatus = browserSemaphore.getStatus();
-          const _semAvailable = _semStatus.max - _semStatus.count;
+          const _semAvailable = _semStatus.max - _semStatus.count - _semStatus.waiting;
           for (const _profileId of profileIds) {
             const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
             const _lastBulkCheckAt = _idleCooldown[bulkCheckKey(_idleSheetId, _profileId)] || 0;
