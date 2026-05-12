@@ -52,7 +52,7 @@ async function isCampaignRunning() {
  * actually sent at least one invite. Re-registration extends the window
  * — the new expiry is `now + days`.
  */
-export async function registerSchedule({ sheetId, sheetUrl, profileId, profileName, linkedinColumn, days }) {
+export async function registerSchedule({ sheetId, sheetUrl, profileId, profileName, linkedinColumn, days, operatorEmail }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
@@ -63,6 +63,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     profileId,
     profileName: profileName || profileId,
     linkedinColumn: linkedinColumn || '',
+    operatorEmail: operatorEmail || sched[k]?.operatorEmail || null,
     registeredAt: (sched[k]?.registeredAt) || now,
     expiresAt: now + days * 86400000,
     // The campaign's own bulk-check just ran, so no need to immediately
@@ -70,7 +71,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     lastCheckedAt: now,
   };
   await writeSchedule(sched);
-  console.log(`[post-campaign] Registered ${profileName || profileId} on sheet ${sheetId} for ${days}d (expires ${new Date(sched[k].expiresAt).toISOString()})`);
+  console.log(`[post-campaign] Registered ${profileName || profileId} on sheet ${sheetId} for ${days}d (expires ${new Date(sched[k].expiresAt).toISOString()}, owner: ${sched[k].operatorEmail || 'none'})`);
 }
 
 /**

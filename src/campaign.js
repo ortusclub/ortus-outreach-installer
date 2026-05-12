@@ -892,10 +892,11 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, createdBy = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   campaign.running = true;
+  campaign.createdBy = createdBy || null;
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._paused = false;
@@ -2422,6 +2423,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             profileName: pName,
             linkedinColumn,
             days: acceptanceTrackingDays,
+            operatorEmail: campaign.createdBy,
           });
         }
       }

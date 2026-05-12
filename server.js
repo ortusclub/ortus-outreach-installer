@@ -528,7 +528,7 @@ function buildCampaignConfig(body) {
 // instead if they want fire-and-forget semantics.
 function launchCampaign(config, owner) {
   preventSleep('campaign');
-  startCampaign(config).then(() => {
+  startCampaign({ ...config, createdBy: owner }).then(() => {
     const status = getCampaignStatus();
     notifyEmail(owner, {
       title: 'Campaign finished',
@@ -1782,6 +1782,7 @@ function registerSchedule(schedule) {
         mode: schedule.mode || 'connect_only',
         delayMin: schedule.delayMin,
         delayMax: schedule.delayMax,
+        createdBy: schedule.createdBy || null,
       });
       const all = await loadSchedules();
       const s = all.find(x => x.id === schedule.id);
