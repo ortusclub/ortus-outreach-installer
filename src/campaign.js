@@ -2626,6 +2626,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_introduce');
       if (trackingApplies && acceptanceTrackingDays > 0) {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+        // v2.14 verified: per-profile registration ensures every participating
+        // account's post-campaign 6h × 7d sweep fires independently, including
+        // auto-intros for connect_and_introduce campaigns.
         for (let i = 0; i < (campaign.profileIds || []).length; i++) {
           const pid = campaign.profileIds[i];
           const pName = (campaign.profileNames || [])[i] || pid;
