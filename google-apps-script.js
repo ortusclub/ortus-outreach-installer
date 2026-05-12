@@ -59,45 +59,64 @@ var ALWAYS_PROVISIONED_V2 = [
   'LinkedIn Membership ID'
 ];
 
-// Columns within ALWAYS_PROVISIONED_V2 that prepareSheet hides on every run
-// (operator can unhide manually — they just don't show up by default).
+// Columns within ALWAYS_PROVISIONED_V2 (plus Connected) that prepareSheet
+// hides on every run. Operator can unhide manually — they just don't show
+// up by default. v2.14: 'Connected' moved here from MODE_COLUMNS_V2 — its
+// boolean Yes/No is redundant with Connection Accepted Status's text value,
+// but the bot still writes to it for downstream tooling.
 var ALWAYS_HIDDEN_BY_DEFAULT_V2 = [
   'Last Action',
   'LinkedIn URN',
-  'LinkedIn Membership ID'
+  'LinkedIn Membership ID',
+  'Connected'
+];
+
+// v2.14: Pre-v2 column headers from the old `ensureColumns` schema. Every
+// `prepareSheet` call hides these when found on the sheet — never deletes
+// (preserves historical data per operator rule). Operator can unhide
+// manually if they need to inspect old runs. 'Connected Status' is the v1
+// name for the column that v2.14 renames to 'Connection Accepted Status' —
+// COLUMN_RENAMES doesn't migrate it because hybrid sheets may have both;
+// hiding the legacy one keeps the operator's primary view clean.
+var LEGACY_COLUMNS_TO_HIDE_V2 = [
+  'OP', 'Message', 'InMail', 'Account Used',
+  'Reply', 'Reply At', 'Reply Preview',
+  'Connected Status'
 ];
 
 // Per-mode columns added on top of ALWAYS_PROVISIONED_V2 by prepareSheet.
-// 'Connected' shows during modes that READ the connection state (Check
-// Status — owns the column; Message Only + Introduce Back — pre-flight
-// sweeps the column). 'Open Profile' shows only during Open Profile mode.
+// v2.14: header rename — Connection Status → Connection Request Status,
+// Check Status → Connection Accepted Status. 'Connected' boolean dropped
+// from every visible mode set (now ALWAYS_HIDDEN_BY_DEFAULT_V2).
+// 'Open Profile' shows only during Open Profile mode.
 var MODE_COLUMNS_V2 = {
-  connect_only:      ['Connection Status'],
-  check_status:      ['Check Status', 'Connected'],
-  message_only:      ['DM Status', 'Check Status', 'Connected'],
-  introduce_back:    ['Intro Status', 'Check Status', 'Connected'],
+  connect_only:      ['Connection Request Status'],
+  check_status:      ['Connection Accepted Status'],
+  message_only:      ['DM Status', 'Connection Accepted Status'],
+  introduce_back:    ['Intro Status', 'Connection Accepted Status'],
   open_profile_only: ['OP Status', 'Open Profile'],
   inmail_only:       ['InM Status'],
-  // Connect + Introduce Back is the full cold-lead flow: send connect
-  // (→ Connection Status), bulk-check for acceptance (→ Check Status +
-  // Connected), then DM the lead introducing them to a primary person
-  // (→ Intro Status). Carries every status column those three sub-steps
-  // populate.
-  // Connect + Introduce Back ships its own dedicated 'Introduction Status'
-  // column: stamps 'Introduction Made' on a successful auto-intro DM,
-  // 'Failed' if the DM didn't go through, blank while the lead is still
-  // pending or never accepted. Distinct from 'Intro Status' (which is
-  // introduce_back's own per-lead state).
-  connect_and_introduce: ['Connection Status', 'Check Status', 'Connected', 'Introduction Status']
+  // Connect + Introduce Back: full cold-lead flow with three mode columns.
+  // Auto-intro fires when bulk-check detects acceptance — Introduction
+  // Status becomes the single source of truth for those rows (Connection
+  // Accepted Status stays blank to avoid dual-stamping). Rows where
+  // auto-intro doesn't fire (e.g. primary person missing) get the normal
+  // Connection Accepted Status = 'Connected' stamp as fallback.
+  connect_and_introduce: ['Connection Request Status',
+                          'Connection Accepted Status',
+                          'Introduction Status']
 };
 
 // Every per-mode column across every mode — used to compute the "hide
-// everything not in this run's set" list. Open Profile + Connected join
-// this set so they get hidden when their relevant modes aren't running.
+// everything not in this run's set" list. Open Profile joins this set so
+// it's hidden when Open Profile mode isn't running. v2.14: 'Connected'
+// removed (now ALWAYS_HIDDEN_BY_DEFAULT_V2); 'Connection Status' →
+// 'Connection Request Status'; 'Check Status' → 'Connection Accepted
+// Status'.
 var ALL_MODE_COLUMNS_V2 = [
-  'Connection Status', 'DM Status', 'OP Status',
-  'InM Status', 'Intro Status', 'Check Status',
-  'Open Profile', 'Connected', 'Introduction Status'
+  'Connection Request Status', 'DM Status', 'OP Status',
+  'InM Status', 'Intro Status', 'Connection Accepted Status',
+  'Open Profile', 'Introduction Status'
 ];
 
 // ── Status palette (legacy yellow / green / red / grey) ──
@@ -146,10 +165,15 @@ var STATE_VALUES = [
 
 // Rename pairs — old header → new header. ensureColumns copies values from
 // old to new before removing the old (see migrateColumnRenames + the new
-// names being added to OLD_COLUMNS_TO_REMOVE below).
+// names being added to OLD_COLUMNS_TO_REMOVE below). v2.14: the existing
+// 'Connection Status' → 'Connection Request Status' rename now also
+// handles the v2 → v2.14 rename (idempotent). Added 'Check Status' →
+// 'Connection Accepted Status' for the v2.14 rename. Existing v2 sheets
+// auto-migrate values on first prepareSheet call after redeploy.
 var COLUMN_RENAMES = [
   { from: 'Status',            to: 'Connection Request Status' },
   { from: 'Connection Status', to: 'Connection Request Status' },
+  { from: 'Check Status',      to: 'Connection Accepted Status' },
   { from: 'CC',                to: 'Connected Status' },
   { from: 'Date',              to: 'Date of Last Action' },
   { from: 'Time',              to: 'Time of Last Action' },
@@ -205,7 +229,7 @@ var OLD_COLUMNS_TO_REMOVE = [
 // ── Field name → Column header mapping ──
 var FIELD_MAP = {
   status:          'Connection Request Status',
-  cc:              'Connected Status',
+  cc:              'Connection Accepted Status',  // v2.14: was 'Connected Status'; bulk-check writes route here
   op:              'OP',
   message:         'Message',
   inmail:          'InMail',
@@ -224,12 +248,15 @@ var FIELD_MAP = {
   // field path (`status` → 'Connection Request Status') stays for legacy sheets.
   stage:             'Stage',
   sender:            'Sender',
-  connectionStatus:  'Connection Status',
+  // v2.14: connectionStatus → Connection Request Status, checkStatus →
+  // Connection Accepted Status. Bot field names unchanged — only destination
+  // column headers shift.
+  connectionStatus:  'Connection Request Status',
   dmStatus:          'DM Status',
   opStatus:          'OP Status',
   inmStatus:         'InM Status',
   introStatus:       'Intro Status',
-  checkStatus:       'Check Status',
+  checkStatus:       'Connection Accepted Status',
   introductionStatus:'Introduction Status',
   // Phase 11.3 — Check DMs writeback
   Reply:           'Reply',
@@ -510,9 +537,9 @@ function handlePrepareSheet(sheet, data) {
   });
 
   // 3) Hide always-provisioned metadata columns (Status mirror, URN,
-  // Membership ID). Provisioned so the bot can write to them, hidden so the
-  // operator sees a clean primary view. Push them onto `hidden` so the
-  // caller's log surfaces them.
+  // Membership ID, Connected). Provisioned so the bot can write to them,
+  // hidden so the operator sees a clean primary view. Push them onto
+  // `hidden` so the caller's log surfaces them.
   ALWAYS_HIDDEN_BY_DEFAULT_V2.forEach(function(col) {
     var idx = headers.indexOf(col);
     if (idx === -1) return;
@@ -520,7 +547,17 @@ function handlePrepareSheet(sheet, data) {
     if (hidden.indexOf(col) === -1) hidden.push(col);
   });
 
-  // 4) Re-apply conditional formatting. Stage + every per-mode status
+  // 4) v2.14: hide pre-v2 legacy columns from older `ensureColumns` runs
+  // (OP, Message, InMail, Account Used, Reply, Reply At, Reply Preview).
+  // Never deletes — preserves historical data. Operator can unhide manually.
+  LEGACY_COLUMNS_TO_HIDE_V2.forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx === -1) return;
+    sheet.hideColumns(idx + 1);
+    if (hidden.indexOf(col) === -1) hidden.push(col);
+  });
+
+  // 5) Re-apply conditional formatting. Stage + every per-mode status
   // column get the full state palette (yellow / green / red / grey, bold).
   applyStatePaletteToColumns(sheet, headers, ['Stage'].concat(thisModeCols));
 
