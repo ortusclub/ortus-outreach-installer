@@ -1469,7 +1469,7 @@ function onModeChange() {
   if (navSheet) navSheet.style.display = isPostAmp ? 'none' : '';
   // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
   // caps invitations per account per day). DM/IC/OP/InMail are unlimited.
-  const isConnectMode = (mode === 'connect_only');
+  const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_introduce');
   const dailyKnob = document.getElementById('daily-limit-knob');
   if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
   if (isCheckStatus) {
