@@ -53,7 +53,8 @@ const HISTORY_PATH = dataPath('history.json');
 const IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 // Idle-account bulk-checks only fire for campaigns that have been running
 // long enough to be worth optimizing. Short campaigns rely on the in-batch
-// trigger alone.
+// trigger alone. Used by the idle-bulk-check trigger added in a follow-up
+// task; defined here so both triggers share one source of truth.
 const IDLE_CAMPAIGN_MIN_DURATION_MS = 30 * 60 * 1000;
 // Per-(profileId, sheetId) timestamp of the last bulk Connection Status
 // check. Used to gate the bulk-check to once every BULK_CHECK_INTERVAL_MS
@@ -2064,7 +2065,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                   // auto-intro will fire for newly-Connected rows — suppress the
                   // Connection Accepted Status stamp for those so Introduction Status
                   // is the single source of truth.
-                  const willAutoIntro = !!(templates && templates.primaryName && templates.primaryIntroBody);
+                  const willAutoIntro = !!(
+                    templates && templates.primaryName && templates.primaryName.trim() &&
+                    templates.primaryIntroBody && templates.primaryIntroBody.trim()
+                  );
 
                   const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName, {
                     suppressAcceptedStamp: willAutoIntro,
