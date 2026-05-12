@@ -36,15 +36,121 @@ function memberIdFromAny(value) {
 }
 
 /**
+ * Pure helper — given the fetched connections + the sheet rows, decide
+ * which rows get Connected stamps vs Still Pending stamps. Extracted from
+ * bulkCheckConnections so it can be unit-tested without spinning up a
+ * Puppeteer page.
+ *
+ * @param {object[]} rows - sheet rows (from fetchSheet)
+ * @param {object[]} conns - Voyager connections array
+ * @param {string} linkedinColumn - operator-specified URL column name (or '')
+ * @param {string} stillPendingLabel - timestamped "Still Pending" stamp value
+ * @param {object} opts
+ * @param {boolean} [opts.suppressAcceptedStamp=false] - when true, matched
+ *   URLs are returned in connectedUrls but their cc/connectedAlready writes
+ *   are omitted from the updates array
+ * @returns {{ updates: object[], connectedUrls: string[], diag: object }}
+ */
+export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendingLabel, opts = {}) {
+  const { suppressAcceptedStamp = false } = opts;
+
+  // Build matching sets (same logic as the inline version)
+  const connectedSlugs = new Set();
+  const connectedMemberIds = new Set();
+  const connectedNames = new Set();
+  for (const c of conns) {
+    if (c.publicId) connectedSlugs.add(c.publicId.toLowerCase());
+    const mid = memberIdFromAny(c.urn) || memberIdFromAny(c.publicId);
+    if (mid) connectedMemberIds.add(mid);
+    const nameKey = `${(c.firstName || '').toLowerCase().trim()} ${(c.lastName || '').toLowerCase().trim()}`.trim();
+    if (nameKey && nameKey !== ' ') connectedNames.add(nameKey);
+  }
+
+  const updates = [];
+  const connectedUrls = [];
+  let dbgRowsScanned = 0, dbgWithUrl = 0, dbgWithCRS = 0;
+  let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
+
+  for (const row of rows) {
+    dbgRowsScanned++;
+    const url = extractLinkedInUrl(row, linkedinColumn);
+    if (!url) continue;
+    dbgWithUrl++;
+
+    // Accepted-status lookup includes both old (Connected Status / CC) and
+    // new (Connection Accepted Status) headers for back-compat across the
+    // v2.14 rename window.
+    const cs = (
+      row['Connection Accepted Status'] || row['connection accepted status']
+      || row['Check Status'] || row['check status']
+      || row['Connected Status']  || row['connected status']
+      || row['CC'] || row['cc'] || ''
+    ).toString().trim();
+    if (cs === 'Connection Declined') { dbgAlreadyDeclined++; continue; }
+
+    const slug = publicIdFromUrl(url);
+    const rowUrn = (row['LinkedIn URN'] || row['linkedin urn'] || '').toString();
+    const memberId = memberIdFromAny(rowUrn) || memberIdFromAny(url);
+    const firstName = (row['First Name'] || row['first name'] || row['firstName'] || '').toString().toLowerCase().trim();
+    const lastName  = (row['Last Name']  || row['last name']  || row['lastName']  || '').toString().toLowerCase().trim();
+    const nameKey = `${firstName} ${lastName}`.trim();
+
+    const isMatch = (slug && connectedSlugs.has(slug))
+      || (memberId && connectedMemberIds.has(memberId))
+      || (nameKey && nameKey !== ' ' && connectedNames.has(nameKey));
+
+    if (isMatch) {
+      dbgPidMatched++;
+      if (cs === 'Connected') { dbgAlreadyConnected++; continue; }
+      connectedUrls.push(url);
+      if (!suppressAcceptedStamp) {
+        updates.push({ linkedinUrl: url, cc: 'Connected', connectedAlready: 'Yes' });
+      }
+      continue;
+    }
+
+    // Not in recent connections — stamp "Still Pending" if the bot invited.
+    const requestStatus = (
+      row['Connection Request Status'] || row['connection request status']
+      || row['Connection Status']        || row['connection status']
+      || row['Status'] || row['status'] || ''
+    ).toString().trim();
+    if (requestStatus !== 'Connection Request Sent') continue;
+    dbgWithCRS++;
+    updates.push({ linkedinUrl: url, cc: stillPendingLabel });
+  }
+
+  return {
+    updates,
+    connectedUrls,
+    diag: {
+      rowsScanned: dbgRowsScanned,
+      withUrl: dbgWithUrl,
+      withCRS: dbgWithCRS,
+      alreadyConnected: dbgAlreadyConnected,
+      alreadyDeclined: dbgAlreadyDeclined,
+      pidMatched: dbgPidMatched,
+      slugs: connectedSlugs.size,
+      memberIds: connectedMemberIds.size,
+      names: connectedNames.size,
+    },
+  };
+}
+
+/**
  * Run one bulk-check pass for a profile.
  *
  * @param {puppeteer.Page} page - Active page on a LinkedIn URL
  * @param {string} sheetUrl - Sheet URL the campaign is running against
  * @param {string} linkedinColumn - Operator-specified URL column name (or '')
  * @param {string} pName - Profile name for logging
- * @returns {Promise<{ matched: number, fetched: number, error?: string }>}
+ * @param {object} [opts={}]
+ * @param {boolean} [opts.suppressAcceptedStamp=false] - when true, matched
+ *   URLs are returned in connectedUrls but their cc/connectedAlready writes
+ *   are omitted from the batch update
+ * @returns {Promise<{ matched: number, fetched: number, error?: string, connectedUrls?: string[] }>}
  */
-export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName) {
+export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName, opts = {}) {
   // 1) Always navigate to a stable LinkedIn URL so the page context has
   // fresh cookies. /mynetwork/invite-connect/connections/ is what LinkedIn's
   // own UI hits. Then check whether we ended up logged in — a stale-session
@@ -97,22 +203,6 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     console.warn(`[bulk-check] sidecar tab write failed: ${err.message}`);
   }
 
-  // Build THREE sets for O(1) matching: vanity-slug publicIds, ACwAA-style
-  // member IDs, AND "first last" name pairs. Sheet rows can carry either
-  // URL format; the name fallback catches the case where the URL has a
-  // vanity slug but Voyager's connections API only returns URNs (without
-  // publicIdentifier) — common across many account types.
-  const connectedSlugs = new Set();
-  const connectedMemberIds = new Set();
-  const connectedNames = new Set();
-  for (const c of conns) {
-    if (c.publicId) connectedSlugs.add(c.publicId.toLowerCase());
-    const mid = memberIdFromAny(c.urn) || memberIdFromAny(c.publicId);
-    if (mid) connectedMemberIds.add(mid);
-    const nameKey = `${(c.firstName || '').toLowerCase().trim()} ${(c.lastName || '').toLowerCase().trim()}`.trim();
-    if (nameKey && nameKey !== ' ') connectedNames.add(nameKey);
-  }
-
   // 3) Read the sheet. Match each row's public identifier against the
   // connected set. Skip rows that already show Connected/Declined — only
   // promote rows that are still pending or unverified.
@@ -130,81 +220,21 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   const pad = (n) => String(n).padStart(2, '0');
   const stillPendingLabel = `Still Pending (${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())})`;
 
-  // Diagnostic counters — surfaced in the campaign log so we can see why
-  // the stamp count is what it is. Pure observability; remove once the
-  // bulk-check is well-trusted.
-  let dbgRowsScanned = 0;
-  let dbgWithUrl = 0;
-  let dbgWithCRS = 0;
-  let dbgAlreadyConnected = 0;
-  let dbgAlreadyDeclined = 0;
-  let dbgPidMatched = 0;
-  const sampleCRSValues = new Set();
-  const sampleSheetSlugs = [];
-  const sampleSheetMemberIds = [];
-  // Snapshot a few extracted IDs from the connections list so we can
-  // eyeball-compare against what's in the sheet rows.
-  const sampleConnectedSlugs = [...connectedSlugs].slice(0, 3);
-  const sampleConnectedMemberIds = [...connectedMemberIds].slice(0, 3);
+  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+    rows,
+    conns,
+    linkedinColumn,
+    stillPendingLabel,
+    { suppressAcceptedStamp: opts.suppressAcceptedStamp === true }
+  );
 
-  const updates = [];
-  for (const row of rows) {
-    dbgRowsScanned++;
-    const url = extractLinkedInUrl(row, linkedinColumn);
-    if (!url) continue;
-    dbgWithUrl++;
-    const cs = (row['Connected Status'] || row['connected status'] || row['CC'] || row['cc'] || '').toString().trim();
-    if (cs === 'Connection Declined') { dbgAlreadyDeclined++; continue; }
-    const slug = publicIdFromUrl(url);
-    // Captured URN takes precedence over the URL — the bot stamps it on
-    // every successful connect via getProfileUrn. Falls back to scanning
-    // the URL itself for an ACoAA pattern.
-    // LinkedIn URN column now carries the bare ACoAA… portion (the bot
-    // strips the `urn:li:fsd_profile:` prefix on write). Membership ID
-    // column carries the NUMERIC member number — not useful for matching
-    // against the connections API, which returns ACoAA-style URNs.
-    const rowUrn = (row['LinkedIn URN'] || row['linkedin urn'] || '').toString();
-    const memberId = memberIdFromAny(rowUrn) || memberIdFromAny(url);
-    if (sampleSheetSlugs.length < 3 && slug) sampleSheetSlugs.push(slug);
-    if (sampleSheetMemberIds.length < 3 && memberId) sampleSheetMemberIds.push(memberId);
-    // Name fallback: assemble "first last" from the row when URL match fails.
-    const firstName = (row['First Name'] || row['first name'] || row['firstName'] || '').toString().toLowerCase().trim();
-    const lastName  = (row['Last Name']  || row['last name']  || row['lastName']  || '').toString().toLowerCase().trim();
-    const nameKey = `${firstName} ${lastName}`.trim();
-    const isMatch = (slug && connectedSlugs.has(slug))
-      || (memberId && connectedMemberIds.has(memberId))
-      || (nameKey && nameKey !== ' ' && connectedNames.has(nameKey));
-    if (isMatch) {
-      dbgPidMatched++;
-      if (cs === 'Connected') { dbgAlreadyConnected++; continue; }
-      // When the bulk-check confirms acceptance, flip the Connected column
-      // (formerly "Connected Already") from No → Yes so it tracks current
-      // connection state, not just whether the lead was already 1st-degree
-      // at connect time.
-      updates.push({ linkedinUrl: url, cc: 'Connected', connectedAlready: 'Yes' });
-      continue;
-    }
-    // Not in the recent-connections list. Only stamp "Still Pending" on rows
-    // the bot actually invited — checked via Connection Request Status, with
-    // back-compat tolerance for the legacy 'Status' column. Skips rows the
-    // bot hasn't touched (e.g. cold leads or operator-edited rows).
-    const requestStatus = (row['Connection Request Status'] || row['connection request status']
-      || row['Connection Status'] || row['connection status']
-      || row['Status'] || row['status'] || '').toString().trim();
-    if (sampleCRSValues.size < 5 && requestStatus) sampleCRSValues.add(requestStatus);
-    if (requestStatus !== 'Connection Request Sent') continue;
-    dbgWithCRS++;
-    updates.push({ linkedinUrl: url, cc: stillPendingLabel });
-  }
-
-  const sampleConnectedNames = [...connectedNames].slice(0, 3);
-  const diagSummary = `scanned=${dbgRowsScanned}, withUrl=${dbgWithUrl}, slugs=${connectedSlugs.size}, memberIds=${connectedMemberIds.size}, names=${connectedNames.size}, pidMatched=${dbgPidMatched}, alreadyConnected=${dbgAlreadyConnected}, alreadyDeclined=${dbgAlreadyDeclined}, stamped=${dbgWithCRS}\n  ↳ sampleSheetSlugs=${sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...sampleCRSValues].join(' | ') || '(none)'}`;
+  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}`;
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);
 
   if (updates.length === 0) {
-    return { matched: 0, fetched: conns.length, diag: diagSummary };
+    return { matched: 0, fetched: conns.length, diag: diagSummary, connectedUrls };
   }
 
   // Batch-update via the existing Apps Script bridge. cc → 'Connected
@@ -212,14 +242,12 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   try {
     await batchUpdateSheet(sheetUrl, updates);
   } catch (err) {
-    return { matched: 0, fetched: conns.length, error: `batch-update: ${err.message}`, diag: diagSummary };
+    return { matched: 0, fetched: conns.length, error: `batch-update: ${err.message}`, diag: diagSummary, connectedUrls };
   }
 
   const matchedCount = updates.filter((u) => u.cc === 'Connected').length;
   const pendingCount = updates.length - matchedCount;
-  // List of leads that just flipped to Connected this sweep — the
-  // connect_and_introduce mode uses this to fire the auto-intro DM in the
-  // same browser session before the loop moves on.
-  const connectedUrls = updates.filter((u) => u.cc === 'Connected').map((u) => u.linkedinUrl);
+  // connectedUrls comes from computeBulkCheckUpdates — includes matched URLs
+  // regardless of suppressAcceptedStamp, so callers can fire auto-intros.
   return { matched: matchedCount, fetched: conns.length, stamped: pendingCount, diag: diagSummary, connectedUrls };
 }
