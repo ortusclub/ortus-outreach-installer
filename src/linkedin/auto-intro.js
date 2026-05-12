@@ -17,6 +17,26 @@ import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl } from '../campaign.js';
 
+/**
+ * Build the template object passed into performOutreach for a 3-way intro DM.
+ * Exported so the field-name contract with outreach.js can be unit-tested.
+ *
+ * outreach.js gates the message branch on `templates.followUpMessage`, so the
+ * intro DM body MUST be stored under that key. (Earlier versions used
+ * `followUp1`, which silently failed with "No message template".)
+ */
+export function buildAutoIntroTpl({ primaryName, primaryIntroBody, primaryUrl = '', introTitle = 'Introduction: {first name} <> {intro name}' }) {
+  return {
+    introMode: true,
+    introName: primaryName,
+    introTitle,
+    followUpMessage: primaryIntroBody,
+    primaryName,
+    primaryUrl,
+    primaryIntroBody,
+  };
+}
+
 function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const day = d.getDate();
@@ -73,15 +93,7 @@ export async function runAutoIntros({
     if (u) rowByUrl.set(u, r);
   }
 
-  const introTpl = {
-    introMode: true,
-    introName: primaryName,
-    introTitle,
-    followUp1: primaryIntroBody,
-    primaryName,
-    primaryUrl,
-    primaryIntroBody,
-  };
+  const introTpl = buildAutoIntroTpl({ primaryName, primaryIntroBody, primaryUrl, introTitle });
 
   log(`  🤝 [${profileName}] Auto-introducing ${connectedUrls.length} new connection(s) to ${primaryName}…`);
   for (const url of connectedUrls) {
