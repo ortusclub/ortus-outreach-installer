@@ -46,6 +46,15 @@ import * as browserSemaphore from './browser-semaphore.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
+// v2.14 — per-mode bulk-check cadence. connect_and_introduce mode lowers
+// the in-campaign cooldown from 6h → 5 min so acceptances detected mid-run
+// can trigger intro DMs before the campaign ends. Other modes keep the 6h
+// floor via BULK_CHECK_INTERVAL_MS below.
+const IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+// Idle-account bulk-checks only fire for campaigns that have been running
+// long enough to be worth optimizing. Short campaigns rely on the in-batch
+// trigger alone.
+const IDLE_CAMPAIGN_MIN_DURATION_MS = 30 * 60 * 1000;
 // Per-(profileId, sheetId) timestamp of the last bulk Connection Status
 // check. Used to gate the bulk-check to once every BULK_CHECK_INTERVAL_MS
 // per profile per sheet, avoiding redundant Voyager hits.
@@ -2047,9 +2056,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 const cooldown = await readBulkCheckCooldown();
                 const _key = bulkCheckKey(_sheetId, profileId);
                 const last = cooldown[_key] || 0;
-                if (Date.now() - last >= BULK_CHECK_INTERVAL_MS) {
-                  log(`  📡 [${pName}] Bulk Connection Status check (cooldown elapsed)…`);
-                  const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName);
+                // v2.14: per-mode interval — 5 min for connect_and_introduce (was 6h).
+                if (Date.now() - last >= IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS) {
+                  log(`  📡 [${pName}] In-batch bulk Connection Status check (5-min cooldown elapsed)…`);
+
+                  // Dual-stamp avoidance: when primary fields are configured, the
+                  // auto-intro will fire for newly-Connected rows — suppress the
+                  // Connection Accepted Status stamp for those so Introduction Status
+                  // is the single source of truth.
+                  const willAutoIntro = !!(templates && templates.primaryName && templates.primaryIntroBody);
+
+                  const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName, {
+                    suppressAcceptedStamp: willAutoIntro,
+                  });
                   if (r.error) {
                     log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
                   } else {
@@ -2061,19 +2080,21 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
                   // Auto-introduction pass via shared helper — same logic
                   // the manual button + post-campaign scheduler use.
-                  await runAutoIntros({
-                    page,
-                    profileId,
-                    profileName: pName,
-                    sheetUrl,
-                    linkedinColumn,
-                    connectedUrls: r.connectedUrls,
-                    primaryName: (templates && templates.primaryName || '').trim(),
-                    primaryIntroBody: (templates && templates.primaryIntroBody || '').trim(),
-                    primaryUrl: (templates && templates.primaryUrl || '').trim(),
-                    introTitle: (templates && templates.introTitle) || 'Introduction: {first name} <> {intro name}',
-                    log,
-                  });
+                  if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+                    await runAutoIntros({
+                      page,
+                      profileId,
+                      profileName: pName,
+                      sheetUrl,
+                      linkedinColumn,
+                      connectedUrls: r.connectedUrls,
+                      primaryName: (templates && templates.primaryName || '').trim(),
+                      primaryIntroBody: (templates && templates.primaryIntroBody || '').trim(),
+                      primaryUrl: (templates && templates.primaryUrl || '').trim(),
+                      introTitle: (templates && templates.introTitle) || 'Introduction: {first name} <> {intro name}',
+                      log,
+                    });
+                  }
                 }
               } catch (err) {
                 log(`  ⚠ [${pName}] Bulk check threw: ${err.message}`);
