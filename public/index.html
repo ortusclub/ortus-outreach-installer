@@ -258,11 +258,7 @@
           <input type="text" id="primary-person-url" placeholder="https://www.linkedin.com/in/..." style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
           <div style="font-size:11px; color:var(--gray); margin-top:4px">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
         </div>
-        <div>
-          <label for="primary-intro-body" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro DM body</label>
-          <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." style="width:100%; background:transparent; border:1px solid var(--hairline); border-radius:4px; color:var(--ink); padding:8px; font-family:var(--body); font-size:0.95rem; outline:none; resize:vertical;" oninput="savePrimaryPersonFields()"></textarea>
-          <div style="font-size:11px; color:var(--gray); margin-top:4px">Placeholders: <code>{first name}</code>, <code>{primary name}</code>, <code>{primary url}</code>, plus any sheet column.</div>
-        </div>
+        <div style="font-size:11px; color:var(--gray); margin-top:4px">The intro DM body lives in <strong>Section 5 · Message Templates</strong> below — that's where you'll write it with the variable buttons.</div>
       </div>
 
     </div>
@@ -717,6 +713,13 @@
       <label for="tpl-inmail-body">Body</label>
       <textarea id="tpl-inmail-body" rows="3" placeholder="Hi {firstName}, I came across your profile…"></textarea>
       <div class="placeholder-tags" data-target="tpl-inmail-body"></div>
+    </div>
+
+    <!-- ── Intro DM Body (connect_and_introduce) ── -->
+    <div class="section tpl-section" id="tpl-intro-section" style="display:none">
+      <h2 data-edit="h2-intro-dm">Intro DM Body <small>(sent after the connection is accepted)</small></h2>
+      <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." oninput="savePrimaryPersonFields()"></textarea>
+      <div class="placeholder-tags" data-target="primary-intro-body"></div>
     </div>
 
     <!-- ── Open Profile (open_profile_only) ── -->

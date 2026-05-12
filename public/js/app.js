@@ -1358,6 +1358,7 @@ function onModeChange() {
   const message = document.getElementById('tpl-message-section');
   const inmail = document.getElementById('tpl-inmail-section');
   const op = document.getElementById('tpl-op-section');
+  const intro = document.getElementById('tpl-intro-section');
   const tplMgmt = document.getElementById('nav-templates');
   const primaryBlock = document.getElementById('primary-person-block');
 
@@ -1365,6 +1366,7 @@ function onModeChange() {
   message.style.display = 'none';
   inmail.style.display = 'none';
   if (op) op.style.display = 'none';
+  if (intro) intro.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
@@ -2053,7 +2055,7 @@ function updatePlaceholderTags() {
   // sender chips. Always rendered (matches how senderFirstName/senderName
   // already show in non-message-only modes); harmless in non-intro
   // campaigns since they substitute to empty strings outside introMode.
-  const extras = ['senderFirstName', 'senderName', 'intro first name', 'intro last name'];
+  const extras = ['senderFirstName', 'senderName', 'intro first name', 'intro last name', 'primary name', 'primary url'];
   document.querySelectorAll('.placeholder-tags').forEach(container => {
     const tags = [...sheetColumns, ...extras].map(col =>
       `<span class="tag" data-val="{${col}}">{${col}}</span>`
