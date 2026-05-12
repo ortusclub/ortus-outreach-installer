@@ -77,7 +77,18 @@ var MODE_COLUMNS_V2 = {
   message_only:      ['DM Status', 'Check Status', 'Connected'],
   introduce_back:    ['Intro Status', 'Check Status', 'Connected'],
   open_profile_only: ['OP Status', 'Open Profile'],
-  inmail_only:       ['InM Status']
+  inmail_only:       ['InM Status'],
+  // Connect + Introduce Back is the full cold-lead flow: send connect
+  // (→ Connection Status), bulk-check for acceptance (→ Check Status +
+  // Connected), then DM the lead introducing them to a primary person
+  // (→ Intro Status). Carries every status column those three sub-steps
+  // populate.
+  // Connect + Introduce Back ships its own dedicated 'Introduction Status'
+  // column: stamps 'Introduction Made' on a successful auto-intro DM,
+  // 'Failed' if the DM didn't go through, blank while the lead is still
+  // pending or never accepted. Distinct from 'Intro Status' (which is
+  // introduce_back's own per-lead state).
+  connect_and_introduce: ['Connection Status', 'Check Status', 'Connected', 'Introduction Status']
 };
 
 // Every per-mode column across every mode — used to compute the "hide
@@ -86,7 +97,7 @@ var MODE_COLUMNS_V2 = {
 var ALL_MODE_COLUMNS_V2 = [
   'Connection Status', 'DM Status', 'OP Status',
   'InM Status', 'Intro Status', 'Check Status',
-  'Open Profile', 'Connected'
+  'Open Profile', 'Connected', 'Introduction Status'
 ];
 
 // ── Status palette (legacy yellow / green / red / grey) ──
@@ -154,6 +165,10 @@ var COLUMN_RENAMES = [
 var MODE_TRACKING_COLUMNS = {
   connect_only:              ['Connection Request Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
   connect_and_check_status:  ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
+  // Connect + Introduce Back uses the same column set as Connect + Check
+  // Connection Status (it's that flow + an intro DM follow-up, with the
+  // intro tracked elsewhere for now).
+  connect_and_introduce:     ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
   message_only:              ['Connection Request Status', 'Message',  'Account Used', 'Date of Last Action', 'Time of Last Action'],
   inmail_only:               ['Connection Request Status', 'InMail',   'Account Used', 'Date of Last Action', 'Time of Last Action'],
   open_profile_only:         ['Connection Request Status', 'OP',       'Account Used', 'Date of Last Action', 'Time of Last Action'],
@@ -215,6 +230,7 @@ var FIELD_MAP = {
   inmStatus:         'InM Status',
   introStatus:       'Intro Status',
   checkStatus:       'Check Status',
+  introductionStatus:'Introduction Status',
   // Phase 11.3 — Check DMs writeback
   Reply:           'Reply',
   ReplyAt:         'Reply At',

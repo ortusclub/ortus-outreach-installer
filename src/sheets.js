@@ -102,10 +102,23 @@ export async function fetchSheet(sheetUrl) {
 
   console.log(`[sheets] Fetching CSV from: ${csvUrl}`);
 
-  // P-05 fix (2.8.18): 15s timeout. Without one, a Sheets/Apps Script outage
-  // (or a network hang) can stall the campaign loop indefinitely — the
-  // operator just sees "Idle" with no log activity.
-  const response = await fetch(csvUrl, { signal: AbortSignal.timeout(15000) });
+  // P-05 fix (2.8.18): timeout to prevent indefinite stalls on Google
+  // Sheets / network outages. Bumped 15s → 30s and added one retry —
+  // CSV exports occasionally take 15-25s on bigger sheets and the original
+  // single-shot fetch failed the bulk-check on every slow sweep.
+  async function tryFetch(timeoutMs) {
+    return fetch(csvUrl, { signal: AbortSignal.timeout(timeoutMs) });
+  }
+  let response;
+  try {
+    response = await tryFetch(30000);
+  } catch (err) {
+    // Timeout (AbortError) or network blip — give it one more shot before
+    // surfacing as a sweep failure. Bulk-check is gated by a 6h cooldown,
+    // so spending a few extra seconds here is cheap insurance.
+    console.warn(`[sheets] First CSV fetch failed (${err.message}); retrying once…`);
+    response = await tryFetch(30000);
+  }
   if (!response.ok) {
     throw new Error(`Failed to fetch Google Sheet (HTTP ${response.status}). Is the sheet publicly viewable?`);
   }

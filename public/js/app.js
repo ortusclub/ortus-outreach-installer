@@ -1359,11 +1359,13 @@ function onModeChange() {
   const inmail = document.getElementById('tpl-inmail-section');
   const op = document.getElementById('tpl-op-section');
   const tplMgmt = document.getElementById('nav-templates');
+  const primaryBlock = document.getElementById('primary-person-block');
 
   connect.style.display = 'none';
   message.style.display = 'none';
   inmail.style.display = 'none';
   if (op) op.style.display = 'none';
+  if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -1907,6 +1909,19 @@ const MODE_LIST = [
       'Read-only — no messages sent',
     ],
   },
+  // Connect + Introduce Back: full cold-lead-to-intro flow. Sends a connect
+  // request, waits for acceptance (verified by bulk-check), then auto-DMs
+  // the lead introducing them to a configured "primary person". Distinct
+  // from `introduce_back` which assumes the lead is already 1st-degree.
+  {
+    value: 'connect_and_introduce',
+    name: 'Connect + Introduce Back',
+    bullets: [
+      'Send connection requests to new profiles',
+      'Once accepted, auto-DM with an intro to a primary person',
+      'End-to-end cold-lead → intro pipeline',
+    ],
+  },
   {
     value: 'message_only',
     name: 'Message Only',
@@ -2410,7 +2425,7 @@ async function startCampaign() {
   // drop the connection note regardless of what's in the textarea.
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
-    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -2421,6 +2436,12 @@ async function startCampaign() {
     introMode: mode === 'introduce_back',
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
+    // Connect + Introduce Back: primary person + intro DM body. Backend
+    // stores these on the campaign config; auto-send-after-acceptance is
+    // the next chunk of work.
+    primaryName: document.getElementById('primary-person-name')?.value?.trim() || '',
+    primaryUrl:  document.getElementById('primary-person-url')?.value?.trim() || '',
+    primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
   };
 
   // Show account queue
@@ -5228,6 +5249,29 @@ function restoreIntroState() {
   } catch { /* storage blocked — DOM defaults stand */ }
 }
 document.addEventListener('DOMContentLoaded', restoreIntroState);
+
+// Connect + Introduce Back fields (mode-specific to connect_and_introduce).
+// Persisted to localStorage so the wizard repopulates after navigation.
+function savePrimaryPersonFields() {
+  try {
+    localStorage.setItem('ortus-primary-name', document.getElementById('primary-person-name')?.value || '');
+    localStorage.setItem('ortus-primary-url',  document.getElementById('primary-person-url')?.value  || '');
+    localStorage.setItem('ortus-primary-body', document.getElementById('primary-intro-body')?.value  || '');
+  } catch { /* storage blocked */ }
+}
+function restorePrimaryPersonState() {
+  try {
+    const nameEl = document.getElementById('primary-person-name');
+    const urlEl  = document.getElementById('primary-person-url');
+    const bodyEl = document.getElementById('primary-intro-body');
+    if (nameEl) nameEl.value = localStorage.getItem('ortus-primary-name') || nameEl.value;
+    if (urlEl)  urlEl.value  = localStorage.getItem('ortus-primary-url')  || urlEl.value;
+    if (bodyEl) bodyEl.value = localStorage.getItem('ortus-primary-body') || bodyEl.value;
+  } catch { /* storage blocked — DOM defaults stand */ }
+}
+window.savePrimaryPersonFields = savePrimaryPersonFields;
+document.addEventListener('DOMContentLoaded', restorePrimaryPersonState);
+if (document.readyState !== 'loading') restorePrimaryPersonState();
 // app.js is loaded as <script type="module">, so top-level `function`
 // declarations are module-scoped. onclick="setIntroMode(true)" in the HTML
 // can't see them unless we explicitly attach to window. Same pattern as
@@ -6241,7 +6285,12 @@ async function bulkCheckNow() {
 
   const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
   const linkedinColumn = document.getElementById('linkedin-col-select')?.value || '';
-  const profileId = (Array.isArray(selectedProfileIds) && selectedProfileIds[0]) || '';
+  // Pass ALL selected accounts so the sweep covers each one (subject to
+  // server-side parked-account filtering). Old behaviour only sent the
+  // first selected, which silently skipped the sweep entirely when the
+  // first account was parked.
+  const profileIds = (Array.isArray(selectedProfileIds) && selectedProfileIds.length)
+    ? selectedProfileIds.slice() : [];
 
   if (!sheetUrl) { setStatus('Paste a sheet URL first.'); return; }
 
@@ -6278,15 +6327,28 @@ async function bulkCheckNow() {
       if (liveLines.length > 0) renderLive('(running…)');
     } catch { /* swallow */ }
   }, 2000);
-  setStatus(profileId
-    ? 'Launching browser + sweeping…'
+  setStatus(profileIds.length
+    ? `Launching browser + sweeping ${profileIds.length} account(s)…`
     : 'No accounts selected — checking sheet for previously-used accounts…');
 
   try {
-    // Send profileId only when explicitly selected; server falls back to
-    // deriving from the sheet's Account Used column otherwise.
+    // Send the full selected array. Server now accepts profileIds (plural).
+    // Falls back to deriving from the sheet's Account Used column when the
+    // operator hasn't selected anyone.
     const body = { sheetUrl, linkedinColumn };
-    if (profileId) body.profileId = profileId;
+    if (profileIds.length) body.profileIds = profileIds;
+    // Pull the wizard's Primary Person fields if filled — server uses them
+    // to fire the auto-intro DM after the bulk-check stamps Connected.
+    // Empty values mean no auto-intro happens (no behaviour change for
+    // non-introduce campaigns).
+    const primaryName = document.getElementById('primary-person-name')?.value?.trim() || '';
+    const primaryIntroBody = document.getElementById('primary-intro-body')?.value || '';
+    const primaryUrl = document.getElementById('primary-person-url')?.value?.trim() || '';
+    if (primaryName && primaryIntroBody) {
+      body.primaryName = primaryName;
+      body.primaryIntroBody = primaryIntroBody;
+      body.primaryUrl = primaryUrl;
+    }
     const r = await fetch('/api/bulk-check-now', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

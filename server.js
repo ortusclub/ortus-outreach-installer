@@ -803,19 +803,24 @@ app.post('/api/bulk-check-now', async (req, res) => {
     if (campaign.running) {
       return res.status(409).json({ error: 'A campaign is currently running. Wait for it to finish or stop it first.' });
     }
-    const { sheetUrl, linkedinColumn, profileId } = req.body || {};
+    const { sheetUrl, linkedinColumn, profileId, profileIds,
+            primaryName, primaryIntroBody, primaryUrl, introTitle } = req.body || {};
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
 
     const token = process.env.GOLOGIN_API_TOKEN;
     const { bulkCheckConnections } = await import('./src/linkedin/bulk-check-connections.js');
+    const { runAutoIntros } = await import('./src/linkedin/auto-intro.js');
     const { closeProfile: _closeProfile } = await import('./src/gologin-launcher.js');
 
-    // Build the list of profiles to sweep. Explicit profileId wins; fallback
+    // Build the list of profiles to sweep. Explicit selection wins (in
+    // priority order: profileIds array > legacy profileId scalar). Fallback
     // is to derive unique account emails from the sheet's Account Used
     // column, then map to profile IDs via the GoLogin profile cache.
     let profileIdsToSweep = [];
     let derivedFromSheet = false;
-    if (profileId) {
+    if (Array.isArray(profileIds) && profileIds.length > 0) {
+      profileIdsToSweep = profileIds.filter((p) => typeof p === 'string' && p.length);
+    } else if (profileId) {
       profileIdsToSweep = [profileId];
     } else {
       try {
@@ -906,6 +911,29 @@ app.post('/api/bulk-check-now', async (req, res) => {
       try {
         campaignLog(`📡 [${pName}] Sweeping recent connections…`);
         r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn || '', pName);
+        // If primary fields were supplied (manual button clicked from a
+        // wizard with Connect + Introduce Back configured), follow up with
+        // an auto-intro pass while the browser is still open.
+        if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0
+            && primaryName && primaryIntroBody) {
+          try {
+            await runAutoIntros({
+              page: launched.page,
+              profileId: pid,
+              profileName: pName,
+              sheetUrl,
+              linkedinColumn: linkedinColumn || '',
+              connectedUrls: r.connectedUrls,
+              primaryName: String(primaryName).trim(),
+              primaryIntroBody: String(primaryIntroBody).trim(),
+              primaryUrl: String(primaryUrl || '').trim(),
+              introTitle: introTitle || 'Introduction: {first name} <> {intro name}',
+              log: campaignLog,
+            });
+          } catch (introErr) {
+            campaignLog(`⚠ [${pName}] Auto-intro pass threw: ${introErr.message}`);
+          }
+        }
       } catch (err) {
         r = { error: `Sweep threw: ${err.message}` };
       } finally {
