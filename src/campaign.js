@@ -2473,6 +2473,35 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (t?.active) browserSemaphore.setMax(1);
         else browserSemaphore.setMax(MAX_CONCURRENT_PROFILES);
 
+        // v2.14: connect_and_introduce idle bulk-check pass. Each pool iteration,
+        // for every profileId that's parked between batches, check if its 5-min
+        // cooldown has elapsed and a semaphore slot is free — if so, briefly
+        // reopen the profile to fire a bulk-check + auto-intros, then close.
+        // All seven gates live in shouldFireIdleBulkCheck (pure, unit-tested).
+        if (mode === 'connect_and_introduce') {
+          const _idleSheetId = _extractSheetIdFromUrl(sheetUrl);
+          const _idleCooldown = await readBulkCheckCooldown().catch(() => ({}));
+          const _semStatus = browserSemaphore.getStatus();
+          const _semAvailable = _semStatus.max - _semStatus.count;
+          for (const _profileId of profileIds) {
+            const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
+            const _lastBulkCheckAt = _idleCooldown[bulkCheckKey(_idleSheetId, _profileId)] || 0;
+            const _fire = shouldFireIdleBulkCheck({
+              mode,
+              campaignStartTime,
+              profileBrowserOpen: sessions.has(_profileId),
+              profileWeeklyLimited: weeklyLimited.has(_profileId),
+              semaphoreAvailable: _semAvailable,
+              lastBulkCheckAt: _lastBulkCheckAt,
+              now: Date.now(),
+            });
+            if (!_fire) continue;
+            // Fire and await — keeps pool iteration order predictable.
+            // The helper acquires its own semaphore slot internally.
+            await runIdleBulkCheck(_profileId, _pName);
+          }
+        }
+
         const profileId = pickNextProfile();
         if (!profileId) {
           if (noProfilesLeftEver()) break;
