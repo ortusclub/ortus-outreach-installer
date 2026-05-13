@@ -5607,51 +5607,179 @@ async function moveQueuedCampaign(id, direction) {
 }
 window.moveQueuedCampaign = moveQueuedCampaign;
 
-// Dashboard's Schedules section. Renders the same /api/schedules data the
-// wizard's hidden schedules-section uses, but in the campaign-row layout so
-// it lives alongside Active and Past.
+// v2.14 — fetches monitoring state alongside cron schedules. Renders the
+// Monitoring card (if active) above the existing cron-schedule rows.
 async function refreshDashboardSchedules() {
   const list = document.getElementById('schedules-campaign-list');
   if (!list) return;
   try {
-    const data = await fetch('/api/schedules').then((r) => r.json());
-    if (!Array.isArray(data) || data.length === 0) {
-      list.innerHTML = '<p class="empty-state">No schedules yet. Create one from the Launch step → switch to Schedule.</p>';
-      return;
+    // Fetch both in parallel
+    const [monState, schedules] = await Promise.all([
+      fetch('/api/monitoring/state').then((r) => r.json()).catch(() => null),
+      fetch('/api/schedules').then((r) => r.json()).catch(() => []),
+    ]);
+
+    const parts = [];
+    const monHtml = renderMonitoringCard(monState);
+    if (monHtml) parts.push(monHtml);
+
+    if (Array.isArray(schedules) && schedules.length > 0) {
+      const dayMap = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
+      const schedHtml = schedules.map((s) => {
+        const sParts = (s.cron || '').split(' ');
+        let cronFriendly = s.cron || '';
+        if (sParts.length === 5) {
+          const min = sParts[0].padStart(2, '0');
+          const hr = sParts[1].padStart(2, '0');
+          const days = sParts[4] === '*' ? 'Every day' : sParts[4].split(',').map(d => dayMap[d] || d).join(', ');
+          cronFriendly = `${hr}:${min} · ${days}`;
+        }
+        const lastRun = s.lastRun ? dashboardFormatDate(s.lastRun) : 'Never run';
+        const limit = s.dailyLimit != null ? `${s.dailyLimit}/day` : '';
+        return `
+          <div class="campaign-row campaign-row--with-edit">
+            <span class="campaign-row-name">${escHtml(s.name || 'Schedule')}</span>
+            <span class="campaign-row-type">${escHtml(dashboardModeLabel(s.mode))}</span>
+            <span class="campaign-row-progress">${escHtml(cronFriendly)}${limit ? ' · ' + escHtml(limit) : ''} · last ${escHtml(lastRun)}</span>
+            <span class="campaign-row-status">Scheduled</span>
+            <span class="campaign-row-actions">
+              <button type="button" class="campaign-row-edit" onclick="queueScheduleNow('${escHtml(s.id)}')" title="Queue this schedule to run as soon as a slot opens">Run now</button>
+              <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="deleteSchedule('${escHtml(s.id)}')" title="Delete this schedule" aria-label="Delete schedule">×</button>
+            </span>
+          </div>
+        `;
+      }).join('');
+      parts.push(schedHtml);
     }
-    const dayMap = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
-    list.innerHTML = data.map((s) => {
-      const parts = (s.cron || '').split(' ');
-      let cronFriendly = s.cron || '';
-      if (parts.length === 5) {
-        const min = parts[0].padStart(2, '0');
-        const hr = parts[1].padStart(2, '0');
-        const days = parts[4] === '*'
-          ? 'Every day'
-          : parts[4].split(',').map(d => dayMap[d] || d).join(', ');
-        cronFriendly = `${hr}:${min} · ${days}`;
-      }
-      const lastRun = s.lastRun
-        ? dashboardFormatDate(s.lastRun)
-        : 'Never run';
-      const limit = s.dailyLimit != null ? `${s.dailyLimit}/day` : '';
-      return `
-        <div class="campaign-row campaign-row--with-edit">
-          <span class="campaign-row-name">${escHtml(s.name || 'Schedule')}</span>
-          <span class="campaign-row-type">${escHtml(dashboardModeLabel(s.mode))}</span>
-          <span class="campaign-row-progress">${escHtml(cronFriendly)}${limit ? ' · ' + escHtml(limit) : ''} · last ${escHtml(lastRun)}</span>
-          <span class="campaign-row-status">Scheduled</span>
-          <span class="campaign-row-actions">
-            <button type="button" class="campaign-row-edit" onclick="queueScheduleNow('${escHtml(s.id)}')" title="Queue this schedule to run as soon as a slot opens">Run now</button>
-            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="deleteSchedule('${escHtml(s.id)}')" title="Delete this schedule" aria-label="Delete schedule">×</button>
-          </span>
-        </div>
-      `;
-    }).join('');
+
+    if (parts.length === 0) {
+      list.innerHTML = '<p class="empty-state">No schedules yet. Create one from the Launch step → switch to Schedule.</p>';
+    } else {
+      list.innerHTML = parts.join('');
+    }
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load schedules.</p>';
   }
 }
+
+// v2.14 — renders the Monitoring card for the Schedules lane.
+// Returns an HTML string (or '' if no monitoring campaign is active).
+function renderMonitoringCard(state) {
+  if (!state || state.state !== 'monitoring') return '';
+
+  const now = Date.now();
+  const next = state.nextCheckAt ? new Date(state.nextCheckAt) : null;
+  const until = state.monitoringUntil ? new Date(state.monitoringUntil) : null;
+  const remainingMs = until ? until.getTime() - now : 0;
+  const endingSoon = remainingMs > 0 && remainingMs <= 24 * 60 * 60 * 1000;
+
+  const hhmm = (d) => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '—';
+  const _fmtRemaining = (ms) => {
+    if (ms <= 0) return '0m';
+    const days = Math.floor(ms / 86400000);
+    const hours = Math.floor((ms % 86400000) / 3600000);
+    const mins = Math.floor((ms % 3600000) / 60000);
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins}m`;
+  };
+
+  const profileIds = state.profileIds || [];
+  const profileNames = state.profileNames || [];
+  const participating = state.participatingProfileIds || [];
+  const accountRows = participating.map((pid) => {
+    const idx = profileIds.indexOf(pid);
+    const name = idx >= 0 ? (profileNames[idx] || pid) : pid;
+    return `<div class="mon-account-row">${escHtml(name)}<span class="check-time">monitoring</span></div>`;
+  }).join('') || '<div class="mon-account-row" style="color:var(--gray)">No accounts</div>';
+
+  // Counts derived from logs would require backend work; for v1, show placeholders the operator can update if needed.
+  // The operator's sheet is the source of truth — counts here are informational.
+  const logs = state.logs || [];
+  const logsHtml = logs.slice(-100).map((line) => `<div>${escHtml(line)}</div>`).join('');
+
+  const badgeClass = endingSoon ? 'mon-badge ending-soon' : 'mon-badge';
+  const badgeText = endingSoon ? '● ENDING SOON' : '● MONITORING';
+  const endingLine = endingSoon
+    ? `Window ends in <b>${escHtml(_fmtRemaining(remainingMs))}</b> — still-pending leads will be stamped <i>Closed - Not Connected</i>`
+    : `Next check: <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(_fmtRemaining(remainingMs))}</b>`;
+
+  return `
+    <div class="mon-card" id="monitoring-card">
+      <div class="mon-row">
+        <div>
+          <div class="mon-title">
+            BULK CONNECTION CHECK + INTRODUCE
+            <span class="${badgeClass}">${badgeText}</span>
+          </div>
+          <div class="mon-next">${endingLine}</div>
+        </div>
+      </div>
+      <button class="mon-btn-expand" onclick="toggleMonitoringCard()">▾ Show details</button>
+      <div class="mon-details" id="monitoring-details" style="display:none">
+        <div class="mon-actions">
+          <button class="mon-btn" id="mon-check-now-btn" onclick="monitoringCheckNow()">⚡ Check now</button>
+          <button class="mon-btn danger" onclick="monitoringStop()">✕ Stop monitoring</button>
+        </div>
+        <div class="mon-sub-label">Accounts (${participating.length})</div>
+        <div class="mon-accounts">${accountRows}</div>
+        <div class="mon-sub-label">Log (live)</div>
+        <div class="mon-log">${logsHtml || '<div style="color:var(--gray)">No log entries yet.</div>'}</div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleMonitoringCard() {
+  const card = document.getElementById('monitoring-card');
+  const details = document.getElementById('monitoring-details');
+  if (!card || !details) return;
+  const isOpen = details.style.display !== 'none';
+  if (isOpen) {
+    details.style.display = 'none';
+    card.classList.remove('expanded');
+    const btn = card.querySelector('.mon-btn-expand');
+    if (btn) btn.textContent = '▾ Show details';
+  } else {
+    details.style.display = '';
+    card.classList.add('expanded');
+    const btn = card.querySelector('.mon-btn-expand');
+    if (btn) btn.textContent = '▴ Hide details';
+  }
+}
+window.toggleMonitoringCard = toggleMonitoringCard;
+
+async function monitoringCheckNow() {
+  const btn = document.getElementById('mon-check-now-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⚡ Checking…'; }
+  try {
+    await fetch('/api/monitoring/check-now', { method: 'POST' });
+    setTimeout(() => refreshDashboardSchedules(), 1500);
+  } catch (err) {
+    alert('Check now failed: ' + err.message);
+  } finally {
+    setTimeout(() => {
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ Check now'; }
+    }, 3000);
+  }
+}
+window.monitoringCheckNow = monitoringCheckNow;
+
+async function monitoringStop() {
+  if (!confirm('End monitoring now? Any still-pending leads will be stamped Closed - Not Connected.')) return;
+  try {
+    const res = await fetch('/api/monitoring/stop', { method: 'POST' }).then((r) => r.json());
+    if (res.ok) {
+      alert(`Monitoring ended. ${res.stampedCount || 0} lead(s) stamped Closed - Not Connected.`);
+      refreshDashboardSchedules();
+    } else {
+      alert('Stop failed: ' + (res.error || 'unknown'));
+    }
+  } catch (err) {
+    alert('Stop failed: ' + err.message);
+  }
+}
+window.monitoringStop = monitoringStop;
 
 // "Run now" on a schedule: post its config to /api/campaign/start. Server
 // queues it if a campaign is already running, otherwise starts immediately.
