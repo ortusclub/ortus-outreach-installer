@@ -34,6 +34,8 @@ import { registerSchedule as registerPostCampaignSweep } from './post-campaign-b
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { computeStillPendingUrls, buildClosedNotConnectedUpdate } from './stop-monitoring.js';
+import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
+import { decideResumeAction } from './monitoring-resume.js';
 import { dataPath } from './paths.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -2663,6 +2665,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       } catch (busErr) {
         console.warn('[monitoring] Log bus registration failed:', busErr.message);
       }
+
+      // v2.14: persist the monitoring slice to disk so the campaign can
+      // resume after app restart / crash.
+      try {
+        await writeMonitoringState(campaign);
+      } catch (persistErr) {
+        console.warn('[monitoring] persistence write failed:', persistErr.message);
+      }
     }
 
     // Register a post-campaign acceptance-tracking window for every profile
@@ -2889,6 +2899,9 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // 4. Transition state
   campaign.state = 'done';
 
+  // Clear the on-disk monitoring slice
+  try { await clearMonitoringState(); } catch { /* */ }
+
   return { ok: true, stampedCount, reason };
 }
 
@@ -2921,6 +2934,47 @@ export function stopMonitoringWatcher() {
     clearInterval(_monitoringWatcherTimer);
     _monitoringWatcherTimer = null;
   }
+}
+
+/**
+ * Called at app boot. Reads the persisted monitoring slice (if any),
+ * rehydrates `campaign` with its fields, then decides whether to resume
+ * or expire based on monitoringUntil vs now.
+ *
+ * Idempotent — safe to call multiple times.
+ */
+export async function resumeMonitoringFromDisk() {
+  const slice = await readMonitoringState();
+  if (!slice) return { action: 'noop', reason: 'no-persisted-state' };
+
+  // Rehydrate the campaign global with the persisted slice fields
+  Object.assign(campaign, slice);
+
+  const decision = decideResumeAction(campaign, new Date());
+  if (decision.action === 'expire') {
+    await stopMonitoring({ reason: 'window-elapsed-on-restart' });
+    return { action: 'expire' };
+  }
+  if (decision.action === 'resume') {
+    campaign.nextCheckAt = decision.recomputedNextCheckAt.toISOString();
+    const ts = `[${new Date().toISOString()}]`;
+    const _hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    campaign.logs = campaign.logs || [];
+    campaign.logs.push(`${ts} 🛏 Monitoring resumed · next check at ${_hhmm(decision.recomputedNextCheckAt)}`);
+    try {
+      const _sheetId = _extractSheetIdFromUrl(campaign.sheetUrl);
+      const _appender = buildAppendLogger({ logs: campaign.logs, capLines: 5000 });
+      for (const _pid of (campaign.participatingProfileIds || [])) {
+        registerAppender(_sheetId, _pid, _appender);
+      }
+    } catch (busErr) {
+      console.warn('[monitoring-resume] log bus re-registration failed:', busErr.message);
+    }
+    // Persist the updated nextCheckAt
+    await writeMonitoringState(campaign);
+    return { action: 'resume' };
+  }
+  return { action: 'noop' };
 }
 
 /**

@@ -16,7 +16,7 @@ import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, popNext as popNextQueued } from './src/campaign-queue.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
@@ -2070,6 +2070,14 @@ app.listen(PORT, async () => {
     for (const s of schedules) registerSchedule(s);
     if (schedules.length) console.log(`  ✦ Schedules: ${schedules.filter(s => s.enabled).length} active of ${schedules.length} total`);
   }).catch(err => console.error('Failed to load schedules:', err.message));
+
+  // v2.14 — resume any in-flight monitoring state from disk before the watcher
+  // starts, so the campaign global is populated on the first watcher tick.
+  resumeMonitoringFromDisk()
+    .then((r) => {
+      if (r.action !== 'noop') console.log('[boot] monitoring:', r.action);
+    })
+    .catch((err) => console.warn('[boot] monitoring resume failed:', err.message));
 
   // v2.14 — start the T+7d monitoring auto-end watcher
   startMonitoringWatcher();
