@@ -988,9 +988,13 @@
       <div class="run-bar-actions">
         <button type="button" class="btn btn-sm" onclick="scrollToSection('nav-status')">View Status</button>
 
+        <!-- v2.14.x: Resume button appears only when the most recent campaign
+             ended with endReason === 'stopped' AND no campaign is currently
+             running. Visibility is toggled by refreshResumeAvailability(). -->
+        <button type="button" id="btn-resume-rb" class="btn btn-sm btn-start" onclick="openResumeChoiceFromRunbar()" title="Pick up the last stopped campaign where it left off." hidden>Resume</button>
         <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start Campaign</button>
         <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
-        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers. No resume — Start launches a fresh run.">Stop Campaign</button>
+        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers.">Stop Campaign</button>
 
         <!-- Saved configs — pushed to the far right, smaller. Stores the
              whole wizard form (mode/accounts/sheet/templates/limits) under
@@ -1032,6 +1036,24 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" onclick="closePastCampaignModal()">Close</button>
         <button type="button" class="btn btn-primary" id="past-campaign-rerun-btn" onclick="rerunPastCampaign()">Re-run with same settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.14.x: Resume-choice modal — opens when operator clicks Resume on a
+       stopped campaign (from past-list row or runbar). Two paths: instant
+       resume with same settings, or pre-fill the wizard for tweaks. -->
+  <div id="resume-choice-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeResumeChoiceModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resume-choice-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeResumeChoiceModal()">&times;</button>
+      <h3 id="resume-choice-title" class="modal-title">Resume campaign</h3>
+      <div id="resume-choice-body" class="past-campaign-modal-body"></div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-primary" id="resume-choice-same" onclick="resumeWithSameSettings()">Resume now · same settings</button>
+        <button type="button" class="btn btn-secondary" id="resume-choice-edit" onclick="resumeWithEditFirst()">Edit settings first</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" onclick="closeResumeChoiceModal()">Cancel</button>
       </div>
     </div>
   </div>

@@ -2716,6 +2716,10 @@ async function showBrowsers() {
   }
 }
 
+// v2.14.x: track running-state transitions so we can refresh the runbar
+// Resume button only when a campaign actually ends (not on every poll).
+let _wasRunning = false;
+
 function setCampaignButtons(running, paused = false, pauseRequested = false) {
   // Queue mode: wizard's btn-start is repurposed as "Add to Queue" — keep
   // it enabled even when a campaign runs, so the operator can stage the
@@ -2735,6 +2739,15 @@ function setCampaignButtons(running, paused = false, pauseRequested = false) {
       b.disabled = running;
     }
   });
+  // v2.14.x: while a campaign is running, hide the runbar Resume button.
+  // When the run ends, refresh availability — the new history entry is
+  // already appended by then.
+  const resumeBtn = document.getElementById('btn-resume-rb');
+  if (resumeBtn && running) resumeBtn.hidden = true;
+  if (_wasRunning && !running && typeof refreshResumeAvailability === 'function') {
+    setTimeout(refreshResumeAvailability, 300);
+  }
+  _wasRunning = running;
   ['btn-stop',  'btn-stop-rb' ].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !running; });
   // Disable Check DMs while a campaign runs (mutex — both need the same browsers)
   const btnCheck = document.getElementById('btn-check-dms');
@@ -5509,6 +5522,8 @@ function goDashboard()      { window.location.hash = '#/'; }
 
 async function refreshDashboard() {
   await Promise.all([refreshActiveCampaign(), refreshDashboardQueue(), refreshDashboardSchedules(), refreshDashboardDrafts(), refreshPastCampaigns()]);
+  // v2.14.x: keep the runbar Resume button in sync with the latest history.
+  if (typeof refreshResumeAvailability === 'function') refreshResumeAvailability();
 }
 
 // Dashboard's Drafts section. Multi-draft store backs this — operator can
@@ -6356,10 +6371,13 @@ async function refreshPastCampaigns() {
                         : reason === 'errored' ? 'is-errored'
                         : 'is-done';
       const checked = pastSelectedIdxs.has(idx) ? 'checked' : '';
-      // Sam's restart button — only on stopped entries. Completed campaigns
-      // already reopen via row-click → modal → re-run.
+      // v2.14.x: Resume button — only on stopped entries. Opens a choice
+      // modal asking whether to resume with identical settings (instant) or
+      // pre-fill the wizard for tweaks. Completed campaigns are NOT
+      // resumable (they hit their target — operator re-runs as a fresh
+      // campaign via the existing details-modal "Re-run" CTA).
       const restartBtn = reason === 'stopped'
-        ? `<button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); restartPastCampaign(${idx})" title="Reopen and prepare to start again">Start again</button>`
+        ? `<button type="button" class="campaign-row-edit campaign-row-resume" onclick="event.stopPropagation(); openResumeChoice(${idx})" title="Resume this campaign — pick up where it stopped">Resume</button>`
         : '';
       return `
         <div class="campaign-row campaign-row-clickable campaign-row--with-edit" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
@@ -6463,6 +6481,195 @@ async function restartPastCampaign(idx) {
   }
 }
 window.restartPastCampaign = restartPastCampaign;
+
+// ─── Resume choice modal (v2.14.x) ──────────────────────────────────────
+// Opens when the operator clicks Resume on a stopped campaign (past list
+// or runbar). Two paths: instant resume with same settings, or open the
+// wizard prefilled. The backend (campaign.js) seeds today's per-account
+// counts from state.processed so accounts pick up where they left off.
+
+let _resumeChoiceIdx = null;
+let _lastStoppedHistoryEntry = null; // {idx, c} — populated by refreshResumeAvailability
+
+function openResumeChoice(idx) {
+  _resumeChoiceIdx = idx;
+  const entry = (pastCampaignsCache || []).find(e => e.idx === idx);
+  if (!entry) {
+    console.warn('[resume] entry not in cache for idx', idx);
+    return;
+  }
+  const c = entry.c;
+  const hasSettings = !!(c && c.settings);
+  const body = document.getElementById('resume-choice-body');
+  const sameBtn = document.getElementById('resume-choice-same');
+
+  // Build summary rows so the operator sees what they're resuming.
+  const modeLabel = (typeof dashboardModeLabel === 'function' ? dashboardModeLabel(c.mode) : c.mode) || '—';
+  const dateStr = (typeof dashboardFormatDate === 'function' ? dashboardFormatDate(c.startedAt || c.date) : c.date) || '—';
+  const profiles = Array.isArray(c.profiles) ? c.profiles : [];
+  const dailyLimit = c.settings?.dailyLimit ?? c.dailyLimit ?? '—';
+  const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
+
+  const rows = [
+    ['Name', escHtml(c.name || '(unnamed)')],
+    ['Mode', escHtml(modeLabel)],
+    ['Stopped at', escHtml(dateStr)],
+    ['Sheet', escHtml(c.settings?.sheetUrl || '—')],
+    ['Accounts', profiles.length ? escHtml(profiles.join(', ')) : '—'],
+    ['Daily limit', escHtml(String(dailyLimit))],
+    ['Already processed', escHtml(`${processed} lead${processed === 1 ? '' : 's'}`)],
+  ];
+
+  if (body) {
+    body.innerHTML = rows.map(([k, v]) =>
+      `<div class="past-detail-row"><span class="past-detail-key">${escHtml(k)}</span><span class="past-detail-val">${v}</span></div>`
+    ).join('') +
+    `<p style="margin-top:14px; color:var(--gray); font-size:.78rem; line-height:1.5;">
+      Today's per-account counts will be preserved — accounts pick up where they left off, not from 0.
+    </p>`;
+  }
+
+  // Disable "Resume same" if no settings snapshot (older entries from before
+  // v2.11.7 didn't persist settings).
+  if (sameBtn) {
+    sameBtn.disabled = !hasSettings;
+    sameBtn.title = hasSettings ? '' : 'This campaign predates settings-snapshot persistence — use "Edit settings first" to reconfigure.';
+  }
+
+  document.getElementById('resume-choice-modal').classList.remove('hidden');
+}
+window.openResumeChoice = openResumeChoice;
+
+function closeResumeChoiceModal() {
+  document.getElementById('resume-choice-modal').classList.add('hidden');
+  _resumeChoiceIdx = null;
+}
+window.closeResumeChoiceModal = closeResumeChoiceModal;
+
+// Resume now · same settings — POST directly to /api/campaign/start with
+// the saved settings snapshot. Backend's campaignCounts seeder handles the
+// "pick up at 22/50" piece automatically (campaign.js, look for the
+// _todayPrefix block).
+async function resumeWithSameSettings() {
+  if (_resumeChoiceIdx == null) return;
+  const entry = (pastCampaignsCache || []).find(e => e.idx === _resumeChoiceIdx);
+  if (!entry || !entry.c.settings) {
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast('This campaign has no saved settings — use "Edit settings first" instead.', 5000);
+    }
+    return;
+  }
+  const c = entry.c;
+  const s = c.settings;
+  const payload = {
+    profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+    sheetUrl: s.sheetUrl || '',
+    templates: s.templates || {},
+    dailyLimit: s.dailyLimit ?? 50,
+    mode: c.mode,
+    messageOpenProfiles: !!s.messageOpenProfiles,
+    delayMin: s.delayMin ?? 15,
+    delayMax: s.delayMax ?? 45,
+    linkedinColumn: s.linkedinColumn || '',
+    concurrency: s.concurrency ?? 1,
+    name: c.name ? `${c.name} (resumed)` : '',
+  };
+
+  closeResumeChoiceModal();
+  try {
+    const r = await fetch('/api/campaign/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => '');
+      if (typeof showCampaignToast === 'function') {
+        showCampaignToast(`Resume failed: ${err || r.statusText}`, 6000);
+      }
+      return;
+    }
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast('Resumed — accounts will pick up at today\'s current counts.', 4000);
+    }
+    // Refresh state so cockpit/runbar reflect the running campaign.
+    if (typeof startPolling === 'function') startPolling();
+    if (typeof refreshResumeAvailability === 'function') refreshResumeAvailability();
+  } catch (err) {
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`Resume failed: ${err.message}`, 6000);
+    }
+  }
+}
+window.resumeWithSameSettings = resumeWithSameSettings;
+
+// Edit-first path — close the choice modal and fall through to the
+// existing wizard-prefill flow (rerunPastCampaign already does this for
+// the past-campaign details modal).
+function resumeWithEditFirst() {
+  if (_resumeChoiceIdx == null) return;
+  const idx = _resumeChoiceIdx;
+  closeResumeChoiceModal();
+  // Set the pastCampaignModalEntry so rerunPastCampaign can find it.
+  const entry = (pastCampaignsCache || []).find(e => e.idx === idx);
+  if (entry) {
+    pastCampaignModalEntry = entry;
+    rerunPastCampaign();
+  }
+}
+window.resumeWithEditFirst = resumeWithEditFirst;
+
+// Runbar Resume button: visible only when the most recent campaign in
+// history ended with endReason === 'stopped' AND no campaign is currently
+// running. Called on dashboard load and after any campaign state change.
+async function refreshResumeAvailability() {
+  const btn = document.getElementById('btn-resume-rb');
+  if (!btn) return;
+  try {
+    const data = await fetch('/api/history').then(r => r.json());
+    if (!Array.isArray(data) || data.length === 0) {
+      btn.hidden = true;
+      _lastStoppedHistoryEntry = null;
+      return;
+    }
+    // Find the most recent entry (history is appended chronologically).
+    const indexed = data.map((c, idx) => ({ idx, c }));
+    indexed.sort((a, b) => {
+      const ta = new Date(a.c.startedAt || a.c.date).getTime();
+      const tb = new Date(b.c.startedAt || b.c.date).getTime();
+      return tb - ta;
+    });
+    const latest = indexed[0];
+    const isStopped = (latest.c.endReason === 'stopped') && !!latest.c.settings;
+    // Don't surface Resume while a campaign is already running.
+    const running = !!document.getElementById('btn-stop-rb')?.disabled === false;
+    btn.hidden = !(isStopped && !running);
+    _lastStoppedHistoryEntry = isStopped ? latest : null;
+  } catch {
+    btn.hidden = true;
+    _lastStoppedHistoryEntry = null;
+  }
+}
+window.refreshResumeAvailability = refreshResumeAvailability;
+
+// Runbar Resume click — opens the same modal as the past-list path.
+function openResumeChoiceFromRunbar() {
+  if (!_lastStoppedHistoryEntry) {
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast('No stopped campaign to resume.', 3000);
+    }
+    return;
+  }
+  // Make sure pastCampaignsCache has this entry so openResumeChoice can find it.
+  // If the past list hasn't been rendered yet, prime the cache minimally.
+  const idx = _lastStoppedHistoryEntry.idx;
+  const already = (pastCampaignsCache || []).find(e => e.idx === idx);
+  if (!already) {
+    pastCampaignsCache = (pastCampaignsCache || []).concat([_lastStoppedHistoryEntry]);
+  }
+  openResumeChoice(idx);
+}
+window.openResumeChoiceFromRunbar = openResumeChoiceFromRunbar;
 
 // Dashboard "+ Start new campaign" — creates a brand-new draft entry and
 // opens the wizard with empty inputs. Other drafts are preserved (visible
@@ -6706,6 +6913,8 @@ document.addEventListener('click', (e) => {
 
 window.addEventListener('hashchange', applyRoute);
 document.addEventListener('DOMContentLoaded', applyRoute);
+// v2.14.x: surface Resume button on the runbar as soon as the app loads.
+document.addEventListener('DOMContentLoaded', () => { setTimeout(refreshResumeAvailability, 400); });
 if (document.readyState !== 'loading') applyRoute();
 
 window.goCreateCampaign = goCreateCampaign;

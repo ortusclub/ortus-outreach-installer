@@ -1074,6 +1074,34 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       await saveState(state);
     }
 
+    // v2.14.x: Resume support — seed campaignCounts from today's entries in
+    // state.processed so an account that already sent N leads today (whether
+    // on this campaign or one stopped earlier today) keeps that count instead
+    // of resetting to 0/dailyLimit. This is what makes "Resume same settings"
+    // pick up where the prior run left off, AND it cumulatively caps daily
+    // activity so LinkedIn's per-day quotas can't be blown by stop-and-restart.
+    // Skip-only actions don't count toward the daily send total.
+    const _todayPrefix = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+    const _skipActions = new Set(['_in_progress', 'email_required', 'not_open_profile']);
+    let _seedTotal = 0;
+    for (const entry of Object.values(state.processed)) {
+      if (!entry || !entry.profileId || !entry.date) continue;
+      if (!entry.date.startsWith(_todayPrefix)) continue;
+      if (_skipActions.has(entry.action)) continue;
+      if (!profileIds.includes(entry.profileId)) continue;
+      campaignCounts[entry.profileId] = (campaignCounts[entry.profileId] || 0) + 1;
+      _seedTotal++;
+    }
+    if (_seedTotal > 0) {
+      const summary = Object.entries(campaignCounts)
+        .filter(([, n]) => n > 0)
+        .map(([pid, n]) => {
+          const pName = profileNameCache[pid] || (pid === 'local-browser' ? 'You' : pid);
+          return `${pName} ${n}/${dailyLimit}`;
+        }).join(' · ');
+      log(`▶ Resuming today's counts: ${summary}`);
+    }
+
     // Pre-filter targets. Filter rules (new schema):
     //   - check_status: only process rows with CC="Sent" (pending invites).
     //   - all other modes: skip rows where Status="Done".

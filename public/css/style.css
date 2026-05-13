@@ -3401,6 +3401,36 @@ body.route-dashboard .sidebar-nav { display: none; }
   transition: border-color 0.15s, color 0.15s;
 }
 .campaign-row-edit:hover { border-color: var(--ink); color: var(--ink); }
+
+/* v2.14.x: Resume button on stopped past-campaign rows — gold treatment
+   (same rationale as Start CTA: Resume IS a Start). */
+.campaign-row-edit.campaign-row-resume {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+.campaign-row-edit.campaign-row-resume:hover {
+  background: var(--gold);
+  color: var(--bg);
+}
+
+/* Runbar Resume button — uses .btn-start's existing dark-pill base, but
+   when added as a sibling we want it visually distinct from Start so the
+   operator sees Resume as the primary path. Inherits gold-on-dark from
+   btn-start; no extra styles needed unless we want to differentiate. */
+
+/* Resume-choice modal "Cancel" link */
+.modal-cancel-link {
+  background: transparent;
+  border: 0;
+  color: var(--gray);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.modal-cancel-link:hover { color: var(--ink); }
 .campaign-row-actions { display: flex; gap: 8px; align-items: center; }
 .campaign-row-edit--icon {
   font-size: 0.95rem;
