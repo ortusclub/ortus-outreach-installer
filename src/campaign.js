@@ -31,6 +31,7 @@ import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
+import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { dataPath } from './paths.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -1589,6 +1590,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const _checkStatusCursorByProfile = {};
     const _checkStatusExhausted = new Set();
     const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
+    // v2.14: tracks profiles that successfully sent ≥1 connection_sent during this
+    // campaign run. Used by the end-of-list bulk-check trigger to know which
+    // accounts to bulk-check (each LinkedIn account can only see its OWN
+    // connections, so we must iterate every participating account separately).
+    const profilesThatSentAtLeastOne = new Set();
     // Phase 2.8.8: silent-failure guard — if a profile produces N
     // consecutive non-success outcomes, park it for the rest of the run.
     // Catches silent weekly-limit exhaustion and any other systemic per-account
@@ -2079,6 +2085,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
             // Per-action side effects the pure helper can't capture.
             if (result.action === 'connection_sent') {
+              profilesThatSentAtLeastOne.add(profileId);
               try {
                 const meta = await captureProfileMeta(page);
                 if (meta.memberId)     sheetData.linkedinUrn       = meta.memberId;
@@ -2616,6 +2623,30 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       });
     } catch (histErr) {
       console.error('Failed to save campaign history:', histErr.message);
+    }
+
+    // v2.14: end-of-list bulk-check for connect_and_introduce campaigns. Fires
+    // one extra bulk-check pass for every account that actually sent at least
+    // one connection request, BEFORE the campaign transitions to its
+    // monitoring phase. Sequential (respects browserSemaphore), failures
+    // non-fatal. Skipped for non-connect_and_introduce modes.
+    if (mode === 'connect_and_introduce' && profilesThatSentAtLeastOne.size > 0) {
+      log(`📡 End-of-list bulk check · ${profilesThatSentAtLeastOne.size} account(s)`);
+      for (const _profileId of profilesThatSentAtLeastOne) {
+        const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
+        try {
+          await runIdleBulkCheck(_profileId, _pName);
+        } catch (err) {
+          log(`  ⚠ [${_pName}] End-of-list bulk check threw: ${err.message}`);
+        }
+      }
+
+      // Transition campaign state: running → monitoring
+      const updated = transitionToMonitoring(campaign, {
+        now: new Date(),
+        participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
+      });
+      Object.assign(campaign, updated);
     }
 
     // Register a post-campaign acceptance-tracking window for every profile
