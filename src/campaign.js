@@ -2302,13 +2302,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 auditAction: normalizeSkipReason('InMail credits exhausted'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('EMAIL_REQUIRED')) {
-              log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead.`);
-              pushSoftWarning(campaign, {
-                profileId,
-                pName,
-                kind: 'email_required',
-                message: 'LinkedIn requires email to connect',
-              });
+              // Per-lead skip — LinkedIn asked for the recipient's email.
+              // Not an account-level issue, so no soft-warning chip; the log
+              // line + sheet stamp below carry all the info the operator needs.
+              log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead, moving on.`);
               state.processed[url] = { profileId, profileName: pName, action: 'email_required', date: now };
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {

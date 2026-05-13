@@ -2892,50 +2892,87 @@ function renderAccountQueue(names, currentName, status, profileIds) {
     )) || null;
   };
 
-  el.innerHTML = names.map((name, i) => {
+  // Resolve a row's state to one of 10 distinct chips. Each chip is its own
+  // label + stateClass; visual differentiation lives in style.css. Per-lead
+  // issues (email_required etc.) no longer surface here — they're just sheet
+  // stamps + log lines.
+  function resolveChip({ isActive, isPastCurrent, parkedHit, warningHit, endHit }) {
+    if (isActive) {
+      return { label: 'Sending', stateClass: 'chip-sending', detail: '' };
+    }
+    if (parkedHit) {
+      const r = parkedHit.reason;
+      if (r === 'session_expired') {
+        return { label: 'Needs login', stateClass: 'chip-needs-login', detail: 'Session expired' };
+      }
+      if (r === 'weekly_limit_429') {
+        return { label: 'LinkedIn cap · invites', stateClass: 'chip-li-invites', detail: 'Weekly invite cap reached' };
+      }
+      if (r === 'consecutive_skips') {
+        const n = parkedHit.skipCount ? `${parkedHit.skipCount} consecutive skips` : 'too many consecutive skips';
+        return { label: 'Parked · too many skips', stateClass: 'chip-parked', detail: n };
+      }
+      return { label: 'Parked', stateClass: 'chip-parked', detail: r || '' };
+    }
+    if (warningHit) {
+      const k = warningHit.kind;
+      if (k === 'weekly_limit') {
+        return { label: 'LinkedIn cap · invites', stateClass: 'chip-li-invites', detail: 'Weekly invite cap reached' };
+      }
+      if (k === 'rate_limited') {
+        return { label: 'Rate limited', stateClass: 'chip-rate-limited', detail: 'LinkedIn rate-limit page shown' };
+      }
+      // Unknown future kind — fall through to a generic action chip rather than hiding it.
+      return { label: 'Action required', stateClass: 'chip-needs-login', detail: warningHit.message || k || '' };
+    }
+    if (endHit) {
+      const r = String(endHit.reason || '');
+      if (/InMail/i.test(r)) {
+        return { label: 'LinkedIn cap · InMail', stateClass: 'chip-li-inmail', detail: r };
+      }
+      if (/weekly|429/i.test(r)) {
+        return { label: 'LinkedIn cap · invites', stateClass: 'chip-li-invites', detail: r };
+      }
+      if (/session expired/i.test(r)) {
+        return { label: 'Needs login', stateClass: 'chip-needs-login', detail: r };
+      }
+      if (/bulk|sweep|Check Status/i.test(r)) {
+        return { label: 'Status sweep done', stateClass: 'chip-bulk-done', detail: r };
+      }
+      if (/campaign limit|Reached campaign/i.test(r)) {
+        return { label: 'Batch done', stateClass: 'chip-batch', detail: r };
+      }
+      // Default terminal — treat as clean batch end.
+      return { label: 'Batch done', stateClass: 'chip-batch', detail: r };
+    }
+    if (isPastCurrent) {
+      return { label: 'Batch done', stateClass: 'chip-batch', detail: '' };
+    }
+    return { label: 'Queued', stateClass: 'chip-queued', detail: '' };
+  }
+
+  // Header + legend get rendered ONCE above the rows so the operator can
+  // always reach the chip glossary without scrolling.
+  const headerHtml = `
+    <div class="account-queue-header">
+      <span class="account-queue-title">Account queue</span>
+      <button type="button" class="queue-help-ico" onclick="toggleAccountQueueLegend()" title="What do these chips mean?">?</button>
+    </div>
+    <div class="account-queue-legend" id="account-queue-legend" hidden>
+      ${_renderAccountQueueLegend()}
+    </div>
+  `;
+
+  const rowsHtml = names.map((name, i) => {
     const isActive = currentName && name === currentName;
     const isPastCurrent = currentName && names.indexOf(currentName) > i;
     const parkedHit = findIn(parked, name);
     const warningHit = findIn(warnings, name);
     const endHit = findIn(endReasons, name);
 
-    // Translate the bot's machine-readable park reason into a human-readable
-    // sentence so the row tells the operator what to do next.
-    const parkReasonLabel = (r) => {
-      if (!r) return '';
-      const map = {
-        session_expired: 'Session expired — log in again',
-        consecutive_skips: 'Parked after consecutive skips',
-        weekly_limit_429: 'Weekly invitation limit reached',
-      };
-      return map[r] || r;
-    };
-
-    let label, stateClass, detail = '';
-    if (isActive) {
-      label = 'Running';
-      stateClass = 'is-running';
-    } else if (parkedHit) {
-      label = 'Parked';
-      stateClass = 'is-parked';
-      detail = parkedHit.reason ? parkReasonLabel(parkedHit.reason) : (parkedHit.kind || '');
-    } else if (warningHit) {
-      label = 'Warning';
-      stateClass = 'is-warning';
-      detail = warningHit.kind || warningHit.message || '';
-    } else if (endHit) {
-      // Surface end reason regardless of queue position — needed post-campaign
-      // when currentName is null and isPastCurrent never trips.
-      label = 'Done';
-      stateClass = 'is-done';
-      detail = endHit.reason || endHit.kind || '';
-    } else if (isPastCurrent) {
-      label = 'Done';
-      stateClass = 'is-done';
-    } else {
-      label = 'Waiting';
-      stateClass = 'is-waiting';
-    }
+    const { label, stateClass, detail } = resolveChip({
+      isActive, isPastCurrent, parkedHit, warningHit, endHit,
+    });
 
     const profileId = ids[i] || '';
     // Try Again only for parked rows; Open Browser is always available so
@@ -2950,12 +2987,56 @@ function renderAccountQueue(names, currentName, status, profileIds) {
       <div class="queue-row ${stateClass}">
         <span class="queue-row-num">${i + 1}</span>
         <span class="queue-row-name">${escHtml(name)}</span>
-        <span class="queue-row-status">${label}</span>
+        <span class="queue-row-status">${escHtml(label)}</span>
         <span class="queue-row-detail">${detail ? escHtml(detail) : ''}</span>
         <span class="queue-row-actions">${tryAgainBtn}${openBtn}</span>
       </div>
     `;
   }).join('');
+
+  el.innerHTML = headerHtml + rowsHtml;
+}
+
+function toggleAccountQueueLegend() {
+  const panel = document.getElementById('account-queue-legend');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+}
+window.toggleAccountQueueLegend = toggleAccountQueueLegend;
+
+function _renderAccountQueueLegend() {
+  const groups = [
+    { title: 'Active', rows: [
+      ['Queued', 'chip-queued', 'Waiting its turn. Will run when an earlier account finishes.'],
+      ['Sending', 'chip-sending', 'Sending right now. Progress shown in the detail column.'],
+    ]},
+    { title: 'Finished — nothing to do', rows: [
+      ['Batch done', 'chip-batch', "Hit today's target. Picks up again on the next scheduled run."],
+      ['Status sweep done', 'chip-bulk-done', 'Bulk Connection-Status check finished. Informational only.'],
+    ]},
+    { title: 'LinkedIn put a ceiling on you', rows: [
+      ['LinkedIn cap · invites', 'chip-li-invites', 'Weekly invite cap reached (~200/wk; lower on some accounts). LinkedIn rule, not ours.'],
+      ['LinkedIn cap · InMail', 'chip-li-inmail', 'Out of InMail credits. Waits for LinkedIn to top them up.'],
+    ]},
+    { title: 'Needs you · 1-click in the browser', rows: [
+      ['Needs login', 'chip-needs-login', 'Session expired. Open the GoLogin browser and sign back in.'],
+      ['Rate limited', 'chip-rate-limited', 'LinkedIn showed a rate-limit page. Open browser to verify.'],
+    ]},
+    { title: 'Out of rotation', rows: [
+      ['Parked · too many skips', 'chip-parked', 'Auto-pulled after consecutive skips. "Try again" puts it back.'],
+    ]},
+  ];
+  return groups.map(g => `
+    <div class="legend-group">
+      <div class="legend-group-title">${escHtml(g.title)}</div>
+      ${g.rows.map(([label, cls, desc]) => `
+        <div class="legend-row">
+          <span class="legend-chip ${cls}">${escHtml(label)}</span>
+          <span class="legend-desc">${escHtml(desc)}</span>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
 }
 
 async function openProfileBrowser(profileId) {

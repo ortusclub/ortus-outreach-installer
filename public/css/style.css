@@ -945,6 +945,92 @@ select {
 .queue-row.is-running .queue-row-status { color: var(--ink); border-color: var(--ink); }
 .queue-row.is-parked  .queue-row-status { color: #c0392b; border-color: rgba(192, 57, 43, 0.45); }
 .queue-row.is-warning .queue-row-status { color: #b9770e; border-color: rgba(185, 119, 14, 0.45); }
+
+/* v2.14.x chip taxonomy — 10 distinct chips, one per state. Visual weight
+   carries urgency: white=active, dim-dashed=clean terminal, amber=action,
+   red=parked. See toggleAccountQueueLegend() for the operator-facing glossary. */
+.queue-row.chip-queued    .queue-row-status { color: var(--gray); border-color: var(--hairline); }
+.queue-row.chip-sending   .queue-row-status { color: var(--ink);  border-color: var(--ink); }
+.queue-row.chip-batch     .queue-row-status { color: var(--gray); border-color: var(--hairline); border-style: dashed; }
+.queue-row.chip-bulk-done .queue-row-status { color: var(--gray); border-color: var(--hairline); border-style: dashed; }
+.queue-row.chip-li-invites .queue-row-status { color: var(--ink); border-color: var(--hairline); }
+.queue-row.chip-li-inmail  .queue-row-status { color: var(--ink); border-color: var(--hairline); }
+.queue-row.chip-needs-login  .queue-row-status { color: #b9770e; border-color: rgba(185, 119, 14, 0.55); }
+.queue-row.chip-rate-limited .queue-row-status { color: #b9770e; border-color: rgba(185, 119, 14, 0.55); }
+.queue-row.chip-parked    .queue-row-status { color: #c0392b; border-color: rgba(192, 57, 43, 0.5); }
+
+.queue-row.chip-batch .queue-row-name,
+.queue-row.chip-bulk-done .queue-row-name { color: var(--gray); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* Queue header + legend popover (? icon next to "Account queue" title) */
+.account-queue-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px 10px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+.queue-help-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  color: var(--gray);
+  font-size: 0.65rem;
+  cursor: pointer;
+  background: transparent;
+  padding: 0; line-height: 1;
+}
+.queue-help-ico:hover { color: var(--ink); border-color: var(--ink); }
+.account-queue-legend {
+  border: 1px solid var(--hairline);
+  margin: 0 14px 14px;
+  padding: 14px 18px;
+}
+.legend-group { margin-top: 14px; }
+.legend-group:first-child { margin-top: 0; }
+.legend-group-title {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gray);
+  border-bottom: 1px solid var(--hairline-soft);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+}
+.legend-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 5px 0;
+}
+.legend-row + .legend-row { border-top: 1px solid var(--hairline-soft); }
+.legend-chip {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  color: var(--gray);
+  white-space: nowrap;
+  justify-self: start;
+}
+.legend-chip.chip-sending   { color: var(--ink); border-color: var(--ink); }
+.legend-chip.chip-batch     { color: var(--gray); border-style: dashed; }
+.legend-chip.chip-bulk-done { color: var(--gray); border-style: dashed; }
+.legend-chip.chip-li-invites,
+.legend-chip.chip-li-inmail { color: var(--ink); border-color: var(--hairline); }
+.legend-chip.chip-needs-login,
+.legend-chip.chip-rate-limited { color: #b9770e; border-color: rgba(185, 119, 14, 0.55); }
+.legend-chip.chip-parked    { color: #c0392b; border-color: rgba(192, 57, 43, 0.5); }
+.legend-desc { font-size: 0.7rem; color: var(--gray); line-height: 1.4; }
+
 .queue-row-detail {
   font-family: var(--mono);
   font-size: 0.6rem;
