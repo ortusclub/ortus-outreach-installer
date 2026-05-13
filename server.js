@@ -683,6 +683,56 @@ app.post('/api/queue/:id/move', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Monitoring routes (Task 8a) — Check now, Stop monitoring, State
+// ---------------------------------------------------------------------------
+
+app.post('/api/monitoring/check-now', async (req, res) => {
+  try {
+    const { runMonitoringCheckAll, getCampaignState } = await import('./src/campaign.js');
+    const state = getCampaignState();
+    if (state.state !== 'monitoring') {
+      return res.status(400).json({ error: 'Campaign is not in monitoring state' });
+    }
+    // Fire and forget — the operator wants the button to feel responsive,
+    // but the actual bulk-check pass takes 30-120s.
+    runMonitoringCheckAll().catch((err) => console.warn('[check-now] threw:', err.message));
+    res.json({ ok: true, started: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/monitoring/stop', async (_req, res) => {
+  try {
+    const { stopMonitoring: _stopMonitoring } = await import('./src/campaign.js');
+    const result = await _stopMonitoring({ reason: 'operator-stopped' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/monitoring/state', (_req, res) => {
+  import('./src/campaign.js').then((mod) => {
+    const c = mod.getCampaignState();
+    // Return only the monitoring-relevant slice
+    res.json({
+      state: c.state || 'idle',
+      mode: c.mode,
+      sendingEndedAt: c.sendingEndedAt,
+      monitoringUntil: c.monitoringUntil,
+      nextCheckAt: c.nextCheckAt,
+      participatingProfileIds: c.participatingProfileIds || [],
+      profileIds: c.profileIds || [],
+      profileNames: c.profileNames || [],
+      logs: c.logs || [],
+      sheetUrl: c.sheetUrl,
+      name: c.name,
+    });
+  }).catch((err) => res.status(500).json({ error: err.message }));
+});
+
 app.post('/api/campaign/stop', async (_req, res) => {
   const result = stopCampaign();
   // Phase 2.8.9: force-close all Orbita/local browsers immediately so the

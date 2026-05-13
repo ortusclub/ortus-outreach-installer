@@ -2987,3 +2987,116 @@ export function _setTestState(patch) {
     Object.assign(campaign, patch);
   }
 }
+
+/**
+ * Returns the current campaign global (shallow reference).
+ * Used by the monitoring HTTP routes in server.js.
+ */
+export function getCampaignState() {
+  return campaign;
+}
+
+/**
+ * Module-level monitoring bulk-check helper. Mirrors the inside-startCampaign
+ * `runIdleBulkCheck` closure but reads its config from the persisted
+ * `campaign` global rather than closure-bound locals. Used by:
+ *   - The Check now button (immediate, no cooldown gate)
+ *   - The T+7d auto-end watcher (when it wants to fire a final pass — future)
+ *
+ * Acquires browserSemaphore, opens profile, fires bulkCheck +
+ * runAutoIntros, updates cooldown, closes. Failures non-fatal — logs to the
+ * campaign log via the bus.
+ */
+export async function runMonitoringCheck(profileId, profileName) {
+  if (campaign.state !== 'monitoring') {
+    return { ok: false, error: 'Campaign not in monitoring state' };
+  }
+  const sheetUrl = campaign.sheetUrl;
+  const linkedinColumn = campaign.linkedinColumn || '';
+  const templates = campaign.templates || {};
+  const token = process.env.GOLOGIN_API_TOKEN;
+
+  await browserSemaphore.acquire();
+  let launched;
+  try {
+    const ts = `[${new Date().toISOString()}]`;
+    const msg = `📡 [${profileName}] Check now — bulk check pass starting…`;
+    campaign.logs = campaign.logs || [];
+    campaign.logs.push(`${ts} ${msg}`);
+
+    launched = await launchProfile(profileId, token);
+
+    const willAutoIntro = !!(
+      templates.primaryName && templates.primaryName.trim() &&
+      templates.primaryIntroBody && templates.primaryIntroBody.trim()
+    );
+    const r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn, profileName, {
+      suppressAcceptedStamp: willAutoIntro,
+    });
+
+    const ts2 = `[${new Date().toISOString()}]`;
+    if (r.error) {
+      campaign.logs.push(`${ts2} ⚠ [${profileName}] Check now: ${r.error}`);
+    } else {
+      const stamped = r.stamped || 0;
+      campaign.logs.push(`${ts2} 📡 [${profileName}] Check now: ${r.matched} Connected, ${stamped} Still Pending (of ${r.fetched})`);
+    }
+
+    if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+      await runAutoIntros({
+        page: launched.page,
+        profileId,
+        profileName,
+        sheetUrl,
+        linkedinColumn,
+        connectedUrls: r.connectedUrls,
+        primaryName: templates.primaryName.trim(),
+        primaryIntroBody: templates.primaryIntroBody.trim(),
+        primaryUrl: (templates.primaryUrl || '').trim(),
+        introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+        log: (line) => {
+          const ts3 = `[${new Date().toISOString()}]`;
+          campaign.logs.push(`${ts3} ${line}`);
+        },
+      });
+    }
+
+    // Update cooldown — same as runIdleBulkCheck
+    const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+    const cooldown = await readBulkCheckCooldown();
+    cooldown[bulkCheckKey(_sheetId, profileId)] = Date.now();
+    await writeBulkCheckCooldown(cooldown);
+
+    await writeMonitoringState(campaign);
+    return { ok: true, matched: r.matched, stamped: r.stamped, connectedUrls: r.connectedUrls || [] };
+  } catch (err) {
+    const ts4 = `[${new Date().toISOString()}]`;
+    campaign.logs = campaign.logs || [];
+    campaign.logs.push(`${ts4} ⚠ [${profileName}] Check now failed: ${err.message}`);
+    return { ok: false, error: err.message };
+  } finally {
+    try {
+      if (profileId === 'local-browser') await closeLocalBrowser();
+      else await closeProfile(profileId);
+    } catch { /* */ }
+    browserSemaphore.release();
+  }
+}
+
+/**
+ * Orchestrator: fire runMonitoringCheck for ALL participating profiles
+ * sequentially. Returns an array of per-profile results.
+ */
+export async function runMonitoringCheckAll() {
+  if (campaign.state !== 'monitoring') {
+    return { ok: false, error: 'Campaign not in monitoring state' };
+  }
+  const results = [];
+  for (const pid of (campaign.participatingProfileIds || [])) {
+    const idx = (campaign.profileIds || []).indexOf(pid);
+    const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
+    const r = await runMonitoringCheck(pid, pName || pid);
+    results.push({ profileId: pid, ...r });
+  }
+  return { ok: true, results };
+}
