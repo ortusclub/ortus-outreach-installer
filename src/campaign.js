@@ -32,7 +32,8 @@ import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
-import { registerAppender, buildAppendLogger } from './campaign-log-bus.js';
+import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
+import { computeStillPendingUrls, buildClosedNotConnectedUpdate } from './stop-monitoring.js';
 import { dataPath } from './paths.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -2835,6 +2836,91 @@ export function getCampaignStatus() {
       multiplier: thr.multiplier,
     } : null,
   };
+}
+
+/**
+ * Ends the Monitoring phase early. Stamps still-pending leads Closed -
+ * Not Connected in the sheet, transitions the campaign to 'done', and
+ * unregisters the log-bus appenders.
+ *
+ * Called by:
+ *   - Operator clicks "Stop monitoring" in the UI (reason: 'operator-stopped')
+ *   - T+7d auto-end watcher (reason: 'window-elapsed')
+ *   - Restart resume finds an expired monitoringUntil (reason: 'window-elapsed-on-restart')
+ */
+export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
+  if (campaign.state !== 'monitoring') {
+    return { ok: false, error: 'Campaign is not in monitoring state' };
+  }
+
+  const sheetUrl = campaign.sheetUrl;
+  const linkedinColumn = campaign.linkedinColumn || '';
+  const sheetId = _extractSheetIdFromUrl(sheetUrl);
+
+  // 1. Fetch sheet, compute still-pending leads
+  let stampedCount = 0;
+  try {
+    const rows = await fetchSheetRows(sheetUrl);
+    const pendingUrls = computeStillPendingUrls(rows, linkedinColumn);
+    for (const url of pendingUrls) {
+      try {
+        await updateSheetRow(sheetUrl, url, buildClosedNotConnectedUpdate(), linkedinColumn);
+        stampedCount++;
+      } catch (err) {
+        console.warn(`[stopMonitoring] stamp failed for ${url}: ${err.message}`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[stopMonitoring] sheet fetch failed: ${err.message}`);
+  }
+
+  // 2. Append a final log line
+  const ts = `[${new Date().toISOString()}]`;
+  campaign.logs = campaign.logs || [];
+  campaign.logs.push(`${ts} 🛏 Monitoring ended (reason: ${reason}) · ${stampedCount} still-pending lead(s) stamped Closed - Not Connected`);
+
+  // 3. Unregister log-bus appenders for every participating profile
+  if (Array.isArray(campaign.participatingProfileIds)) {
+    for (const pid of campaign.participatingProfileIds) {
+      unregisterAppender(sheetId, pid);
+    }
+  }
+
+  // 4. Transition state
+  campaign.state = 'done';
+
+  return { ok: true, stampedCount, reason };
+}
+
+/**
+ * v2.14 — T+7d auto-end watcher. Polls every 60s. When the active campaign
+ * is in monitoring state and the 7-day window has elapsed, fires
+ * stopMonitoring({ reason: 'window-elapsed' }) automatically.
+ */
+let _monitoringWatcherTimer = null;
+export function startMonitoringWatcher() {
+  if (_monitoringWatcherTimer) return;
+  _monitoringWatcherTimer = setInterval(() => {
+    try {
+      if (campaign.state === 'monitoring' && campaign.monitoringUntil) {
+        const until = new Date(campaign.monitoringUntil).getTime();
+        if (Date.now() >= until) {
+          stopMonitoring({ reason: 'window-elapsed' }).catch((err) => {
+            console.warn('[monitoring-watcher] stopMonitoring threw:', err.message);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[monitoring-watcher] tick threw:', err.message);
+    }
+  }, 60 * 1000);
+}
+
+export function stopMonitoringWatcher() {
+  if (_monitoringWatcherTimer) {
+    clearInterval(_monitoringWatcherTimer);
+    _monitoringWatcherTimer = null;
+  }
 }
 
 /**
