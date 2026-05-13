@@ -1017,6 +1017,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     log(`Profiles: ${profileIds.length} selected`);
     const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
     log(`Campaign limit per account: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
+    if (!_NO_LIMIT_MODES.has(mode)) {
+      log(`  (set in launch wizard — adjust under "Campaign limit per account" before next run if this isn't what you expected)`);
+    }
     if (concurrency > 1) {
       log(`▶ Concurrency=${concurrency} workers (browser cap=${MAX_CONCURRENT_PROFILES}).`);
     }
@@ -2203,7 +2206,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // from the next round; this gives operators a visible "why" on
             // the dashboard's Done row.
             if (!skipsDailyLimit && getCampaignCount(profileId) >= dailyLimit) {
-              recordProfileEnd(profileId, pName, `Reached daily limit (${dailyLimit})`);
+              recordProfileEnd(profileId, pName, `Reached campaign limit (${dailyLimit})`);
             }
           } else {
             const errorMsg = result.error || result.action || '';
