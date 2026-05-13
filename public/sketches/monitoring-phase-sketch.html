@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Monitoring Phase — Schedules Lane Sketch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999999;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --green: #3fb950;
+    --red: #f85149;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: 40px;
+  }
+
+  .page-title {
+    font-family: var(--display);
+    letter-spacing: 0.04em;
+    font-size: 1.4rem;
+    color: var(--gray);
+    margin-bottom: 8px;
+  }
+  .page-sub {
+    color: var(--gray);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    margin-bottom: 40px;
+    max-width: 720px;
+  }
+
+  /* ─── Lane headers — match real dashboard ─── */
+  .dashboard-section-title {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gray);
+    margin: 0 0 12px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .empty-state {
+    color: var(--gray); font-size: 0.75rem;
+    text-align: center; padding: 32px 0;
+    font-family: var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
+  }
+
+  .lane { margin-bottom: 40px; }
+
+  /* ─── The Monitoring card ─── */
+  .mon-card {
+    border: 1px solid var(--hairline);
+    background: var(--bg);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+    transition: border-color 0.15s;
+  }
+  .mon-card.expanded { border-color: rgba(255, 255, 255, 0.28); }
+
+  .mon-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .mon-title {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+  }
+  .mon-badge {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 1px 8px;
+    border: 1px solid var(--green);
+    border-radius: 2px;
+    color: var(--green);
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    transform: translateY(-2px);
+  }
+  .mon-next {
+    color: var(--gray);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+  }
+  .mon-next b { color: var(--ink); font-weight: 500; }
+
+  .mon-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .mon-btn {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    padding: 5px 12px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .mon-btn:hover { border-color: var(--ink); }
+  .mon-btn.danger { color: var(--red); }
+  .mon-btn.danger:hover { border-color: var(--red); }
+  .mon-btn-expand {
+    background: transparent;
+    color: var(--gray);
+    border: none;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 8px;
+    padding: 4px 0;
+  }
+  .mon-btn-expand:hover { color: var(--ink); }
+
+  /* ─── Expanded details ─── */
+  .mon-details {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--hairline-soft);
+  }
+  .mon-sub-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--gray);
+    margin-bottom: 8px;
+  }
+  .mon-accounts { margin-bottom: 18px; }
+  .mon-account-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 0.78rem;
+    color: var(--ink);
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .mon-account-row:last-child { border-bottom: none; }
+  .mon-account-row .check-time { color: var(--gray); font-size: 0.72rem; }
+
+  .mon-counts {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 18px;
+    padding: 10px 0;
+    border-top: 1px solid var(--hairline-soft);
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .mon-count { font-size: 0.75rem; color: var(--gray); }
+  .mon-count b {
+    color: var(--ink);
+    font-family: var(--display);
+    font-size: 1.4rem;
+    font-weight: 400;
+    display: block;
+    letter-spacing: 0.02em;
+    margin-bottom: 2px;
+  }
+  .mon-count.intro b { color: var(--green); }
+  .mon-count.timeout b { color: var(--red); }
+
+  /* ─── Log ─── */
+  .mon-log {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--hairline-soft);
+    padding: 12px;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 0.72rem;
+    max-height: 200px;
+    overflow-y: auto;
+    color: var(--gray);
+  }
+  .mon-log .line { padding: 2px 0; }
+  .mon-log .ts { color: var(--gray); margin-right: 8px; }
+  .mon-log .ev-intro { color: var(--green); }
+  .mon-log .ev-check { color: var(--ink); }
+  .mon-log .ev-send { color: var(--ink); }
+
+  /* Side-by-side */
+  .demo-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 40px;
+  }
+  .demo-col h3 {
+    font-family: var(--display);
+    letter-spacing: 0.04em;
+    font-size: 1rem;
+    color: var(--gray);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--hairline-soft);
+  }
+
+  .annotation {
+    color: var(--gray);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    margin-top: 6px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+  <div class="page-title">MONITORING PHASE — DASHBOARD SKETCH</div>
+  <div class="page-sub">
+    What the operator sees during the 7-day post-sending window. The campaign drops out of the active sending view and appears in the Schedules lane as a Monitoring card. Two states shown: collapsed (default) and expanded (operator clicked into it).
+  </div>
+
+  <!-- ─── State A: Collapsed (default in Schedules lane) ─── -->
+  <div class="demo-row">
+
+    <div class="demo-col">
+      <h3>STATE 1 · COLLAPSED (default)</h3>
+      <div class="lane">
+        <h2 class="dashboard-section-title">Queued</h2>
+        <p class="empty-state">No queued campaigns.</p>
+      </div>
+      <div class="lane">
+        <h2 class="dashboard-section-title">Schedules</h2>
+
+        <div class="mon-card">
+          <div class="mon-row">
+            <div>
+              <div class="mon-title">
+                BULK CONNECTION CHECK + INTRODUCE
+                <span class="mon-badge">● MONITORING</span>
+              </div>
+              <div class="mon-next" style="margin-top:6px">
+                Next check: <b>today at 14:32</b> &middot; ends in <b>6d 19h</b>
+              </div>
+            </div>
+          </div>
+          <button class="mon-btn-expand">▾ Show details</button>
+        </div>
+
+      </div>
+      <div class="annotation">
+        One line per active monitoring campaign. Glanceable from the dashboard. Operator clicks "Show details" to expand.
+      </div>
+    </div>
+
+    <!-- ─── State B: Expanded ─── -->
+    <div class="demo-col">
+      <h3>STATE 2 · EXPANDED (clicked open)</h3>
+      <div class="lane">
+        <h2 class="dashboard-section-title">Schedules</h2>
+
+        <div class="mon-card expanded">
+          <div class="mon-row">
+            <div>
+              <div class="mon-title">
+                BULK CONNECTION CHECK + INTRODUCE
+                <span class="mon-badge">● MONITORING</span>
+              </div>
+              <div class="mon-next" style="margin-top:6px">
+                Next check: <b>today at 14:32</b> &middot; ends in <b>6d 19h</b>
+              </div>
+            </div>
+          </div>
+
+          <div class="mon-actions">
+            <button class="mon-btn">⚡ Check now</button>
+            <button class="mon-btn danger">✕ Stop monitoring</button>
+          </div>
+
+          <div class="mon-details">
+            <div class="mon-sub-label">Accounts (2)</div>
+            <div class="mon-accounts">
+              <div class="mon-account-row">
+                marife.espeleta@ortus.solutions
+                <span class="check-time">last check: 13:32 &middot; 5m ago</span>
+              </div>
+              <div class="mon-account-row">
+                ayush.goswami@ortus.solutions
+                <span class="check-time">last check: 13:32 &middot; 5m ago</span>
+              </div>
+            </div>
+
+            <div class="mon-counts">
+              <div class="mon-count">
+                <b>12</b>
+                Pending
+              </div>
+              <div class="mon-count intro">
+                <b>5</b>
+                Connected &amp; introduced
+              </div>
+              <div class="mon-count timeout">
+                <b>0</b>
+                Timed out (7d)
+              </div>
+            </div>
+
+            <div class="mon-sub-label">Log (live)</div>
+            <div class="mon-log">
+              <div class="line"><span class="ts">[13:32:14]</span> <span class="ev-check">📡 marife.espeleta: bulk check, 1 new accepted</span></div>
+              <div class="line"><span class="ts">[13:32:38]</span> <span class="ev-intro">🤝 marife → sean-james-alcosin: Introduction Made</span></div>
+              <div class="line"><span class="ts">[13:32:41]</span> <span class="ev-check">📡 ayush.goswami: bulk check, 0 new accepted</span></div>
+              <div class="line"><span class="ts">[13:32:42]</span> 🛏 Monitoring idle &middot; next check at 19:32</div>
+              <div class="line"><span class="ts">[07:32:00]</span> <span class="ev-check">📡 marife.espeleta: bulk check, 2 new accepted</span></div>
+              <div class="line"><span class="ts">[07:32:24]</span> <span class="ev-intro">🤝 marife → hannah-samson: Introduction Made</span></div>
+              <div class="line"><span class="ts">[07:32:51]</span> <span class="ev-intro">🤝 marife → francis-zuzartee: Introduction Made</span></div>
+              <div class="line"><span class="ts">[07:32:55]</span> <span class="ev-check">📡 ayush.goswami: bulk check, 1 new accepted</span></div>
+              <div class="line"><span class="ts">[07:33:18]</span> <span class="ev-intro">🤝 ayush → milena-fuda: Introduction Made</span></div>
+              <div class="line"><span class="ts">[07:33:20]</span> 🛏 Monitoring idle &middot; next check at 13:32</div>
+              <div class="line"><span class="ts">[01:32:00]</span> <span class="ev-check">📡 End-of-list bulk check &middot; all accounts</span></div>
+              <div class="line"><span class="ts">[01:32:08]</span> <span class="ev-check">📡 marife.espeleta: bulk check, 1 new accepted</span></div>
+              <div class="line"><span class="ts">[01:32:31]</span> <span class="ev-intro">🤝 marife → andrea-paolacci: Introduction Made</span></div>
+              <div class="line"><span class="ts">[01:32:33]</span> <span class="ev-check">📡 ayush.goswami: bulk check, 1 new accepted</span></div>
+              <div class="line"><span class="ts">[01:32:56]</span> <span class="ev-intro">🤝 ayush → tomasz-kowalski: Introduction Made</span></div>
+              <div class="line"><span class="ts">[01:32:58]</span> 🛏 Monitoring started &middot; next check at 07:32</div>
+              <div class="line"><span class="ts">[01:31:45]</span> <span class="ev-send">✓ Phase 1 complete &middot; 7 connection requests sent across 2 accounts</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="annotation">
+        Same card, expanded. Shows the SAME log that was streaming during Phase 1 — scheduled checks append onto it, oldest at the bottom (or top, your call).
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── State C: End-of-window ─── -->
+  <h3 style="font-family: var(--display); letter-spacing: 0.04em; font-size: 1rem; color: var(--gray); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px dashed var(--hairline-soft);">STATE 3 · LAST MINUTE OF 7-DAY WINDOW</h3>
+  <div class="lane" style="max-width: 50%;">
+    <h2 class="dashboard-section-title">Schedules</h2>
+    <div class="mon-card">
+      <div class="mon-row">
+        <div>
+          <div class="mon-title">
+            BULK CONNECTION CHECK + INTRODUCE
+            <span class="mon-badge" style="border-color: var(--red); color: var(--red);">● ENDING SOON</span>
+          </div>
+          <div class="mon-next" style="margin-top:6px">
+            Window ends in <b>4m</b> &middot; 3 leads still pending will be stamped <i>Closed - Not Connected</i>
+          </div>
+        </div>
+      </div>
+      <button class="mon-btn-expand">▾ Show details</button>
+    </div>
+  </div>
+  <div class="annotation" style="margin-top:6px;">
+    Near the end of the 7-day window the badge flips red so the operator notices. Stop-monitoring auto-fires at T+7d (or operator can let it).
+  </div>
+
+  <!-- ─── State D: Old vs new comparison ─── -->
+  <h3 style="font-family: var(--display); letter-spacing: 0.04em; font-size: 1rem; color: var(--gray); margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px dashed var(--hairline-soft);">BEFORE / AFTER — what the operator currently sees vs. what they'll see</h3>
+  <div class="demo-row">
+    <div class="demo-col">
+      <h3 style="border-bottom: 1px dashed var(--hairline-soft);">BEFORE (today)</h3>
+      <div style="border: 1px solid var(--hairline); padding: 14px 16px; margin-bottom: 10px;">
+        <div style="font-size: 0.78rem; color: var(--ink);">
+          [01:31:45] ✓ 7 connection requests sent &middot; 2 accounts<br>
+          [01:31:46] ✓ Campaign finished.<br>
+          <span style="color: var(--gray)">&nbsp;</span><br>
+          <span style="color: var(--gray)">(silence for 6 hours)</span><br>
+          <span style="color: var(--gray)">(post-campaign bulk-check fires in a SEPARATE log window the operator cannot see)</span>
+        </div>
+      </div>
+      <div class="annotation">Boss's complaint: "the bulk connection test and the introduction seems to be happening in a different log to the connections which is very confusing."</div>
+    </div>
+    <div class="demo-col">
+      <h3 style="border-bottom: 1px dashed var(--hairline-soft);">AFTER (this spec)</h3>
+      <div style="border: 1px solid var(--hairline); padding: 14px 16px; margin-bottom: 10px;">
+        <div style="font-size: 0.78rem; color: var(--ink);">
+          [01:31:45] ✓ 7 connection requests sent &middot; 2 accounts<br>
+          [01:31:50] <span style="color: var(--ink);">📡 End-of-list bulk check &middot; all accounts</span><br>
+          [01:32:08] <span style="color: var(--ink);">📡 marife: 1 new accepted</span><br>
+          [01:32:31] <span style="color: var(--green);">🤝 marife → andrea: Introduction Made</span><br>
+          [01:32:58] 🛏 Monitoring started &middot; next check at 07:32<br>
+          <span style="color: var(--gray)">(card appears in Schedules lane)</span><br>
+          [07:32:00] <span style="color: var(--ink);">📡 marife: bulk check, 2 new accepted</span><br>
+          [07:32:24] <span style="color: var(--green);">🤝 marife → hannah: Introduction Made</span><br>
+          [...]<br>
+          <span style="color: var(--gray)">+7 days of activity, all in the same log stream</span>
+        </div>
+      </div>
+      <div class="annotation">One continuous log. Campaign visible in Schedules lane the entire time.</div>
+    </div>
+  </div>
+
+</body>
+</html>
