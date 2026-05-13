@@ -32,6 +32,7 @@ import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
+import { registerAppender, buildAppendLogger } from './campaign-log-bus.js';
 import { dataPath } from './paths.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -2647,6 +2648,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
       });
       Object.assign(campaign, updated);
+
+      // v2.14: register a log appender per participating profile so the
+      // post-campaign scheduler's bulk-check log lines route back into
+      // this campaign's in-memory log array during the 7-day Monitoring
+      // window. Operator sees one continuous stream in the UI.
+      try {
+        const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+        const _appender = buildAppendLogger({ logs: campaign.logs, capLines: 5000 });
+        for (const _pid of profilesThatSentAtLeastOne) {
+          registerAppender(_sheetId, _pid, _appender);
+        }
+      } catch (busErr) {
+        console.warn('[monitoring] Log bus registration failed:', busErr.message);
+      }
     }
 
     // Register a post-campaign acceptance-tracking window for every profile

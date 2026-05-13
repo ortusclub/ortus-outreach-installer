@@ -20,6 +20,7 @@ import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { notifyEmail, enqueueDesktopNotification } from './notifier.js';
 import { getPrefs } from './notification-prefs.js';
+import { appendCampaignLog } from './campaign-log-bus.js';
 
 const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
 const TICK_INTERVAL_MS = 30 * 60 * 1000; // 30 min between scheduler passes
@@ -171,7 +172,9 @@ async function tick() {
     // Entry may have been deleted above (expired) — guard.
     if (!entry) continue;
 
-    console.log(`[post-campaign] Sweeping ${entry.profileName} on sheet ${entry.sheetId}…`);
+    const _sweepMsg = `📡 ${entry.profileName}: bulk check pass starting…`;
+    console.log(`[post-campaign] ${_sweepMsg}`);
+    appendCampaignLog(entry.sheetId, entry.profileId, _sweepMsg);
     let launched;
     try {
       launched = await launchProfile(entry.profileId, token);
@@ -186,7 +189,9 @@ async function tick() {
       if (r.error) {
         console.warn(`[post-campaign] ${entry.profileName} sweep error: ${r.error}`);
       } else {
+        const _resultMsg = `📡 ${entry.profileName}: bulk check, ${r.matched} new accepted · ${r.stamped || 0} still pending`;
         console.log(`[post-campaign] ${entry.profileName}: ${r.matched} Connected, ${r.stamped || 0} Still Pending`);
+        appendCampaignLog(entry.sheetId, entry.profileId, _resultMsg);
         // Auto-intro pass for connect_and_introduce campaigns whose
         // primary fields were stored at registration time.
         if (Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0
@@ -203,6 +208,10 @@ async function tick() {
               primaryIntroBody: entry.primaryIntroBody,
               primaryUrl: entry.primaryUrl || '',
               introTitle: entry.introTitle || 'Introduction: {first name} <> {intro name}',
+              log: (line) => {
+                console.log(`[post-campaign] ${line}`);
+                appendCampaignLog(entry.sheetId, entry.profileId, line);
+              },
             });
           } catch (introErr) {
             console.warn(`[post-campaign] ${entry.profileName} auto-intro threw: ${introErr.message}`);
@@ -214,6 +223,12 @@ async function tick() {
     } finally {
       try { await closeProfile(entry.profileId); } catch { /* */ }
     }
+
+    // Emit "idle" line with next-check time (now + 6h).
+    const _nextCheckAt = new Date(now + SWEEP_COOLDOWN_MS);
+    const _nextHHMM = _nextCheckAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const _idleMsg = `🛏 Monitoring idle · next check at ${_nextHHMM}`;
+    appendCampaignLog(entry.sheetId, entry.profileId, _idleMsg);
 
     entry.lastCheckedAt = now;
     changed = true;
