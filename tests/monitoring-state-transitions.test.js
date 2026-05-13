@@ -36,10 +36,14 @@ test('transitionToMonitoring: empty participatingProfileIds → state=done (no a
   assert.equal(out.state, 'done');
 });
 
-test('transitionToMonitoring appends a "Monitoring started" log line', () => {
+test('transitionToMonitoring appends a "Monitoring started" log line with next-check time in local TZ', () => {
   const campaign = { id: 'c1', mode: 'connect_and_introduce', state: 'running', logs: [] };
-  const out = transitionToMonitoring(campaign, { now: new Date('2026-05-13T01:31:45Z'), participatingProfileIds: ['p1'] });
+  const now = new Date('2026-05-13T01:31:45Z');
+  const out = transitionToMonitoring(campaign, { now, participatingProfileIds: ['p1'] });
   const last = out.logs[out.logs.length - 1];
   assert.match(last, /Monitoring started/);
-  assert.match(last, /07:31/);
+  const expectedNextCheck = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+  const hh = String(expectedNextCheck.getHours()).padStart(2, '0');
+  const mm = String(expectedNextCheck.getMinutes()).padStart(2, '0');
+  assert.ok(last.includes(`${hh}:${mm}`), `expected log to contain "${hh}:${mm}", got: ${last}`);
 });
