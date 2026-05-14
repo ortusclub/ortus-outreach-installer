@@ -1405,6 +1405,27 @@ export async function sendIntroMessage(page, body, introName, groupTitle) {
         .replace(/[^a-z0-9\s'-]/g, ' ').replace(/\s+/g, ' ').trim();
       const norm = normalizeName(name);
 
+      // 3-tier matcher (mirrors src/linkedin/match-primary.js — keep in sync).
+      //   1. exact / startsWith
+      //   2. token-prefix (each token in configured name must prefix some word in candidate)
+      //   3. single-candidate fallback (only one suggestion: trust it)
+      const matchOne = (cands) => {
+        for (let i = 0; i < cands.length; i++) {
+          const t = normalizeName(cands[i].innerText || cands[i].textContent);
+          if (t === norm || t.startsWith(`${norm} `)) return { idx: i, reason: 'exact' };
+        }
+        const tokens = norm.split(/\s+/);
+        for (let i = 0; i < cands.length; i++) {
+          const t = normalizeName(cands[i].innerText || cands[i].textContent);
+          const words = t.split(/\s+/);
+          if (tokens.every(tok => words.some(w => w.startsWith(tok)))) {
+            return { idx: i, reason: 'token-prefix' };
+          }
+        }
+        if (cands.length === 1) return { idx: 0, reason: 'single-candidate' };
+        return { idx: -1, reason: 'no-match' };
+      };
+
       let lastCandidateCount = 0;
       let lastCandidatePreview = '';
       for (let i = 0; i < 30; i++) {
@@ -1421,27 +1442,24 @@ export async function sendIntroMessage(page, body, introName, groupTitle) {
             lastCandidateCount = candidates.length;
             lastCandidatePreview = candidates.slice(0, 3).map(c => (c.innerText || '').trim().split('\n')[0]).join(' | ');
           }
-          const exact = candidates.find((c) => {
-            const t = normalizeName(c.innerText || c.textContent);
-            return t === norm || t.startsWith(`${norm} `);
-          });
-          if (exact) {
-            activate(exact);
-            return { ok: true, candidateCount: candidates.length, preview: lastCandidatePreview };
+          const result = matchOne(candidates);
+          if (result.idx >= 0) {
+            activate(candidates[result.idx]);
+            return { ok: true, candidateCount: candidates.length, preview: lastCandidatePreview, matchReason: result.reason };
           }
         }
       }
       return { ok: false, candidateCount: lastCandidateCount, preview: lastCandidatePreview };
     }, introName);
 
-    console.log(`[actions:intro] Dropdown poll result: ok=${clickResult.ok} candidates=${clickResult.candidateCount} preview="${clickResult.preview}"`);
+    console.log(`[actions:intro] Dropdown poll result: ok=${clickResult.ok} candidates=${clickResult.candidateCount} preview="${clickResult.preview}" matchReason=${clickResult.matchReason || 'n/a'}`);
 
     if (!clickResult.ok) {
       // Clean up the attribute before throwing
       await page.evaluate(() => document.querySelector('[data-ortus-recipient="1"]')?.removeAttribute('data-ortus-recipient'));
       const detail = clickResult.candidateCount === 0
         ? 'recipient-not-in-results (dropdown never opened — confirm 1st-degree connection)'
-        : `recipient-not-in-results (${clickResult.candidateCount} suggestions but no exact match; saw: ${clickResult.preview})`;
+        : `recipient-not-in-results (${clickResult.candidateCount} suggestions but no match; saw: ${clickResult.preview})`;
       throw new Error(`INTRO_RECIPIENT_NOT_FOUND: ${detail}`);
     }
 
