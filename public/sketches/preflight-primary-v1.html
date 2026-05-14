@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pre-flight: primary person verification — v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-elev: #141414;
+    --ink: #fafafa;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --gold: #F7BE68;
+    --green: #3fb950;
+    --red: #f85149;
+    --amber: #d6a14a;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 48px 56px 120px;
+    -webkit-font-smoothing: antialiased;
+    font-weight: 400;
+  }
+
+  .page-head { display: flex; align-items: baseline; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.6rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+
+  .section { margin-bottom: 64px; }
+  .section-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 6px; }
+  .section-title { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .section-counter { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  .section-desc { font-size: 0.82rem; color: var(--gray); margin-bottom: 22px; max-width: 760px; line-height: 1.5; }
+
+  /* Modal frame */
+  .modal {
+    background: var(--bg-elev);
+    border: 1px solid var(--hairline);
+    border-radius: 0;
+    max-width: 560px;
+    width: 100%;
+    padding: 32px 32px 28px;
+  }
+  .modal-eyebrow { font-size: 0.6rem; letter-spacing: 0.22em; color: var(--gray); text-transform: uppercase; margin-bottom: 14px; }
+  .modal-title { font-family: var(--display); font-size: 1.9rem; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.05; margin-bottom: 18px; }
+  .modal-body { font-size: 0.88rem; color: var(--gray); line-height: 1.55; margin-bottom: 22px; }
+  .modal-body strong { color: var(--ink); font-weight: 500; }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 18px; border-top: 1px solid var(--hairline-soft); }
+  .btn {
+    font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase;
+    padding: 10px 20px; border: 1px solid var(--hairline); background: transparent; color: var(--ink);
+    border-radius: 9999px; cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.72; }
+  .btn--ghost { color: var(--gray); }
+  .btn--primary { border-color: var(--ink); }
+  .btn--accent { border-color: var(--gold); color: var(--gold); }
+
+  /* Progress + per-profile rows */
+  .profile-list { display: flex; flex-direction: column; border-top: 1px solid var(--hairline-soft); margin-bottom: 22px; }
+  .profile-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 4px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .profile-row:last-child { border-bottom: none; }
+  .profile-icon { font-family: var(--display); font-size: 1.15rem; line-height: 1; text-align: center; }
+  .profile-icon.pass { color: var(--green); }
+  .profile-icon.fail { color: var(--red); }
+  .profile-icon.spin { color: var(--gray); animation: spin 1.4s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .profile-name { font-size: 0.85rem; color: var(--ink); font-weight: 500; }
+  .profile-detail { font-size: 0.72rem; color: var(--gray); margin-top: 3px; line-height: 1.4; }
+  .profile-detail strong { color: var(--amber); font-weight: 500; }
+  .profile-status { font-size: 0.58rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); white-space: nowrap; }
+  .profile-status.pass { color: var(--green); }
+  .profile-status.fail { color: var(--red); }
+
+  /* Suggestion pills (did-you-mean) */
+  .suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .sug-pill {
+    font-size: 0.62rem; letter-spacing: 0.04em;
+    border: 1px solid var(--amber); color: var(--amber);
+    padding: 4px 10px; border-radius: 9999px; cursor: pointer;
+    background: transparent;
+  }
+  .sug-pill:hover { background: rgba(214, 161, 74, 0.08); }
+
+  /* Progress bar (verifying state) */
+  .progress {
+    height: 2px; background: var(--hairline-soft); position: relative; margin-bottom: 18px; overflow: hidden;
+  }
+  .progress-fill {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: var(--ink); width: 35%;
+    animation: progress 2.5s ease-in-out infinite;
+  }
+  @keyframes progress {
+    0% { width: 10%; }
+    50% { width: 75%; }
+    100% { width: 100%; }
+  }
+
+  /* Summary banner */
+  .summary-banner {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 16px;
+    border: 1px solid var(--hairline-soft);
+    margin-bottom: 18px;
+  }
+  .summary-banner.pass { border-color: rgba(63, 185, 80, 0.4); }
+  .summary-banner.fail { border-color: rgba(248, 81, 73, 0.4); }
+  .summary-icon { font-family: var(--display); font-size: 1.3rem; line-height: 1; }
+  .summary-icon.pass { color: var(--green); }
+  .summary-icon.fail { color: var(--red); }
+  .summary-text { font-size: 0.82rem; color: var(--ink); line-height: 1.4; }
+  .summary-text small { display: block; color: var(--gray); font-size: 0.72rem; margin-top: 2px; }
+
+  /* Sketches stack */
+  .sketches { display: grid; gap: 56px; }
+  @media (min-width: 1280px) {
+    .sketches { grid-template-columns: 1fr 1fr; gap: 56px 48px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="page-title">Pre-flight verification</div>
+  <div class="page-sub">CC + IC · launch-time check · primary person · v1</div>
+</div>
+
+<div class="section">
+  <div class="section-head">
+    <div class="section-title">The flow</div>
+    <div class="section-counter">3 states</div>
+  </div>
+  <div class="section-desc">
+    Operator clicks Start on a CC+IC campaign. Before any connection requests go out, the app verifies the configured <em>primary person</em> (name + LinkedIn URL, both required) can be reached from every active sender account. Three possible outcomes below — each is its own modal state.
+  </div>
+</div>
+
+<div class="sketches">
+
+  <!-- ─────────────────────────────────────────────────────────── -->
+  <!-- STATE 1: VERIFYING -->
+  <!-- ─────────────────────────────────────────────────────────── -->
+  <div>
+    <div class="section-head" style="margin-bottom: 18px;">
+      <div class="section-title">A · Verifying</div>
+      <div class="section-counter">~10–15 sec</div>
+    </div>
+
+    <div class="modal">
+      <div class="modal-eyebrow">Pre-flight · in progress</div>
+      <div class="modal-title">Verifying primary person</div>
+      <div class="modal-body">
+        Checking <strong>Sam Ferrer</strong> is reachable from each sender account before the campaign starts. Cancel anytime — no connection requests have been sent yet.
+      </div>
+
+      <div class="progress"><div class="progress-fill"></div></div>
+
+      <div class="profile-list">
+        <div class="profile-row">
+          <div class="profile-icon pass">✓</div>
+          <div>
+            <div class="profile-name">antonio@ortusclub.com</div>
+            <div class="profile-detail">Profile loaded · typeahead matched</div>
+          </div>
+          <div class="profile-status pass">Verified</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-icon spin">↻</div>
+          <div>
+            <div class="profile-name">pat@ortusclub.com</div>
+            <div class="profile-detail">Loading profile…</div>
+          </div>
+          <div class="profile-status">Checking</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-icon" style="color: var(--gray-2);">·</div>
+          <div>
+            <div class="profile-name">sam@ortusclub.com</div>
+            <div class="profile-detail">Queued</div>
+          </div>
+          <div class="profile-status" style="color: var(--gray-2);">Pending</div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn--ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────── -->
+  <!-- STATE 2: ALL PASS -->
+  <!-- ─────────────────────────────────────────────────────────── -->
+  <div>
+    <div class="section-head" style="margin-bottom: 18px;">
+      <div class="section-title">B · All clear</div>
+      <div class="section-counter">auto-dismiss · 1.5 sec</div>
+    </div>
+
+    <div class="modal">
+      <div class="modal-eyebrow">Pre-flight · complete</div>
+      <div class="modal-title">All accounts verified</div>
+
+      <div class="summary-banner pass">
+        <div class="summary-icon pass">✓</div>
+        <div class="summary-text">
+          <strong>Sam Ferrer</strong> is reachable from all 3 sender accounts.
+          <small>Campaign starting now.</small>
+        </div>
+      </div>
+
+      <div class="profile-list">
+        <div class="profile-row">
+          <div class="profile-icon pass">✓</div>
+          <div>
+            <div class="profile-name">antonio@ortusclub.com</div>
+            <div class="profile-detail">Profile loaded · typeahead matched · 1st-degree confirmed</div>
+          </div>
+          <div class="profile-status pass">Verified</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-icon pass">✓</div>
+          <div>
+            <div class="profile-name">pat@ortusclub.com</div>
+            <div class="profile-detail">Profile loaded · typeahead matched · 1st-degree confirmed</div>
+          </div>
+          <div class="profile-status pass">Verified</div>
+        </div>
+        <div class="profile-row">
+          <div class="profile-icon pass">✓</div>
+          <div>
+            <div class="profile-name">sam@ortusclub.com</div>
+            <div class="profile-detail">Profile loaded · typeahead matched · 1st-degree confirmed</div>
+          </div>
+          <div class="profile-status pass">Verified</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────── -->
+  <!-- STATE 3: FAILURE — MIXED CASES -->
+  <!-- ─────────────────────────────────────────────────────────── -->
+  <div style="grid-column: 1 / -1;">
+    <div class="section-head" style="margin-bottom: 18px;">
+      <div class="section-title">C · Failure</div>
+      <div class="section-counter">hard-block · explicit reasons</div>
+    </div>
+    <div class="section-desc">
+      Below shows the three failure types in one modal so you can compare them. In real use, only the failures that actually occurred would be listed.
+    </div>
+
+    <div class="modal" style="max-width: 700px;">
+      <div class="modal-eyebrow">Pre-flight · campaign blocked</div>
+      <div class="modal-title">Primary person can't be reached</div>
+
+      <div class="summary-banner fail">
+        <div class="summary-icon fail">✕</div>
+        <div class="summary-text">
+          <strong>Sam Ferrer</strong> couldn't be verified on 3 of 3 sender accounts. Connection requests have not been sent.
+          <small>Fix the issues below and try again.</small>
+        </div>
+      </div>
+
+      <div class="profile-list">
+
+        <!-- Case 1: Name mismatch (did-you-mean) -->
+        <div class="profile-row" style="grid-template-columns: 22px 1fr auto; align-items: start;">
+          <div class="profile-icon fail" style="margin-top: 4px;">✕</div>
+          <div>
+            <div class="profile-name">antonio@ortusclub.com</div>
+            <div class="profile-detail">
+              Profile loaded, but typeahead doesn't surface "Sam Ferrer".
+              LinkedIn shows this person's name as <strong>Samuel Ferrer</strong>.
+            </div>
+            <div class="suggestions">
+              <button class="sug-pill">Use "Samuel Ferrer"</button>
+            </div>
+          </div>
+          <div class="profile-status fail">Name mismatch</div>
+        </div>
+
+        <!-- Case 2: URL works but not 1st-degree -->
+        <div class="profile-row" style="grid-template-columns: 22px 1fr auto; align-items: start;">
+          <div class="profile-icon fail" style="margin-top: 4px;">✕</div>
+          <div>
+            <div class="profile-name">pat@ortusclub.com</div>
+            <div class="profile-detail">
+              Profile loads but no <strong>Message</strong> button — Sam Ferrer is not a 1st-degree connection on this account. Intros from this account would fail every time.
+            </div>
+          </div>
+          <div class="profile-status fail">Not connected</div>
+        </div>
+
+        <!-- Case 3: URL invalid -->
+        <div class="profile-row" style="grid-template-columns: 22px 1fr auto; align-items: start;">
+          <div class="profile-icon fail" style="margin-top: 4px;">✕</div>
+          <div>
+            <div class="profile-name">sam@ortusclub.com</div>
+            <div class="profile-detail">
+              URL <strong>linkedin.com/in/sam-ferrer-xyz</strong> returned 404. Check the LinkedIn URL field in the wizard.
+            </div>
+          </div>
+          <div class="profile-status fail">URL not found</div>
+        </div>
+
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn--ghost">Cancel</button>
+        <button class="btn btn--primary">Edit primary person</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
