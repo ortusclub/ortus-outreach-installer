@@ -21,35 +21,10 @@ import { runAutoIntros } from './linkedin/auto-intro.js';
 import { notifyEmail, enqueueDesktopNotification } from './notifier.js';
 import { getPrefs } from './notification-prefs.js';
 import { appendCampaignLog } from './campaign-log-bus.js';
-import { isTestModeOn } from './test-mode.js';
 
 const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
-const PROD_TICK_INTERVAL_MS = 30 * 60 * 1000;
-const TEST_TICK_INTERVAL_MS = 20_000;
-const PROD_SWEEP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // per (sheet, profile)
-// Test mode is "fast first sweep so we know the plumbing works, then slow
-// enough that the operator has time to manually accept on another browser".
-const TEST_FIRST_SWEEP_COOLDOWN_MS = 60_000;
-const TEST_SUBSEQUENT_SWEEP_COOLDOWN_MS = 5 * 60 * 1000;
-
-// Pure helper exported for unit testing — no disk reads, no globals.
-export function computeCooldownMs({ isTestMode, sweepCount }) {
-  if (!isTestMode) return PROD_SWEEP_COOLDOWN_MS;
-  return (sweepCount || 0) > 0
-    ? TEST_SUBSEQUENT_SWEEP_COOLDOWN_MS
-    : TEST_FIRST_SWEEP_COOLDOWN_MS;
-}
-
-function getSweepCooldownMs(entry) {
-  return computeCooldownMs({
-    isTestMode: isTestModeOn(),
-    sweepCount: (entry && entry.sweepCount) || 0,
-  });
-}
-
-function getTickIntervalMs() {
-  return isTestModeOn() ? TEST_TICK_INTERVAL_MS : PROD_TICK_INTERVAL_MS;
-}
+const TICK_INTERVAL_MS = 30 * 60 * 1000;
+const SWEEP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // per (sheet, profile)
 
 let _tickTimer = null;
 
@@ -109,8 +84,6 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     // The campaign's own bulk-check just ran, so no need to immediately
     // sweep again — set lastCheckedAt to "now" so the cooldown applies.
     lastCheckedAt: now,
-    // Drives the first-vs-subsequent cooldown selection in test mode.
-    sweepCount: 0,
   };
   await writeSchedule(sched);
   console.log(`[post-campaign] Registered ${profileName || profileId} on sheet ${sheetId} for ${days}d (expires ${new Date(sched[k].expiresAt).toISOString()}, owner: ${sched[k].operatorEmail || 'none'})`);
@@ -186,7 +159,7 @@ async function tick() {
       console.log(`[post-campaign] Schedule expired for ${entry.profileName} on sheet ${entry.sheetId}`);
       continue;
     }
-    if (now < (entry.lastCheckedAt || 0) + getSweepCooldownMs(entry)) continue;
+    if (now < (entry.lastCheckedAt || 0) + SWEEP_COOLDOWN_MS) continue;
     dueKeys.push(k);
   }
 
@@ -251,14 +224,10 @@ async function tick() {
       try { await closeProfile(entry.profileId); } catch { /* */ }
     }
 
-    // Bump sweepCount BEFORE computing next-check time, so the cooldown
-    // we display is the "subsequent" one (5min in test mode) — not the
-    // "first" one we just consumed.
     entry.lastCheckedAt = now;
-    entry.sweepCount = (entry.sweepCount || 0) + 1;
     changed = true;
 
-    const _nextCheckAt = new Date(now + getSweepCooldownMs(entry));
+    const _nextCheckAt = new Date(now + SWEEP_COOLDOWN_MS);
     const _nextHHMM = _nextCheckAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const _idleMsg = `🛏 Monitoring idle · next check at ${_nextHHMM}`;
     appendCampaignLog(entry.sheetId, entry.profileId, _idleMsg);
@@ -273,26 +242,16 @@ async function tick() {
   if (changed) await writeSchedule(sched);
 }
 
-// Chained setTimeout (not setInterval) so flipping test mode mid-session
-// re-paces the loop on the next tick instead of requiring an Electron restart.
-function _scheduleNext() {
-  _tickTimer = setTimeout(async () => {
-    try { await tick(); }
-    catch (err) { console.warn(`[post-campaign] Tick threw: ${err.message}`); }
-    finally { _scheduleNext(); }
-  }, getTickIntervalMs());
-}
-
 export function startScheduler() {
   if (_tickTimer) return;
+  _tickTimer = setInterval(() => { tick().catch((err) => console.warn(`[post-campaign] Tick threw: ${err.message}`)); }, TICK_INTERVAL_MS);
   // First pass shortly after boot so overdue checks don't wait the full interval.
   setTimeout(() => { tick().catch((err) => console.warn(`[post-campaign] First-tick threw: ${err.message}`)); }, 30_000);
-  _scheduleNext();
-  console.log(`[post-campaign] Scheduler started (interval: ${Math.round(getTickIntervalMs() / 1000)}s, test mode: ${isTestModeOn() ? 'on' : 'off'})`);
+  console.log(`[post-campaign] Scheduler started (30-min ticks, 6h per-account cooldown)`);
 }
 
 export function stopScheduler() {
-  if (_tickTimer) clearTimeout(_tickTimer);
+  if (_tickTimer) clearInterval(_tickTimer);
   _tickTimer = null;
 }
 

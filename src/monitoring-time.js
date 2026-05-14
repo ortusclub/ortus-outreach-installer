@@ -1,16 +1,5 @@
-import { isTestModeOn } from './test-mode.js';
-
 export const MONITORING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const PROD_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const TEST_CHECK_INTERVAL_MS = 60_000;
-
-// Backward-compat for any caller that imports the constant by name (e.g. tests).
-// New callers should use getCheckIntervalMs().
-export const CHECK_INTERVAL_MS = PROD_CHECK_INTERVAL_MS;
-
-export function getCheckIntervalMs() {
-  return isTestModeOn() ? TEST_CHECK_INTERVAL_MS : PROD_CHECK_INTERVAL_MS;
-}
+export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function _toDate(d) {
   return d instanceof Date ? d : new Date(d);
@@ -22,16 +11,14 @@ export function computeMonitoringUntil(sendingEndedAt) {
 }
 
 /**
- * Returns the next check boundary strictly AFTER `now`, measured from
- * `sendingEndedAt`. Boundary spacing follows getCheckIntervalMs() — 6h in
- * production, 1min in test mode. Strict >: a `now` that lands exactly on
- * a boundary returns the boundary after it.
+ * Returns the next 6h check boundary strictly AFTER `now`, measured from
+ * `sendingEndedAt`. If `now` lands exactly on a boundary, returns the next
+ * one (strict >).
  */
 export function recomputeNextCheckAt(sendingEndedAt, now) {
   const s = _toDate(sendingEndedAt).getTime();
   const n = _toDate(now).getTime();
-  const interval = getCheckIntervalMs();
   const elapsed = n - s;
-  const ticksPassed = Math.floor(elapsed / interval) + 1;
-  return new Date(s + ticksPassed * interval);
+  const ticksPassed = Math.floor(elapsed / CHECK_INTERVAL_MS) + 1;
+  return new Date(s + ticksPassed * CHECK_INTERVAL_MS);
 }

@@ -2442,26 +2442,6 @@ app.post('/api/preview-intro-dm', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Dev tools — Test mode (compress 6h sweep to 60s for manual testing)
-// ---------------------------------------------------------------------------
-
-app.get('/api/test-mode', async (_req, res) => {
-  const { isTestModeOn } = await import('./src/test-mode.js');
-  res.json({ on: isTestModeOn() });
-});
-
-app.post('/api/test-mode', async (req, res) => {
-  try {
-    const { on } = req.body || {};
-    const { setTestMode } = await import('./src/test-mode.js');
-    setTestMode(!!on);
-    res.json({ ok: true, on: !!on });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
 // Phase 2.8.20 (W1-C1) — fatal-error sink. Sync write because the process is
 // already dying — async writes risk being dropped before the event loop ends.
 // Line-delimited JSON (NDJSON) keeps appends cheap and partial-write-safe.

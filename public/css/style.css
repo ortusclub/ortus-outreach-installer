@@ -3866,18 +3866,3 @@ body.route-dashboard .sidebar-nav { display: none; }
   border-top: 1px solid var(--hairline-soft);
 }
 
-/* Dev tools — Test mode banner */
-.testmode-banner {
-  position: sticky;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  background: rgba(214, 161, 74, 0.12);
-  border-bottom: 1px solid rgba(214, 161, 74, 0.5);
-  color: #d6a14a;
-  text-align: center;
-  padding: 6px 16px;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-}
