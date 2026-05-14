@@ -35,6 +35,7 @@
         <div class="nav-section-label">Dev tools</div>
         <button type="button" class="nav-item" onclick="devVerifyPrimaryNow()">Verify primary person</button>
         <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
+        <button type="button" class="nav-item" id="devtool-testmode-toggle" onclick="devToggleTestMode()">Test mode: 1-min sweep · <span id="testmode-state">OFF</span></button>
       </nav>
 
       <div class="theme-toggle-group">
@@ -85,6 +86,7 @@
 
     <!-- ── Main ── -->
     <main class="main">
+    <div id="testmode-banner" class="testmode-banner hidden">&#9888; TEST MODE: monitoring sweep compressed to 1 minute. Disable in Dev tools when done.</div>
     <div class="container">
     <div class="page-header">
       <div class="page-header-title">

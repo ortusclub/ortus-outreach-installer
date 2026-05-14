@@ -1,5 +1,16 @@
+import { isTestModeOn } from './test-mode.js';
+
 export const MONITORING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const PROD_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const TEST_CHECK_INTERVAL_MS = 60_000;
+
+// Backward-compat for any caller that imports the constant by name (e.g. tests).
+// New callers should use getCheckIntervalMs().
+export const CHECK_INTERVAL_MS = PROD_CHECK_INTERVAL_MS;
+
+export function getCheckIntervalMs() {
+  return isTestModeOn() ? TEST_CHECK_INTERVAL_MS : PROD_CHECK_INTERVAL_MS;
+}
 
 function _toDate(d) {
   return d instanceof Date ? d : new Date(d);

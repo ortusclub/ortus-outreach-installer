@@ -21,10 +21,19 @@ import { runAutoIntros } from './linkedin/auto-intro.js';
 import { notifyEmail, enqueueDesktopNotification } from './notifier.js';
 import { getPrefs } from './notification-prefs.js';
 import { appendCampaignLog } from './campaign-log-bus.js';
+import { isTestModeOn } from './test-mode.js';
 
 const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
 const TICK_INTERVAL_MS = 30 * 60 * 1000; // 30 min between scheduler passes
-const SWEEP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // per (sheet, profile)
+const PROD_SWEEP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // per (sheet, profile)
+const TEST_SWEEP_COOLDOWN_MS = 60_000;
+
+function getSweepCooldownMs() {
+  return isTestModeOn() ? TEST_SWEEP_COOLDOWN_MS : PROD_SWEEP_COOLDOWN_MS;
+}
+
+// Backward-compat for any caller importing the constant.
+const SWEEP_COOLDOWN_MS = PROD_SWEEP_COOLDOWN_MS;
 
 let _tickTimer = null;
 
@@ -159,7 +168,7 @@ async function tick() {
       console.log(`[post-campaign] Schedule expired for ${entry.profileName} on sheet ${entry.sheetId}`);
       continue;
     }
-    if (now < (entry.lastCheckedAt || 0) + SWEEP_COOLDOWN_MS) continue;
+    if (now < (entry.lastCheckedAt || 0) + getSweepCooldownMs()) continue;
     dueKeys.push(k);
   }
 
@@ -224,8 +233,8 @@ async function tick() {
       try { await closeProfile(entry.profileId); } catch { /* */ }
     }
 
-    // Emit "idle" line with next-check time (now + 6h).
-    const _nextCheckAt = new Date(now + SWEEP_COOLDOWN_MS);
+    // Emit "idle" line with next-check time (now + cooldown).
+    const _nextCheckAt = new Date(now + getSweepCooldownMs());
     const _nextHHMM = _nextCheckAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const _idleMsg = `🛏 Monitoring idle · next check at ${_nextHHMM}`;
     appendCampaignLog(entry.sheetId, entry.profileId, _idleMsg);

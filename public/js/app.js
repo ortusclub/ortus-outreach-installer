@@ -252,6 +252,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (__cockpit.running) startPolling();
   }).catch(() => {});
 
+  // Dev tools: sync banner and toggle label on load.
+  refreshTestModeBanner();
+
   // Phase 2.8.14: relocate the Throughput section (#nav-pace) to sit right
   // under the Accounts section (#nav-accounts) so the live total recalculation
   // is contextual to the account selection above it.
@@ -7434,3 +7437,39 @@ function closePreviewIntroModal() {
   if (m) m.classList.add('hidden');
 }
 window.closePreviewIntroModal = closePreviewIntroModal;
+
+async function devToggleTestMode() {
+  try {
+    const curRes = await fetch('/api/test-mode');
+    const cur = await curRes.json();
+    const next = !cur.on;
+    const res = await fetch('/api/test-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on: next }),
+    });
+    if (!res.ok) {
+      alert('Could not toggle test mode.');
+      return;
+    }
+    refreshTestModeBanner();
+    alert(next
+      ? '✓ Test mode ON. Monitoring sweeps now fire every 1 minute. Disable when done testing.'
+      : '✓ Test mode OFF. Monitoring sweeps return to 6-hour cadence.');
+  } catch (e) {
+    alert(`Toggle failed: ${e.message}`);
+  }
+}
+window.devToggleTestMode = devToggleTestMode;
+
+async function refreshTestModeBanner() {
+  try {
+    const res = await fetch('/api/test-mode');
+    const { on } = await res.json();
+    const banner = document.getElementById('testmode-banner');
+    const stateEl = document.getElementById('testmode-state');
+    if (banner) banner.classList.toggle('hidden', !on);
+    if (stateEl) stateEl.textContent = on ? 'ON' : 'OFF';
+  } catch { /* best-effort */ }
+}
+window.refreshTestModeBanner = refreshTestModeBanner;
