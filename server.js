@@ -2187,11 +2187,12 @@ app.listen(PORT, async () => {
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);
 
-  // Post-campaign acceptance tracking sweeps are disabled. Operators run
-  // the dedicated Check Status campaign manually when they want to refresh
-  // Connected status. The scheduler module is left in the codebase but not
-  // started — existing `data/post-campaign-bulk-check.json` schedules will
-  // simply sit idle (no harm).
+  // Post-campaign sweeps power the CC+IC auto-intro DM (and bulk-check
+  // refresh for any other registered entry). Each tick respects per-entry
+  // cooldown + 7-day expiry; runAutoIntros only fires for entries that
+  // carry primaryName/primaryIntroBody, so Check Status-only entries are
+  // bulk-checked but never DM'd.
+  startPostCampaignScheduler();
 
   // Load and register saved schedules (D-05)
   loadSchedules().then(schedules => {
