@@ -10,7 +10,8 @@
  * Spec: docs/superpowers/specs/2026-05-14-cc-ic-primary-person-preflight-design.md §4
  */
 
-const PROFILE_NAV_TIMEOUT_MS = 30_000;
+const PROFILE_NAV_TIMEOUT_MS = 60_000;
+const PILL_WAIT_TIMEOUT_MS = 30_000;
 
 export async function verifyPrimaryPerson({
   page,
@@ -174,9 +175,10 @@ export async function verifyPrimaryPerson({
     return { ok: false, failureType: 'crash', canonicalName, detail: `Compose nav failed: ${e.message}` };
   }
 
-  // Wait up to 15s for the recipient "Remove" pill to appear, confirming
-  // LinkedIn routed the publicId to a real connection.
-  log(`  [preflight:${profileName}] Waiting for recipient pill to appear (up to 15s)…`);
+  // Wait up to PILL_WAIT_TIMEOUT_MS for the recipient "Remove" pill to
+  // appear, confirming LinkedIn routed the publicId to a real connection.
+  // Returns as soon as the pill renders (500ms polling).
+  log(`  [preflight:${profileName}] Waiting for recipient pill to appear (up to ${Math.round(PILL_WAIT_TIMEOUT_MS / 1000)}s)…`);
   let pillFound = false;
   let pillAriaLabel = '';
   try {
@@ -187,7 +189,7 @@ export async function verifyPrimaryPerson({
       if (pills.length === 0) return false;
       // Return the first pill's aria-label so we can log it.
       return pills[0].getAttribute('aria-label') || 'Remove (no label)';
-    }, { timeout: 15_000, polling: 500 }).then(handle => handle.jsonValue());
+    }, { timeout: PILL_WAIT_TIMEOUT_MS, polling: 500 }).then(handle => handle.jsonValue());
     pillFound = true;
   } catch {
     // Recipient pill never appeared. Distinguish causes.
