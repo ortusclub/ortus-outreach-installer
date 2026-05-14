@@ -2734,7 +2734,6 @@ function showPreflightFailure(results, primaryName) {
       timeout:        'Timed out',
       config:         'Config missing',
       session_expired:'Session expired',
-      render_timeout: 'Profile didn\'t render',
     };
     row.querySelector('.preflight-row-status').textContent = statusMap[r.failureType] || 'Failed';
 
@@ -2753,8 +2752,6 @@ function showPreflightFailure(results, primaryName) {
       detailEl.innerHTML = `Couldn't load the primary person's LinkedIn URL. ${_preflightEscapeHtml(r.detail || '')}`;
     } else if (r.failureType === 'session_expired') {
       detailEl.innerHTML = `This account's LinkedIn session is logged out — open this GoLogin profile and log back in, then retry. <em style="color:var(--gray)">${_preflightEscapeHtml(r.detail || '')}</em>`;
-    } else if (r.failureType === 'render_timeout') {
-      detailEl.innerHTML = `LinkedIn loaded the URL but the profile name never appeared on screen. Most likely a slow machine or a brief network blip — try again. ${_preflightEscapeHtml(r.detail || '')}`;
     } else {
       detailEl.textContent = r.detail || 'Unknown failure';
     }
