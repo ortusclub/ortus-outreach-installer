@@ -27,18 +27,29 @@ const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
 const PROD_TICK_INTERVAL_MS = 30 * 60 * 1000;
 const TEST_TICK_INTERVAL_MS = 20_000;
 const PROD_SWEEP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // per (sheet, profile)
-const TEST_SWEEP_COOLDOWN_MS = 60_000;
+// Test mode is "fast first sweep so we know the plumbing works, then slow
+// enough that the operator has time to manually accept on another browser".
+const TEST_FIRST_SWEEP_COOLDOWN_MS = 60_000;
+const TEST_SUBSEQUENT_SWEEP_COOLDOWN_MS = 5 * 60 * 1000;
 
-function getSweepCooldownMs() {
-  return isTestModeOn() ? TEST_SWEEP_COOLDOWN_MS : PROD_SWEEP_COOLDOWN_MS;
+// Pure helper exported for unit testing — no disk reads, no globals.
+export function computeCooldownMs({ isTestMode, sweepCount }) {
+  if (!isTestMode) return PROD_SWEEP_COOLDOWN_MS;
+  return (sweepCount || 0) > 0
+    ? TEST_SUBSEQUENT_SWEEP_COOLDOWN_MS
+    : TEST_FIRST_SWEEP_COOLDOWN_MS;
+}
+
+function getSweepCooldownMs(entry) {
+  return computeCooldownMs({
+    isTestMode: isTestModeOn(),
+    sweepCount: (entry && entry.sweepCount) || 0,
+  });
 }
 
 function getTickIntervalMs() {
   return isTestModeOn() ? TEST_TICK_INTERVAL_MS : PROD_TICK_INTERVAL_MS;
 }
-
-// Backward-compat for any caller importing the constant.
-const SWEEP_COOLDOWN_MS = PROD_SWEEP_COOLDOWN_MS;
 
 let _tickTimer = null;
 
@@ -98,6 +109,8 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     // The campaign's own bulk-check just ran, so no need to immediately
     // sweep again — set lastCheckedAt to "now" so the cooldown applies.
     lastCheckedAt: now,
+    // Drives the first-vs-subsequent cooldown selection in test mode.
+    sweepCount: 0,
   };
   await writeSchedule(sched);
   console.log(`[post-campaign] Registered ${profileName || profileId} on sheet ${sheetId} for ${days}d (expires ${new Date(sched[k].expiresAt).toISOString()}, owner: ${sched[k].operatorEmail || 'none'})`);
@@ -173,7 +186,7 @@ async function tick() {
       console.log(`[post-campaign] Schedule expired for ${entry.profileName} on sheet ${entry.sheetId}`);
       continue;
     }
-    if (now < (entry.lastCheckedAt || 0) + getSweepCooldownMs()) continue;
+    if (now < (entry.lastCheckedAt || 0) + getSweepCooldownMs(entry)) continue;
     dueKeys.push(k);
   }
 
@@ -238,14 +251,17 @@ async function tick() {
       try { await closeProfile(entry.profileId); } catch { /* */ }
     }
 
-    // Emit "idle" line with next-check time (now + cooldown).
-    const _nextCheckAt = new Date(now + getSweepCooldownMs());
+    // Bump sweepCount BEFORE computing next-check time, so the cooldown
+    // we display is the "subsequent" one (5min in test mode) — not the
+    // "first" one we just consumed.
+    entry.lastCheckedAt = now;
+    entry.sweepCount = (entry.sweepCount || 0) + 1;
+    changed = true;
+
+    const _nextCheckAt = new Date(now + getSweepCooldownMs(entry));
     const _nextHHMM = _nextCheckAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const _idleMsg = `🛏 Monitoring idle · next check at ${_nextHHMM}`;
     appendCampaignLog(entry.sheetId, entry.profileId, _idleMsg);
-
-    entry.lastCheckedAt = now;
-    changed = true;
 
     // Bail if a campaign started mid-tick (foreground takes priority).
     if (await isCampaignRunning()) {
