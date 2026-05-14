@@ -22,7 +22,7 @@
 import { existsSync, mkdirSync, appendFileSync, statSync, renameSync } from 'fs';
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
-import { launchProfile, closeProfile, getProfiles, getProfilePid } from './gologin-launcher.js';
+import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, ensureTrackingColumns, prepareSheet } from './sheets-writer.js';
@@ -241,6 +241,14 @@ function getSenderName(row) {
 
 // Campaign-scoped counters — reset every time a campaign starts
 const campaignCounts = {};
+
+// v2.14.x: Snapshot of the most recent startCampaign() options, captured
+// at run-start. Used by restoreCampaign() to re-launch with the exact same
+// settings after a force-reset. Survives until the next startCampaign;
+// cleared explicitly is never necessary (next start overwrites). Lost on
+// app restart — Restore-after-crash falls back to history.json's last
+// entry, which carries the same shape via its settings snapshot.
+let _lastRunSettings = null;
 
 function getCampaignCount(profileId) {
   return campaignCounts[profileId] || 0;
@@ -954,6 +962,14 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
 
 export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, createdBy = null }) {
   if (campaign.running) throw new Error('Campaign already running');
+
+  // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
+  // throw, so even a campaign that fails preflight is recoverable.
+  _lastRunSettings = {
+    profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
+    delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
+    name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
+  };
 
   campaign.running = true;
   campaign.createdBy = createdBy || null;
@@ -2839,6 +2855,91 @@ export function resumeCampaign() {
   campaign._paused = false; // awaitUnpause's while-loop will exit on next tick
   log('▶ Resume requested.');
   return { ok: true };
+}
+
+// v2.14.x: Restore — "panic button" for when the campaign is stuck and
+// neither Stop nor Pause are responding. Force-kills browsers, lies to the
+// rest of the system about `running` being false (even if the in-flight
+// loop is hung mid-await), then re-launches the same campaign with the
+// snapshotted settings. Today's per-account counts are seeded from
+// state.processed by startCampaign so accounts pick up where they left
+// off, not from 0/dailyLimit.
+//
+// The old (potentially hung) loop is left in memory — its awaits will
+// resolve to errors as browsers die under it. State writes from that loop
+// are tolerated because saveState() atomically overwrites; the worst-case
+// race is one slightly-stale write, which the next live save corrects.
+//
+// Returns { ok, restartedFrom, reason? }:
+//   restartedFrom: 'running' | 'history' | null (idle no-op)
+export async function restoreCampaign() {
+  const wasRunning = campaign.running;
+  let settings = _lastRunSettings;
+
+  // Force-kill browser processes synchronously. closeAllProfiles handles
+  // the SIGTERM + SIGKILL fallback path inside gologin-launcher.
+  try { await closeAllProfiles(); } catch (err) { console.warn('[restore] closeAllProfiles:', err.message); }
+  try { await closeLocalBrowser(); } catch (err) { console.warn('[restore] closeLocalBrowser:', err.message); }
+
+  // Lie to the rest of the system: the old loop's `running = false` may
+  // never fire if it's hung. Set it ourselves so UI + status endpoints
+  // immediately reflect idle. Mark _skipCleanup so any awakening from the
+  // hung loop short-circuits without touching state.
+  campaign._abort = true;
+  campaign._skipCleanup = true;
+  campaign.running = false;
+  campaign.currentProfile = null;
+  campaign.currentAction = null;
+  log('↻ Restore: campaign engine force-reset.');
+
+  // If we weren't running but have history with settings, restore from
+  // there (covers the "app restarted after crash" case).
+  if (!settings) {
+    try {
+      const raw = await readFile(HISTORY_PATH, 'utf8');
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const last = arr[arr.length - 1];
+        if (last && last.settings) {
+          const s = last.settings;
+          settings = {
+            profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+            sheetUrl: s.sheetUrl || '',
+            templates: s.templates || {},
+            dailyLimit: s.dailyLimit ?? 50,
+            mode: last.mode,
+            messageOpenProfiles: !!s.messageOpenProfiles,
+            delayMin: s.delayMin ?? 15,
+            delayMax: s.delayMax ?? 45,
+            linkedinColumn: s.linkedinColumn || '',
+            concurrency: s.concurrency ?? 1,
+            name: last.name ? `${last.name} (restored)` : '',
+          };
+        }
+      }
+    } catch { /* no history → nothing to restore from */ }
+  }
+
+  if (!settings) {
+    log('↻ Restore: no settings to restart with — engine is idle now.');
+    return { ok: true, restartedFrom: null, reason: 'nothing-to-restore' };
+  }
+
+  // Brief wait so the old loop's pending I/O has a chance to fail out
+  // before the new loop starts touching the same files.
+  await new Promise((r) => setTimeout(r, 1500));
+
+  // Re-launch. Fire-and-forget — startCampaign awaits the full lifecycle
+  // and we don't want to block the HTTP response on that.
+  const restartedFrom = wasRunning ? 'running' : 'history';
+  const launchName = wasRunning
+    ? `${settings.name || ''} (restored)`.trim()
+    : settings.name;
+  startCampaign({ ...settings, name: launchName }).catch((err) => {
+    log(`↻ Restore: restart failed — ${err.message}`);
+  });
+
+  return { ok: true, restartedFrom };
 }
 
 async function awaitUnpause() {

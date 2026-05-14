@@ -16,7 +16,7 @@ import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, popNext as popNextQueued } from './src/campaign-queue.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
@@ -757,6 +757,22 @@ app.post('/api/campaign/pause', (_req, res) => {
 
 app.post('/api/campaign/resume', (_req, res) => {
   res.json(resumeCampaign());
+});
+
+// v2.14.x: Restore — "panic button" recovery endpoint. Force-kills
+// browsers, force-resets in-memory campaign state (even if the in-flight
+// loop is hung), and re-launches with the most recent settings. Settings
+// source priority: live snapshot (_lastRunSettings) → last history.json
+// entry → none (idle no-op with cleanup only). Always returns 200 with
+// { ok, restartedFrom, reason? } — the loop runs async after the response.
+app.post('/api/campaign/restore', async (_req, res) => {
+  try {
+    const result = await restoreCampaign();
+    res.json(result);
+  } catch (err) {
+    console.error('[restore] failed:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 app.get('/api/campaign/status', (_req, res) => {

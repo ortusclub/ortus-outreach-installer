@@ -996,6 +996,14 @@
         <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
         <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers.">Stop Campaign</button>
 
+        <!-- v2.14.x: Restore — always-visible "panic button" for when a
+             campaign is stuck and Stop / Pause aren't responding. Force-
+             kills browsers, force-resets in-memory state, then re-launches
+             with the same settings (today's per-account counts are seeded
+             from state.processed so accounts pick up where they left off). -->
+        <span class="run-bar-divider" aria-hidden="true"></span>
+        <button type="button" id="btn-restore-rb" class="btn btn-sm btn-restore" onclick="confirmRestoreCampaign()" title="Force-restart the campaign engine. Use when Stop / Pause aren't responding."><span class="ico-restore" aria-hidden="true">↻</span> Restore</button>
+
         <!-- Saved configs — pushed to the far right, smaller. Stores the
              whole wizard form (mode/accounts/sheet/templates/limits) under
              a name you can re-load later. -->
@@ -1066,6 +1074,33 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" onclick="closeStopModal()">Cancel</button>
         <button type="button" class="btn btn-stop" onclick="confirmStopCampaignNow()">Yes, Stop Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.14.x: Restore confirmation modal — opens from the runbar "↻ Restore"
+       button. Always-visible panic recovery action. -->
+  <div id="restore-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeRestoreModal()">
+    <div class="modal-card restore-modal-card" role="dialog" aria-modal="true" aria-labelledby="restore-modal-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeRestoreModal()">&times;</button>
+      <div class="restore-modal-eyebrow">⚠ Recovery action</div>
+      <h3 id="restore-modal-title" class="modal-title">Force-restart the campaign engine?</h3>
+      <p class="restore-modal-sub">
+        Use this when something is stuck and Stop / Pause aren't responding.
+        Below is exactly what happens. Your progress on already-processed
+        leads is safe — Restore reads the same on-disk ledger any campaign would.
+      </p>
+      <div class="restore-modal-list">
+        <div><span class="restore-li-key">Kill</span> Every running Orbita / Chromium / local-browser process</div>
+        <div><span class="restore-li-key">Reset</span> All in-memory campaign state — counters, parked profiles, soft warnings, queue cursors</div>
+        <div><span class="restore-li-key">Preserve</span> The on-disk ledger of which leads were already processed (state.json)</div>
+        <div><span class="restore-li-key">Restart</span> The same campaign, seeded with today's per-account counts</div>
+      </div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-restore-cta" onclick="doRestoreCampaign()">Yes · force-restart engine</button>
+      </div>
+      <div style="text-align: center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" onclick="closeRestoreModal()">Cancel</button>
       </div>
     </div>
   </div>

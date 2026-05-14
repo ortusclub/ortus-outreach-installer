@@ -2585,6 +2585,49 @@ async function stopEverything() {
 }
 window.stopEverything = stopEverything;
 
+// v2.14.x: Restore — always-visible runbar panic button. Opens a confirm
+// modal, then POSTs /api/campaign/restore. The backend force-kills
+// browsers, force-resets in-memory state, and re-launches with the same
+// settings. See restoreCampaign() in campaign.js for the full behaviour.
+function confirmRestoreCampaign() {
+  const modal = document.getElementById('restore-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+window.confirmRestoreCampaign = confirmRestoreCampaign;
+
+function closeRestoreModal() {
+  const modal = document.getElementById('restore-modal');
+  if (modal) modal.classList.add('hidden');
+}
+window.closeRestoreModal = closeRestoreModal;
+
+async function doRestoreCampaign() {
+  closeRestoreModal();
+  showCampaignToast('Restoring · force-closing browsers · resetting state…', 7000);
+  try {
+    const r = await fetch('/api/campaign/restore', { method: 'POST' });
+    const data = await r.json().catch(() => ({}));
+    if (!data.ok) {
+      showCampaignToast(`Restore failed: ${data.error || r.statusText}`, 6000);
+      return;
+    }
+    if (data.restartedFrom === null) {
+      showCampaignToast('Engine restored — nothing to resume.', 4000);
+    } else {
+      const src = data.restartedFrom === 'running' ? 'live settings' : 'last campaign';
+      showCampaignToast(`Engine restored — relaunching from ${src}.`, 4000);
+    }
+    // Refresh polling so the cockpit / runbar pick up the new state.
+    if (typeof startPolling === 'function') startPolling();
+    if (typeof refreshResumeAvailability === 'function') {
+      setTimeout(refreshResumeAvailability, 600);
+    }
+  } catch (err) {
+    showCampaignToast(`Restore failed: ${err.message}`, 6000);
+  }
+}
+window.doRestoreCampaign = doRestoreCampaign;
+
 // Phase 2.8.9: Pause/Resume toggle. Button label is driven by polled status,
 // not local state, so the source of truth is the server.
 async function pauseOrResumeCampaign() {

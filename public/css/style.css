@@ -3497,6 +3497,95 @@ body.route-dashboard .sidebar-nav { display: none; }
 }
 .stop-choice-pill.is-stop:hover .stop-choice-pill-headline { color: #c0392b; }
 .stop-choice-cancel-row { text-align: center; margin-top: 16px; }
+
+/* v2.14.x: Runbar Restore button — always visible, V2 (icon + label).
+   Neutral hairline pill; goes to ink on hover. Vertical divider before
+   it visually groups Restore apart from Start/Pause/Stop (lifecycle
+   actions) as a recovery action. */
+.run-bar-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background: var(--hairline);
+  margin: 0 6px;
+  align-self: center;
+}
+.btn-restore {
+  background: transparent;
+  color: var(--gray);
+  border: 1px solid var(--hairline);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-restore:hover { color: var(--ink); border-color: var(--ink); }
+.ico-restore {
+  font-size: 0.95rem;
+  line-height: 1;
+  display: inline-block;
+}
+
+/* Restore confirmation modal — amber eyebrow signals "recovery action",
+   amber CTA matches. Not red (Restore isn't destructive — state.processed
+   survives). */
+.restore-modal-card {
+  max-width: 540px;
+  padding: 38px 44px 30px;
+  position: relative;
+}
+.restore-modal-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #b9770e;
+  margin-bottom: 8px;
+}
+.restore-modal-sub {
+  font-size: 0.8rem;
+  color: var(--gray);
+  margin-bottom: 22px;
+  line-height: 1.55;
+}
+.restore-modal-list {
+  border: 1px solid var(--hairline);
+  padding: 14px 18px;
+  margin-bottom: 22px;
+  font-size: 0.72rem;
+  color: var(--ink);
+  line-height: 1.65;
+}
+.restore-modal-list > div + div { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--hairline-soft); }
+.restore-li-key {
+  color: var(--gray);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  display: inline-block;
+  min-width: 86px;
+  margin-right: 8px;
+}
+.btn-restore-cta {
+  color: #b9770e;
+  border: 1px solid rgba(185, 119, 14, 0.55);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 14px 22px;
+  border-radius: 9999px;
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn-restore-cta:hover {
+  background: #b9770e;
+  color: var(--bg);
+  border-color: #b9770e;
+}
 .campaign-row-actions { display: flex; gap: 8px; align-items: center; }
 .campaign-row-edit--icon {
   font-size: 0.95rem;
