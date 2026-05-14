@@ -618,23 +618,10 @@ app.post('/api/campaign/start', async (req, res) => {
       });
     }
 
-    // Fire-and-forget — the campaign continues in background. The HTTP
-    // response returns immediately; the dashboard polls /api/status for
-    // progress.
-    preventSleep('campaign');
-    startCampaign({ ...config, createdBy: owner })
-      .then(() => {
-        const status = getCampaignStatus();
-        notifyEmail(owner, {
-          title: 'Campaign finished',
-          body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
-          link: '/',
-        }).catch(() => {});
-      })
-      .catch((err) => {
-        console.error('Campaign error:', err.message);
-        allowSleep('campaign');
-      });
+    // Fire-and-forget — campaign runs in background; dashboard polls
+    // /api/status. launchCampaign handles preventSleep, allowSleep,
+    // queue chaining, and finish/failure email notifications.
+    launchCampaign(config, owner);
     res.json({ ok: true, message: 'Campaign started' });
   } catch (err) {
     console.error('Campaign start error:', err.message);
