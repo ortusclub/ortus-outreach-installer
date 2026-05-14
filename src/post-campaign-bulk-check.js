@@ -24,12 +24,17 @@ import { appendCampaignLog } from './campaign-log-bus.js';
 import { isTestModeOn } from './test-mode.js';
 
 const SCHEDULE_FILE = dataPath('post-campaign-bulk-check.json');
-const TICK_INTERVAL_MS = 30 * 60 * 1000; // 30 min between scheduler passes
+const PROD_TICK_INTERVAL_MS = 30 * 60 * 1000;
+const TEST_TICK_INTERVAL_MS = 20_000;
 const PROD_SWEEP_COOLDOWN_MS = 6 * 60 * 60 * 1000; // per (sheet, profile)
 const TEST_SWEEP_COOLDOWN_MS = 60_000;
 
 function getSweepCooldownMs() {
   return isTestModeOn() ? TEST_SWEEP_COOLDOWN_MS : PROD_SWEEP_COOLDOWN_MS;
+}
+
+function getTickIntervalMs() {
+  return isTestModeOn() ? TEST_TICK_INTERVAL_MS : PROD_TICK_INTERVAL_MS;
 }
 
 // Backward-compat for any caller importing the constant.
@@ -252,16 +257,26 @@ async function tick() {
   if (changed) await writeSchedule(sched);
 }
 
+// Chained setTimeout (not setInterval) so flipping test mode mid-session
+// re-paces the loop on the next tick instead of requiring an Electron restart.
+function _scheduleNext() {
+  _tickTimer = setTimeout(async () => {
+    try { await tick(); }
+    catch (err) { console.warn(`[post-campaign] Tick threw: ${err.message}`); }
+    finally { _scheduleNext(); }
+  }, getTickIntervalMs());
+}
+
 export function startScheduler() {
   if (_tickTimer) return;
-  _tickTimer = setInterval(() => { tick().catch((err) => console.warn(`[post-campaign] Tick threw: ${err.message}`)); }, TICK_INTERVAL_MS);
-  // First pass shortly after boot so overdue checks don't wait 30 min.
+  // First pass shortly after boot so overdue checks don't wait the full interval.
   setTimeout(() => { tick().catch((err) => console.warn(`[post-campaign] First-tick threw: ${err.message}`)); }, 30_000);
-  console.log('[post-campaign] Scheduler started (30-min ticks)');
+  _scheduleNext();
+  console.log(`[post-campaign] Scheduler started (interval: ${Math.round(getTickIntervalMs() / 1000)}s, test mode: ${isTestModeOn() ? 'on' : 'off'})`);
 }
 
 export function stopScheduler() {
-  if (_tickTimer) clearInterval(_tickTimer);
+  if (_tickTimer) clearTimeout(_tickTimer);
   _tickTimer = null;
 }
 
