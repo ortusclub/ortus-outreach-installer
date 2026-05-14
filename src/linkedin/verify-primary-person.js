@@ -10,7 +10,7 @@
  * Spec: docs/superpowers/specs/2026-05-14-cc-ic-primary-person-preflight-design.md §4
  */
 
-const PROFILE_NAV_TIMEOUT_MS = 15_000;
+const PROFILE_NAV_TIMEOUT_MS = 30_000;
 
 export async function verifyPrimaryPerson({
   page,
