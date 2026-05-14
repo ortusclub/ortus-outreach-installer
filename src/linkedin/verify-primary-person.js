@@ -10,11 +10,7 @@
  * Spec: docs/superpowers/specs/2026-05-14-cc-ic-primary-person-preflight-design.md §4
  */
 
-import { matchPrimaryCandidate } from './match-primary.js';
-
 const PROFILE_NAV_TIMEOUT_MS = 15_000;
-const TYPEAHEAD_POLL_ITER = 30;
-const TYPEAHEAD_POLL_INTERVAL_MS = 200;
 
 export async function verifyPrimaryPerson({
   page,
@@ -153,60 +149,50 @@ export async function verifyPrimaryPerson({
   }
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ── Step 4: Typeahead test ───────────────────────────────────────────────
-  // Navigate to the generic compose page. The page is a heavy SPA — we need
-  // to POLL for the recipient input to mount rather than waiting a fixed
-  // time. Slow machines need 5-10 seconds.
+  // ── Step 4: URL-recipient routing test ───────────────────────────────────
+  // Mirrors the URL pattern that src/linkedin/actions.js sendIntroMessage uses
+  // in real campaigns. Navigate to /messaging/compose/?recipient=<publicId>
+  // and verify LinkedIn accepts the recipient (renders a "Remove" pill).
+  // This is more reliable than typing into the typeahead — same internal
+  // LinkedIn routing path that the actual campaign uses.
+  const publicIdMatch = primaryUrl.match(/\/in\/([^/?#]+)/);
+  if (!publicIdMatch) {
+    return {
+      ok: false,
+      failureType: 'url_invalid',
+      canonicalName,
+      detail: `Could not extract publicId from primaryUrl: ${primaryUrl}`,
+    };
+  }
+  const primaryPublicId = publicIdMatch[1];
+  const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(primaryPublicId)}`;
+
+  log(`  [preflight:${profileName}] Opening compose with recipient=${primaryPublicId}…`);
   try {
-    await page.goto('https://www.linkedin.com/messaging/?compose=true', {
-      waitUntil: 'domcontentloaded', timeout: PROFILE_NAV_TIMEOUT_MS,
-    });
+    await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: PROFILE_NAV_TIMEOUT_MS });
   } catch (e) {
     return { ok: false, failureType: 'crash', canonicalName, detail: `Compose nav failed: ${e.message}` };
   }
 
-  // Poll up to 15 seconds for the recipient input to appear and be tag-able.
-  // Done in browser context so we can match across class-name variants —
-  // LinkedIn renames classes regularly; the aria-label / placeholder is the
-  // most stable signal.
-  log(`  [preflight:${profileName}] Waiting for compose page recipient input to render…`);
-  let tagged = false;
+  // Wait up to 15s for the recipient "Remove" pill to appear, confirming
+  // LinkedIn routed the publicId to a real connection.
+  log(`  [preflight:${profileName}] Waiting for recipient pill to appear (up to 15s)…`);
+  let pillFound = false;
+  let pillAriaLabel = '';
   try {
-    await page.waitForFunction(() => {
-      const isVisible = (el) => {
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        if (r.width <= 0 || r.height <= 0) return false;
-        const s = window.getComputedStyle(el);
-        return s.display !== 'none' && s.visibility !== 'hidden';
-      };
-      const inputs = Array.from(document.querySelectorAll(
-        'input, textarea, [contenteditable="true"][role="textbox"]'
-      )).filter(isVisible);
-      for (const el of inputs) {
-        const text = [
-          el.getAttribute('aria-label'),
-          el.getAttribute('placeholder'),
-          el.getAttribute('class'),
-          el.getAttribute('id'),
-        ].join(' ').toLowerCase();
-        if (text.includes('enter message recipients') ||
-            text.includes('msg-connections-typeahead__search-field') ||
-            text.includes('type a name') ||
-            text.includes('type the name')) {
-          el.setAttribute('data-ortus-preflight', '1');
-          return true;
-        }
-      }
-      return false;
-    }, { timeout: 15_000, polling: 500 });
-    tagged = true;
+    pillAriaLabel = await page.waitForFunction(() => {
+      const pills = Array.from(document.querySelectorAll(
+        '.msg-connections-typeahead__added-recipients button[aria-label^="Remove"], button.artdeco-pill[aria-label^="Remove"]'
+      ));
+      if (pills.length === 0) return false;
+      // Return the first pill's aria-label so we can log it.
+      return pills[0].getAttribute('aria-label') || 'Remove (no label)';
+    }, { timeout: 15_000, polling: 500 }).then(handle => handle.jsonValue());
+    pillFound = true;
   } catch {
-    // Input never appeared. Detect WHY:
-    // - Sign-in redirect (session expired between Stage A and Stage B)
-    // - LinkedIn changed the compose page layout entirely
-    const url = page.url();
-    const signedOut = /\/login|\/authwall|\/checkpoint|\/uas\/login/i.test(url);
+    // Recipient pill never appeared. Distinguish causes.
+    const currentUrl = page.url();
+    const signedOut = /\/login|\/authwall|\/checkpoint|\/uas\/login/i.test(currentUrl);
     if (signedOut) {
       return {
         ok: false,
@@ -215,69 +201,18 @@ export async function verifyPrimaryPerson({
         detail: 'LinkedIn redirected to sign-in when opening the compose page. This GoLogin profile needs to log back in.',
       };
     }
+    // No pill + not signed out. Most likely: primary is not actually messageable
+    // from this account (not a 1st-degree connection OR LinkedIn blocked the
+    // routing for some other reason).
     return {
       ok: false,
-      failureType: 'crash',
+      failureType: 'not_connected',
       canonicalName,
-      detail: 'Compose page loaded but the recipient input never appeared within 15s. LinkedIn may have changed the layout, or the page didn\'t finish loading on this machine.',
+      detail: `LinkedIn did not add the primary person as a recipient. This usually means the primary isn't a 1st-degree connection on this account, or LinkedIn doesn't recognize the publicId "${primaryPublicId}".`,
     };
   }
 
-  const sel = '[data-ortus-preflight="1"]';
-  try {
-    await page.click(sel);
-    await page.type(sel, primaryName, { delay: 60 });
-  } catch (e) {
-    await page.evaluate(() => document.querySelector('[data-ortus-preflight="1"]')?.removeAttribute('data-ortus-preflight'));
-    return { ok: false, failureType: 'crash', canonicalName, detail: `Type failed: ${e.message}` };
-  }
-
-  // Poll dropdown, gather candidate texts, run matcher in Node-side after each poll.
-  let lastCandidates = [];
-  for (let iter = 0; iter < TYPEAHEAD_POLL_ITER; iter++) {
-    await new Promise(r => setTimeout(r, TYPEAHEAD_POLL_INTERVAL_MS));
-    const cands = await page.evaluate(() => {
-      const isVisible = (el) => {
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        if (r.width <= 0 || r.height <= 0) return false;
-        const s = window.getComputedStyle(el);
-        return s.display !== 'none' && s.visibility !== 'hidden';
-      };
-      const roots = Array.from(document.querySelectorAll(
-        '.msg-connections-typeahead__search-results, [role="listbox"], .reusable-search__entity-result-list'
-      ));
-      const searchRoots = roots.length ? roots : [document];
-      const out = [];
-      for (const root of searchRoots) {
-        const rows = Array.from(root.querySelectorAll(
-          'li, [role="option"], button, .msg-connections-typeahead__search-result, .reusable-search__result-container'
-        )).filter(isVisible);
-        for (const r of rows) {
-          const text = (r.innerText || r.textContent || '').trim().split('\n').slice(0, 2).join(' · ');
-          if (text) out.push({ text });
-        }
-      }
-      return out;
-    });
-    if (cands.length) lastCandidates = cands;
-    const result = matchPrimaryCandidate(cands, primaryName);
-    if (result.matchIndex !== null) {
-      // Match found — pre-flight passes. We do NOT click; just clean up.
-      await page.evaluate(() => document.querySelector('[data-ortus-preflight="1"]')?.removeAttribute('data-ortus-preflight'));
-      const candidates = lastCandidates.slice(0, 3);
-      log(`  [preflight:${profileName}] Typeahead matched: "${primaryName}" (reason=${result.reason})`);
-      return { ok: true, canonicalName, candidates };
-    }
-  }
-
-  // Out of polls — no match.
-  await page.evaluate(() => document.querySelector('[data-ortus-preflight="1"]')?.removeAttribute('data-ortus-preflight'));
-  return {
-    ok: false, failureType: 'name_mismatch', canonicalName,
-    candidates: lastCandidates.slice(0, 3),
-    detail: lastCandidates.length === 0
-      ? 'Dropdown never opened — typeahead may be broken or connection lost'
-      : `${lastCandidates.length} suggestions but no match`,
-  };
+  log(`  [preflight:${profileName}] ✓ Recipient pill detected (aria-label: "${pillAriaLabel}")`);
+  return { ok: true, canonicalName, candidates: [] };
+  // ─────────────────────────────────────────────────────────────────────────
 }
