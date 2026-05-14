@@ -7162,63 +7162,6 @@ if (document.readyState !== 'loading') updateSheetTabHint();
 window.updateSheetTabHint = updateSheetTabHint;
 
 // ---------------------------------------------------------------------------
-// Dev tools — Verify primary person now (no campaign launch)
-// ---------------------------------------------------------------------------
-async function devVerifyPrimaryNow() {
-  // Gather current wizard state: profile IDs and primary person fields.
-  const profileIds = (typeof selectedProfileIds !== 'undefined' && Array.isArray(selectedProfileIds))
-    ? selectedProfileIds.filter(id => id !== 'local-browser')
-    : Array.from(document.querySelectorAll('.profile-item.selected'))
-        .map(el => el.querySelector('input[type="checkbox"]')?.value)
-        .filter(Boolean);
-
-  const primaryName = (document.getElementById('primary-person-name')?.value || '').trim();
-  const primaryUrl  = (document.getElementById('primary-person-url')?.value  || '').trim();
-
-  if (!profileIds.length) {
-    alert('Select at least one LinkedIn account in the wizard first (Section III).');
-    return;
-  }
-  if (!primaryName || !primaryUrl) {
-    alert('Fill in Primary Person Name and LinkedIn URL in Section IV (Campaign Settings) first.');
-    return;
-  }
-
-  // Show the preflight modal in "verifying" state — reuses the existing modal.
-  openPreflightModal(primaryName);
-
-  try {
-    const res = await fetch('/api/preflight-only', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileIds, primaryName, primaryUrl }),
-    });
-
-    // Handle non-OK status (409 conflict, 400 validation, 500 error).
-    if (!res.ok) {
-      const txt = await res.text();
-      closePreflightModal();
-      let msg;
-      try { msg = JSON.parse(txt).error || txt; } catch { msg = txt; }
-      alert(`Verify failed:\n\n${msg}`);
-      return;
-    }
-
-    const result = await res.json();
-    if (result.allPassed) {
-      closePreflightModal();
-      alert(`✓ Primary person verified on ${result.results.length}/${result.results.length} account${result.results.length === 1 ? '' : 's'}.`);
-    } else {
-      showPreflightFailure(result.results, primaryName);
-    }
-  } catch (e) {
-    closePreflightModal();
-    alert(`Network error:\n\n${e.message}`);
-  }
-}
-window.devVerifyPrimaryNow = devVerifyPrimaryNow;
-
-// ---------------------------------------------------------------------------
 // Dev tools — Preview intro DM (no LinkedIn interaction, pure text preview)
 // ---------------------------------------------------------------------------
 async function devPreviewIntroDM() {
