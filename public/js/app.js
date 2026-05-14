@@ -2726,13 +2726,15 @@ function showPreflightFailure(results, primaryName) {
     row.querySelector('.preflight-row-name').textContent = r.profileName || r.profileId || 'unknown account';
 
     const statusMap = {
-      url_invalid:   'URL not found',
-      not_connected: 'Not connected',
-      name_mismatch: 'Name mismatch',
-      launch_failed: 'Launch failed',
-      crash:         'Verification crashed',
-      timeout:       'Timed out',
-      config:        'Config missing',
+      url_invalid:    'URL not found',
+      not_connected:  'Not connected',
+      name_mismatch:  'Name mismatch',
+      launch_failed:  'Launch failed',
+      crash:          'Verification crashed',
+      timeout:        'Timed out',
+      config:         'Config missing',
+      session_expired:'Session expired',
+      render_timeout: 'Profile didn\'t render',
     };
     row.querySelector('.preflight-row-status').textContent = statusMap[r.failureType] || 'Failed';
 
@@ -2749,6 +2751,10 @@ function showPreflightFailure(results, primaryName) {
       detailEl.innerHTML = `Profile loads but no <strong>Message</strong> button — ${_preflightEscapeHtml(primaryName)} is not a 1st-degree connection on this account. Intros from this account would fail every time.`;
     } else if (r.failureType === 'url_invalid') {
       detailEl.innerHTML = `Couldn't load the primary person's LinkedIn URL. ${_preflightEscapeHtml(r.detail || '')}`;
+    } else if (r.failureType === 'session_expired') {
+      detailEl.innerHTML = `This account's LinkedIn session is logged out — open this GoLogin profile and log back in, then retry. <em style="color:var(--gray)">${_preflightEscapeHtml(r.detail || '')}</em>`;
+    } else if (r.failureType === 'render_timeout') {
+      detailEl.innerHTML = `LinkedIn loaded the URL but the profile name never appeared on screen. Most likely a slow machine or a brief network blip — try again. ${_preflightEscapeHtml(r.detail || '')}`;
     } else {
       detailEl.textContent = r.detail || 'Unknown failure';
     }

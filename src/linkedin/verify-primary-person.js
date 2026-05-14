@@ -4,7 +4,7 @@
  *
  * Returns one of:
  *   { ok: true,  canonicalName, candidates }
- *   { ok: false, failureType: 'url_invalid' | 'not_connected' | 'name_mismatch' | 'crash' | 'config',
+ *   { ok: false, failureType: 'url_invalid' | 'not_connected' | 'name_mismatch' | 'crash' | 'config' | 'session_expired' | 'render_timeout',
  *     canonicalName?, candidates?, detail }
  *
  * Spec: docs/superpowers/specs/2026-05-14-cc-ic-primary-person-preflight-design.md §4
@@ -34,6 +34,60 @@ export async function verifyPrimaryPerson({
     log(`  [preflight:${profileName}] URL navigation failed: ${e.message}`);
     return { ok: false, failureType: 'url_invalid', detail: `Navigation failed: ${e.message}` };
   }
+  // ── Wait for the profile content to render ───────────────────────────────
+  // LinkedIn profile pages are a React SPA — the H1 with the name is NOT in
+  // the initial HTML; React mounts it after domcontentloaded. Without this
+  // wait, we read an empty DOM and mistake a still-rendering page for a
+  // missing URL.
+  try {
+    await page.waitForFunction(() => {
+      const h1 = document.querySelector('h1.text-heading-xlarge, main h1, h1');
+      const text = (h1?.innerText || '').trim();
+      return text.length > 2;
+    }, { timeout: 10_000 });
+  } catch {
+    // Render didn't complete in 10s. Distinguish causes.
+    const currentUrl = page.url();
+    const signedOutByUrl = /\/login|\/authwall|\/checkpoint|\/uas\/login/i.test(currentUrl);
+    const signedOutByContent = await page.evaluate(() => {
+      const t = (document.title || '').toLowerCase();
+      const b = (document.body?.innerText || '').toLowerCase().slice(0, 500);
+      return t.includes('sign in') || t.includes('join linkedin') ||
+             b.includes('please sign in') || b.includes('welcome back');
+    }).catch(() => false);
+
+    if (signedOutByUrl || signedOutByContent) {
+      log(`  [preflight:${profileName}] LinkedIn redirected to sign-in — session expired on this GoLogin profile.`);
+      return {
+        ok: false,
+        failureType: 'session_expired',
+        detail: 'LinkedIn redirected this account to the sign-in page. Open the profile in GoLogin and log back in.',
+      };
+    }
+
+    const looksMissing = await page.evaluate(() => {
+      const t = (document.title || '').toLowerCase();
+      const h1 = (document.querySelector('h1')?.innerText || '').toLowerCase();
+      return t.includes('page not found') || t.includes("doesn't exist") ||
+             h1.includes('page not found') || h1.includes('not available');
+    }).catch(() => false);
+    if (looksMissing) {
+      return {
+        ok: false,
+        failureType: 'url_invalid',
+        detail: `URL returned a not-found page: ${primaryUrl}`,
+      };
+    }
+
+    log(`  [preflight:${profileName}] Profile page H1 didn't render within 10s — possible slow machine, network issue, or LinkedIn rate-limiting.`);
+    return {
+      ok: false,
+      failureType: 'render_timeout',
+      detail: 'Profile page loaded but the name didn\'t render within 10 seconds. Try again, or check if LinkedIn is rate-limiting this account.',
+    };
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Catch "Page not found" / "This profile is not available"
   const pageMissing = await page.evaluate(() => {
     const t = (document.title || '').toLowerCase();
@@ -53,8 +107,10 @@ export async function verifyPrimaryPerson({
     return (h1?.innerText || '').trim().split('\n')[0].trim();
   });
   if (!canonicalName) {
-    log(`  [preflight:${profileName}] Profile page loaded but no H1 found — DOM may have shifted`);
-    return { ok: false, failureType: 'url_invalid', detail: 'Profile page loaded but no name H1 found' };
+    // Should be unreachable — waitForFunction above proved the H1 had content.
+    // Keep as defensive guard in case the DOM mutates between the wait and the read.
+    log(`  [preflight:${profileName}] Profile H1 rendered but canonical name extracted as empty — DOM may have shifted between wait and read.`);
+    return { ok: false, failureType: 'render_timeout', detail: 'Profile H1 was present briefly but went empty before we could read it.' };
   }
   log(`  [preflight:${profileName}] Canonical name: "${canonicalName}"`);
 
