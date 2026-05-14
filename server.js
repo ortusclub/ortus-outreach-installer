@@ -2309,6 +2309,47 @@ app.post('/api/notify/test', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Dev-tool: run the CC+IC preflight check without launching a campaign.
+// Operator opens profiles, runs verifyPrimaryPerson on each, closes them.
+// ---------------------------------------------------------------------------
+app.post('/api/preflight-only', async (req, res) => {
+  try {
+    if (campaign.running) {
+      return res.status(409).json({ error: 'A campaign is currently running. Stop it first.' });
+    }
+    const { profileIds, primaryName, primaryUrl } = req.body || {};
+    if (!Array.isArray(profileIds) || profileIds.length === 0) {
+      return res.status(400).json({ error: 'profileIds required' });
+    }
+    if (!primaryName || !primaryUrl) {
+      return res.status(400).json({ error: 'primaryName and primaryUrl required' });
+    }
+
+    const { runPreflightStandalone } = await import('./src/preflight-runner.js');
+
+    // Build profileNameMap from cache — best-effort, falls back to IDs.
+    const token = process.env.GOLOGIN_API_TOKEN;
+    let profileNameMap = {};
+    try {
+      const all = await getProfiles(token);
+      profileNameMap = Object.fromEntries(all.map(p => [p.id, p.name || p.id]));
+    } catch { /* best-effort */ }
+
+    const result = await runPreflightStandalone({
+      profileIds,
+      primaryName,
+      primaryUrl,
+      profileNameMap,
+      log: (msg) => { campaignLog(msg); },
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('[preflight-only] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Phase 2.8.20 (W1-C1) — fatal-error sink. Sync write because the process is
 // already dying — async writes risk being dropped before the event loop ends.
 // Line-delimited JSON (NDJSON) keeps appends cheap and partial-write-safe.
