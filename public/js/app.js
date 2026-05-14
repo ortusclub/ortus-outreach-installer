@@ -7374,3 +7374,63 @@ async function devVerifyPrimaryNow() {
   }
 }
 window.devVerifyPrimaryNow = devVerifyPrimaryNow;
+
+// ---------------------------------------------------------------------------
+// Dev tools — Preview intro DM (no LinkedIn interaction, pure text preview)
+// ---------------------------------------------------------------------------
+async function devPreviewIntroDM() {
+  const sheetUrl   = (document.getElementById('sheet-url')?.value         || '').trim();
+  // Intro DM body lives in Section 5 Message Templates textarea
+  const introBody  = (document.getElementById('primary-intro-body')?.value || '').trim();
+  const primaryName = (document.getElementById('primary-person-name')?.value || '').trim();
+  const primaryUrl  = (document.getElementById('primary-person-url')?.value  || '').trim();
+  // Group conversation title input (Section IV, CC+IC mode)
+  const introTitle  = (document.getElementById('intro-title')?.value         || '').trim();
+
+  if (!sheetUrl)    { alert('Configure the Google Sheet URL in the wizard first (Section II).'); return; }
+  if (!introBody)   { alert('The intro DM body is empty — fill in the message body in Section V (Message Templates) first.'); return; }
+  if (!primaryName) { alert('Fill in Primary Person Name in Section IV (Campaign Settings) first.'); return; }
+
+  try {
+    const res = await fetch('/api/preview-intro-dm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheetUrl, introBody, primaryName, primaryUrl, introTitle }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      alert(`Preview failed:\n\n${err.error || res.statusText}`);
+      return;
+    }
+
+    const data = await res.json();
+
+    // Populate and show the modal
+    document.getElementById('preview-intro-sample').textContent =
+      `Sample lead from row 1: ${data.sampleLead.firstName || '(no first name)'} ${data.sampleLead.lastName || ''} · ${data.sampleLead.company || '—'}`.trim();
+    document.getElementById('preview-intro-recipients').textContent =
+      `${data.sampleLead.firstName || '(lead)'} ${data.sampleLead.lastName || ''} · ${data.primaryName}`.trim();
+    document.getElementById('preview-intro-title').textContent = data.resolvedTitle;
+    document.getElementById('preview-intro-body').textContent  = data.resolvedBody;
+
+    const warnEl = document.getElementById('preview-intro-warnings');
+    if (data.unresolvedPlaceholders && data.unresolvedPlaceholders.length > 0) {
+      warnEl.textContent = `⚠ Unresolved placeholders: ${data.unresolvedPlaceholders.join(', ')} — these will be stripped from the actual message.`;
+      warnEl.style.display = '';
+    } else {
+      warnEl.style.display = 'none';
+    }
+
+    document.getElementById('preview-intro-modal').classList.remove('hidden');
+  } catch (e) {
+    alert(`Network error:\n\n${e.message}`);
+  }
+}
+window.devPreviewIntroDM = devPreviewIntroDM;
+
+function closePreviewIntroModal() {
+  const m = document.getElementById('preview-intro-modal');
+  if (m) m.classList.add('hidden');
+}
+window.closePreviewIntroModal = closePreviewIntroModal;

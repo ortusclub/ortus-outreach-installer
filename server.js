@@ -2350,6 +2350,97 @@ app.post('/api/preflight-only', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Dev tools — Preview intro DM (pure text, no LinkedIn interaction)
+// Fetches the first row from the configured sheet, runs personalizeTemplate
+// with the same data dict that auto-intro uses, and returns the resolved body
+// + title so the operator can catch stale placeholders before a campaign run.
+// ---------------------------------------------------------------------------
+app.post('/api/preview-intro-dm', async (req, res) => {
+  try {
+    const { sheetUrl, introBody, primaryName, primaryUrl, introTitle } = req.body || {};
+    if (!sheetUrl)    return res.status(400).json({ error: 'sheetUrl required' });
+    if (!introBody)   return res.status(400).json({ error: 'introBody required' });
+    if (!primaryName) return res.status(400).json({ error: 'primaryName required' });
+
+    const { personalizeTemplate } = await import('./src/linkedin/helpers.js');
+    const { fetchSheet }          = await import('./src/sheets.js');
+
+    let rows = [];
+    try {
+      rows = await fetchSheet(sheetUrl);
+    } catch (e) {
+      return res.status(400).json({ error: `Sheet fetch failed: ${e.message}` });
+    }
+
+    if (!rows.length) {
+      return res.status(400).json({ error: 'Sheet has no rows' });
+    }
+
+    // Use the first row as the sample lead.
+    const row = rows[0];
+
+    // Mirror the introData dict built in outreach.js (case 'message', introMode).
+    // The row is spread verbatim so raw column names (e.g. "First Name") resolve
+    // directly; we also add normalised lowercase-spaced aliases that operators
+    // typically write in their body copy.
+    const introTokens = String(primaryName).trim().split(/\s+/);
+    const introFirst  = introTokens[0] || '';
+    const introLast   = introTokens.slice(1).join(' ');
+
+    const data = {
+      // Raw row — resolves whatever casing the operator actually used as a header
+      ...row,
+      // Normalised aliases for the most common lead name placeholders
+      'first name': (row['First Name'] || row['first name'] || row['firstName'] || row['first_name'] || '').trim(),
+      'last name':  (row['Last Name']  || row['last name']  || row['lastName']  || row['last_name']  || '').trim(),
+      'name':       (row['Name']       || row['name']       || '').trim() ||
+                    `${(row['First Name'] || row['first name'] || '').trim()} ${(row['Last Name'] || row['last name'] || '').trim()}`.trim(),
+      'company':    (row['Company']    || row['company']    || '').trim(),
+      // Primary / intro person tokens — all naming variants accepted by outreach.js
+      'primary name': primaryName,
+      'primary url':  primaryUrl || '',
+      'intro name':       primaryName,
+      'introName':        primaryName,
+      'intro_name':       primaryName,
+      'intro first name': introFirst,
+      'introFirstName':   introFirst,
+      'intro_first_name': introFirst,
+      'intro last name':  introLast,
+      'introLastName':    introLast,
+      'intro_last_name':  introLast,
+    };
+
+    const resolvedBody  = personalizeTemplate(introBody, data);
+    const resolvedTitle = personalizeTemplate(
+      introTitle || 'Introduction: {first name} <> {intro name}',
+      data
+    );
+
+    // Surface any remaining unresolved placeholders as a warning.
+    const bodyLeftovers  = resolvedBody.match(/\{[^}]+\}/g)  || [];
+    const titleLeftovers = resolvedTitle.match(/\{[^}]+\}/g) || [];
+    const unresolvedPlaceholders = [...new Set([...bodyLeftovers, ...titleLeftovers])];
+
+    res.json({
+      ok: true,
+      sampleLead: {
+        firstName: data['first name'],
+        lastName:  data['last name'],
+        company:   data['company'],
+      },
+      resolvedTitle,
+      resolvedBody,
+      primaryName,
+      primaryUrl: primaryUrl || '',
+      unresolvedPlaceholders,
+    });
+  } catch (err) {
+    console.error('[preview-intro-dm] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Phase 2.8.20 (W1-C1) — fatal-error sink. Sync write because the process is
 // already dying — async writes risk being dropped before the event loop ends.
 // Line-delimited JSON (NDJSON) keeps appends cheap and partial-write-safe.

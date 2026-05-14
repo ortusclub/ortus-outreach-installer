@@ -34,6 +34,7 @@
 
         <div class="nav-section-label">Dev tools</div>
         <button type="button" class="nav-item" onclick="devVerifyPrimaryNow()">Verify primary person</button>
+        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
       </nav>
 
       <div class="theme-toggle-group">
@@ -1200,6 +1201,25 @@
       </div>
       <div id="preview-modal-body" class="preview-modal__body">
         <!-- Populated by renderPreviewModal() -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Intro DM Preview modal (Dev tools) -->
+  <div id="preview-intro-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closePreviewIntroModal()">
+    <div class="modal-card preview-intro-modal-card" role="dialog" aria-modal="true" aria-labelledby="preview-intro-modal-title">
+      <div class="preflight-eyebrow">Intro DM preview · sample lead</div>
+      <h3 id="preview-intro-modal-title" class="modal-title">What the operator will see</h3>
+      <div id="preview-intro-sample" style="font-size:0.7rem; color:var(--gray); margin-bottom:14px;"></div>
+      <div style="font-size:0.6rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gray); margin-bottom:6px;">Recipients</div>
+      <div id="preview-intro-recipients" style="font-size:0.85rem; color:var(--ink); margin-bottom:14px; padding:10px 12px; border:1px solid var(--hairline);"></div>
+      <div style="font-size:0.6rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gray); margin-bottom:6px;">Conversation title</div>
+      <div id="preview-intro-title" style="font-size:0.85rem; color:var(--ink); margin-bottom:14px; padding:10px 12px; border:1px solid var(--hairline); font-style:italic;"></div>
+      <div style="font-size:0.6rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gray); margin-bottom:6px;">Message body</div>
+      <div id="preview-intro-body" style="font-size:0.9rem; color:var(--ink); margin-bottom:18px; padding:14px 16px; border:1px solid var(--hairline); white-space:pre-wrap; line-height:1.55;"></div>
+      <div id="preview-intro-warnings" style="font-size:0.75rem; color:#d6a14a; margin-bottom:14px; display:none;"></div>
+      <div class="preflight-actions">
+        <button class="btn" type="button" onclick="closePreviewIntroModal()">Close</button>
       </div>
     </div>
   </div>
