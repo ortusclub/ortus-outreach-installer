@@ -3431,6 +3431,72 @@ body.route-dashboard .sidebar-nav { display: none; }
   padding: 4px 8px;
 }
 .modal-cancel-link:hover { color: var(--ink); }
+
+/* v2.14.x: Stop-choice modal (CC + Introduce Back only) — two side-by-side
+   pills, no eyebrow, equal visual weight. The "Stop everything" pill turns
+   red on hover; the "keep monitoring" pill stays neutral. */
+.stop-choice-card {
+  max-width: 580px;
+  padding: 38px 40px 30px;
+  position: relative;
+}
+.stop-choice-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gray);
+  margin-bottom: 8px;
+}
+.stop-choice-headline {
+  font-family: var(--display);
+  font-size: 2rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.stop-choice-sub {
+  font-size: 0.78rem;
+  color: var(--gray);
+  margin-bottom: 24px;
+  line-height: 1.55;
+}
+.stop-choice-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.stop-choice-pill {
+  border: 1px solid var(--hairline);
+  padding: 16px 18px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  text-align: left;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  border-radius: 0;
+}
+.stop-choice-pill-headline {
+  font-family: var(--display);
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.stop-choice-pill-sub {
+  font-size: 0.65rem;
+  color: var(--gray);
+  line-height: 1.45;
+}
+.stop-choice-pill.is-monitor:hover { border-color: var(--ink); }
+.stop-choice-pill.is-stop:hover {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+.stop-choice-pill.is-stop:hover .stop-choice-pill-headline { color: #c0392b; }
+.stop-choice-cancel-row { text-align: center; margin-top: 16px; }
 .campaign-row-actions { display: flex; gap: 8px; align-items: center; }
 .campaign-row-edit--icon {
   font-size: 0.95rem;

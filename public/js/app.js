@@ -2523,7 +2523,15 @@ async function stopCampaign() {
 }
 
 // Phase 2.8.9: Stop confirmation modal — guards against accidental clicks.
+// v2.14.x: for connect_and_introduce campaigns, route to the choice modal
+// (stop-sending-keep-monitoring vs. stop-everything) instead of the simple
+// yes/no modal. Other modes keep the original single-question modal.
 function confirmStopCampaign() {
+  if (__cockpit && __cockpit.mode === 'connect_and_introduce') {
+    const modal = document.getElementById('stop-choice-modal');
+    if (modal) modal.classList.remove('hidden');
+    return;
+  }
   const modal = document.getElementById('confirm-stop-modal');
   if (modal) modal.classList.remove('hidden');
 }
@@ -2533,12 +2541,49 @@ function closeStopModal() {
   if (modal) modal.classList.add('hidden');
 }
 
+function closeStopChoiceModal() {
+  const modal = document.getElementById('stop-choice-modal');
+  if (modal) modal.classList.add('hidden');
+}
+window.closeStopChoiceModal = closeStopChoiceModal;
+
 async function confirmStopCampaignNow() {
   closeStopModal();
   // Visual feedback while the server force-closes browsers (~1-2s).
   showCampaignToast('Stopping campaign — closing browsers…', 4000);
   await stopCampaign();
 }
+
+// v2.14.x: "Stop sending, keep monitoring" — CC+IC only. Fires the
+// existing /api/campaign/stop with no body, which preserves the post-
+// campaign bulk-check + auto-intro monitoring path (campaign.js falls
+// through to end-of-list bulk-check + transitionToMonitoring as it would
+// at natural end-of-list).
+async function stopAndKeepMonitoring() {
+  closeStopChoiceModal();
+  showCampaignToast('Stopping new sends — monitoring stays active for 7 days.', 5000);
+  try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
+  try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
+}
+window.stopAndKeepMonitoring = stopAndKeepMonitoring;
+
+// v2.14.x: "Stop everything" — CC+IC only. Posts { full: true } so the
+// campaign loop skips the end-of-list bulk-check + monitoring transition
+// + post-campaign sweep registration. Pending invitations stay pending;
+// no auto-intros will fire.
+async function stopEverything() {
+  closeStopChoiceModal();
+  showCampaignToast('Stopping campaign completely — no further checks or DMs.', 5000);
+  try {
+    await fetch('/api/campaign/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full: true }),
+    });
+  } catch { /* */ }
+  try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
+}
+window.stopEverything = stopEverything;
 
 // Phase 2.8.9: Pause/Resume toggle. Button label is driven by polled status,
 // not local state, so the source of truth is the server.
@@ -6371,12 +6416,15 @@ async function refreshPastCampaigns() {
                         : reason === 'errored' ? 'is-errored'
                         : 'is-done';
       const checked = pastSelectedIdxs.has(idx) ? 'checked' : '';
-      // v2.14.x: Resume button — only on stopped entries. Opens a choice
-      // modal asking whether to resume with identical settings (instant) or
-      // pre-fill the wizard for tweaks. Completed campaigns are NOT
-      // resumable (they hit their target — operator re-runs as a fresh
-      // campaign via the existing details-modal "Re-run" CTA).
-      const restartBtn = reason === 'stopped'
+      // v2.14.x: Resume button — only on stopped entries that DIDN'T pick
+      // "Stop everything" (fullStop flag set by the CC+IC stop-choice
+      // modal). Full-halt stops are semantically "I'm done with this
+      // campaign" — no Resume offered. Opens a choice modal asking whether
+      // to resume with identical settings (instant) or pre-fill the wizard
+      // for tweaks. Completed campaigns are NOT resumable (they hit their
+      // target — operator re-runs as a fresh campaign via the existing
+      // details-modal "Re-run" CTA).
+      const restartBtn = (reason === 'stopped' && !c.fullStop)
         ? `<button type="button" class="campaign-row-edit campaign-row-resume" onclick="event.stopPropagation(); openResumeChoice(${idx})" title="Resume this campaign — pick up where it stopped">Resume</button>`
         : '';
       return `
@@ -6640,7 +6688,9 @@ async function refreshResumeAvailability() {
       return tb - ta;
     });
     const latest = indexed[0];
-    const isStopped = (latest.c.endReason === 'stopped') && !!latest.c.settings;
+    // v2.14.x: a stopped-with-fullStop campaign is not resumable — operator
+    // explicitly halted everything. Treat it as terminal like 'completed'.
+    const isStopped = (latest.c.endReason === 'stopped') && !!latest.c.settings && !latest.c.fullStop;
     // Don't surface Resume while a campaign is already running.
     const running = !!document.getElementById('btn-stop-rb')?.disabled === false;
     btn.hidden = !(isStopped && !running);

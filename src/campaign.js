@@ -959,6 +959,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.createdBy = createdBy || null;
   campaign._abort = false;
   campaign._stoppedManually = false;
+  campaign._skipCleanup = false;
   campaign._paused = false;
   campaign._pauseRequested = false;
   campaign.currentProfile = null;
@@ -2627,6 +2628,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         templateNames: Object.entries(tpl).filter(([_, v]) => v && (typeof v === 'string' ? v : v.subject)).map(([k]) => k),
         // v2.11.7: badge state in the dashboard's Past list.
         endReason,
+        // v2.14.x: true when operator chose "Stop everything" in the CC+IC
+        // stop-choice modal. The past-list hides the Resume button on these
+        // entries — "Stop everything" semantically means the operator is
+        // done with this campaign, not pausing it.
+        fullStop: !!campaign._skipCleanup,
         // v2.11.7: settings snapshot for the "Re-run with same settings" CTA.
         // Operator already trusts this machine with the templates (they're
         // typed into the wizard), and the file is in the user-only data
@@ -2662,7 +2668,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // one connection request, BEFORE the campaign transitions to its
     // monitoring phase. Sequential (respects browserSemaphore), failures
     // non-fatal. Skipped for non-connect_and_introduce modes.
-    if (mode === 'connect_and_introduce' && profilesThatSentAtLeastOne.size > 0) {
+    // v2.14.x: also skipped when operator chose "Stop everything" in the
+    // CC+IC stop-choice modal — _skipCleanup signals a full halt with no
+    // post-campaign monitoring or auto-intros.
+    if (!campaign._skipCleanup && mode === 'connect_and_introduce' && profilesThatSentAtLeastOne.size > 0) {
       log(`📡 End-of-list bulk check · ${profilesThatSentAtLeastOne.size} account(s)`);
       for (const _profileId of profilesThatSentAtLeastOne) {
         const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
@@ -2707,9 +2716,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // that actually sent at least one connect. Skipped when
     // acceptanceTrackingDays is 0 or for non-connect modes where the
     // bulk-check doesn't make sense.
+    // v2.14.x: also skipped when operator chose "Stop everything" in the
+    // CC+IC stop-choice modal (_skipCleanup) — the operator has explicitly
+    // opted out of post-campaign monitoring.
     try {
       const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_introduce');
-      if (trackingApplies && acceptanceTrackingDays > 0) {
+      if (!campaign._skipCleanup && trackingApplies && acceptanceTrackingDays > 0) {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
         // v2.14 verified: per-profile registration ensures every participating
         // account's post-campaign 6h × 7d sweep fires independently, including
@@ -2781,19 +2793,27 @@ export function retryParkedProfile(profileId) {
   return { ok: true, profileName: pName };
 }
 
-export function stopCampaign() {
+export function stopCampaign({ full = false } = {}) {
   campaign._abort = true;
   // Distinguish operator-initiated stop from natural completion so the
   // dashboard can surface a "Stopped" badge + Restart button on the history
   // entry that gets written when the loop unwinds.
   campaign._stoppedManually = true;
+  // v2.14.x: when `full` is true (operator picked "Stop everything" in the
+  // CC+IC stop-choice modal), the finally block skips the end-of-list
+  // bulk-check, the running→monitoring transition, and the per-account
+  // post-campaign sweep registration. Default false preserves the existing
+  // "Stop sending, keep monitoring" semantics.
+  campaign._skipCleanup = !!full;
   // Wake any in-flight awaitUnpause() so the loop can exit cleanly.
   campaign._paused = false;
   campaign._pauseRequested = false;
-  log('■ Stop requested.');
+  log(full
+    ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
+    : '■ Stop requested.');
   // P-02 fix (2.8.18): return a real shape instead of undefined so
   // /api/campaign/stop sends `{ok:true}` like every other endpoint.
-  return { ok: true };
+  return { ok: true, full: !!full };
 }
 
 // Phase 2.8.9: pause/resume.

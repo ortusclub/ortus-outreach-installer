@@ -1058,7 +1058,7 @@
     </div>
   </div>
 
-  <!-- Phase 2.8.9: Stop confirmation modal -->
+  <!-- Phase 2.8.9: Stop confirmation modal (non-CC+IC modes) -->
   <div id="confirm-stop-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopModal()">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="stop-modal-title">
       <h3 id="stop-modal-title" class="modal-title">Stop Campaign?</h3>
@@ -1066,6 +1066,32 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" onclick="closeStopModal()">Cancel</button>
         <button type="button" class="btn btn-stop" onclick="confirmStopCampaignNow()">Yes, Stop Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.14.x: Stop-choice modal — opens INSTEAD of the simple Stop modal
+       when the running campaign is mode=connect_and_introduce. Two paths:
+       (a) Stop sending, keep the post-campaign bulk-check + auto-intro
+       monitoring alive; (b) Stop everything (no checks, no DMs). -->
+  <div id="stop-choice-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopChoiceModal()">
+    <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="stop-choice-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeStopChoiceModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Stop campaign · Connect + Introduce Back</div>
+      <h3 id="stop-choice-title" class="modal-title stop-choice-headline">What kind of stop?</h3>
+      <p class="stop-choice-sub" id="stop-choice-sub">Some invitations are still pending acceptance — choose what happens to them.</p>
+      <div class="stop-choice-row">
+        <button type="button" class="stop-choice-pill is-monitor" onclick="stopAndKeepMonitoring()">
+          <div class="stop-choice-pill-headline">Stop sending,<br>keep monitoring</div>
+          <div class="stop-choice-pill-sub">Bulk-check fires now, then every 6 h for 7 days. Auto-intro DMs still fire on accept.</div>
+        </button>
+        <button type="button" class="stop-choice-pill is-stop" onclick="stopEverything()">
+          <div class="stop-choice-pill-headline">Stop<br>everything</div>
+          <div class="stop-choice-pill-sub">No sends, no checks, no DMs. Pending invites stay pending.</div>
+        </button>
+      </div>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="modal-cancel-link" onclick="closeStopChoiceModal()">Cancel</button>
       </div>
     </div>
   </div>

@@ -733,8 +733,13 @@ app.get('/api/monitoring/state', (_req, res) => {
   }).catch((err) => res.status(500).json({ error: err.message }));
 });
 
-app.post('/api/campaign/stop', async (_req, res) => {
-  const result = stopCampaign();
+app.post('/api/campaign/stop', async (req, res) => {
+  // v2.14.x: optional `{ full: true }` body opts out of the
+  // connect_and_introduce post-campaign sweep + auto-intros. Default
+  // behaviour is unchanged (Stop sending, keep monitoring) — relevant only
+  // when the running campaign is mode=connect_and_introduce.
+  const fullHalt = !!(req.body && req.body.full);
+  const result = stopCampaign({ full: fullHalt });
   // Phase 2.8.9: force-close all Orbita/local browsers immediately so the
   // operator sees them disappear rather than waiting for the loop to wind down.
   // Errors here are non-fatal — the loop's own cleanup is idempotent.
