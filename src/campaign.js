@@ -2727,22 +2727,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
     clearTimeout(closeTimeout);
 
-    // End-of-list bulk-check + monitoring transition. Must live INSIDE the
-    // try block: it depends on the in-scope closure `runIdleBulkCheck` and
-    // its captures (token, etc.) which only exist while we're still inside
-    // the try. Moving these to finally previously threw "runIdleBulkCheck
-    // is not defined".
+    // Transition to monitoring for CC+IC runs that sent ≥1 connect. The
+    // end-of-list bulk-check that used to live here was removed: the
+    // immediate close-then-reopen pattern on the same profile is a clear
+    // bot signature, and in-campaign idle bulk-checks already catch
+    // mid-run acceptances while the 6h post-campaign scheduler catches
+    // the rest.
     if (!campaign._skipCleanup && mode === 'connect_and_introduce' && profilesThatSentAtLeastOne.size > 0) {
-      log(`📡 End-of-list bulk check · ${profilesThatSentAtLeastOne.size} account(s)`);
-      for (const _profileId of profilesThatSentAtLeastOne) {
-        const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
-        try {
-          await runIdleBulkCheck(_profileId, _pName);
-        } catch (err) {
-          log(`  ⚠ [${_pName}] End-of-list bulk check threw: ${err.message}`);
-        }
-      }
-
       const updated = transitionToMonitoring(campaign, {
         now: new Date(),
         participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
