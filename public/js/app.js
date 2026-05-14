@@ -2479,43 +2479,75 @@ async function startCampaign() {
   // Show account queue
   renderAccountQueue(selectedProfileIds.map(id => selectedProfileNames[id] || id), null);
 
+  const body = {
+    profileIds: selectedProfileIds,
+    sheetUrl,
+    templates,
+    dailyLimit,
+    mode,
+    primaryName: templates.primaryName,
+    messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
+    delayMin,
+    delayMax,
+    linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
+    senderFirstNames,
+    // 2.9.8: parallel-accounts knob. Server only honors it when ≥5
+    // accounts are selected and the toggle is on.
+    concurrency: (() => {
+      const tog = document.getElementById('concurrency-toggle');
+      const cnt = document.getElementById('concurrency-count');
+      if (!tog?.checked) return 1;
+      const n = parseInt(cnt?.value, 10);
+      return Number.isFinite(n) && n >= 2 ? Math.min(5, n) : 2;
+    })(),
+    // Campaign Name from the wizard's top-of-page input. Empty string is
+    // valid — the dashboard row falls back to "Add name" inline-editable.
+    name: (document.getElementById('campaign-name-input')?.value || '').trim(),
+    // Pre-flight Check Status sweep. Toggle lives inside each mode's
+    // coverage section (Section 2b for message_only, 2c for
+    // introduce_back). Only one is visible at a time — read whichever
+    // is checked. Server-side gated to the two modes anyway.
+    preflightCheckStatus: !!(
+      document.getElementById('preflight-check-toggle-mo')?.checked ||
+      document.getElementById('preflight-check-toggle-ib')?.checked
+    ),
+  };
+
+  await submitStartCampaign(body);
+}
+
+async function submitStartCampaign(body) {
+  _preflightStartBody = body;
+  const isCCIC = body.mode === 'connect_and_introduce';
+  if (isCCIC) {
+    openPreflightModal(body.primaryName || '');
+  }
   try {
     const res = await fetch('/api/campaign/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        profileIds: selectedProfileIds,
-        sheetUrl,
-        templates,
-        dailyLimit,
-        mode,
-        messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
-        delayMin,
-        delayMax,
-        linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
-        senderFirstNames,
-        // 2.9.8: parallel-accounts knob. Server only honors it when ≥5
-        // accounts are selected and the toggle is on.
-        concurrency: (() => {
-          const tog = document.getElementById('concurrency-toggle');
-          const cnt = document.getElementById('concurrency-count');
-          if (!tog?.checked) return 1;
-          const n = parseInt(cnt?.value, 10);
-          return Number.isFinite(n) && n >= 2 ? Math.min(5, n) : 2;
-        })(),
-        // Campaign Name from the wizard's top-of-page input. Empty string is
-        // valid — the dashboard row falls back to "Add name" inline-editable.
-        name: (document.getElementById('campaign-name-input')?.value || '').trim(),
-        // Pre-flight Check Status sweep. Toggle lives inside each mode's
-        // coverage section (Section 2b for message_only, 2c for
-        // introduce_back). Only one is visible at a time — read whichever
-        // is checked. Server-side gated to the two modes anyway.
-        preflightCheckStatus: !!(
-          document.getElementById('preflight-check-toggle-mo')?.checked ||
-          document.getElementById('preflight-check-toggle-ib')?.checked
-        ),
-      }),
+      body: JSON.stringify(body),
     });
+
+    if (res.status === 409) {
+      const payload = await res.json();
+      if (payload.error === 'preflight_failed') {
+        showPreflightFailure(payload.results, body.primaryName || '');
+        return;
+      }
+    }
+
+    if (!res.ok) {
+      const txt = await res.text();
+      closePreflightModal();
+      alert(`Could not start campaign:\n\n${txt}`);
+      return;
+    }
+
+    // Success — close any open preflight modal.
+    closePreflightModal();
+    _preflightStartBody = null;
+
     const data = await res.json();
     if (data.error) { alert(`Error: ${data.error}`); return; }
     if (!data.ok) { alert(data.message || 'Could not start campaign.'); return; }
@@ -2540,8 +2572,9 @@ async function startCampaign() {
     // Snapshot the configuration so "Load Last Used" can restore it next time.
     if (typeof saveLastUsedPreset === 'function') saveLastUsedPreset();
     startPolling();
-  } catch (err) {
-    alert(`Failed: ${err.message}`);
+  } catch (e) {
+    closePreflightModal();
+    alert(`Network error starting campaign:\n\n${e.message}`);
   }
 }
 
@@ -2630,6 +2663,127 @@ function closeRestoreModal() {
   if (modal) modal.classList.add('hidden');
 }
 window.closeRestoreModal = closeRestoreModal;
+
+// ── Pre-flight modal ──────────────────────────────────────────────────────
+let _preflightStartBody = null; // stashed start-campaign body for retry
+
+function openPreflightModal(primaryName) {
+  const modal = document.getElementById('preflight-modal');
+  if (!modal) return;
+  const nameEl = document.getElementById('preflight-primary-name');
+  if (nameEl) nameEl.textContent = primaryName || '…';
+  modal.dataset.state = 'verifying';
+  modal.querySelector('.preflight-state-verifying').style.display = '';
+  modal.querySelector('.preflight-state-failure').style.display = 'none';
+  modal.classList.remove('hidden');
+}
+window.openPreflightModal = openPreflightModal;
+
+function showPreflightFailure(results, primaryName) {
+  const modal = document.getElementById('preflight-modal');
+  if (!modal) return;
+  modal.dataset.state = 'failure';
+  modal.querySelector('.preflight-state-verifying').style.display = 'none';
+  modal.querySelector('.preflight-state-failure').style.display = '';
+
+  const failed = results.filter(r => !r.ok);
+  const summaryEl = document.getElementById('preflight-fail-summary');
+  if (summaryEl) {
+    summaryEl.textContent =
+      `${primaryName} couldn't be verified on ${failed.length} of ${results.length} sender account${results.length === 1 ? '' : 's'}.`;
+  }
+
+  const rowsEl = document.getElementById('preflight-failure-rows');
+  if (!rowsEl) return;
+  rowsEl.innerHTML = '';
+  for (const r of failed) {
+    const row = document.createElement('div');
+    row.className = 'preflight-row';
+    row.innerHTML = `
+      <div class="preflight-row-icon">✕</div>
+      <div>
+        <div class="preflight-row-name"></div>
+        <div class="preflight-row-detail"></div>
+        <div class="preflight-suggestion-holder"></div>
+      </div>
+      <div class="preflight-row-status"></div>
+    `;
+    row.querySelector('.preflight-row-name').textContent = r.profileName || r.profileId || 'unknown account';
+
+    const statusMap = {
+      url_invalid:   'URL not found',
+      not_connected: 'Not connected',
+      name_mismatch: 'Name mismatch',
+      launch_failed: 'Launch failed',
+      crash:         'Verification crashed',
+      timeout:       'Timed out',
+      config:        'Config missing',
+    };
+    row.querySelector('.preflight-row-status').textContent = statusMap[r.failureType] || 'Failed';
+
+    const detailEl = row.querySelector('.preflight-row-detail');
+    if (r.failureType === 'name_mismatch' && r.canonicalName) {
+      detailEl.innerHTML = `Profile loaded, but typeahead doesn't surface "${_preflightEscapeHtml(primaryName)}". LinkedIn shows this person's name as <strong>${_preflightEscapeHtml(r.canonicalName)}</strong>.`;
+      const pill = document.createElement('button');
+      pill.className = 'preflight-suggestion-pill';
+      pill.type = 'button';
+      pill.textContent = `Use "${r.canonicalName}"`;
+      pill.onclick = () => applyDidYouMeanAndRetry(r.canonicalName);
+      row.querySelector('.preflight-suggestion-holder').appendChild(pill);
+    } else if (r.failureType === 'not_connected') {
+      detailEl.innerHTML = `Profile loads but no <strong>Message</strong> button — ${_preflightEscapeHtml(primaryName)} is not a 1st-degree connection on this account. Intros from this account would fail every time.`;
+    } else if (r.failureType === 'url_invalid') {
+      detailEl.innerHTML = `Couldn't load the primary person's LinkedIn URL. ${_preflightEscapeHtml(r.detail || '')}`;
+    } else {
+      detailEl.textContent = r.detail || 'Unknown failure';
+    }
+    rowsEl.appendChild(row);
+  }
+}
+window.showPreflightFailure = showPreflightFailure;
+
+function closePreflightModal() {
+  // Note: this closes the modal but does NOT abort an in-flight preflight
+  // request — the orchestrator has a 60s overall timeout but no abort
+  // signal. If the operator cancels while pre-flight is still running, the
+  // request will complete (either silently starting the campaign on pass,
+  // or 409 landing on a closed modal). For typical 10-15s pre-flights this
+  // is acceptable; full abort-signal plumbing is deferred.
+  const modal = document.getElementById('preflight-modal');
+  if (modal) modal.classList.add('hidden');
+  _preflightStartBody = null;
+}
+window.closePreflightModal = closePreflightModal;
+
+function closePreflightModalAndScrollToPrimary() {
+  closePreflightModal();
+  const nameInput = document.getElementById('primary-person-name');
+  if (nameInput) {
+    nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => nameInput.focus(), 300);
+  }
+}
+window.closePreflightModalAndScrollToPrimary = closePreflightModalAndScrollToPrimary;
+
+async function applyDidYouMeanAndRetry(newName) {
+  const nameInput = document.getElementById('primary-person-name');
+  if (nameInput) {
+    nameInput.value = newName;
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  if (!_preflightStartBody) return;
+  // Update body with new name and re-submit. server.js destructures
+  // primaryName from req.body root and forwards into templates before
+  // calling startCampaign — root update is enough.
+  _preflightStartBody.primaryName = newName;
+  openPreflightModal(newName);
+  await submitStartCampaign(_preflightStartBody);
+}
+window.applyDidYouMeanAndRetry = applyDidYouMeanAndRetry;
+
+function _preflightEscapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 async function doRestoreCampaign() {
   closeRestoreModal();
