@@ -2517,11 +2517,6 @@ async function startCampaign() {
 }
 
 async function submitStartCampaign(body) {
-  _preflightStartBody = body;
-  const isCCIC = body.mode === 'connect_and_introduce';
-  if (isCCIC) {
-    openPreflightModal(body.primaryName || '');
-  }
   try {
     const res = await fetch('/api/campaign/start', {
       method: 'POST',
@@ -2529,38 +2524,16 @@ async function submitStartCampaign(body) {
       body: JSON.stringify(body),
     });
 
-    if (res.status === 409) {
-      const payload = await res.json();
-      if (payload.error === 'preflight_failed') {
-        showPreflightFailure(payload.results, body.primaryName || '');
-        return;
-      }
-    }
-
     if (!res.ok) {
       const txt = await res.text();
-      closePreflightModal();
       alert(`Could not start campaign:\n\n${txt}`);
       return;
     }
 
-    // If operator cancelled during the in-flight request, don't start the
-    // campaign silently. The server has already marked campaign.running = true
-    // and the campaign is launching; the polling loop and Stop button will
-    // surface it. We just skip the local UI transition so the operator can
-    // hit Stop from the dashboard if they really meant Cancel.
-    if (_preflightCancelled) {
-      _preflightStartBody = null;
-      _preflightCancelled = false;
-      return;
-    }
-    // Success — close any open preflight modal.
-    closePreflightModal();
-    _preflightStartBody = null;
-
     const data = await res.json();
     if (data.error) { alert(`Error: ${data.error}`); return; }
     if (!data.ok) { alert(data.message || 'Could not start campaign.'); return; }
+
     // Whether the campaign starts now or gets queued, the draft has been
     // consumed. Drop it from the Drafts list and clear the active id.
     try {
@@ -2570,8 +2543,8 @@ async function submitStartCampaign(body) {
         localStorage.removeItem('currentDraftId');
       }
     } catch {}
+
     // Server queued the campaign because another one is already running.
-    // Pop back to the dashboard and tell the operator what happened.
     if (data.queued) {
       alert(data.message || 'Added to queue.');
       if (typeof saveLastUsedPreset === 'function') saveLastUsedPreset();
@@ -2579,11 +2552,9 @@ async function submitStartCampaign(body) {
       return;
     }
     setCampaignButtons(true);
-    // Snapshot the configuration so "Load Last Used" can restore it next time.
     if (typeof saveLastUsedPreset === 'function') saveLastUsedPreset();
     startPolling();
   } catch (e) {
-    closePreflightModal();
     alert(`Network error starting campaign:\n\n${e.message}`);
   }
 }
