@@ -155,6 +155,7 @@ var STATE_VALUES = [
   { val: 'Already Connected',          state: 'connected' },
   { val: 'Accepted',                   state: 'connected' },
   { val: 'Yes',                        state: 'connected' },
+  { val: 'Introduction Made',          state: 'connected' },
   // declined (red)
   { val: 'Declined',                   state: 'declined' },
   { val: 'Unreachable',                state: 'declined' },

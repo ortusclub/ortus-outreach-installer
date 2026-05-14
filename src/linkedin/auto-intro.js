@@ -97,22 +97,52 @@ export async function runAutoIntros({
 
   log(`  🤝 [${profileName}] Auto-introducing ${connectedUrls.length} new connection(s) to ${primaryName}…`);
   for (const url of connectedUrls) {
+    // Mirror the enrichment campaign.js applies in DM mode (src/campaign.js:2037-
+    // 2046) so {firstName}/{lastName}/{company}/{title}/{senderName}/
+    // {senderFirstName} resolve in the intro DM body. Also expose the primary
+    // person under both 'primary name' (UI variable button) and 'primaryName'
+    // (camelCase) since operators type either form.
+    const row = rowByUrl.get(url) || {};
+    const enrichedData = {
+      ...row,
+      firstName: row['First Name'] || row['firstName'] || row['first_name'] || '',
+      lastName: row['Last Name'] || row['lastName'] || row['last_name'] || '',
+      company: row['Company'] || row['company'] || '',
+      title: row['Title'] || row['title'] || row['Job Title'] || '',
+      senderName: profileName || '',
+      senderFirstName: (profileName || '').split(/\s+/)[0] || '',
+      primaryName,
+      'primary name': primaryName,
+      primaryUrl: primaryUrl || '',
+      'primary url': primaryUrl || '',
+    };
     try {
       const introResult = await performOutreach(
         page,
         url,
-        { ...introTpl, data: rowByUrl.get(url) || {} },
+        { ...introTpl, data: enrichedData },
         { profileId },
         'force_message',
       );
       const ok = introResult && (introResult.action === 'message_sent' || introResult.action === 'already_processed');
-      await updateSheetRow(sheetUrl, url, {
+      // On successful intro, also stamp cc='Connected' (and its mirror fields)
+      // because the upstream bulk-check that fed this URL into connectedUrls
+      // was called with suppressAcceptedStamp=true — it deliberately leaves
+      // the Connection Accepted Status cell alone so we can land both
+      // updates in one Apps Script call from here.
+      const tracking = {
         introductionStatus: ok ? 'Introduction Made' : 'Failed',
         sender: profileName,
         accountUsed: profileName,
         dateLastAction: _formatLocalDate(new Date()),
         auditAction: ok ? `Introduction sent to ${primaryName}` : `Intro failed: ${introResult?.error || 'unknown'}`,
-      }, linkedinColumn).catch(() => {});
+      };
+      if (ok) {
+        tracking.cc = 'Connected';
+        tracking.connectedAlready = 'Yes';
+        tracking.checkStatus = 'Connected';
+      }
+      await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
       if (ok) {
         result.sent++;
         log(`  🤝 [${profileName}] ${url}: Introduction Made`);
