@@ -537,6 +537,12 @@ function launchCampaign(config, owner) {
       link: '/',
     }).catch(() => {});
   }).catch(err => {
+    // v2.14.x: Preflight validation failures (connect_and_introduce mode) are caught here.
+    // The error is logged but not surfaced as HTTP 409 (fire-and-forget pattern prevents
+    // early route-level error handling). The UI will see the failure via logs/state polling.
+    if (err?.message === 'PREFLIGHT_FAILED' && err.preflight) {
+      log(`⚠ Preflight failed: ${err.preflight.results.map(r => `${r.profileName}=${r.failureType}`).join(', ')}`);
+    }
     console.error('Campaign error:', err.message);
     notifyEmail(owner, {
       title: 'Campaign failed',
@@ -618,8 +624,46 @@ app.post('/api/campaign/start', async (req, res) => {
       });
     }
 
-    launchCampaign(config, owner);
-    res.json({ ok: true, message: 'Campaign started' });
+    // v2.14.x: await startCampaign to catch PREFLIGHT_FAILED early.
+    // This blocks the route during campaign setup + execution, but allows the UI
+    // to receive immediate 409 response on preflight validation failures (CC+IC mode).
+    const { startCampaign: _startCampaign } = await import('./src/campaign.js');
+    try {
+      preventSleep('campaign');
+      await _startCampaign({ ...config, createdBy: owner });
+      // Campaign completed successfully.
+      const status = getCampaignStatus();
+      notifyEmail(owner, {
+        title: 'Campaign finished',
+        body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+        link: '/',
+      }).catch(() => {});
+      res.json({ ok: true, message: 'Campaign finished' });
+    } catch (err) {
+      // Preflight validation failure (CC+IC mode).
+      if (err?.message === 'PREFLIGHT_FAILED' && err.preflight) {
+        allowSleep();
+        return res.status(409).json({
+          error: 'preflight_failed',
+          results: err.preflight.results,
+        });
+      }
+      // Campaign failed mid-run or other setup error.
+      allowSleep();
+      notifyEmail(owner, {
+        title: 'Campaign failed',
+        body: `Your campaign failed: ${err.message}`,
+        link: '/',
+      }).catch(() => {});
+      throw err;
+    } finally {
+      allowSleep();
+      // Chain into the queue: the next entry (if any) launches now that
+      // this campaign fully completed. Sequential by design.
+      runNextFromQueue().catch(err => {
+        console.error('Queue chain error:', err.message);
+      });
+    }
   } catch (err) {
     console.error('Campaign start error:', err.message);
     res.status(500).json({ error: err.message });
