@@ -2772,10 +2772,14 @@ async function applyDidYouMeanAndRetry(newName) {
     nameInput.dispatchEvent(new Event('input', { bubbles: true }));
   }
   if (!_preflightStartBody) return;
-  // Update body with new name and re-submit. server.js destructures
-  // primaryName from req.body root and forwards into templates before
-  // calling startCampaign — root update is enough.
+  // Update body so the retry uses the new name. campaign.js reads
+  // templates.primaryName (via server.js buildCampaignConfig) so the nested
+  // field is the load-bearing one; updating the root too keeps consistency
+  // for any future code that reads from there.
   _preflightStartBody.primaryName = newName;
+  if (_preflightStartBody.templates) {
+    _preflightStartBody.templates.primaryName = newName;
+  }
   openPreflightModal(newName);
   await submitStartCampaign(_preflightStartBody);
 }
