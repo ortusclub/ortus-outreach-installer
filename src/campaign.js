@@ -1043,6 +1043,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   // 'stopped' from campaign._abort, otherwise stays 'completed'.
   let endReason = 'completed';
 
+  // Referenced by the finally block (end-of-list bulk-check + monitoring
+  // handoff), so it must live outside the try below.
+  const profilesThatSentAtLeastOne = new Set();
+
   try {
     rotateCampaignLogIfBig();
     log('=== Campaign starting ===');
@@ -1658,11 +1662,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     const _checkStatusCursorByProfile = {};
     const _checkStatusExhausted = new Set();
     const weeklyLimited = new Set(); // Profiles that hit weekly/credit limit
-    // v2.14: tracks profiles that successfully sent ≥1 connection_sent during this
-    // campaign run. Used by the end-of-list bulk-check trigger to know which
-    // accounts to bulk-check (each LinkedIn account can only see its OWN
-    // connections, so we must iterate every participating account separately).
-    const profilesThatSentAtLeastOne = new Set();
     // Phase 2.8.8: silent-failure guard — if a profile produces N
     // consecutive non-success outcomes, park it for the rest of the run.
     // Catches silent weekly-limit exhaustion and any other systemic per-account
