@@ -22,14 +22,16 @@ export function computeMonitoringUntil(sendingEndedAt) {
 }
 
 /**
- * Returns the next 6h check boundary strictly AFTER `now`, measured from
- * `sendingEndedAt`. If `now` lands exactly on a boundary, returns the next
- * one (strict >).
+ * Returns the next check boundary strictly AFTER `now`, measured from
+ * `sendingEndedAt`. Boundary spacing follows getCheckIntervalMs() — 6h in
+ * production, 1min in test mode. Strict >: a `now` that lands exactly on
+ * a boundary returns the boundary after it.
  */
 export function recomputeNextCheckAt(sendingEndedAt, now) {
   const s = _toDate(sendingEndedAt).getTime();
   const n = _toDate(now).getTime();
+  const interval = getCheckIntervalMs();
   const elapsed = n - s;
-  const ticksPassed = Math.floor(elapsed / CHECK_INTERVAL_MS) + 1;
-  return new Date(s + ticksPassed * CHECK_INTERVAL_MS);
+  const ticksPassed = Math.floor(elapsed / interval) + 1;
+  return new Date(s + ticksPassed * interval);
 }

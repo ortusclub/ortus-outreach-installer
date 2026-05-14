@@ -2726,6 +2726,45 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     }
 
     clearTimeout(closeTimeout);
+
+    // End-of-list bulk-check + monitoring transition. Must live INSIDE the
+    // try block: it depends on the in-scope closure `runIdleBulkCheck` and
+    // its captures (token, etc.) which only exist while we're still inside
+    // the try. Moving these to finally previously threw "runIdleBulkCheck
+    // is not defined".
+    if (!campaign._skipCleanup && mode === 'connect_and_introduce' && profilesThatSentAtLeastOne.size > 0) {
+      log(`📡 End-of-list bulk check · ${profilesThatSentAtLeastOne.size} account(s)`);
+      for (const _profileId of profilesThatSentAtLeastOne) {
+        const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
+        try {
+          await runIdleBulkCheck(_profileId, _pName);
+        } catch (err) {
+          log(`  ⚠ [${_pName}] End-of-list bulk check threw: ${err.message}`);
+        }
+      }
+
+      const updated = transitionToMonitoring(campaign, {
+        now: new Date(),
+        participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
+      });
+      Object.assign(campaign, updated);
+
+      try {
+        const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+        const _appender = buildAppendLogger({ logs: campaign.logs, capLines: 5000 });
+        for (const _pid of profilesThatSentAtLeastOne) {
+          registerAppender(_sheetId, _pid, _appender);
+        }
+      } catch (busErr) {
+        console.warn('[monitoring] Log bus registration failed:', busErr.message);
+      }
+
+      try {
+        await writeMonitoringState(campaign);
+      } catch (persistErr) {
+        console.warn('[monitoring] persistence write failed:', persistErr.message);
+      }
+    }
   } catch (err) {
     log(`Fatal: ${err.message}`);
     pushError(err);
@@ -2783,55 +2822,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       });
     } catch (histErr) {
       console.error('Failed to save campaign history:', histErr.message);
-    }
-
-    // v2.14: end-of-list bulk-check for connect_and_introduce campaigns. Fires
-    // one extra bulk-check pass for every account that actually sent at least
-    // one connection request, BEFORE the campaign transitions to its
-    // monitoring phase. Sequential (respects browserSemaphore), failures
-    // non-fatal. Skipped for non-connect_and_introduce modes.
-    // v2.14.x: also skipped when operator chose "Stop everything" in the
-    // CC+IC stop-choice modal — _skipCleanup signals a full halt with no
-    // post-campaign monitoring or auto-intros.
-    if (!campaign._skipCleanup && mode === 'connect_and_introduce' && profilesThatSentAtLeastOne.size > 0) {
-      log(`📡 End-of-list bulk check · ${profilesThatSentAtLeastOne.size} account(s)`);
-      for (const _profileId of profilesThatSentAtLeastOne) {
-        const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
-        try {
-          await runIdleBulkCheck(_profileId, _pName);
-        } catch (err) {
-          log(`  ⚠ [${_pName}] End-of-list bulk check threw: ${err.message}`);
-        }
-      }
-
-      // Transition campaign state: running → monitoring
-      const updated = transitionToMonitoring(campaign, {
-        now: new Date(),
-        participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
-      });
-      Object.assign(campaign, updated);
-
-      // v2.14: register a log appender per participating profile so the
-      // post-campaign scheduler's bulk-check log lines route back into
-      // this campaign's in-memory log array during the 7-day Monitoring
-      // window. Operator sees one continuous stream in the UI.
-      try {
-        const _sheetId = _extractSheetIdFromUrl(sheetUrl);
-        const _appender = buildAppendLogger({ logs: campaign.logs, capLines: 5000 });
-        for (const _pid of profilesThatSentAtLeastOne) {
-          registerAppender(_sheetId, _pid, _appender);
-        }
-      } catch (busErr) {
-        console.warn('[monitoring] Log bus registration failed:', busErr.message);
-      }
-
-      // v2.14: persist the monitoring slice to disk so the campaign can
-      // resume after app restart / crash.
-      try {
-        await writeMonitoringState(campaign);
-      } catch (persistErr) {
-        console.warn('[monitoring] persistence write failed:', persistErr.message);
-      }
     }
 
     // Register a post-campaign acceptance-tracking window for every profile
