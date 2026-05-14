@@ -523,6 +523,44 @@ function buildCampaignConfig(body) {
   };
 }
 
+// Fire-and-forget campaign launch that signals the preflight outcome via
+// onPreflightResult before the campaign continues running in background.
+// Used by POST /api/campaign/start to support 409 PREFLIGHT_FAILED responses
+// while still keeping the long campaign-run async.
+function launchCampaignWithPreflight(config, owner, onPreflightResult) {
+  preventSleep('campaign');
+  startCampaign({
+    ...config,
+    createdBy: owner,
+    onPreflightComplete: onPreflightResult,
+  })
+    .then(() => {
+      const status = getCampaignStatus();
+      notifyEmail(owner, {
+        title: 'Campaign finished',
+        body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+        link: '/',
+      }).catch(() => {});
+    })
+    .catch((err) => {
+      if (err?.message === 'PREFLIGHT_FAILED' && err.preflight) {
+        // Already signaled via callback; no email needed for this case
+        // (the operator sees the 409 modal in the UI).
+        return;
+      }
+      console.error('Campaign error:', err.message);
+      notifyEmail(owner, {
+        title: 'Campaign failed',
+        body: `Your campaign failed: ${err.message}`,
+        link: '/',
+      }).catch(() => {});
+    })
+    .finally(() => {
+      allowSleep();
+      runNextFromQueue().catch(e => console.error('Queue chain error:', e.message));
+    });
+}
+
 // Launch a campaign and chain into the queue when it finishes. Calling
 // this while another campaign is still running will throw downstream from
 // startCampaign — callers must check campaign.running first and queue
@@ -618,7 +656,26 @@ app.post('/api/campaign/start', async (req, res) => {
       });
     }
 
-    launchCampaign(config, owner);
+    // Await only the preflight outcome (~15s for CC+IC; instant for other
+    // modes). The campaign continues in background after this resolves.
+    // - allPassed=true → return 200, campaign keeps running
+    // - allPassed=false → return 409 with structured results, campaign aborted
+    const preflightOutcome = await new Promise((resolve) => {
+      let resolved = false;
+      const safeResolve = (v) => { if (!resolved) { resolved = true; resolve(v); } };
+
+      launchCampaignWithPreflight(config, owner, safeResolve);
+
+      // Defensive: if preflight never signals within 90s, unblock the route.
+      setTimeout(() => safeResolve({ allPassed: true, results: [], stalled: true }), 90_000);
+    });
+
+    if (!preflightOutcome.allPassed) {
+      return res.status(409).json({
+        error: 'preflight_failed',
+        results: preflightOutcome.results,
+      });
+    }
     res.json({ ok: true, message: 'Campaign started' });
   } catch (err) {
     console.error('Campaign start error:', err.message);

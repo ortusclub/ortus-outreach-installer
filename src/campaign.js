@@ -961,7 +961,7 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, createdBy = null }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, createdBy = null, onPreflightComplete = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
@@ -1746,12 +1746,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       const primaryName = templates?.primaryName || '';
       const primaryUrl  = templates?.primaryUrl  || '';
       if (!primaryName || !primaryUrl) {
-        const err = new Error('PREFLIGHT_FAILED');
-        err.preflight = {
+        const preflightResult = {
           allPassed: false,
           results: [{ profileName: 'config', ok: false, failureType: 'config',
                       detail: 'primaryName or primaryUrl missing — both are required for CC+IC' }],
         };
+        if (typeof onPreflightComplete === 'function') {
+          try { onPreflightComplete(preflightResult); } catch {}
+        }
+        const err = new Error('PREFLIGHT_FAILED');
+        err.preflight = preflightResult;
         throw err;
       }
 
@@ -1803,11 +1807,23 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           await closeSession(pid);
         }
         campaign.running = false;
+        if (typeof onPreflightComplete === 'function') {
+          try { onPreflightComplete({ allPassed: false, results: preflight.results }); } catch {}
+        }
         const err = new Error('PREFLIGHT_FAILED');
         err.preflight = preflight;
         throw err;
       }
       log(`✓ Pre-flight verified primary person on ${verifiable.length}/${profileIds.length} accounts`);
+      if (typeof onPreflightComplete === 'function') {
+        try { onPreflightComplete({ allPassed: true, results: preflight.results }); } catch {}
+      }
+    }
+    // For non-connect_and_introduce modes there is no preflight to run.
+    // Signal pass immediately so the HTTP route's Promise resolves without
+    // waiting 90s for the defensive timeout.
+    if (mode !== 'connect_and_introduce' && typeof onPreflightComplete === 'function') {
+      try { onPreflightComplete({ allPassed: true, results: [], skipped: true }); } catch {}
     }
     // ─────────────────────────────────────────────────────────────────────
 
