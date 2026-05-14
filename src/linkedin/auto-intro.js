@@ -7,35 +7,21 @@
  * a 3-way intro DM that includes the configured primary person. Stamps
  * `Introduction Status` on each row.
  *
- * Reuses the introduce_back outreach flow (introMode=true) — same code
- * path that the standalone Introduce Back mode uses, just with the
- * primary person's name/body overriding introName/title/body.
+ * v2.13.14: Construct templates + data exactly the way campaign.js builds
+ * them for the Introduce Back batch loop — same `tpl` shape, same `data`
+ * enrichment, same call signature into performOutreach. The only overlay
+ * is `introMode: true`, `introName: primaryName`, `followUpMessage:
+ * primaryIntroBody`, and `introUrl: primaryUrl` (which triggers URL
+ * routing for the second pill in sendIntroMessage, sidestepping the
+ * unreliable typeahead). senderFirstNames is honoured so
+ * `{sender first name}` resolves to the operator-configured nice name
+ * rather than the GoLogin email.
  */
 
 import { performOutreach } from './outreach.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl } from '../campaign.js';
-
-/**
- * Build the template object passed into performOutreach for a 3-way intro DM.
- * Exported so the field-name contract with outreach.js can be unit-tested.
- *
- * outreach.js gates the message branch on `templates.followUpMessage`, so the
- * intro DM body MUST be stored under that key. (Earlier versions used
- * `followUp1`, which silently failed with "No message template".)
- */
-export function buildAutoIntroTpl({ primaryName, primaryIntroBody, primaryUrl = '', introTitle = 'Introduction: {first name} <> {intro name}' }) {
-  return {
-    introMode: true,
-    introName: primaryName,
-    introTitle,
-    followUpMessage: primaryIntroBody,
-    primaryName,
-    primaryUrl,
-    primaryIntroBody,
-  };
-}
 
 function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -54,10 +40,8 @@ function _formatLocalDate(d) {
  * @param {string} args.sheetUrl              - target sheet URL (used to look up row data)
  * @param {string} args.linkedinColumn        - operator-specified URL column name
  * @param {string[]} args.connectedUrls       - leads that just flipped to Connected
- * @param {string} args.primaryName           - primary person's full LinkedIn name
- * @param {string} args.primaryIntroBody      - DM body template (with placeholders)
- * @param {string} [args.primaryUrl]          - optional primary person URL (placeholder)
- * @param {string} [args.introTitle]          - group thread title template
+ * @param {object} args.templates             - wizard templates (full object — primaryName, primaryUrl, primaryIntroBody, introTitle, etc.)
+ * @param {Record<string,string>} [args.senderFirstNames] - operator-configured nice names per profileId
  * @param {Function} [args.log]               - log function (defaults to console.log)
  * @returns {Promise<{sent: number, failed: number, skipped: number}>}
  */
@@ -68,19 +52,37 @@ export async function runAutoIntros({
   sheetUrl,
   linkedinColumn,
   connectedUrls,
-  primaryName,
-  primaryIntroBody,
-  primaryUrl = '',
-  introTitle = 'Introduction: {first name} <> {intro name}',
+  templates = {},
+  senderFirstNames = {},
   log = console.log,
 }) {
   const result = { sent: 0, failed: 0, skipped: 0 };
   if (!Array.isArray(connectedUrls) || connectedUrls.length === 0) return result;
+
+  const primaryName      = (templates.primaryName      || '').trim();
+  const primaryIntroBody = (templates.primaryIntroBody || '').trim();
+  const primaryUrl       = (templates.primaryUrl       || '').trim();
+
   if (!primaryName || !primaryIntroBody) {
     log(`  ⚠ [${profileName}] ${connectedUrls.length} acceptance(s) found but Primary Person name/body missing — skipping auto-intro.`);
     result.skipped = connectedUrls.length;
     return result;
   }
+
+  // Build the templates object the way campaign.js does for Introduce Back —
+  // same shape, full wizard inheritance — with the CC+IC-specific overlay.
+  // `introUrl` is what makes sendIntroMessage use URL-routing for the
+  // second pill (see actions.js:1284 and outreach.js:488). Without it the
+  // call would fall back to the typeahead-typing path, which is what was
+  // failing in the field with "dropdown never opened".
+  const tpl = {
+    ...templates,
+    introMode: true,
+    introName: primaryName,
+    followUpMessage: primaryIntroBody,
+    introUrl: primaryUrl,
+    introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+  };
 
   // Re-fetch sheet to map URLs → row data for placeholder substitution.
   // Cheap (single CSV read) and necessary because outreach.js merges the
@@ -93,34 +95,39 @@ export async function runAutoIntros({
     if (u) rowByUrl.set(u, r);
   }
 
-  const introTpl = buildAutoIntroTpl({ primaryName, primaryIntroBody, primaryUrl, introTitle });
-
   log(`  🤝 [${profileName}] Auto-introducing ${connectedUrls.length} new connection(s) to ${primaryName}…`);
   for (const url of connectedUrls) {
-    // Mirror the enrichment campaign.js applies in DM mode (src/campaign.js:2037-
-    // 2046) so {firstName}/{lastName}/{company}/{title}/{senderName}/
-    // {senderFirstName} resolve in the intro DM body. Also expose the primary
-    // person under both 'primary name' (UI variable button) and 'primaryName'
-    // (camelCase) since operators type either form.
+    // Build `data` the EXACT same way campaign.js builds it for the IB
+    // batch loop (see src/campaign.js around the `Build template data`
+    // comment). senderFirstName resolves from the operator-configured
+    // map first, falling back to splitting the profile display name —
+    // matching IB byte-for-byte.
     const row = rowByUrl.get(url) || {};
-    const enrichedData = {
+    const resolvedFirst = senderFirstNames[profileId];
+    const data = {
       ...row,
       firstName: row['First Name'] || row['firstName'] || row['first_name'] || '',
       lastName: row['Last Name'] || row['lastName'] || row['last_name'] || '',
       company: row['Company'] || row['company'] || '',
       title: row['Title'] || row['title'] || row['Job Title'] || '',
       senderName: profileName || '',
-      senderFirstName: (profileName || '').split(/\s+/)[0] || '',
+      senderFirstName: (resolvedFirst && resolvedFirst.trim())
+        || (profileName || '').split(/\s+/)[0]
+        || '',
+      // Surface the primary person under both the variable-button label
+      // ("primary name") and the camelCase form so either flavour the
+      // operator types in their template resolves.
       primaryName,
       'primary name': primaryName,
       primaryUrl: primaryUrl || '',
       'primary url': primaryUrl || '',
     };
+
     try {
       const introResult = await performOutreach(
         page,
         url,
-        { ...introTpl, data: enrichedData },
+        { ...tpl, data },
         { profileId },
         'force_message',
       );

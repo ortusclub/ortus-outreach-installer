@@ -485,7 +485,11 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
             };
             const body  = personalizeTemplate(templates.followUpMessage, introData);
             const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
-            await sendIntroMessage(page, body, templates.introName, title);
+            // v2.13.14: pass introUrl when set so sendIntroMessage uses
+            // URL-routing for the second pill (skips the unreliable
+            // typeahead). CC+IC auto-intro populates this; IB leaves it
+            // empty so its behaviour is unchanged.
+            await sendIntroMessage(page, body, templates.introName, title, templates.introUrl || '');
           } else {
             await sendMessage(page, personalizeTemplate(templates.followUpMessage, data));
           }

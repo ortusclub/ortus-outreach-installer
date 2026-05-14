@@ -1271,7 +1271,7 @@ export async function sendMessage(page, message) {
 // getConversationTitleInputTarget, hasSelectedRecipient).
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendIntroMessage(page, body, introName, groupTitle) {
+export async function sendIntroMessage(page, body, introName, groupTitle, secondRecipientUrl = '') {
   if (!introName) throw new Error('MESSAGE_SEND_FAILED: introName required');
 
   const currentUrl = page.url();
@@ -1281,7 +1281,21 @@ export async function sendIntroMessage(page, body, introName, groupTitle) {
   }
   const publicId = publicIdMatch[1];
 
-  const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
+  // v2.13.14: when the caller provides the second recipient's LinkedIn URL,
+  // append a second `recipient=<publicId>` query param so LinkedIn auto-adds
+  // BOTH pills via URL routing — same mechanism we use for the lead pill,
+  // and the same mechanism the deleted preflight (verify-primary-person.js)
+  // proved 100% reliable. The existing `alreadyAdded` check below then
+  // detects the URL-added second pill and skips the unreliable typeahead
+  // step entirely. Callers that don't pass the URL (e.g. the standalone
+  // Introduce Back path) keep the typeahead behaviour byte-for-byte.
+  let composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
+  if (secondRecipientUrl) {
+    const secondMatch = secondRecipientUrl.match(/\/in\/([^/?#]+)/);
+    if (secondMatch) {
+      composeUrl += `&recipient=${encodeURIComponent(secondMatch[1])}`;
+    }
+  }
   console.log(`[actions:intro] Navigating to ${composeUrl}`);
   try {
     await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });

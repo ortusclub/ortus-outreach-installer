@@ -989,6 +989,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.softWarnings = [];
   campaign.profileEndReasons = [];
   campaign.name = (typeof name === 'string' ? name : '').trim();
+  // v2.13.14: stash the wizard inputs on the campaign object so the
+  // monitoring path (runMonitoringCheck → runAutoIntros) can read them
+  // without being passed every arg explicitly. Without this, the post-
+  // campaign auto-intro silently no-ops because `templates.primaryName`
+  // is undefined inside runMonitoringCheck.
+  campaign.templates = templates || {};
+  campaign.senderFirstNames = senderFirstNames || {};
+  campaign.sheetUrl = sheetUrl || '';
+  campaign.linkedinColumn = linkedinColumn || '';
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
@@ -1626,10 +1635,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             sheetUrl,
             linkedinColumn,
             connectedUrls: r.connectedUrls,
-            primaryName: templates.primaryName.trim(),
-            primaryIntroBody: templates.primaryIntroBody.trim(),
-            primaryUrl: (templates.primaryUrl || '').trim(),
-            introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+            templates,
+            senderFirstNames,
             log,
           });
         }
@@ -2249,10 +2256,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                       sheetUrl,
                       linkedinColumn,
                       connectedUrls: r.connectedUrls,
-                      primaryName: (templates && templates.primaryName || '').trim(),
-                      primaryIntroBody: (templates && templates.primaryIntroBody || '').trim(),
-                      primaryUrl: (templates && templates.primaryUrl || '').trim(),
-                      introTitle: (templates && templates.introTitle) || 'Introduction: {first name} <> {intro name}',
+                      templates,
+                      senderFirstNames,
                       log,
                     });
                   }
@@ -3195,10 +3200,8 @@ export async function runMonitoringCheck(profileId, profileName) {
         sheetUrl,
         linkedinColumn,
         connectedUrls: r.connectedUrls,
-        primaryName: templates.primaryName.trim(),
-        primaryIntroBody: templates.primaryIntroBody.trim(),
-        primaryUrl: (templates.primaryUrl || '').trim(),
-        introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+        templates,
+        senderFirstNames: campaign.senderFirstNames || {},
         log: (line) => {
           const ts3 = `[${new Date().toISOString()}]`;
           campaign.logs.push(`${ts3} ${line}`);

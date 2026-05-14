@@ -23,6 +23,11 @@ export const MONITORING_FIELDS = [
   'nextCheckAt',
   'logs',
   'templates',
+  // v2.13.14: persisted so runMonitoringCheck → runAutoIntros can resolve
+  // `{sender first name}` to the operator-configured nice name after an
+  // app restart. Without this, post-restart monitoring intro DMs fall
+  // back to the GoLogin email split.
+  'senderFirstNames',
 ];
 
 export function extractMonitoringSlice(campaign) {
