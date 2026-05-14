@@ -523,44 +523,6 @@ function buildCampaignConfig(body) {
   };
 }
 
-// Fire-and-forget campaign launch that signals the preflight outcome via
-// onPreflightResult before the campaign continues running in background.
-// Used by POST /api/campaign/start to support 409 PREFLIGHT_FAILED responses
-// while still keeping the long campaign-run async.
-function launchCampaignWithPreflight(config, owner, onPreflightResult) {
-  preventSleep('campaign');
-  startCampaign({
-    ...config,
-    createdBy: owner,
-    onPreflightComplete: onPreflightResult,
-  })
-    .then(() => {
-      const status = getCampaignStatus();
-      notifyEmail(owner, {
-        title: 'Campaign finished',
-        body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
-        link: '/',
-      }).catch(() => {});
-    })
-    .catch((err) => {
-      if (err?.message === 'PREFLIGHT_FAILED' && err.preflight) {
-        // Already signaled via callback; no email needed for this case
-        // (the operator sees the 409 modal in the UI).
-        return;
-      }
-      console.error('Campaign error:', err.message);
-      notifyEmail(owner, {
-        title: 'Campaign failed',
-        body: `Your campaign failed: ${err.message}`,
-        link: '/',
-      }).catch(() => {});
-    })
-    .finally(() => {
-      allowSleep();
-      runNextFromQueue().catch(e => console.error('Queue chain error:', e.message));
-    });
-}
-
 // Launch a campaign and chain into the queue when it finishes. Calling
 // this while another campaign is still running will throw downstream from
 // startCampaign — callers must check campaign.running first and queue
@@ -656,26 +618,23 @@ app.post('/api/campaign/start', async (req, res) => {
       });
     }
 
-    // Await only the preflight outcome (~15s for CC+IC; instant for other
-    // modes). The campaign continues in background after this resolves.
-    // - allPassed=true → return 200, campaign keeps running
-    // - allPassed=false → return 409 with structured results, campaign aborted
-    const preflightOutcome = await new Promise((resolve) => {
-      let resolved = false;
-      const safeResolve = (v) => { if (!resolved) { resolved = true; resolve(v); } };
-
-      launchCampaignWithPreflight(config, owner, safeResolve);
-
-      // Defensive: if preflight never signals within 90s, unblock the route.
-      setTimeout(() => safeResolve({ allPassed: true, results: [], stalled: true }), 90_000);
-    });
-
-    if (!preflightOutcome.allPassed) {
-      return res.status(409).json({
-        error: 'preflight_failed',
-        results: preflightOutcome.results,
+    // Fire-and-forget — the campaign continues in background. The HTTP
+    // response returns immediately; the dashboard polls /api/status for
+    // progress.
+    preventSleep('campaign');
+    startCampaign({ ...config, createdBy: owner })
+      .then(() => {
+        const status = getCampaignStatus();
+        notifyEmail(owner, {
+          title: 'Campaign finished',
+          body: `Your campaign finished: ${status.processedToday || 0} actions, ${(status.errors || []).length} error(s).`,
+          link: '/',
+        }).catch(() => {});
+      })
+      .catch((err) => {
+        console.error('Campaign error:', err.message);
+        allowSleep('campaign');
       });
-    }
     res.json({ ok: true, message: 'Campaign started' });
   } catch (err) {
     console.error('Campaign start error:', err.message);
@@ -2305,47 +2264,6 @@ app.post('/api/notify/test', async (req, res) => {
     });
     res.json({ ok: true, recipient: req.user, ...result });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Dev-tool: run the CC+IC preflight check without launching a campaign.
-// Operator opens profiles, runs verifyPrimaryPerson on each, closes them.
-// ---------------------------------------------------------------------------
-app.post('/api/preflight-only', async (req, res) => {
-  try {
-    if (campaign.running) {
-      return res.status(409).json({ error: 'A campaign is currently running. Stop it first.' });
-    }
-    const { profileIds, primaryName, primaryUrl } = req.body || {};
-    if (!Array.isArray(profileIds) || profileIds.length === 0) {
-      return res.status(400).json({ error: 'profileIds required' });
-    }
-    if (!primaryName || !primaryUrl) {
-      return res.status(400).json({ error: 'primaryName and primaryUrl required' });
-    }
-
-    const { runPreflightStandalone } = await import('./src/preflight-runner.js');
-
-    // Build profileNameMap from cache — best-effort, falls back to IDs.
-    const token = process.env.GOLOGIN_API_TOKEN;
-    let profileNameMap = {};
-    try {
-      const all = await getProfiles(token);
-      profileNameMap = Object.fromEntries(all.map(p => [p.id, p.name || p.id]));
-    } catch { /* best-effort */ }
-
-    const result = await runPreflightStandalone({
-      profileIds,
-      primaryName,
-      primaryUrl,
-      profileNameMap,
-      log: (msg) => { campaignLog(msg); },
-    });
-    res.json(result);
-  } catch (err) {
-    console.error('[preflight-only] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
