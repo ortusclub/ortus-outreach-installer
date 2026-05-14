@@ -4,7 +4,7 @@
  *
  * Returns one of:
  *   { ok: true,  canonicalName, candidates }
- *   { ok: false, failureType: 'url_invalid' | 'not_connected' | 'name_mismatch' | 'crash',
+ *   { ok: false, failureType: 'url_invalid' | 'not_connected' | 'name_mismatch' | 'crash' | 'config',
  *     canonicalName?, candidates?, detail }
  *
  * Spec: docs/superpowers/specs/2026-05-14-cc-ic-primary-person-preflight-design.md §4
