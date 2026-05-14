@@ -154,9 +154,9 @@ export async function verifyPrimaryPerson({
   // ─────────────────────────────────────────────────────────────────────────
 
   // ── Step 4: Typeahead test ───────────────────────────────────────────────
-  // Navigate to a generic compose page. Use the sender's own messaging inbox
-  // as a safe landing — opens the typeahead-capable recipient input without
-  // needing a specific publicId.
+  // Navigate to the generic compose page. The page is a heavy SPA — we need
+  // to POLL for the recipient input to mount rather than waiting a fixed
+  // time. Slow machines need 5-10 seconds.
   try {
     await page.goto('https://www.linkedin.com/messaging/?compose=true', {
       waitUntil: 'domcontentloaded', timeout: PROFILE_NAV_TIMEOUT_MS,
@@ -164,35 +164,63 @@ export async function verifyPrimaryPerson({
   } catch (e) {
     return { ok: false, failureType: 'crash', canonicalName, detail: `Compose nav failed: ${e.message}` };
   }
-  await new Promise(r => setTimeout(r, 1200));
 
-  // Find + tag the recipient input (same selector logic as sendIntroMessage).
-  const tagged = await page.evaluate(() => {
-    const isVisible = (el) => {
-      if (!el) return false;
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return false;
-      const s = window.getComputedStyle(el);
-      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
-    };
-    const inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"][role="textbox"]'))
-      .filter(isVisible);
-    for (const el of inputs) {
-      const text = [
-        el.getAttribute('aria-label'),
-        el.getAttribute('placeholder'),
-        el.getAttribute('class'),
-        el.getAttribute('id'),
-      ].join(' ').toLowerCase();
-      if (text.includes('enter message recipients') || text.includes('msg-connections-typeahead__search-field')) {
-        el.setAttribute('data-ortus-preflight', '1');
-        return true;
+  // Poll up to 15 seconds for the recipient input to appear and be tag-able.
+  // Done in browser context so we can match across class-name variants —
+  // LinkedIn renames classes regularly; the aria-label / placeholder is the
+  // most stable signal.
+  log(`  [preflight:${profileName}] Waiting for compose page recipient input to render…`);
+  let tagged = false;
+  try {
+    await page.waitForFunction(() => {
+      const isVisible = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        const s = window.getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      const inputs = Array.from(document.querySelectorAll(
+        'input, textarea, [contenteditable="true"][role="textbox"]'
+      )).filter(isVisible);
+      for (const el of inputs) {
+        const text = [
+          el.getAttribute('aria-label'),
+          el.getAttribute('placeholder'),
+          el.getAttribute('class'),
+          el.getAttribute('id'),
+        ].join(' ').toLowerCase();
+        if (text.includes('enter message recipients') ||
+            text.includes('msg-connections-typeahead__search-field') ||
+            text.includes('type a name') ||
+            text.includes('type the name')) {
+          el.setAttribute('data-ortus-preflight', '1');
+          return true;
+        }
       }
+      return false;
+    }, { timeout: 15_000, polling: 500 });
+    tagged = true;
+  } catch {
+    // Input never appeared. Detect WHY:
+    // - Sign-in redirect (session expired between Stage A and Stage B)
+    // - LinkedIn changed the compose page layout entirely
+    const url = page.url();
+    const signedOut = /\/login|\/authwall|\/checkpoint|\/uas\/login/i.test(url);
+    if (signedOut) {
+      return {
+        ok: false,
+        failureType: 'session_expired',
+        canonicalName,
+        detail: 'LinkedIn redirected to sign-in when opening the compose page. This GoLogin profile needs to log back in.',
+      };
     }
-    return false;
-  });
-  if (!tagged) {
-    return { ok: false, failureType: 'crash', canonicalName, detail: 'Compose typeahead input not found' };
+    return {
+      ok: false,
+      failureType: 'crash',
+      canonicalName,
+      detail: 'Compose page loaded but the recipient input never appeared within 15s. LinkedIn may have changed the layout, or the page didn\'t finish loading on this machine.',
+    };
   }
 
   const sel = '[data-ortus-preflight="1"]';
