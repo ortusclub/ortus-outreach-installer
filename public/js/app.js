@@ -2544,6 +2544,16 @@ async function submitStartCampaign(body) {
       return;
     }
 
+    // If operator cancelled during the in-flight request, don't start the
+    // campaign silently. The server has already marked campaign.running = true
+    // and the campaign is launching; the polling loop and Stop button will
+    // surface it. We just skip the local UI transition so the operator can
+    // hit Stop from the dashboard if they really meant Cancel.
+    if (_preflightCancelled) {
+      _preflightStartBody = null;
+      _preflightCancelled = false;
+      return;
+    }
     // Success — close any open preflight modal.
     closePreflightModal();
     _preflightStartBody = null;
@@ -2666,6 +2676,7 @@ window.closeRestoreModal = closeRestoreModal;
 
 // ── Pre-flight modal ──────────────────────────────────────────────────────
 let _preflightStartBody = null; // stashed start-campaign body for retry
+let _preflightCancelled = false; // operator clicked Cancel mid-flight
 
 function openPreflightModal(primaryName) {
   const modal = document.getElementById('preflight-modal');
@@ -2675,6 +2686,7 @@ function openPreflightModal(primaryName) {
   modal.dataset.state = 'verifying';
   modal.querySelector('.preflight-state-verifying').style.display = '';
   modal.querySelector('.preflight-state-failure').style.display = 'none';
+  _preflightCancelled = false;
   modal.classList.remove('hidden');
 }
 window.openPreflightModal = openPreflightModal;
@@ -2723,7 +2735,7 @@ function showPreflightFailure(results, primaryName) {
 
     const detailEl = row.querySelector('.preflight-row-detail');
     if (r.failureType === 'name_mismatch' && r.canonicalName) {
-      detailEl.innerHTML = `Profile loaded, but typeahead doesn't surface "${_preflightEscapeHtml(primaryName)}". LinkedIn shows this person's name as <strong>${_preflightEscapeHtml(r.canonicalName)}</strong>.`;
+      detailEl.innerHTML = `Profile loaded, but typeahead doesn't surface "${_preflightEscapeHtml(primaryName)}". LinkedIn shows this person's name as <strong>${_preflightEscapeHtml(r.canonicalName)}</strong>. <em style="color:var(--gray)">If that's not your intended primary person, fix the LinkedIn URL field first — the pill below will commit you to "${_preflightEscapeHtml(r.canonicalName)}".</em>`;
       const pill = document.createElement('button');
       pill.className = 'preflight-suggestion-pill';
       pill.type = 'button';
@@ -2752,6 +2764,7 @@ function closePreflightModal() {
   const modal = document.getElementById('preflight-modal');
   if (modal) modal.classList.add('hidden');
   _preflightStartBody = null;
+  _preflightCancelled = true;
 }
 window.closePreflightModal = closePreflightModal;
 
