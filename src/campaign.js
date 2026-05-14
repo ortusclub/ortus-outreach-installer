@@ -998,6 +998,21 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   // Reset campaign counts — allows reusing same accounts immediately
   for (const key of Object.keys(campaignCounts)) delete campaignCounts[key];
 
+  // v2.14.x: defensive guard — if the campaign launches as connect_and_introduce
+  // without the primary person fields, every accepted invite would silently
+  // skip the auto-intro (runAutoIntros' internal early-return). The wizard's
+  // Start handler now hard-blocks this case at click-time, but a queued or
+  // restored campaign could still slip through if its persisted payload was
+  // built before that guard existed. Surface a loud warning so the audit log
+  // shows what happened.
+  if (mode === 'connect_and_introduce') {
+    const _pName = (templates && templates.primaryName || '').trim();
+    const _pBody = (templates && templates.primaryIntroBody || '').trim();
+    if (!_pName || !_pBody) {
+      log('⚠ Connect+IntroBack started WITHOUT primary person fields — auto-intros will be skipped on every acceptance. Stop and reconfigure to enable intros.');
+    }
+  }
+
   // Normalize templates
   const tpl = {
     connectionNote: templates.connectionNote || templates.note || '',

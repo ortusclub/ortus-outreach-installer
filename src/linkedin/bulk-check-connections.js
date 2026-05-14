@@ -116,7 +116,18 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       if (cs === 'Connected') { dbgAlreadyConnected++; continue; }
       connectedUrls.push(url);
       if (!suppressAcceptedStamp) {
-        updates.push({ linkedinUrl: url, cc: 'Connected', connectedAlready: 'Yes' });
+        // v2.14.x: also stamp checkStatus so the legacy "Check Status"
+        // column (still present on operator sheets that haven't been
+        // migrated by the Apps Script rename) fills in visibly. In the
+        // v2.14 schema both cc and checkStatus map to the same column
+        // ("Connection Accepted Status"), so the dual write is a no-op
+        // there. In v2.13.x they're separate columns — this fills both.
+        updates.push({
+          linkedinUrl: url,
+          cc: 'Connected',
+          connectedAlready: 'Yes',
+          checkStatus: 'Connected',
+        });
       }
       continue;
     }
@@ -130,7 +141,12 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     if (sampleCRSValues.size < 5 && requestStatus) sampleCRSValues.add(requestStatus);
     if (requestStatus !== 'Connection Request Sent') continue;
     dbgWithCRS++;
-    updates.push({ linkedinUrl: url, cc: stillPendingLabel });
+    // Same dual-write as the matched branch — see comment above.
+    updates.push({
+      linkedinUrl: url,
+      cc: stillPendingLabel,
+      checkStatus: stillPendingLabel,
+    });
   }
 
   return {

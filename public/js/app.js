@@ -2388,6 +2388,34 @@ async function startCampaign() {
     if (!opBody) { alert('Open Profile body template is required when "Message Open Profiles Directly" is on.'); return; }
   }
 
+  // v2.14.x: Hard-block Start for Connect + Introduce Back when the primary
+  // person fields are empty. Without them, the campaign would send connection
+  // requests but every accepted lead would silently SKIP the intro DM (the
+  // server logs a warning but the operator never sees it). Block at click-time
+  // and scroll/focus the first empty field so the operator can fix it.
+  if (_mode === 'connect_and_introduce') {
+    const _pName = (document.getElementById('primary-person-name')?.value || '').trim();
+    const _pBody = (document.getElementById('primary-intro-body')?.value || '').trim();
+    if (!_pName || !_pBody) {
+      const missing = [];
+      if (!_pName) missing.push('• Primary Person · Full name');
+      if (!_pBody) missing.push('• Intro DM Body');
+      alert(
+        'Connect + Introduce Back can\'t start without the primary person.\n\n' +
+        'Missing:\n' + missing.join('\n') + '\n\n' +
+        'Without these, accepted invites can\'t be auto-introduced to anyone. ' +
+        'Fill in the missing field(s) and try again.'
+      );
+      const firstEmpty = !_pName ? 'primary-person-name' : 'primary-intro-body';
+      const el = document.getElementById(firstEmpty);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => el.focus(), 400);
+      }
+      return;
+    }
+  }
+
   // Resolve sender first names per profile (SoO column D, or local-browser input)
   const senderFirstNames = {};
   const missing = [];
