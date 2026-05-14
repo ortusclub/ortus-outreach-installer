@@ -33,7 +33,6 @@
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
 
         <div class="nav-section-label">Dev tools</div>
-        <button type="button" class="nav-item" onclick="devVerifyPrimaryNow()">Verify primary person</button>
         <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
       </nav>
 
@@ -1102,44 +1101,6 @@
       <div style="text-align: center; margin-top: 12px;">
         <button type="button" class="modal-cancel-link" onclick="closeRestoreModal()">Cancel</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Pre-flight verification modal (CC+IC primary person) -->
-  <div id="preflight-modal" class="modal-backdrop hidden" data-state="verifying" onclick="if(event.target===this)closePreflightModal()">
-    <div class="modal-card preflight-modal-card" role="dialog" aria-modal="true" aria-labelledby="preflight-modal-title">
-
-      <!-- VERIFYING state -->
-      <div class="preflight-state preflight-state-verifying">
-        <div class="preflight-eyebrow">Pre-flight · in progress</div>
-        <h3 id="preflight-modal-title" class="modal-title">Verifying primary person</h3>
-        <p class="preflight-sub">
-          Checking <strong id="preflight-primary-name">…</strong> is reachable from each sender account before the campaign starts. This takes about 15 seconds.
-        </p>
-        <div class="preflight-progress"><div class="preflight-progress-fill"></div></div>
-        <div class="preflight-actions">
-          <button class="btn btn-secondary" type="button" onclick="closePreflightModal()">Cancel</button>
-        </div>
-      </div>
-
-      <!-- FAILURE state -->
-      <div class="preflight-state preflight-state-failure" style="display:none">
-        <div class="preflight-eyebrow">Pre-flight · campaign blocked</div>
-        <h3 class="modal-title">Primary person can't be reached</h3>
-        <div class="preflight-summary-banner">
-          <div class="preflight-summary-icon">✕</div>
-          <div class="preflight-summary-text">
-            <strong id="preflight-fail-summary">…</strong>
-            <small>Fix the issues below and try again. No connection requests have been sent.</small>
-          </div>
-        </div>
-        <div id="preflight-failure-rows" class="preflight-rows"></div>
-        <div class="preflight-actions">
-          <button class="btn btn-secondary" type="button" onclick="closePreflightModal()">Cancel</button>
-          <button class="btn" type="button" onclick="closePreflightModalAndScrollToPrimary()">Edit primary person</button>
-        </div>
-      </div>
-
     </div>
   </div>
 
