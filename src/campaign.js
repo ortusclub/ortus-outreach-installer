@@ -31,7 +31,6 @@ import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
-import { runPreflight } from './preflight-primary.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { computeStillPendingUrls, buildClosedNotConnectedUpdate } from './stop-monitoring.js';
@@ -961,7 +960,7 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, createdBy = null, onPreflightComplete = null }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, createdBy = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
@@ -1735,96 +1734,6 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       log(`Per-profile turn floor: ${(cooldownMs / 60000).toFixed(0)}min (queue rotation is the primary pacer).`);
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Pre-flight: verify primary person is reachable from every sender
-    // account before any connection requests go out. CC+IC only.
-    //
-    // Spec: docs/superpowers/specs/2026-05-14-cc-ic-primary-person-preflight-design.md
-    // ─────────────────────────────────────────────────────────────────────
-    if (mode === 'connect_and_introduce') {
-      const primaryName = templates?.primaryName || '';
-      const primaryUrl  = templates?.primaryUrl  || '';
-      if (!primaryName || !primaryUrl) {
-        const preflightResult = {
-          allPassed: false,
-          results: [{ profileName: 'config', ok: false, failureType: 'config',
-                      detail: 'primaryName or primaryUrl missing — both are required for CC+IC' }],
-        };
-        if (typeof onPreflightComplete === 'function') {
-          try { onPreflightComplete(preflightResult); } catch {}
-        }
-        const err = new Error('PREFLIGHT_FAILED');
-        err.preflight = preflightResult;
-        throw err;
-      }
-
-      log(`📋 Pre-flight: verifying primary person on ${profileIds.length} account(s)…`);
-      const launchedSessions = [];
-      for (const pid of profileIds) {
-        if (campaign._abort) break;
-        const sess = await ensureOpen(pid);
-        if (!sess) {
-          launchedSessions.push({
-            profileId: pid,
-            profileName: profileNameCache[pid] || pid,
-            page: null,
-            launchFailed: true,
-          });
-        } else {
-          launchedSessions.push({
-            profileId: pid,
-            profileName: sess.pName,
-            page: sess.page,
-          });
-        }
-      }
-
-      // Profiles that failed to launch are treated as pre-flight failures.
-      const launchFailures = launchedSessions
-        .filter(s => s.launchFailed)
-        .map(s => ({ profileId: s.profileId, profileName: s.profileName,
-                     ok: false, failureType: 'launch_failed',
-                     detail: 'Browser failed to launch — check GoLogin status' }));
-
-      const verifiable = launchedSessions.filter(s => !s.launchFailed);
-      const preflight = await runPreflight({
-        sessions: verifiable,
-        primaryName, primaryUrl, log,
-      });
-      preflight.results.push(...launchFailures);
-      preflight.allPassed = preflight.allPassed && launchFailures.length === 0;
-
-      if (!preflight.allPassed) {
-        log(`❌ Pre-flight failed — campaign aborted.`);
-        for (const r of preflight.results.filter(x => !x.ok)) {
-          log(`   ${r.profileName}: ${r.failureType} — ${r.detail || ''}`);
-        }
-        // Close all launched sessions using the canonical closeSession() helper
-        // which handles semaphore release correctly (mirrors the end-of-run
-        // teardown in the finally block below).
-        for (const pid of [...sessions.keys()]) {
-          await closeSession(pid);
-        }
-        campaign.running = false;
-        if (typeof onPreflightComplete === 'function') {
-          try { onPreflightComplete({ allPassed: false, results: preflight.results }); } catch {}
-        }
-        const err = new Error('PREFLIGHT_FAILED');
-        err.preflight = preflight;
-        throw err;
-      }
-      log(`✓ Pre-flight verified primary person on ${verifiable.length}/${profileIds.length} accounts`);
-      if (typeof onPreflightComplete === 'function') {
-        try { onPreflightComplete({ allPassed: true, results: preflight.results }); } catch {}
-      }
-    }
-    // For non-connect_and_introduce modes there is no preflight to run.
-    // Signal pass immediately so the HTTP route's Promise resolves without
-    // waiting 90s for the defensive timeout.
-    if (mode !== 'connect_and_introduce' && typeof onPreflightComplete === 'function') {
-      try { onPreflightComplete({ allPassed: true, results: [], skipped: true }); } catch {}
-    }
-    // ─────────────────────────────────────────────────────────────────────
 
     function pickNextProfile() {
       const now = Date.now();
