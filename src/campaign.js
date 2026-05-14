@@ -2966,6 +2966,12 @@ export function getCampaignStatus() {
     running: campaign.running,
     paused: campaign._paused,
     pauseRequested: campaign._pauseRequested,
+    // v2.13.14: surface monitoring fields so the cockpit + run-bar can
+    // reflect post-campaign monitoring state without a second poll.
+    state: campaign.state || 'idle',
+    monitoringUntil: campaign.monitoringUntil || null,
+    nextCheckAt: campaign.nextCheckAt || null,
+    participatingProfileIds: campaign.participatingProfileIds || [],
     currentAction: campaign.currentAction,
     currentProfile: campaign.currentProfile,
     processedToday: campaign.processedToday,

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Monitoring · Live Status surfaces</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1a17;
+    --ink-soft: #4a4843;
+    --gray: #8b867a;
+    --dim: #b5b1a6;
+    --bg: #fafaf8;
+    --card-bg: #ffffff;
+    --hairline: #e8e5dc;
+    --hairline-soft: #f0ede4;
+    --gold: #C5A255;
+    --green: #34a853;
+    --green-soft: #e7f6e9;
+    --red: #d23f31;
+    --black: #1a1a17;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Inter', sans-serif; line-height: 1.5; padding: 56px 40px 80px; }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-family: 'Cormorant Garamond', serif; font-size: 2.4rem; font-weight: 500; margin: 0 0 6px; color: var(--ink); }
+  h1 em { color: var(--gold); font-style: italic; font-weight: 400; }
+  .sub { color: var(--gray); font-size: 0.7rem; letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 12px; }
+  .intro { color: var(--ink-soft); max-width: 760px; margin-bottom: 56px; font-size: 0.92rem; }
+  .intro code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 3px; color: var(--ink); }
+
+  .variant { margin-bottom: 56px; }
+  .variant-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--hairline); }
+  .variant-label { font-size: 0.62rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--gold); font-weight: 600; }
+  .variant-name { font-family: 'Cormorant Garamond', serif; font-size: 1.55rem; font-weight: 500; }
+  .variant-note { color: var(--gray); font-size: 0.85rem; margin: 0 0 20px; max-width: 720px; }
+
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; }
+  .badge.before { background: rgba(139, 134, 122, 0.12); color: var(--gray); border: 1px solid rgba(139, 134, 122, 0.25); }
+  .badge.after  { background: rgba(197, 162, 85, 0.1); color: var(--gold); border: 1px solid rgba(197, 162, 85, 0.45); }
+
+  /* ─── Surface 1: Cockpit (Live Status hero) ─────────── */
+  .cockpit { background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 6px; padding: 28px 36px; display: grid; grid-template-columns: 200px 1fr 240px; gap: 32px; align-items: center; }
+  .cockpit-ring { position: relative; width: 168px; height: 168px; }
+  .cockpit-ring svg { width: 100%; height: 100%; }
+  .cockpit-ring-bg { fill: none; stroke: var(--hairline-soft); stroke-width: 4; }
+  .cockpit-ring-fg { fill: none; stroke: var(--ink); stroke-width: 4; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; }
+  .cockpit-ring-fg.idle { stroke: var(--hairline); }
+  .cockpit-ring-fg.monitoring { stroke: var(--green); stroke-dasharray: 6 6; }
+  .cockpit-ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .cockpit-ring-num { font-family: 'JetBrains Mono', monospace; font-size: 2.2rem; font-weight: 500; color: var(--ink); line-height: 1; }
+  .cockpit-ring-num.dim { color: var(--dim); }
+  .cockpit-ring-unit { font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-top: 8px; }
+  .cockpit-info { }
+  .cockpit-tag { display: inline-flex; align-items: center; gap: 8px; font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; font-weight: 600; }
+  .pulse-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--dim); }
+  .pulse-dot.monitoring { background: var(--green); box-shadow: 0 0 0 4px rgba(52, 168, 83, 0.18); }
+  .cockpit-tag.monitoring { color: var(--green); }
+  .cockpit-action { font-family: 'Inter', sans-serif; font-size: 1.55rem; font-weight: 600; color: var(--ink); margin-bottom: 18px; }
+  .cockpit-action.dim { color: var(--dim); font-weight: 500; }
+  .cockpit-meta { display: grid; grid-template-columns: 92px 1fr; gap: 6px 16px; }
+  .cockpit-meta-label { font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); padding-top: 2px; }
+  .cockpit-meta-value { color: var(--ink); font-size: 0.9rem; }
+  .cockpit-meta-value.dim { color: var(--dim); }
+  .cockpit-meta-value.mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+  .cockpit-stats { border-left: 1px solid var(--hairline); padding-left: 28px; }
+  .cockpit-stat { margin-bottom: 16px; }
+  .cockpit-stat-label { font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 4px; }
+  .cockpit-stat-value { font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 500; color: var(--ink); }
+  .cockpit-stat-of { font-size: 0.85rem; color: var(--gray); font-weight: 400; }
+  .cockpit-stat-bar { height: 3px; background: var(--hairline-soft); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+  .cockpit-stat-bar-fill { height: 100%; background: var(--gold); }
+  .cockpit-stat-bar-fill.monitoring { background: var(--green); animation: pulse-bar 2.5s ease-in-out infinite; }
+  @keyframes pulse-bar { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+  /* ─── Surface 2: Run bar (sticky bottom toolbar) ───── */
+  .run-bar { display: flex; align-items: center; gap: 18px; padding: 18px 24px; background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 999px; box-shadow: 0 2px 12px rgba(26, 26, 23, 0.06); }
+  .run-status { display: flex; align-items: center; gap: 10px; font-size: 0.75rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); font-weight: 600; padding-right: 8px; }
+  .run-status.monitoring { color: var(--green); }
+  .run-status .pulse-dot { width: 9px; height: 9px; }
+  .run-meta-mono { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; letter-spacing: 0.04em; text-transform: none; color: var(--ink); font-weight: 500; padding-left: 12px; border-left: 1px solid var(--hairline); margin-left: 4px; }
+  .run-meta-mono .dim { color: var(--gray); }
+  .btn { padding: 9px 18px; border-radius: 999px; font-family: 'Inter', sans-serif; font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; border: 1px solid var(--hairline); background: var(--card-bg); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--ink); color: white; border-color: var(--ink); }
+  .btn.danger { background: #f4d4d0; border-color: #f4d4d0; color: var(--red); }
+  .btn.disabled { opacity: 0.5; cursor: not-allowed; }
+  .run-bar-spacer { flex: 1; }
+  .run-bar-divider { width: 1px; height: 18px; background: var(--hairline); }
+  .preset-pill { padding: 7px 14px; background: var(--hairline-soft); border-radius: 999px; font-size: 0.7rem; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
+  .preset-pill-count { background: var(--card-bg); border-radius: 999px; padding: 1px 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }
+
+  .footer-note { margin-top: 64px; padding-top: 28px; border-top: 1px solid var(--hairline); color: var(--ink-soft); font-size: 0.88rem; line-height: 1.7; }
+  .footer-note strong { color: var(--ink); font-weight: 600; }
+  .footer-note code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Monitoring · <em>Live Status</em> surfaces</h1>
+  <div class="sub">Where to show "ends in 6d 23h" · pick A / B / C</div>
+  <p class="intro">
+    Your campaign is in monitoring state (the Schedule card on the dashboard confirms it: <code>● Monitoring · Next check 04:35 · ends in 6d 23h</code>). But the <strong>Live Status</strong> cockpit at the top of the page says <code>IDLE · No campaign running</code>, and the <strong>sticky run-bar</strong> at the bottom says <code>Idle</code>. Both should reflect the active monitoring state. Three places we can fix it.
+  </p>
+
+  <!-- ─── BEFORE / Today ─────────────────────────────────── -->
+  <div class="variant">
+    <div class="variant-header">
+      <div>
+        <span class="badge before">Today</span>
+        <span class="variant-name" style="margin-left: 12px;">What you see now (broken)</span>
+      </div>
+      <span class="variant-label">monitoring info hidden</span>
+    </div>
+    <p class="variant-note">Both the cockpit and the run-bar say "idle". The campaign IS monitoring — but the operator can't tell from these two surfaces.</p>
+
+    <div class="cockpit">
+      <div class="cockpit-ring">
+        <svg viewBox="0 0 100 100">
+          <circle class="cockpit-ring-bg" cx="50" cy="50" r="45"></circle>
+          <circle class="cockpit-ring-fg idle" cx="50" cy="50" r="45"></circle>
+        </svg>
+        <div class="cockpit-ring-center">
+          <div class="cockpit-ring-num dim">—</div>
+          <div class="cockpit-ring-unit">idle</div>
+        </div>
+      </div>
+      <div class="cockpit-info">
+        <div class="cockpit-tag"><span class="pulse-dot"></span><span>IDLE</span></div>
+        <div class="cockpit-action dim">No campaign running</div>
+        <div class="cockpit-meta">
+          <div class="cockpit-meta-label">Lead</div>     <div class="cockpit-meta-value dim">—</div>
+          <div class="cockpit-meta-label">Account</div>  <div class="cockpit-meta-value dim">—</div>
+          <div class="cockpit-meta-label">Mode</div>     <div class="cockpit-meta-value dim">—</div>
+        </div>
+      </div>
+      <div class="cockpit-stats">
+        <div class="cockpit-stat">
+          <div class="cockpit-stat-label">Sent today</div>
+          <div class="cockpit-stat-value">1<span class="cockpit-stat-of"> of </span>1</div>
+        </div>
+        <div class="cockpit-stat">
+          <div class="cockpit-stat-label">Errors</div>
+          <div class="cockpit-stat-value">0</div>
+        </div>
+        <div class="cockpit-stat-bar"><div class="cockpit-stat-bar-fill" style="width:100%"></div></div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <div class="run-bar">
+        <div class="run-status"><span class="pulse-dot"></span><span>Idle</span></div>
+        <button class="btn">View Status</button>
+        <button class="btn primary">Start Campaign</button>
+        <button class="btn disabled">Pause</button>
+        <button class="btn danger disabled">Stop Campaign</button>
+        <span class="run-bar-divider"></span>
+        <button class="btn disabled">↻ Restore</button>
+        <div class="run-bar-spacer"></div>
+        <div class="preset-pill">Saved Configs <span class="preset-pill-count">6</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── VARIANT A — Cockpit reflects monitoring ────────── -->
+  <div class="variant">
+    <div class="variant-header">
+      <div>
+        <span class="badge after">A</span>
+        <span class="variant-name" style="margin-left: 12px;">Cockpit reflects monitoring state</span>
+      </div>
+      <span class="variant-label">hero panel · recommended</span>
+    </div>
+    <p class="variant-note">The big ring becomes a live countdown of the window remaining. Tag chip flips green ("MONITORING"). Action line becomes a one-glance summary. Meta rows repurposed: Lead/Account/Mode → Next check / Window / Profiles. Sticky run-bar unchanged.</p>
+
+    <div class="cockpit">
+      <div class="cockpit-ring">
+        <svg viewBox="0 0 100 100">
+          <circle class="cockpit-ring-bg" cx="50" cy="50" r="45"></circle>
+          <circle class="cockpit-ring-fg monitoring" cx="50" cy="50" r="45"></circle>
+        </svg>
+        <div class="cockpit-ring-center">
+          <div class="cockpit-ring-num">6d 23h</div>
+          <div class="cockpit-ring-unit">window left</div>
+        </div>
+      </div>
+      <div class="cockpit-info">
+        <div class="cockpit-tag monitoring"><span class="pulse-dot monitoring"></span><span>MONITORING</span></div>
+        <div class="cockpit-action">Watching for acceptances</div>
+        <div class="cockpit-meta">
+          <div class="cockpit-meta-label">Next check</div>   <div class="cockpit-meta-value mono">04:35 · in 6h 12m</div>
+          <div class="cockpit-meta-label">Ends</div>         <div class="cockpit-meta-value mono">May 21, 22:30 · in 6d 23h</div>
+          <div class="cockpit-meta-label">Profiles</div>     <div class="cockpit-meta-value">cayla.pambid (1 still-pending)</div>
+        </div>
+      </div>
+      <div class="cockpit-stats">
+        <div class="cockpit-stat">
+          <div class="cockpit-stat-label">Sent today</div>
+          <div class="cockpit-stat-value">1<span class="cockpit-stat-of"> of </span>1</div>
+        </div>
+        <div class="cockpit-stat">
+          <div class="cockpit-stat-label">Errors</div>
+          <div class="cockpit-stat-value">0</div>
+        </div>
+        <div class="cockpit-stat-bar"><div class="cockpit-stat-bar-fill monitoring" style="width:100%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── VARIANT B — Run bar reflects monitoring ─────── -->
+  <div class="variant">
+    <div class="variant-header">
+      <div>
+        <span class="badge after">B</span>
+        <span class="variant-name" style="margin-left: 12px;">Run-bar shows monitoring inline</span>
+      </div>
+      <span class="variant-label">sticky toolbar · always visible</span>
+    </div>
+    <p class="variant-note">The sticky toolbar is on every page no matter how far you've scrolled. The status pill flips to "MONITORING" with the next-check time + remaining window appended as monospace metadata. Cockpit unchanged.</p>
+
+    <div class="run-bar">
+      <div class="run-status monitoring"><span class="pulse-dot monitoring"></span><span>Monitoring</span></div>
+      <span class="run-meta-mono"><span class="dim">next</span> 04:35 <span class="dim">· ends in</span> 6d 23h</span>
+      <button class="btn">View Status</button>
+      <button class="btn primary">Start Campaign</button>
+      <button class="btn disabled">Pause</button>
+      <button class="btn danger disabled">Stop Campaign</button>
+      <span class="run-bar-divider"></span>
+      <button class="btn disabled">↻ Restore</button>
+      <div class="run-bar-spacer"></div>
+      <div class="preset-pill">Saved Configs <span class="preset-pill-count">6</span></div>
+    </div>
+
+    <p class="variant-note" style="margin-top: 16px; font-style: italic;">Cockpit stays as-is (the "broken" view above). Operator gets the timing info but only by scrolling to find the toolbar — and the cockpit still lies.</p>
+  </div>
+
+  <!-- ─── VARIANT C — Both surfaces ─────────────────── -->
+  <div class="variant">
+    <div class="variant-header">
+      <div>
+        <span class="badge after">C</span>
+        <span class="variant-name" style="margin-left: 12px;">Both surfaces reflect monitoring</span>
+      </div>
+      <span class="variant-label">cockpit + run-bar</span>
+    </div>
+    <p class="variant-note">Fix both surfaces. Cockpit becomes the primary status display (full detail). Run-bar carries a short version (just status + countdown) for when you're scrolled away. No surface lies about state.</p>
+
+    <div class="cockpit">
+      <div class="cockpit-ring">
+        <svg viewBox="0 0 100 100">
+          <circle class="cockpit-ring-bg" cx="50" cy="50" r="45"></circle>
+          <circle class="cockpit-ring-fg monitoring" cx="50" cy="50" r="45"></circle>
+        </svg>
+        <div class="cockpit-ring-center">
+          <div class="cockpit-ring-num">6d 23h</div>
+          <div class="cockpit-ring-unit">window left</div>
+        </div>
+      </div>
+      <div class="cockpit-info">
+        <div class="cockpit-tag monitoring"><span class="pulse-dot monitoring"></span><span>MONITORING</span></div>
+        <div class="cockpit-action">Watching for acceptances</div>
+        <div class="cockpit-meta">
+          <div class="cockpit-meta-label">Next check</div>   <div class="cockpit-meta-value mono">04:35 · in 6h 12m</div>
+          <div class="cockpit-meta-label">Ends</div>         <div class="cockpit-meta-value mono">May 21, 22:30 · in 6d 23h</div>
+          <div class="cockpit-meta-label">Profiles</div>     <div class="cockpit-meta-value">cayla.pambid (1 still-pending)</div>
+        </div>
+      </div>
+      <div class="cockpit-stats">
+        <div class="cockpit-stat">
+          <div class="cockpit-stat-label">Sent today</div>
+          <div class="cockpit-stat-value">1<span class="cockpit-stat-of"> of </span>1</div>
+        </div>
+        <div class="cockpit-stat">
+          <div class="cockpit-stat-label">Errors</div>
+          <div class="cockpit-stat-value">0</div>
+        </div>
+        <div class="cockpit-stat-bar"><div class="cockpit-stat-bar-fill monitoring" style="width:100%"></div></div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <div class="run-bar">
+        <div class="run-status monitoring"><span class="pulse-dot monitoring"></span><span>Monitoring</span></div>
+        <span class="run-meta-mono"><span class="dim">next</span> 04:35 <span class="dim">· ends in</span> 6d 23h</span>
+        <button class="btn">View Status</button>
+        <button class="btn primary">Start Campaign</button>
+        <button class="btn disabled">Pause</button>
+        <button class="btn danger disabled">Stop Campaign</button>
+        <span class="run-bar-divider"></span>
+        <button class="btn disabled">↻ Restore</button>
+        <div class="run-bar-spacer"></div>
+        <div class="preset-pill">Saved Configs <span class="preset-pill-count">6</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <strong>Data source:</strong> already on the running <code>campaign</code> object — <code>campaign.state === 'monitoring'</code>, <code>campaign.nextCheckAt</code>, <code>campaign.monitoringUntil</code>. The Schedule card on the dashboard already renders this; the cockpit and run-bar just need to read the same fields.<br><br>
+    <strong>Implementation:</strong> small change in <code>updateCockpitFromStatus()</code> + <code>updateRunBar()</code> in <code>public/js/app.js</code>. Polls <code>/api/status</code> every 2s (already happens), so values auto-tick. Zero backend changes.<br><br>
+    <strong>Live test impact:</strong> none. The running Electron process loaded its code at boot — editing files now doesn't affect it. New behaviour activates on the next <code>dev:app</code> restart.<br><br>
+    <strong>Note on the big ring:</strong> in variants A and C, the ring shows the window countdown. It ticks down once per second (UI-side). I can swap it for the "minutes until next check" countdown if you prefer — let me know.
+  </div>
+</div>
+</body>
+</html>

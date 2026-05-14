@@ -2712,8 +2712,31 @@ const __cockpit = {
   action: null,
   mode: null,
   pName: null,
+  // v2.13.14 — monitoring overlay. Populated from /api/campaign/status.
+  state: 'idle',
+  monitoringUntil: null,
+  nextCheckAt: null,
+  participatingProfileIds: [],
+  profileIds: [],
+  profileNames: [],
 };
 const COCKPIT_RING_CIRCUMFERENCE = 282.7; // 2πr where r=45
+
+// Format a duration in ms as a human string ("6d 23h", "12h 4m", "8m").
+// Matches the convention used by renderMonitoringCard so the cockpit,
+// run-bar, and Schedule card all display the same string.
+function _cockpitFmtRemaining(ms) {
+  if (ms <= 0) return '0m';
+  const days = Math.floor(ms / 86400000);
+  const hours = Math.floor((ms % 86400000) / 3600000);
+  const mins = Math.floor((ms % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+function _cockpitHHMM(d) {
+  return d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '—';
+}
 
 function updateCockpit(s) {
   __cockpit.running = !!s.running;
@@ -2722,6 +2745,12 @@ function updateCockpit(s) {
   __cockpit.action = s.currentAction || null;
   __cockpit.mode = s.mode || null;
   __cockpit.pName = s.currentProfile || null;
+  __cockpit.state = s.state || 'idle';
+  __cockpit.monitoringUntil = s.monitoringUntil || null;
+  __cockpit.nextCheckAt = s.nextCheckAt || null;
+  __cockpit.participatingProfileIds = s.participatingProfileIds || [];
+  __cockpit.profileIds = s.profileIds || [];
+  __cockpit.profileNames = s.profileNames || [];
   renderCockpit();
 }
 
@@ -2738,25 +2767,86 @@ function renderCockpit() {
   const modeEl = document.getElementById('cockpit-mode-meta');
   if (!ring || !ringFg || !num || !unit || !tag || !dot || !action) return;
 
+  // v2.13.14 — Monitoring overlay. running=false but state='monitoring'
+  // means the campaign has finished sending and is now watching for
+  // acceptances. Surface the timing info so the operator doesn't have
+  // to scroll to the Schedule card to know when the next check is.
+  if (!__cockpit.running && __cockpit.state === 'monitoring') {
+    ring.classList.remove('indeterminate', 'paused');
+    ring.classList.add('monitoring');
+    const until = __cockpit.monitoringUntil ? new Date(__cockpit.monitoringUntil) : null;
+    const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
+    const now = Date.now();
+    const remainingMs = until ? until.getTime() - now : 0;
+    // Window-elapsed fraction → static-looking dashed ring for the visual cue.
+    // (No animated countdown — the dashed pattern signals "watching", and
+    // the centre text shows the live remainder.)
+    ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE * 0.15;
+    num.textContent = _cockpitFmtRemaining(remainingMs);
+    unit.textContent = 'window left';
+    tag.textContent = 'MONITORING';
+    dot.classList.remove('live', 'paused-dot');
+    dot.classList.add('monitoring');
+    action.textContent = 'Watching for acceptances';
+    if (lead) {
+      lead.textContent = next
+        ? `${_cockpitHHMM(next)} · in ${_cockpitFmtRemaining(Math.max(0, next.getTime() - now))}`
+        : '—';
+    }
+    const _leadLabel = document.querySelector('.cockpit-meta-label[data-cockpit-row="lead"]')
+      || lead?.previousElementSibling;
+    if (_leadLabel) _leadLabel.textContent = 'Next check';
+    if (account) {
+      account.textContent = until
+        ? `${until.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${_cockpitHHMM(until)} · in ${_cockpitFmtRemaining(remainingMs)}`
+        : '—';
+    }
+    const _accountLabel = document.querySelector('.cockpit-meta-label[data-cockpit-row="account"]')
+      || account?.previousElementSibling;
+    if (_accountLabel) _accountLabel.textContent = 'Ends';
+    if (modeEl) {
+      const ids = __cockpit.participatingProfileIds || [];
+      const names = ids.map((pid) => {
+        const idx = (__cockpit.profileIds || []).indexOf(pid);
+        return idx >= 0 ? (__cockpit.profileNames[idx] || pid) : pid;
+      });
+      modeEl.textContent = names.length === 0 ? '—'
+        : names.length === 1 ? names[0]
+        : `${names[0]} (+${names.length - 1})`;
+    }
+    const _modeLabel = document.querySelector('.cockpit-meta-label[data-cockpit-row="mode"]')
+      || modeEl?.previousElementSibling;
+    if (_modeLabel) _modeLabel.textContent = 'Profiles';
+    return;
+  }
+
   // Idle — no campaign running.
   if (!__cockpit.running) {
-    ring.classList.remove('indeterminate', 'paused');
+    ring.classList.remove('indeterminate', 'paused', 'monitoring');
     ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE;
     num.textContent = '—';
     unit.textContent = 'idle';
     tag.textContent = 'IDLE';
-    dot.classList.remove('live', 'paused-dot');
+    dot.classList.remove('live', 'paused-dot', 'monitoring');
     action.textContent = 'No campaign running';
     if (lead)    lead.textContent    = '—';
     if (account) account.textContent = '—';
     if (modeEl)  modeEl.textContent  = '—';
+    // Restore default meta labels (in case we came back from monitoring state).
+    const _leadLabel = lead?.previousElementSibling;
+    const _accountLabel = account?.previousElementSibling;
+    const _modeLabel = modeEl?.previousElementSibling;
+    if (_leadLabel) _leadLabel.textContent = 'Lead';
+    if (_accountLabel) _accountLabel.textContent = 'Account';
+    if (_modeLabel) _modeLabel.textContent = 'Mode';
     return;
   }
 
   // Paused — distinct visual.
   if (__cockpit.paused) {
-    ring.classList.remove('indeterminate');
+    ring.classList.remove('indeterminate', 'monitoring');
     ring.classList.add('paused');
+    dot.classList.remove('monitoring');
     ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE * 0.3;
     num.textContent = '||';
     unit.textContent = 'paused';
@@ -2770,9 +2860,9 @@ function renderCockpit() {
   }
 
   // Running — countdown if action has endsAt, else indeterminate arc.
-  ring.classList.remove('paused');
+  ring.classList.remove('paused', 'monitoring');
   tag.textContent = __cockpit.pauseRequested ? 'PAUSING…' : 'LIVE';
-  dot.classList.remove('paused-dot'); dot.classList.add('live');
+  dot.classList.remove('paused-dot', 'monitoring'); dot.classList.add('live');
 
   const a = __cockpit.action;
   if (!a) {
@@ -4081,7 +4171,9 @@ function initRunBarMirror() {
   let wasRunning = false;
   const sync = () => {
     const running = !!__cockpit.running;
+    const monitoring = !running && __cockpit.state === 'monitoring';
     bar.classList.toggle('running', running);
+    bar.classList.toggle('monitoring', monitoring);
     const profile = (__cockpit.action && __cockpit.action.account) || __cockpit.pName || '';
     const mode = formatMode(__cockpit.mode);
     const today = document.getElementById('st-today')?.textContent || '0';
@@ -4089,6 +4181,16 @@ function initRunBarMirror() {
     if (running) {
       const label = __cockpit.paused ? 'Paused' : (__cockpit.pauseRequested ? 'Pausing…' : 'Running');
       txt.innerHTML = `<strong>${label}</strong> · ${mode} · ${profile} · ${today}/${total}`;
+    } else if (monitoring) {
+      // v2.13.14 — surface monitoring countdown in the sticky toolbar.
+      // Matches the format in the Schedule card so the operator sees
+      // the same "next 04:35 · ends in 6d 23h" no matter where they look.
+      const now = Date.now();
+      const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
+      const until = __cockpit.monitoringUntil ? new Date(__cockpit.monitoringUntil) : null;
+      const nextStr = _cockpitHHMM(next);
+      const endsStr = until ? _cockpitFmtRemaining(until.getTime() - now) : '—';
+      txt.innerHTML = `<strong>Monitoring</strong> <span class="run-bar-meta-mono">next ${nextStr} · ends in ${endsStr}</span>`;
     } else {
       txt.textContent = 'Idle';
     }
@@ -4097,26 +4199,37 @@ function initRunBarMirror() {
     const rpDot = document.getElementById('rp-dot');
     const rpStatusText = document.getElementById('rp-status-text');
     const rpStatusSub = document.getElementById('rp-status-sub');
-    if (rpDot) rpDot.classList.toggle('running', running);
-    if (rpStatusText) rpStatusText.textContent = running ? 'Running' : 'Idle';
+    if (rpDot) {
+      rpDot.classList.toggle('running', running);
+      rpDot.classList.toggle('monitoring', monitoring);
+    }
+    if (rpStatusText) rpStatusText.textContent = running ? 'Running' : (monitoring ? 'Monitoring' : 'Idle');
     if (rpStatusSub) {
-      rpStatusSub.textContent = running
-        ? `${mode} · ${profile} · ${today}/${total}`
-        : 'No campaign running';
+      if (running) {
+        rpStatusSub.textContent = `${mode} · ${profile} · ${today}/${total}`;
+      } else if (monitoring) {
+        const now = Date.now();
+        const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
+        const until = __cockpit.monitoringUntil ? new Date(__cockpit.monitoringUntil) : null;
+        rpStatusSub.textContent = `next ${_cockpitHHMM(next)} · ends in ${until ? _cockpitFmtRemaining(until.getTime() - now) : '—'}`;
+      } else {
+        rpStatusSub.textContent = 'No campaign running';
+      }
     }
 
     // Right-pane activity feed — mirror the last ~10 log entries
     syncActivityFeed();
 
-    // Auto-expand Live Status when running, auto-collapse when idle
+    // Auto-expand Live Status when running OR monitoring, auto-collapse when truly idle.
     if (statusSection && statusSection.classList.contains('collapsible')) {
-      if (running && statusSection.classList.contains('collapsed')) {
+      const active = running || monitoring;
+      if (active && statusSection.classList.contains('collapsed')) {
         statusSection.classList.remove('collapsed');
-      } else if (!running && wasRunning) {
+      } else if (!active && wasRunning) {
         statusSection.classList.add('collapsed');
       }
     }
-    wasRunning = running;
+    wasRunning = running || monitoring;
   };
   setInterval(sync, 2000);
   sync();
