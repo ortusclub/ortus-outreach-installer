@@ -14,6 +14,9 @@ export function computeMonitoringUntil(sendingEndedAt) {
  * Returns the next cadence boundary strictly AFTER `now`, measured from
  * `sendingEndedAt`. If `now` lands exactly on a boundary, returns the next
  * one (strict >). `cadenceMin` defaults to 360 (6h) for backward compat.
+ * IMPORTANT: callers MUST pass cadenceMin explicitly when honouring the
+ * operator-configured cadence — relying on the default silently overrode
+ * a 15-minute wizard setting in monitoring-resume.js prior to v2.14.x.
  */
 export function recomputeNextCheckAt(sendingEndedAt, now, cadenceMin = 360) {
   const s = _toDate(sendingEndedAt).getTime();

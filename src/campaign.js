@@ -36,6 +36,7 @@ import { registerAppender, buildAppendLogger, unregisterAppender } from './campa
 import { computeStillPendingUrls, buildClosedNotConnectedUpdate } from './stop-monitoring.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { decideResumeAction } from './monitoring-resume.js';
+import { enqueueDesktopNotification } from './notifier.js';
 import { dataPath } from './paths.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -2694,6 +2695,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       } catch (persistErr) {
         console.warn('[monitoring] persistence write failed:', persistErr.message);
       }
+      // v2.14.x: arm the 15s pre-fire heads-up for the first auto-check.
+      _preFireNotifiedFor = null;
+      schedulePreFireHeadsUp();
     }
   } catch (err) {
     log(`Fatal: ${err.message}`);
@@ -3083,6 +3087,10 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // 4. Transition state
   campaign.state = 'done';
 
+  // v2.14.x: cancel any armed pre-fire heads-up (we just left monitoring).
+  if (_preFireTimer) { clearTimeout(_preFireTimer); _preFireTimer = null; }
+  _preFireNotifiedFor = null;
+
   // Clear the on-disk monitoring slice
   try { await clearMonitoringState(); } catch { /* */ }
 
@@ -3103,6 +3111,50 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
  */
 let _monitoringWatcherTimer = null;
 let _checkInProgress = false;
+// v2.14.x: pre-fire heads-up. 15 s before each auto-check, fire a
+// desktop notification + cockpit log line so the operator can context-
+// switch out of LinkedIn before the bulk-check tab opens.
+const PRE_FIRE_OFFSET_MS = 15_000;
+let _preFireTimer = null;
+let _preFireNotifiedFor = null; // ISO of the nextCheckAt we've already notified for
+
+function _firePreCheckNotification() {
+  try {
+    const names = (campaign.participatingProfileIds || [])
+      .map((pid) => {
+        const idx = (campaign.profileIds || []).indexOf(pid);
+        return idx >= 0 ? (campaign.profileNames || [])[idx] || pid : pid;
+      })
+      .filter(Boolean)
+      .join(', ');
+    const title = 'Bulk check fires in 15s';
+    const body = names
+      ? `About to check connections for ${names}.`
+      : 'About to fire monitoring auto-check.';
+    enqueueDesktopNotification({ title, body, audience: campaign.createdBy || null });
+    const ts = `[${new Date().toISOString()}]`;
+    campaign.logs = campaign.logs || [];
+    campaign.logs.push(`${ts} ⏰ ${title} — ${body}`);
+  } catch (err) {
+    console.warn('[pre-fire] notification failed:', err.message);
+  }
+}
+
+export function schedulePreFireHeadsUp() {
+  if (_preFireTimer) {
+    clearTimeout(_preFireTimer);
+    _preFireTimer = null;
+  }
+  if (campaign.state !== 'monitoring' || !campaign.nextCheckAt) return;
+  if (_preFireNotifiedFor === campaign.nextCheckAt) return; // already done for this cycle
+  const targetMs = new Date(campaign.nextCheckAt).getTime();
+  const delay = targetMs - PRE_FIRE_OFFSET_MS - Date.now();
+  if (delay <= 0) return; // already inside the 15s window or past it
+  _preFireTimer = setTimeout(() => {
+    _preFireNotifiedFor = campaign.nextCheckAt;
+    _firePreCheckNotification();
+  }, delay);
+}
 
 export async function tickMonitoringNow({ _testStub = null } = {}) {
   try {
@@ -3159,9 +3211,11 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
           nextNext = prevNext + (missed + 1) * ms;
         }
         campaign.nextCheckAt = new Date(nextNext).toISOString();
+        _preFireNotifiedFor = null; // new cycle — re-arm the pre-fire heads-up
         try { await writeMonitoringState(campaign); } catch { /* */ }
         const hhmm = (d) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         campaign.logs.push(`[${new Date().toISOString()}] 🛏 Monitoring · next check at ${hhmm(new Date(campaign.nextCheckAt))}`);
+        schedulePreFireHeadsUp();
       }
       _checkInProgress = false;
     }
@@ -3206,10 +3260,12 @@ export async function resumeMonitoringFromDisk() {
   }
   if (decision.action === 'resume') {
     campaign.nextCheckAt = decision.recomputedNextCheckAt.toISOString();
+    _preFireNotifiedFor = null; // resume after restart — re-arm
     const ts = `[${new Date().toISOString()}]`;
     const _hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     campaign.logs = campaign.logs || [];
     campaign.logs.push(`${ts} 🛏 Monitoring resumed · next check at ${_hhmm(decision.recomputedNextCheckAt)}`);
+    schedulePreFireHeadsUp();
     try {
       const _sheetId = _extractSheetIdFromUrl(campaign.sheetUrl);
       const _appender = buildAppendLogger({ logs: campaign.logs, capLines: 5000 });
