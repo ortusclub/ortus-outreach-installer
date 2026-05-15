@@ -1555,6 +1555,55 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
     await page.type(recipientSelector, introName, { delay: 60 });
     console.log(`[actions:intro] Typed recipient name with real keystrokes: "${introName}"`);
 
+    // v2.14.x: URL-settle poll BEFORE the dropdown-poll page.evaluate.
+    // For recipient combinations that already have a 3-way intro thread
+    // (lead + primary + sender), LinkedIn's typeahead API recognizes the
+    // combo as the user types and redirects the browser to that existing
+    // thread BEFORE the typeahead dropdown opens. The redirect destroys
+    // the JS execution context, and the dropdown-poll page.evaluate below
+    // would hang at the CDP protocol-timeout (~3 min). Repro: kenya5/peter
+    // → pinky-salaria across the 17:00 / 21:44 / 22:36 runs on 2026-05-15
+    // — all hit Runtime.callFunctionOn timed out / Execution context was
+    // destroyed because the redirect happened mid-type.
+    //
+    // Settle the URL first (≤6s). If we land on /messaging/thread/{id}
+    // (NOT /thread/new which is the legitimate new-thread compose path
+    // for fresh intros), the trio already has a thread — throw a dedicated
+    // signal that auto-intro maps to 'Introduction Already Made'. This
+    // turns a 6-minute CDP timeout into a ~2s clean detection.
+    {
+      const STABLE_MS   = 1500;
+      const HARD_CAP_MS = 6000;
+      const POLL_MS     = 250;
+      const start = Date.now();
+      let lastUrl = page.url();
+      let lastChangeAt = Date.now();
+      let didNavigate = false;
+      while (Date.now() - start < HARD_CAP_MS) {
+        await new Promise(r => setTimeout(r, POLL_MS));
+        let currentUrl;
+        try { currentUrl = page.url(); }
+        catch { currentUrl = lastUrl + '?transition'; }
+        if (currentUrl !== lastUrl) {
+          didNavigate = true;
+          console.log(`[actions:intro] URL changed during type: ${lastUrl} → ${currentUrl}`);
+          lastUrl = currentUrl;
+          lastChangeAt = Date.now();
+        } else if (Date.now() - lastChangeAt >= STABLE_MS) {
+          break;
+        }
+      }
+      const finalUrl = lastUrl;
+      if (/\/messaging\/thread\/[^/]+/i.test(finalUrl) && !finalUrl.includes('/thread/new')) {
+        console.log(`[actions:intro] Existing intro thread detected at ${finalUrl} — already introduced; aborting compose.`);
+        await page.evaluate(() => document.querySelector('[data-ortus-recipient="1"]')?.removeAttribute('data-ortus-recipient')).catch(() => {});
+        throw new Error('INTRO_ALREADY_EXISTS');
+      }
+      if (didNavigate) {
+        console.log(`[actions:intro] URL settled at ${finalUrl} — continuing to dropdown poll.`);
+      }
+    }
+
     // Wait for typeahead dropdown, click exact match.
     const clickResult = await page.evaluate(async (name) => {
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));

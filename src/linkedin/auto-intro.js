@@ -212,6 +212,7 @@ export async function runAutoIntros({
     const title = personalizeTemplate(tpl.introTitle, introData);
 
     let ok = false;
+    let alreadyMade = false;
     let errMsg = '';
     let attempt = 0;
     while (attempt < 2) {
@@ -222,6 +223,15 @@ export async function runAutoIntros({
         break;
       } catch (err) {
         errMsg = err.message || String(err);
+        // v2.14.x: sendIntroMessage detected via URL-settle that the trio
+        // already has an existing intro thread (LinkedIn redirected from
+        // /compose/?recipient=X to /messaging/thread/{id} mid-type). Stamp
+        // 'Introduction Already Made' to preserve the audit distinction
+        // between intros made by THIS run vs pre-existing ones.
+        if (errMsg.includes('INTRO_ALREADY_EXISTS')) {
+          alreadyMade = true;
+          break;
+        }
         if (attempt < 2 && errMsg.includes('INTRO_RECIPIENT_NOT_FOUND')) {
           log(`  ↻ [${profileName}] ${url}: typeahead miss, retrying once…`);
           await new Promise(r => setTimeout(r, 2000));
@@ -235,16 +245,27 @@ export async function runAutoIntros({
     // detection (suppressAcceptedStamp=false in the campaign call sites).
     // auto-intro only stamps Introduction Status here.
     const tracking = {
-      introductionStatus: ok ? 'Introduction Made' : 'Failed',
+      introductionStatus: alreadyMade
+        ? 'Introduction Already Made'
+        : (ok ? 'Introduction Made' : 'Failed'),
       sender: profileName,
       accountUsed: profileName,
       dateLastAction: _formatLocalDate(new Date()),
-      auditAction: ok ? `Introduction sent to ${primaryName}` : `Intro failed: ${errMsg || 'unknown'}`,
+      auditAction: alreadyMade
+        ? `Introduction thread already exists with ${primaryName}`
+        : (ok ? `Introduction sent to ${primaryName}` : `Intro failed: ${errMsg || 'unknown'}`),
     };
     await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
     if (ok) {
       result.sent++;
       log(`  🤝 [${profileName}] ${url}: Introduction Made`);
+    } else if (alreadyMade) {
+      // Counted as a sent (the intro is effectively done — there's an
+      // active thread) so result.sent reflects real coverage rather than
+      // creating a third counter the campaign loop would have to learn
+      // about. The distinct sheet stamp + log line preserve the audit.
+      result.sent++;
+      log(`  ⏳ [${profileName}] ${url}: Introduction Already Made (existing thread detected)`);
     } else {
       result.failed++;
       log(`  ⚠ [${profileName}] ${url}: Failed (${errMsg || 'unknown'})`);
