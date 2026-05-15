@@ -97,3 +97,59 @@ test('row with missing LinkedIn URL: silently skipped, doesn\'t throw', () => {
   assert.equal(diag.rowsScanned, 1, 'still counted as scanned');
   assert.equal(diag.withUrl, 0, 'but withUrl=0 since URL was missing');
 });
+
+// v2.14.x — pre-existing 1st-degree connection branching
+test('matched + wasInvited: stamps Connected (normal acceptance flow)', () => {
+  const rows = [baseRow({ 'Connection Request Status': 'Connection Request Sent' })];
+  const { updates } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  const match = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(match);
+  assert.equal(match.cc, 'Connected');
+  assert.equal(match.checkStatus, 'Connected');
+  assert.equal(match.stage, undefined, 'wasInvited path does NOT stamp stage');
+  assert.equal(match.sender, undefined, 'wasInvited path does NOT stamp sender');
+});
+
+test('matched + NOT invited: stamps Sender + Stage = "Already connected" (pre-existing 1st-degree)', () => {
+  // Row has no prior outreach by the bot — it's a lead the operator
+  // already had as a 1st-degree connection. Bulk-check should stamp the
+  // account that's connected so the operator sees WHO, and pre-filter
+  // can skip the row from new connect sends.
+  const rows = [baseRow({ 'Connection Request Status': '' })];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 1, 'still pushed to connectedUrls so runAutoIntros fires');
+  const match = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(match);
+  assert.equal(match.sender, 'kenya5@ortus.solutions');
+  assert.equal(match.stage, 'Already connected');
+  assert.equal(match.cc, 'Already connected');
+  assert.equal(match.checkStatus, 'Already connected');
+  assert.equal(match.connectedAlready, 'Yes');
+});
+
+test('matched + NOT invited + suppressAcceptedStamp: no stamp but URL returned for IC DM', () => {
+  const rows = [baseRow({ 'Connection Request Status': '' })];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: true, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 1, 'connectedUrls still populated');
+  const match = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(match, undefined, 'no stamp when suppressAcceptedStamp is true');
+});
+
+test('row already marked "Already connected" via Connection Accepted Status: skipped (no re-stamp)', () => {
+  const rows = [baseRow({ 'Connection Accepted Status': 'Already connected', 'Connected Status': '' })];
+  const { connectedUrls, updates } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 0, 'already-stamped rows not re-pushed');
+  assert.equal(updates.length, 0, 'no re-stamp');
+});

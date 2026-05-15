@@ -52,7 +52,7 @@ function memberIdFromAny(value) {
  * @returns {{ updates: object[], connectedUrls: string[], diag: object }}
  */
 export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendingLabel, opts = {}) {
-  const { suppressAcceptedStamp = false } = opts;
+  const { suppressAcceptedStamp = false, profileName = '' } = opts;
 
   // Build matching sets (same logic as the inline version)
   const connectedSlugs = new Set();
@@ -111,9 +111,25 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       || (memberId && connectedMemberIds.has(memberId))
       || (nameKey && nameKey !== ' ' && connectedNames.has(nameKey));
 
+    // v2.14.x: extract requestStatus BEFORE the isMatch branch so we can
+    // distinguish two match cases:
+    //   - wasInvited: bot sent a connect request in a prior run, recipient
+    //     has now accepted → "Connected" (normal acceptance flow)
+    //   - !wasInvited: lead was already a 1st-degree connection to this
+    //     account before the campaign ever started → "Already connected",
+    //     with Sender + Stage stamped so the operator sees WHICH account
+    //     they're connected to, and pre-filter excludes the row from new
+    //     connect sends by other accounts.
+    const requestStatus = (
+      row['Connection Request Status'] || row['connection request status']
+      || row['Connection Status']        || row['connection status']
+      || row['Status'] || row['status'] || ''
+    ).toString().trim();
+    const wasInvited = requestStatus === 'Connection Request Sent';
+
     if (isMatch) {
       dbgPidMatched++;
-      if (cs === 'Connected') { dbgAlreadyConnected++; continue; }
+      if (cs === 'Connected' || cs === 'Already connected') { dbgAlreadyConnected++; continue; }
       connectedUrls.push(url);
       if (!suppressAcceptedStamp) {
         // v2.14.x: also stamp checkStatus so the legacy "Check Status"
@@ -122,22 +138,37 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         // v2.14 schema both cc and checkStatus map to the same column
         // ("Connection Accepted Status"), so the dual write is a no-op
         // there. In v2.13.x they're separate columns — this fills both.
-        updates.push({
-          linkedinUrl: url,
-          cc: 'Connected',
-          connectedAlready: 'Yes',
-          checkStatus: 'Connected',
-        });
+        if (wasInvited) {
+          // Normal acceptance — bot invited, recipient accepted.
+          updates.push({
+            linkedinUrl: url,
+            cc: 'Connected',
+            connectedAlready: 'Yes',
+            checkStatus: 'Connected',
+          });
+        } else {
+          // Pre-existing 1st-degree connection (no prior outreach by the bot).
+          // Mirror Pinky's row pattern from outreach.js's already_connected
+          // path: Sender + Stage + Connection Accepted Status all reading
+          // "Already connected". Pre-filter (campaign.js:1216) excludes
+          // Stage='Already connected' from new connect sends, so other
+          // accounts won't try to connect. The existing connectedUrls →
+          // runAutoIntros chain fires the IC DM from THIS account
+          // immediately in the same bulk-check pass.
+          updates.push({
+            linkedinUrl: url,
+            sender: profileName,
+            stage: 'Already connected',
+            cc: 'Already connected',
+            connectedAlready: 'Yes',
+            checkStatus: 'Already connected',
+          });
+        }
       }
       continue;
     }
 
     // Not in recent connections — stamp "Still Pending" if the bot invited.
-    const requestStatus = (
-      row['Connection Request Status'] || row['connection request status']
-      || row['Connection Status']        || row['connection status']
-      || row['Status'] || row['status'] || ''
-    ).toString().trim();
     if (sampleCRSValues.size < 5 && requestStatus) sampleCRSValues.add(requestStatus);
     if (requestStatus !== 'Connection Request Sent') continue;
     dbgWithCRS++;
@@ -260,7 +291,12 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     conns,
     linkedinColumn,
     stillPendingLabel,
-    { suppressAcceptedStamp: opts.suppressAcceptedStamp === true }
+    {
+      suppressAcceptedStamp: opts.suppressAcceptedStamp === true,
+      // v2.14.x: stamped onto pre-existing 1st-degree matches so the
+      // operator sees WHICH account is connected to the lead.
+      profileName: pName || '',
+    }
   );
 
   const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
