@@ -1555,6 +1555,49 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       throw new Error(`INTRO_RECIPIENT_NOT_FOUND: ${detail}`);
     }
 
+    // v2.14.x: poll page.url() until it stops changing for STABLE_MS
+    // before continuing. After clicking the typeahead candidate, LinkedIn
+    // navigates /messaging/compose/?recipient=… → /messaging/thread/new/
+    // ?isTYAHFlow=true&… for some recipient combinations (typically when
+    // an existing thread between the same participants already exists).
+    // The navigation destroys the JS execution context and breaks any
+    // subsequent page.evaluate. Both reproductions in 2026-05-15 logs
+    // (kenya5/peter → pinky-salaria):
+    //   17:00 run: "Execution context was destroyed"
+    //   21:44 run: "Runtime.callFunctionOn timed out" (CDP protocolTimeout)
+    // User-confirmed via manual GoLogin repro 2026-05-16 00:20 — the URL
+    // transition fires for pinky+antonio for kenya5's account. Without
+    // this wait, the pill-verify page.evaluate below races the navigation.
+    //
+    // If LinkedIn doesn't redirect (most leads), the URL stays constant
+    // and we exit within ~1.7s. Cost is bounded by HARD_CAP_MS.
+    {
+      const STABLE_MS   = 1500;
+      const HARD_CAP_MS = 8000;
+      const POLL_MS     = 250;
+      const start = Date.now();
+      let lastUrl = page.url();
+      let lastChangeAt = Date.now();
+      let didNavigate = false;
+      while (Date.now() - start < HARD_CAP_MS) {
+        await new Promise(r => setTimeout(r, POLL_MS));
+        let currentUrl;
+        try { currentUrl = page.url(); }
+        catch { currentUrl = lastUrl + '?transition'; }
+        if (currentUrl !== lastUrl) {
+          didNavigate = true;
+          console.log(`[actions:intro] URL changed mid-flow: ${lastUrl} → ${currentUrl}`);
+          lastUrl = currentUrl;
+          lastChangeAt = Date.now();
+        } else if (Date.now() - lastChangeAt >= STABLE_MS) {
+          break;
+        }
+      }
+      if (didNavigate) {
+        console.log(`[actions:intro] URL settled at ${lastUrl} — re-acquiring DOM and continuing.`);
+      }
+    }
+
     // Verify the pill appeared
     await new Promise(r => setTimeout(r, 600));
     const verified = await page.evaluate((name) => {
