@@ -1442,7 +1442,12 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
 
       let lastCandidateCount = 0;
       let lastCandidatePreview = '';
-      for (let i = 0; i < 30; i++) {
+      // v2.14.x: poll up to 50 * 200ms = 10s for the typeahead dropdown.
+      // Was 30 * 200ms = 6s, which was too short for GoLogin profiles on
+      // slow laptops (live test 2026-05-15 fell back to URL routing
+      // because the dropdown hadn't rendered). Smart poll: short-circuits
+      // on first hit, only the slow cases pay the extra wait.
+      for (let i = 0; i < 50; i++) {
         await sleep(200);
         const roots = Array.from(document.querySelectorAll(
           '.msg-connections-typeahead__search-results, [role="listbox"], .reusable-search__entity-result-list'
