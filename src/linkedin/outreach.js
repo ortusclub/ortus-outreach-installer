@@ -485,11 +485,14 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
             };
             const body  = personalizeTemplate(templates.followUpMessage, introData);
             const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
-            // v2.13.14: pass introUrl when set so sendIntroMessage uses
-            // URL-routing for the second pill (skips the unreliable
-            // typeahead). CC+IC auto-intro populates this; IB leaves it
-            // empty so its behaviour is unchanged.
-            await sendIntroMessage(page, body, templates.introName, title, templates.introUrl || '');
+            // v2.14.x: CC+IC and IB call sendIntroMessage with the SAME
+            // arguments — typeahead-for-primary path. The previous
+            // URL-routing experiment (passing templates.introUrl as 5th
+            // arg) failed because LinkedIn's compose URL parser is
+            // last-wins for repeated ?recipient= params, so the lead's
+            // pill was silently dropped. The secondRecipientUrl param on
+            // sendIntroMessage now has no caller (dead code, harmless).
+            await sendIntroMessage(page, body, templates.introName, title);
           } else {
             await sendMessage(page, personalizeTemplate(templates.followUpMessage, data));
           }
