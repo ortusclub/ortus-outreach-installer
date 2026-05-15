@@ -28,6 +28,11 @@ export const MONITORING_FIELDS = [
   // app restart. Without this, post-restart monitoring intro DMs fall
   // back to the GoLogin email split.
   'senderFirstNames',
+  // v2.14.x: operator-chosen cadence (15-360 min) for the monitoring
+  // auto-trigger. Survives restart so the watcher tick uses the right
+  // interval after rehydration; defaults to 60 if absent (e.g. older
+  // state files written before this field shipped).
+  'checkIntervalMinutes',
 ];
 
 export function extractMonitoringSlice(campaign) {
