@@ -1271,13 +1271,18 @@ export async function sendMessage(page, message) {
 // getConversationTitleInputTarget, hasSelectedRecipient).
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendIntroMessage(page, body, introName, groupTitle, secondRecipientUrl = '') {
+export async function sendIntroMessage(page, body, introName, groupTitle, secondRecipientUrl = '', leadUrl = '') {
   if (!introName) throw new Error('MESSAGE_SEND_FAILED: introName required');
 
-  const currentUrl = page.url();
-  const publicIdMatch = currentUrl.match(/\/in\/([^/?#]+)/);
+  // v2.14.x: leadUrl arg lets callers supply the lead's /in/<publicId> URL
+  // directly so we no longer require the page to be on the profile first.
+  // The IC DM fast-path uses this to skip the wasted 5-30s profile-visit
+  // detour (networkidle0 + DOM settle) and jump straight to compose.
+  // Backward-compat: when leadUrl is empty, parse from page.url() as before.
+  const sourceUrl = leadUrl || page.url();
+  const publicIdMatch = sourceUrl.match(/\/in\/([^/?#]+)/);
   if (!publicIdMatch) {
-    throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${currentUrl})`);
+    throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${sourceUrl})`);
   }
   const publicId = publicIdMatch[1];
 

@@ -18,7 +18,8 @@
  * rather than the GoLogin email.
  */
 
-import { performOutreach } from './outreach.js';
+import { sendIntroMessage } from './actions.js';
+import { personalizeTemplate } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl } from '../campaign.js';
@@ -103,8 +104,16 @@ export async function runAutoIntros({
   const primaryFirstName = primaryTokens[0] || '';
   const primaryLastName  = primaryTokens.slice(1).join(' ');
 
+  // v2.14.x: split introName (=primaryName) the same way outreach.js:469-484
+  // does for IB, so {intro first name} / {intro last name} resolve in both
+  // the body and the group title.
+  const introTokens = primaryName.split(/\s+/);
+  const introFirst  = introTokens[0] || '';
+  const introLast   = introTokens.slice(1).join(' ');
+
   log(`  🤝 [${profileName}] Auto-introducing ${connectedUrls.length} new connection(s) to ${primaryName}…`);
-  for (const url of connectedUrls) {
+  for (let i = 0; i < connectedUrls.length; i++) {
+    const url = connectedUrls[i];
     // Build `data` the EXACT same way campaign.js builds it for the IB
     // batch loop (see src/campaign.js around the `Build template data`
     // comment). senderFirstName resolves from the operator-configured
@@ -170,60 +179,90 @@ export async function runAutoIntros({
     log(`     · row matched=${!!rowByUrl.get(url)} firstName="${leadFirstName}" lastName="${leadLastName}"`);
     log(`  ✓ [${profileName}] ${url}: Connection Accepted (stamped at detection)`);
 
-    try {
-      // v2.14.x: REVERTED 2026-05-15 — the withWatchdog wrap added in
-      // c13919b created a race condition. JS Promise.race does not
-      // cancel the inner Promise, so when the 180s watchdog fired the
-      // previous performOutreach was still typing — and the next
-      // iteration's page.goto() navigated the page mid-typing,
-      // producing the "typing my name then the profile changes"
-      // symptom in headless/background mode. Restoring the direct
-      // await; INTRO_RECIPIENT_NOT_FOUND retry-once is preserved.
-      let introResult;
-      let attempt = 0;
-      while (attempt < 2) {
-        attempt++;
-        introResult = await performOutreach(
-          page, url, { ...tpl, data }, { profileId }, 'force_message',
-        );
+    // v2.14.x: IC DM fast-path — bypass performOutreach entirely.
+    //
+    // The old path called performOutreach(..., 'force_message') which did:
+    //   1. page.goto(leadProfile, { waitUntil: 'networkidle0', timeout: 30s })
+    //   2. waitForDomSettle (1.5s settle + 2s buffer)
+    //   3. zoom=75%
+    //   4. Voyager degree check + getConnectionStatus DOM check
+    //   5. → eventually called sendIntroMessage, which navigates to compose anyway
+    //
+    // For IC DM none of (1)-(4) is necessary: bulk-check just confirmed
+    // degree=1 within the last ~60s, and sendIntroMessage navigates to its
+    // own compose URL. The profile-visit detour wasted 5-30s per lead in
+    // background-throttled mode and was the underlying reason the 180s
+    // watchdog kept firing. Now we build the body/title from templates and
+    // call sendIntroMessage directly with the lead URL as the 6th arg.
+    //
+    // INTRO_RECIPIENT_NOT_FOUND retry-once is preserved.
+    const introData = {
+      ...data,
+      'intro name':       primaryName,
+      'introName':        primaryName,
+      'intro_name':       primaryName,
+      'intro first name': introFirst,
+      'introFirstName':   introFirst,
+      'intro_first_name': introFirst,
+      'intro last name':  introLast,
+      'introLastName':    introLast,
+      'intro_last_name':  introLast,
+    };
+    const body  = personalizeTemplate(tpl.followUpMessage, introData);
+    const title = personalizeTemplate(tpl.introTitle, introData);
 
-        const errStr = String(introResult?.error || '');
-        if (attempt < 2 && errStr.includes('INTRO_RECIPIENT_NOT_FOUND')) {
+    let ok = false;
+    let errMsg = '';
+    let attempt = 0;
+    while (attempt < 2) {
+      attempt++;
+      try {
+        await sendIntroMessage(page, body, primaryName, title, '', url);
+        ok = true;
+        break;
+      } catch (err) {
+        errMsg = err.message || String(err);
+        if (attempt < 2 && errMsg.includes('INTRO_RECIPIENT_NOT_FOUND')) {
           log(`  ↻ [${profileName}] ${url}: typeahead miss, retrying once…`);
           await new Promise(r => setTimeout(r, 2000));
           continue;
         }
         break;
       }
-      const ok = introResult && (introResult.action === 'message_sent' || introResult.action === 'already_processed');
-      // v2.14.x: Connection Accepted Status is now stamped at bulk-check
-      // detection (suppressAcceptedStamp=false in the campaign call sites).
-      // auto-intro only stamps Introduction Status here.
-      const tracking = {
-        introductionStatus: ok ? 'Introduction Made' : 'Failed',
-        sender: profileName,
-        accountUsed: profileName,
-        dateLastAction: _formatLocalDate(new Date()),
-        auditAction: ok ? `Introduction sent to ${primaryName}` : `Intro failed: ${introResult?.error || 'unknown'}`,
-      };
-      await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
-      if (ok) {
-        result.sent++;
-        log(`  🤝 [${profileName}] ${url}: Introduction Made`);
-      } else {
-        result.failed++;
-        log(`  ⚠ [${profileName}] ${url}: Failed (${introResult?.error || introResult?.action || '?'})`);
-      }
-    } catch (err) {
+    }
+
+    // v2.14.x: Connection Accepted Status is stamped at bulk-check
+    // detection (suppressAcceptedStamp=false in the campaign call sites).
+    // auto-intro only stamps Introduction Status here.
+    const tracking = {
+      introductionStatus: ok ? 'Introduction Made' : 'Failed',
+      sender: profileName,
+      accountUsed: profileName,
+      dateLastAction: _formatLocalDate(new Date()),
+      auditAction: ok ? `Introduction sent to ${primaryName}` : `Intro failed: ${errMsg || 'unknown'}`,
+    };
+    await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
+    if (ok) {
+      result.sent++;
+      log(`  🤝 [${profileName}] ${url}: Introduction Made`);
+    } else {
       result.failed++;
-      await updateSheetRow(sheetUrl, url, {
-        introductionStatus: 'Failed',
-        sender: profileName,
-        accountUsed: profileName,
-        dateLastAction: _formatLocalDate(new Date()),
-        auditAction: `Intro threw: ${err.message}`,
-      }, linkedinColumn).catch(() => {});
-      log(`  ⚠ [${profileName}] Intro DM threw for ${url}: ${err.message}`);
+      log(`  ⚠ [${profileName}] ${url}: Failed (${errMsg || 'unknown'})`);
+    }
+
+    // v2.14.x: brief feed visit between IC DMs. Mirrors the organic
+    // browsing the campaign loop does between connect requests — gives
+    // the compose page a clean reset before the next intro and pads
+    // the cadence to look less robotic. Skipped after the last lead.
+    if (i < connectedUrls.length - 1) {
+      try {
+        log(`  🔄 [${profileName}] Brief feed visit between intros…`);
+        await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await new Promise(r => setTimeout(r, 5000));
+      } catch (e) {
+        // Feed visit is best-effort; don't fail the batch over it.
+        log(`  ⚠ [${profileName}] Feed visit warning: ${e.message}`);
+      }
     }
   }
   return result;
