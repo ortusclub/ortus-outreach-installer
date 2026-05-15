@@ -3210,10 +3210,15 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
         let nextNext = prevNext + ms;
         const _now = Date.now();
         if (nextNext <= _now) {
-          // Skipped one or more cadence boundaries — advance to the next
-          // boundary strictly after now.
-          const missed = Math.ceil((_now - prevNext) / ms);
-          nextNext = prevNext + (missed + 1) * ms;
+          // Skipped one or more cadence boundaries — advance to the
+          // smallest boundary strictly AFTER now. Mirrors the
+          // floor(elapsed/ms)+1 formula in recomputeNextCheckAt
+          // (monitoring-time.js:23) so behaviour matches the boot/wake
+          // resume path. Earlier ceil-based formula was off-by-one when
+          // _now landed mid-interval (prev=0, ms=15, now=20 → returned
+          // 45 instead of 30).
+          const ticksPassed = Math.floor((_now - prevNext) / ms) + 1;
+          nextNext = prevNext + ticksPassed * ms;
         }
         campaign.nextCheckAt = new Date(nextNext).toISOString();
         _preFireNotifiedFor = null; // new cycle — re-arm the pre-fire heads-up
