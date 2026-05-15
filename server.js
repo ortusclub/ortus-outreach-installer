@@ -999,11 +999,26 @@ app.post('/api/bulk-check-now', async (req, res) => {
       try {
         campaignLog(`📡 [${pName}] Sweeping recent connections…`);
         r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn || '', pName);
-        // If primary fields were supplied (manual button clicked from a
-        // wizard with Connect + Introduce Back configured), follow up with
-        // an auto-intro pass while the browser is still open.
+        // v2.14.x: Match the cockpit's "Check now" button — after bulk-check,
+        // also fire auto-intros for any newly-accepted leads. Build the
+        // templates object from req.body fields first (wizard direct call),
+        // then fall back to campaign.templates (live-panel "Bulk Check" button
+        // which has no DOM fields for primary person). Without this fallback,
+        // the button only stamped Connection Accepted but never sent the intro
+        // DM, leaving operators wondering why Bulk Check produced no IC messages.
+        // Note: runAutoIntros reads templates.primaryName / templates.primaryIntroBody
+        // (not top-level params), so we must pass a templates object.
+        const _reqTemplates = {
+          primaryName:      String(primaryName      || '').trim(),
+          primaryIntroBody: String(primaryIntroBody || '').trim(),
+          primaryUrl:       String(primaryUrl       || '').trim(),
+          introTitle:       introTitle || '',
+        };
+        const _effectiveTemplates = (_reqTemplates.primaryName && _reqTemplates.primaryIntroBody)
+          ? _reqTemplates
+          : (campaign.templates || {});
         if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0
-            && primaryName && primaryIntroBody) {
+            && _effectiveTemplates.primaryName && _effectiveTemplates.primaryIntroBody) {
           try {
             await runAutoIntros({
               page: launched.page,
@@ -1012,10 +1027,8 @@ app.post('/api/bulk-check-now', async (req, res) => {
               sheetUrl,
               linkedinColumn: linkedinColumn || '',
               connectedUrls: r.connectedUrls,
-              primaryName: String(primaryName).trim(),
-              primaryIntroBody: String(primaryIntroBody).trim(),
-              primaryUrl: String(primaryUrl || '').trim(),
-              introTitle: introTitle || 'Introduction: {first name} <> {intro name}',
+              templates: _effectiveTemplates,
+              senderFirstNames: campaign.senderFirstNames || {},
               log: campaignLog,
             });
           } catch (introErr) {
