@@ -2059,7 +2059,11 @@ function updatePlaceholderTags() {
   // sender chips. Always rendered (matches how senderFirstName/senderName
   // already show in non-message-only modes); harmless in non-intro
   // campaigns since they substitute to empty strings outside introMode.
-  const extras = ['senderFirstName', 'senderName', 'intro first name', 'intro last name', 'primary name', 'primary url'];
+  // v2.14.x: 'primary first name' / 'primary last name' join the list —
+  // splits primaryName on whitespace in auto-intro.js so operators can
+  // write "Hey {firstName}, let me introduce you {primary first name}"
+  // instead of always rendering the full name.
+  const extras = ['senderFirstName', 'senderName', 'intro first name', 'intro last name', 'primary name', 'primary first name', 'primary last name', 'primary url'];
   document.querySelectorAll('.placeholder-tags').forEach(container => {
     const tags = [...sheetColumns, ...extras].map(col =>
       `<span class="tag" data-val="{${col}}">{${col}}</span>`
