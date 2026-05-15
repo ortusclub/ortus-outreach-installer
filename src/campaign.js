@@ -80,7 +80,7 @@ export const BATCH_SIZE = 5;
  *  180s; env-overridable for stress-testing (LEAD_TIMEOUT_MS=2000 will time
  *  out almost every lead, useful for proving the path).
  */
-const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 180000;
+export const LEAD_TIMEOUT_MS = Number(process.env.LEAD_TIMEOUT_MS) || 180000;
 
 // Hard cap on simultaneously-open browsers (Orbita + local Chromium combined).
 // 2.9.9: dropped from 3 → 2 per Q-protocol decision. Type-agnostic — every
@@ -95,7 +95,7 @@ const MAX_CONCURRENT_PROFILES = Number(process.env.MAX_CONCURRENT_PROFILES) || 2
  */
 const STATE_RETENTION_DAYS = Number(process.env.STATE_RETENTION_DAYS) || 60;
 
-function withWatchdog(promise, timeoutMs, profileId) {
+export function withWatchdog(promise, timeoutMs, profileId) {
   let timer;
   const watchdog = new Promise((_, reject) => {
     timer = setTimeout(() => reject(Object.assign(
