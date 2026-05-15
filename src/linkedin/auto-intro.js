@@ -95,6 +95,14 @@ export async function runAutoIntros({
     if (u) rowByUrl.set(u, r);
   }
 
+  // v2.14.x: split primaryName on whitespace so operators can write
+  // "Hey {firstName}, let me introduce you {primary first name}" instead
+  // of always rendering the full name. Mirrors the intro-name split in
+  // outreach.js:469-484 for the IB path.
+  const primaryTokens    = primaryName.split(/\s+/);
+  const primaryFirstName = primaryTokens[0] || '';
+  const primaryLastName  = primaryTokens.slice(1).join(' ');
+
   log(`  🤝 [${profileName}] Auto-introducing ${connectedUrls.length} new connection(s) to ${primaryName}…`);
   for (const url of connectedUrls) {
     // Build `data` the EXACT same way campaign.js builds it for the IB
@@ -104,10 +112,28 @@ export async function runAutoIntros({
     // matching IB byte-for-byte.
     const row = rowByUrl.get(url) || {};
     const resolvedFirst = senderFirstNames[profileId];
+    // v2.14.x: tolerate every reasonable casing of the name columns —
+    // "First Name" / "first name" / "FIRST NAME" / "First name" /
+    // "firstName" / "first_name". Without this, a column header like
+    // "first name" (lowercase) silently produces an empty firstName and
+    // the intro DM goes out as "Hey , let me introduce you…" with the
+    // lead's name missing. See live-test screenshot 2026-05-15.
+    const leadFirstName = row['First Name'] || row['First name'] || row['first name']
+      || row['FIRST NAME'] || row['firstName'] || row['FirstName'] || row['first_name'] || '';
+    const leadLastName = row['Last Name'] || row['Last name'] || row['last name']
+      || row['LAST NAME'] || row['lastName'] || row['LastName'] || row['last_name'] || '';
     const data = {
       ...row,
-      firstName: row['First Name'] || row['firstName'] || row['first_name'] || '',
-      lastName: row['Last Name'] || row['lastName'] || row['last_name'] || '',
+      firstName: leadFirstName,
+      lastName: leadLastName,
+      // v2.14.x: the default introTitle is `'Introduction: {first name}
+      // <> {intro name}'` (with a space). Without these aliases the
+      // {first name} token never resolves and the thread title renders
+      // as "Introduction:  <> Antonio Varlese" with the lead's name
+      // missing. Mirror the camelCase + with-space dual-flavour pattern
+      // outreach.js uses for intro name.
+      'first name': leadFirstName,
+      'last name': leadLastName,
       company: row['Company'] || row['company'] || '',
       title: row['Title'] || row['title'] || row['Job Title'] || '',
       senderName: profileName || '',
@@ -121,7 +147,22 @@ export async function runAutoIntros({
       'primary name': primaryName,
       primaryUrl: primaryUrl || '',
       'primary url': primaryUrl || '',
+      // v2.14.x: primary-name split — operators can now write just
+      // {primary first name} instead of always {primary name}. All
+      // three naming flavours accepted (with-space label, camelCase,
+      // snake_case) for parity with how outreach.js handles intro name.
+      'primary first name': primaryFirstName,
+      'primaryFirstName':   primaryFirstName,
+      'primary_first_name': primaryFirstName,
+      'primary last name': primaryLastName,
+      'primaryLastName':   primaryLastName,
+      'primary_last_name': primaryLastName,
     };
+    // v2.14.x: diagnostic log — surfaces whether rowByUrl found the lead
+    // and what firstName/lastName resolved to. If the field still comes
+    // up empty after the casing tolerance above, this line tells the
+    // operator exactly which column header to fix in their sheet.
+    log(`     · row matched=${!!rowByUrl.get(url)} firstName="${leadFirstName}" lastName="${leadLastName}"`);
     log(`  ✓ [${profileName}] ${url}: Connection Accepted (stamped at detection)`);
 
     try {
