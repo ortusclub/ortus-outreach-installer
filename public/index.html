@@ -261,7 +261,7 @@
           <input type="text" id="primary-person-url" placeholder="https://www.linkedin.com/in/..." style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
           <div style="font-size:11px; color:var(--gray); margin-top:4px">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
         </div>
-        <div style="font-size:11px; color:var(--gray); margin-top:4px">The intro DM body lives in <strong>Section 5 · Message Templates</strong> below — that's where you'll write it with the variable buttons.</div>
+        <div style="font-size:11px; color:var(--gray); margin-top:4px">The intro DM body and Group Conversation Title live in <strong>Section 5 · Message Templates</strong> below.</div>
       </div>
 
       <!-- v2.14.x: Auto-check cadence (CC+IC only). Sets how often the
@@ -282,6 +282,14 @@
           </select>
         </div>
         <div style="font-size:11px; color:var(--gray); margin-top:8px">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
+      </div>
+
+      <!-- Group Conversation Title — shared by connect_and_introduce and introduce_back.
+           Moved out of nav-introduce-back so CC+IC operators can set it here. -->
+      <div id="intro-title-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
+        <label for="intro-title" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Group conversation title</label>
+        <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
+        <div style="font-size:11px; color:var(--gray); margin-top:4px">Placeholders: <code>{first name}</code>, <code>{intro name}</code>, <code>{intro first name}</code>, <code>{intro last name}</code>, plus any sheet column.</div>
       </div>
 
     </div>
@@ -517,15 +525,10 @@
           <div style="padding:10px 14px; border-left:2px solid var(--gold, #F7BE68); font-size:12px; color:var(--gray); margin-bottom:14px;">
             Adds a third person to a group thread before sending — mirrors the LinkedIn DM Assistant's Option+I flow. Sheet stamp becomes <code style="color:var(--gold,#F7BE68)">sent IC</code> in the DM column. Status still becomes <code style="color:var(--gold,#F7BE68)">DM Sent</code>.
           </div>
-          <div style="margin-bottom:14px">
+          <div>
             <label for="intro-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro person — full LinkedIn name</label>
             <input type="text" id="intro-name" placeholder="e.g. Antonio Varlese" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
             <div style="font-size:11px; color:var(--gray); margin-top:4px">Typed into LinkedIn's recipient typeahead. Must be a 1st-degree connection of every sender that runs this campaign.</div>
-          </div>
-          <div>
-            <label for="intro-title" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Group conversation title</label>
-            <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
-            <div style="font-size:11px; color:var(--gray); margin-top:4px">Placeholders: <code>{first name}</code>, <code>{intro name}</code>, <code>{intro first name}</code>, <code>{intro last name}</code>, plus any sheet column.</div>
           </div>
         </div>
       </div>

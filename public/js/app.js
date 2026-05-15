@@ -1370,6 +1370,8 @@ function onModeChange() {
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   const cadenceBlock = document.getElementById('check-cadence-block');
   if (cadenceBlock) cadenceBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  const introTitleBlock = document.getElementById('intro-title-block');
+  if (introTitleBlock) introTitleBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
