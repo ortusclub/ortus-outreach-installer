@@ -497,7 +497,7 @@ app.post('/api/templates/preview', async (req, res) => {
 function buildCampaignConfig(body) {
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
           delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
-          acceptanceTrackingDays, preflightCheckStatus } = body || {};
+          acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes } = body || {};
   let concurrencyClean = 1;
   if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
     const n = Math.min(5, Number(concurrency));
@@ -517,6 +517,7 @@ function buildCampaignConfig(body) {
     concurrency: concurrencyClean,
     name: typeof name === 'string' ? name : '',
     acceptanceTrackingDays: Math.max(0, Math.min(30, Number(acceptanceTrackingDays) || 0)),
+    checkIntervalMinutes: Math.max(15, Math.min(360, Number(checkIntervalMinutes) || 60)),
     // Honoured only when mode is message_only or introduce_back. campaign.js
     // gates further so other modes silently ignore the flag.
     preflightCheckStatus: !!preflightCheckStatus,
@@ -734,6 +735,19 @@ app.get('/api/monitoring/state', (_req, res) => {
       name: c.name,
     });
   }).catch((err) => res.status(500).json({ error: err.message }));
+});
+
+// v2.14.x: macOS sleep-resume hook. Called by electron/main.js when the
+// system wakes — kicks an immediate tick so an overdue auto-check fires
+// without waiting up to 60s for the next setInterval boundary.
+app.post('/api/monitoring/wake', async (_req, res) => {
+  try {
+    const { tickMonitoringNow } = await import('./src/campaign.js');
+    tickMonitoringNow().catch((err) => console.warn('[wake] tick threw:', err.message));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/campaign/stop', async (req, res) => {
