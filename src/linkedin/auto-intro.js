@@ -21,7 +21,7 @@
 import { performOutreach } from './outreach.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
-import { extractLinkedInUrl, withWatchdog, LEAD_TIMEOUT_MS } from '../campaign.js';
+import { extractLinkedInUrl } from '../campaign.js';
 
 function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -171,26 +171,22 @@ export async function runAutoIntros({
     log(`  ✓ [${profileName}] ${url}: Connection Accepted (stamped at detection)`);
 
     try {
+      // v2.14.x: REVERTED 2026-05-15 — the withWatchdog wrap added in
+      // c13919b created a race condition. JS Promise.race does not
+      // cancel the inner Promise, so when the 180s watchdog fired the
+      // previous performOutreach was still typing — and the next
+      // iteration's page.goto() navigated the page mid-typing,
+      // producing the "typing my name then the profile changes"
+      // symptom in headless/background mode. Restoring the direct
+      // await; INTRO_RECIPIENT_NOT_FOUND retry-once is preserved.
       let introResult;
       let attempt = 0;
       while (attempt < 2) {
         attempt++;
-        try {
-          introResult = await withWatchdog(
-            performOutreach(page, url, { ...tpl, data }, { profileId }, 'force_message'),
-            LEAD_TIMEOUT_MS,
-            profileId,
-          );
-        } catch (watchdogErr) {
-          if (watchdogErr && watchdogErr.kind === 'watchdog') {
-            log(`  ⏱ [${profileName}] Intro DM timed out after ${LEAD_TIMEOUT_MS / 1000}s — ${url}`);
-            introResult = { action: 'skipped', error: 'intro_timeout_watchdog' };
-            break; // watchdog timeout — don't retry
-          }
-          throw watchdogErr;
-        }
+        introResult = await performOutreach(
+          page, url, { ...tpl, data }, { profileId }, 'force_message',
+        );
 
-        // Check for transient typeahead miss — retry once before giving up.
         const errStr = String(introResult?.error || '');
         if (attempt < 2 && errStr.includes('INTRO_RECIPIENT_NOT_FOUND')) {
           log(`  ↻ [${profileName}] ${url}: typeahead miss, retrying once…`);
