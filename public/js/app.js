@@ -4226,7 +4226,7 @@ function initRunBarMirror() {
         rpStatusSub.textContent = `${mode} · ${profile} · ${today}/${total}`;
       } else if (monitoring) {
         if (__cockpit.monitoringCheckInProgress) {
-          rpStatusSub.textContent = 'Checking now…';
+          rpStatusSub.textContent = 'checking now…';
         } else {
           const now = Date.now();
           const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
