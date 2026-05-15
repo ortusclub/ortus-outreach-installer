@@ -275,6 +275,9 @@ function normalizeSkipReason(msg) {
   if (lower.includes('login page detected') || lower.includes('session expired')) return 'Skipped: Session expired';
   if (lower.includes('email required')) return 'Skipped: Email required';
   if (lower.includes('connect button not found')) return 'Skipped: Connect button not found';
+  // v2.14.x: modal cross-check detected we clicked Connect for someone
+  // other than the profile owner (e.g. a sidebar firstName collision).
+  if (lower.includes('connect_modal_wrong_person')) return 'Skipped: Connect modal opened for wrong person';
   if (lower.includes('send not confirmed') || lower.includes('send_not_confirmed')) return 'Skipped: Send not confirmed';
   // v2.10.0 — VOYAGER_REJECTED carries the HTTP status + LinkedIn's own error reason.
   // v2.14.x — 429 is overwhelmingly the weekly invitation cap (see the

@@ -645,6 +645,49 @@ export async function sendConnectionRequest(page, noteArg) {
         }
       }
 
+      // METHOD 3 (v2.14.x): DOM-anchored structural fallback.
+      // Ported from LinkedIn QuickConnect extension's findProfileActionButton.
+      // Anchors search to the profile top-card region (derived from main h1)
+      // and rejects sidebar / recommendation containers. Catches the case
+      // where LinkedIn renders the Connect CTA without an "Invite ... to
+      // connect" aria-label (e.g. profile re-layouts, A/B test variants) —
+      // METHOD 1+2 would miss those. Less bot-detectable approaches first
+      // (aria-scan), DOM walking only when those fail.
+      const main = document.querySelector('main');
+      const topCardH1 = main?.querySelector('h1');
+      const topCard = topCardH1?.closest(
+        '.pv-top-card, .pv-profile-card, .ph5.pb5, section.artdeco-card, section, article'
+      );
+      const structuralRoot = topCard || main;
+      if (structuralRoot) {
+        const isSidebarOrSuggestion = (el) => !!el.closest([
+          'aside',
+          '[role="complementary"]',
+          '.scaffold-layout__aside',
+          '.scaffold-layout__sidebar',
+          '[aria-label*="People also viewed"]',
+          '[aria-label*="People you may know"]',
+          '[aria-label*="Similar profiles"]',
+          '[aria-label*="More profiles for you"]',
+          '[aria-label*="Other profiles viewed"]',
+        ].join(','));
+        const candidates = Array.from(
+          structuralRoot.querySelectorAll('button, a[role="button"]')
+        );
+        for (const b of candidates) {
+          if (isSidebarOrSuggestion(b)) continue;
+          if (b.disabled || b.getAttribute('aria-disabled') === 'true') continue;
+          const rect = b.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) continue;
+          const t = (b.textContent || '').trim().toLowerCase();
+          const a = (b.getAttribute('aria-label') || '').toLowerCase();
+          if (t === 'connect' || a === 'connect') {
+            b.click();
+            return 'top-card-structural';
+          }
+        }
+      }
+
       // NO OTHER FALLBACKS — if neither matched, go to More dropdown
       return null;
     });
@@ -782,6 +825,50 @@ export async function sendConnectionRequest(page, noteArg) {
         addNote: modal.hasAddNote, sendWithout: modal.hasSendWithout,
         send: modal.hasSend, withdraw: modal.hasWithdraw,
       }));
+
+      // v2.14.x: first-name cross-check between the modal's invitee name
+      // and the profile owner's first name. Defends against the case
+      // where METHOD 1/2/3 click a Connect button outside the profile's
+      // top card (e.g. a sidebar suggestion whose firstName collides
+      // with the lead). LinkedIn's invitation modal contains copy like
+      // "Personalize your invitation to <Name>" / "Add a note to
+      // <Name>'s invitation" — we extract <Name>, take its first token,
+      // compare to the profile h1's first token. Mismatch → dismiss
+      // the modal and throw so we never send to the wrong person.
+      // Operator-chosen policy: first-name-only (lower false-positive
+      // risk than full-name match). Skipped silently when the modal
+      // doesn't expose a recognizable invitee name, or when h1 is
+      // empty — no behaviour change from prior runs in those cases.
+      const nameCheck = await page.evaluate(() => {
+        const dialogs = document.querySelectorAll('[role="dialog"], .artdeco-modal');
+        let modalInvitee = '';
+        for (const d of dialogs) {
+          const r = d.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) continue;
+          const text = d.innerText || '';
+          const m = text.match(/invitation to ([^\n.]+?)(?: by adding| by | \.)/i)
+                 || text.match(/Add a note to ([^\n.]+?)(?:'s invitation|\.|$)/im)
+                 || text.match(/Personalize your invitation to ([^\n.]+?)(?:\b|\.)/i);
+          if (m) { modalInvitee = m[1].trim(); break; }
+        }
+        const h1 = document.querySelector('main h1') || document.querySelector('h1');
+        const profileName = h1
+          ? h1.textContent.trim().split('\n')[0].trim().toLowerCase()
+          : '';
+        const profileFirst = profileName.split(/\s+/)[0] || '';
+        const modalFirst = (modalInvitee || '').toLowerCase().split(/\s+/)[0] || '';
+        return { modalInvitee, profileFirst, modalFirst };
+      });
+      if (nameCheck.modalFirst && nameCheck.profileFirst &&
+          nameCheck.modalFirst !== nameCheck.profileFirst) {
+        console.warn(`[actions] ⚠ Modal name mismatch — profile="${nameCheck.profileFirst}" modal="${nameCheck.modalFirst}" ("${nameCheck.modalInvitee}"). Dismissing modal and aborting.`);
+        await clickByAria(page, 'Dismiss').catch(() => {});
+        await clickByText(page, 'Cancel').catch(() => {});
+        throw new Error(`CONNECT_MODAL_WRONG_PERSON: clicked Connect for wrong profile (modal opened for "${nameCheck.modalInvitee}", expected first-name "${nameCheck.profileFirst}")`);
+      }
+      if (nameCheck.modalFirst && nameCheck.profileFirst) {
+        console.log(`[actions] ✓ Modal name check passed: ${nameCheck.modalFirst}`);
+      }
 
       // Withdraw → already pending
       if (modal.hasWithdraw) {
