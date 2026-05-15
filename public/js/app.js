@@ -2399,10 +2399,9 @@ async function startCampaign() {
     const _pName = (document.getElementById('primary-person-name')?.value || '').trim();
     const _pUrl  = (document.getElementById('primary-person-url')?.value  || '').trim();
     const _pBody = (document.getElementById('primary-intro-body')?.value || '').trim();
-    if (!_pName || !_pUrl || !_pBody) {
+    if (!_pName || !_pBody) {
       const missing = [];
       if (!_pName) missing.push('• Primary Person · Full name');
-      if (!_pUrl)  missing.push('• Primary Person · LinkedIn URL');
       if (!_pBody) missing.push('• Intro DM Body');
       alert(
         'Connect + Introduce Back can\'t start without the primary person.\n\n' +
@@ -2410,7 +2409,7 @@ async function startCampaign() {
         'Without these, accepted invites can\'t be auto-introduced to anyone. ' +
         'Fill in the missing field(s) and try again.'
       );
-      const firstEmpty = !_pName ? 'primary-person-name' : (!_pUrl ? 'primary-person-url' : 'primary-intro-body');
+      const firstEmpty = !_pName ? 'primary-person-name' : 'primary-intro-body';
       const el = document.getElementById(firstEmpty);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
