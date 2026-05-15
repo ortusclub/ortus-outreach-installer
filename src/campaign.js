@@ -2976,6 +2976,9 @@ export function getCampaignStatus() {
     state: campaign.state || 'idle',
     monitoringUntil: campaign.monitoringUntil || null,
     nextCheckAt: campaign.nextCheckAt || null,
+    // v2.14.x: surface the tick re-entrancy guard so the cockpit + run-bar
+    // can flip to "Checking now…" while a bulk-check is mid-fire.
+    monitoringCheckInProgress: _checkInProgress,
     participatingProfileIds: campaign.participatingProfileIds || [],
     currentAction: campaign.currentAction,
     currentProfile: campaign.currentProfile,

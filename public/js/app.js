@@ -2727,6 +2727,7 @@ const __cockpit = {
   monitoringUntil: null,
   nextCheckAt: null,
   participatingProfileIds: [],
+  monitoringCheckInProgress: false,
   profileIds: [],
   profileNames: [],
 };
@@ -2758,6 +2759,7 @@ function updateCockpit(s) {
   __cockpit.state = s.state || 'idle';
   __cockpit.monitoringUntil = s.monitoringUntil || null;
   __cockpit.nextCheckAt = s.nextCheckAt || null;
+  __cockpit.monitoringCheckInProgress = !!s.monitoringCheckInProgress;
   __cockpit.participatingProfileIds = s.participatingProfileIds || [];
   __cockpit.profileIds = s.profileIds || [];
   __cockpit.profileNames = s.profileNames || [];
@@ -2797,7 +2799,7 @@ function renderCockpit() {
     tag.textContent = 'MONITORING';
     dot.classList.remove('live', 'paused-dot');
     dot.classList.add('monitoring');
-    action.textContent = 'Watching for acceptances';
+    action.textContent = __cockpit.monitoringCheckInProgress ? 'Checking now…' : 'Watching for acceptances';
     if (lead) {
       lead.textContent = next
         ? `${_cockpitHHMM(next)} · in ${_cockpitFmtRemaining(Math.max(0, next.getTime() - now))}`
@@ -4195,12 +4197,17 @@ function initRunBarMirror() {
       // v2.13.14 — surface monitoring countdown in the sticky toolbar.
       // Matches the format in the Schedule card so the operator sees
       // the same "next 04:35 · ends in 6d 23h" no matter where they look.
-      const now = Date.now();
-      const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
-      const until = __cockpit.monitoringUntil ? new Date(__cockpit.monitoringUntil) : null;
-      const nextStr = _cockpitHHMM(next);
-      const endsStr = until ? _cockpitFmtRemaining(until.getTime() - now) : '—';
-      txt.innerHTML = `<strong>Monitoring</strong> <span class="run-bar-meta-mono">next ${nextStr} · ends in ${endsStr}</span>`;
+      // v2.14.x — when a bulk-check is mid-fire, swap to "checking now…".
+      if (__cockpit.monitoringCheckInProgress) {
+        txt.innerHTML = `<strong>Monitoring</strong> <span class="run-bar-meta-mono">checking now…</span>`;
+      } else {
+        const now = Date.now();
+        const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
+        const until = __cockpit.monitoringUntil ? new Date(__cockpit.monitoringUntil) : null;
+        const nextStr = _cockpitHHMM(next);
+        const endsStr = until ? _cockpitFmtRemaining(until.getTime() - now) : '—';
+        txt.innerHTML = `<strong>Monitoring</strong> <span class="run-bar-meta-mono">next ${nextStr} · ends in ${endsStr}</span>`;
+      }
     } else {
       txt.textContent = 'Idle';
     }
@@ -4218,10 +4225,14 @@ function initRunBarMirror() {
       if (running) {
         rpStatusSub.textContent = `${mode} · ${profile} · ${today}/${total}`;
       } else if (monitoring) {
-        const now = Date.now();
-        const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
-        const until = __cockpit.monitoringUntil ? new Date(__cockpit.monitoringUntil) : null;
-        rpStatusSub.textContent = `next ${_cockpitHHMM(next)} · ends in ${until ? _cockpitFmtRemaining(until.getTime() - now) : '—'}`;
+        if (__cockpit.monitoringCheckInProgress) {
+          rpStatusSub.textContent = 'Checking now…';
+        } else {
+          const now = Date.now();
+          const next = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt) : null;
+          const until = __cockpit.monitoringUntil ? new Date(__cockpit.monitoringUntil) : null;
+          rpStatusSub.textContent = `next ${_cockpitHHMM(next)} · ends in ${until ? _cockpitFmtRemaining(until.getTime() - now) : '—'}`;
+        }
       } else {
         rpStatusSub.textContent = 'No campaign running';
       }
