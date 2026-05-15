@@ -976,6 +976,18 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._skipCleanup = false;
+  // v2.14.x: reset monitoring state machine fields on every new run.
+  // Without this, a prior run that reached "Monitoring ended" sets
+  // campaign.state = 'done' (campaign.js:3072), which then carries over
+  // to the next CC+IC run and causes transitionToMonitoring to early-
+  // return silently (campaign-state-transitions.js:12). Symptom in the
+  // field: fresh CC+IC campaign reaches 3/3, logs "Campaign ended", but
+  // the cockpit stays IDLE instead of flipping to Monitoring.
+  campaign.state = null;
+  campaign.sendingEndedAt = null;
+  campaign.monitoringUntil = null;
+  campaign.nextCheckAt = null;
+  campaign.participatingProfileIds = [];
   campaign._paused = false;
   campaign._pauseRequested = false;
   campaign.currentProfile = null;
