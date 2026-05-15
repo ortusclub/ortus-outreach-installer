@@ -960,7 +960,7 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, createdBy = null }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
@@ -998,6 +998,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.senderFirstNames = senderFirstNames || {};
   campaign.sheetUrl = sheetUrl || '';
   campaign.linkedinColumn = linkedinColumn || '';
+  // v2.14.x: operator-chosen cadence for the monitoring auto-trigger.
+  // Read by transitionToMonitoring (initial nextCheckAt) and by
+  // tickMonitoringNow (reschedule after each fire). Persisted via
+  // monitoring-persistence so post-restart rehydration honors it.
+  campaign.checkIntervalMinutes = checkIntervalMinutes;
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
@@ -3062,26 +3067,75 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
 }
 
 /**
- * v2.14 — T+7d auto-end watcher. Polls every 60s. When the active campaign
- * is in monitoring state and the 7-day window has elapsed, fires
- * stopMonitoring({ reason: 'window-elapsed' }) automatically.
+ * v2.14 — Module-level tick callback. Two duties on each fire:
+ *   1. T+7d auto-end: if monitoringUntil has elapsed, stop monitoring.
+ *   2. Auto-check: if nextCheckAt is overdue, fire runMonitoringCheckAll
+ *      and reschedule nextCheckAt by the operator-chosen cadence.
+ *
+ * Re-entrancy guard (_checkInProgress) prevents double-fire when the bulk
+ * check takes longer than the heartbeat interval.
+ *
+ * The `_testStub` param is for unit tests only — when provided, it
+ * replaces runMonitoringCheckAll. Production callers omit it.
  */
 let _monitoringWatcherTimer = null;
+let _checkInProgress = false;
+
+export async function tickMonitoringNow({ _testStub = null } = {}) {
+  try {
+    if (campaign.state !== 'monitoring') return;
+
+    // Duty 1: 7-day window expiry (existing behavior)
+    if (campaign.monitoringUntil) {
+      const until = new Date(campaign.monitoringUntil).getTime();
+      if (Date.now() >= until) {
+        await stopMonitoring({ reason: 'window-elapsed' }).catch((err) => {
+          console.warn('[monitoring-tick] stopMonitoring threw:', err.message);
+        });
+        return;
+      }
+    }
+
+    // Duty 2: fire bulk-check + auto-intros when nextCheckAt is overdue
+    if (!campaign.nextCheckAt) return;
+    if (Date.now() < new Date(campaign.nextCheckAt).getTime()) return;
+    if (_checkInProgress) return;
+
+    _checkInProgress = true;
+    const cadenceMin = campaign.checkIntervalMinutes || 60;
+    const ts = `[${new Date().toISOString()}]`;
+    campaign.logs = campaign.logs || [];
+    campaign.logs.push(`${ts} 🛏 Monitoring · auto-check starting (cadence=${cadenceMin}m)`);
+
+    try {
+      if (_testStub) {
+        await _testStub();
+      } else {
+        await runMonitoringCheckAll();
+      }
+    } catch (err) {
+      console.warn('[monitoring-tick] runMonitoringCheckAll threw:', err.message);
+    } finally {
+      // Reschedule ONLY if still in monitoring state (operator may have stopped mid-fire)
+      if (campaign.state === 'monitoring') {
+        const ms = (campaign.checkIntervalMinutes || 60) * 60_000;
+        campaign.nextCheckAt = new Date(Date.now() + ms).toISOString();
+        try { await writeMonitoringState(campaign); } catch { /* */ }
+        const hhmm = (d) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        campaign.logs.push(`[${new Date().toISOString()}] 🛏 Monitoring · next check at ${hhmm(new Date(campaign.nextCheckAt))}`);
+      }
+      _checkInProgress = false;
+    }
+  } catch (err) {
+    console.warn('[monitoring-tick] outer threw:', err.message);
+    _checkInProgress = false;
+  }
+}
+
 export function startMonitoringWatcher() {
   if (_monitoringWatcherTimer) return;
   _monitoringWatcherTimer = setInterval(() => {
-    try {
-      if (campaign.state === 'monitoring' && campaign.monitoringUntil) {
-        const until = new Date(campaign.monitoringUntil).getTime();
-        if (Date.now() >= until) {
-          stopMonitoring({ reason: 'window-elapsed' }).catch((err) => {
-            console.warn('[monitoring-watcher] stopMonitoring threw:', err.message);
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('[monitoring-watcher] tick threw:', err.message);
-    }
+    tickMonitoringNow().catch((err) => console.warn('[monitoring-watcher] tick threw:', err.message));
   }, 60 * 1000);
 }
 
