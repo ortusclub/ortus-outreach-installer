@@ -11,14 +11,15 @@ export function computeMonitoringUntil(sendingEndedAt) {
 }
 
 /**
- * Returns the next 6h check boundary strictly AFTER `now`, measured from
+ * Returns the next cadence boundary strictly AFTER `now`, measured from
  * `sendingEndedAt`. If `now` lands exactly on a boundary, returns the next
- * one (strict >).
+ * one (strict >). `cadenceMin` defaults to 360 (6h) for backward compat.
  */
-export function recomputeNextCheckAt(sendingEndedAt, now) {
+export function recomputeNextCheckAt(sendingEndedAt, now, cadenceMin = 360) {
   const s = _toDate(sendingEndedAt).getTime();
   const n = _toDate(now).getTime();
   const elapsed = n - s;
-  const ticksPassed = Math.floor(elapsed / CHECK_INTERVAL_MS) + 1;
-  return new Date(s + ticksPassed * CHECK_INTERVAL_MS);
+  const intervalMs = cadenceMin * 60_000;
+  const ticksPassed = Math.floor(elapsed / intervalMs) + 1;
+  return new Date(s + ticksPassed * intervalMs);
 }
