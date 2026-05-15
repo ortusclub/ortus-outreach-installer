@@ -17,8 +17,9 @@ export function transitionToMonitoring(campaign, { now, participatingProfileIds 
 
   const sendingEndedAt = new Date(now);
   const monitoringUntil = computeMonitoringUntil(sendingEndedAt);
-  const nextCheckAt = recomputeNextCheckAt(sendingEndedAt, sendingEndedAt);
-  const logs = [...(campaign.logs || []), `${_logTs(sendingEndedAt)} 🛏 Monitoring started · next check at ${_hhmm(nextCheckAt)}`];
+  const cadenceMin = campaign.checkIntervalMinutes || 60;
+  const nextCheckAt = recomputeNextCheckAt(sendingEndedAt, sendingEndedAt, cadenceMin);
+  const logs = [...(campaign.logs || []), `${_logTs(sendingEndedAt)} 🛏 Monitoring started · next check at ${_hhmm(nextCheckAt)} (cadence=${cadenceMin}m)`];
 
   return {
     ...campaign,
@@ -28,5 +29,7 @@ export function transitionToMonitoring(campaign, { now, participatingProfileIds 
     nextCheckAt: nextCheckAt.toISOString(),
     participatingProfileIds: [...participatingProfileIds],
     logs,
+    // Persist the resolved cadence so post-restart rehydration uses it.
+    checkIntervalMinutes: cadenceMin,
   };
 }

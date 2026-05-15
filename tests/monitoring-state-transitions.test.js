@@ -16,7 +16,7 @@ test('transitionToMonitoring: connect_and_introduce → state=monitoring with al
   assert.equal(out.state, 'monitoring');
   assert.equal(out.sendingEndedAt, now.toISOString());
   assert.equal(out.monitoringUntil, '2026-05-20T01:31:45.000Z');
-  assert.equal(out.nextCheckAt, '2026-05-13T07:31:45.000Z');
+  assert.equal(out.nextCheckAt, '2026-05-13T02:31:45.000Z');
   assert.deepEqual(out.participatingProfileIds, ['p1', 'p2']);
 });
 
@@ -42,7 +42,7 @@ test('transitionToMonitoring appends a "Monitoring started" log line with next-c
   const out = transitionToMonitoring(campaign, { now, participatingProfileIds: ['p1'] });
   const last = out.logs[out.logs.length - 1];
   assert.match(last, /Monitoring started/);
-  const expectedNextCheck = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+  const expectedNextCheck = new Date(now.getTime() + 60 * 60 * 1000);
   const hh = String(expectedNextCheck.getHours()).padStart(2, '0');
   const mm = String(expectedNextCheck.getMinutes()).padStart(2, '0');
   assert.ok(last.includes(`${hh}:${mm}`), `expected log to contain "${hh}:${mm}", got: ${last}`);
