@@ -125,19 +125,32 @@ export async function runAutoIntros({
 
     try {
       let introResult;
-      try {
-        introResult = await withWatchdog(
-          performOutreach(page, url, { ...tpl, data }, { profileId }, 'force_message'),
-          LEAD_TIMEOUT_MS,
-          profileId,
-        );
-      } catch (watchdogErr) {
-        if (watchdogErr && watchdogErr.kind === 'watchdog') {
-          log(`  ⏱ [${profileName}] Intro DM timed out after ${LEAD_TIMEOUT_MS / 1000}s — ${url}`);
-          introResult = { action: 'skipped', error: 'intro_timeout_watchdog' };
-        } else {
+      let attempt = 0;
+      while (attempt < 2) {
+        attempt++;
+        try {
+          introResult = await withWatchdog(
+            performOutreach(page, url, { ...tpl, data }, { profileId }, 'force_message'),
+            LEAD_TIMEOUT_MS,
+            profileId,
+          );
+        } catch (watchdogErr) {
+          if (watchdogErr && watchdogErr.kind === 'watchdog') {
+            log(`  ⏱ [${profileName}] Intro DM timed out after ${LEAD_TIMEOUT_MS / 1000}s — ${url}`);
+            introResult = { action: 'skipped', error: 'intro_timeout_watchdog' };
+            break; // watchdog timeout — don't retry
+          }
           throw watchdogErr;
         }
+
+        // Check for transient typeahead miss — retry once before giving up.
+        const errStr = String(introResult?.error || '');
+        if (attempt < 2 && errStr.includes('INTRO_RECIPIENT_NOT_FOUND')) {
+          log(`  ↻ [${profileName}] ${url}: typeahead miss, retrying once…`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        break;
       }
       const ok = introResult && (introResult.action === 'message_sent' || introResult.action === 'already_processed');
       // On successful intro, also stamp cc='Connected' (and its mirror fields)
