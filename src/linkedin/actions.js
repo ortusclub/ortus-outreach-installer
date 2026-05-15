@@ -1270,7 +1270,18 @@ export async function sendMessage(page, message) {
   // ── Honest verification (preserved from 2.8.46) ──
   // Old logic falsely returned "sent" whenever a class selector didn't
   // match. Now we require positive proof.
-  await new Promise(r => setTimeout(r, 2500));
+  //
+  // v2.14.x: bumped the post-Send wait from 2500ms → 7500ms. On
+  // 2026-05-15 we caught a confirmed false-negative for Dianne (IC DM):
+  // the bot reported MESSAGE_SEND_FAILED, but the user's manual check of
+  // the LinkedIn thread showed the message had landed within seconds.
+  // LinkedIn's "compose → thread" DOM transition can take 3-8s on slow
+  // GoLogin profiles — the OLD composer still has the body text while
+  // the NEW thread-view composer (empty) hasn't yet replaced it, AND
+  // the just-sent message hasn't yet appeared in .msg-s-event-listitem.
+  // 7.5s window covers the slow-transition case without sacrificing
+  // happy-path throughput meaningfully.
+  await new Promise(r => setTimeout(r, 7500));
   const verified = await page.evaluate((sentText) => {
     const editor = document.querySelector(
       'div[role="textbox"][aria-label*="Write a message" i], ' +
@@ -1677,7 +1688,10 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
   }
 
   // ── Step 5: honest verification (same as sendMessage) ──
-  await new Promise(r => setTimeout(r, 2500));
+  // v2.14.x: bumped 2500ms → 7500ms to fix the IC DM / IB false-negative
+  // caught for Dianne on 2026-05-15. See the matching comment in
+  // sendMessage above for the full rationale.
+  await new Promise(r => setTimeout(r, 7500));
   const verified = await page.evaluate((sentText) => {
     const editor = document.querySelector(
       'div[role="textbox"][aria-label*="Write a message" i], ' +
