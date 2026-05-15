@@ -3142,7 +3142,23 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
       // Reschedule ONLY if still in monitoring state (operator may have stopped mid-fire)
       if (campaign.state === 'monitoring') {
         const ms = (campaign.checkIntervalMinutes || 60) * 60_000;
-        campaign.nextCheckAt = new Date(Date.now() + ms).toISOString();
+        // v2.14.x: schedule the next tick from the PREVIOUS nextCheckAt
+        // boundary, not from "now" (which is whenever the bulk-check
+        // happened to finish). Without this, a 1-2 min bulk-check
+        // compounded drift on every cycle (15min → 17min → 19min → …).
+        // If the bulk-check ran long and the next boundary is already in
+        // the past, advance forward by whole intervals so the watcher
+        // fires immediately on the next 60s tick to catch up.
+        const prevNext = campaign.nextCheckAt ? new Date(campaign.nextCheckAt).getTime() : Date.now();
+        let nextNext = prevNext + ms;
+        const _now = Date.now();
+        if (nextNext <= _now) {
+          // Skipped one or more cadence boundaries — advance to the next
+          // boundary strictly after now.
+          const missed = Math.ceil((_now - prevNext) / ms);
+          nextNext = prevNext + (missed + 1) * ms;
+        }
+        campaign.nextCheckAt = new Date(nextNext).toISOString();
         try { await writeMonitoringState(campaign); } catch { /* */ }
         const hhmm = (d) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         campaign.logs.push(`[${new Date().toISOString()}] 🛏 Monitoring · next check at ${hhmm(new Date(campaign.nextCheckAt))}`);
