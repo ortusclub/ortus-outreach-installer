@@ -264,6 +264,26 @@
         <div style="font-size:11px; color:var(--gray); margin-top:4px">The intro DM body lives in <strong>Section 5 · Message Templates</strong> below — that's where you'll write it with the variable buttons.</div>
       </div>
 
+      <!-- v2.14.x: Auto-check cadence (CC+IC only). Sets how often the
+           monitoring watcher fires the bulk-check + auto-intro DM during
+           the 7-day acceptance window. -->
+      <div id="check-cadence-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
+        <div style="font-family:var(--display); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:14px;">Auto-check &amp; intro cadence</div>
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+          <span style="font-size:0.95rem; color:var(--ink);">Every</span>
+          <select id="check-cadence-select" style="background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:6px 0; font-family:var(--body); font-size:0.95rem; outline:none;">
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60" selected>1 hour</option>
+            <option value="90">1.5 hours</option>
+            <option value="120">2 hours</option>
+            <option value="180">3 hours</option>
+            <option value="360">6 hours</option>
+          </select>
+        </div>
+        <div style="font-size:11px; color:var(--gray); margin-top:8px">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
+      </div>
+
     </div>
 
     <!-- ── Rate & Limits (extracted from Choose a Campaign) ── -->

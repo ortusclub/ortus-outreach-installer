@@ -1368,6 +1368,8 @@ function onModeChange() {
   if (op) op.style.display = 'none';
   if (intro) intro.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  const cadenceBlock = document.getElementById('check-cadence-block');
+  if (cadenceBlock) cadenceBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -2511,6 +2513,14 @@ async function startCampaign() {
       document.getElementById('preflight-check-toggle-mo')?.checked ||
       document.getElementById('preflight-check-toggle-ib')?.checked
     ),
+    // v2.14.x: operator-chosen cadence for the monitoring auto-trigger.
+    // Only relevant for CC+IC mode; server clamps to [15, 360] and ignores
+    // the field for non-CC+IC modes.
+    checkIntervalMinutes: (() => {
+      if (mode !== 'connect_and_introduce') return undefined;
+      const v = parseInt(document.getElementById('check-cadence-select')?.value, 10);
+      return Number.isFinite(v) ? v : 60;
+    })(),
   };
 
   await submitStartCampaign(body);
