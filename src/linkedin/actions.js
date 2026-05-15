@@ -457,22 +457,50 @@ async function typeIntoField(page, text) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function clickConnectFromMore(page) {
-  console.log('[actions] Opening More dropdown…');
+  console.log('[actions] Opening profile More dropdown…');
 
-  // Step 1: Click the More button via JS
+  // v2.14.x: Bug 1 fix — anchor the More-button search to the profile
+  // top-card region. Previously this was a global document scan that
+  // matched the NAV BAR "More" button (For Business / Premium menu)
+  // because it appears earlier in DOM order than the profile's "..."
+  // button. The bot then opened the nav menu and looked for "Connect"
+  // inside it — never found, retry loop burned 30s, lead failed.
+  // Repro: /tmp/dev-app.log @ 2026-05-15T21:01 (pravin-bisen).
+  // Aria-label variants from the QuickConnect extension's findProfileActionButton.
   const moreClicked = await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const more = buttons.find(b => {
+    const h1 = document.querySelector('main h1');
+    const topCard = h1?.closest(
+      '.pv-top-card, .pv-profile-card, .ph5.pb5, section.artdeco-card, section, article'
+    );
+    const root = topCard || document.querySelector('main');
+    if (!root) return false;
+
+    const isSidebarOrSuggestion = (el) => !!el.closest([
+      'aside',
+      '[role="complementary"]',
+      '.scaffold-layout__aside',
+      '.scaffold-layout__sidebar',
+      '[aria-label*="People also viewed"]',
+      '[aria-label*="People you may know"]',
+      '[aria-label*="Similar profiles"]',
+      '[aria-label*="More profiles for you"]',
+      '[aria-label*="Other profiles viewed"]',
+    ].join(','));
+
+    const buttons = Array.from(root.querySelectorAll('button'));
+    const more = buttons.find((b) => {
+      if (isSidebarOrSuggestion(b)) return false;
       const a = (b.getAttribute('aria-label') || '').toLowerCase();
       const t = (b.textContent || '').trim().toLowerCase();
-      return a === 'more actions' || a === 'more' || t === 'more';
+      return a === 'more actions' || a === 'more' || a === 'more options'
+          || a === 'see more actions' || t === 'more' || t === '…' || t === '...';
     });
     if (more) { more.click(); return true; }
     return false;
   });
 
   if (!moreClicked) {
-    console.log('[actions] More button not found.');
+    console.log('[actions] Profile More button not found in top-card region.');
     return false;
   }
 
@@ -480,31 +508,49 @@ async function clickConnectFromMore(page) {
   console.log('[actions] More clicked. Waiting 5s for dropdown…');
   await new Promise(r => setTimeout(r, 5000));
 
-  // Step 3: Find and click "Connect" in dropdown via JS
-  const connectClicked = await page.evaluate(() => {
-    // Search dropdown items — look for exact "Connect" text
+  // Step 3: Inspect dropdown for Connect OR Pending. Return one of:
+  //   'connect'  → Connect item found and clicked
+  //   'pending'  → Pending item found (invitation already sent — caller
+  //                should treat this as 'already_processed', NOT retry)
+  //   null       → neither found
+  //
+  // v2.14.x Bug 2 fix: previously this only scanned for "Connect" text.
+  // For 3rd-degree profiles where the operator already sent a connection,
+  // the menu shows "Pending" where "Connect" used to be (per the
+  // 2026-05-15 screenshot for pravin-bisen). Without this detection the
+  // retry loop times out → misleading "Connect button not found" skip.
+  const menuResult = await page.evaluate(() => {
     const selectors = 'li, [role="menuitem"], [role="option"], .artdeco-dropdown__item';
-    const items = Array.from(document.querySelectorAll(selectors));
 
-    for (const el of items) {
-      const text = (el.textContent || '').trim();
-      if (text === 'Connect') {
-        el.click();
-        return 'dom';
+    const matchText = (root) => {
+      const items = Array.from(root.querySelectorAll(selectors));
+      for (const el of items) {
+        const text = (el.textContent || '').trim();
+        if (text === 'Connect') { el.click(); return 'connect'; }
+        // Pending detection — exact "Pending" item, accounts for case
+        // where the menu spans wrap text and contain only the word.
+        if (text === 'Pending') return 'pending';
       }
-    }
+      return null;
+    };
 
-    // Try spans inside the actual dropdown container only
+    let r = matchText(document);
+    if (r) return r;
+
+    // Try spans inside the visible dropdown container only
     const dropdowns = document.querySelectorAll('.artdeco-dropdown__content, [role="menu"], .artdeco-dropdown__content--is-open');
     for (const dropdown of dropdowns) {
-      if (!dropdown.offsetWidth) continue; // skip hidden dropdowns
+      if (!dropdown.offsetWidth) continue;
       const spans = dropdown.querySelectorAll('span, div, a');
       for (const el of spans) {
         const text = (el.textContent || '').trim();
         if (text === 'Connect' && el.offsetWidth > 0) {
           const parent = el.closest('li') || el.closest('[role="menuitem"]') || el;
           parent.click();
-          return 'dropdown-connect';
+          return 'connect';
+        }
+        if (text === 'Pending' && el.offsetWidth > 0) {
+          return 'pending';
         }
       }
     }
@@ -512,22 +558,22 @@ async function clickConnectFromMore(page) {
     // Shadow DOM dropdown
     const outlet = document.getElementById('interop-outlet');
     if (outlet?.shadowRoot) {
-      const shadowItems = Array.from(outlet.shadowRoot.querySelectorAll(selectors));
-      for (const el of shadowItems) {
-        const text = (el.textContent || '').trim();
-        if (text === 'Connect') {
-          el.click();
-          return 'shadow';
-        }
-      }
+      const r2 = matchText(outlet.shadowRoot);
+      if (r2) return r2;
     }
 
     return null;
   });
 
-  if (connectClicked) {
-    console.log(`[actions] ✓ Connect clicked from dropdown (${connectClicked}).`);
-    return true;
+  if (menuResult === 'connect') {
+    console.log('[actions] ✓ Connect clicked from profile dropdown.');
+    return 'connect';
+  }
+  if (menuResult === 'pending') {
+    console.log('[actions] ⏳ Pending item found in profile dropdown — invitation already sent to this lead.');
+    // Close dropdown
+    await page.evaluate(() => document.body.click());
+    return 'pending';
   }
 
   // Debug: log what IS in the dropdown
@@ -541,8 +587,8 @@ async function clickConnectFromMore(page) {
 
   // Close dropdown
   await page.evaluate(() => document.body.click());
-  console.log('[actions] Connect not in dropdown.');
-  return false;
+  console.log('[actions] Neither Connect nor Pending in profile dropdown.');
+  return null;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -613,11 +659,22 @@ export async function sendConnectionRequest(page, noteArg) {
 
     // PRIORITY 2: Only try More dropdown if direct button wasn't found
     console.log(`[actions] No direct Connect — trying More dropdown… (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
-    connectClicked = await clickConnectFromMore(page);
-    if (connectClicked) {
+    const moreResult = await clickConnectFromMore(page);
+    if (moreResult === 'connect') {
+      connectClicked = true;
       console.log('[actions] Waiting 5s for modal…');
       await new Promise(r => setTimeout(r, 5000));
       break;
+    }
+    if (moreResult === 'pending') {
+      // v2.14.x Bug 2 fix: Pending state was found in the profile More
+      // dropdown — the invitation has already been sent to this lead.
+      // Throw a specific error that outreach.js maps to
+      // { action: 'already_processed' } so the row gets stamped Stage =
+      // 'Connect Pending' / Connection Request Status = 'Connection
+      // Request Sent' instead of the misleading "Connect button not
+      // found" we used to emit.
+      throw new Error('INVITATION_ALREADY_PENDING');
     }
 
     // Neither found — wait and retry

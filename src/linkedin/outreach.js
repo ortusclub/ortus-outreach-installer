@@ -427,6 +427,12 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         const r = await sendConnectionRequest(page, note);
         return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
       } catch (err) {
+        // v2.14.x: actions.js detected the lead's invitation is already
+        // Pending via the profile More dropdown (e.g. Pravin Bisen 2026-05-15).
+        // Treat as already_processed so the row gets stamped Connect Pending.
+        if (String(err.message).includes('INVITATION_ALREADY_PENDING')) {
+          return { action: 'already_processed' };
+        }
         return { action: 'skipped', error: `Connect failed: ${err.message}` };
       }
     } else {
@@ -443,6 +449,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           const r = await sendConnectionRequest(page, note);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
+          if (String(err.message).includes('INVITATION_ALREADY_PENDING')) {
+            return { action: 'already_processed' };
+          }
           return { action: 'skipped', error: `Connect failed: ${err.message}` };
         }
       }
@@ -509,6 +518,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           const r = await sendConnectionRequest(page, note);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (e) {
+          if (String(e.message).includes('INVITATION_ALREADY_PENDING')) {
+            return { action: 'already_processed' };
+          }
           console.log(`[outreach] More Connect failed: ${e.message}`);
         }
 
@@ -535,6 +547,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           const r = await sendConnectionRequest(page, note);
           return { action: 'connection_sent', invitationUrn: r?.invitationUrn || null };
         } catch (err) {
+          if (String(err.message).includes('INVITATION_ALREADY_PENDING')) {
+            return { action: 'already_processed' };
+          }
           return { action: 'skipped', error: `Unknown status, connect failed: ${err.message}` };
         }
       }
