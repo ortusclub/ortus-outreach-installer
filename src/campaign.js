@@ -277,9 +277,15 @@ function normalizeSkipReason(msg) {
   if (lower.includes('connect button not found')) return 'Skipped: Connect button not found';
   if (lower.includes('send not confirmed') || lower.includes('send_not_confirmed')) return 'Skipped: Send not confirmed';
   // v2.10.0 — VOYAGER_REJECTED carries the HTTP status + LinkedIn's own error reason.
-  // Preserve the status code in the normalised stage so the user can see it at a glance.
+  // v2.14.x — 429 is overwhelmingly the weekly invitation cap (see the
+  // consecutive-429 park logic in startCampaign at ~line 1705). Surface the
+  // operator-friendly cause for 429s directly so the first 1-2 attempts
+  // before the account auto-parks don't read as cryptic "HTTP 429" lines.
+  // Other statuses (400/403/etc.) are rare — keep the code visible for
+  // diagnostics.
   if (lower.includes('voyager_rejected')) {
     const statusMatch = s.match(/HTTP\s+(\d+)/i);
+    if (statusMatch && statusMatch[1] === '429') return 'Skipped: Weekly invitation limit reached';
     return statusMatch ? `Skipped: LinkedIn rejected (HTTP ${statusMatch[1]})` : 'Skipped: LinkedIn rejected';
   }
   if (lower.includes('weekly invitation limit') || lower.includes('weekly_limit')) return 'Skipped: Weekly limit reached';
