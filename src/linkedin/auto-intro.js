@@ -122,6 +122,7 @@ export async function runAutoIntros({
       primaryUrl: primaryUrl || '',
       'primary url': primaryUrl || '',
     };
+    log(`  ✓ [${profileName}] ${url}: Connection Accepted (stamped at detection)`);
 
     try {
       let introResult;
@@ -153,11 +154,9 @@ export async function runAutoIntros({
         break;
       }
       const ok = introResult && (introResult.action === 'message_sent' || introResult.action === 'already_processed');
-      // On successful intro, also stamp cc='Connected' (and its mirror fields)
-      // because the upstream bulk-check that fed this URL into connectedUrls
-      // was called with suppressAcceptedStamp=true — it deliberately leaves
-      // the Connection Accepted Status cell alone so we can land both
-      // updates in one Apps Script call from here.
+      // v2.14.x: Connection Accepted Status is now stamped at bulk-check
+      // detection (suppressAcceptedStamp=false in the campaign call sites).
+      // auto-intro only stamps Introduction Status here.
       const tracking = {
         introductionStatus: ok ? 'Introduction Made' : 'Failed',
         sender: profileName,
@@ -165,11 +164,6 @@ export async function runAutoIntros({
         dateLastAction: _formatLocalDate(new Date()),
         auditAction: ok ? `Introduction sent to ${primaryName}` : `Intro failed: ${introResult?.error || 'unknown'}`,
       };
-      if (ok) {
-        tracking.cc = 'Connected';
-        tracking.connectedAlready = 'Yes';
-        tracking.checkStatus = 'Connected';
-      }
       await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
       if (ok) {
         result.sent++;

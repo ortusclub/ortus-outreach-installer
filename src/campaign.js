@@ -1623,7 +1623,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           templates.primaryIntroBody && templates.primaryIntroBody.trim()
         );
         const r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn, pName, {
-          suppressAcceptedStamp: willAutoIntro,
+          // v2.14.x: stamp Connection Accepted immediately at bulk-check detection
+          // so the operator sees acceptance in the sheet BEFORE the intro DM fires.
+          // The auto-intro pass then only stamps Introduction Status (no longer
+          // batched into a single Apps Script write).
+          suppressAcceptedStamp: false,
         });
         if (r.error) {
           log(`  ⚠ [${pName}] Idle bulk-check: ${r.error}`);
@@ -2240,7 +2244,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                   );
 
                   const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName, {
-                    suppressAcceptedStamp: willAutoIntro,
+                    // v2.14.x: stamp Connection Accepted immediately at bulk-check detection
+                    // so the operator sees acceptance in the sheet BEFORE the intro DM fires.
+                    // The auto-intro pass then only stamps Introduction Status (no longer
+                    // batched into a single Apps Script write).
+                    suppressAcceptedStamp: false,
                   });
                   if (r.error) {
                     log(`  ⚠ [${pName}] Bulk check: ${r.error}`);
@@ -3244,7 +3252,11 @@ export async function runMonitoringCheck(profileId, profileName) {
       templates.primaryIntroBody && templates.primaryIntroBody.trim()
     );
     const r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn, profileName, {
-      suppressAcceptedStamp: willAutoIntro,
+      // v2.14.x: stamp Connection Accepted immediately at bulk-check detection
+      // so the operator sees acceptance in the sheet BEFORE the intro DM fires.
+      // The auto-intro pass then only stamps Introduction Status (no longer
+      // batched into a single Apps Script write).
+      suppressAcceptedStamp: false,
     });
 
     const ts2 = `[${new Date().toISOString()}]`;
