@@ -11,7 +11,7 @@
 // boot. Dashboard is a child surface opened on tray click. Close (X) hides to
 // tray; only Cmd+Q or tray Quit actually terminates the process.
 
-import { app, BrowserWindow, Tray, Menu, shell, dialog } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, dialog, powerMonitor } from 'electron';
 import { existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -182,6 +182,16 @@ if (!gotLock) {
       tray = new Tray(trayIconPath());
       tray.setToolTip('The Ortus Outreach');
       tray.setContextMenu(buildTrayMenu());
+
+      // v2.14.x: macOS sleep-resume hook. When the lid opens (or the system
+      // wakes from sleep), ping the server's monitoring-wake endpoint so an
+      // overdue auto-check fires immediately rather than waiting up to 60s
+      // for the next setInterval tick.
+      powerMonitor.on('resume', () => {
+        if (!serverPort) return;
+        fetch(`http://127.0.0.1:${serverPort}/api/monitoring/wake`, { method: 'POST' })
+          .catch((err) => console.warn('[powerMonitor.resume] ping failed:', err.message));
+      });
 
       tray.on('click', () => {
         if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
