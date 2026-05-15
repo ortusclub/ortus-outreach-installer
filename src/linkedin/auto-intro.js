@@ -140,11 +140,16 @@ export async function runAutoIntros({
       senderFirstName: (resolvedFirst && resolvedFirst.trim())
         || (profileName || '').split(/\s+/)[0]
         || '',
-      // Surface the primary person under both the variable-button label
-      // ("primary name") and the camelCase form so either flavour the
-      // operator types in their template resolves.
+      // Surface the primary person under every naming flavour the
+      // operator might have typed: legacy "primary name", new
+      // "primary full name" (v2.14.x rename), and the camelCase form.
+      // All three resolve to the same full name so old templates keep
+      // working after the wizard chip rename.
       primaryName,
       'primary name': primaryName,
+      'primary full name': primaryName,
+      'primaryFullName': primaryName,
+      'primary_full_name': primaryName,
       primaryUrl: primaryUrl || '',
       'primary url': primaryUrl || '',
       // v2.14.x: primary-name split — operators can now write just

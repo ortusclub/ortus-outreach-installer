@@ -1374,6 +1374,10 @@ function onModeChange() {
   if (introTitleBlock) introTitleBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
+  // v2.14.x: variable chips are mode-aware (CC+IC hides {intro X},
+  // IB hides {primary X}). Refresh on every mode change.
+  try { updatePlaceholderTags(); } catch (_) {}
+
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
   // the connect_only Yes/No toggle. See applyTemplateUIVisibility.
   applyTemplateUIVisibility(mode, localStorage.getItem('ortus-add-note') === '1');
@@ -2055,17 +2059,38 @@ function updateOpenProfileVisibility() {
 // Placeholder tags
 // ─────────────────────────────────────────────────────────────────────────────
 function updatePlaceholderTags() {
-  // v2.11.6: 'intro first name' / 'intro last name' join the existing
-  // sender chips. Always rendered (matches how senderFirstName/senderName
-  // already show in non-message-only modes); harmless in non-intro
-  // campaigns since they substitute to empty strings outside introMode.
-  // v2.14.x: 'primary first name' / 'primary last name' join the list —
-  // splits primaryName on whitespace in auto-intro.js so operators can
-  // write "Hey {firstName}, let me introduce you {primary first name}"
-  // instead of always rendering the full name.
-  const extras = ['senderFirstName', 'senderName', 'intro first name', 'intro last name', 'primary name', 'primary first name', 'primary last name', 'primary url'];
+  // v2.14.x: chip list is now mode-aware.
+  //   - Empty/whitespace sheet columns dropped (a trailing-comma column
+  //     header in the CSV used to produce a stray `{}` chip).
+  //   - In CC+IC mode, {intro X} chips are hidden because they're aliases
+  //     of {primary X} (auto-intro.js sets introName = primaryName). Showing
+  //     both confused operators.
+  //   - In IB mode, {primary X} chips are hidden — that mode has no primary
+  //     concept; the introduction target is configured via the intro
+  //     section's name field.
+  //   - {primary name} renamed to {primary full name} for clarity vs
+  //     {primary first name} / {primary last name}. auto-intro.js maps both
+  //     keys to the same value so old templates with {primary name} still
+  //     resolve.
+  const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
+  const isCcIc = mode === 'connect_and_introduce';
+  const isIb   = mode === 'introduce_back';
+
+  const senderChips  = ['senderFirstName', 'senderName'];
+  const introChips   = ['intro first name', 'intro last name'];
+  const primaryChips = ['primary full name', 'primary first name', 'primary last name', 'primary url'];
+
+  const extras = [
+    ...senderChips,
+    ...(isCcIc ? [] : introChips),
+    ...(isIb   ? [] : primaryChips),
+  ];
+
+  const sheetCols = (Array.isArray(sheetColumns) ? sheetColumns : [])
+    .filter((c) => typeof c === 'string' && c.trim().length > 0);
+
   document.querySelectorAll('.placeholder-tags').forEach(container => {
-    const tags = [...sheetColumns, ...extras].map(col =>
+    const tags = [...sheetCols, ...extras].map(col =>
       `<span class="tag" data-val="{${col}}">{${col}}</span>`
     ).join('');
     container.innerHTML = tags;
