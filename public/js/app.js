@@ -2611,6 +2611,15 @@ async function stopCampaign() {
 // (stop-sending-keep-monitoring vs. stop-everything) instead of the simple
 // yes/no modal. Other modes keep the original single-question modal.
 function confirmStopCampaign() {
+  // v2.14.x: when the campaign is in monitoring state (sending finished,
+  // watcher active), route to the dedicated stop-monitoring modal instead
+  // of the running-campaign flow. Without this, the button was either
+  // dead (the older disable rule) or would hit the wrong modal.
+  if (__cockpit && !__cockpit.running && __cockpit.state === 'monitoring') {
+    const modal = document.getElementById('confirm-stop-monitoring-modal');
+    if (modal) modal.classList.remove('hidden');
+    return;
+  }
   if (__cockpit && __cockpit.mode === 'connect_and_introduce') {
     const modal = document.getElementById('stop-choice-modal');
     if (modal) modal.classList.remove('hidden');
@@ -2630,6 +2639,34 @@ function closeStopChoiceModal() {
   if (modal) modal.classList.add('hidden');
 }
 window.closeStopChoiceModal = closeStopChoiceModal;
+
+// v2.14.x: Stop-monitoring modal helpers. Mirrors the stop-choice modal
+// pattern so the in-app monochrome aesthetic stays consistent. The
+// existing monitoringStop() in app.js:~6160 used a native browser
+// confirm() — replaced by this modal when the operator hits the bottom-
+// bar Stop button during monitoring.
+function closeStopMonitoringModal() {
+  const modal = document.getElementById('confirm-stop-monitoring-modal');
+  if (modal) modal.classList.add('hidden');
+}
+window.closeStopMonitoringModal = closeStopMonitoringModal;
+
+async function confirmStopMonitoringNow() {
+  closeStopMonitoringModal();
+  showCampaignToast('Ending monitoring — stamping still-pending leads…', 4000);
+  try {
+    const res = await fetch('/api/monitoring/stop', { method: 'POST' }).then((r) => r.json());
+    if (res.ok) {
+      showCampaignToast(`Monitoring ended. ${res.stampedCount || 0} lead(s) stamped Closed - Not Connected.`, 5000);
+      if (typeof refreshDashboardSchedules === 'function') refreshDashboardSchedules();
+    } else {
+      alert('Stop failed: ' + (res.error || 'unknown'));
+    }
+  } catch (err) {
+    alert('Stop failed: ' + err.message);
+  }
+}
+window.confirmStopMonitoringNow = confirmStopMonitoringNow;
 
 async function confirmStopCampaignNow() {
   closeStopModal();
@@ -3014,7 +3051,14 @@ function setCampaignButtons(running, paused = false, pauseRequested = false) {
       b.disabled = running;
     }
   });
-  ['btn-stop',  'btn-stop-rb' ].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !running; });
+  // v2.14.x: Stop button is now enabled during monitoring too, not just
+  // while sending. The bottom-bar Stop was previously dead during monitoring,
+  // and the only way to halt was a hidden "✕ Stop monitoring" button buried
+  // inside the collapsed monitoring-card details. confirmStopCampaign routes
+  // the click based on state (running → existing flow, monitoring → new
+  // stop-monitoring modal).
+  const _monitoring = !running && __cockpit && __cockpit.state === 'monitoring';
+  ['btn-stop',  'btn-stop-rb' ].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !running && !_monitoring; });
   // Disable Check DMs while a campaign runs (mutex — both need the same browsers)
   const btnCheck = document.getElementById('btn-check-dms');
   if (btnCheck) btnCheck.disabled = running;

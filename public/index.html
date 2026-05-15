@@ -1101,6 +1101,21 @@
     </div>
   </div>
 
+  <!-- v2.14.x: Stop-monitoring confirmation modal. Opens when the bottom-bar
+       Stop button is clicked while the campaign is in monitoring state
+       (sending finished, watcher active). Replaces the buried "✕ Stop
+       monitoring" button inside the collapsed monitoring-card details. -->
+  <div id="confirm-stop-monitoring-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeStopMonitoringModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="stop-monitoring-modal-title">
+      <h3 id="stop-monitoring-modal-title" class="modal-title">End Monitoring?</h3>
+      <p class="modal-body">The 7-day acceptance watch will end. Any still-pending leads will be stamped <i>Closed - Not Connected</i> in the sheet. The campaign moves to the Past list.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeStopMonitoringModal()">Cancel</button>
+        <button type="button" class="btn btn-stop" onclick="confirmStopMonitoringNow()">Yes, End Monitoring</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v2.14.x: Restore confirmation modal — opens from the runbar "↻ Restore"
        button. Always-visible panic recovery action. -->
   <div id="restore-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeRestoreModal()">
