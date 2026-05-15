@@ -3154,6 +3154,11 @@ export function schedulePreFireHeadsUp() {
     _preFireNotifiedFor = campaign.nextCheckAt;
     _firePreCheckNotification();
   }, delay);
+  // Don't keep the Node event loop alive solely on this timer — otherwise
+  // `node --test` processes hang after their assertions pass.
+  if (_preFireTimer && typeof _preFireTimer.unref === 'function') {
+    _preFireTimer.unref();
+  }
 }
 
 export async function tickMonitoringNow({ _testStub = null } = {}) {
