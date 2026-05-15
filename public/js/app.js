@@ -2775,6 +2775,14 @@ function _cockpitFmtRemaining(ms) {
   if (hours > 0) return `${hours}h ${mins}m`;
   return `${mins}m`;
 }
+// v2.14.x: finer-grained countdown for the ring centre. Shows seconds
+// when < 1 min remains so the operator sees the last 60s tick down,
+// then mins/hours/days for longer ranges.
+function _cockpitFmtCountdown(ms) {
+  if (ms <= 0) return '0s';
+  if (ms < 60_000) return `${Math.ceil(ms / 1000)}s`;
+  return _cockpitFmtRemaining(ms);
+}
 function _cockpitHHMM(d) {
   return d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '—';
 }
@@ -2801,6 +2809,10 @@ function renderCockpit() {
   const ringFg = document.getElementById('cockpit-ring-fg');
   const num = document.getElementById('cockpit-ring-num');
   const unit = document.getElementById('cockpit-ring-unit');
+  const footer = document.getElementById('cockpit-ring-footer');
+  // v2.14.x: footer is only populated in the monitoring branch.
+  // Clear it on every render so it doesn't leak into idle/paused/running.
+  if (footer) footer.textContent = '';
   const tag = document.getElementById('cockpit-status-tag');
   const dot = document.getElementById('cockpit-pulse-dot');
   const action = document.getElementById('cockpit-action');
@@ -2824,8 +2836,14 @@ function renderCockpit() {
     // (No animated countdown — the dashed pattern signals "watching", and
     // the centre text shows the live remainder.)
     ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE * 0.15;
-    num.textContent = _cockpitFmtRemaining(remainingMs);
-    unit.textContent = 'window left';
+    // v2.14.x ring redesign (Variant A): big number = live countdown to
+    // next check, small label = "NEXT CHECK", tiny footer = window left.
+    // Operator feedback: the slowly-changing window figure shouldn't
+    // dominate; the live countdown is what matters minute-to-minute.
+    const nextCountdownMs = next ? Math.max(0, next.getTime() - now) : 0;
+    num.textContent = next ? _cockpitFmtCountdown(nextCountdownMs) : '—';
+    unit.textContent = 'next check';
+    if (footer) footer.textContent = until ? _cockpitFmtRemaining(remainingMs) : '';
     tag.textContent = 'MONITORING';
     dot.classList.remove('live', 'paused-dot');
     dot.classList.add('monitoring');

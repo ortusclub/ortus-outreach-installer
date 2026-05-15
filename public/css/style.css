@@ -2326,6 +2326,21 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   margin-top: 4px;
   text-transform: uppercase;
 }
+/* v2.14.x: tiny footer line inside the ring — shows window-left
+   ("6d 23h") while the big number above is the live next-check
+   countdown. Empty in idle/running/paused states. */
+.cockpit-ring-footer {
+  font-family: var(--display);
+  font-size: 0.78rem;
+  color: var(--gray);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  line-height: 1;
+}
+.cockpit-ring-footer:empty {
+  display: none;
+}
 .cockpit-info {
   flex: 1;
   min-width: 0;
