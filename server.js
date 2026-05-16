@@ -55,6 +55,11 @@ const PUBLIC_PATHS = new Set([
   '/login.html', '/signup.html', '/electron-login.html',
   '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/electron-login',
   '/api/health',
+  // help.html is a static onboarding manual with zero sensitive content —
+  // safe to expose without auth so Electron's target="_blank" link works
+  // from any browser (the link opens in the system browser, which lacks
+  // the Electron session cookie and would otherwise bounce through login).
+  '/help.html',
 ]);
 
 app.post('/api/auth/login', async (req, res) => {
