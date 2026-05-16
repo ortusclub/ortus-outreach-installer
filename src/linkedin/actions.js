@@ -1555,6 +1555,27 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
     await page.type(recipientSelector, introName, { delay: 60 });
     console.log(`[actions:intro] Typed recipient name with real keystrokes: "${introName}"`);
 
+    // v2.14.x: verify keystrokes actually landed; retype once if input is empty.
+    // Background-tab throttling can drop keystrokes during typeahead re-render
+    // (operator confirmed 2026-05-16: hang only fires for background profiles).
+    // Chrome flags in gologin-launcher.js fix the root cause; this is the
+    // belt-and-suspenders retry for residual edge cases (slow VM, hiccup).
+    try {
+      const typedValue = await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        return el ? (el.value || el.textContent || '') : '';
+      }, recipientSelector);
+      const firstNameExpected = String(introName || '').toLowerCase().split(/\s+/)[0];
+      if (firstNameExpected && !String(typedValue).toLowerCase().includes(firstNameExpected)) {
+        console.warn(`[actions:intro] Input empty after type ("${typedValue}"); retyping "${introName}".`);
+        try { await page.click(recipientSelector); } catch { /* best-effort */ }
+        await page.type(recipientSelector, introName, { delay: 60 });
+        console.log(`[actions:intro] Retyped recipient name: "${introName}"`);
+      }
+    } catch (e) {
+      console.warn(`[actions:intro] Type verification failed: ${e.message}`);
+    }
+
     // v2.14.x: URL-settle poll BEFORE the dropdown-poll page.evaluate.
     // For recipient combinations that already have a 3-way intro thread
     // (lead + primary + sender), LinkedIn's typeahead API recognizes the
@@ -1618,9 +1639,11 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
             return r.width > 0 && r.height > 0;
           });
         const overlayText = dialogs.map((d) => (d.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160)).join(' || ');
-        return { url: window.location.href, overlayText };
+        const recipInput = document.querySelector('[data-ortus-recipient="1"]');
+        const inputValue = recipInput ? (recipInput.value || recipInput.textContent || '') : '';
+        return { url: window.location.href, overlayText, inputValue };
       });
-      console.log(`[actions:intro] Pre-poll state: url="${preState.url}" overlay="${preState.overlayText || 'none'}"`);
+      console.log(`[actions:intro] Pre-poll state: url="${preState.url}" overlay="${preState.overlayText || 'none'}" inputValue="${preState.inputValue}"`);
     } catch (e) {
       console.warn(`[actions:intro] Pre-poll state capture failed: ${e.message}`);
     }

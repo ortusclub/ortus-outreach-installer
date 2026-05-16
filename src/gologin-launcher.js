@@ -75,6 +75,14 @@ export async function launchProfile(profileId, token) {
       '--disable-extensions',
       '--disable-background-networking',
       '--disable-features=TranslateUI,MediaRouter',
+      // v2.14.x: Chrome aggressively throttles renderers when the OS window is
+      // backgrounded/occluded — page.type() keystrokes get dropped by the
+      // typeahead component during its throttled re-render. Operator confirmed
+      // 2026-05-16 that the IC DM hang only fires when the GoLogin window is
+      // in the background; bringing it foreground unblocks it instantly. These
+      // three flags together force every renderer to behave as foreground.
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
       '--renderer-process-limit=2',
       '--js-flags=--max-old-space-size=512',
