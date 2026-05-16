@@ -2841,7 +2841,32 @@ function updateCockpit(s) {
   renderCockpit();
 }
 
+// v2.14.x: defensive stale-state detector. When in monitoring mode and the
+// cached nextCheckAt is more than 30s in the past AND no check is mid-fire,
+// the backend should have rescheduled by now. Force a fresh pollStatus()
+// to pull the new nextCheckAt. This catches the case where:
+//   - Mac slept and woke (powerMonitor.resume is unreliable on macOS)
+//   - Renderer was suspended longer than backend (setInterval lag after wake)
+//   - Any other reason the cached state diverged from the truth
+// Throttled: at most once every 5s, so the 250ms render tick can't hammer
+// the server. Idempotent — pollStatus has its own guard against overlap.
+let _lastStaleForcePoll = 0;
+function _maybeForcePollOnStale() {
+  if (__cockpit.state !== 'monitoring') return;
+  if (__cockpit.monitoringCheckInProgress) return;
+  if (!__cockpit.nextCheckAt) return;
+  const next = new Date(__cockpit.nextCheckAt).getTime();
+  const now = Date.now();
+  if (next > now - 30_000) return; // not stale yet
+  if (now - _lastStaleForcePoll < 5_000) return; // throttle
+  _lastStaleForcePoll = now;
+  if (typeof pollStatus === 'function') {
+    pollStatus().catch(() => { /* best-effort */ });
+  }
+}
+
 function renderCockpit() {
+  _maybeForcePollOnStale();
   const ring = document.querySelector('.cockpit-ring');
   const ringFg = document.getElementById('cockpit-ring-fg');
   const num = document.getElementById('cockpit-ring-num');

@@ -194,6 +194,19 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     // Not in recent connections — stamp "Still Pending" if the bot invited.
     if (sampleCRSValues.size < 5 && requestStatus) sampleCRSValues.add(requestStatus);
     if (requestStatus !== 'Connection Request Sent') continue;
+    // v2.14.x: never overwrite a row that's already known-connected or
+    // already-introduced. LinkedIn's recent-connections endpoint returns at
+    // most ~80 most-recent connections — older accepted invites silently
+    // fall off the list. Without this guard, every bulk-check pass after
+    // ~80 newer connections downgrades the older ones from "Connected" /
+    // "Already connected" back to "Still Pending", wiping the audit trail
+    // even though the lead IS still a connection. Operator screenshot
+    // 2026-05-16: Cindy (intro'd 14:48) shown as "Still Pending (17:07)".
+    if (cs === 'Connected' || cs === 'Already connected') continue;
+    const _introStatusForGuard = (
+      row['Introduction Status'] || row['introduction status'] || ''
+    ).toString().trim();
+    if (_introStatusForGuard === 'Introduction Made' || _introStatusForGuard === 'Introduction Already Made') continue;
     dbgWithCRS++;
     // Same dual-write as the matched branch — see comment above.
     updates.push({
