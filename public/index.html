@@ -289,7 +289,8 @@
       <div id="intro-title-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
         <label for="intro-title" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Group conversation title</label>
         <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
-        <div style="font-size:11px; color:var(--gray); margin-top:4px">Placeholders: <code>{first name}</code>, <code>{intro name}</code>, <code>{intro first name}</code>, <code>{intro last name}</code>, plus any sheet column.</div>
+        <div class="placeholder-tags" data-target="intro-title" style="margin-top:10px"></div>
+        <div style="font-size:11px; color:var(--gray); margin-top:4px">Click a chip to insert at the cursor. Available: <code>{first name}</code>, <code>{intro name}</code>, <code>{intro first name}</code>, <code>{intro last name}</code>, plus any sheet column.</div>
       </div>
 
     </div>

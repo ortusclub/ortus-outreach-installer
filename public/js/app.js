@@ -4863,6 +4863,27 @@ function applyPresetConfig(config) {
   setV('tpl-op-subject', t.openProfileSubject || '');
   setV('tpl-op-body', t.openProfileBody || '');
 
+  // v2.14.x: CC+IC fields. These live inside config.templates as
+  // primaryName / primaryUrl / primaryIntroBody / introTitle. Without
+  // these restores, Re-run loses the primary person and the operator
+  // has to retype everything (screenshot 2026-05-16).
+  setV('primary-person-name', t.primaryName || '');
+  setV('primary-person-url', t.primaryUrl || '');
+  setV('primary-intro-body', t.primaryIntroBody || '');
+  if (t.introTitle) setV('intro-title', t.introTitle);
+
+  // v2.14.x: concurrency restore. concurrency=1 means single-worker
+  // (toggle off); >1 means parallel mode (toggle on + count set).
+  const _conc = Number(config.concurrency || 1);
+  const _concTog = document.getElementById('concurrency-toggle');
+  const _concCnt = document.getElementById('concurrency-count');
+  if (_concTog && _concCnt) {
+    _concTog.checked = _conc > 1;
+    _concCnt.value = String(_conc > 1 ? _conc : 2);
+    _concCnt.disabled = !(_conc > 1);
+    if (typeof alphaSyncConcurrency === 'function') alphaSyncConcurrency();
+  }
+
   // Restore selected profiles. If profiles haven't loaded yet the selection
   // will be re-applied by renderProfiles once they arrive.
   if (Array.isArray(config.profileIds)) {
@@ -6624,6 +6645,12 @@ function rerunPastCampaign() {
   if (!s) return;
 
   // Build a preset-config-shaped object so we can reuse applyPresetConfig.
+  // v2.14.x: include CC+IC fields (primaryName / primaryUrl / primaryIntroBody
+  // / introTitle) and the concurrency knob so Re-run truly carries forward
+  // every operator-visible setting from the prior run. They live inside
+  // s.templates (the campaign loop reads them from there) and as a top-level
+  // s.concurrency — operator screenshot 2026-05-16 showed the primary person
+  // name + concurrency missing on Re-run.
   const config = {
     mode: c.mode,
     sheetUrl: s.sheetUrl || '',
@@ -6635,6 +6662,8 @@ function rerunPastCampaign() {
     addNote: !!(s.templates && s.templates.connectionNote),
     templates: s.templates || {},
     profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+    concurrency: s.concurrency ?? 1,
+    senderFirstNames: s.senderFirstNames || {},
   };
 
   closePastCampaignModal();

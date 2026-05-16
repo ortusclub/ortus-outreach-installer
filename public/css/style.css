@@ -10,6 +10,7 @@
 :root {
   /* Canvas */
   --bg: #0a0a0a;
+  --bg-soft: rgba(255, 255, 255, 0.03);
   --ink: #fafafa;
   --gray: #999999;
   --hairline: rgba(255, 255, 255, 0.15);
@@ -35,6 +36,7 @@
 
 body.theme-light {
   --bg: #fafafa;
+  --bg-soft: #faf9f7;
   --ink: #0a0a0a;
   --gray: #999999;
   --hairline: rgba(0, 0, 0, 0.15);
