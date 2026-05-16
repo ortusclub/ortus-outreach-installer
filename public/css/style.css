@@ -2393,13 +2393,18 @@ body.theme-light .tour-spotlight { background: rgba(0, 0, 0, 0.55); }
 
 .nav-help-wrapper { position: relative; }
 .nav-item-help { width: 100%; }
+/* Drops INSIDE the sidebar below the Help button. Anchoring outside the
+   sidebar with `left: calc(100% + 8px)` doesn't work — the sidebar has
+   `overflow-y: auto`, which (per CSS spec) forces the other axis to also
+   clip, so a popover that extends past the sidebar's right edge gets
+   invisibly hidden. Below-the-button stays inside the clip bounds. */
 .help-popover {
   position: absolute;
-  left: calc(100% + 8px);
-  top: 0;
+  left: 12px;
+  right: 12px;
+  top: calc(100% + 4px);
   background: var(--card, var(--bg));
   border: 1px solid var(--gold);
-  width: 220px;
   z-index: 1000;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
 }
@@ -2438,15 +2443,6 @@ body.theme-light .help-popover { background: #fff; box-shadow: 0 12px 28px rgba(
 body.theme-light .help-pop-item { color: var(--ink); }
 body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
 
-/* On narrow viewports the popover would overflow the sidebar — drop it
-   below the button instead of to the right. */
-@media (max-width: 900px) {
-  .help-popover {
-    left: 0;
-    top: calc(100% + 4px);
-    width: 100%;
-  }
-}
 
 /* Inline toast — bottom-center, auto-dismisses. Used for pause/resume hints. */
 .campaign-toast {
