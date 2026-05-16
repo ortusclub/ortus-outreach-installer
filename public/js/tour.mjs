@@ -213,9 +213,13 @@ function _renderCurrentStep() {
   const step = getStepByIndex(_tourState.index);
   if (!step) { endTour(false); return; }
   const target = _getTargetElement(step.targetId);
-  if (!target) {
-    // Section not rendered in this view (e.g. dashboard view active).
-    // Skip to next step rather than throw.
+  // Skip when target is missing OR has zero size (parent route hidden, etc.).
+  const isMeasurable = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  if (!isMeasurable(target)) {
     if (isLastStep(_tourState.index)) { endTour(true); return; }
     _tourState.index = nextIndex(_tourState.index);
     _renderCurrentStep();
@@ -251,7 +255,21 @@ function _renderCurrentStep() {
   });
 }
 
-export function startTour() {
+// Guard: the tour's targets all live inside #wizard-view which is hidden on
+// the dashboard route (body.route-dashboard). If we're not on the wizard
+// route, navigate there first and wait for layout to settle before
+// measuring target rects. Without this, every getBoundingClientRect() comes
+// back zero-sized and the spotlight + callout render at top-left.
+async function _ensureWizardRoute() {
+  const hash = window.location.hash || '#/';
+  if (hash.startsWith('#/new')) return;
+  window.location.hash = '#/new';
+  // 350 ms covers the route-class flip + the wizard's reveal-and-layout.
+  await new Promise((r) => setTimeout(r, 350));
+}
+
+export async function startTour() {
+  await _ensureWizardRoute();
   _tourState = { index: 0 };
   const overlay = _getOverlay();
   if (!overlay) {
@@ -305,11 +323,13 @@ export function endTour(markCompleted = true) {
 export function maybeAutoStartTour() {
   if (isTourCompleted()) return false;
   // Defer until next tick so DOM is fully painted.
-  setTimeout(() => { try { startTour(); } catch (err) { console.warn('[tour] auto-start failed:', err.message); } }, 600);
+  setTimeout(() => {
+    startTour().catch((err) => console.warn('[tour] auto-start failed:', err.message));
+  }, 600);
   return true;
 }
 
 export function replayTour() {
   resetTourCompletion();
-  startTour();
+  startTour().catch((err) => console.warn('[tour] replay failed:', err.message));
 }
