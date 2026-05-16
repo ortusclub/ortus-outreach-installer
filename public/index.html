@@ -837,6 +837,12 @@
     <div class="section collapsible collapsed" id="nav-status">
       <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">Live Status</span></h2>
       <div class="collapsible-body">
+      <!-- Post-launch tips — 2-col grid: cockpit + queue + log on the left,
+           tips card on the right (320 px fixed). Tips card is hidden by
+           default and shown by renderPostLaunchSidebar() during running /
+           monitoring. CSS at .live-status-grid handles the layout. -->
+      <div class="live-status-grid">
+      <div class="live-status-main">
       <!-- Phase 2.8.12 + 2.8.13: Live cockpit — single panel, all live state -->
       <div class="cockpit-panel" id="cockpit-panel">
         <div class="cockpit-top">
@@ -894,6 +900,17 @@
         <button class="btn btn-secondary btn-sm" onclick="clearCampaignLog()">Clear Log</button>
       </div>
       <div class="log-panel" id="log-panel"><div class="entry info">Waiting to start…</div></div>
+      </div><!-- /.live-status-main -->
+      <aside class="live-status-aside">
+        <div class="pts-card hidden" id="post-launch-tips-card">
+          <div class="pts-head" onclick="togglePostLaunchTipsCard()">
+            <span class="pts-caret" id="pts-caret">▾</span>
+            <span class="pts-title" id="pts-title">TIPS FOR THIS RUN</span>
+          </div>
+          <div id="pts-body" class="pts-body"></div>
+        </div>
+      </aside>
+      </div><!-- /.live-status-grid -->
       </div>
     </div>
 
@@ -1086,6 +1103,20 @@
       </div>
       <div style="text-align:center; margin-top: 12px;">
         <button type="button" class="modal-cancel-link" onclick="closeResumeChoiceModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post-launch tips modal — fires once per mode after Start. Operator can
+       tick "Don't show again" to silence it for that mode via localStorage. -->
+  <div id="post-launch-tips-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closePostLaunchTipsModal()">
+    <div class="modal-card ptm-card" role="dialog" aria-modal="true" aria-labelledby="ptm-title">
+      <span class="ptm-pill" id="ptm-pill">CAMPAIGN STARTED</span>
+      <h3 id="ptm-title" class="modal-title ptm-title">YOU'RE LIVE.</h3>
+      <div id="ptm-body" class="ptm-body"></div>
+      <div class="ptm-foot">
+        <label class="ptm-silence"><input type="checkbox" id="ptm-silence-check"> Don't show this again</label>
+        <button type="button" class="btn btn-start" onclick="dismissPostLaunchTipsModal()">GOT IT</button>
       </div>
     </div>
   </div>

@@ -2173,6 +2173,116 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Post-launch tips — modal (Variant A) + sidebar card (Variant B)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Modal — wider than standard confirm modals to fit the tips list. */
+.ptm-card { max-width: 560px; padding: 28px 32px 24px; }
+.ptm-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--display); font-size: 0.7rem; letter-spacing: 0.16em;
+  color: var(--ink);
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  margin-bottom: 14px;
+}
+.ptm-pill::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold);
+}
+.ptm-title { font-size: 1.6rem; margin-bottom: 18px; line-height: 1.05; }
+.ptm-body { margin-bottom: 22px; }
+.ptm-list { list-style: none; margin: 0; padding: 0; }
+.ptm-list li {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hairline-soft, rgba(255,255,255,0.06));
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.ptm-list li:last-child { border-bottom: none; }
+.ptm-list .ptm-icon { font-size: 0.95rem; }
+.ptm-list code {
+  background: rgba(255,255,255,0.06);
+  padding: 0 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+.ptm-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 8px;
+}
+.ptm-silence {
+  font-size: 0.78rem; color: var(--gray);
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer;
+}
+.ptm-silence input { width: 14px; height: 14px; accent-color: var(--gold); cursor: pointer; }
+
+/* Light-theme adjustments — modal body lines + code chips. */
+body.theme-light .ptm-list li { color: var(--ink); border-bottom-color: rgba(0,0,0,0.08); }
+body.theme-light .ptm-list code { background: rgba(0,0,0,0.05); }
+body.theme-light .ptm-silence { color: var(--gray); }
+
+/* Live Status 2-col grid (Q1=a layout). Cockpit + queue + log on the left,
+   tips card on the right. Collapses to 1-col below 1100 px so the cockpit
+   log doesn't get cramped on smaller laptops. */
+.live-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 18px;
+  align-items: start;
+}
+.live-status-main { min-width: 0; /* prevent grid blowout from long log lines */ }
+.live-status-aside { min-width: 0; }
+@media (max-width: 1100px) {
+  .live-status-grid { grid-template-columns: 1fr; }
+}
+
+/* Sidebar tips card. Same monochrome treatment as the rest of the cockpit. */
+.pts-card {
+  background: var(--card, var(--bg));
+  border: 1px solid var(--hairline);
+  padding: 14px 16px;
+}
+.pts-card.hidden { display: none; }
+.pts-head {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none;
+  margin-bottom: 10px;
+}
+.pts-caret {
+  font-family: var(--display); font-size: 0.8rem;
+  color: var(--gray);
+  transition: transform 120ms ease-out;
+  display: inline-block;
+}
+.pts-card.collapsed .pts-caret { transform: rotate(-90deg); }
+.pts-title {
+  font-family: var(--display); font-size: 0.72rem;
+  letter-spacing: 0.14em; color: var(--ink);
+}
+.pts-body { transition: max-height 160ms ease-out; }
+.pts-card.collapsed .pts-body { display: none; }
+.pts-list { list-style: none; margin: 0; padding: 0; }
+.pts-list li {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline-soft, rgba(255,255,255,0.06));
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.pts-list li:last-child { border-bottom: none; }
+.pts-list .pts-icon { font-size: 0.85rem; }
+body.theme-light .pts-list li { border-bottom-color: rgba(0,0,0,0.06); }
+
 /* Inline toast — bottom-center, auto-dismisses. Used for pause/resume hints. */
 .campaign-toast {
   position: fixed;

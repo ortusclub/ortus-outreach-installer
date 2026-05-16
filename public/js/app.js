@@ -5,6 +5,13 @@
 // Every function referenced from an inline onclick handler in index.html is
 // re-exposed on `window` at the bottom of this file.
 import { renderRepliesPanel } from '/js/replies-panel.mjs';
+import {
+  getTipsForMode,
+  renderModalTipsHtml,
+  renderSidebarTipsHtml,
+  isTipsSilenced,
+  silenceTipsForMode,
+} from '/js/post-launch-tips.mjs';
 
 let selectedProfileIds = [];
 let selectedProfileNames = {};
@@ -2593,10 +2600,114 @@ async function submitStartCampaign(body) {
     }
     setCampaignButtons(true);
     if (typeof saveLastUsedPreset === 'function') saveLastUsedPreset();
+    // Post-launch tips modal — fires once per mode after a successful start.
+    // Operator can tick "Don't show again" to silence per-mode.
+    try { maybeShowPostLaunchTipsModal(body); } catch (err) { console.warn('[tips] modal failed:', err.message); }
     startPolling();
   } catch (e) {
     alert(`Network error starting campaign:\n\n${e.message}`);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Post-launch tips — modal (Variant A) + sidebar card (Variant B).
+// Data + token substitution live in /js/post-launch-tips.mjs. This block
+// handles UI lifecycle (show, dismiss, silence, sidebar render, collapse).
+// ─────────────────────────────────────────────────────────────────────────
+
+// Build the substitution context from the wizard body / cockpit / wizard
+// inputs. Called at modal-show AND on every sidebar render so dynamic tokens
+// stay in sync if the operator changes cadence mid-run (not currently
+// possible, but the helper is cheap and future-proof).
+function _ptmContextFromBody(body) {
+  const tpl = body?.templates || {};
+  return {
+    dailyLimit: body?.dailyLimit ?? 50,
+    delayMin: body?.delayMin ?? 15,
+    delayMax: body?.delayMax ?? 45,
+    checkIntervalMinutes: body?.checkIntervalMinutes ?? 60,
+    primaryName: tpl.primaryName || tpl.introName || '',
+  };
+}
+function _ptmContextFromCockpit() {
+  // Sidebar reads from __cockpit (populated by pollStatus). Falls back to
+  // wizard inputs when the field isn't on the server status payload.
+  const tpl = (__cockpit && __cockpit.templates) || {};
+  const cadenceFromWizard = parseInt(document.getElementById('check-cadence-select')?.value, 10);
+  return {
+    dailyLimit: 50, // server status doesn't surface dailyLimit; default fits CC tip
+    delayMin: 15,
+    delayMax: 45,
+    checkIntervalMinutes: (__cockpit && __cockpit.checkIntervalMinutes)
+      || (Number.isFinite(cadenceFromWizard) ? cadenceFromWizard : 60),
+    primaryName: tpl.primaryName || document.getElementById('primary-person-name')?.value || '',
+  };
+}
+
+function maybeShowPostLaunchTipsModal(body) {
+  const mode = body?.mode || '';
+  if (!mode) return;
+  if (isTipsSilenced(mode)) return;
+  const set = getTipsForMode(mode, _ptmContextFromBody(body));
+  if (!set) return; // unknown mode — no tip data, no modal
+  const modal = document.getElementById('post-launch-tips-modal');
+  if (!modal) return;
+  const titleEl = document.getElementById('ptm-title');
+  const bodyEl  = document.getElementById('ptm-body');
+  const silenceCheck = document.getElementById('ptm-silence-check');
+  if (titleEl) titleEl.textContent = set.modalTitle;
+  if (bodyEl)  bodyEl.innerHTML    = renderModalTipsHtml(mode, _ptmContextFromBody(body));
+  if (silenceCheck) silenceCheck.checked = false;
+  modal.dataset.mode = mode;
+  modal.classList.remove('hidden');
+  // Esc dismisses — bound for this lifetime only, removed on close.
+  const escHandler = (ev) => { if (ev.key === 'Escape') dismissPostLaunchTipsModal(); };
+  modal._escHandler = escHandler;
+  document.addEventListener('keydown', escHandler);
+}
+
+function closePostLaunchTipsModal() {
+  const modal = document.getElementById('post-launch-tips-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  if (modal._escHandler) {
+    document.removeEventListener('keydown', modal._escHandler);
+    modal._escHandler = null;
+  }
+}
+
+function dismissPostLaunchTipsModal() {
+  const modal = document.getElementById('post-launch-tips-modal');
+  const mode = modal?.dataset?.mode || '';
+  const silence = !!document.getElementById('ptm-silence-check')?.checked;
+  if (silence && mode) silenceTipsForMode(mode);
+  closePostLaunchTipsModal();
+}
+
+// Sidebar tips card — rendered alongside the cockpit during running OR
+// monitoring. Reads mode from __cockpit (server status). Hidden when idle.
+function renderPostLaunchSidebar() {
+  const card = document.getElementById('post-launch-tips-card');
+  if (!card) return;
+  const mode = (__cockpit && __cockpit.mode) || '';
+  const isRunning = !!(__cockpit && __cockpit.running);
+  const isMonitoring = !!(__cockpit && __cockpit.state === 'monitoring');
+  // Hide when idle. The modal handled the first-time read; the sidebar is a
+  // mid-run reference so operators don't need to remember tips later.
+  if (!isRunning && !isMonitoring) { card.classList.add('hidden'); return; }
+  const set = getTipsForMode(mode, _ptmContextFromCockpit());
+  if (!set) { card.classList.add('hidden'); return; }
+  const titleEl = document.getElementById('pts-title');
+  const bodyEl  = document.getElementById('pts-body');
+  if (titleEl) titleEl.textContent = set.sidebarTitle;
+  if (bodyEl)  bodyEl.innerHTML    = renderSidebarTipsHtml(mode, _ptmContextFromCockpit());
+  card.classList.remove('hidden');
+}
+
+function togglePostLaunchTipsCard() {
+  const card = document.getElementById('post-launch-tips-card');
+  if (!card) return;
+  card.classList.toggle('collapsed');
 }
 
 async function stopCampaign() {
@@ -2687,6 +2798,9 @@ async function stopAndKeepMonitoring() {
   try { await fetch('/api/check-dms/stop', { method: 'POST' }); } catch { /* */ }
 }
 window.stopAndKeepMonitoring = stopAndKeepMonitoring;
+window.closePostLaunchTipsModal   = closePostLaunchTipsModal;
+window.dismissPostLaunchTipsModal = dismissPostLaunchTipsModal;
+window.togglePostLaunchTipsCard   = togglePostLaunchTipsCard;
 
 // v2.14.x: "Stop everything" — CC+IC only. Posts { full: true } so the
 // campaign loop skips the end-of-list bulk-check + monitoring transition
@@ -2839,6 +2953,10 @@ function updateCockpit(s) {
   __cockpit.profileIds = s.profileIds || [];
   __cockpit.profileNames = s.profileNames || [];
   renderCockpit();
+  // Sidebar tips card lives in the Live Status right column. Re-render on
+  // every poll so mode/state transitions (idle → running → monitoring → idle)
+  // flip visibility + title without extra plumbing.
+  try { renderPostLaunchSidebar(); } catch (err) { console.warn('[tips] sidebar failed:', err.message); }
 }
 
 // v2.14.x: defensive stale-state detector. When in monitoring mode and the
