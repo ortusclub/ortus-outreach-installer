@@ -1552,14 +1552,36 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       await page.evaluate(() => document.activeElement?.blur());
       await page.click(recipientSelector);
     } catch { /* focus is best-effort */ }
-    await page.type(recipientSelector, introName, { delay: 60 });
-    console.log(`[actions:intro] Typed recipient name with real keystrokes: "${introName}"`);
+    // v2.14.x: Paste-style insert instead of keystroke-by-keystroke typing.
+    // page.type sends 16 separate keystrokes over ~960ms — every one is a
+    // chance for the typeahead chip-finalize re-render to drop chars when
+    // the renderer is throttled (macOS App Nap, occluded windows, etc.).
+    // A paste is atomic: one value mutation + one input event, no drop window.
+    // We keep a ~1s wait afterwards so the typeahead's debounce/API has the
+    // same render budget the typing flow used to give it. Chrome-flag fix
+    // in gologin-launcher.js stays as belt-and-suspenders for click events.
+    const pasteRecipient = async () => {
+      await page.evaluate((sel, text) => {
+        const el = document.querySelector(sel);
+        if (!el) return;
+        // Native setter so controlled-input wrappers (React/Ember) see the change.
+        const proto = Object.getPrototypeOf(el);
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+                    || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        if (setter) setter.call(el, text);
+        else el.value = text;
+        el.dispatchEvent(new InputEvent('input', {
+          bubbles: true, cancelable: true,
+          inputType: 'insertFromPaste', data: text,
+        }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, recipientSelector, introName);
+      await new Promise(r => setTimeout(r, 1000));
+    };
+    await pasteRecipient();
+    console.log(`[actions:intro] Pasted recipient name: "${introName}"`);
 
-    // v2.14.x: verify keystrokes actually landed; retype once if input is empty.
-    // Background-tab throttling can drop keystrokes during typeahead re-render
-    // (operator confirmed 2026-05-16: hang only fires for background profiles).
-    // Chrome flags in gologin-launcher.js fix the root cause; this is the
-    // belt-and-suspenders retry for residual edge cases (slow VM, hiccup).
+    // Verify the paste actually landed; re-paste once if input is empty.
     try {
       const typedValue = await page.evaluate((sel) => {
         const el = document.querySelector(sel);
@@ -1567,13 +1589,13 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       }, recipientSelector);
       const firstNameExpected = String(introName || '').toLowerCase().split(/\s+/)[0];
       if (firstNameExpected && !String(typedValue).toLowerCase().includes(firstNameExpected)) {
-        console.warn(`[actions:intro] Input empty after type ("${typedValue}"); retyping "${introName}".`);
+        console.warn(`[actions:intro] Input empty after paste ("${typedValue}"); re-pasting "${introName}".`);
         try { await page.click(recipientSelector); } catch { /* best-effort */ }
-        await page.type(recipientSelector, introName, { delay: 60 });
-        console.log(`[actions:intro] Retyped recipient name: "${introName}"`);
+        await pasteRecipient();
+        console.log(`[actions:intro] Re-pasted recipient name: "${introName}"`);
       }
     } catch (e) {
-      console.warn(`[actions:intro] Type verification failed: ${e.message}`);
+      console.warn(`[actions:intro] Paste verification failed: ${e.message}`);
     }
 
     // v2.14.x: URL-settle poll BEFORE the dropdown-poll page.evaluate.
