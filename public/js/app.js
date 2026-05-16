@@ -3505,7 +3505,13 @@ async function pollStatus() {
       if (runEl) { runEl.textContent = 'Idle'; runEl.className = 'value stopped'; }
       if (warningEl) warningEl.style.display = 'none';
       setCampaignButtons(false);
-      if (s.logs?.length > 0 && !s.running) stopPolling();
+      // v2.14.x: keep polling during monitoring so the cockpit's nextCheckAt
+      // countdown stays in sync when the backend reschedules after each
+      // hourly bulk-check. Without this, the Live Status panel and run-bar
+      // freeze on the previous check's timestamp (operator saw "16:30 · 0s"
+      // while Schedules card correctly showed 17:30 — same `campaign.nextCheckAt`
+      // value, but the cockpit-fed endpoint stopped being polled).
+      if (s.logs?.length > 0 && !s.running && s.state !== 'monitoring') stopPolling();
     }
 
     const profEl = document.getElementById('st-profile');
