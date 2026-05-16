@@ -3106,9 +3106,17 @@ export function getCampaignStatus() {
  *   - Restart resume finds an expired monitoringUntil (reason: 'window-elapsed-on-restart')
  */
 export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
+  // v2.14.x DIAG: trace which step fires (or doesn't) when the cockpit's
+  // "stale monitoring view after Stop" symptom recurs. Captured in
+  // /tmp/dev-app.log via server stdout. Pure additive — no behaviour change.
+  console.log(`[stopMonitoring] called: reason=${reason}, state=${campaign.state}, monitoringUntil=${campaign.monitoringUntil}, nextCheckAt=${campaign.nextCheckAt}`);
+
   if (campaign.state !== 'monitoring') {
+    console.log(`[stopMonitoring] early-return: state="${campaign.state}" is not 'monitoring'`);
     return { ok: false, error: 'Campaign is not in monitoring state' };
   }
+
+  console.log('[stopMonitoring] passed state guard, proceeding with cleanup');
 
   const sheetUrl = campaign.sheetUrl;
   const linkedinColumn = campaign.linkedinColumn || '';
@@ -3131,6 +3139,8 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
     console.warn(`[stopMonitoring] sheet fetch failed: ${err.message}`);
   }
 
+  console.log(`[stopMonitoring] stamp loop done: stamped=${stampedCount} pending lead(s)`);
+
   // 2. Append a final log line
   const ts = `[${new Date().toISOString()}]`;
   campaign.logs = campaign.logs || [];
@@ -3145,6 +3155,7 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
 
   // 4. Transition state
   campaign.state = 'done';
+  console.log(`[stopMonitoring] state set to 'done'`);
 
   // v2.14.x: cancel any armed pre-fire heads-up (we just left monitoring).
   if (_preFireTimer) { clearTimeout(_preFireTimer); _preFireTimer = null; }
@@ -3153,6 +3164,7 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // Clear the on-disk monitoring slice
   try { await clearMonitoringState(); } catch { /* */ }
 
+  console.log(`[stopMonitoring] return ok=true, stampedCount=${stampedCount}, reason=${reason}`);
   return { ok: true, stampedCount, reason };
 }
 
