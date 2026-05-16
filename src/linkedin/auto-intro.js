@@ -22,7 +22,7 @@ import { sendIntroMessage } from './actions.js';
 import { personalizeTemplate } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
-import { extractLinkedInUrl } from '../campaign.js';
+import { extractLinkedInUrl, campaign } from '../campaign.js';
 
 function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -257,6 +257,10 @@ export async function runAutoIntros({
     };
     await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
     if (ok) {
+      // v2.14.x: blacklist this URL for the rest of the process so the next
+      // bulk-check pass (5-min cooldown) doesn't re-fire the same intro.
+      // Primary defense against Google Sheets CSV-export cache lag.
+      try { campaign.introducedInRun?.add(url); } catch { /* */ }
       result.sent++;
       log(`  🤝 [${profileName}] ${url}: Introduction Made`);
     } else if (alreadyMade) {
@@ -264,6 +268,7 @@ export async function runAutoIntros({
       // active thread) so result.sent reflects real coverage rather than
       // creating a third counter the campaign loop would have to learn
       // about. The distinct sheet stamp + log line preserve the audit.
+      try { campaign.introducedInRun?.add(url); } catch { /* */ }
       result.sent++;
       log(`  ⏳ [${profileName}] ${url}: Introduction Already Made (existing thread detected)`);
     } else {

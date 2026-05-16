@@ -17,7 +17,7 @@
 import { getRecentConnections } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { batchUpdateSheet, writeRecentConnectionsTab } from '../sheets-writer.js';
-import { extractLinkedInUrl } from '../campaign.js';
+import { extractLinkedInUrl, campaign } from '../campaign.js';
 
 function publicIdFromUrl(url) {
   if (!url) return '';
@@ -52,7 +52,7 @@ function memberIdFromAny(value) {
  * @returns {{ updates: object[], connectedUrls: string[], diag: object }}
  */
 export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendingLabel, opts = {}) {
-  const { suppressAcceptedStamp = false, profileName = '' } = opts;
+  const { suppressAcceptedStamp = false, profileName = '', introducedInRun = null } = opts;
 
   // Build matching sets (same logic as the inline version)
   const connectedSlugs = new Set();
@@ -76,6 +76,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   const connectedUrls = [];
   let dbgRowsScanned = 0, dbgWithUrl = 0, dbgWithCRS = 0;
   let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
+  let dbgAlreadyIntroduced = 0;
   const sampleSheetSlugs = [];
   const sampleSheetMemberIds = [];
   const sampleCRSValues = new Set();
@@ -130,6 +131,28 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     if (isMatch) {
       dbgPidMatched++;
       if (cs === 'Connected' || cs === 'Already connected') { dbgAlreadyConnected++; continue; }
+      // v2.14.x — Option B: skip if the sheet already shows an Introduction
+      // for this row. Defense across process restarts (when the in-memory
+      // Set below is empty) and against the duplicate-intro pattern
+      // observed for accounts with many pre-existing 1st-degree connections
+      // (nitin.kumar 2026-05-16: kanojiya/samson/chaudhary intro'd 3× in
+      // one day because the bulk-check filter only checked cs, not is_).
+      const introductionStatus = (
+        row['Introduction Status'] || row['introduction status'] || ''
+      ).toString().trim();
+      if (introductionStatus === 'Introduction Made' || introductionStatus === 'Introduction Already Made') {
+        dbgAlreadyIntroduced++;
+        continue;
+      }
+      // v2.14.x — Option A: in-memory blacklist of URLs intro'd this
+      // process. Bulletproof against Google Sheets CSV export cache lag
+      // (the sheet read here may not see writes made <5 min ago, which is
+      // exactly the window in which bulk-check fires again per the 5-min
+      // cooldown).
+      if (introducedInRun && introducedInRun.has(url)) {
+        dbgAlreadyIntroduced++;
+        continue;
+      }
       connectedUrls.push(url);
       if (!suppressAcceptedStamp) {
         // v2.14.x: also stamp checkStatus so the legacy "Check Status"
@@ -189,6 +212,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       withCRS: dbgWithCRS,
       alreadyConnected: dbgAlreadyConnected,
       alreadyDeclined: dbgAlreadyDeclined,
+      alreadyIntroduced: dbgAlreadyIntroduced,
       pidMatched: dbgPidMatched,
       slugs: connectedSlugs.size,
       memberIds: connectedMemberIds.size,
@@ -296,10 +320,13 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
       // v2.14.x: stamped onto pre-existing 1st-degree matches so the
       // operator sees WHICH account is connected to the lead.
       profileName: pName || '',
+      // v2.14.x: read campaign-level in-memory blacklist by default so
+      // every call site benefits without needing to pass the Set explicitly.
+      introducedInRun: opts.introducedInRun || campaign.introducedInRun,
     }
   );
 
-  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
+  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);

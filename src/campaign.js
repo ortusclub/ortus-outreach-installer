@@ -379,6 +379,13 @@ export const campaign = {
   // Read by the dashboard's account-queue table to explain why a row reads
   // "Done". Reset at startCampaign so each run starts clean.
   profileEndReasons: [],
+  // v2.14.x: in-memory blacklist of leads already intro'd in this process.
+  // Primary defense against re-firing the same IC DM when the sheet write
+  // is delayed/dropped or when Google Sheets' CSV export cache lags behind
+  // the most recent write. Bulk-check filters this set BEFORE pushing URLs
+  // to connectedUrls; auto-intro .add()s URLs after successful (or already-
+  // exists) intros. Reset on each new campaign start.
+  introducedInRun: new Set(),
   name: '',
 };
 
@@ -998,6 +1005,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.monitoringUntil = null;
   campaign.nextCheckAt = null;
   campaign.participatingProfileIds = [];
+  campaign.introducedInRun = new Set();
   campaign._paused = false;
   campaign._pauseRequested = false;
   campaign.currentProfile = null;
