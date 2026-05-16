@@ -2283,6 +2283,171 @@ body.theme-light .ptm-silence { color: var(--gray); }
 .pts-list .pts-icon { font-size: 0.85rem; }
 body.theme-light .pts-list li { border-bottom-color: rgba(0,0,0,0.06); }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Onboarding tour — DOM spotlight + callout
+   ───────────────────────────────────────────────────────────────────────── */
+
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  pointer-events: none;
+}
+.tour-overlay.hidden { display: none; }
+
+/* The spotlight is a full-screen dark overlay with a clip-path that punches
+   a hole around the current target rect. Updated each render. */
+.tour-spotlight {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: auto; /* catches clicks outside the target — keeps focus */
+  transition: clip-path 200ms ease-out;
+}
+
+/* Callout bubble — positioned absolutely by JS. */
+.tour-callout {
+  position: absolute;
+  background: var(--bg);
+  border: 1px solid var(--gold);
+  padding: 18px 20px 16px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  z-index: 100000;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  animation: tour-rise 200ms ease-out;
+}
+.tour-callout .tour-step {
+  font-family: var(--display);
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+.tour-callout .tour-title {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  color: var(--ink);
+  line-height: 1.15;
+}
+.tour-callout .tour-body {
+  font-size: 0.84rem;
+  color: var(--ink);
+  line-height: 1.55;
+  margin-bottom: 16px;
+}
+.tour-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.tour-skip {
+  font-size: 0.72rem;
+  color: var(--gray);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-family: var(--body, var(--mono));
+  padding: 4px 0;
+}
+.tour-skip:hover { color: var(--ink); }
+.tour-nav { display: flex; gap: 8px; }
+.tour-btn {
+  font-family: var(--display);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  padding: 7px 14px;
+  cursor: pointer;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink);
+}
+.tour-btn:hover { border-color: var(--ink); }
+.tour-btn.primary {
+  background: var(--gold);
+  color: #000;
+  border-color: var(--gold);
+}
+.tour-btn.primary:hover { background: #ffc878; }
+
+@keyframes tour-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+body.theme-light .tour-callout { background: #fff; box-shadow: 0 14px 36px rgba(0,0,0,0.25); }
+body.theme-light .tour-spotlight { background: rgba(0, 0, 0, 0.55); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Sidebar Help popover (anchored to the Help nav button)
+   ───────────────────────────────────────────────────────────────────────── */
+
+.nav-help-wrapper { position: relative; }
+.nav-item-help { width: 100%; }
+.help-popover {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  background: var(--card, var(--bg));
+  border: 1px solid var(--gold);
+  width: 220px;
+  z-index: 1000;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+.help-popover.hidden { display: none; }
+.help-popover-title {
+  font-family: var(--display);
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  color: var(--gray);
+  padding: 10px 14px 6px;
+  border-bottom: 1px solid var(--hairline-soft, rgba(255,255,255,0.06));
+}
+.help-pop-item {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  color: var(--ink);
+  cursor: pointer;
+  border-bottom: 1px solid var(--hairline-soft, rgba(255,255,255,0.06));
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  text-align: left;
+  font-family: inherit;
+  width: 100%;
+  text-decoration: none;
+}
+.help-pop-item:last-child { border-bottom: none; }
+.help-pop-item:hover { background: rgba(247, 190, 104, 0.08); }
+.help-pop-icon { font-size: 0.95rem; }
+
+body.theme-light .help-popover { background: #fff; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18); }
+body.theme-light .help-pop-item { color: var(--ink); }
+body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
+
+/* On narrow viewports the popover would overflow the sidebar — drop it
+   below the button instead of to the right. */
+@media (max-width: 900px) {
+  .help-popover {
+    left: 0;
+    top: calc(100% + 4px);
+    width: 100%;
+  }
+}
+
 /* Inline toast — bottom-center, auto-dismisses. Used for pause/resume hints. */
 .campaign-toast {
   position: fixed;

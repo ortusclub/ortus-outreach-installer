@@ -32,6 +32,25 @@
         <div class="nav-section-label">Review</div>
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
 
+        <div class="nav-section-label">Help</div>
+        <div class="nav-help-wrapper">
+          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
+            <span class="nav-num">?</span>Help
+          </button>
+          <div id="help-popover" class="help-popover hidden">
+            <div class="help-popover-title">HELP</div>
+            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
+              <span class="help-pop-icon">📘</span><span>Take the tour</span>
+            </button>
+            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
+              <span class="help-pop-icon">📄</span><span>Open the manual</span>
+            </a>
+            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
+              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
+            </button>
+          </div>
+        </div>
+
         <div class="nav-section-label">Dev tools</div>
         <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
       </nav>
@@ -1268,5 +1287,24 @@
       }
     }).catch(() => {});
   </script>
+
+  <!-- Onboarding tour overlay. Hidden by default. Lifecycle controlled by
+       public/js/tour.mjs (startTour / endTour). Spotlight uses clip-path to
+       punch a hole around the target wizard section. -->
+  <div id="tour-overlay" class="tour-overlay hidden" aria-hidden="true">
+    <div class="tour-spotlight"></div>
+    <div class="tour-callout" role="dialog" aria-modal="true">
+      <div class="tour-step" id="tour-step-label">STEP 1 / 5</div>
+      <h4 class="tour-title" id="tour-title-text">…</h4>
+      <p class="tour-body" id="tour-body-text">…</p>
+      <div class="tour-foot">
+        <button type="button" class="tour-skip" onclick="onTourSkip()">Skip tour</button>
+        <div class="tour-nav">
+          <button type="button" class="tour-btn tour-back" onclick="onTourBack()">← BACK</button>
+          <button type="button" class="tour-btn tour-next primary" onclick="onTourNext()">NEXT →</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

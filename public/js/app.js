@@ -12,6 +12,16 @@ import {
   isTipsSilenced,
   silenceTipsForMode,
 } from '/js/post-launch-tips.mjs';
+import {
+  startTour,
+  tourNext,
+  tourBack,
+  tourSkip,
+  endTour,
+  replayTour,
+  maybeAutoStartTour,
+  isTourCompleted,
+} from '/js/tour.mjs';
 
 let selectedProfileIds = [];
 let selectedProfileNames = {};
@@ -269,6 +279,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   // Sync visible→hidden once and run an initial recalc.
   if (typeof alphaSyncRate === 'function') alphaSyncRate();
+
+  // Onboarding tour — auto-start on first ever app load (no localStorage flag).
+  // No-op if flag is already set. Defers internally so layout settles first.
+  try { maybeAutoStartTour(); } catch (err) { console.warn('[tour] auto-start failed:', err.message); }
 });
 
 let serverLogInterval = null;
@@ -2710,6 +2724,44 @@ function togglePostLaunchTipsCard() {
   card.classList.toggle('collapsed');
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Onboarding tour — sidebar Help popover + inline-onclick handlers.
+// Tour engine lives in /js/tour.mjs. This block wires the UI.
+// ─────────────────────────────────────────────────────────────────────────
+
+function toggleHelpPopover(ev) {
+  if (ev) ev.stopPropagation();
+  const pop = document.getElementById('help-popover');
+  if (!pop) return;
+  const isHidden = pop.classList.contains('hidden');
+  // Refresh "Replay tour" visibility every open — flag may have just changed.
+  const replay = document.getElementById('help-pop-replay');
+  if (replay) replay.style.display = isTourCompleted() ? '' : 'none';
+  pop.classList.toggle('hidden', !isHidden);
+  // First open after toggling: bind a one-shot outside-click listener to dismiss.
+  if (isHidden) {
+    const outsideHandler = (e) => {
+      const wrapper = pop.closest('.nav-help-wrapper');
+      if (wrapper && !wrapper.contains(e.target)) {
+        pop.classList.add('hidden');
+        document.removeEventListener('click', outsideHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', outsideHandler), 0);
+  }
+}
+
+function _closeHelpPopover() {
+  const pop = document.getElementById('help-popover');
+  if (pop) pop.classList.add('hidden');
+}
+
+function onHelpTakeTour() { _closeHelpPopover(); startTour(); }
+function onHelpReplayTour() { _closeHelpPopover(); replayTour(); }
+function onTourNext() { tourNext(); }
+function onTourBack() { tourBack(); }
+function onTourSkip() { tourSkip(); }
+
 async function stopCampaign() {
   // 2.9.7: Check DMs is a separate flow with its own stop endpoint. Stop
   // both — only the running one will react, and double-stop is harmless.
@@ -2801,6 +2853,12 @@ window.stopAndKeepMonitoring = stopAndKeepMonitoring;
 window.closePostLaunchTipsModal   = closePostLaunchTipsModal;
 window.dismissPostLaunchTipsModal = dismissPostLaunchTipsModal;
 window.togglePostLaunchTipsCard   = togglePostLaunchTipsCard;
+window.toggleHelpPopover          = toggleHelpPopover;
+window.onHelpTakeTour             = onHelpTakeTour;
+window.onHelpReplayTour           = onHelpReplayTour;
+window.onTourNext                 = onTourNext;
+window.onTourBack                 = onTourBack;
+window.onTourSkip                 = onTourSkip;
 
 // v2.14.x: "Stop everything" — CC+IC only. Posts { full: true } so the
 // campaign loop skips the end-of-list bulk-check + monitoring transition
