@@ -1604,8 +1604,37 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       }
     }
 
+    // v2.14.x: ALWAYS-fires diagnostic — capture URL + any visible
+    // modal/overlay text immediately before the dropdown-poll page.evaluate.
+    // The previous fa8595a URL-settle would only log on URL change; for the
+    // hang class we just diagnosed (page stays on /compose but becomes
+    // unresponsive), nothing logged. This gives us the actual page state
+    // at the point of failure for the next run.
+    try {
+      const preState = await page.evaluate(() => {
+        const dialogs = Array.from(document.querySelectorAll('[role="dialog"], .artdeco-modal'))
+          .filter((d) => {
+            const r = d.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          });
+        const overlayText = dialogs.map((d) => (d.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160)).join(' || ');
+        return { url: window.location.href, overlayText };
+      });
+      console.log(`[actions:intro] Pre-poll state: url="${preState.url}" overlay="${preState.overlayText || 'none'}"`);
+    } catch (e) {
+      console.warn(`[actions:intro] Pre-poll state capture failed: ${e.message}`);
+    }
+
+    // v2.14.x: wrap the dropdown poll in a 30s soft-timeout. If the
+    // page.evaluate doesn't return in 30s, the browser tab is hung
+    // (native dialog, LinkedIn modal blocking JS, or background-tab
+    // throttle). Without this we'd wait for CDP's 180s protocolTimeout,
+    // often fired twice (~6 min total). Capture a screenshot + final
+    // URL for diagnosis, then throw INTRO_DROPDOWN_HANG.
+    const DROPDOWN_SOFT_TIMEOUT_MS = 30000;
+
     // Wait for typeahead dropdown, click exact match.
-    const clickResult = await page.evaluate(async (name) => {
+    const dropdownPromise = page.evaluate(async (name) => {
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const isVisible = (el) => {
         if (!el) return false;
@@ -1679,6 +1708,59 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       }
       return { ok: false, candidateCount: lastCandidateCount, preview: lastCandidatePreview };
     }, introName);
+
+    // v2.14.x: race the dropdown poll against a 30s soft-timeout.
+    let clickResult;
+    try {
+      clickResult = await Promise.race([
+        dropdownPromise,
+        new Promise((_, reject) => setTimeout(
+          () => reject(new Error('INTRO_DROPDOWN_SOFT_TIMEOUT')),
+          DROPDOWN_SOFT_TIMEOUT_MS,
+        )),
+      ]);
+    } catch (raceErr) {
+      if (raceErr.message === 'INTRO_DROPDOWN_SOFT_TIMEOUT') {
+        // Capture diagnostic state — defensive: screenshot + URL may also
+        // hang if the page is fully wedged, race each against a 5s timer.
+        const withTimeout = (p, ms) => Promise.race([
+          p,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms)),
+        ]);
+        let urlAtHang = '?';
+        try { urlAtHang = page.url(); } catch { /* page.url() is sync but may throw on detached */ }
+        let screenshotPath = '';
+        try {
+          const ts = Date.now();
+          const safeName = String(introName).replace(/\W+/g, '_').slice(0, 30);
+          screenshotPath = `/tmp/intro-hang-${safeName}-${ts}.png`;
+          await withTimeout(page.screenshot({ path: screenshotPath, fullPage: false }), 5000);
+          console.warn(`[actions:intro] Captured screenshot: ${screenshotPath}`);
+        } catch (sErr) {
+          console.warn(`[actions:intro] Screenshot capture failed/timed out: ${sErr.message}`);
+          screenshotPath = '';
+        }
+        let postOverlay = '';
+        try {
+          const post = await withTimeout(
+            page.evaluate(() => {
+              const dialogs = Array.from(document.querySelectorAll('[role="dialog"], .artdeco-modal'))
+                .filter((d) => {
+                  const r = d.getBoundingClientRect();
+                  return r.width > 0 && r.height > 0;
+                });
+              return dialogs.map((d) => (d.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 200)).join(' || ');
+            }),
+            5000,
+          );
+          postOverlay = post;
+        } catch { /* page.evaluate also hung — confirms the wedge */ }
+        console.warn(`[actions:intro] Dropdown poll soft-timeout after ${DROPDOWN_SOFT_TIMEOUT_MS / 1000}s. urlAtHang="${urlAtHang}" postOverlay="${postOverlay || 'none-or-eval-hung'}" screenshot="${screenshotPath || 'none'}"`);
+        await page.evaluate(() => document.querySelector('[data-ortus-recipient="1"]')?.removeAttribute('data-ortus-recipient')).catch(() => {});
+        throw new Error(`INTRO_DROPDOWN_HANG: page.evaluate did not return within ${DROPDOWN_SOFT_TIMEOUT_MS / 1000}s. urlAtHang=${urlAtHang} screenshot=${screenshotPath || 'none'}`);
+      }
+      throw raceErr;
+    }
 
     console.log(`[actions:intro] Dropdown poll result: ok=${clickResult.ok} candidates=${clickResult.candidateCount} preview="${clickResult.preview}" matchReason=${clickResult.matchReason || 'n/a'}`);
 
