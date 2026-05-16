@@ -178,7 +178,7 @@
 <div class="eyebrow">ORTUS OUTREACH · MANUAL</div>
 <h1>GETTING STARTED</h1>
 <p class="lead">
-Five sections in the wizard. Each does one thing. Skim this once and you'll know where everything lives.
+Seven sections in the wizard. Each does one thing. Skim this once and you'll know where everything lives.
 Each section below mirrors what the interactive tour shows you in-app, so you can come back here later
 if you forget.
 </p>
@@ -187,9 +187,28 @@ if you forget.
 <div class="hp-section">
   <div class="hp-num">I</div>
   <div>
+    <div class="hp-title">CAMPAIGN NAME</div>
+    <div class="hp-sub">The label that follows your campaign</div>
+    <div class="hp-screenshot">[ SCREENSHOT · Campaign Name input at the top ]</div>
+    <div class="hp-body">
+      The first thing at the top of the wizard. Give the campaign a name so you can find it in the
+      dashboard later. Supports a placeholder convention — e.g. <code>TAG_CITY_I</code> if you run a lot
+      of campaigns and want a naming pattern.
+    </div>
+    <ul class="hp-callouts">
+      <li><span class="num">1</span><span>Persisted to localStorage as a draft, so you don't lose it if you refresh.</span></li>
+      <li><span class="num">2</span><span>Optional — leave blank and the dashboard shows "Add name" inline-editable.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ── II ────────────────────────────────────────────────────────── -->
+<div class="hp-section">
+  <div class="hp-num">II</div>
+  <div>
     <div class="hp-title">CAMPAIGN TYPE</div>
     <div class="hp-sub">Pick what your campaign does</div>
-    <div class="hp-screenshot">[ SCREENSHOT · Section I — Mode dropdown ]</div>
+    <div class="hp-screenshot">[ SCREENSHOT · Section 1 — Mode dropdown ]</div>
     <div class="hp-body">
       Choose the action this campaign performs. Connect requests, follow-up DMs, 3-way intros, InMail,
       Open Profile messages, or background checks (Check Status / Check DMs). Each has different rules —
@@ -202,13 +221,13 @@ if you forget.
   </div>
 </div>
 
-<!-- ── II ────────────────────────────────────────────────────────── -->
+<!-- ── III ───────────────────────────────────────────────────────── -->
 <div class="hp-section">
-  <div class="hp-num">II</div>
+  <div class="hp-num">III</div>
   <div>
     <div class="hp-title">DATA</div>
     <div class="hp-sub">Your Google Sheet</div>
-    <div class="hp-screenshot">[ SCREENSHOT · Section II — Sheet URL input + tab hint ]</div>
+    <div class="hp-screenshot">[ SCREENSHOT · Section 2 — Sheet URL input + tab hint ]</div>
     <div class="hp-body">
       Paste the full Google Sheet URL — including the <code>#gid=...</code> tab if the sheet has multiple
       tabs. Ortus reads rows from this sheet and writes back the Stage column. The LinkedIn URL column is
@@ -222,13 +241,13 @@ if you forget.
   </div>
 </div>
 
-<!-- ── III ───────────────────────────────────────────────────────── -->
+<!-- ── IV ────────────────────────────────────────────────────────── -->
 <div class="hp-section">
-  <div class="hp-num">III</div>
+  <div class="hp-num">IV</div>
   <div>
     <div class="hp-title">LINKEDIN ACCOUNTS</div>
     <div class="hp-sub">Who sends</div>
-    <div class="hp-screenshot">[ SCREENSHOT · Section III — Account chips + status badges ]</div>
+    <div class="hp-screenshot">[ SCREENSHOT · Section 3 — Account chips + status badges ]</div>
     <div class="hp-body">
       Select GoLogin profiles to use. Multiple accounts rotate through the lead list — throughput scales
       with accounts. Each chip shows the account's status (active, parked, weekly-limited, needs login)
@@ -241,18 +260,38 @@ if you forget.
   </div>
 </div>
 
-<!-- ── IV ────────────────────────────────────────────────────────── -->
+<!-- ── V ─────────────────────────────────────────────────────────── -->
 <div class="hp-section">
-  <div class="hp-num">IV</div>
+  <div class="hp-num">V</div>
   <div>
-    <div class="hp-title">CAMPAIGN SETTINGS</div>
-    <div class="hp-sub">Templates · pacing · tracking</div>
-    <div class="hp-screenshot">[ SCREENSHOT · Section IV — Templates with variable chips ]</div>
+    <div class="hp-title">THROUGHPUT &amp; PACING</div>
+    <div class="hp-sub">How fast Ortus sends</div>
+    <div class="hp-screenshot">[ SCREENSHOT · Section 4 — Daily limit + delay sliders ]</div>
     <div class="hp-body">
-      Write the message templates. Variable chips substitute from sheet columns at send time — click a
-      chip to insert it at the cursor. Daily limit + pacing live here for CC modes (other modes have no
-      daily cap). For Connect + Introduce Back: the Acceptance Tracking window (7 days) and the
-      auto-check cadence (15 / 30 / 60 / 90 / 120 / 180 / 360 min — default 60).
+      Sits between Accounts and Templates. Sets the per-send pace (default 15–45 s) and, for Connect
+      modes only, the daily limit per profile (default 50). Other modes (DM, IB, InMail, Open Profile)
+      have no daily cap — they send to every eligible row.
+    </div>
+    <ul class="hp-callouts">
+      <li><span class="num">1</span><span>Faster pacing = more throughput per hour, but raises LinkedIn risk on Connect modes.</span></li>
+      <li><span class="num">2</span><span>The pace applies between sends within a profile; profiles still rotate independently.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ── VI ────────────────────────────────────────────────────────── -->
+<div class="hp-section">
+  <div class="hp-num">VI</div>
+  <div>
+    <div class="hp-title">MESSAGE TEMPLATES</div>
+    <div class="hp-sub">What gets sent</div>
+    <div class="hp-screenshot">[ SCREENSHOT · Section 5 — Templates with variable chips ]</div>
+    <div class="hp-body">
+      Write the connection note, follow-up DM, intro body, InMail subject + body, or Open Profile DM —
+      whichever applies to the mode you picked. Variable chips substitute from sheet columns at send
+      time — click a chip to insert it at the cursor. For Connect + Introduce Back: the Acceptance
+      Tracking window (7 days) and the auto-check cadence (15 / 30 / 60 / 90 / 120 / 180 / 360 min —
+      default 60) live here too.
     </div>
     <ul class="hp-callouts">
       <li><span class="num">1</span><span>Hover any chip to preview what it'll resolve to for the first row of your sheet.</span></li>
@@ -261,28 +300,28 @@ if you forget.
   </div>
 </div>
 
-<!-- ── V ─────────────────────────────────────────────────────────── -->
+<!-- ── VII ───────────────────────────────────────────────────────── -->
 <div class="hp-section">
-  <div class="hp-num">V</div>
+  <div class="hp-num">VII</div>
   <div>
     <div class="hp-title">LAUNCH</div>
-    <div class="hp-sub">Name · Start · monitor</div>
-    <div class="hp-screenshot">[ SCREENSHOT · Section V — Campaign name + Start button ]</div>
+    <div class="hp-sub">Press Start</div>
+    <div class="hp-screenshot">[ SCREENSHOT · Section 6 — Start button ]</div>
     <div class="hp-body">
-      Give the campaign a name (used in the dashboard later) and press Start. The cockpit takes over:
-      live progress, account queue, log, and the mode-specific tips card in the right column. A modal
-      fires once explaining the things to know about the mode you launched.
+      Press Start. The cockpit takes over: live progress, account queue, log, and the mode-specific
+      tips card in the right column. A modal fires once explaining the things to know about the mode
+      you launched.
     </div>
     <ul class="hp-callouts">
-      <li><span class="num">1</span><span>Campaign name supports placeholder syntax — e.g. <code>TAG_CITY_I</code>.</span></li>
-      <li><span class="num">2</span><span>Once Start is pressed, the wizard collapses and Live Status expands automatically.</span></li>
+      <li><span class="num">1</span><span>Once Start is pressed, the wizard collapses and Live Status expands automatically.</span></li>
+      <li><span class="num">2</span><span>If another campaign is already running, this one gets queued — the wizard banner says so.</span></li>
     </ul>
   </div>
 </div>
 
-<!-- ── VI ────────────────────────────────────────────────────────── -->
+<!-- ── VIII ──────────────────────────────────────────────────────── -->
 <div class="hp-section">
-  <div class="hp-num" style="color: var(--ink); font-size: 2.4rem;">VI</div>
+  <div class="hp-num" style="color: var(--ink); font-size: 2.4rem;">VIII</div>
   <div>
     <div class="hp-title">AFTER LAUNCH</div>
     <div class="hp-sub">Live Status · tips · stop</div>

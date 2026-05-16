@@ -18,12 +18,14 @@ import {
 // Step navigation
 // ─────────────────────────────────────────────────────────────────────────
 
-test('TOUR_STEPS has 5 entries covering the wizard sections', () => {
-  assert.equal(TOUR_STEPS.length, 5);
+test('TOUR_STEPS has 7 entries covering the wizard sections', () => {
+  assert.equal(TOUR_STEPS.length, 7);
   assert.deepEqual(TOUR_STEPS.map(s => s.targetId), [
+    'nav-campaign-name',
     'nav-settings',
     'nav-sheet',
     'nav-accounts',
+    'nav-pace',
     'nav-templates',
     'nav-launch',
   ]);
@@ -41,24 +43,24 @@ test('every step has id, targetId, stepLabel, title, body', () => {
 });
 
 test('getStepByIndex returns step or null at bounds', () => {
-  assert.equal(getStepByIndex(0).targetId, 'nav-settings');
-  assert.equal(getStepByIndex(4).targetId, 'nav-launch');
+  assert.equal(getStepByIndex(0).targetId, 'nav-campaign-name');
+  assert.equal(getStepByIndex(6).targetId, 'nav-launch');
   assert.equal(getStepByIndex(-1), null);
-  assert.equal(getStepByIndex(5), null);
+  assert.equal(getStepByIndex(7), null);
   assert.equal(getStepByIndex(99), null);
   assert.equal(getStepByIndex('nope'), null);
 });
 
 test('nextIndex advances within bounds and clamps at last', () => {
   assert.equal(nextIndex(0), 1);
-  assert.equal(nextIndex(3), 4);
-  assert.equal(nextIndex(4), 4);  // clamped at last
-  assert.equal(nextIndex(100), 4);
+  assert.equal(nextIndex(5), 6);
+  assert.equal(nextIndex(6), 6);  // clamped at last
+  assert.equal(nextIndex(100), 6);
   assert.equal(nextIndex(null), 0);
 });
 
 test('prevIndex steps back and clamps at first', () => {
-  assert.equal(prevIndex(4), 3);
+  assert.equal(prevIndex(6), 5);
   assert.equal(prevIndex(1), 0);
   assert.equal(prevIndex(0), 0);  // clamped at first
   assert.equal(prevIndex(-5), 0);
@@ -67,8 +69,8 @@ test('prevIndex steps back and clamps at first', () => {
 test('isFirstStep / isLastStep edge predicates', () => {
   assert.equal(isFirstStep(0), true);
   assert.equal(isFirstStep(1), false);
-  assert.equal(isLastStep(4), true);
-  assert.equal(isLastStep(3), false);
+  assert.equal(isLastStep(6), true);
+  assert.equal(isLastStep(5), false);
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -215,17 +217,38 @@ test('completion helpers do not throw with null storage', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 test('regression: every step targets an existing wizard section id', () => {
-  // The five wizard section IDs in public/index.html. If any get renamed
+  // The seven wizard section IDs in public/index.html. If any get renamed
   // without updating tour.mjs, this test fails.
-  const VALID = new Set(['nav-settings', 'nav-sheet', 'nav-accounts', 'nav-templates', 'nav-launch']);
+  const VALID = new Set([
+    'nav-campaign-name', 'nav-settings', 'nav-sheet', 'nav-accounts',
+    'nav-pace', 'nav-templates', 'nav-launch',
+  ]);
   for (const step of TOUR_STEPS) {
     assert.ok(VALID.has(step.targetId), `Unknown wizard target: ${step.targetId}`);
   }
 });
 
-test('regression: step labels follow "STEP N / 5" format', () => {
+test('regression: step labels follow "STEP N / 7" format', () => {
   for (let i = 0; i < TOUR_STEPS.length; i++) {
-    const expected = `STEP ${i + 1} / 5`;
+    const expected = `STEP ${i + 1} / 7`;
     assert.equal(TOUR_STEPS[i].stepLabel, expected, `Step ${i} label mismatch`);
   }
+});
+
+test('regression: pacing step (nav-pace) sits between accounts and templates', () => {
+  const ids = TOUR_STEPS.map(s => s.targetId);
+  const accountsIdx = ids.indexOf('nav-accounts');
+  const paceIdx = ids.indexOf('nav-pace');
+  const templatesIdx = ids.indexOf('nav-templates');
+  assert.ok(accountsIdx >= 0 && paceIdx >= 0 && templatesIdx >= 0, 'one of the steps is missing');
+  assert.ok(accountsIdx < paceIdx, 'pacing must come AFTER accounts');
+  assert.ok(paceIdx < templatesIdx, 'pacing must come BEFORE templates');
+});
+
+test('regression: campaign name step is first, above campaign type', () => {
+  const ids = TOUR_STEPS.map(s => s.targetId);
+  const nameIdx = ids.indexOf('nav-campaign-name');
+  const typeIdx = ids.indexOf('nav-settings');
+  assert.equal(nameIdx, 0, 'campaign name should be the first step');
+  assert.ok(nameIdx < typeIdx, 'campaign name must come BEFORE campaign type');
 });

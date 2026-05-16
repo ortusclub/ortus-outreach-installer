@@ -18,39 +18,53 @@
 
 export const TOUR_STEPS = [
   {
+    id: 'campaign-name',
+    targetId: 'nav-campaign-name',
+    stepLabel: 'STEP 1 / 7',
+    title: 'NAME YOUR CAMPAIGN',
+    body: "This is the label you'll see in the dashboard later. Supports placeholder syntax like TAG_CITY_I if you run a lot of campaigns and want a naming pattern.",
+  },
+  {
     id: 'campaign-type',
     targetId: 'nav-settings',
-    stepLabel: 'STEP 1 / 5',
+    stepLabel: 'STEP 2 / 7',
     title: 'PICK WHAT YOUR CAMPAIGN DOES',
     body: "Each mode behaves differently — Connect, Message, 3-way Intro, InMail, Open Profile. The modal that fires when you press Start will explain that mode's specifics.",
   },
   {
     id: 'data',
     targetId: 'nav-sheet',
-    stepLabel: 'STEP 2 / 5',
+    stepLabel: 'STEP 3 / 7',
     title: 'PASTE YOUR GOOGLE SHEET',
     body: 'Ortus reads rows from here and writes back the Stage column. Sheet must be shared with the Apps Script account. Watch out for trailing spaces in column headers — they break variable substitution silently.',
   },
   {
     id: 'accounts',
     targetId: 'nav-accounts',
-    stepLabel: 'STEP 3 / 5',
+    stepLabel: 'STEP 4 / 7',
     title: 'SELECT LINKEDIN ACCOUNTS',
     body: 'Pick which GoLogin profiles run this campaign. Multiple accounts rotate through the lead list — more accounts = higher daily throughput. Status badges show which ones are healthy before launch.',
   },
   {
+    id: 'pacing',
+    targetId: 'nav-pace',
+    stepLabel: 'STEP 5 / 7',
+    title: 'THROUGHPUT + PACING',
+    body: 'How fast Ortus sends. For Connect modes the daily limit per profile lives here. Other modes (DM, IB, InMail, Open Profile) have no daily cap but still respect the per-send 15–45 s pace.',
+  },
+  {
     id: 'templates',
     targetId: 'nav-templates',
-    stepLabel: 'STEP 4 / 5',
-    title: 'TEMPLATES + PACING',
-    body: 'Write the messages. Variable chips substitute from sheet columns at send time — click a chip to insert it at the cursor. For CC+IC: Acceptance Tracking window and auto-check cadence live here too.',
+    stepLabel: 'STEP 6 / 7',
+    title: 'MESSAGE TEMPLATES',
+    body: "Write the connection note, follow-up DM, or intro body. Variable chips substitute from sheet columns at send time — click a chip to insert it at the cursor. For CC+IC: Acceptance Tracking window and auto-check cadence live here too.",
   },
   {
     id: 'launch',
     targetId: 'nav-launch',
-    stepLabel: 'STEP 5 / 5',
-    title: 'NAME IT, PRESS START',
-    body: 'Name your campaign (used in the dashboard later) and press Start. The cockpit takes over and a mode-specific tips modal fires once explaining things to know about that mode.',
+    stepLabel: 'STEP 7 / 7',
+    title: 'PRESS START',
+    body: 'Hit Start and the cockpit takes over. A mode-specific tips modal fires once explaining things to know about that mode. Live Status expands automatically to show progress.',
   },
 ];
 
