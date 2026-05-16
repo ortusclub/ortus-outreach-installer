@@ -138,7 +138,18 @@ export async function launchProfile(profileId, token) {
   try {
     const cdp = await page.target().createCDPSession();
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-    console.log(`[gologin] Focus emulation enabled for ${profileId}`);
+    // Re-apply on every main-frame navigation. Puppeteer 22.15.0 doesn't yet
+    // have the EmulationManager logic from PR #14501 that tracks this setting
+    // and re-applies it after nav. ensureProfileLoggedIn does a page.goto +
+    // re-acquire dance (campaign.js:714) where the setting could be lost on
+    // a process-swap navigation. Listener uses the same long-lived CDP
+    // session; cost is one CDP call per navigation, swallowed errors only.
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+      }
+    });
+    console.log(`[gologin] Focus emulation enabled for ${profileId} (with nav re-apply)`);
   } catch (err) {
     console.warn(`[gologin] Focus emulation failed for ${profileId}: ${err.message}`);
   }
