@@ -344,6 +344,46 @@ export function getModeHint(mode, prevAction) {
   return null;
 }
 
+// v2.14.x — Pure predicate: is this v2-schema row eligible for a standalone
+// DM (message_only) or IB (introduce_back) send?
+//
+// History: the original filter only matched Stage === 'Connected · DM Now',
+// which is written by ONE code path — the per-lead Voyager check in
+// outreach.js (status_accepted action → buildSheetDataForAction at line 908).
+// The bulk-check (bulk-check-connections.js:164-188) writes
+// `cc: 'Connected'` to the 'Connection Accepted Status' column but does NOT
+// touch Stage, so after a real CC → bulk-check flow every accepted row
+// still has Stage = 'Connect Pending'. Standalone DM/IB campaigns silently
+// found zero targets on those sheets.
+//
+// This predicate accepts three Stage states that all mean "row is connected,
+// safe to DM":
+//   - 'Connected · DM Now'  — per-lead Voyager check confirmed (status_accepted)
+//   - 'Already connected'   — bulk-check Path B, pre-existing 1st-degree
+//   - 'Connect Pending'     iff Connection Accepted Status says Connected
+//                             (bulk-check Path A leaves Stage unchanged but
+//                             writes cc)
+//
+// Terminal stages (DM Sent / IC Sent / OP Sent / InM Sent / Replied / Done)
+// and any Skipped-* stage are rejected so reruns can't re-send. CC+IC's
+// monitoring path is intentionally NOT touched — it bypasses this filter
+// entirely (runAutoIntros reads connectedUrls directly from bulk-check).
+export function isDmIbEligible(row) {
+  const stage = (row['Stage'] || row['stage'] || '').toString().trim();
+  if (!stage || stage.startsWith('Skipped')) return false;
+  const TERMINAL = new Set(['DM Sent', 'IC Sent', 'InM Sent', 'OP Sent', 'Replied', 'Done']);
+  if (TERMINAL.has(stage)) return false;
+  if (stage === 'Connected · DM Now' || stage === 'Already connected') return true;
+  if (stage === 'Connect Pending') {
+    const cc = (
+      row['Connection Accepted Status'] || row['connection accepted status'] ||
+      row['Connected Status']            || row['connected status'] || ''
+    ).toString().trim();
+    return cc === 'Connected' || cc === 'Already connected';
+  }
+  return false;
+}
+
 // Phase 2.8.20 (W3-C2): cached disk status, refreshed on a 30s interval.
 // Kept module-local so getCampaignStatus() can stay synchronous (it's called
 // from /api/campaign/status hot path).
@@ -1222,9 +1262,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           return stage === 'Connect Pending';
         }
         if (mode === 'message_only' || mode === 'introduce_back') {
-          // Standard DM (message_only) and 3-way intro (introduce_back)
-          // both source from Connected · DM Now.
-          return stage === 'Connected · DM Now';
+          // v2.14.x — accept any row that represents a known connection,
+          // regardless of which path stamped it. See isDmIbEligible() comment
+          // for the full rationale (campaign.js:~349). Replaces the previous
+          // single-Stage check that missed bulk-check-confirmed acceptances.
+          return isDmIbEligible(row);
         }
         if (mode === 'connect_only' || mode === 'connect_and_introduce') {
           // Cold targets: Stage empty (never touched) or 'Send Connect'.
