@@ -126,6 +126,23 @@ export async function launchProfile(profileId, token) {
   page.setDefaultNavigationTimeout(30000);
   page.setDefaultTimeout(15000);
 
+  // v2.14.x: Force the page to report itself as focused/active regardless of
+  // OS window state. LinkedIn's typeahead (and many other async features)
+  // check document.hasFocus() / visibility — when the answer is "not focused"
+  // they skip or degrade processing, which is why typing into the IC DM
+  // recipient input fails when the GoLogin window is backgrounded but CC
+  // clicks work fine. This is the same CDP call Playwright makes by default
+  // for every page, and what Puppeteer's emulateFocusedPage(true) (added in
+  // PR #14501, post-22.x) wraps. Source:
+  // chromedevtools.github.io/devtools-protocol — Emulation.setFocusEmulationEnabled
+  try {
+    const cdp = await page.target().createCDPSession();
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    console.log(`[gologin] Focus emulation enabled for ${profileId}`);
+  } catch (err) {
+    console.warn(`[gologin] Focus emulation failed for ${profileId}: ${err.message}`);
+  }
+
   // 2.8.44: auto-handle browser dialogs. LinkedIn's compose page registers a
   // beforeunload handler when the textarea has unsaved text — if a send fails
   // and we navigate to the next lead, the dialog blocks Puppeteer until it
