@@ -7225,6 +7225,58 @@ window.startNewCampaign = startNewCampaign;
 // "Bulk check connections" button. Uses the first selected account
 // (selectedProfileIds[0]) and the current sheet URL. Server enforces the
 // "no campaign running" guard.
+// v2.14.x: graphical Bulk Check result card. Replaces the long inline
+// text line. Called after /api/bulk-check-now returns a final result.
+// Card markup is in public/index.html (.bulk-check-summary with
+// [data-bcs="..."] hooks); styles in public/css/style.css.
+function renderBulkCheckSummary({ matched, stamped, fetched, profilesSweep, derivedFromSheet, failures, skippedParked }) {
+  const card = document.querySelector('.bulk-check-summary');
+  if (!card) return;
+  const set = (key, val) => {
+    const el = card.querySelector(`[data-bcs="${key}"]`);
+    if (el) el.textContent = String(val);
+  };
+  set('matched', matched);
+  set('stamped', stamped);
+  set('fetched', fetched);
+
+  // Sub-label: "across N accounts from the sheet" / "across N accounts"
+  // / blank. Mirrors the per-call source hint the old text line carried.
+  const sub = profilesSweep
+    ? (derivedFromSheet
+        ? `across ${profilesSweep} accounts from the sheet`
+        : `across ${profilesSweep} ${profilesSweep === 1 ? 'account' : 'accounts'}`)
+    : '';
+  set('sub', sub);
+
+  // Notes: failures (red glyph) + parked-account skips (neutral glyph).
+  // Each row is "<glyph> <body>" with the glyph styled per note class.
+  const notesEl = card.querySelector('[data-bcs="notes"]');
+  if (notesEl) {
+    const parts = [];
+    if (Array.isArray(failures) && failures.length > 0) {
+      const names = failures.map((p) => p.profileName || p.profileId).join(', ');
+      const errs  = failures.map((p) => `${p.profileName || p.profileId}: ${p.error}`).join(' • ');
+      parts.push(`<div class="note note--warn"><span class="glyph">⚠</span><span class="body"><strong>${failures.length} ${failures.length === 1 ? 'account' : 'accounts'} failed:</strong> ${escapeHtml(names)}<br><span style="opacity:0.75">${escapeHtml(errs)}</span></span></div>`);
+    }
+    if (Array.isArray(skippedParked) && skippedParked.length > 0) {
+      const detail = skippedParked.map((s) => `${s.profileName || s.profileId} (${s.reason})`).join(', ');
+      parts.push(`<div class="note"><span class="glyph">⊘</span><span class="body"><strong>${skippedParked.length} parked ${skippedParked.length === 1 ? 'account' : 'accounts'} skipped:</strong> ${escapeHtml(detail)}</span></div>`);
+    }
+    notesEl.innerHTML = parts.join('');
+  }
+
+  card.hidden = false;
+}
+
+// Minimal HTML escape — defensive, since the values flow from server
+// (profile names, error messages) that could in theory contain '<' etc.
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 async function bulkCheckNow() {
   // Two buttons exist (wizard Advanced + live status panel) and two status
   // spans share the .bulk-check-status-msg class. Update all instances.
@@ -7232,6 +7284,13 @@ async function bulkCheckNow() {
   const statusEls = document.querySelectorAll('.bulk-check-status-msg');
   const setStatus = (txt) => { statusEls.forEach((el) => { el.textContent = txt; }); };
   const setBtnDisabled = (b) => { btns.forEach((el) => { el.disabled = b; }); };
+
+  // v2.14.x: hide the previous result card (if any) at the start of a new
+  // sweep so the operator doesn't see stale numbers while the new check
+  // is running. The streaming status text takes over until the new
+  // result lands.
+  const _summaryCard = document.querySelector('.bulk-check-summary');
+  if (_summaryCard) _summaryCard.hidden = true;
 
   const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
   const linkedinColumn = document.getElementById('linkedin-col-select')?.value || '';
@@ -7334,11 +7393,22 @@ async function bulkCheckNow() {
     } else if (result.error) {
       setStatus(`Sweep error: ${result.error}`);
     } else {
-      const msg = `${matched} marked Connected, ${stamped} marked Still Pending (of ${fetched} recent connections fetched)${sourceTag}`;
-      const partial = failures.length > 0 ? ` — ${failures.length} account(s) failed: ${failures.map((p) => p.profileName || p.profileId).join(', ')}` : '';
-      const skippedNote = skippedParked.length > 0 ? ` — skipped ${skippedParked.length} parked account(s): ${skippedParked.map((s) => s.profileName || s.profileId).join(', ')}` : '';
-      setStatus(msg + partial + skippedNote);
-      if (typeof showCampaignToast === 'function') showCampaignToast(`Bulk check: ${msg}`, 6000);
+      // v2.14.x: render the graphical summary card instead of the long
+      // single-line text. Clear the inline streaming text so we don't
+      // show both. The card is a sibling div with [data-bcs="..."]
+      // hooks for the three stat numbers + sub label + notes list.
+      renderBulkCheckSummary({
+        matched, stamped, fetched,
+        profilesSweep,
+        derivedFromSheet: !!data.derivedFromSheet,
+        failures,
+        skippedParked,
+      });
+      setStatus('');
+      if (typeof showCampaignToast === 'function') {
+        const msg = `${matched} marked Connected, ${stamped} marked Still Pending (of ${fetched} recent connections fetched)${sourceTag}`;
+        showCampaignToast(`Bulk check: ${msg}`, 6000);
+      }
     }
   } catch (err) {
     setStatus(`Failed: ${err.message}`);

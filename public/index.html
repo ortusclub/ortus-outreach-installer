@@ -904,6 +904,31 @@
         <button type="button" id="btn-bulk-check-live" class="btn btn-secondary btn-sm" onclick="bulkCheckNow()">Bulk check connections</button>
         <span class="bulk-check-status-msg" style="font-style: italic; color: var(--gray); font-size: 0.85rem;"></span>
       </div>
+      <!-- v2.14.x: graphical summary card. Hidden until /api/bulk-check-now
+           returns a final result; replaces the long single-line text that
+           was previously rendered into .bulk-check-status-msg. The text
+           span above stays for streaming progress lines during the sweep. -->
+      <div class="bulk-check-summary" hidden>
+        <div class="bulk-check-summary__head">
+          <span class="bulk-check-summary__label">BULK CHECK · RESULT</span>
+          <span class="bulk-check-summary__sub" data-bcs="sub"></span>
+        </div>
+        <div class="bulk-check-summary__stats">
+          <div class="bulk-check-summary__stat">
+            <div class="bulk-check-summary__num" data-bcs="matched">0</div>
+            <div class="bulk-check-summary__lbl">CONNECTED</div>
+          </div>
+          <div class="bulk-check-summary__stat">
+            <div class="bulk-check-summary__num bulk-check-summary__num--muted" data-bcs="stamped">0</div>
+            <div class="bulk-check-summary__lbl">STILL PENDING</div>
+          </div>
+          <div class="bulk-check-summary__stat">
+            <div class="bulk-check-summary__num bulk-check-summary__num--muted" data-bcs="fetched">0</div>
+            <div class="bulk-check-summary__lbl">FETCHED</div>
+          </div>
+        </div>
+        <div class="bulk-check-summary__notes" data-bcs="notes"></div>
+      </div>
       <div id="campaign-warnings" style="display:none">
         <div>&#9888; Keep your laptop open — closing the lid stops the campaign</div>
         <div>&#9888; Do not close the browser windows that open — they run the campaign</div>

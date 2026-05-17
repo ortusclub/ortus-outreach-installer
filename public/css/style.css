@@ -3348,6 +3348,96 @@ body.route-dashboard .sidebar-nav { display: none; }
   overflow-y: auto;
 }
 
+/* v2.14.x: graphical bulk-check result card. Replaces the long inline
+   text line ("0 marked Connected, 8 marked Still Pending (of 120
+   recent connections fetched) — 1 account(s) failed: …") with a
+   cockpit-style numeric panel. Hairlines + monospace label + display
+   font on the numbers; no accent colors, monochrome only — matches
+   the Bugatti command-deck design language used elsewhere. */
+.bulk-check-summary {
+  border: 1px solid var(--hairline);
+  background: var(--bg-soft);
+  padding: 14px 18px 16px;
+  margin: 8px 0 14px;
+}
+.bulk-check-summary[hidden] { display: none; }
+.bulk-check-summary__head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline-soft);
+  margin-bottom: 12px;
+}
+.bulk-check-summary__label {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  color: var(--gray);
+}
+.bulk-check-summary__sub {
+  font-size: 0.72rem;
+  color: var(--gray);
+  font-style: italic;
+}
+.bulk-check-summary__sub:empty { display: none; }
+.bulk-check-summary__stats {
+  display: flex;
+  gap: 36px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.bulk-check-summary__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 80px;
+}
+.bulk-check-summary__num {
+  font-family: var(--display);
+  font-size: 2.4rem;
+  line-height: 1;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.bulk-check-summary__num--muted { color: var(--gray); }
+.bulk-check-summary__lbl {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  color: var(--gray);
+}
+.bulk-check-summary__notes {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--gray);
+}
+.bulk-check-summary__notes:empty {
+  display: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.bulk-check-summary__notes .note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.bulk-check-summary__notes .note .glyph {
+  font-family: var(--mono);
+  color: var(--gray);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+.bulk-check-summary__notes .note .body { flex: 1; }
+.bulk-check-summary__notes .note--warn .glyph { color: var(--red); }
+.bulk-check-summary__notes .note--ok .glyph { color: var(--green); }
+
 .back-link {
   background: transparent;
   border: none;
