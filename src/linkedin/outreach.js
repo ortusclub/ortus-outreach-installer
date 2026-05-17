@@ -174,17 +174,23 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     } catch { /* cookie check is best-effort */ }
 
     // ── Step 1: Navigate to lead's profile ──
-    // 2.8.29 perf: check_only uses domcontentloaded (not networkidle0) — the
+    // 2.8.29 perf: check_only used domcontentloaded (not networkidle0) — the
     // Voyager API only needs the URL pathname + cookies, both available as
     // soon as the document parses. networkidle0 waits for LinkedIn's polling
-    // to stop and routinely costs 10-20s of dead time. Send paths still wait
-    // because they need the action buttons rendered.
-    const navWait = (modeHint === 'check_only') ? 'domcontentloaded' : 'networkidle0';
-    const navTimeout = (modeHint === 'check_only') ? 15000 : 30000;
+    // to stop and routinely costs 10-20s of dead time.
+    //
+    // v2.14.x: send paths ALSO switch to domcontentloaded. In background-
+    // throttled tabs (the operator's default mode — 99% of campaigns run
+    // with the Electron window backgrounded), LinkedIn's chat-polling /
+    // realtime-updates XHRs never go idle, so networkidle0 was timing out
+    // at 30s on every navigation. The subsequent `waitForDomSettle` +
+    // explicit 2s buffer (Step 2 below) covers the rendered-action-buttons
+    // wait that networkidle0 used to provide. Net: 30s dead time → ~3.5s
+    // settle.
     try {
-      await page.goto(url, { waitUntil: navWait, timeout: navTimeout });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
     } catch (e) {
-      console.log(`[outreach] ${navWait} timed out, continuing: ${e.message}`);
+      console.log(`[outreach] domcontentloaded timed out, continuing: ${e.message}`);
     }
 
     // ── Step 2: DOM settle / buffer / zoom — only needed for paths that
