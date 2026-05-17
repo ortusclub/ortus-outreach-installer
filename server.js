@@ -2415,6 +2415,125 @@ app.post('/api/preview-intro-dm', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// v2.14.x — Diagnostic: navigate a URL inside a specific GoLogin profile and
+// report what URL the page ACTUALLY ends up on (after redirects + JS-driven
+// nav). Built to investigate the Sales-Nav redirect issue: paste the
+// /messaging/compose/?recipient=… URL, see if LinkedIn server-side reroutes
+// to /sales/lead/…, capture a screenshot of where we landed.
+//
+// Usage from terminal (port shows on dev:app boot — currently 61044):
+//   curl -X POST http://localhost:<PORT>/api/diagnostic/navigate \
+//     -H 'Content-Type: application/json' \
+//     -d '{"profileEmail":"marife.espeleta@ortus.solutions","url":"https://www.linkedin.com/messaging/compose/?recipient=hannah-gywneth-samson-085a83378"}'
+//
+// Response includes the inputUrl we asked for, finalUrl after redirects,
+// the full transition list (every URL the main frame visited), title,
+// whether Sales Nav was detected, and a screenshot path. Refuses to run if
+// a campaign is currently active so it doesn't fight for the semaphore.
+// ---------------------------------------------------------------------------
+app.post('/api/diagnostic/navigate', async (req, res) => {
+  if (campaign.running) {
+    return res.status(409).json({ error: 'A campaign is currently running. Stop it first to use the diagnostic.' });
+  }
+  const { profileEmail, profileId: profileIdRaw, url } = req.body || {};
+  if (!url) return res.status(400).json({ error: 'url required' });
+  if (!profileEmail && !profileIdRaw) {
+    return res.status(400).json({ error: 'profileEmail or profileId required' });
+  }
+  const token = process.env.GOLOGIN_API_TOKEN;
+  let profileId = profileIdRaw;
+  let resolvedFromEmail = null;
+  if (!profileId && profileEmail) {
+    try {
+      const allProfiles = await getProfiles(token);
+      const match = allProfiles.find((p) => String(p.name || '').toLowerCase() === String(profileEmail).toLowerCase());
+      if (!match) {
+        return res.status(404).json({ error: `Profile not found for email: ${profileEmail}` });
+      }
+      profileId = match.id;
+      resolvedFromEmail = match.name;
+    } catch (err) {
+      return res.status(500).json({ error: `Profile resolution failed: ${err.message}` });
+    }
+  }
+
+  const { closeProfile: _closeProfile } = await import('./src/gologin-launcher.js');
+
+  let launched;
+  try {
+    launched = await launchProfile(profileId, token);
+  } catch (err) {
+    return res.status(500).json({ error: `Launch failed: ${err.message}` });
+  }
+  const page = launched.page;
+
+  const transitions = [];
+  const navListener = (frame) => {
+    try {
+      if (frame === page.mainFrame()) {
+        transitions.push({ at: new Date().toISOString(), url: frame.url() });
+      }
+    } catch { /* */ }
+  };
+  page.on('framenavigated', navListener);
+
+  let navError = null;
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (err) {
+    navError = err.message;
+  }
+  // Let any client-side / meta-refresh redirects play out.
+  await new Promise(r => setTimeout(r, 5000));
+
+  let finalUrl = '';
+  let title = '';
+  try { finalUrl = page.url(); } catch { /* */ }
+  try { title = await page.title(); } catch { /* */ }
+
+  // Screenshot for visual confirmation of where we landed.
+  const ts = Date.now();
+  const screenshotPath = `/tmp/ortus-diagnose-${ts}.png`;
+  try {
+    await page.screenshot({ path: screenshotPath, fullPage: false });
+  } catch (e) {
+    console.warn(`[diagnostic] screenshot failed: ${e.message}`);
+  }
+
+  // Capture the visible DOM landmarks — different LinkedIn surfaces have
+  // distinct top-bar markers. Helps identify Sales Nav vs regular UI.
+  let landmarks = {};
+  try {
+    landmarks = await page.evaluate(() => {
+      const out = {};
+      out.hasSalesNavBar  = !!document.querySelector('#sales-nav-app-banner, .global-nav__nav, [data-control-name*="sales"]');
+      out.hasMessagingForm = !!document.querySelector('.msg-form__contenteditable, div[role="textbox"][aria-label*="Write a message" i]');
+      out.hasSalesCompose = !!document.querySelector('.lead-message-form, .ml-message-form, .msg-overlay-list-bubble');
+      out.bodyTextSample  = (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      return out;
+    });
+  } catch { /* */ }
+
+  page.off('framenavigated', navListener);
+  try { await _closeProfile(profileId); } catch { /* */ }
+
+  res.json({
+    profileEmail: profileEmail || resolvedFromEmail,
+    profileId,
+    inputUrl: url,
+    finalUrl,
+    redirected: !!finalUrl && finalUrl !== url,
+    salesNavDetected: !!finalUrl && finalUrl.includes('/sales/'),
+    transitionCount: transitions.length,
+    transitions,
+    title,
+    landmarks,
+    navError,
+    screenshotPath,
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 2.8.20 (W1-C1) — fatal-error sink. Sync write because the process is
 // already dying — async writes risk being dropped before the event loop ends.
 // Line-delimited JSON (NDJSON) keeps appends cheap and partial-write-safe.
