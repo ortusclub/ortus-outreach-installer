@@ -7269,14 +7269,6 @@ function renderBulkCheckSummary({ matched, stamped, fetched, profilesSweep, deri
   card.hidden = false;
 }
 
-// Minimal HTML escape — defensive, since the values flow from server
-// (profile names, error messages) that could in theory contain '<' etc.
-function escapeHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
 async function bulkCheckNow() {
   // Two buttons exist (wizard Advanced + live status panel) and two status
   // spans share the .bulk-check-status-msg class. Update all instances.
