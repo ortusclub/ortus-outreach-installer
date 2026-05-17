@@ -119,6 +119,38 @@ var ALL_MODE_COLUMNS_V2 = [
   'Open Profile', 'Introduction Status'
 ];
 
+// Column widths applied on every prepareSheet call. Universal map: any
+// column on the sheet whose header matches a key here gets its width
+// set; unknown columns (operator-added) are left untouched. Includes
+// common operator-owned columns alongside bot-provisioned ones so a
+// fresh Ortus sheet displays without "…" truncation by default.
+var COLUMN_WIDTHS_V2 = {
+  // Operator-owned columns commonly seen on Ortus sheets.
+  'First Name': 100,
+  'Last Name':  110,
+  'linkedin url': 320,
+  'LinkedIn URL': 320,
+
+  // Always-provisioned bot columns (Stage + timing + sender).
+  'Stage':               160,
+  'Sender':              200,
+  'Date of Last Action': 110,
+  'Time of Last Action': 100,
+
+  // Per-mode status columns. Widths chosen to fit the longest common
+  // value without wrap (e.g. "Connection Request Sent", "Still Pending
+  // (2026-05-17 11:46)"). Long-tail values may still wrap in Sheets if
+  // the operator has wrap enabled.
+  'Connection Request Status':  200,
+  'Connection Accepted Status': 240,
+  'DM Status':                  160,
+  'OP Status':                  130,
+  'InM Status':                 130,
+  'Intro Status':               160,
+  'Introduction Status':        180,
+  'Open Profile':               140
+};
+
 // ── Status palette (legacy yellow / green / red / grey) ──
 // Applied as conditional format rules to Stage + every per-mode status
 // column on every prepareSheet call. Cells are bold + tinted bg + tinted
@@ -570,6 +602,16 @@ function handlePrepareSheet(sheet, data) {
       .setBackground('#f1f3f4');
     if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1);
   }
+
+  // 6) Set column widths from COLUMN_WIDTHS_V2. Kills "…" truncation on
+  // common columns (Stage, Sender, status text, LinkedIn URL). Idempotent:
+  // every prepareSheet call resets widths to the map values. Columns
+  // whose header is not in the map keep their existing width.
+  Object.keys(COLUMN_WIDTHS_V2).forEach(function(col) {
+    var idx = headers.indexOf(col);
+    if (idx === -1) return;
+    sheet.setColumnWidth(idx + 1, COLUMN_WIDTHS_V2[col]);
+  });
 
   return jsonResponse({
     success: true,
