@@ -29,5 +29,8 @@ export function computeStillPendingUrls(rows, linkedinColumn) {
 }
 
 export function buildClosedNotConnectedUpdate() {
-  return { connectionRequestStatus: CLOSED_NOT_CONNECTED_STAMP };
+  // Key must match google-apps-script.js FIELD_MAP. Both `status` and
+  // `connectionStatus` route to the 'Connection Request Status' column;
+  // any other key is silently dropped by writeFields.
+  return { connectionStatus: CLOSED_NOT_CONNECTED_STAMP };
 }

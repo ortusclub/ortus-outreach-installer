@@ -25,7 +25,7 @@ import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
-import { updateSheetRow, ensureTrackingColumns, prepareSheet } from './sheets-writer.js';
+import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet } from './sheets-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
@@ -3116,44 +3116,21 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
     return { ok: false, error: 'Campaign is not in monitoring state' };
   }
 
-  console.log('[stopMonitoring] passed state guard, proceeding with cleanup');
+  console.log('[stopMonitoring] passed state guard, flipping state BEFORE slow sheet work');
 
+  // Capture context before state flip — protects against a new campaign
+  // overwriting campaign.sheetUrl while the stamp call is in flight.
   const sheetUrl = campaign.sheetUrl;
   const linkedinColumn = campaign.linkedinColumn || '';
   const sheetId = _extractSheetIdFromUrl(sheetUrl);
+  const participatingProfileIds = Array.isArray(campaign.participatingProfileIds)
+    ? campaign.participatingProfileIds.slice() : [];
 
-  // 1. Fetch sheet, compute still-pending leads
-  let stampedCount = 0;
-  try {
-    const rows = await fetchSheetRows(sheetUrl);
-    const pendingUrls = computeStillPendingUrls(rows, linkedinColumn);
-    for (const url of pendingUrls) {
-      try {
-        await updateSheetRow(sheetUrl, url, buildClosedNotConnectedUpdate(), linkedinColumn);
-        stampedCount++;
-      } catch (err) {
-        console.warn(`[stopMonitoring] stamp failed for ${url}: ${err.message}`);
-      }
-    }
-  } catch (err) {
-    console.warn(`[stopMonitoring] sheet fetch failed: ${err.message}`);
-  }
-
-  console.log(`[stopMonitoring] stamp loop done: stamped=${stampedCount} pending lead(s)`);
-
-  // 2. Append a final log line
-  const ts = `[${new Date().toISOString()}]`;
-  campaign.logs = campaign.logs || [];
-  campaign.logs.push(`${ts} 🛏 Monitoring ended (reason: ${reason}) · ${stampedCount} still-pending lead(s) stamped Closed - Not Connected`);
-
-  // 3. Unregister log-bus appenders for every participating profile
-  if (Array.isArray(campaign.participatingProfileIds)) {
-    for (const pid of campaign.participatingProfileIds) {
-      unregisterAppender(sheetId, pid);
-    }
-  }
-
-  // 4. Transition state
+  // ── State transition + timer cleanup FIRST ──────────────────────────
+  // Move state to 'done' BEFORE the sheet stamp. Without this, the 60s
+  // monitoring watcher tick fires a fresh runMonitoringCheckAll during
+  // the stamp call (its state guard at line 3237 still sees 'monitoring'),
+  // and the cockpit + dashboard show "monitoring" until the stamp finishes.
   campaign.state = 'done';
   console.log(`[stopMonitoring] state set to 'done'`);
 
@@ -3161,8 +3138,46 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   if (_preFireTimer) { clearTimeout(_preFireTimer); _preFireTimer = null; }
   _preFireNotifiedFor = null;
 
-  // Clear the on-disk monitoring slice
+  // Unregister log-bus appenders for every participating profile.
+  for (const pid of participatingProfileIds) {
+    unregisterAppender(sheetId, pid);
+  }
+
+  // Clear the on-disk monitoring slice so a crash-then-restart doesn't
+  // resume monitoring on a stopped campaign.
   try { await clearMonitoringState(); } catch { /* */ }
+
+  // ── Sheet stamping (single batch call) ──────────────────────────────
+  // Replaces the previous serial updateSheetRow loop (one HTTP round-trip
+  // per pending lead). With ~50 pending leads, the serial path took
+  // 2-5 minutes — long enough that the watcher tick fired a fresh check
+  // mid-stop. Batch path is one HTTP call regardless of count: ~5-10s.
+  let stampedCount = 0;
+  try {
+    const rows = await fetchSheetRows(sheetUrl);
+    const pendingUrls = computeStillPendingUrls(rows, linkedinColumn);
+    if (pendingUrls.length > 0) {
+      const updates = pendingUrls.map((url) => ({
+        linkedinUrl: url,
+        ...buildClosedNotConnectedUpdate(),
+      }));
+      const ok = await batchUpdateSheet(sheetUrl, updates);
+      if (ok) {
+        stampedCount = pendingUrls.length;
+      } else {
+        console.warn(`[stopMonitoring] batchUpdateSheet returned false for ${pendingUrls.length} pending lead(s)`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[stopMonitoring] sheet stamp failed: ${err.message}`);
+  }
+
+  console.log(`[stopMonitoring] stamp batch done: stamped=${stampedCount} pending lead(s)`);
+
+  // Append a final log line.
+  const ts = `[${new Date().toISOString()}]`;
+  campaign.logs = campaign.logs || [];
+  campaign.logs.push(`${ts} 🛏 Monitoring ended (reason: ${reason}) · ${stampedCount} still-pending lead(s) stamped Closed - Not Connected`);
 
   console.log(`[stopMonitoring] return ok=true, stampedCount=${stampedCount}, reason=${reason}`);
   return { ok: true, stampedCount, reason };
