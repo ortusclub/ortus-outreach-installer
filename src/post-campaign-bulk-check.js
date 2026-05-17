@@ -197,6 +197,18 @@ async function tick() {
         if (Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0
             && entry.primaryName && entry.primaryIntroBody) {
           try {
+            // v2.14.x: runAutoIntros reads primary fields from `templates.*`
+            // (auto-intro.js:63-65), NOT from top-level kwargs. The previous
+            // top-level shape silently triggered the "Primary Person missing"
+            // early-return (auto-intro.js:67-71) for every post-campaign
+            // sweep — every CC+IC intro that should have fired in the 7-day
+            // post-campaign window was silently skipped. Wrap in templates
+            // here. (Same convention used by the 3 in-campaign call sites
+            // in campaign.js and the manual /api/bulk-check-now button.)
+            // NOTE: senderFirstNames is not persisted on the schedule entry
+            // today, so `{sender first name}` tokens fall back to the
+            // profile email-split. Persist on registerSchedule in a future
+            // change if operators use that token in post-campaign intros.
             await runAutoIntros({
               page: launched.page,
               profileId: entry.profileId,
@@ -204,10 +216,12 @@ async function tick() {
               sheetUrl: entry.sheetUrl,
               linkedinColumn: entry.linkedinColumn,
               connectedUrls: r.connectedUrls,
-              primaryName: entry.primaryName,
-              primaryIntroBody: entry.primaryIntroBody,
-              primaryUrl: entry.primaryUrl || '',
-              introTitle: entry.introTitle || 'Introduction: {first name} <> {intro name}',
+              templates: {
+                primaryName: entry.primaryName,
+                primaryIntroBody: entry.primaryIntroBody,
+                primaryUrl: entry.primaryUrl || '',
+                introTitle: entry.introTitle || 'Introduction: {first name} <> {intro name}',
+              },
               log: (line) => {
                 console.log(`[post-campaign] ${line}`);
                 appendCampaignLog(entry.sheetId, entry.profileId, line);
