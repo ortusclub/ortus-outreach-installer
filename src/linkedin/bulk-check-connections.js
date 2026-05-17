@@ -130,31 +130,46 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
 
     if (isMatch) {
       dbgPidMatched++;
-      if (cs === 'Connected' || cs === 'Already connected') { dbgAlreadyConnected++; continue; }
-      // v2.14.x — Option B: skip if the sheet already shows an Introduction
-      // for this row. Defense across process restarts (when the in-memory
-      // Set below is empty) and against the duplicate-intro pattern
-      // observed for accounts with many pre-existing 1st-degree connections
-      // (nitin.kumar 2026-05-16: kanojiya/samson/chaudhary intro'd 3× in
-      // one day because the bulk-check filter only checked cs, not is_).
+
+      // v2.14.x: check introductionStatus FIRST. The previous code skipped
+      // any row with cs='Connected'/'Already connected' before looking at
+      // introductionStatus — which meant any lead whose intro got
+      // INTERRUPTED (Stop pressed mid-batch, browser died) was stamped
+      // 'Skipped — Stop pressed' / 'Skipped — browser closed' but then
+      // EXCLUDED FROM RE-PICKUP on every subsequent bulk-check, because
+      // the cs guard short-circuited before the introductionStatus check
+      // could route them back into connectedUrls. The cs-guard was a stale
+      // proxy for "intro already done"; the introductionStatus check below
+      // is the authoritative signal — see commit comment about
+      // nitin.kumar 2026-05-16 (kanojiya/samson/chaudhary 3× intros).
       const introductionStatus = (
         row['Introduction Status'] || row['introduction status'] || ''
       ).toString().trim();
+
+      // Authoritative intro-already-done signals: sheet-side (cross-restart)
+      // and in-memory blacklist (this-process, beats CSV cache lag).
       if (introductionStatus === 'Introduction Made' || introductionStatus === 'Introduction Already Made') {
         dbgAlreadyIntroduced++;
         continue;
       }
-      // v2.14.x — Option A: in-memory blacklist of URLs intro'd this
-      // process. Bulletproof against Google Sheets CSV export cache lag
-      // (the sheet read here may not see writes made <5 min ago, which is
-      // exactly the window in which bulk-check fires again per the 5-min
-      // cooldown).
       if (introducedInRun && introducedInRun.has(url)) {
         dbgAlreadyIntroduced++;
         continue;
       }
+
+      // Not yet introduced — queue for the auto-intro pass. Even if the
+      // CC column is already 'Connected' (from a prior bulk-check), the
+      // intro still needs to fire — this is the path that lets
+      // 'Skipped — Stop pressed' / 'Skipped — browser closed' / 'Failed'
+      // leads recover on the next bulk-check round.
+      const ccAlreadyStamped = (cs === 'Connected' || cs === 'Already connected');
+      if (ccAlreadyStamped) dbgAlreadyConnected++;
       connectedUrls.push(url);
-      if (!suppressAcceptedStamp) {
+
+      // Only stamp the CC column when it's not already at its target
+      // value — avoids redundant Apps Script writes for rows we're just
+      // re-picking-up for an intro retry.
+      if (!suppressAcceptedStamp && !ccAlreadyStamped) {
         // v2.14.x: also stamp checkStatus so the legacy "Check Status"
         // column (still present on operator sheets that haven't been
         // migrated by the Apps Script rename) fills in visibly. In the

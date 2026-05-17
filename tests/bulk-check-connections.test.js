@@ -56,13 +56,59 @@ test('suppressAcceptedStamp=true: still-pending rows STILL get stamped', () => {
   assert.equal(pendingStamp.cc, stillPendingLabel);
 });
 
-test('back-compat: recognizes "Connection Accepted Status" as already-Connected header', () => {
-  const rows = [baseRow({ 'Connection Accepted Status': 'Connected', 'Connected Status': '' })];
+test('back-compat: row with CC=Connected (new header) AND introduction made is skipped', () => {
+  // v2.14.x: CC=Connected alone is NOT enough to skip — the intro might
+  // have been interrupted (Stop pressed, browser died) leaving a Skipped
+  // stamp that needs re-pickup. The authoritative "intro done" signal is
+  // introductionStatus='Introduction Made'. See bulk-check-connections.js
+  // re-ordering for SB-2.
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'Introduction Status': 'Introduction Made',
+  })];
   const { connectedUrls } = computeBulkCheckUpdates(
     rows, baseConns, linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
   );
-  // Row already shows Connected via the NEW header — should be skipped (no re-stamp).
-  assert.equal(connectedUrls.length, 0, 'rows already marked Connected via new header are skipped');
+  assert.equal(connectedUrls.length, 0, 'rows with intro already made are skipped');
+});
+
+test('SB-2 fix: row with CC=Connected but BLANK introductionStatus is re-pushed for intro retry', () => {
+  // Repro of the SB-2 bug: a lead whose intro was interrupted mid-batch
+  // had CC=Connected but no introductionStatus. Previous filter skipped
+  // them forever; new filter re-pushes them to connectedUrls so the next
+  // auto-intro pass fires.
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    // No Introduction Status — intro never fired or got interrupted.
+  })];
+  const { connectedUrls, updates } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 1, 'CC=Connected without intro IS re-pushed for retry');
+  // CC is already at its target value — don't redundantly re-stamp it.
+  const stamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(stamp, undefined, 'no CC re-stamp when already Connected');
+});
+
+test('SB-2 fix: row with CC=Connected + Skipped — Stop pressed is re-pushed for intro retry', () => {
+  // Specifically tests the new 'Skipped — Stop pressed' / 'Skipped — browser
+  // closed' status from auto-intro.js's graceful-abort path. These statuses
+  // must be treated identically to 'no intro status' — re-push for retry,
+  // do not re-stamp CC.
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Introduction Status': 'Skipped — Stop pressed',
+  })];
+  const { connectedUrls, updates } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 1, 'Skipped status is treated as not-yet-introduced');
+  const stamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(stamp, undefined, 'no CC re-stamp');
 });
 
 test('empty conns: pending rows still get Still Pending stamp; matched-set lookups yield no false matches', () => {
@@ -144,12 +190,20 @@ test('matched + NOT invited + suppressAcceptedStamp: no stamp but URL returned f
   assert.equal(match, undefined, 'no stamp when suppressAcceptedStamp is true');
 });
 
-test('row already marked "Already connected" via Connection Accepted Status: skipped (no re-stamp)', () => {
-  const rows = [baseRow({ 'Connection Accepted Status': 'Already connected', 'Connected Status': '' })];
+test('row marked "Already connected" + introduction already made: skipped (no re-stamp)', () => {
+  // v2.14.x: CC='Already connected' alone is NOT enough — the row could
+  // need an intro retry if the introductionStatus is blank/Skipped/Failed.
+  // Authoritative "skip me" signal is introductionStatus='Introduction Made'
+  // (or 'Introduction Already Made').
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Already connected',
+    'Connected Status': '',
+    'Introduction Status': 'Introduction Made',
+  })];
   const { connectedUrls, updates } = computeBulkCheckUpdates(
     rows, baseConns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
   );
-  assert.equal(connectedUrls.length, 0, 'already-stamped rows not re-pushed');
+  assert.equal(connectedUrls.length, 0, 'intro-already-made rows not re-pushed');
   assert.equal(updates.length, 0, 'no re-stamp');
 });
