@@ -128,7 +128,7 @@ function handleAppendEvents(data) {
         .setValues(g.rows);
       appendedTotal += g.rows.length;
     }
-    upsertIndexRow(ss, g.tabName, g.startedAt, g.operator);
+    upsertIndexRow(ss, g.tabName, g.startedAt, g.operator, sheet.getSheetId());
   });
 
   return jsonResponse({ success: true, appended: appendedTotal });
@@ -235,7 +235,9 @@ function ensureIndexTab(ss) {
 
 // Insert or refresh the Index row for a given tab. Uses formulas to
 // keep totals live — they auto-update as new rows append to that tab.
-function upsertIndexRow(ss, tabName, startedAt, operator) {
+// gid must be the numeric sheet ID from sheet.getSheetId() so the
+// HYPERLINK target resolves to a real in-sheet anchor.
+function upsertIndexRow(ss, tabName, startedAt, operator, gid) {
   var index = ensureIndexTab(ss);
   var lastRow = index.getLastRow();
 
@@ -252,6 +254,9 @@ function upsertIndexRow(ss, tabName, startedAt, operator) {
   }
 
   var quotedName = "'" + tabName.replace(/'/g, "''") + "'";
+  var linkFormula = (gid || gid === 0)
+    ? '=HYPERLINK("#gid=' + gid + '", "Open")'
+    : '"—"';
   var values = [
     tabName,
     startedAt || '',
@@ -260,7 +265,7 @@ function upsertIndexRow(ss, tabName, startedAt, operator) {
     '=IFERROR(COUNTIF(' + quotedName + '!C:C, "ERROR"), 0)',
     '=IFERROR(COUNTIF(' + quotedName + '!C:C, "WARN"), 0)',
     '=IFERROR(INDEX(' + quotedName + '!A:A, COUNTA(' + quotedName + '!A:A)), "")',
-    '=HYPERLINK("#gid=" & ' + quotedName + '!A1, "Open")'
+    linkFormula
   ];
 
   if (existingRowNum === -1) {
