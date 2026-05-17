@@ -1552,70 +1552,30 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       await page.evaluate(() => document.activeElement?.blur());
       await page.click(recipientSelector);
     } catch { /* focus is best-effort */ }
-    // v2.14.x: CDP Input.insertText — IME-style atomic text injection that
-    // works in background-throttled tabs (single protocol call, no per-
-    // keystroke timing window) AND triggers browser-NATIVE input events
-    // that React's controlled-input value-setter override catches. The
-    // previous synthetic-paste path (`dispatchEvent(new InputEvent('input',
-    // {inputType:'insertFromPaste'}))`) is documented as unreliable
-    // against React controlled inputs because:
-    //   1. React overrides HTMLInputElement.prototype.value setter to
-    //      detect changes — only browser-native input events go through
-    //      that pipeline reliably (see react-trigger-change npm + Cory
-    //      Rylan's writeup).
-    //   2. The W3C Input Events spec requires `insertFromPaste` to be
-    //      preceded by a real `paste` event; dispatching the InputEvent
-    //      alone is non-conformant, and Chrome/React event handling for
-    //      it is best-effort.
-    // Symptom: typeahead search XHR sometimes fired, sometimes didn't —
-    // first-lead-in-batch failed (Ranjana 16:24:17 / 2026-05-17) while
-    // later leads happened to work. With Input.insertText the browser
-    // dispatches the input event from C++ (Blink's IME path), which
-    // bypasses both issues.
-    //
-    // Why this works in background: Input.insertText is a CDP command —
-    // it does not flow through Chrome's UI input-event pipeline (which IS
-    // subject to per-keystroke throttling in occluded windows). The
-    // existing --disable-background-timer-throttling and
-    // --disable-renderer-backgrounding flags in gologin-launcher keep
-    // LinkedIn's debounce timer firing afterwards.
-    let _cdp;
-    try { _cdp = await page.target().createCDPSession(); } catch { /* fall through; pasteRecipient handles null */ }
+    // v2.14.x: Paste-style insert instead of keystroke-by-keystroke typing.
+    // page.type sends 16 separate keystrokes over ~960ms — every one is a
+    // chance for the typeahead chip-finalize re-render to drop chars when
+    // the renderer is throttled (macOS App Nap, occluded windows, etc.).
+    // A paste is atomic: one value mutation + one input event, no drop window.
+    // We keep a ~1s wait afterwards so the typeahead's debounce/API has the
+    // same render budget the typing flow used to give it. Chrome-flag fix
+    // in gologin-launcher.js stays as belt-and-suspenders for click events.
     const pasteRecipient = async () => {
-      // Clear any existing text via React-aware native setter so re-paste
-      // retries start from a clean slate (Input.insertText INSERTS at the
-      // cursor — without clearing first, the second paste would
-      // concatenate stale partial text).
-      await page.evaluate((sel) => {
+      await page.evaluate((sel, text) => {
         const el = document.querySelector(sel);
         if (!el) return;
+        // Native setter so controlled-input wrappers (React/Ember) see the change.
         const proto = Object.getPrototypeOf(el);
         const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
                     || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-        if (setter) setter.call(el, '');
-        else el.value = '';
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      }, recipientSelector);
-      // Re-focus before insertText — CDP Input.insertText inserts at the
-      // browser's current focus point.
-      try { await page.click(recipientSelector); } catch { /* best-effort */ }
-      if (_cdp) {
-        await _cdp.send('Input.insertText', { text: introName });
-      } else {
-        // Fallback: if CDP session creation failed, fall back to the
-        // setter-based synthetic dispatch. Worse than CDP but better
-        // than aborting the intro.
-        await page.evaluate((sel, text) => {
-          const el = document.querySelector(sel);
-          if (!el) return;
-          const proto = Object.getPrototypeOf(el);
-          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
-                      || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if (setter) setter.call(el, text);
-          else el.value = text;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        }, recipientSelector, introName);
-      }
+        if (setter) setter.call(el, text);
+        else el.value = text;
+        el.dispatchEvent(new InputEvent('input', {
+          bubbles: true, cancelable: true,
+          inputType: 'insertFromPaste', data: text,
+        }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, recipientSelector, introName);
       await new Promise(r => setTimeout(r, 1000));
     };
     await pasteRecipient();
@@ -1637,9 +1597,6 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
     } catch (e) {
       console.warn(`[actions:intro] Paste verification failed: ${e.message}`);
     }
-    // Tidy: release the CDP session now that all Input.insertText calls are
-    // done. Auto-cleaned on page close anyway, but explicit detach is cheap.
-    if (_cdp) { await _cdp.detach().catch(() => {}); }
 
     // v2.14.x: URL-settle poll BEFORE the dropdown-poll page.evaluate.
     // For recipient combinations that already have a 3-way intro thread
