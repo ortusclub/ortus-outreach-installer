@@ -26,6 +26,7 @@ import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfileP
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet } from './sheets-writer.js';
+import { opsLogEvent, campaignLogAppendRun } from './log-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
@@ -460,6 +461,30 @@ function setAction(label, opts = {}) {
   };
 }
 
+// Helper for the central Operations Log (Ortus Operations Log sheet via
+// log-writer.js). Fire-and-forget — never throws, never blocks. Reads
+// campaign context from the global. Silent no-op when OPS_LOG_WEBAPP_URL
+// is unset.
+function _ops(severity, eventName, extra) {
+  try {
+    const e = extra || {};
+    opsLogEvent(
+      {
+        name: campaign.name || '',
+        startedAt: campaign.startedAt || '',
+        operator: campaign.createdBy || '',
+      },
+      {
+        severity,
+        event: eventName,
+        account: e.account || campaign.currentProfile || '',
+        leadUrl: e.leadUrl || '',
+        details: e.details || '',
+      },
+    );
+  } catch (_) { /* fire-and-forget */ }
+}
+
 // 2.9.2: format a Date in the operator's local timezone (the Electron app
 // runs on their machine, so new Date() already reflects their TZ — Philippines,
 // Europe, US, wherever). Output: "May 4th, 13:43" — month abbreviation, day
@@ -542,6 +567,8 @@ function pushSoftWarning(state, { profileId, pName, kind, message }) {
   }
 
   appendWarningLog(entry).catch(() => {}); // fire-and-forget, errors logged in helper
+  // Mirror to the central Operations Log.
+  _ops('WARN', `Soft warning: ${kind}`, { account: pName, details: message });
   return entry;
 }
 
@@ -588,6 +615,10 @@ function pushError(err) {
   if (campaign.errors.length > 100) campaign.errors.shift();
   // Phase 2.8.20 (W1-B2): also persist to disk (fire-and-forget).
   appendErrorLog(entry).catch(() => {});
+  // Mirror to the central Operations Log so colleagues can self-diagnose.
+  _ops('ERROR', err.message || 'Error', {
+    details: err.stack ? (err.stack.split('\n')[1] || '').trim() : '',
+  });
 }
 
 // ── Profile name cache ──
@@ -1053,6 +1084,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.totalProcessed = 0;
   campaign.totalTargets = 0;
   campaign.mode = mode;
+  // ISO timestamp marking when this campaign run began. Used by the
+  // central Operations Log to route events to the correct per-campaign
+  // tab (campaign name + startedAt is the tab key, so resumes append
+  // to the same tab).
+  campaign.startedAt = new Date().toISOString();
   campaign.profileNames = [];
   campaign.errors = [];
   campaign.parkedProfiles = [];
@@ -1120,6 +1156,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   };
 
   const campaignStartTime = Date.now();
+
+  // Central Operations Log: mark the start of this campaign run.
+  _ops('INFO', 'Campaign started', {
+    details: `mode: ${mode} · ${Array.isArray(profileIds) ? profileIds.length : 0} account(s) · daily limit: ${dailyLimit}`,
+  });
+
   // v2.11.7: track how the run ended so the dashboard badge can say
   // "completed" / "stopped" / "errored" instead of always "completed".
   // Resolved once in finally — catch sets 'errored', operator-stop sets
@@ -2738,6 +2780,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
       });
       Object.assign(campaign, updated);
+      _ops('INFO', 'Monitoring started', {
+        details: `${profilesThatSentAtLeastOne.size} account(s) · cadence: ${campaign.checkIntervalMinutes || 60}min · ends: ${campaign.monitoringUntil || ''}`,
+      });
 
       try {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
@@ -2815,6 +2860,39 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       });
     } catch (histErr) {
       console.error('Failed to save campaign history:', histErr.message);
+    }
+
+    // Central Operations Log + Campaign Activity Log mirrors. Both are
+    // fire-and-forget — failures never block the campaign-end cleanup.
+    const _durationSec = Math.round((Date.now() - campaignStartTime) / 1000);
+    _ops('INFO', `Campaign ended (${endReason})`, {
+      details: `${campaign.totalProcessed} processed · ${campaign.errors.length} errors · ${_durationSec}s`,
+    });
+    try {
+      const _templateBlocks = [];
+      if (tpl.connectionNote)    _templateBlocks.push(`Connection note: "${tpl.connectionNote}"`);
+      if (tpl.followUpMessage)   _templateBlocks.push(`Follow-up: "${tpl.followUpMessage}"`);
+      if (tpl.inmail?.subject)   _templateBlocks.push(`InMail subject: "${tpl.inmail.subject}"`);
+      if (tpl.inmail?.message)   _templateBlocks.push(`InMail body: "${tpl.inmail.message}"`);
+      if (tpl.openProfileSubject) _templateBlocks.push(`OP subject: "${tpl.openProfileSubject}"`);
+      if (tpl.openProfileBody)   _templateBlocks.push(`OP body: "${tpl.openProfileBody}"`);
+      if (tpl.introName)         _templateBlocks.push(`Intro name: ${tpl.introName}`);
+      campaignLogAppendRun({
+        ts: new Date().toISOString(),
+        operator: campaign.createdBy || '',
+        name: campaign.name || '',
+        mode: campaign.mode || '',
+        profiles: campaign.profileNames || [],
+        totalLeads: campaign.totalTargets || 0,
+        processed: campaign.totalProcessed || 0,
+        errors: campaign.errors.length || 0,
+        durationSec: _durationSec,
+        endReason,
+        templatePreview: _templateBlocks.join('\n\n'),
+        sheetUrl: sheetUrl || '',
+      }).catch(() => {}); // fire-and-forget — network errors are non-fatal
+    } catch (logErr) {
+      console.warn('[log-writer] campaign-end mirror threw:', logErr.message);
     }
 
     // Register a post-campaign acceptance-tracking window for every profile
@@ -3133,6 +3211,7 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // and the cockpit + dashboard show "monitoring" until the stamp finishes.
   campaign.state = 'done';
   console.log(`[stopMonitoring] state set to 'done'`);
+  _ops('INFO', `Monitoring ended (${reason})`);
 
   // v2.14.x: cancel any armed pre-fire heads-up (we just left monitoring).
   if (_preFireTimer) { clearTimeout(_preFireTimer); _preFireTimer = null; }
