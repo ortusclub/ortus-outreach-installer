@@ -762,6 +762,17 @@ app.post('/api/campaign/stop', async (req, res) => {
   // when the running campaign is mode=connect_and_introduce.
   const fullHalt = !!(req.body && req.body.full);
   const result = stopCampaign({ full: fullHalt });
+  // v2.14.x: ALSO flip the abort flags for Check DMs and Post Amplification.
+  // The bottom-bar Stop button posts to /api/campaign/stop regardless of
+  // which subsystem is currently running (the cockpit overlay sets
+  // checkDms.running and postAmp.running to make the UI feel like a unified
+  // campaign). Without these flips, the closeAllProfiles() below kills
+  // their browsers but their loops keep iterating — post-amp launches a
+  // FRESH browser for the next account and the operator sees a "stopped"
+  // campaign mysteriously start sending again. checkDms has the same
+  // shape. Flipping both flags here makes Stop actually mean Stop.
+  checkDms._abort = true;
+  postAmp._abort = true;
   // v2.14.x: respond to the UI immediately so the dashboard flips to
   // 'stopping' without waiting for the browser-close round-trip. The actual
   // browser kill runs after a short drain window — see comment block below.
