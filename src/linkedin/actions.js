@@ -1678,6 +1678,28 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
     // URL for diagnosis, then throw INTRO_DROPDOWN_HANG.
     const DROPDOWN_SOFT_TIMEOUT_MS = 30000;
 
+    // v2.14.x: wake-up click fallback. The paste + dispatchEvent path
+    // sometimes leaves the typeahead in a state where the value is in
+    // the input but the debounced search XHR never fired — the dropdown
+    // stays closed and we'd throw INTRO_RECIPIENT_NOT_FOUND. Operator
+    // manually reproduced (2026-05-17): clicking the recipient input at
+    // that point causes LinkedIn to fire the search and open the
+    // dropdown immediately.
+    //
+    // Fire a single page.click on the recipient input 4s into the
+    // dropdown poll. If the dropdown already opened naturally by then,
+    // a click on the same anchored input doesn't dismiss it (LinkedIn
+    // only closes typeahead dropdowns on clicks OUTSIDE). If it hadn't,
+    // this nudge triggers the search. We don't await it — page.click
+    // runs in parallel with the page.evaluate poll below.
+    let _wakeUpFired = false;
+    const _wakeUpTimer = setTimeout(() => {
+      _wakeUpFired = true;
+      page.click(recipientSelector)
+        .then(() => console.log('[actions:intro] Wake-up click fired (4s into dropdown poll — fallback for typeahead miss)'))
+        .catch((e) => console.warn(`[actions:intro] Wake-up click failed: ${e.message}`));
+    }, 4000);
+
     // Wait for typeahead dropdown, click exact match.
     const dropdownPromise = page.evaluate(async (name) => {
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -1764,7 +1786,12 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
           DROPDOWN_SOFT_TIMEOUT_MS,
         )),
       ]);
+      // Dropdown poll resolved (either ok=true match or ok=false no-match).
+      // Cancel the pending wake-up click if it hasn't fired yet — no point
+      // clicking once we have an answer.
+      clearTimeout(_wakeUpTimer);
     } catch (raceErr) {
+      clearTimeout(_wakeUpTimer);
       if (raceErr.message === 'INTRO_DROPDOWN_SOFT_TIMEOUT') {
         // Capture diagnostic state — defensive: screenshot + URL may also
         // hang if the page is fully wedged, race each against a 5s timer.
