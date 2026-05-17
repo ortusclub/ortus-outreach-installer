@@ -2869,14 +2869,40 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       details: `${campaign.totalProcessed} processed · ${campaign.errors.length} errors · ${_durationSec}s`,
     });
     try {
+      // Mode-aware template preview. Only dump fields the running mode
+      // actually uses — wizard form state may carry leftover values
+      // (e.g. OP body from a previous preset) that the campaign never
+      // sent, and logging those would mislead anyone reading the
+      // Campaign Activity sheet.
       const _templateBlocks = [];
-      if (tpl.connectionNote)    _templateBlocks.push(`Connection note: "${tpl.connectionNote}"`);
-      if (tpl.followUpMessage)   _templateBlocks.push(`Follow-up: "${tpl.followUpMessage}"`);
-      if (tpl.inmail?.subject)   _templateBlocks.push(`InMail subject: "${tpl.inmail.subject}"`);
-      if (tpl.inmail?.message)   _templateBlocks.push(`InMail body: "${tpl.inmail.message}"`);
-      if (tpl.openProfileSubject) _templateBlocks.push(`OP subject: "${tpl.openProfileSubject}"`);
-      if (tpl.openProfileBody)   _templateBlocks.push(`OP body: "${tpl.openProfileBody}"`);
-      if (tpl.introName)         _templateBlocks.push(`Intro name: ${tpl.introName}`);
+      const _wantsConnect  = (mode === 'connect_only' || mode === 'connect_and_introduce');
+      const _wantsMessage  = (mode === 'message_only' || mode === 'introduce_back');
+      const _wantsInmail   = (mode === 'inmail_only');
+      const _wantsOp       = (mode === 'open_profile_only')
+                          || (mode === 'connect_only' && !!messageOpenProfiles);
+      const _wantsAutoIntro = (mode === 'connect_and_introduce');
+      if (_wantsConnect && tpl.connectionNote)
+        _templateBlocks.push(`Connection note: "${tpl.connectionNote}"`);
+      if (_wantsMessage && tpl.followUpMessage)
+        _templateBlocks.push(`Follow-up: "${tpl.followUpMessage}"`);
+      if (_wantsInmail && tpl.inmail?.subject)
+        _templateBlocks.push(`InMail subject: "${tpl.inmail.subject}"`);
+      if (_wantsInmail && tpl.inmail?.message)
+        _templateBlocks.push(`InMail body: "${tpl.inmail.message}"`);
+      if (_wantsOp && tpl.openProfileSubject)
+        _templateBlocks.push(`OP subject: "${tpl.openProfileSubject}"`);
+      if (_wantsOp && tpl.openProfileBody)
+        _templateBlocks.push(`OP body: "${tpl.openProfileBody}"`);
+      // IC mode (introduce_back) → group-DM intro
+      if (_wantsMessage && tpl.introMode && tpl.introName)
+        _templateBlocks.push(`Intro recipient (IC): ${tpl.introName}`);
+      // CC+IC → post-acceptance auto-intro to a primary person
+      if (_wantsAutoIntro) {
+        const _pName = (templates && templates.primaryName ? templates.primaryName : '').trim();
+        const _pBody = (templates && templates.primaryIntroBody ? templates.primaryIntroBody : '').trim();
+        if (_pName) _templateBlocks.push(`Primary person: ${_pName}`);
+        if (_pBody) _templateBlocks.push(`Intro DM body: "${_pBody}"`);
+      }
       campaignLogAppendRun({
         ts: new Date().toISOString(),
         operator: campaign.createdBy || '',
