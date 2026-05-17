@@ -2982,6 +2982,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     campaign.running = false;
     campaign.currentProfile = null;
     campaign._unparkProfile = null;
+    // v2.14.x: reset abort flag at campaign-end. Without this, _abort stays
+    // true after any operator-initiated Stop and bleeds into subsequent
+    // manual /api/bulk-check-now, post-campaign sweeps, and monitoring
+    // ticks — auto-intro.js's `if (campaign._abort)` guard then fires
+    // immediately and stamps every newly-Connected lead as
+    // 'Skipped — Stop pressed' (repro 2026-05-17T20:19:11: manual bulk
+    // check called runAutoIntros, log shows 'Auto-introducing 3' then
+    // 'Stop detected — marking remaining 3' in the SAME millisecond).
+    campaign._abort = false;
     log('=== Campaign ended ===');
     campaign.currentAction = null; // clear cockpit
   }
