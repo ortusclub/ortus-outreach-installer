@@ -188,12 +188,21 @@ var STATE_VALUES = [
   { val: 'Accepted',                   state: 'connected' },
   { val: 'Yes',                        state: 'connected' },
   { val: 'Introduction Made',          state: 'connected' },
+  // v2.14.x: 'Introduction Already Made' uses the lighter 'sent' green to
+  // visually distinguish "we found a pre-existing thread" from "we just
+  // fired a new intro" — both are valid completions, the lighter tint
+  // signals the no-action variant at a glance.
+  { val: 'Introduction Already Made',  state: 'sent' },
   // declined (red)
   { val: 'Declined',                   state: 'declined' },
   { val: 'Unreachable',                state: 'declined' },
   { val: 'Not OP',                     state: 'declined' },
   { val: 'Not connectable',            state: 'declined' },
-  { val: 'No',                         state: 'declined' }
+  { val: 'No',                         state: 'declined' },
+  // v2.14.x: 'Failed' appears in Introduction Status when a real LinkedIn-
+  // side rejection happens (compose textbox didn't appear, recipient not
+  // in typeahead results, etc.). Red mirrors how 'Declined' renders in CC.
+  { val: 'Failed',                     state: 'declined' }
 ];
 
 // Rename pairs — old header → new header. ensureColumns copies values from
@@ -653,10 +662,21 @@ function applyStatePaletteToColumns(sheet, headers, columnNames) {
 
   var newRules = [];
   // Skip rule FIRST so it wins for "Skipped: …" values (which carry a
-  // free-text reason after the prefix).
+  // free-text reason after the prefix). Two variants: the colon form is
+  // the legacy reason format ("Skipped: URL not found"); the em-dash form
+  // is what Introduction Status uses for the v2.14.x interrupted-intro
+  // stamps ("Skipped — Stop pressed", "Skipped — browser closed"). Both
+  // get the same grey palette so the eye reads them as the same class.
   var skipPal = STATE_PALETTE.skipped;
   newRules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenTextStartsWith('Skipped:')
+    .setBackground(skipPal.bg)
+    .setFontColor(skipPal.fg)
+    .setBold(true)
+    .setRanges(ranges)
+    .build());
+  newRules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenTextStartsWith('Skipped —')
     .setBackground(skipPal.bg)
     .setFontColor(skipPal.fg)
     .setBold(true)
