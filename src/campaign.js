@@ -2849,6 +2849,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             introMode: !!tpl.introMode,
             introName: tpl.introName || '',
             introTitle: tpl.introTitle || '',
+            // CC+IC primary-person fields. Persisted here so Re-run can
+            // restore them on the wizard — without these the "Intro DM
+            // body" + "Primary person — Full name" inputs come back blank.
+            primaryName:      (templates && templates.primaryName)      || '',
+            primaryIntroBody: (templates && templates.primaryIntroBody) || '',
+            primaryUrl:       (templates && templates.primaryUrl)       || '',
           },
           dailyLimit,
           messageOpenProfiles: !!messageOpenProfiles,
