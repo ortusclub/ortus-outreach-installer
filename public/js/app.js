@@ -3772,6 +3772,22 @@ async function pollStatus() {
         panel.scrollTop = panel.scrollHeight;
       }
     }
+
+    // v2.14.x: feed the in-flight bulk-check panel from the campaign
+    // logs we just polled. Catches the campaign's own in-batch bulk-
+    // checks (📡 'In-batch ... (5-min cooldown elapsed)…' lines) so the
+    // operator gets the same graphical treatment whether they pressed
+    // the button or the campaign auto-triggered the sweep.
+    // renderBulkCheckLive auto-hides when activity is >30s old, so this
+    // is a no-op during the dormant phases of a long campaign. The
+    // manual bulkCheckNow flow uses __keepAlive to override the timeout
+    // while the operator-initiated sweep is in flight.
+    try {
+      if (Array.isArray(s.logs) && s.logs.length > 0) {
+        const bcLive = parseBulkCheckFromLogs(s.logs);
+        renderBulkCheckLive(bcLive);
+      }
+    } catch { /* */ }
   } catch { /* */ }
 }
 
@@ -7225,6 +7241,185 @@ window.startNewCampaign = startNewCampaign;
 // "Bulk check connections" button. Uses the first selected account
 // (selectedProfileIds[0]) and the current sheet URL. Server enforces the
 // "no campaign running" guard.
+// v2.14.x: in-flight bulk-check panel (Variant A). Parses campaign.logs
+// for bulk-check activity and renders into the .bulk-check-live panel
+// in public/index.html. Same panel is used for two scenarios:
+//   (1) manual BULK CHECK CONNECTIONS button — bulkCheckNow's streaming
+//       poll feeds it.
+//   (2) campaign in-batch bulk-check (📡 In-batch ... 5-min cooldown
+//       elapsed) — pollStatus detects the lines and feeds the same
+//       renderer.
+// Both paths flow through renderBulkCheckLive() so the panel looks
+// identical whether the operator triggered it or the campaign did.
+
+// Returns { matched, stamped, fetched, currentProfile, currentStep,
+// profilesTotal, profilesDone, completed, lastEventMs } from the most
+// recent bulk-check "session" in the logs (a chain of 📡 lines without
+// a >30s gap). Returns null if no bulk-check activity found.
+function parseBulkCheckFromLogs(logs) {
+  if (!Array.isArray(logs) || logs.length === 0) return null;
+  const SESSION_GAP_MS = 30000;
+  // First pass: scan from the END backwards to find the latest session.
+  // A "session" is a run of bulk-check-related lines without a >30s gap.
+  let sessionStart = -1;
+  let lastTs = 0;
+  const bulkRe = /📡|Manual bulk check complete/;
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const ts = logs[i].match(/^\[(.*?)\]/);
+    if (!ts) continue;
+    const t = new Date(ts[1]).getTime();
+    if (isNaN(t)) continue;
+    const isBulk = bulkRe.test(logs[i]);
+    if (sessionStart === -1) {
+      if (!isBulk) continue;
+      sessionStart = i;
+      lastTs = t;
+      continue;
+    }
+    if (!isBulk) continue;
+    const prevT = new Date((logs[sessionStart].match(/^\[(.*?)\]/) || [])[1]).getTime();
+    if (prevT - t > SESSION_GAP_MS) break;
+    sessionStart = i;
+  }
+  if (sessionStart === -1) return null;
+
+  const state = {
+    matched: 0, stamped: 0, fetched: 0,
+    currentProfile: '', currentStep: '',
+    profilesTotal: 0, profilesDone: 0,
+    completed: false, lastEventMs: lastTs,
+  };
+  const done = new Set();
+
+  for (let i = sessionStart; i < logs.length; i++) {
+    const raw = logs[i];
+    const ts = raw.match(/^\[(.*?)\]/);
+    if (!ts) continue;
+    const t = new Date(ts[1]).getTime();
+    if (isNaN(t)) continue;
+    if (t - lastTs > SESSION_GAP_MS) break;
+    if (t > lastTs) lastTs = t;
+    const line = raw.replace(/^\[.*?\]\s*/, '').trim();
+
+    let m;
+    if ((m = line.match(/Manual bulk Connection Status check — sweeping (\d+) account/))) {
+      state.profilesTotal = parseInt(m[1], 10);
+      continue;
+    }
+    if (line.match(/Manual bulk check complete/)) {
+      state.completed = true;
+      continue;
+    }
+
+    const pmatch = line.match(/^📡\s*\[([^\]]+)\]\s*(.*)$/);
+    if (!pmatch) continue;
+    const name = pmatch[1];
+    const rest = pmatch[2];
+
+    // Account result lines — count once per (account, session).
+    let r;
+    if ((r = rest.match(/Bulk check:\s*(\d+)\s*marked Connected,\s*(\d+)\s*marked Still Pending \(of\s*(\d+)\s*recent connections fetched\)/))) {
+      if (!done.has(name)) {
+        state.matched += parseInt(r[1], 10);
+        state.stamped += parseInt(r[2], 10);
+        state.fetched += parseInt(r[3], 10);
+        state.profilesDone += 1;
+        done.add(name);
+      }
+      continue;
+    }
+    if ((r = rest.match(/Idle bulk-check:\s*(\d+)\s*Connected,\s*(\d+)\s*Still Pending \(of\s*(\d+)\)/))) {
+      if (!done.has(name)) {
+        state.matched += parseInt(r[1], 10);
+        state.stamped += parseInt(r[2], 10);
+        state.fetched += parseInt(r[3], 10);
+        state.profilesDone += 1;
+        done.add(name);
+      }
+      continue;
+    }
+    if ((r = rest.match(/Check now:\s*(\d+)\s*Connected,\s*(\d+)\s*Still Pending \(of\s*(\d+)\)/))) {
+      if (!done.has(name)) {
+        state.matched += parseInt(r[1], 10);
+        state.stamped += parseInt(r[2], 10);
+        state.fetched += parseInt(r[3], 10);
+        state.profilesDone += 1;
+        done.add(name);
+      }
+      continue;
+    }
+
+    // In-flight state — most recent line wins.
+    state.currentProfile = name;
+    if (/Launching browser/i.test(rest))                    state.currentStep = 'launching browser…';
+    else if (/Sweeping recent connections/i.test(rest))     state.currentStep = 'sweeping recent connections…';
+    else if (/In-batch bulk Connection Status/i.test(rest)) state.currentStep = 'in-batch bulk check (cooldown elapsed)…';
+    else if (/Idle bulk-check — briefly reopening/i.test(rest)) state.currentStep = 'idle bulk-check — reopening profile…';
+    else if (/Check now — bulk check pass starting/i.test(rest)) state.currentStep = 'check now — pass starting…';
+    else if (/Auto-introducing/i.test(rest))                state.currentStep = 'auto-introducing newly connected leads…';
+    else state.currentStep = rest.slice(0, 100);
+  }
+
+  state.lastEventMs = lastTs;
+  if (state.profilesTotal > 0 && state.profilesDone >= state.profilesTotal) {
+    state.completed = true;
+  }
+  return state;
+}
+
+// Render the bulk-check live state into the .bulk-check-live panel. Pass
+// null to hide. Idempotent — safe to call on every poll.
+function renderBulkCheckLive(state) {
+  const panel = document.querySelector('.bulk-check-live');
+  if (!panel) return;
+  // Hide if no state OR activity is older than 30s (campaign moved on).
+  if (!state || (Date.now() - (state.lastEventMs || 0) > 30000 && !state.__keepAlive)) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const set = (k, v) => {
+    const el = panel.querySelector(`[data-bcl="${k}"]`);
+    if (el) el.textContent = String(v);
+  };
+  set('matched', state.matched || 0);
+  set('stamped', state.stamped || 0);
+  set('fetched', state.fetched || 0);
+
+  const doingTextEl = panel.querySelector('[data-bcl="doing-text"]');
+  if (doingTextEl) {
+    if (state.completed) {
+      const total = state.profilesDone || state.profilesTotal || 0;
+      doingTextEl.innerHTML = `Completed — <strong>${escHtml(String(total))}</strong> ${total === 1 ? 'account' : 'accounts'} swept`;
+    } else if (state.currentProfile) {
+      doingTextEl.innerHTML = `<strong>${escHtml(state.currentProfile)}</strong> · ${escHtml(state.currentStep || 'working…')}`;
+    } else {
+      doingTextEl.innerHTML = `<strong>—</strong> · waiting…`;
+    }
+  }
+
+  const pillEl = panel.querySelector('[data-bcl="pill"]');
+  const pillTextEl = panel.querySelector('[data-bcl="pill-text"]');
+  if (pillEl && pillTextEl) {
+    if (state.completed) {
+      pillTextEl.textContent = 'DONE';
+      pillEl.classList.add('bulk-check-live__pill--done');
+    } else {
+      const denom = state.profilesTotal > 0 ? ` · ${state.profilesDone || 0} OF ${state.profilesTotal}` : '';
+      pillTextEl.textContent = `RUNNING${denom}`;
+      pillEl.classList.remove('bulk-check-live__pill--done');
+    }
+  }
+
+  const prog = panel.querySelector('[data-bcl="progress"]');
+  if (prog) {
+    const pct = state.profilesTotal > 0
+      ? Math.min(100, Math.round(((state.profilesDone || 0) / state.profilesTotal) * 100))
+      : (state.completed ? 100 : 0);
+    prog.style.width = pct + '%';
+  }
+}
+
 // v2.14.x: graphical Bulk Check result card. Replaces the long inline
 // text line. Called after /api/bulk-check-now returns a final result.
 // Card markup is in public/index.html (.bulk-check-summary with
@@ -7279,10 +7474,24 @@ async function bulkCheckNow() {
 
   // v2.14.x: hide the previous result card (if any) at the start of a new
   // sweep so the operator doesn't see stale numbers while the new check
-  // is running. The streaming status text takes over until the new
-  // result lands.
+  // is running. The new in-flight panel (.bulk-check-live) takes over;
+  // pollStatus also feeds it from /api/campaign/status logs for any
+  // in-campaign bulk-check that wasn't manually triggered.
   const _summaryCard = document.querySelector('.bulk-check-summary');
   if (_summaryCard) _summaryCard.hidden = true;
+  // Show the live panel immediately with the known profile total so the
+  // operator sees "RUNNING · 0 OF N" within ~100ms instead of waiting for
+  // the first log line to arrive.
+  if (profileIds.length) {
+    renderBulkCheckLive({
+      matched: 0, stamped: 0, fetched: 0,
+      currentProfile: '', currentStep: 'starting…',
+      profilesTotal: profileIds.length, profilesDone: 0,
+      completed: false,
+      lastEventMs: Date.now(),
+      __keepAlive: true,
+    });
+  }
 
   const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
   const linkedinColumn = document.getElementById('linkedin-col-select')?.value || '';
@@ -7325,7 +7534,15 @@ async function bulkCheckNow() {
         seenLines.add(line);
         liveLines.push(line.replace(/^\[.*?\]\s*/, ''));
       }
-      if (liveLines.length > 0) renderLive('(running…)');
+      // Feed the in-flight panel from the parsed logs. Override
+      // profilesTotal with the locally-known count so the "0 OF 3" denominator
+      // shows immediately (before any log line has set it from server-side).
+      const parsed = parseBulkCheckFromLogs(logs);
+      if (parsed) {
+        if (profileIds.length && !parsed.profilesTotal) parsed.profilesTotal = profileIds.length;
+        parsed.__keepAlive = true; // keep visible during the active manual sweep
+        renderBulkCheckLive(parsed);
+      }
     } catch { /* swallow */ }
   }, 2000);
   setStatus(profileIds.length
@@ -7396,6 +7613,9 @@ async function bulkCheckNow() {
         failures,
         skippedParked,
       });
+      // Hide the in-flight live panel — the summary card takes over.
+      const _livePanel = document.querySelector('.bulk-check-live');
+      if (_livePanel) _livePanel.hidden = true;
       setStatus('');
       if (typeof showCampaignToast === 'function') {
         const msg = `${matched} marked Connected, ${stamped} marked Still Pending (of ${fetched} recent connections fetched)${sourceTag}`;

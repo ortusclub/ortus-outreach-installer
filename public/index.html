@@ -904,6 +904,36 @@
         <button type="button" id="btn-bulk-check-live" class="btn btn-secondary btn-sm" onclick="bulkCheckNow()">Bulk check connections</button>
         <span class="bulk-check-status-msg" style="font-style: italic; color: var(--gray); font-size: 0.85rem;"></span>
       </div>
+      <!-- v2.14.x: in-flight bulk-check panel (Variant A from public/sketches/
+           bulk-check-streaming.html). Shows while a bulk check is running —
+           manually triggered (BULK CHECK CONNECTIONS button) OR campaign
+           in-batch (auto-fired by the 5-min cooldown logic). Hidden when no
+           bulk-check activity has been seen in the last ~15s. -->
+      <div class="bulk-check-live" hidden>
+        <div class="bulk-check-live__head">
+          <span class="bulk-check-live__label">BULK CHECK · LIVE</span>
+          <span class="bulk-check-live__pill" data-bcl="pill"><span class="bulk-check-live__pulse"></span><span data-bcl="pill-text">RUNNING</span></span>
+        </div>
+        <div class="bulk-check-live__stats">
+          <div class="bulk-check-live__stat">
+            <div class="bulk-check-live__num" data-bcl="matched">0</div>
+            <div class="bulk-check-live__lbl">CONNECTED</div>
+          </div>
+          <div class="bulk-check-live__stat">
+            <div class="bulk-check-live__num bulk-check-live__num--muted" data-bcl="stamped">0</div>
+            <div class="bulk-check-live__lbl">STILL PENDING</div>
+          </div>
+          <div class="bulk-check-live__stat">
+            <div class="bulk-check-live__num bulk-check-live__num--muted" data-bcl="fetched">0</div>
+            <div class="bulk-check-live__lbl">FETCHED</div>
+          </div>
+        </div>
+        <div class="bulk-check-live__doing">
+          <span class="bulk-check-live__pulse" data-bcl="doing-pulse"></span>
+          <span data-bcl="doing-text"><strong>—</strong> · waiting…</span>
+        </div>
+        <div class="bulk-check-live__progress"><span data-bcl="progress"></span></div>
+      </div>
       <!-- v2.14.x: graphical summary card. Hidden until /api/bulk-check-now
            returns a final result; replaces the long single-line text that
            was previously rendered into .bulk-check-status-msg. The text

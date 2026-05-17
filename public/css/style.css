@@ -3348,6 +3348,120 @@ body.route-dashboard .sidebar-nav { display: none; }
   overflow-y: auto;
 }
 
+/* v2.14.x: in-flight bulk-check panel (Variant A — sketch at
+   public/sketches/bulk-check-streaming.html). Stat strip + doing-line +
+   progress bar. Shows for two scenarios:
+     (a) manual BULK CHECK CONNECTIONS button — driven by the streaming
+         poll in bulkCheckNow().
+     (b) campaign in-batch bulk-check — driven by pollStatus() observing
+         📡 log lines in campaign.logs.
+   Hidden when no bulk-check activity in the last ~15s. */
+.bulk-check-live {
+  border: 1px solid var(--hairline);
+  background: var(--bg-soft);
+  padding: 16px 22px 18px;
+  margin: 8px 0 14px;
+}
+.bulk-check-live[hidden] { display: none; }
+.bulk-check-live__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--hairline-soft);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+.bulk-check-live__label {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  color: var(--gray);
+}
+.bulk-check-live__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(247, 190, 104, 0.35);
+  border-radius: 9999px;
+  padding: 4px 12px;
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  color: var(--gold);
+}
+.bulk-check-live__pill--done {
+  border-color: rgba(63, 185, 80, 0.35);
+  color: var(--green);
+}
+.bulk-check-live__pill--done .bulk-check-live__pulse { animation: none; }
+.bulk-check-live__pulse {
+  width: 6px; height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: bclpulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes bclpulse {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; }
+}
+.bulk-check-live__stats {
+  display: flex;
+  gap: 44px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.bulk-check-live__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 90px;
+}
+.bulk-check-live__num {
+  font-family: var(--display);
+  font-size: 2.4rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--ink);
+}
+.bulk-check-live__num--muted { color: var(--gray); }
+.bulk-check-live__lbl {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+  color: var(--gray);
+}
+.bulk-check-live__doing {
+  color: var(--gray);
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-style: italic;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline-soft);
+}
+.bulk-check-live__doing strong {
+  color: var(--ink);
+  font-weight: 500;
+  font-style: normal;
+}
+.bulk-check-live__doing .bulk-check-live__pulse { color: var(--gold); }
+.bulk-check-live__progress {
+  height: 2px;
+  background: rgba(255,255,255,0.06);
+  margin-top: 14px;
+  overflow: hidden;
+}
+.bulk-check-live__progress > span {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  width: 0%;
+  transition: width 0.5s ease;
+}
+
 /* v2.14.x: graphical bulk-check result card. Replaces the long inline
    text line ("0 marked Connected, 8 marked Still Pending (of 120
    recent connections fetched) — 1 account(s) failed: …") with a
