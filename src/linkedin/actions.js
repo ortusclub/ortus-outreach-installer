@@ -1543,17 +1543,14 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
   if (alreadyAdded) {
     console.log('[actions:intro] Recipient already added — skipping typeahead');
   } else {
+    // Real-keystroke typing. delay=60ms per char gives LinkedIn's debounce
+    // time to register each char as the user types — exactly what the
+    // typeahead listener expects.
     const recipientSelector = '[data-ortus-recipient="1"]';
-    // v2.14.x: page.focus() instead of click-blur-click. Clicks flow
-    // through Chrome's UI event pipeline which is throttled in occluded
-    // windows — a dropped click means the cursor isn't on the recipient
-    // input and the subsequent Input.insertText inserts into the wrong
-    // element (or no element). page.focus() calls element.focus() at
-    // the DOM level, bypassing the input pipeline. Coupled with the
-    // CDP focus emulation set up at page launch, this gives reliable
-    // focus regardless of OS window state.
     try {
-      await page.focus(recipientSelector);
+      await page.click(recipientSelector);
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.click(recipientSelector);
     } catch { /* focus is best-effort */ }
     // v2.14.x: CDP Input.insertText — IME-style atomic text injection that
     // works in background-throttled tabs (single protocol call, no per-
@@ -1600,10 +1597,8 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
         el.dispatchEvent(new Event('input', { bubbles: true }));
       }, recipientSelector);
       // Re-focus before insertText — CDP Input.insertText inserts at the
-      // browser's current focus point. Use page.focus (DOM-level) instead
-      // of page.click (input-pipeline, throttled in occluded windows) so
-      // a dropped click can't mis-direct the insert.
-      try { await page.focus(recipientSelector); } catch { /* best-effort */ }
+      // browser's current focus point.
+      try { await page.click(recipientSelector); } catch { /* best-effort */ }
       if (_cdp) {
         await _cdp.send('Input.insertText', { text: introName });
       } else {
@@ -1635,7 +1630,7 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       const firstNameExpected = String(introName || '').toLowerCase().split(/\s+/)[0];
       if (firstNameExpected && !String(typedValue).toLowerCase().includes(firstNameExpected)) {
         console.warn(`[actions:intro] Input empty after paste ("${typedValue}"); re-pasting "${introName}".`);
-        try { await page.focus(recipientSelector); } catch { /* best-effort */ }
+        try { await page.click(recipientSelector); } catch { /* best-effort */ }
         await pasteRecipient();
         console.log(`[actions:intro] Re-pasted recipient name: "${introName}"`);
       }
