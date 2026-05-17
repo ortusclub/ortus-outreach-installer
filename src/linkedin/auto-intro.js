@@ -111,9 +111,62 @@ export async function runAutoIntros({
   const introFirst  = introTokens[0] || '';
   const introLast   = introTokens.slice(1).join(' ');
 
+  // v2.14.x: bail-out helper. When stop is pressed mid-batch or the browser
+  // dies under us, the remaining intros never get a fair attempt — stamp
+  // them with a 'Skipped — <reason>' status so the operator does NOT see a
+  // cascade of bogus 'Failed' marks. Reason ∈ {'Stop pressed','browser closed'}.
+  // The next campaign run / bulk-check sweep will re-detect these leads as
+  // Connected with no Introduction Status and fire the intro fresh.
+  async function _stampSkipped(skippedUrls, reason) {
+    for (const skippedUrl of skippedUrls) {
+      await updateSheetRow(sheetUrl, skippedUrl, {
+        introductionStatus: `Skipped — ${reason}`,
+        sender: profileName,
+        accountUsed: profileName,
+        dateLastAction: _formatLocalDate(new Date()),
+        auditAction: `Intro skipped: ${reason} (lead never attempted)`,
+      }, linkedinColumn).catch(() => {});
+      result.skipped++;
+    }
+  }
+  // v2.14.x: returns true when the puppeteer page is dead — browser was
+  // killed (closeAllProfiles), the websocket dropped, or the tab was closed.
+  // page.isClosed() is documented but flaky in edge cases (puppeteer#6695);
+  // pairing it with browser.connected catches every real scenario.
+  function _browserAlive() {
+    try {
+      const b = page.browser?.();
+      if (!b || b.connected === false) return false;
+      if (page.isClosed?.()) return false;
+      return true;
+    } catch { return false; }
+  }
+
   log(`  🤝 [${profileName}] Auto-introducing ${connectedUrls.length} new connection(s) to ${primaryName}…`);
   for (let i = 0; i < connectedUrls.length; i++) {
     const url = connectedUrls[i];
+
+    // v2.14.x: graceful-abort checkpoint. Without this guard, runAutoIntros
+    // keeps iterating against a dead page after the operator presses Stop
+    // (which force-closes browsers from server.js:/api/campaign/stop) or
+    // after any silent browser death — every subsequent sendIntroMessage
+    // fails fast at 'compose textbox did not appear' and stamps the lead
+    // as 'Failed', producing the 7-bogus-Failed cascade seen 2026-05-17.
+    // Industry pattern (Crawlee #1102, Puppeteer #4671): check abort flag
+    // + browser-alive between iterations and bail out cleanly. Remaining
+    // leads are stamped as 'Skipped — <reason>' so the operator can tell
+    // them apart from real LinkedIn-side failures.
+    if (campaign._abort) {
+      log(`  ■ [${profileName}] Stop detected — marking remaining ${connectedUrls.length - i} intro(s) as Skipped.`);
+      await _stampSkipped(connectedUrls.slice(i), 'Stop pressed');
+      break;
+    }
+    if (!_browserAlive()) {
+      log(`  ■ [${profileName}] Browser closed — marking remaining ${connectedUrls.length - i} intro(s) as Skipped.`);
+      await _stampSkipped(connectedUrls.slice(i), 'browser closed');
+      break;
+    }
+
     // Build `data` the EXACT same way campaign.js builds it for the IB
     // batch loop (see src/campaign.js around the `Build template data`
     // comment). senderFirstName resolves from the operator-configured
@@ -241,19 +294,34 @@ export async function runAutoIntros({
       }
     }
 
+    // v2.14.x: was the failure caused by abort or by the browser dying
+    // mid-send? If so, this isn't a Failed (LinkedIn-side rejection) — it
+    // never got a fair attempt. Reclassify as Skipped so the operator can
+    // tell phantom failures apart from real ones.
+    const interrupted = !ok && !alreadyMade && (campaign._abort || !_browserAlive());
+    const interruptReason = campaign._abort ? 'Stop pressed' : 'browser closed';
+
     // v2.14.x: Connection Accepted Status is stamped at bulk-check
     // detection (suppressAcceptedStamp=false in the campaign call sites).
     // auto-intro only stamps Introduction Status here.
     const tracking = {
       introductionStatus: alreadyMade
         ? 'Introduction Already Made'
-        : (ok ? 'Introduction Made' : 'Failed'),
+        : ok
+          ? 'Introduction Made'
+          : interrupted
+            ? `Skipped — ${interruptReason}`
+            : 'Failed',
       sender: profileName,
       accountUsed: profileName,
       dateLastAction: _formatLocalDate(new Date()),
       auditAction: alreadyMade
         ? `Introduction thread already exists with ${primaryName}`
-        : (ok ? `Introduction sent to ${primaryName}` : `Intro failed: ${errMsg || 'unknown'}`),
+        : ok
+          ? `Introduction sent to ${primaryName}`
+          : interrupted
+            ? `Intro skipped: ${interruptReason} (interrupted mid-send)`
+            : `Intro failed: ${errMsg || 'unknown'}`,
     };
     await updateSheetRow(sheetUrl, url, tracking, linkedinColumn).catch(() => {});
     if (ok) {
@@ -271,6 +339,16 @@ export async function runAutoIntros({
       try { campaign.introducedInRun?.add(url); } catch { /* */ }
       result.sent++;
       log(`  ⏳ [${profileName}] ${url}: Introduction Already Made (existing thread detected)`);
+    } else if (interrupted) {
+      result.skipped++;
+      log(`  ■ [${profileName}] ${url}: Skipped — ${interruptReason}`);
+      // Browser is dead / abort raised — stamp the rest as skipped and exit
+      // the for-loop rather than wasting cycles on guaranteed failures.
+      if (i < connectedUrls.length - 1) {
+        log(`  ■ [${profileName}] Marking remaining ${connectedUrls.length - i - 1} intro(s) as Skipped.`);
+        await _stampSkipped(connectedUrls.slice(i + 1), interruptReason);
+      }
+      break;
     } else {
       result.failed++;
       log(`  ⚠ [${profileName}] ${url}: Failed (${errMsg || 'unknown'})`);

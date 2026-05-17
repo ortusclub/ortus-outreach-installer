@@ -762,12 +762,37 @@ app.post('/api/campaign/stop', async (req, res) => {
   // when the running campaign is mode=connect_and_introduce.
   const fullHalt = !!(req.body && req.body.full);
   const result = stopCampaign({ full: fullHalt });
-  // Phase 2.8.9: force-close all Orbita/local browsers immediately so the
-  // operator sees them disappear rather than waiting for the loop to wind down.
-  // Errors here are non-fatal — the loop's own cleanup is idempotent.
-  try { await closeAllProfiles(); } catch (err) { console.warn('[stop] closeAllProfiles:', err.message); }
-  try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
+  // v2.14.x: respond to the UI immediately so the dashboard flips to
+  // 'stopping' without waiting for the browser-close round-trip. The actual
+  // browser kill runs after a short drain window — see comment block below.
   res.json(result);
+
+  // v2.14.x: drain-then-kill instead of kill-then-loop-discovers-it.
+  //
+  // The previous order (closeAllProfiles -> respond) force-closed every
+  // browser BEFORE any in-flight worker had a chance to see _abort=true.
+  // When that worker was inside runAutoIntros, the next iteration hit a
+  // dead page and stamped 7-10 leads as 'Failed (MESSAGE_SEND_FAILED:
+  // compose textbox did not appear)' — a cascade of phantom failures
+  // (repro: franco.espino 2026-05-17T16:26:53).
+  //
+  // New order:
+  //   1. stopCampaign() flips campaign._abort = true
+  //   2. respond to UI
+  //   3. wait 3s — gives in-flight runAutoIntros / monitoring loops time
+  //      to see _abort at their next iteration boundary, stamp remaining
+  //      leads as 'Skipped — Stop pressed', and exit their finally blocks
+  //      (which close their own browser cleanly)
+  //   4. closeAllProfiles() as a safety net for anything that didn't
+  //      drain (e.g. hung navigations) — by now it's usually a no-op.
+  //
+  // Pattern matches Crawlee (apify/crawlee#1102) and the broader Puppeteer
+  // graceful-abort guidance (puppeteer/puppeteer#4671). Worker-side
+  // cleanup is already idempotent so the safety-net close is harmless.
+  setTimeout(async () => {
+    try { await closeAllProfiles(); } catch (err) { console.warn('[stop] closeAllProfiles:', err.message); }
+    try { await closeLocalBrowser(); } catch (err) { console.warn('[stop] closeLocalBrowser:', err.message); }
+  }, 3000);
 });
 
 // Phase 2.8.9: pause/resume control. Pause is non-destructive — browsers stay
