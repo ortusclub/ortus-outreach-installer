@@ -1,13 +1,16 @@
 /**
  * Ortus Operations Log — Apps Script bridge.
  *
- * Container-bound to the "Ortus Operations Log" Google Sheet. Receives
- * batched event POSTs from the Ortus Outreach bot and writes them to a
- * per-campaign tab. Maintains an Index tab that lists every campaign
+ * Container-bound to the spreadsheet:
+ *   "OPS AND LOGS - ORTUS OUTREACH - DO NOT DELETE"
+ *   https://docs.google.com/spreadsheets/d/1AC0xM8EfjHNApa_PnedrC1t5hw6UWMnuUI1Ox2edmzI/
+ *
+ * Receives batched event POSTs from the Ortus Outreach bot and writes them
+ * to a per-campaign tab. Maintains an Index tab that lists every campaign
  * tab with totals (events, errors, warnings) via spreadsheet formulas.
  *
  * Deployment:
- *   1. Open "Ortus Operations Log" Google Sheet.
+ *   1. Open the "OPS AND LOGS - ORTUS OUTREACH - DO NOT DELETE" sheet.
  *   2. Extensions → Apps Script.
  *   3. Paste this file's contents over the default Code.gs.
  *   4. Deploy → New deployment → Web app → Execute as: Me, Access: Anyone

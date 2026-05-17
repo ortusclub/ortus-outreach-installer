@@ -1,12 +1,15 @@
 /**
  * Ortus Campaign Activity — Apps Script bridge.
  *
- * Container-bound to the "Ortus Campaign Activity" Google Sheet. Receives
- * one POST per completed campaign run from the Ortus Outreach bot and
- * appends a row with the campaign metadata + template preview.
+ * Container-bound to the spreadsheet:
+ *   "CAMPAIGN ACTIVITY - ORTUS OUTREACH - DO NOT DELETE"
+ *   https://docs.google.com/spreadsheets/d/1NZtZdhwqoYMHzk0nC5sQWlsOg3ij0sZpWYUZMO79dOQ/
+ *
+ * Receives one POST per completed campaign run from the Ortus Outreach
+ * bot and appends a row with the campaign metadata + template preview.
  *
  * Deployment:
- *   1. Open "Ortus Campaign Activity" Google Sheet.
+ *   1. Open the "CAMPAIGN ACTIVITY - ORTUS OUTREACH - DO NOT DELETE" sheet.
  *   2. Extensions → Apps Script.
  *   3. Paste this file's contents over the default Code.gs.
  *   4. Deploy → New deployment → Web app → Execute as: Me, Access: Anyone
