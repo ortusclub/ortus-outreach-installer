@@ -22,7 +22,7 @@
 import { existsSync, mkdirSync, appendFileSync, statSync, renameSync } from 'fs';
 import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
-import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid } from './gologin-launcher.js';
+import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet } from './sheets-writer.js';
@@ -795,6 +795,13 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
     if (pages.length > 0) {
       page = pages[pages.length - 1];
       await page.setViewport({ width: 1366, height: 900 });
+      // v2.14.x: re-apply CDP focus emulation on the re-acquired page.
+      // The launcher set it on the ORIGINAL page object only — this is a
+      // different page reference whose CDP session has never been
+      // configured. Without this call, the background-tab IC DM fix is
+      // silently nullified anytime ensureProfileLoggedIn lands on a
+      // non-original page (most common: post-login process-swap).
+      await applyFocusEmulation(page, profileId);
     }
   } catch { /* keep current */ }
 
@@ -2108,6 +2115,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
               page = pages[0];
             }
             session.page = page;
+            // v2.14.x: re-apply CDP focus emulation. Same reason as
+            // ensureProfileLoggedIn — see comment there. Idempotent, so
+            // safe even if pages[N-1] is the same page object as before.
+            await applyFocusEmulation(page, profileId);
           } catch { /* keep current */ }
 
           log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
@@ -2194,6 +2205,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 page = pages[0];
               }
               session.page = page;
+              // v2.14.x: re-apply CDP focus emulation on retry path.
+              await applyFocusEmulation(page, profileId);
             } catch { /* */ }
           }
           // 2.9.8: surface a normalized "Skipped: <reason>" in the dashboard

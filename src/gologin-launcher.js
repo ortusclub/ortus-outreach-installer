@@ -10,6 +10,50 @@ let profileCache = null;
 let profileCacheTime = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * v2.14.x: Force a Puppeteer page to report itself as focused/active
+ * regardless of OS window state. LinkedIn's typeahead (and many other
+ * async features) check document.hasFocus() / visibility and skip or
+ * degrade processing when the answer is "not focused" — which is what
+ * the renderer reports when the operator backgrounds the Chrome window
+ * (99% of campaign runtime).
+ *
+ * This uses CDP Emulation.setFocusEmulationEnabled, the same call
+ * Playwright makes by default for every page. Puppeteer's own
+ * emulateFocusedPage(true) (PR #14501) wraps it but isn't in 22.15.0
+ * yet, so we call CDP directly.
+ *
+ * Idempotent: callers can invoke it after every page re-acquisition
+ * without worrying about leaks — the page-level tag short-circuits
+ * repeats so we don't stack `framenavigated` listeners.
+ *
+ * Why this is exported and called from outside: the launcher applies it
+ * to the initial page, but every site in campaign.js that does
+ * `page = pages[pages.length - 1]` is grabbing a DIFFERENT page object
+ * whose CDP session has never been configured. Without re-applying,
+ * those re-acquired pages silently lose focus emulation and the
+ * background-tab typeahead fix is undone.
+ */
+export async function applyFocusEmulation(page, profileId = 'unknown') {
+  if (!page) return;
+  if (page.__ortusFocusEmulated) return;
+  try {
+    const cdp = await page.target().createCDPSession();
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    // Re-apply on every main-frame navigation. Puppeteer 22.15.0 doesn't yet
+    // track this setting across nav (PR #14501 added that, post-22.x).
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+      }
+    });
+    page.__ortusFocusEmulated = true;
+    console.log(`[gologin] Focus emulation enabled for ${profileId} (with nav re-apply)`);
+  } catch (err) {
+    console.warn(`[gologin] Focus emulation failed for ${profileId}: ${err.message}`);
+  }
+}
+
 export async function getProfiles(token) {
   // Return cache if fresh
   if (profileCache && Date.now() - profileCacheTime < CACHE_TTL) {
@@ -126,33 +170,14 @@ export async function launchProfile(profileId, token) {
   page.setDefaultNavigationTimeout(30000);
   page.setDefaultTimeout(15000);
 
-  // v2.14.x: Force the page to report itself as focused/active regardless of
-  // OS window state. LinkedIn's typeahead (and many other async features)
-  // check document.hasFocus() / visibility — when the answer is "not focused"
-  // they skip or degrade processing, which is why typing into the IC DM
-  // recipient input fails when the GoLogin window is backgrounded but CC
-  // clicks work fine. This is the same CDP call Playwright makes by default
-  // for every page, and what Puppeteer's emulateFocusedPage(true) (added in
-  // PR #14501, post-22.x) wraps. Source:
-  // chromedevtools.github.io/devtools-protocol — Emulation.setFocusEmulationEnabled
-  try {
-    const cdp = await page.target().createCDPSession();
-    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-    // Re-apply on every main-frame navigation. Puppeteer 22.15.0 doesn't yet
-    // have the EmulationManager logic from PR #14501 that tracks this setting
-    // and re-applies it after nav. ensureProfileLoggedIn does a page.goto +
-    // re-acquire dance (campaign.js:714) where the setting could be lost on
-    // a process-swap navigation. Listener uses the same long-lived CDP
-    // session; cost is one CDP call per navigation, swallowed errors only.
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) {
-        cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
-      }
-    });
-    console.log(`[gologin] Focus emulation enabled for ${profileId} (with nav re-apply)`);
-  } catch (err) {
-    console.warn(`[gologin] Focus emulation failed for ${profileId}: ${err.message}`);
-  }
+  // v2.14.x: enable focus emulation on the initial page. Callers that
+  // re-acquire `page` from browser.pages() later (campaign.js:792-798,
+  // 2099-2110, 2185-2196) MUST call applyFocusEmulation(newPage, profileId)
+  // themselves — the setting + the framenavigated re-apply listener are
+  // bound to the page object, not the browser, so a fresh page reference
+  // starts with focus emulation OFF and silently nullifies LinkedIn-side
+  // behaviour that depends on document.hasFocus().
+  await applyFocusEmulation(page, profileId);
 
   // 2.8.44: auto-handle browser dialogs. LinkedIn's compose page registers a
   // beforeunload handler when the textarea has unsaved text — if a send fails
