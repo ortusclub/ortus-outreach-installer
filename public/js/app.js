@@ -8254,3 +8254,126 @@ if (document.readyState === 'loading') {
   if (typeof dashInit === 'function') dashInit();
 }
 
+/** Open a confirmation dialog for the current selection. On confirm, deletes
+ *  past campaigns via /api/history/delete-batch. Non-past selections in v1
+ *  are skipped with a toast — operator should use per-row delete for those. */
+function dashBulkDelete() {
+  if (_dashSelection.size === 0) return;
+  const ids = Array.from(_dashSelection);
+
+  // Partition selection into past (deletable in v1) vs other (skipped in v1)
+  const pastRows = [];
+  const otherRows = [];
+  ids.forEach((id) => {
+    const row = document.querySelector(`.campaign-row[data-campaign-id="${CSS.escape(id)}"]`);
+    if (!row) return;
+    const state = row.dataset.state || '';
+    if (state === 'past' || state === 'stopped' || state === 'completed' || state === 'failed') {
+      const idx = row.dataset.historyIdx;
+      if (idx !== undefined && idx !== '') pastRows.push({ id, idx: Number(idx), row });
+    } else {
+      otherRows.push({ id, state, row });
+    }
+  });
+
+  // If nothing in selection is deletable, just toast and bail
+  if (pastRows.length === 0) {
+    const msg = otherRows.length > 0
+      ? 'Bulk delete only works for Past campaigns in this release. Use per-row delete for the others.'
+      : 'Nothing to delete.';
+    if (typeof window.showToast === 'function') window.showToast(msg);
+    else alert(msg);
+    return;
+  }
+
+  // Build the dialog
+  const names = pastRows.map(({ row, id }) => {
+    const nameEl = row.querySelector('.campaign-row-name, .campaign-row-name-text');
+    return nameEl ? (nameEl.textContent || id).trim() : id;
+  });
+
+  const bg = document.createElement('div');
+  bg.className = 'dash-dialog-bg';
+  bg.innerHTML = `
+    <div class="dash-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-dialog-h">
+      <h2 id="dash-dialog-h">Delete ${pastRows.length} past campaign${pastRows.length === 1 ? '' : 's'}?</h2>
+      <p>This removes <b>${pastRows.length}</b> past campaign${pastRows.length === 1 ? '' : 's'} from the dashboard. <b>Google Sheet rows are not affected.</b></p>
+      <div class="dash-dialog-preview"></div>
+      <div class="dash-dialog-actions">
+        <button type="button" class="btn btn-secondary" id="dash-dialog-cancel">CANCEL</button>
+        <button type="button" class="btn btn-stop" id="dash-dialog-confirm">DELETE ${pastRows.length}</button>
+      </div>
+    </div>
+  `;
+  // Populate preview with escaped names (no innerHTML — safer)
+  const preview = bg.querySelector('.dash-dialog-preview');
+  for (const name of names) {
+    const span = document.createElement('span');
+    span.textContent = `· ${name}`;
+    preview.appendChild(span);
+  }
+  // If there are skipped rows, append a note
+  if (otherRows.length > 0) {
+    const note = document.createElement('span');
+    note.style.cssText = 'display:block; padding-top:6px; color: rgba(255,255,255,0.5); font-size:0.66rem; letter-spacing:0.06em;';
+    note.textContent = `(${otherRows.length} non-past row${otherRows.length === 1 ? '' : 's'} in selection will NOT be deleted — bulk delete supports past only in v1.)`;
+    preview.appendChild(note);
+  }
+  document.body.appendChild(bg);
+
+  // Focus the cancel button by default — safer than focusing the destructive one
+  const cancelBtn = bg.querySelector('#dash-dialog-cancel');
+  const confirmBtn = bg.querySelector('#dash-dialog-confirm');
+  cancelBtn.focus();
+
+  let escHandler;
+  const close = () => {
+    bg.remove();
+    if (escHandler) document.removeEventListener('keydown', escHandler);
+  };
+  cancelBtn.onclick = close;
+  bg.onclick = (e) => { if (e.target === bg) close(); };
+  escHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', escHandler);
+
+  confirmBtn.onclick = async () => {
+    close();
+    await dashPerformBulkDelete(pastRows);
+  };
+}
+
+/** Perform the actual deletion via /api/history/delete-batch. Refreshes the
+ *  past list + dashboard state on completion. */
+async function dashPerformBulkDelete(pastRows) {
+  const indexes = pastRows.map((r) => r.idx).filter((n) => Number.isInteger(n) && n >= 0);
+  if (indexes.length === 0) return;
+  let succeeded = 0;
+  let failed = 0;
+  try {
+    const resp = await fetch('/api/history/delete-batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ indexes }),
+    });
+    if (resp.ok) {
+      succeeded = indexes.length;
+    } else {
+      failed = indexes.length;
+    }
+  } catch {
+    failed = indexes.length;
+  }
+  // Drop the just-deleted ids from the selection set
+  for (const r of pastRows) _dashSelection.delete(r.id);
+  // Refresh the past list — this is the standard refresh function from the
+  // existing code; it re-fetches /api/history and re-renders the past panel.
+  try { if (typeof refreshPastCampaigns === 'function') await refreshPastCampaigns(); } catch {}
+  if (typeof dashRefreshAll === 'function') dashRefreshAll();
+  const msg = failed === 0
+    ? `Deleted ${succeeded} past campaign${succeeded === 1 ? '' : 's'}.`
+    : `Delete failed (${failed} unaffected). Try again.`;
+  if (typeof window.showToast === 'function') window.showToast(msg);
+}
+
+window.dashBulkDelete = dashBulkDelete;
+
