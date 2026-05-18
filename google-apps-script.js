@@ -167,11 +167,18 @@ var STATE_PALETTE = {
 // never appear in a given column are harmless — they simply never match.
 // "Skipped:" is handled separately as a startsWith rule (skip reasons
 // carry free-text after the prefix).
+// v2.52.0: timestamped-suffix variants — prefix-matched via whenTextStartsWith
+// so the same rule covers "Still Pending" + "Still Pending (2026-05-17 23:29)".
+// Without this, cells with a timestamp suffix slipped through the exact-match
+// rules below and rendered uncolored.
+var STATE_STARTS_WITH = [
+  { prefix: 'Still Pending',          state: 'pending' }
+];
+
 var STATE_VALUES = [
   // pending (yellow)
   { val: 'Connect Pending',            state: 'pending' },
   { val: 'Connection Request Sent',    state: 'pending' },
-  { val: 'Still Pending',              state: 'pending' },
   { val: 'Not yet connected',          state: 'pending' },
   // sent (light green)
   { val: 'DM Sent',                    state: 'sent' },
@@ -199,6 +206,10 @@ var STATE_VALUES = [
   { val: 'Not OP',                     state: 'declined' },
   { val: 'Not connectable',            state: 'declined' },
   { val: 'No',                         state: 'declined' },
+  // skipped (grey) — terminal closure stamp written by stop-monitoring.js
+  // when monitoring window expires without acceptance. Grouped with the
+  // other "we're done with this row" greys (Skipped:, Skipped —).
+  { val: 'Closed - Not Connected',     state: 'skipped' },
   // v2.14.x: 'Failed' appears in Introduction Status when a real LinkedIn-
   // side rejection happens (compose textbox didn't appear, recipient not
   // in typeahead results, etc.). Red mirrors how 'Declined' renders in CC.
@@ -690,6 +701,22 @@ function applyStatePaletteToColumns(sheet, headers, columnNames) {
     if (!pal) return;
     newRules.push(SpreadsheetApp.newConditionalFormatRule()
       .whenTextEqualTo(r.val)
+      .setBackground(pal.bg)
+      .setFontColor(pal.fg)
+      .setBold(true)
+      .setRanges(ranges)
+      .build());
+  });
+
+  // v2.52.0: prefix-matched rules for values whose suffix varies at write
+  // time (e.g. "Still Pending (2026-05-17 23:29)" from bulk-check). Without
+  // these, the timestamped variants slipped through the exact-match rules
+  // above and rendered uncolored.
+  STATE_STARTS_WITH.forEach(function(r) {
+    var pal = STATE_PALETTE[r.state];
+    if (!pal) return;
+    newRules.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextStartsWith(r.prefix)
       .setBackground(pal.bg)
       .setFontColor(pal.fg)
       .setBold(true)
