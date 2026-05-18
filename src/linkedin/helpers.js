@@ -1226,3 +1226,45 @@ function normalizeConversation(raw) {
     lastMessage,
   };
 }
+
+/**
+ * Extract a profile URN from a Voyager /identity/profiles/* response payload.
+ *
+ * Voyager returns the profile URN in several shapes depending on the endpoint
+ * variant and decoration version. This helper walks the known locations in
+ * priority order and returns the first `urn:li:fsd_profile:` / `fs_miniProfile`
+ * / `fs_profile` URN it finds. Returns '' if none.
+ *
+ * Pure function — no page/network. Extracted as a separate export so the URN
+ * resolver in intro-voyager.js and the existing captureProfileMeta both
+ * exercise the same logic (currently captureProfileMeta inlines it at L584).
+ */
+export function extractProfileUrnFromVoyagerResponse(data) {
+  if (!data || typeof data !== 'object') return '';
+  const isProfileUrn = (s) =>
+    typeof s === 'string' &&
+    (s.indexOf('urn:li:fsd_profile:') === 0 ||
+     s.indexOf('urn:li:fs_miniProfile:') === 0 ||
+     s.indexOf('urn:li:fs_profile:') === 0);
+
+  const candidates = [
+    data.entityUrn,
+    data.data?.entityUrn,
+    data.profile?.entityUrn,
+    data.miniProfile?.entityUrn,
+  ];
+  for (const c of candidates) {
+    if (isProfileUrn(c)) return c;
+  }
+  if (Array.isArray(data.included)) {
+    for (const item of data.included) {
+      if (item && isProfileUrn(item.entityUrn)) return item.entityUrn;
+    }
+  }
+  if (Array.isArray(data.data?.['*elements'])) {
+    for (const ref of data.data['*elements']) {
+      if (isProfileUrn(ref)) return ref;
+    }
+  }
+  return '';
+}
