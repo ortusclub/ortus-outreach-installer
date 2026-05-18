@@ -159,64 +159,86 @@
         <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ Start new campaign</button>
       </div>
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section-title">Active</h2>
-        <div class="campaign-list" id="active-campaign-list">
-          <p class="empty-state">No active campaigns.</p>
-        </div>
-      </section>
+      <!-- ── Tab bar — 7 categories ── -->
+      <div class="dash-tabs" id="dash-tabs" role="tablist">
+        <button type="button" class="dash-tab" data-tab="active" role="tab" aria-selected="false">Active <span class="dash-tab-ct" data-ct="active">0</span></button>
+        <button type="button" class="dash-tab" data-tab="monitoring" role="tab" aria-selected="false">Monitoring <span class="dash-tab-ct" data-ct="monitoring">0</span><span class="dash-tab-new" data-new="monitoring" hidden>0 new</span></button>
+        <button type="button" class="dash-tab" data-tab="queued" role="tab" aria-selected="false">Queued <span class="dash-tab-ct" data-ct="queued">0</span></button>
+        <button type="button" class="dash-tab" data-tab="schedules" role="tab" aria-selected="false">Schedules <span class="dash-tab-ct" data-ct="schedules">0</span></button>
+        <button type="button" class="dash-tab" data-tab="drafts" role="tab" aria-selected="false">Drafts <span class="dash-tab-ct" data-ct="drafts">0</span></button>
+        <button type="button" class="dash-tab" data-tab="past" role="tab" aria-selected="false">Past <span class="dash-tab-ct" data-ct="past">0</span></button>
+        <button type="button" class="dash-tab" data-tab="all" role="tab" aria-selected="false">All <span class="dash-tab-ct" data-ct="all">0</span></button>
+      </div>
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section-title">Queued</h2>
-        <div class="campaign-list" id="queued-campaign-list">
-          <p class="empty-state">No queued campaigns.</p>
-        </div>
-      </section>
+      <!-- ── Toolbar — select all + search ── -->
+      <div class="dash-toolbar">
+        <span class="dash-selall" id="dash-selall" role="button" tabindex="0">
+          <span class="dash-check" id="dash-selall-check" aria-hidden="true"></span>
+          <span class="dash-selall-label">SELECT ALL</span>
+        </span>
+        <input class="dash-search" id="dash-search" type="text" placeholder="Search this list…" autocomplete="off" />
+      </div>
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section-title">Schedules</h2>
-        <div class="campaign-list" id="schedules-campaign-list">
-          <p class="empty-state">No schedules yet.</p>
+      <!-- ── Bulk action strip — appears when selection >= 1 ── -->
+      <div class="dash-bulkstrip" id="dash-bulkstrip" hidden aria-live="polite">
+        <div class="dash-bulkstrip-l">
+          <span class="dash-bulk-n" id="dash-bulk-n">0</span>SELECTED
+          <span class="dash-bulk-qual" id="dash-bulk-qual"></span>
         </div>
-      </section>
+        <div class="dash-bulkstrip-r">
+          <button type="button" class="btn btn-secondary" onclick="dashClearSelection()">CLEAR</button>
+          <button type="button" class="btn btn-secondary" id="dash-bulk-pause" onclick="dashBulkPauseWatch()" hidden>PAUSE WATCH</button>
+          <button type="button" class="btn btn-stop" onclick="dashBulkDelete()">DELETE</button>
+        </div>
+      </div>
 
-      <section class="dashboard-section">
-        <h2 class="dashboard-section-title">Drafts</h2>
-        <div class="campaign-list" id="drafts-campaign-list">
-          <p class="empty-state">No drafts yet.</p>
-        </div>
-      </section>
-
-      <section class="dashboard-section past-section" id="past-section">
-        <div class="past-section-header">
-          <h2 class="dashboard-section-title">Past</h2>
-          <button type="button" class="past-manage-toggle" id="past-manage-toggle" onclick="togglePastManageMode()" aria-label="Manage past campaigns" title="Manage">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
-              <path d="M10 11v6"></path>
-              <path d="M14 11v6"></path>
-              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
-            </svg>
-          </button>
-        </div>
-        <div class="past-search-row">
-          <input type="text" id="past-search" class="past-search-input" placeholder="Search by name, mode, or date…" oninput="onPastSearchInput()" />
-        </div>
-        <div class="past-bulk-bar" id="past-bulk-bar" hidden>
-          <span class="past-bulk-count" id="past-bulk-count">0 selected</span>
-          <div class="past-bulk-actions">
-            <button type="button" class="btn btn-secondary" onclick="clearPastSelection()">Cancel</button>
-            <button type="button" class="btn btn-stop" id="past-bulk-delete-btn" onclick="bulkDeletePastSelected()">Delete</button>
+      <!-- ── Panels — only one visible at a time. Existing list containers
+           are PRESERVED inside their respective panel so existing render
+           functions (refreshActiveCampaign, refreshDashboardQueue, etc.)
+           continue to write into the same DOM ids they always have. ── -->
+      <div class="dash-panels">
+        <div class="dash-panel" data-panel="active" id="dash-panel-active" role="tabpanel" hidden>
+          <div class="campaign-list" id="active-campaign-list">
+            <p class="empty-state">No active campaigns.</p>
           </div>
         </div>
-        <div class="campaign-list" id="past-campaign-list">
-          <p class="empty-state">No past campaigns yet.</p>
+
+        <div class="dash-panel" data-panel="monitoring" id="dash-panel-monitoring" role="tabpanel" hidden>
+          <div class="campaign-list" id="monitoring-campaign-list">
+            <p class="empty-state">No campaigns are being monitored.</p>
+          </div>
         </div>
-        <div class="past-toggle-row" id="past-toggle-row" hidden>
-          <button type="button" class="past-toggle-btn" id="past-toggle-btn" onclick="togglePastExpanded()"></button>
+
+        <div class="dash-panel" data-panel="queued" id="dash-panel-queued" role="tabpanel" hidden>
+          <div class="campaign-list" id="queued-campaign-list">
+            <p class="empty-state">No queued campaigns.</p>
+          </div>
         </div>
-      </section>
+
+        <div class="dash-panel" data-panel="schedules" id="dash-panel-schedules" role="tabpanel" hidden>
+          <div class="campaign-list" id="schedules-campaign-list">
+            <p class="empty-state">No schedules yet.</p>
+          </div>
+        </div>
+
+        <div class="dash-panel" data-panel="drafts" id="dash-panel-drafts" role="tabpanel" hidden>
+          <div class="campaign-list" id="drafts-campaign-list">
+            <p class="empty-state">No drafts yet.</p>
+          </div>
+        </div>
+
+        <div class="dash-panel" data-panel="past" id="dash-panel-past" role="tabpanel" hidden>
+          <div class="campaign-list" id="past-campaign-list">
+            <p class="empty-state">No past campaigns yet.</p>
+          </div>
+        </div>
+
+        <div class="dash-panel" data-panel="all" id="dash-panel-all" role="tabpanel" hidden>
+          <div class="campaign-list" id="all-campaign-list">
+            <p class="empty-state">No campaigns yet.</p>
+          </div>
+        </div>
+      </div>
 
       <div class="dashboard-actions">
         <button type="button" class="btn btn-primary create-campaign-btn" onclick="goCreateCampaign()">
