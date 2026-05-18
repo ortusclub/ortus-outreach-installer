@@ -7965,3 +7965,292 @@ function closePreviewIntroModal() {
 }
 window.closePreviewIntroModal = closePreviewIntroModal;
 
+// ──────────────────────────────────────────────────────────────────────
+// Dashboard tabbed layout — v2.51
+// Spec: docs/superpowers/specs/2026-05-18-dashboard-tabbed-design.md
+// All exported as window.dashXxx so onclick attributes in index.html find them.
+// ──────────────────────────────────────────────────────────────────────
+
+import {
+  pickDefaultTab as _dashPickDefaultTab,
+  computeCrossTabQualifier as _dashComputeQualifier,
+  toggleInSelection as _dashToggleSel,
+} from './dashboard-state.js';
+
+const DASH_TABS = ['active', 'monitoring', 'queued', 'schedules', 'drafts', 'past', 'all'];
+const DASH_PERSIST_KEY = 'ortus.dashboard.activeTab';
+
+let _dashActiveTab = '';        // current tab name
+let _dashSelection = new Set(); // selected campaign ids (across tabs)
+let _dashSearch = '';           // current search query (per active tab)
+
+/** Read campaign ids per tab from the rendered DOM. Source of truth: the
+ *  list containers populated by the existing refresh* functions. */
+function dashGetIdsByTab() {
+  const out = {};
+  for (const tab of DASH_TABS) {
+    if (tab === 'all') continue; // special-cased below
+    const list = document.getElementById(`${tab}-campaign-list`);
+    if (!list) { out[tab] = []; continue; }
+    out[tab] = Array.from(list.querySelectorAll('.campaign-row[data-campaign-id]'))
+      .map((r) => r.dataset.campaignId);
+  }
+  // 'all' is the union of every other tab — Set dedupes if the same id
+  // appears in two tabs (shouldn't, but defensive).
+  const allIds = new Set();
+  for (const tab of DASH_TABS) {
+    if (tab === 'all') continue;
+    for (const id of (out[tab] || [])) allIds.add(id);
+  }
+  out.all = Array.from(allIds);
+  return out;
+}
+
+/** Update the count badges on the tab bar. */
+function dashUpdateCounts() {
+  const ids = dashGetIdsByTab();
+  for (const tab of DASH_TABS) {
+    const el = document.querySelector(`.dash-tab-ct[data-ct="${tab}"]`);
+    if (el) el.textContent = (ids[tab] || []).length;
+  }
+}
+
+/** Show the panel for `tab`, hide all others. Updates aria-selected. */
+function dashShowPanel(tab) {
+  for (const t of DASH_TABS) {
+    const panel = document.getElementById(`dash-panel-${t}`);
+    const btn = document.querySelector(`.dash-tab[data-tab="${t}"]`);
+    if (panel) {
+      panel.hidden = (t !== tab);
+      panel.classList.toggle('on', t === tab);
+    }
+    if (btn) {
+      btn.classList.toggle('on', t === tab);
+      btn.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+    }
+  }
+}
+
+/** Switch to `tab`. Clears search, re-renders selection state for the new tab. */
+function dashSetTab(tab) {
+  if (!DASH_TABS.includes(tab)) return;
+  _dashActiveTab = tab;
+  _dashSearch = '';
+  const search = document.getElementById('dash-search');
+  if (search) search.value = '';
+  dashShowPanel(tab);
+  dashApplySearch();
+  dashRenderSelection();
+  dashRenderBulkStrip();
+  try { localStorage.setItem(DASH_PERSIST_KEY, tab); } catch {}
+}
+
+/** Apply the current search filter to the rows in the active panel.
+ *  Rows that don't match get display:none. A "no matches" overlay is added
+ *  when the filter would leave zero visible rows. */
+function dashApplySearch() {
+  const panel = document.getElementById(`dash-panel-${_dashActiveTab}`);
+  if (!panel) return;
+  const q = (_dashSearch || '').toLowerCase().trim();
+  const rows = panel.querySelectorAll('.campaign-row[data-campaign-id]');
+  let visibleCount = 0;
+  rows.forEach((row) => {
+    if (!q) {
+      row.style.display = '';
+      visibleCount++;
+      return;
+    }
+    const text = row.textContent.toLowerCase();
+    const match = text.includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) visibleCount++;
+  });
+  // Toggle a "no matches" overlay
+  let overlay = panel.querySelector('.dash-search-empty');
+  if (q && visibleCount === 0 && rows.length > 0) {
+    if (!overlay) {
+      overlay = document.createElement('p');
+      overlay.className = 'empty-state dash-search-empty';
+      overlay.textContent = 'No matches. Try a different search term.';
+      const list = panel.querySelector('.campaign-list');
+      if (list) list.appendChild(overlay);
+    }
+  } else if (overlay) {
+    overlay.remove();
+  }
+}
+
+/** Apply the selection state (gold tint + checkbox state) to every visible row. */
+function dashRenderSelection() {
+  // For every campaign-row in every panel, ensure the checkbox is present and
+  // reflects the current selection state.
+  const allRows = document.querySelectorAll('.dash-panel .campaign-row[data-campaign-id]');
+  allRows.forEach((row) => {
+    const id = row.dataset.campaignId;
+    if (!id) return;
+    let check = row.querySelector(':scope > .dash-row-check');
+    if (!check) {
+      check = document.createElement('span');
+      check.className = 'dash-row-check';
+      check.dataset.id = id;
+      check.setAttribute('role', 'checkbox');
+      check.tabIndex = 0;
+      row.prepend(check);
+    }
+    const sel = _dashSelection.has(id);
+    check.classList.toggle('on', sel);
+    row.classList.toggle('dash-row-sel', sel);
+    check.setAttribute('aria-checked', sel ? 'true' : 'false');
+  });
+  // Master select-all reflects the visible-row state of the active panel
+  dashRenderSelectAll();
+}
+
+/** Update the master select-all checkbox state (none / some / all). */
+function dashRenderSelectAll() {
+  const panel = document.getElementById(`dash-panel-${_dashActiveTab}`);
+  const check = document.getElementById('dash-selall-check');
+  if (!panel || !check) return;
+  const visible = Array.from(panel.querySelectorAll('.campaign-row[data-campaign-id]'))
+    .filter((r) => r.style.display !== 'none');
+  const selected = visible.filter((r) => _dashSelection.has(r.dataset.campaignId));
+  check.classList.remove('on', 'some');
+  if (visible.length > 0 && selected.length === visible.length) check.classList.add('on');
+  else if (selected.length > 0) check.classList.add('some');
+}
+
+/** Show or hide the bulk-action strip, update count + qualifier + button visibility. */
+function dashRenderBulkStrip() {
+  const strip = document.getElementById('dash-bulkstrip');
+  const nEl = document.getElementById('dash-bulk-n');
+  const qualEl = document.getElementById('dash-bulk-qual');
+  const pauseBtn = document.getElementById('dash-bulk-pause');
+  if (!strip || !nEl || !qualEl || !pauseBtn) return;
+  const n = _dashSelection.size;
+  strip.hidden = (n === 0);
+  nEl.textContent = String(n);
+  const ids = dashGetIdsByTab();
+  qualEl.textContent = _dashComputeQualifier(_dashSelection, _dashActiveTab, ids);
+  // Show PAUSE WATCH only when at least one monitoring row is selected
+  const monitoringIds = new Set(ids.monitoring || []);
+  let anyMonitoringSelected = false;
+  for (const id of _dashSelection) {
+    if (monitoringIds.has(id)) { anyMonitoringSelected = true; break; }
+  }
+  pauseBtn.hidden = !anyMonitoringSelected;
+}
+
+/** Wire row-checkbox + select-all + search + tab clicks. Idempotent. */
+function dashInitListeners() {
+  // Tab clicks
+  const tabs = document.getElementById('dash-tabs');
+  if (tabs && !tabs.__dashWired) {
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.dash-tab');
+      if (btn) dashSetTab(btn.dataset.tab);
+    });
+    tabs.__dashWired = true;
+  }
+  // Select-all
+  const selall = document.getElementById('dash-selall');
+  if (selall && !selall.__dashWired) {
+    selall.addEventListener('click', dashToggleSelectAll);
+    selall.__dashWired = true;
+  }
+  // Search input
+  const search = document.getElementById('dash-search');
+  if (search && !search.__dashWired) {
+    search.addEventListener('input', (e) => {
+      _dashSearch = e.target.value;
+      dashApplySearch();
+      dashRenderSelectAll();
+    });
+    search.__dashWired = true;
+  }
+  // Row checkbox clicks — event delegation on the body since rows come and go
+  if (!document.body.__dashRowWired) {
+    document.body.addEventListener('click', (e) => {
+      const check = e.target.closest('.dash-row-check');
+      if (check) {
+        e.stopPropagation();
+        const id = check.dataset.id;
+        if (id) {
+          _dashSelection = _dashToggleSel(_dashSelection, id);
+          dashRenderSelection();
+          dashRenderBulkStrip();
+        }
+      }
+    });
+    document.body.__dashRowWired = true;
+  }
+}
+
+/** Master select-all click. Toggles every VISIBLE row in the active panel. */
+function dashToggleSelectAll() {
+  const panel = document.getElementById(`dash-panel-${_dashActiveTab}`);
+  if (!panel) return;
+  const visible = Array.from(panel.querySelectorAll('.campaign-row[data-campaign-id]'))
+    .filter((r) => r.style.display !== 'none');
+  const visibleIds = visible.map((r) => r.dataset.campaignId);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => _dashSelection.has(id));
+  if (allSelected) {
+    for (const id of visibleIds) _dashSelection.delete(id);
+  } else {
+    for (const id of visibleIds) _dashSelection.add(id);
+  }
+  dashRenderSelection();
+  dashRenderBulkStrip();
+}
+
+function dashClearSelection() {
+  _dashSelection = new Set();
+  dashRenderSelection();
+  dashRenderBulkStrip();
+}
+
+function dashBulkPauseWatch() {
+  // v2.51 — backend pause-monitoring not yet wired. Show a toast.
+  const n = _dashSelection.size;
+  if (typeof window.showToast === 'function') {
+    window.showToast(`Pause Watch is not wired yet (${n} selected). Coming in the next release.`);
+  } else {
+    alert(`Pause Watch is not wired yet (${n} selected). Coming in the next release.`);
+  }
+}
+
+/** Called by the existing refresh* functions OR on demand to re-decorate
+ *  everything. Updates counts + selection + strip. Safe to call frequently. */
+function dashRefreshAll() {
+  dashUpdateCounts();
+  dashRenderSelection();
+  dashRenderBulkStrip();
+}
+
+/** First-paint: pick the default tab and show it. Called once on app load. */
+function dashInit() {
+  dashInitListeners();
+  dashUpdateCounts();
+  const ids = dashGetIdsByTab();
+  const counts = {};
+  for (const t of DASH_TABS) counts[t] = (ids[t] || []).length;
+  let persisted = '';
+  try { persisted = localStorage.getItem(DASH_PERSIST_KEY) || ''; } catch {}
+  const tab = _dashPickDefaultTab(counts, persisted);
+  dashSetTab(tab);
+}
+
+// Expose globals for index.html onclick handlers and for other modules to call
+window.dashSetTab = dashSetTab;
+window.dashClearSelection = dashClearSelection;
+window.dashBulkPauseWatch = dashBulkPauseWatch;
+window.dashRefreshAll = dashRefreshAll;
+window.dashInit = dashInit;
+// dashBulkDelete is wired in Task 5
+
+// First-paint: invoke dashInit on DOM ready (or immediately if already loaded)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { if (typeof dashInit === 'function') dashInit(); });
+} else {
+  if (typeof dashInit === 'function') dashInit();
+}
+
