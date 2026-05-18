@@ -6127,7 +6127,7 @@ async function refreshDashboardDrafts() {
       const name = d.name || '(unnamed draft)';
       const created = dashboardFormatDate(d.createdAt) || '—';
       return `
-        <div class="campaign-row campaign-row--with-edit">
+        <div class="campaign-row campaign-row--with-edit" data-campaign-id="${escHtml(d.id || '')}" data-state="draft">
           <span class="campaign-row-name">${escHtml(name)}</span>
           <span class="campaign-row-type">Draft</span>
           <span class="campaign-row-progress">Created ${escHtml(created)}</span>
@@ -6142,6 +6142,7 @@ async function refreshDashboardDrafts() {
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load drafts.</p>';
   }
+  if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
 
 async function deleteDraft(id) {
@@ -6203,7 +6204,7 @@ async function refreshDashboardQueue() {
       const isFirst = idx === 0;
       const isLast = idx === queue.length - 1;
       return `
-        <div class="campaign-row campaign-row--with-edit">
+        <div class="campaign-row campaign-row--with-edit" data-campaign-id="${escHtml(q.id || '')}" data-state="queued">
           <span class="campaign-row-name">${escHtml(name)}</span>
           <span class="campaign-row-type">${escHtml(modeLabel)}${accountLabel ? ' · ' + accountLabel : ''}</span>
           <span class="campaign-row-progress">${escHtml(positionLabel)}</span>
@@ -6220,6 +6221,7 @@ async function refreshDashboardQueue() {
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load queue.</p>';
   }
+  if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
 
 async function cancelQueuedCampaign(id) {
@@ -6317,7 +6319,7 @@ async function refreshDashboardSchedules() {
         const lastRun = s.lastRun ? dashboardFormatDate(s.lastRun) : 'Never run';
         const limit = s.dailyLimit != null ? `${s.dailyLimit}/day` : '';
         return `
-          <div class="campaign-row campaign-row--with-edit">
+          <div class="campaign-row campaign-row--with-edit" data-campaign-id="${escHtml(s.id || '')}" data-state="schedules">
             <span class="campaign-row-name">${escHtml(s.name || 'Schedule')}</span>
             <span class="campaign-row-type">${escHtml(dashboardModeLabel(s.mode))}</span>
             <span class="campaign-row-progress">${escHtml(cronFriendly)}${limit ? ' · ' + escHtml(limit) : ''} · last ${escHtml(lastRun)}</span>
@@ -6340,6 +6342,7 @@ async function refreshDashboardSchedules() {
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load schedules.</p>';
   }
+  if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
 
 // v2.14 — renders the Monitoring card for the Schedules lane.
@@ -6518,7 +6521,7 @@ async function refreshActiveCampaign() {
       } catch {}
       if (draftName) {
         list.innerHTML = `
-          <div class="campaign-row campaign-row--with-edit">
+          <div class="campaign-row campaign-row--with-edit" data-campaign-id="draft" data-state="draft">
             <div class="campaign-row-name">${dashboardNameButton(draftName, 'draft', 'draft')}</div>
             <span class="campaign-row-type">Draft</span>
             <span class="campaign-row-progress">Not started</span>
@@ -6554,7 +6557,7 @@ async function refreshActiveCampaign() {
     }
     const progress = total > 0 ? `${done} / ${total} · ${left} left` : `${done} processed`;
     list.innerHTML = `
-      <div class="campaign-row campaign-row--with-edit">
+      <div class="campaign-row campaign-row--with-edit" data-campaign-id="active" data-state="active">
         <div class="campaign-row-name">${dashboardNameButton(status.name, 'active', 'active')}</div>
         <span class="campaign-row-type">${escHtml(dashboardModeLabel(status.mode))}</span>
         <span class="campaign-row-progress">${escHtml(progress)}</span>
@@ -6565,6 +6568,7 @@ async function refreshActiveCampaign() {
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load active campaign.</p>';
   }
+  if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
 
 // v2.11.5: collapse + search for the past-campaigns list.
@@ -6948,10 +6952,15 @@ async function refreshPastCampaigns() {
       return;
     }
 
-    const showAll2 = !!q || pastExpanded;
-    const visible2 = showAll2 ? renderable : renderable.slice(0, PAST_COLLAPSED_LIMIT);
+    // Split renderable into past-only and monitoring-only. The original `idx`
+    // is preserved in each entry — it maps to the /api/history/:idx endpoint.
+    const _renderablePast = renderable.filter(({ c }) => c.state !== 'monitoring');
+    const _renderableMonitoring = renderable.filter(({ c }) => c.state === 'monitoring');
 
-    list.innerHTML = visible2.map(({ idx, c }) => {
+    const showAll2 = !!q || pastExpanded;
+    const visible2 = showAll2 ? _renderablePast : _renderablePast.slice(0, PAST_COLLAPSED_LIMIT);
+
+    const _buildPastRowHtml = ({ idx, c }) => {
       const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
       const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
       const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
@@ -6974,8 +6983,9 @@ async function refreshPastCampaigns() {
       const restartBtn = (reason === 'stopped' && !c.fullStop)
         ? `<button type="button" class="campaign-row-edit campaign-row-resume" onclick="event.stopPropagation(); openResumeChoice(${idx})" title="Resume this campaign — pick up where it stopped">Resume</button>`
         : '';
+      const rowState = c.state === 'monitoring' ? 'monitoring' : (c.state || 'past');
       return `
-        <div class="campaign-row campaign-row-clickable campaign-row--with-edit" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
+        <div class="campaign-row campaign-row-clickable campaign-row--with-edit" data-campaign-id="${escHtml(c.id || c.runId || 'past-' + idx)}" data-state="${escHtml(rowState)}" data-history-idx="${idx}" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
           <input type="checkbox" class="past-row-checkbox" data-past-idx="${idx}" ${checked} onclick="event.stopPropagation()" onchange="onPastRowCheckboxChange(event, ${idx})" aria-label="Select campaign" />
           <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
           <span class="campaign-row-type">${escHtml(subtitle)}</span>
@@ -6986,17 +6996,29 @@ async function refreshPastCampaigns() {
           <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
         </div>
       `;
-    }).join('');
+    };
+
+    list.innerHTML = visible2.map(_buildPastRowHtml).join('');
+
+    // Render monitoring entries into their own list (if the element exists).
+    const monList = document.getElementById('monitoring-campaign-list');
+    if (monList) {
+      if (_renderableMonitoring.length === 0) {
+        monList.innerHTML = '';
+      } else {
+        monList.innerHTML = _renderableMonitoring.map(_buildPastRowHtml).join('');
+      }
+    }
 
     renderPastBulkBar();
 
     // Toggle visibility + label. Hidden when searching (search shows all
     // matches inherently) or when total ≤ limit (nothing to expand).
-    // v2.11.8: count uses `renderable` so pending-deleted rows don't inflate
-    // the "Show N more" pill while they're awaiting their commit timer.
+    // v2.11.8: count uses `_renderablePast` so pending-deleted rows don't
+    // inflate the "Show N more" pill while they're awaiting their commit timer.
     if (toggleRow && toggleBtn) {
-      const remaining = renderable.length - PAST_COLLAPSED_LIMIT;
-      if (q || renderable.length <= PAST_COLLAPSED_LIMIT) {
+      const remaining = _renderablePast.length - PAST_COLLAPSED_LIMIT;
+      if (q || _renderablePast.length <= PAST_COLLAPSED_LIMIT) {
         toggleRow.hidden = true;
       } else {
         toggleRow.hidden = false;
@@ -7007,6 +7029,7 @@ async function refreshPastCampaigns() {
     list.innerHTML = '<p class="empty-state">Failed to load history.</p>';
     if (toggleRow) toggleRow.hidden = true;
   }
+  if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
 
 async function deletePastCampaign(idx) {
@@ -8038,6 +8061,7 @@ function dashSetTab(tab) {
   _dashSearch = '';
   const search = document.getElementById('dash-search');
   if (search) search.value = '';
+  if (tab === 'all') renderDashboardAll();
   dashShowPanel(tab);
   dashApplySearch();
   dashRenderSelection();
@@ -8376,4 +8400,40 @@ async function dashPerformBulkDelete(pastRows) {
 }
 
 window.dashBulkDelete = dashBulkDelete;
+
+/** Render the All tab by cloning rows from every other panel's list into
+ *  #all-campaign-list, prepending a status pill based on data-state. */
+function renderDashboardAll() {
+  const target = document.getElementById('all-campaign-list');
+  if (!target) return;
+  const sources = ['active', 'monitoring', 'queued', 'schedules', 'drafts', 'past'];
+  const fragments = [];
+  for (const src of sources) {
+    const list = document.getElementById(`${src}-campaign-list`);
+    if (!list) continue;
+    list.querySelectorAll('.campaign-row[data-campaign-id]').forEach((row) => {
+      const clone = row.cloneNode(true);
+      // Remove any previously-injected checkbox so the cloned row picks up
+      // the fresh one when dashRenderSelection() runs next.
+      clone.querySelectorAll('.dash-row-check').forEach((c) => c.remove());
+      // Prepend a status pill
+      const state = clone.dataset.state || 'past';
+      const pill = document.createElement('span');
+      pill.className = `dash-row-pill ${state}`;
+      pill.textContent = state.toUpperCase();
+      // Insert pill at the start of the name cell if it exists, else as first child
+      const nameCell = clone.querySelector('.campaign-row-name') || clone;
+      nameCell.prepend(pill);
+      fragments.push(clone);
+    });
+  }
+  target.innerHTML = '';
+  if (fragments.length === 0) {
+    target.innerHTML = '<p class="empty-state">No campaigns yet.</p>';
+  } else {
+    for (const f of fragments) target.appendChild(f);
+  }
+  if (typeof dashRefreshAll === 'function') dashRefreshAll();
+}
+window.renderDashboardAll = renderDashboardAll;
 
