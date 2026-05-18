@@ -4269,3 +4269,251 @@ body.route-dashboard .sidebar-nav { display: none; }
   border-top: 1px solid var(--hairline-soft);
 }
 
+/* ──────────────────────────────────────────────────────────────────────
+   Dashboard tabbed layout — v2.51
+   Spec: docs/superpowers/specs/2026-05-18-dashboard-tabbed-design.md
+   ─────────────────────────────────────────────────────────────────── */
+
+.dash-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--hairline);
+  gap: 0;
+  margin-top: 0;
+  overflow-x: auto;
+}
+.dash-tab {
+  padding: 16px 22px;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 0.98rem;
+  letter-spacing: 0.06em;
+  color: var(--gray);
+  cursor: pointer;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  transition: color 0.12s ease;
+}
+.dash-tab:hover { color: var(--ink); }
+.dash-tab.on { color: var(--ink); border-bottom-color: var(--gold); }
+.dash-tab-ct {
+  font-family: var(--body);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  color: var(--gray);
+  padding: 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+}
+.dash-tab.on .dash-tab-ct { border-color: var(--gold); color: var(--gold); }
+.dash-tab-new {
+  background: var(--gold);
+  color: #000;
+  border-radius: 9999px;
+  padding: 1px 6px;
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.dash-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0 14px;
+  border-bottom: 1px solid var(--hairline-soft, rgba(255,255,255,0.06));
+}
+.dash-selall {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gray);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  user-select: none;
+}
+.dash-selall:hover { color: var(--ink); }
+.dash-check {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  position: relative;
+  display: inline-block;
+  transition: all 0.12s ease;
+}
+.dash-check.on { border-color: var(--gold); background: var(--gold); }
+.dash-check.on::after {
+  content: "✓";
+  position: absolute;
+  color: #000;
+  font-size: 11px;
+  left: 1px;
+  top: -3px;
+  font-weight: 700;
+}
+.dash-check.some { border-color: var(--gold); background: rgba(247,190,104,0.4); }
+.dash-check.some::after {
+  content: "–";
+  position: absolute;
+  color: #000;
+  font-size: 11px;
+  left: 3px;
+  top: -3px;
+  font-weight: 700;
+}
+.dash-search {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  padding: 6px 12px;
+  font-family: var(--body);
+  font-size: 0.72rem;
+  border-radius: 9999px;
+  width: 240px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+.dash-search:focus { border-color: var(--ink); }
+.dash-search::placeholder { color: var(--gray); }
+
+.dash-bulkstrip {
+  background: rgba(247,190,104,0.05);
+  border: 1px solid var(--gold);
+  padding: 10px 16px;
+  margin: 14px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  animation: dash-slidedown 0.2s ease;
+}
+@keyframes dash-slidedown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.dash-bulk-n {
+  color: var(--gold);
+  font-family: var(--display);
+  font-size: 1.05rem;
+  margin-right: 10px;
+  letter-spacing: 0.05em;
+}
+.dash-bulk-qual {
+  color: var(--gray);
+  margin-left: 6px;
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+}
+.dash-bulkstrip-r { display: flex; gap: 8px; }
+
+.dash-panels { margin-top: 8px; }
+.dash-panel { display: none; }
+.dash-panel.on { display: block; }
+
+/* Row-level decoration injected by orchestration JS.
+   Existing .campaign-row markup is untouched; we prepend a .dash-row-check
+   span and toggle .dash-row-sel on the row itself. */
+.campaign-row.dash-row-sel {
+  background: rgba(247,190,104,0.05);
+  border-color: rgba(247,190,104,0.25);
+}
+.dash-row-check {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 12px;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+}
+.dash-row-check.on { border-color: var(--gold); background: var(--gold); }
+.dash-row-check.on::after {
+  content: "✓";
+  position: absolute;
+  color: #000;
+  font-size: 11px;
+  left: 1px;
+  top: -3px;
+  font-weight: 700;
+}
+
+/* Status pill — used only on rows rendered in the All tab */
+.dash-row-pill {
+  display: inline-block;
+  font-family: var(--display);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  padding: 2px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  color: var(--gray);
+  margin-right: 10px;
+}
+.dash-row-pill.active     { color: var(--green); border-color: var(--green); }
+.dash-row-pill.monitoring { color: var(--gold);  border-color: var(--gold); }
+.dash-row-pill.queued     { color: var(--ink); }
+.dash-row-pill.draft      { color: var(--gray); opacity: 0.75; }
+.dash-row-pill.past       { color: var(--gray); opacity: 0.55; }
+.dash-row-pill.stopped    { color: var(--red);   border-color: var(--red); }
+
+/* Confirmation dialog for bulk delete */
+.dash-dialog-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: dash-fadein 0.15s ease;
+}
+@keyframes dash-fadein { from { opacity: 0; } to { opacity: 1; } }
+.dash-dialog {
+  background: #0a0a0a;
+  border: 1px solid var(--red, #f85149);
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 90%;
+}
+.dash-dialog h2 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1.35rem;
+  letter-spacing: 0.06em;
+  color: var(--red, #f85149);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+.dash-dialog p {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.dash-dialog p b { color: var(--ink); }
+.dash-dialog-preview {
+  border: 1px solid var(--hairline-soft, rgba(255,255,255,0.06));
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  font-size: 0.74rem;
+  color: var(--gray);
+  max-height: 140px;
+  overflow: auto;
+}
+.dash-dialog-preview span { display: block; padding: 2px 0; }
+.dash-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
