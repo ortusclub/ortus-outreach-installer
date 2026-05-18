@@ -1930,6 +1930,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         let { page } = session;
         campaign.currentProfile = pName;
 
+        // v2.52.0: any profile that successfully opens for a turn becomes a
+        // monitoring participant — regardless of whether its leads end up
+        // as connection_sent or already_processed. Previously the add was
+        // gated on result.action === 'connection_sent' (~line 2313). That
+        // missed profiles whose leads were all already_processed (LinkedIn
+        // showed pending from a prior run). The sheet stamps those rows
+        // with this profile as Sender, so monitoring MUST cover this
+        // profile to track those pending invites. Set.add is idempotent —
+        // the existing add inside the connection_sent branch is harmless.
+        profilesThatSentAtLeastOne.add(profileId);
+
         const batchStart = Date.now();
 
         // ── Inner: up to BATCH_SIZE leads for this profile ──
@@ -2860,6 +2871,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // entries — "Stop everything" semantically means the operator is
         // done with this campaign, not pausing it.
         fullStop: !!campaign._skipCleanup,
+        // v2.52.0: persist campaign.state so the dashboard Monitoring tab
+        // can filter past entries by state==='monitoring'. Previously
+        // omitted → every monitoring transition wrote an entry with
+        // state=undefined → Monitoring tab always showed 0 even when the
+        // engine was actively monitoring. transitionToMonitoring runs
+        // BEFORE this appendHistory call (in the same finally block,
+        // ~line 2790), so campaign.state is already 'monitoring' here for
+        // any CC+IC run that didn't pick Stop Everything.
+        state: campaign.state || null,
         // v2.11.7: settings snapshot for the "Re-run with same settings" CTA.
         // Operator already trusts this machine with the templates (they're
         // typed into the wizard), and the file is in the user-only data
