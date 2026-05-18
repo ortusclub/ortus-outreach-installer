@@ -18,6 +18,8 @@
  * campaign loop is never blocked or aborted by a log-writer failure.
  */
 
+import { OPS_LOG_WEBAPP_URL, CAMPAIGN_LOG_WEBAPP_URL } from './sheets-webapp-url.js';
+
 const FLUSH_INTERVAL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 15_000;
 
@@ -26,7 +28,15 @@ let _flushTimer = null;
 
 // Test seam: allow tests to inject a fake fetch. Production uses globalThis.fetch.
 let _fetchImpl = (...args) => globalThis.fetch(...args);
-let _envImpl = () => process.env;
+
+// v2.56.0 — URL source. Production reads from the centralized constants
+// (sheets-webapp-url.js) so EVERY operator's app — Antonio, Sam, anyone —
+// posts to the same team-wide log sheets. The previous .env-driven pattern
+// silently no-op'd for any operator who hadn't pasted OPS_LOG_WEBAPP_URL +
+// CAMPAIGN_LOG_WEBAPP_URL into their local .env. The _envImpl test seam
+// is preserved verbatim — when a test calls _setEnvImpl with an env stub,
+// the stub overrides the constants for the duration of the test.
+let _envImpl = null; // null = use centralized constants (production)
 
 export function _setFetchImpl(fn) { _fetchImpl = fn; }
 export function _setEnvImpl(fn) { _envImpl = fn; }
@@ -34,12 +44,18 @@ export function _resetForTest() {
   _opsBuffer = [];
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
   _fetchImpl = (...args) => globalThis.fetch(...args);
-  _envImpl = () => process.env;
+  _envImpl = null;
 }
 export function _peekBufferForTest() { return _opsBuffer.slice(); }
 
-function _opsLogUrl() { return _envImpl().OPS_LOG_WEBAPP_URL || ''; }
-function _campaignLogUrl() { return _envImpl().CAMPAIGN_LOG_WEBAPP_URL || ''; }
+function _opsLogUrl() {
+  if (_envImpl) return _envImpl().OPS_LOG_WEBAPP_URL || '';
+  return OPS_LOG_WEBAPP_URL || '';
+}
+function _campaignLogUrl() {
+  if (_envImpl) return _envImpl().CAMPAIGN_LOG_WEBAPP_URL || '';
+  return CAMPAIGN_LOG_WEBAPP_URL || '';
+}
 
 /**
  * Queue an event for the Operations Log. Buffered locally; flushed every

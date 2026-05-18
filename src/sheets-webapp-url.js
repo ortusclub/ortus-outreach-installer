@@ -26,3 +26,15 @@ export const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwZu0o
 // and the signup allowlist. One sheet for everyone.
 export const SOO_SHEET_ID = '1t49JaZppDZZNIUuOv2QQw7j1MCZC8vMMy1uZe_AkLwI';
 export const SOO_SHEET_GID = '992076199';
+
+// v2.56.0 — Operations Log + Campaign Activity Apps Script deployments.
+// Centralized so every operator's app posts to the same team-wide log
+// sheets, not to per-operator .env URLs (which Sam and new colleagues
+// won't have set). Without these centralized, log-writer.js silently
+// no-op'd for everyone except Antonio.
+//
+// Both are Antonio-deployed Apps Script web apps. The target Google Sheets
+// must be shared "anyone with the link can edit" so the Apps Script
+// (running as Antonio) can append rows on every operator's behalf.
+export const OPS_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwWCNWNLTN0z9fWfvUZUwGICzXlg0CG0oBBwASZxqbFzzEnctBBJZRsHmn1dD0F-ANu/exec';
+export const CAMPAIGN_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzvwiF8QpfQmV8Lk_z0PQz4mOJQZUtRNhs8Y7Sq2q_z4XELsbKIfBhXaAvvmgJZuJ2Ucw/exec';
