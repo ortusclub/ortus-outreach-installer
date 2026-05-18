@@ -6996,6 +6996,13 @@ async function refreshPastCampaigns() {
     list.innerHTML = '<p class="empty-state">Failed to load history.</p>';
     if (toggleRow) toggleRow.hidden = true;
   }
+  // v2.52.0: the All tab is a CLONE of the past + monitoring lists. After any
+  // past-list refresh, the All tab's clones are stale — explicitly re-render
+  // here so bulk-delete operators don't have to tab away + back to see
+  // their deletion take effect. (Repro: select rows in All tab → Delete →
+  // server deletes succeed → past-campaign-list re-renders → all-campaign-list
+  // keeps stale clones until next dashSetTab('all') call.)
+  if (typeof renderDashboardAll === 'function') renderDashboardAll();
   if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
 
