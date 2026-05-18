@@ -1,0 +1,16 @@
+{
+  "value": {
+    "renderContentUnions": [],
+    "entityUrn": "urn:li:msg_message:(urn:li:fsd_profile:ACoAABkKUycBZd5cdhq31vO7Rm9K5fCc2Nu6UgA,2-MTc3OTA5MDU4MDk5M2I4OTA0OS0xMDAmOTkyY2RjYjQtOTcwYS00MmZjLWI5ZDYtM2FlZDM4M2U3ZDNkXzEwMA==)",
+    "backendConversationUrn": "urn:li:messagingThread:2-OTkyY2RjYjQtOTcwYS00MmZjLWI5ZDYtM2FlZDM4M2U3ZDNkXzEwMA==",
+    "senderUrn": "urn:li:msg_messagingParticipant:urn:li:fsd_profile:ACoAABkKUycBZd5cdhq31vO7Rm9K5fCc2Nu6UgA",
+    "originToken": "68a62c18-7fda-4398-9a6d-ca8775f4baef",
+    "body": {
+      "attributes": [],
+      "text": "recon test body do not reply"
+    },
+    "backendUrn": "urn:li:messagingMessage:2-MTc3OTA5MDU4MDk5M2I4OTA0OS0xMDAmOTkyY2RjYjQtOTcwYS00MmZjLWI5ZDYtM2FlZDM4M2U3ZDNkXzEwMA==",
+    "conversationUrn": "urn:li:msg_conversation:(urn:li:fsd_profile:ACoAABkKUycBZd5cdhq31vO7Rm9K5fCc2Nu6UgA,2-OTkyY2RjYjQtOTcwYS00MmZjLWI5ZDYtM2FlZDM4M2U3ZDNkXzEwMA==)",
+    "deliveredAt": 1779090581245
+  }
+}
