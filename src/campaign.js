@@ -2136,6 +2136,32 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             await applyFocusEmulation(page, profileId);
           } catch { /* keep current */ }
 
+          // v2.52.0 (Layer B) — page health probe before processing each lead.
+          // Symptom this addresses: Input.dispatchKeyEvent timed out during
+          // organic browsing leaves the renderer's main thread wedged.
+          // browseFeedOrganically swallows that error and the loop continues,
+          // but the page is now CDP-unresponsive. The existing retry path
+          // re-acquires the same dead page reference, burning 3 × 180s per
+          // lead before giving up — 9 minutes of wasted retries per stuck
+          // lead, with no recovery. A 3-second evaluate() probe catches the
+          // wedge cheaply: live pages return in <50ms; wedged pages hit the
+          // probe timeout and we close the session so the profile rotation
+          // re-opens a fresh browser on its next turn.
+          let _pageHealthy = true;
+          try {
+            await Promise.race([
+              page.evaluate(() => 1),
+              new Promise((_, reject) => setTimeout(
+                () => reject(new Error('page_health_probe_timeout')), 3000
+              )),
+            ]);
+          } catch (probeErr) {
+            _pageHealthy = false;
+            log(`  ⚠ ${pName}: page unresponsive (${probeErr.message}) — closing session, profile re-rotates with fresh browser next turn`);
+            try { await closeSession(profileId); } catch { /* best-effort */ }
+          }
+          if (!_pageHealthy) break;
+
           log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
           setAction('Processing lead', { lead: data.firstName || '?', account: pName });
 
