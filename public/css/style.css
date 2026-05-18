@@ -4479,24 +4479,53 @@ body.route-dashboard .sidebar-nav { display: none; }
   font-weight: 700;
 }
 
-/* Status pill — used only on rows rendered in the All tab */
+/* Status pill — used only on rows rendered in the All tab. Each variant uses
+   a solid border + saturated text color so the pill is legible against the
+   light dashboard background. Opacity-faded variants were unreadable. */
 .dash-row-pill {
   display: inline-block;
   font-family: var(--display);
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   padding: 2px 10px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--ink);
   border-radius: 9999px;
-  color: var(--gray);
+  color: var(--ink);
+  background: transparent;
   margin-right: 10px;
+  font-weight: 500;
 }
 .dash-row-pill.active     { color: var(--green); border-color: var(--green); }
-.dash-row-pill.monitoring { color: var(--gold);  border-color: var(--gold); }
-.dash-row-pill.queued     { color: var(--ink); }
-.dash-row-pill.draft      { color: var(--gray); opacity: 0.75; }
-.dash-row-pill.past       { color: var(--gray); opacity: 0.55; }
+.dash-row-pill.monitoring { color: var(--gold);  border-color: var(--gold); background: rgba(247,190,104,0.08); }
+.dash-row-pill.queued     { color: var(--ink);   border-color: var(--ink); }
+.dash-row-pill.draft      { color: var(--ink);   border-color: var(--ink); border-style: dashed; }
+.dash-row-pill.past       { color: var(--ink);   border-color: var(--ink); }
 .dash-row-pill.stopped    { color: var(--red);   border-color: var(--red); }
+
+/* Bump contrast on row text inside dash panels — the global --gray sits at
+   #999 which is too washed-out against the light dashboard background when
+   surrounded by pills + buttons. Override scoped to .dash-panel only so the
+   rest of the app's gray text is untouched. */
+.dash-panel .campaign-row .campaign-row-type,
+.dash-panel .campaign-row .campaign-row-progress {
+  color: #555;
+}
+.dash-panel .campaign-row .campaign-row-status {
+  border-color: rgba(0,0,0,0.45);
+  color: #333;
+}
+.dash-panel .campaign-row .campaign-row-status.is-stopped {
+  color: var(--red);
+  border-color: var(--red);
+}
+.dash-panel .campaign-row .campaign-row-edit {
+  color: #333;
+  border-color: rgba(0,0,0,0.4);
+}
+.dash-panel .campaign-row .campaign-row-edit:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
 
 /* Confirmation dialog for bulk delete */
 .dash-dialog-bg {

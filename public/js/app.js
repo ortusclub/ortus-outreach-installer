@@ -8152,12 +8152,17 @@ function dashInitListeners() {
     });
     search.__dashWired = true;
   }
-  // Row checkbox clicks — event delegation on the body since rows come and go
+  // Row checkbox clicks — event delegation on the body since rows come and go.
+  // Capture phase is required: past rows have an inline onclick="openPastCampaignModal(idx)"
+  // on the row itself, which fires in the bubble phase BEFORE the body's
+  // bubble-phase listener gets a chance to stopPropagation. Capturing on the body
+  // means we see the click before it descends into the row's bubble handlers.
   if (!document.body.__dashRowWired) {
     document.body.addEventListener('click', (e) => {
       const check = e.target.closest('.dash-row-check');
       if (check) {
         e.stopPropagation();
+        e.preventDefault();
         const id = check.dataset.id;
         if (id) {
           _dashSelection = _dashToggleSel(_dashSelection, id);
@@ -8165,7 +8170,7 @@ function dashInitListeners() {
           dashRenderBulkStrip();
         }
       }
-    });
+    }, true);
     document.body.__dashRowWired = true;
   }
 }
