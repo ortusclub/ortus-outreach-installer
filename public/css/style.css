@@ -4394,6 +4394,10 @@ body.route-dashboard .sidebar-nav { display: none; }
   font-size: 0.72rem;
   animation: dash-slidedown 0.2s ease;
 }
+/* Targeted override — .dash-bulkstrip's `display:flex` beats the global
+   `[hidden]{display:none}` rule, so without this the strip stays visible
+   even when JS sets strip.hidden=true. Same pattern as .past-bulk-bar. */
+.dash-bulkstrip[hidden] { display: none; }
 @keyframes dash-slidedown {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -4416,6 +4420,33 @@ body.route-dashboard .sidebar-nav { display: none; }
 .dash-panels { margin-top: 8px; }
 .dash-panel { display: none; }
 .dash-panel.on { display: block; }
+
+/* Inside dashboard panels, switch .campaign-row from its original fixed-column
+   grid to flex. The grid was designed for a fixed child count, but we now
+   prepend .dash-row-check (and on the All tab, .dash-row-pill inside the name
+   cell). Past rows already include a legacy .past-row-checkbox + Resume + Edit
+   + delete-X — combined, that's 8-9 children in a 7-column grid, so EDIT
+   wraps to a new line. Flex lets children flow naturally without overflow. */
+.dash-panel .campaign-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.dash-panel .campaign-row > .campaign-row-name      { flex: 2 1 0; min-width: 0; }
+.dash-panel .campaign-row > .campaign-row-type      { flex: 1.4 1 0; min-width: 0; }
+.dash-panel .campaign-row > .campaign-row-progress  { flex: 1.4 1 0; min-width: 0; }
+/* Right-side controls (status pill + action buttons) keep natural width and
+   sit at the end of the row. */
+.dash-panel .campaign-row > .campaign-row-status,
+.dash-panel .campaign-row > .campaign-row-actions,
+.dash-panel .campaign-row > .campaign-row-edit,
+.dash-panel .campaign-row > .past-row-delete { flex: 0 0 auto; }
+
+/* .dash-row-check is the unified per-row selector now, so the legacy
+   past-row-checkbox is redundant inside dash panels. Hiding it (rather than
+   removing it from the DOM) preserves the existing renderPastBulkBar code
+   path — it just sees 0 checked rows and keeps the old past-bulk-bar hidden. */
+.dash-panel .past-row-checkbox { display: none; }
 
 /* Row-level decoration injected by orchestration JS.
    Existing .campaign-row markup is untouched; we prepend a .dash-row-check
