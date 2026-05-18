@@ -302,7 +302,7 @@
           <input type="text" id="primary-person-url" placeholder="https://www.linkedin.com/in/..." style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
           <div style="font-size:11px; color:var(--gray); margin-top:4px">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
         </div>
-        <div style="font-size:11px; color:var(--gray); margin-top:4px">The intro DM body lives in <strong>Section 5 · Message Templates</strong> below. The Group Conversation Title sits just below this block.</div>
+        <div style="font-size:11px; color:var(--gray); margin-top:4px">The intro DM body <em>and</em> Group Conversation Title both live in <strong>Section 5 · Message Templates</strong> below.</div>
       </div>
 
       <!-- v2.14.x: Auto-check cadence (CC+IC only). Sets how often the
@@ -323,15 +323,6 @@
           </select>
         </div>
         <div style="font-size:11px; color:var(--gray); margin-top:8px">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
-      </div>
-
-      <!-- Group Conversation Title — shared by connect_and_introduce and introduce_back.
-           Moved out of nav-introduce-back so CC+IC operators can set it here. -->
-      <div id="intro-title-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
-        <label for="intro-title" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Group conversation title</label>
-        <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
-        <div class="placeholder-tags" data-target="intro-title" style="margin-top:10px"></div>
-        <div style="font-size:11px; color:var(--gray); margin-top:4px">Click a chip to insert at the cursor. Available: <code>{first name}</code>, <code>{intro name}</code>, <code>{intro first name}</code>, <code>{intro last name}</code>, plus any sheet column.</div>
       </div>
 
     </div>
@@ -781,6 +772,17 @@
       <label for="tpl-inmail-body">Body</label>
       <textarea id="tpl-inmail-body" rows="3" placeholder="Hi {firstName}, I came across your profile…"></textarea>
       <div class="placeholder-tags" data-target="tpl-inmail-body"></div>
+    </div>
+
+    <!-- Group Conversation Title — shared by connect_and_introduce and introduce_back.
+         v2.52.0: moved into Section 5 alongside the Intro DM Body so operators
+         see + edit it next to the related message template. Visibility still
+         driven by applyTemplateVisibility (mode-aware). -->
+    <div id="intro-title-block" class="section tpl-section" style="display:none">
+      <h2 data-edit="h2-intro-title">Group Conversation Title</h2>
+      <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
+      <div class="placeholder-tags" data-target="intro-title" style="margin-top:10px"></div>
+      <div style="font-size:11px; color:var(--gray); margin-top:4px">Click a chip to insert at the cursor. Available: <code>{first name}</code>, <code>{intro name}</code>, <code>{intro first name}</code>, <code>{intro last name}</code>, plus any sheet column.</div>
     </div>
 
     <!-- ── Intro DM Body (connect_and_introduce) ── -->
