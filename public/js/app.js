@@ -6968,13 +6968,35 @@ async function refreshPastCampaigns() {
     list.innerHTML = visible2.map(_buildPastRowHtml).join('');
 
     // Render monitoring entries into their own list (if the element exists).
+    // v2.52.0: include the LIVE in-memory campaign when it's in monitoring
+    // state. Without this, the cockpit shows "WATCHING FOR ACCEPTANCES" but
+    // the Monitoring tab is empty because /api/history only contains
+    // finished campaigns. Source: __cockpit is populated by pollStatus from
+    // /api/campaign/status (see line ~2956), so it's already in sync.
     const monList = document.getElementById('monitoring-campaign-list');
     if (monList) {
-      if (_renderableMonitoring.length === 0) {
-        monList.innerHTML = '';
-      } else {
-        monList.innerHTML = _renderableMonitoring.map(_buildPastRowHtml).join('');
+      let liveRowHtml = '';
+      if (__cockpit && __cockpit.state === 'monitoring') {
+        const liveName = (__cockpit.name || '').trim() || 'Live campaign';
+        const liveMode = dashboardModeLabel(__cockpit.mode);
+        const liveProcessed = Number(__cockpit.totalProcessed) || 0;
+        const nextCheckMs = __cockpit.nextCheckAt ? new Date(__cockpit.nextCheckAt).getTime() : NaN;
+        const minsToNext = !isNaN(nextCheckMs)
+          ? Math.max(0, Math.round((nextCheckMs - Date.now()) / 60000))
+          : null;
+        const subtitle = `${liveMode} · monitoring${minsToNext != null ? ` · next check in ${minsToNext}m` : ''}`;
+        liveRowHtml = `
+          <div class="campaign-row campaign-row-clickable campaign-row--with-edit" data-campaign-id="live-monitoring" data-state="monitoring" onclick="goCreateCampaign()">
+            <div class="campaign-row-name"><button type="button" class="campaign-row-name-text" disabled style="cursor:default">${escHtml(liveName)}</button></div>
+            <span class="campaign-row-type">${escHtml(subtitle)}</span>
+            <span class="campaign-row-progress">${escHtml(liveProcessed + ' processed')}</span>
+            <span class="campaign-row-status is-running">Monitoring</span>
+            <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the live cockpit">View cockpit</button>
+          </div>
+        `;
       }
+      const pastMonitoringHtml = _renderableMonitoring.map(_buildPastRowHtml).join('');
+      monList.innerHTML = liveRowHtml + pastMonitoringHtml;
     }
 
     renderPastBulkBar();
@@ -7481,6 +7503,18 @@ async function bulkCheckNow() {
   // in-campaign bulk-check that wasn't manually triggered.
   const _summaryCard = document.querySelector('.bulk-check-summary');
   if (_summaryCard) _summaryCard.hidden = true;
+
+  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
+  const linkedinColumn = document.getElementById('linkedin-col-select')?.value || '';
+  // Pass ALL selected accounts so the sweep covers each one (subject to
+  // server-side parked-account filtering). Old behaviour only sent the
+  // first selected, which silently skipped the sweep entirely when the
+  // first account was parked.
+  const profileIds = (Array.isArray(selectedProfileIds) && selectedProfileIds.length)
+    ? selectedProfileIds.slice() : [];
+
+  if (!sheetUrl) { setStatus('Paste a sheet URL first.'); return; }
+
   // Show the live panel immediately with the known profile total so the
   // operator sees "RUNNING · 0 OF N" within ~100ms instead of waiting for
   // the first log line to arrive.
@@ -7494,17 +7528,6 @@ async function bulkCheckNow() {
       __keepAlive: true,
     });
   }
-
-  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
-  const linkedinColumn = document.getElementById('linkedin-col-select')?.value || '';
-  // Pass ALL selected accounts so the sweep covers each one (subject to
-  // server-side parked-account filtering). Old behaviour only sent the
-  // first selected, which silently skipped the sweep entirely when the
-  // first account was parked.
-  const profileIds = (Array.isArray(selectedProfileIds) && selectedProfileIds.length)
-    ? selectedProfileIds.slice() : [];
-
-  if (!sheetUrl) { setStatus('Paste a sheet URL first.'); return; }
 
   setBtnDisabled(true);
   // Live log streaming: poll campaign.logs every 2s while the sweep runs and
