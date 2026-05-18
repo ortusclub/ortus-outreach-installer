@@ -1316,3 +1316,53 @@ export async function resolveProfileUrn(page, publicId) {
     return '';
   }
 }
+
+// Per-page-session cache for the sender's URN. WeakMap so the entry is GC'd
+// when the page is closed. Cleared implicitly per profile relaunch.
+const _senderUrnCache = new WeakMap();
+
+/**
+ * Get the URN of the currently-logged-in LinkedIn account on this page.
+ * Calls /voyager/api/me which returns the viewer's profile entity. Cached
+ * per-page so the second+ intro in the same auto-intro loop is free.
+ *
+ * Returns '' on any failure. Callers fall back to typeahead.
+ *
+ * @param {puppeteer.Page} page - active LinkedIn page
+ * @returns {Promise<string>}   - sender's profile URN or ''
+ */
+export async function getSenderUrn(page) {
+  const cached = _senderUrnCache.get(page);
+  if (cached) return cached;
+
+  try {
+    const result = await page.evaluate(async () => {
+      try {
+        const csrf = document.cookie.split(';').map((c) => c.trim())
+          .find((c) => c.startsWith('JSESSIONID='));
+        if (!csrf) return { ok: false };
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        const resp = await fetch('https://www.linkedin.com/voyager/api/me', {
+          headers: {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': token,
+            'x-restli-protocol-version': '2.0.0',
+          },
+          credentials: 'include',
+        });
+        if (!resp.ok) return { ok: false };
+        return { ok: true, data: await resp.json() };
+      } catch {
+        return { ok: false };
+      }
+    });
+
+    if (!result || !result.ok) return '';
+    const urn = extractProfileUrnFromVoyagerResponse(result.data);
+    if (urn) _senderUrnCache.set(page, urn);
+    return urn;
+  } catch {
+    return '';
+  }
+}
