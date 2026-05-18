@@ -56,3 +56,32 @@ export function buildCreateMessagePayload({ senderUrn, recipientUrns, body, titl
   if (t) payload.conversationTitle = t;
   return payload;
 }
+
+/**
+ * Parse the response from a createMessage POST.
+ *
+ * Success shape (status 200): { value: { conversationUrn, backendConversationUrn, deliveredAt, ... } }
+ * Error shape (status 4xx/5xx): arbitrary JSON or plain text; we just pass it through.
+ *
+ * @param {object} args
+ * @param {number} args.status   - HTTP status code
+ * @param {object|string} args.body - parsed JSON body (or raw string if non-JSON)
+ * @returns {object} either:
+ *   { ok: true,  conversationUrn, backendConversationUrn, deliveredAt }
+ *   { ok: false, status, errorBody, reason? }
+ */
+export function parseCreateMessageResponse({ status, body } = {}) {
+  if (status !== 200) {
+    return { ok: false, status, errorBody: body };
+  }
+  const value = body && typeof body === 'object' ? body.value : null;
+  if (!value || !value.conversationUrn) {
+    return { ok: false, status, errorBody: body, reason: 'missing conversationUrn in response' };
+  }
+  return {
+    ok: true,
+    conversationUrn: value.conversationUrn,
+    backendConversationUrn: value.backendConversationUrn || '',
+    deliveredAt: value.deliveredAt || 0,
+  };
+}
