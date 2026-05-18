@@ -1,7 +1,9 @@
 import 'dotenv/config';
 
 // ── Startup env validation (D-06) ──────────────────────────────────
-const REQUIRED_ENV = ['GOLOGIN_API_TOKEN', 'SHEETS_WEBAPP_URL'];
+// v2.52.0: SHEETS_WEBAPP_URL removed from REQUIRED_ENV. The URL is now
+// hard-coded in src/sheets-webapp-url.js and the .env value is ignored.
+const REQUIRED_ENV = ['GOLOGIN_API_TOKEN'];
 const missing = REQUIRED_ENV.filter(k => !process.env[k]);
 if (missing.length) {
   console.error(`\n  FATAL: Missing required environment variables:\n${missing.map(k => '    - ' + k).join('\n')}\n\n  Copy .env.example to .env and fill in all values.\n`);
@@ -2196,7 +2198,7 @@ app.listen(PORT, async () => {
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   startAmbientSampling(getActiveBrowserPids);
   console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
-  console.log(`  ✦ Sheet tracking: ${process.env.SHEETS_WEBAPP_URL ? '✓ configured' : '✗ not configured (set SHEETS_WEBAPP_URL)'}`);
+  console.log(`  ✦ Sheet tracking: ✓ centralized (Antonio's Apps Script)`);
 
   await initNotifier();
   console.log(`  ✦ Notifications: ${process.env.SMTP_HOST ? 'email enabled' : 'email DISABLED — set SMTP_HOST/PORT/USER/PASS + NOTIFY_EMAILS'}\n`);

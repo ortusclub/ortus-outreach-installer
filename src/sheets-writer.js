@@ -9,8 +9,11 @@
  */
 
 import { extractSheetId, extractSheetGid } from './utils.js';
+import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 
-const getWebAppUrl = () => process.env.SHEETS_WEBAPP_URL || '';
+// v2.52.0: hard-coded constant from sheets-webapp-url.js wins over .env.
+// Function form preserved so the existing call sites don't have to change.
+const getWebAppUrl = () => SHEETS_WEBAPP_URL;
 
 /**
  * POST to the Apps Script web app.

@@ -8,6 +8,8 @@
  * so callers can branch on the kind of failure without parsing messages.
  */
 
+import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
+
 export const SOO_TIMEOUT_MS = 10_000;
 
 function makeError(message, code) {
@@ -19,10 +21,10 @@ function makeError(message, code) {
 export async function fetchSoOData() {
   const sooSheetId = process.env.SOO_SHEET_ID;
   const sooGid = process.env.SOO_SHEET_GID;
-  const webappUrl = process.env.SHEETS_WEBAPP_URL;
+  // v2.52.0: webapp URL is hard-coded in sheets-webapp-url.js, .env value ignored.
+  const webappUrl = SHEETS_WEBAPP_URL;
 
   if (!sooSheetId) throw makeError('SOO_SHEET_ID not configured', 'NOT_CONFIGURED');
-  if (!webappUrl) throw makeError('SHEETS_WEBAPP_URL not configured', 'NOT_CONFIGURED');
 
   const payload = JSON.stringify({
     sheetId: sooSheetId,

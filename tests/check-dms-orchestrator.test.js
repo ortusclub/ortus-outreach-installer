@@ -28,6 +28,12 @@ function mockDeps({ conversationsPages = [], rowStatuses = {}, sheetUpdates = []
     getConversationsPage: async () => conversationsPages.shift() ?? null,
     getSheetRowStatus: async (_url, linkedinUrl) => rowStatuses[linkedinUrl] ?? null,
     updateSheetRow: async (_url, linkedinUrl, tracking) => { sheetUpdates.push({ linkedinUrl, tracking }); },
+    // appendReplyRow must be stubbed — the orchestrator calls it unconditionally
+    // before updateSheetRow. Pre-v2.52.0 the real impl silently no-op'd when
+    // SHEETS_WEBAPP_URL was empty in the test env; v2.52.0 hard-codes the URL,
+    // so the real impl would attempt a real fetch and trigger the orchestrator's
+    // try/catch, masking updateSheetRow.
+    appendReplyRow: async () => {},
     ensureOpen: async () => ({ page: mockPage(), profileId: 'Antonio', pName: 'Antonio' }),
     closeSession: async () => {},
     // Orchestrator reads candidate rows from an injected function too:
