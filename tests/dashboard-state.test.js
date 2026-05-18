@@ -6,7 +6,7 @@ import {
   addToSelection,
   removeFromSelection,
   toggleInSelection,
-} from '../src/dashboard-state.js';
+} from '../public/js/dashboard-state.js';
 
 test('pickDefaultTab: returns "monitoring" when monitoring has entries', () => {
   const counts = { active: 0, monitoring: 3, queued: 0, schedules: 0, drafts: 0, past: 5, all: 8 };
