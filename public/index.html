@@ -297,7 +297,12 @@
           <input type="text" id="primary-person-name" placeholder="e.g. Sam Adcock" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
           <div style="font-size:11px; color:var(--gray); margin-top:4px">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
         </div>
-        <div style="margin-bottom:14px">
+        <!-- v2.52.0: visual hidden per operator request. Input element kept
+             alive so the existing primaryUrl flow (localStorage save/load,
+             campaign launch payload, Voyager intro resolver) keeps working
+             with whatever URL was previously saved. Revert by removing the
+             display:none style if the field needs to return. -->
+        <div style="margin-bottom:14px; display:none">
           <label for="primary-person-url" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
           <input type="text" id="primary-person-url" placeholder="https://www.linkedin.com/in/..." style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
           <div style="font-size:11px; color:var(--gray); margin-top:4px">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>

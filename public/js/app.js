@@ -6049,6 +6049,10 @@ if (document.readyState !== 'loading') restoreIntroState();
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard route — landing view at #/, lists active + past campaigns
 // ─────────────────────────────────────────────────────────────────────────────
+// v2.52.0: dashboard-only short codes so the row subtitle doesn't read
+// like raw enum values (CONNECT_AND_INTRODUCE looked like a database
+// column). Operator-facing nicknames only — the canonical mode strings
+// in payloads, history, and the wizard stay untouched.
 const DASHBOARD_MODE_LABELS = {
   connect_only: 'Connect Only',
   check_status: 'Check Status',
@@ -6056,6 +6060,8 @@ const DASHBOARD_MODE_LABELS = {
   inmail_only: 'InMail Only',
   open_profile_only: 'Open Profile Message',
   check_dms: 'Check DMs',
+  connect_and_introduce: 'CC + IB',
+  introduce_back: 'IB',
 };
 function dashboardModeLabel(value) {
   return DASHBOARD_MODE_LABELS[value] || value || '—';
