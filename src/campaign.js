@@ -3306,6 +3306,13 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // misleads the operator about whether monitoring is still running.
   if (campaign.state === 'done') {
     console.log(`[stopMonitoring] idempotent: state already 'done', no-op`);
+    // v2.52.0: surface idempotent stop in the user-facing log so the
+    // operator sees their click reflected (was previously silent —
+    // only the alarming "already ended" toast appeared with no log
+    // trace, leaving the operator unsure whether their action landed).
+    const tsIdem = `[${new Date().toISOString()}]`;
+    campaign.logs = campaign.logs || [];
+    campaign.logs.push(`${tsIdem} 🛏 Stop monitoring clicked — already ended (no-op).`);
     return { ok: true, alreadyStopped: true, stampedCount: 0, reason };
   }
   if (campaign.state !== 'monitoring') {
@@ -3331,6 +3338,15 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   campaign.state = 'done';
   console.log(`[stopMonitoring] state set to 'done'`);
   _ops('INFO', `Monitoring ended (${reason})`);
+
+  // v2.52.0: kick a "stopping…" line into the user-facing log immediately,
+  // BEFORE the slow Apps Script batch stamp (5-10s). Without this, the
+  // operator clicks Stop and sees zero log activity for the duration of
+  // the stamp call, leaving them unsure whether their action landed —
+  // which is what drives the multi-click → idempotent-path loop.
+  const tsStopping = `[${new Date().toISOString()}]`;
+  campaign.logs = campaign.logs || [];
+  campaign.logs.push(`${tsStopping} 🛏 Stopping monitoring (${reason}) — finalizing sheet stamps…`);
 
   // v2.14.x: cancel any armed pre-fire heads-up (we just left monitoring).
   if (_preFireTimer) { clearTimeout(_preFireTimer); _preFireTimer = null; }

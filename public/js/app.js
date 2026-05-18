@@ -2841,6 +2841,19 @@ async function confirmStopMonitoringNow() {
   try {
     const res = await fetch('/api/monitoring/stop', { method: 'POST' }).then((r) => r.json());
     if (res.ok) {
+      // v2.52.0: optimistic state flip. Server confirms state='done' on
+      // any ok=true response — push it into __cockpit immediately so the
+      // cockpit panel stops rendering MONITORING / WATCHING FOR ACCEPTANCES
+      // without waiting up to 2s for the next pollStatus tick. Then force
+      // a poll so monitoringUntil/nextCheckAt clear too. The overlay fires
+      // from updateCockpit's monitoring→done transition detector.
+      if (typeof __cockpit !== 'undefined') {
+        __cockpit.state = 'done';
+        __cockpit.monitoringCheckInProgress = false;
+        if (typeof renderCockpit === 'function') renderCockpit();
+      }
+      if (typeof pollStatus === 'function') pollStatus().catch(() => {});
+
       // alreadyStopped → operator double-clicked; first call already did the work.
       const stamped = res.stampedCount || 0;
       const msg = res.alreadyStopped
