@@ -19,7 +19,6 @@
  */
 
 import { sendIntroMessage } from './actions.js';
-import { sendIntroViaVoyager } from './intro-voyager.js';
 import { personalizeTemplate } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
@@ -265,39 +264,11 @@ export async function runAutoIntros({
     const body  = personalizeTemplate(tpl.followUpMessage, introData);
     const title = personalizeTemplate(tpl.introTitle, introData);
 
-    // v2.51.0 — Voyager-first intro send. When primaryUrl is set, try the
-    // direct API path (POST /voyager/api/.../createMessage). If it succeeds,
-    // skip the DOM typeahead entirely. If it fails (4xx, network error,
-    // URN-resolve fail), fall through to the existing typeahead loop below
-    // BYTE-FOR-BYTE UNCHANGED. Spec: 2026-05-18-voyager-intro-send-design.md
-    let _voyagerOk = false;
-    let _voyagerConversationUrn = '';
-    if (primaryUrl) {
-      try {
-        const vResult = await sendIntroViaVoyager({ page, leadUrl: url, primaryUrl, body, title });
-        if (vResult.ok) {
-          _voyagerOk = true;
-          _voyagerConversationUrn = vResult.conversationUrn;
-          if (vResult.retriedWithoutTitle) {
-            log(`  🤝 [${profileName}] ${url}: Voyager ok (retried without title), convo=${vResult.conversationUrn}`);
-          } else {
-            log(`  🤝 [${profileName}] ${url}: Voyager ok, convo=${vResult.conversationUrn}`);
-          }
-        } else {
-          const detail = vResult.phase || 'unknown';
-          const reason = vResult.reason || (vResult.firstAttempt && vResult.firstAttempt.status) || '';
-          log(`  ↪ [${profileName}] ${url}: Voyager rejected (phase=${detail}, reason=${reason}) — falling back to typeahead`);
-        }
-      } catch (voyErr) {
-        log(`  ↪ [${profileName}] ${url}: Voyager threw (${voyErr.message || voyErr}) — falling back to typeahead`);
-      }
-    }
-
-    let ok = _voyagerOk;
+    let ok = false;
     let alreadyMade = false;
     let errMsg = '';
     let attempt = 0;
-    while (!ok && attempt < 2) {
+    while (attempt < 2) {
       attempt++;
       try {
         await sendIntroMessage(page, body, primaryName, title, '', url);
