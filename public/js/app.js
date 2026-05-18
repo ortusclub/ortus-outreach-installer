@@ -7071,70 +7071,13 @@ async function refreshPastCampaigns() {
             <span class="campaign-row-type">${escHtml(subtitle)}</span>
             <span class="campaign-row-progress">${escHtml(liveProcessed + ' processed')}</span>
             <span class="campaign-row-status is-running">Monitoring</span>
-            <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); openLiveStatusModal()" title="Live monitoring log without leaving the dashboard">Live status</button>
+            <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); scrollToSection('nav-status')" title="Open the Live Status section in the cockpit">Live status</button>
             <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the live cockpit">View cockpit</button>
           </div>
         `;
       }
       const pastMonitoringHtml = _renderableMonitoring.map(_buildPastRowHtml).join('');
       monList.innerHTML = liveRowHtml + pastMonitoringHtml;
-    }
-
-    // v2.52.0: "Live status" modal — opens from the Monitoring tab's live
-    // row, shows the in-memory campaign log without leaving the dashboard.
-    // Polls /api/campaign/status every 2s while open. Hooks the modal up
-    // here (idempotent — only adds the global once) so the row's onclick
-    // resolves to a real function.
-    if (typeof window.openLiveStatusModal !== 'function') {
-      window.openLiveStatusModal = async function openLiveStatusModal() {
-        let modal = document.getElementById('live-status-modal');
-        if (!modal) {
-          modal = document.createElement('div');
-          modal.id = 'live-status-modal';
-          modal.style.cssText = 'position:fixed;inset:0;background:rgba(20,20,20,0.78);z-index:9998;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);';
-          modal.innerHTML = '<div style="background:#fafafa;color:#111;width:min(820px,92vw);max-height:82vh;border:1px solid #222;display:flex;flex-direction:column;">'
-            + '<div style="padding:14px 20px;border-bottom:1px solid var(--hairline,#e7e2d8);display:flex;align-items:center;justify-content:space-between;">'
-            +   '<div style="font-family:var(--display,inherit);font-size:0.78rem;letter-spacing:0.18em;text-transform:uppercase;">● Live status</div>'
-            +   '<button type="button" id="live-status-close" aria-label="Close" style="background:transparent;border:0;font-size:1.4rem;line-height:1;cursor:pointer;color:#111;">&times;</button>'
-            + '</div>'
-            + '<div id="live-status-meta" style="padding:10px 20px;border-bottom:1px solid var(--hairline,#e7e2d8);font-size:0.85rem;color:#444;">Loading…</div>'
-            + '<pre id="live-status-log" style="margin:0;padding:14px 20px;flex:1;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:0.78rem;line-height:1.45;white-space:pre-wrap;background:#fafafa;"></pre>'
-            + '</div>';
-          document.body.appendChild(modal);
-          modal.addEventListener('click', (e) => { if (e.target === modal) closeLiveStatusModal(); });
-          modal.querySelector('#live-status-close').addEventListener('click', closeLiveStatusModal);
-        } else {
-          modal.style.display = 'flex';
-        }
-        const tick = async () => {
-          try {
-            const r = await fetch('/api/campaign/status');
-            if (!r.ok) return;
-            const s = await r.json();
-            const meta = document.getElementById('live-status-meta');
-            const logEl = document.getElementById('live-status-log');
-            if (meta) {
-              const next = s.nextCheckAt ? new Date(s.nextCheckAt) : null;
-              const nextStr = next ? `${String(next.getHours()).padStart(2,'0')}:${String(next.getMinutes()).padStart(2,'0')}` : '—';
-              meta.textContent = `${s.name || 'Live campaign'} · ${s.state || 'idle'} · next check at ${nextStr}`;
-            }
-            if (logEl) {
-              const logs = Array.isArray(s.logs) ? s.logs : [];
-              const wasNearBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 40;
-              logEl.textContent = logs.slice(-200).join('\n');
-              if (wasNearBottom) logEl.scrollTop = logEl.scrollHeight;
-            }
-          } catch { /* */ }
-        };
-        await tick();
-        if (window._liveStatusTimer) clearInterval(window._liveStatusTimer);
-        window._liveStatusTimer = setInterval(tick, 2000);
-      };
-      window.closeLiveStatusModal = function closeLiveStatusModal() {
-        const modal = document.getElementById('live-status-modal');
-        if (modal) modal.style.display = 'none';
-        if (window._liveStatusTimer) { clearInterval(window._liveStatusTimer); window._liveStatusTimer = null; }
-      };
     }
 
     renderPastBulkBar();
