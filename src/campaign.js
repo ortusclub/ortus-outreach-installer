@@ -399,6 +399,14 @@ setInterval(_refreshDiskStatus, 30000).unref?.();
 export const campaign = {
   running: false,
   _abort: false,
+  // v2.52.0: monotonic generation counter for orphan-loop detection.
+  // startCampaign increments this and each loop captures its own myGen
+  // closure. If restoreCampaign re-launches before the prior loop has
+  // finished unwinding, the prior loop sees campaign._generation !== myGen
+  // and exits immediately — regardless of whether _abort has been reset.
+  // Without this, restoreCampaign creates orphan loops that keep sending
+  // connections + transition to monitoring even after the operator's Stop.
+  _generation: 0,
   // Phase 2.8.9: pause/resume. _pauseRequested flips immediately on user click;
   // _paused flips once the loop boundary acknowledges (i.e. current lead done).
   // The two-state separation lets the UI show "Pausing…" vs "Paused".
@@ -1071,6 +1079,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._skipCleanup = false;
+  // v2.52.0: capture this loop's generation. Any prior loop still in flight
+  // (e.g. after restoreCampaign re-launched without waiting for the old loop
+  // to fully unwind) will see campaign._generation !== myGen on its next
+  // iteration check and exit — even though we just reset _abort to false.
+  // See _generation comment on the campaign object for full context.
+  const myGen = ++campaign._generation;
+  const isOrphan = () => campaign._generation !== myGen;
   // v2.14.x: reset monitoring state machine fields on every new run.
   // Without this, a prior run that reached "Monitoring ended" sets
   // campaign.state = 'done' (campaign.js:3072), which then carries over
@@ -1905,7 +1920,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
      * weeklyLimited, consecutiveSkips, leadsExhausted).
      */
     async function runProfileTurn(profileId) {
-        if (campaign._abort) return;
+        if (campaign._abort || isOrphan()) return;
         if (leadsExhausted) return;
 
         const session = await ensureOpen(profileId);
@@ -1922,10 +1937,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // 2.8.34: message_only does the same — open the browser, send to all
         // accepted connections back-to-back, close. No batching, no rotation.
         const innerLimit = (mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back') ? Infinity : BATCH_SIZE;
-        for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort; leadInBatch++) {
+        for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort && !isOrphan(); leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
-        await awaitUnpause();
-        if (campaign._abort) break;
+        await awaitUnpause(myGen);
+        if (campaign._abort || isOrphan()) break;
         // ── Phase 11.1: per-iteration resource sample + throttle decision ──
         // Pattern: RESEARCH.md §Pattern 2 (cached sample) + §Pattern 3 (multiplicative composition).
         // Writes campaign._lastSample and campaign._throttle for the status endpoint to read.
@@ -2686,7 +2701,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       let _idleCooldownCache = null;
       let _idleCooldownCacheAt = 0;
 
-      while (!campaign._abort && !leadsExhausted) {
+      while (!campaign._abort && !leadsExhausted && !isOrphan()) {
         // Adaptive RAM throttle: drop browser cap to 1 when throttle engages,
         // restore on release (Q1=(a) "drain to 1").
         const t = campaign._throttle;
@@ -3167,15 +3182,21 @@ export async function restoreCampaign() {
   return { ok: true, restartedFrom };
 }
 
-async function awaitUnpause() {
+async function awaitUnpause(myGen) {
   if (!campaign._pauseRequested && !campaign._paused) return;
   campaign._paused = true;
   setAction('Paused — awaiting resume');
   log('⏸ Campaign paused — browsers stay open. Press Resume to continue.');
-  while (campaign._paused && !campaign._abort) {
+  // v2.52.0: also exit when the generation no longer matches (orphan loop
+  // left over from a restoreCampaign re-launch). Without this an orphan
+  // sitting in awaitUnpause would block forever on a 1s poll that only
+  // checked _abort — which startCampaign reset to false.
+  while (campaign._paused && !campaign._abort && (myGen === undefined || campaign._generation === myGen)) {
     await new Promise(r => setTimeout(r, 1000));
   }
-  if (!campaign._abort) log('▶ Campaign resumed.');
+  if (!campaign._abort && (myGen === undefined || campaign._generation === myGen)) {
+    log('▶ Campaign resumed.');
+  }
   campaign._paused = false;
   campaign._pauseRequested = false;
 }
