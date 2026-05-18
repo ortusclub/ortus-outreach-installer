@@ -1268,3 +1268,51 @@ export function extractProfileUrnFromVoyagerResponse(data) {
   }
   return '';
 }
+
+/**
+ * Resolve a LinkedIn public-id (`samueladcock`, `cindy-pambid-1b7113338`, etc.)
+ * to its profile URN (`urn:li:fsd_profile:ACoAA…`) WITHOUT navigating to the
+ * profile page. Uses the same Voyager `/identity/profiles/<publicId>` endpoint
+ * already proven by captureProfileMeta (helpers.js:560).
+ *
+ * Returns '' if the lookup fails for any reason (network error, 404, 403,
+ * non-JSON response, no URN in response). Callers fall back to typeahead.
+ *
+ * @param {puppeteer.Page} page  - active LinkedIn page (any URL works — needs
+ *                                  only the JSESSIONID cookie for CSRF)
+ * @param {string} publicId      - the slug after /in/ in a LinkedIn URL
+ * @returns {Promise<string>}    - profile URN or '' on any failure
+ */
+export async function resolveProfileUrn(page, publicId) {
+  if (!publicId || typeof publicId !== 'string') return '';
+  try {
+    const result = await page.evaluate(async (pid) => {
+      try {
+        const csrf = document.cookie.split(';').map((c) => c.trim())
+          .find((c) => c.startsWith('JSESSIONID='));
+        if (!csrf) return { ok: false, reason: 'no-csrf' };
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        const url = `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(pid)}`;
+        const resp = await fetch(url, {
+          headers: {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': token,
+            'x-restli-protocol-version': '2.0.0',
+          },
+          credentials: 'include',
+        });
+        if (!resp.ok) return { ok: false, reason: `http-${resp.status}` };
+        const data = await resp.json();
+        return { ok: true, data };
+      } catch (err) {
+        return { ok: false, reason: 'fetch-threw', message: String(err && err.message || err) };
+      }
+    }, publicId);
+
+    if (!result || !result.ok) return '';
+    return extractProfileUrnFromVoyagerResponse(result.data);
+  } catch (err) {
+    return '';
+  }
+}
