@@ -8,7 +8,7 @@
  * so callers can branch on the kind of failure without parsing messages.
  */
 
-import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
+import { SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './sheets-webapp-url.js';
 
 export const SOO_TIMEOUT_MS = 10_000;
 
@@ -19,12 +19,14 @@ function makeError(message, code) {
 }
 
 export async function fetchSoOData() {
-  const sooSheetId = process.env.SOO_SHEET_ID;
-  const sooGid = process.env.SOO_SHEET_GID;
-  // v2.52.0: webapp URL is hard-coded in sheets-webapp-url.js, .env value ignored.
+  // v2.52.0: SOO_SHEET_ID, SOO_SHEET_GID, and the webapp URL are all hard-coded
+  // in sheets-webapp-url.js. Any matching .env values are ignored. Previously
+  // operators had to ask Antonio for the SoO values, paste them into a local
+  // .env, and re-paste on every update — which is why the SoO panel silently
+  // failed for any operator who skipped that setup step.
+  const sooSheetId = SOO_SHEET_ID;
+  const sooGid = SOO_SHEET_GID;
   const webappUrl = SHEETS_WEBAPP_URL;
-
-  if (!sooSheetId) throw makeError('SOO_SHEET_ID not configured', 'NOT_CONFIGURED');
 
   const payload = JSON.stringify({
     sheetId: sooSheetId,
