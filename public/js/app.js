@@ -7151,6 +7151,11 @@ async function resumeWithSameSettings() {
     linkedinColumn: s.linkedinColumn || '',
     concurrency: s.concurrency ?? 1,
     name: c.name ? `${c.name} (resumed)` : '',
+    // v2.52.0: carry forward the operator-chosen monitoring cadence so resume
+    // doesn't silently fall back to the server's 60-min default. Pre-v2.52
+    // history entries don't have the field — undefined here lets the server
+    // apply its 60-min default just like before.
+    checkIntervalMinutes: s.checkIntervalMinutes,
   };
 
   closeResumeChoiceModal();

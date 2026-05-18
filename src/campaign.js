@@ -2875,6 +2875,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           delayMax,
           linkedinColumn: linkedinColumn || '',
           concurrency: concurrency || 1,
+          // v2.52.0: persist the operator-chosen monitoring cadence so resume
+          // flows can carry it forward. Pre-2.52 history entries don't have
+          // this field — resume falls back to the server's 60-min default.
+          checkIntervalMinutes: campaign.checkIntervalMinutes || undefined,
         },
       });
     } catch (histErr) {
@@ -3191,6 +3195,11 @@ export function getCampaignStatus() {
     state: campaign.state || 'idle',
     monitoringUntil: campaign.monitoringUntil || null,
     nextCheckAt: campaign.nextCheckAt || null,
+    // v2.52.0: surface the operator-chosen cadence so the cockpit tips +
+    // the dashboard Monitoring tab show the ACTUAL running value, not the
+    // wizard dropdown's default. Was missing entirely → tips fell back to
+    // the wizard's HTML default (60 min) regardless of campaign reality.
+    checkIntervalMinutes: campaign.checkIntervalMinutes || null,
     // v2.14.x: surface the tick re-entrancy guard so the cockpit + run-bar
     // can flip to "Checking now…" while a bulk-check is mid-fire.
     monitoringCheckInProgress: _checkInProgress,
