@@ -5356,17 +5356,12 @@ window.alphaStepDaily = alphaStepDaily;
 window.alphaSyncConcurrency = alphaSyncConcurrency;
 window.toggleSection = toggleSection;
 window.openUnifiedLog = openUnifiedLog;
-window.onPastSearchInput = onPastSearchInput;
-window.togglePastExpanded = togglePastExpanded;
 window.openPastCampaignModal = openPastCampaignModal;
 window.closePastCampaignModal = closePastCampaignModal;
 window.rerunPastCampaign = rerunPastCampaign;
 window.onPastRowCheckboxChange = onPastRowCheckboxChange;
 window.singleDeletePast = singleDeletePast;
-window.bulkDeletePastSelected = bulkDeletePastSelected;
-window.clearPastSelection = clearPastSelection;
 window.undoPendingDeletes = undoPendingDeletes;
-window.togglePastManageMode = togglePastManageMode;
 window.togglePresetPopover = togglePresetPopover;
 window.updateCampaignSummary = updateCampaignSummary;
 // v2.12.x — Post Amplification inline handlers in index.html.
@@ -6599,16 +6594,6 @@ let pastSelectedIdxs = new Set();
 let pastPendingDeletes = [];
 let pastPendingTimer = null;
 
-function onPastSearchInput() {
-  const inp = document.getElementById('past-search');
-  pastSearchQuery = ((inp && inp.value) || '').trim().toLowerCase();
-  refreshPastCampaigns();
-}
-
-function togglePastExpanded() {
-  pastExpanded = !pastExpanded;
-  refreshPastCampaigns();
-}
 
 // ─── v2.11.8: per-row delete + multi-select bulk + undo flow ──────────────
 //
@@ -6637,13 +6622,6 @@ function onPastRowCheckboxChange(event, idx) {
   renderPastBulkBar();
 }
 
-function clearPastSelection() {
-  pastSelectedIdxs.clear();
-  // v2.11.9: Cancel exits manage mode entirely (operator's signal that
-  // they're done managing, not just clearing selection mid-flow).
-  if (pastManageMode) togglePastManageMode();
-  else refreshPastCampaigns();
-}
 
 function renderPastBulkBar() {
   const bar = document.getElementById('past-bulk-bar');
@@ -6664,16 +6642,6 @@ function renderPastBulkBar() {
   btn.textContent = `Delete ${n}`;
 }
 
-function togglePastManageMode() {
-  pastManageMode = !pastManageMode;
-  const section = document.getElementById('past-section');
-  const toggle = document.getElementById('past-manage-toggle');
-  if (section) section.classList.toggle('manage-mode', pastManageMode);
-  if (toggle) toggle.classList.toggle('active', pastManageMode);
-  // Exiting manage mode clears selection so the next entry starts clean.
-  if (!pastManageMode) pastSelectedIdxs.clear();
-  refreshPastCampaigns();
-}
 
 function singleDeletePast(idx) {
   // Drop from selection if it was selected (so the bulk bar doesn't keep
@@ -6682,13 +6650,6 @@ function singleDeletePast(idx) {
   enqueuePendingDeletes([idx], 'Campaign deleted.');
 }
 
-function bulkDeletePastSelected() {
-  const idxs = [...pastSelectedIdxs];
-  if (idxs.length === 0) return;
-  pastSelectedIdxs.clear();
-  const label = idxs.length === 1 ? 'Campaign deleted.' : `${idxs.length} campaigns deleted.`;
-  enqueuePendingDeletes(idxs, label);
-}
 
 function enqueuePendingDeletes(newIdxs, baseLabel) {
   // Merge with anything already queued — dedupe.
@@ -8436,4 +8397,49 @@ function renderDashboardAll() {
   if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
 window.renderDashboardAll = renderDashboardAll;
+
+// Dashboard keyboard shortcuts. Only fire when focus is inside the dashboard view
+// (or on body) AND no input/textarea is focused (so typing doesn't trigger).
+function dashKeyHandler(e) {
+  const dashView = document.getElementById('dashboard-view');
+  if (!dashView || dashView.style.display === 'none') return;
+  // Ignore key events when typing in an input/textarea/contenteditable
+  const t = document.activeElement;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+  // 1..7 → tab
+  if (e.key >= '1' && e.key <= '7') {
+    const idx = Number(e.key) - 1;
+    if (idx >= 0 && idx < DASH_TABS.length) {
+      dashSetTab(DASH_TABS[idx]);
+      e.preventDefault();
+    }
+    return;
+  }
+  // / → focus search
+  if (e.key === '/') {
+    const search = document.getElementById('dash-search');
+    if (search) { search.focus(); e.preventDefault(); }
+    return;
+  }
+  // Esc → clear selection
+  if (e.key === 'Escape' && _dashSelection.size > 0) {
+    dashClearSelection();
+    e.preventDefault();
+    return;
+  }
+  // Cmd/Ctrl+A → select all visible
+  if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+    dashToggleSelectAll();
+    e.preventDefault();
+    return;
+  }
+  // Backspace/Delete → bulk delete (only when selection non-empty)
+  if ((e.key === 'Backspace' || e.key === 'Delete') && _dashSelection.size > 0) {
+    dashBulkDelete();
+    e.preventDefault();
+    return;
+  }
+}
+document.addEventListener('keydown', dashKeyHandler);
 
