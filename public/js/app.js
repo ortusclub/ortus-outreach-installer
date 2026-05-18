@@ -6918,8 +6918,14 @@ async function refreshPastCampaigns() {
     const _renderablePast = renderable.filter(({ c }) => c.state !== 'monitoring');
     const _renderableMonitoring = renderable.filter(({ c }) => c.state === 'monitoring');
 
-    const showAll2 = !!q || pastExpanded;
-    const visible2 = showAll2 ? _renderablePast : _renderablePast.slice(0, PAST_COLLAPSED_LIMIT);
+    // v2.52.0: drop the 3-row collapse. The "Show N more" toggle button
+    // was removed in the dashboard rebuild (commit b4ffff0), so the slice
+    // truncation was hiding rows with no way to recover them — and
+    // renderDashboardAll cloning from this list meant the All tab only ever
+    // saw 3 past entries no matter how many existed. The Monitoring/All
+    // tabs need the full list; the dashboard search input handles "I have
+    // hundreds of past campaigns" use cases instead of collapsing.
+    const visible2 = _renderablePast;
 
     const _buildPastRowHtml = ({ idx, c }) => {
       const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
