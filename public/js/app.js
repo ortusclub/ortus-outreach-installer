@@ -2779,6 +2779,14 @@ function confirmStopCampaign() {
   // of the running-campaign flow. Without this, the button was either
   // dead (the older disable rule) or would hit the wrong modal.
   if (__cockpit && !__cockpit.running && __cockpit.state === 'monitoring') {
+    // v2.52.0: when a stop is already in flight, surface the same persistent
+    // banner instead of letting the operator re-open the modal and fire a
+    // racing second POST. The first call will finalize the sheet stamps in
+    // a few seconds — the toast confirms work is happening.
+    if (typeof _stoppingMonitoring !== 'undefined' && _stoppingMonitoring) {
+      showCampaignToast('Still ending monitoring — hang tight, sheet stamping in progress…', 8000);
+      return;
+    }
     const modal = document.getElementById('confirm-stop-monitoring-modal');
     if (modal) modal.classList.remove('hidden');
     return;
@@ -2814,19 +2822,39 @@ function closeStopMonitoringModal() {
 }
 window.closeStopMonitoringModal = closeStopMonitoringModal;
 
+// v2.52.0 — client-side flag set true while /api/monitoring/stop is in
+// flight. Suppresses re-opening the stop-monitoring modal during the
+// 5–10s sheet-stamp window (so impatient operators can't fire a second
+// POST and see the misleading 'not in monitoring state' alert). Cleared
+// when the response lands OR after a 30s safety timeout.
+let _stoppingMonitoring = false;
+let _stoppingMonitoringStartedAt = 0;
+
 async function confirmStopMonitoringNow() {
   closeStopMonitoringModal();
-  showCampaignToast('Ending monitoring — stamping still-pending leads…', 4000);
+  if (_stoppingMonitoring) return; // already in flight — no-op
+  _stoppingMonitoring = true;
+  _stoppingMonitoringStartedAt = Date.now();
+  // Persistent banner via the existing campaign toast — 30s duration covers
+  // the worst-case sheet-stamp time. Cleared early when the fetch resolves.
+  showCampaignToast('Ending monitoring — finalizing the sheet (this can take 5–10 s)…', 30000);
   try {
     const res = await fetch('/api/monitoring/stop', { method: 'POST' }).then((r) => r.json());
     if (res.ok) {
-      showCampaignToast(`Monitoring ended. ${res.stampedCount || 0} lead(s) stamped Closed - Not Connected.`, 5000);
+      // alreadyStopped → operator double-clicked; first call already did the work.
+      const stamped = res.stampedCount || 0;
+      const msg = res.alreadyStopped
+        ? 'Monitoring already ended — sheet stamps were applied.'
+        : `Monitoring ended. ${stamped} lead(s) stamped Closed - Not Connected.`;
+      showCampaignToast(msg, 6000);
       if (typeof refreshDashboardSchedules === 'function') refreshDashboardSchedules();
     } else {
       alert('Stop failed: ' + (res.error || 'unknown'));
     }
   } catch (err) {
     alert('Stop failed: ' + err.message);
+  } finally {
+    _stoppingMonitoring = false;
   }
 }
 window.confirmStopMonitoringNow = confirmStopMonitoringNow;
@@ -2996,14 +3024,66 @@ function _cockpitHHMM(d) {
   return d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '—';
 }
 
+// v2.52.0 — full-screen overlay shown when monitoring transitions to 'done'.
+// Idempotent: a second call while the overlay is visible is a no-op.
+// Auto-dismisses after 3s and navigates to dashboard so the operator gets
+// closure on the campaign without manually closing.
+let _monEndedOverlayShown = false;
+function showMonitoringEndedOverlay() {
+  if (_monEndedOverlayShown) return;
+  _monEndedOverlayShown = true;
+  let el = document.getElementById('monitoring-ended-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'monitoring-ended-overlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(20,20,20,0.86);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);transition:opacity 200ms ease-out;opacity:0;';
+    el.innerHTML = '<div style="background:#fafafa;color:#111;padding:40px 56px;border:1px solid #222;border-radius:0;text-align:center;font-family:inherit;max-width:520px;">'
+      + '<div style="font-size:0.78rem;letter-spacing:0.18em;color:#c9a233;margin-bottom:12px;">● MONITORING ENDED</div>'
+      + '<h2 style="margin:0 0 14px;font-size:1.6rem;letter-spacing:0.04em;">Campaign complete.</h2>'
+      + '<p style="margin:0 0 22px;color:#444;font-size:0.95rem;line-height:1.45;">All still-pending invitations have been stamped <i>Closed - Not Connected</i> in your sheet. Returning to the dashboard…</p>'
+      + '<button type="button" id="mon-ended-go-now" style="background:#111;color:#fff;border:0;padding:10px 22px;letter-spacing:0.12em;font-size:0.78rem;cursor:pointer;border-radius:9999px;">DASHBOARD NOW</button>'
+      + '</div>';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '1'; });
+    const goNow = el.querySelector('#mon-ended-go-now');
+    if (goNow) goNow.addEventListener('click', _dismissMonEndedOverlay);
+  }
+  setTimeout(_dismissMonEndedOverlay, 3000);
+}
+function _dismissMonEndedOverlay() {
+  const el = document.getElementById('monitoring-ended-overlay');
+  if (el) {
+    el.style.opacity = '0';
+    setTimeout(() => { el.remove(); }, 220);
+  }
+  _monEndedOverlayShown = false;
+  // Navigate to dashboard so the cockpit is no longer in view. Past tab
+  // will pick up the completed campaign on its next fetch.
+  try { window.location.hash = '#/'; } catch { /* */ }
+  try { if (typeof refreshDashboard === 'function') refreshDashboard(); } catch { /* */ }
+}
+
 function updateCockpit(s) {
+  // v2.52.0: detect 'monitoring' → 'done' transition so the cockpit shows
+  // a clear MONITORING ENDED confirmation + auto-redirect to dashboard.
+  // Without this, the badge silently disappears and the operator can't
+  // tell whether the stop landed. _prevState is module-local; reset on
+  // navigate (page reload starts fresh).
+  const prevState = __cockpit.state;
+  const nextState = s.state || 'idle';
+  const justEnded = prevState === 'monitoring' && nextState === 'done';
+
   __cockpit.running = !!s.running;
   __cockpit.paused = !!s.paused;
   __cockpit.pauseRequested = !!s.pauseRequested;
   __cockpit.action = s.currentAction || null;
   __cockpit.mode = s.mode || null;
   __cockpit.pName = s.currentProfile || null;
-  __cockpit.state = s.state || 'idle';
+  __cockpit.state = nextState;
+
+  if (justEnded) {
+    try { showMonitoringEndedOverlay(); } catch (e) { console.warn('[monitoring-ended] overlay failed:', e.message); }
+  }
   __cockpit.monitoringUntil = s.monitoringUntil || null;
   __cockpit.nextCheckAt = s.nextCheckAt || null;
   __cockpit.monitoringCheckInProgress = !!s.monitoringCheckInProgress;

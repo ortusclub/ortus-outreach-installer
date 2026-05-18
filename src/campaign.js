@@ -3299,6 +3299,15 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // /tmp/dev-app.log via server stdout. Pure additive — no behaviour change.
   console.log(`[stopMonitoring] called: reason=${reason}, state=${campaign.state}, monitoringUntil=${campaign.monitoringUntil}, nextCheckAt=${campaign.nextCheckAt}`);
 
+  // v2.52.0: idempotent. A double-click (or in-flight first call finishing
+  // after a second click arrives) used to surface "Campaign is not in
+  // monitoring state" — alarming because the first call already succeeded.
+  // Now we treat state='done' as the no-op success case so the UI never
+  // misleads the operator about whether monitoring is still running.
+  if (campaign.state === 'done') {
+    console.log(`[stopMonitoring] idempotent: state already 'done', no-op`);
+    return { ok: true, alreadyStopped: true, stampedCount: 0, reason };
+  }
   if (campaign.state !== 'monitoring') {
     console.log(`[stopMonitoring] early-return: state="${campaign.state}" is not 'monitoring'`);
     return { ok: false, error: 'Campaign is not in monitoring state' };
