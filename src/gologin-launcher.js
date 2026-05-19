@@ -118,7 +118,16 @@ export async function launchProfile(profileId, token) {
       // Reduce per-Chromium RAM footprint (~100-150MB each) on low-resource hosts
       '--disable-extensions',
       '--disable-background-networking',
-      '--disable-features=TranslateUI,MediaRouter',
+      // v2.57.x: add CalculateNativeWinOcclusion to the existing disable-features.
+      // Chromium has a parallel "is this window occluded by other windows?"
+      // detector that downgrades the renderer to hidden state independently
+      // of the backgrounding flags below. Without disabling it, a window
+      // sitting behind another app on macOS can still throttle even though
+      // it's technically not minimized. Belt-and-suspenders alongside the
+      // backgrounding flags + CDP focus emulation in applyFocusEmulation().
+      // Chromium only honors ONE --disable-features flag (last-wins), so all
+      // disabled features must live in this single comma-joined arg.
+      '--disable-features=TranslateUI,MediaRouter,CalculateNativeWinOcclusion',
       // v2.14.x: Chrome aggressively throttles renderers when the OS window is
       // backgrounded/occluded — page.type() keystrokes get dropped by the
       // typeahead component during its throttled re-render. Operator confirmed

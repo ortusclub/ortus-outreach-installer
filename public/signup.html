@@ -51,7 +51,7 @@
         <header class="auth-form-header">
           <div class="auth-form-label">Enrollment · 01</div>
           <h1 class="auth-form-title">Sign <em style="font-style:normal">up</em></h1>
-          <div class="auth-form-sub">Must match an email in the State of Operations sheet</div>
+          <div class="auth-form-sub">Operators only · @ortusclub.com or @ortus.solutions</div>
         </header>
 
         <div class="auth-form-rule"></div>
@@ -59,7 +59,7 @@
         <div class="auth-field">
           <div class="auth-field-head">
             <label for="email">Email</label>
-            <span class="aside">State of Operations</span>
+            <span class="aside">@ortusclub.com / @ortus.solutions</span>
           </div>
           <input id="email" name="email" type="email" autocomplete="username" required placeholder="name@ortusclub.com">
         </div>
@@ -69,14 +69,20 @@
             <label for="password">Password</label>
             <span class="aside">Min 8 chars</span>
           </div>
-          <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
+          <div class="auth-pw-wrap">
+            <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
+            <button type="button" class="auth-pw-toggle" id="password-toggle" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
         </div>
 
         <div class="auth-field">
           <div class="auth-field-head">
             <label for="password2">Confirm</label>
           </div>
-          <input id="password2" name="password2" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
+          <div class="auth-pw-wrap">
+            <input id="password2" name="password2" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
+            <button type="button" class="auth-pw-toggle" id="password2-toggle" aria-label="Show password" aria-pressed="false">Show</button>
+          </div>
         </div>
 
         <div class="auth-actions">
@@ -102,6 +108,39 @@
         if (el) el.textContent = v;
       }
     }).catch(() => {});
+
+    // v2.57.x — Prefill email from ?email= query string. Used by the
+    // forgot-password flow which redirects login.html → reset endpoint →
+    // signup.html?email=<email> so the user only types their password.
+    (function prefillEmail() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const emailParam = params.get('email');
+        if (emailParam) {
+          const emailInput = document.getElementById('email');
+          if (emailInput) emailInput.value = emailParam.trim();
+          const pw = document.getElementById('password');
+          if (pw) pw.focus();
+        }
+      } catch { /* ignore — best-effort prefill */ }
+    })();
+
+    // v2.57.x — Password show/hide toggle. Click "Show" to reveal the
+    // typed password (operator can verify what they typed). Pure UI.
+    function wirePasswordToggle(inputId, btnId) {
+      const inp = document.getElementById(inputId);
+      const btn = document.getElementById(btnId);
+      if (!inp || !btn) return;
+      btn.addEventListener('click', () => {
+        const showing = inp.type === 'text';
+        inp.type = showing ? 'password' : 'text';
+        btn.textContent = showing ? 'Show' : 'Hide';
+        btn.setAttribute('aria-pressed', String(!showing));
+        btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      });
+    }
+    wirePasswordToggle('password', 'password-toggle');
+    wirePasswordToggle('password2', 'password2-toggle');
 
     const form = document.getElementById('signup-form');
     const errBox = document.getElementById('auth-error');

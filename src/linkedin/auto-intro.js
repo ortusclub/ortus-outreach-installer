@@ -22,7 +22,7 @@ import { sendIntroMessage } from './actions.js';
 import { personalizeTemplate } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
-import { extractLinkedInUrl, campaign } from '../campaign.js';
+import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
 
 function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -31,6 +31,52 @@ function _formatLocalDate(d) {
     : (n % 10 === 2 && n % 100 !== 12) ? 'nd'
     : (n % 10 === 3 && n % 100 !== 13) ? 'rd' : 'th';
   return `${months[d.getMonth()]} ${day}${ord}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// v2.57.x — Translate raw sendIntroMessage error strings into operator-friendly
+// "Failed — <reason>" labels for the Introduction Status sheet column. Mirrors
+// the "Skipped — <reason>" pattern used for CC interrupts so the leads sheet
+// is scannable without diving into the Audit tab. The raw error stays in
+// auditAction (Audit tab) for debugging — that's where engineers paste into
+// GitHub issues. Order matters: more-specific patterns first.
+function _friendlyIntroFailure(errMsg) {
+  const m = errMsg || '';
+  if (m.includes('MESSAGE_SEND_FAILED: compose textbox did not appear')) {
+    return "Failed — Compose page didn't load";
+  }
+  if (m.includes('INTRO_RECIPIENT_NOT_FOUND: recipient-not-in-results')) {
+    if (/\d+ suggestions but no match/.test(m)) {
+      return "Failed — Primary name didn't match suggestions";
+    }
+    return 'Failed — Primary not in your connections';
+  }
+  if (m.includes('INTRO_RECIPIENT_NOT_FOUND: recipient-input-not-found')) {
+    return 'Failed — Compose page missing recipient field';
+  }
+  if (m.includes('INTRO_RECIPIENT_NOT_FOUND: recipient-pill-not-confirmed')) {
+    return 'Failed — Primary clicked but not added';
+  }
+  if (m.includes('INTRO_DROPDOWN_HANG')) {
+    return 'Failed — Compose page froze';
+  }
+  if (m.includes('MESSAGE_SEND_FAILED: not on a profile page')) {
+    return 'Failed — Invalid lead URL';
+  }
+  if (m.includes('MESSAGE_SEND_FAILED: could not type')) {
+    return "Failed — Couldn't type message";
+  }
+  if (m.includes('MESSAGE_SEND_FAILED: composer not focusable')) {
+    return 'Failed — Message body not focusable';
+  }
+  if (m.includes('MESSAGE_SEND_FAILED: send not confirmed')) {
+    return 'Failed — Send not confirmed';
+  }
+  if (m.includes('MESSAGE_SEND_FAILED: introName required')) {
+    return 'Failed — Primary name missing in template';
+  }
+  // Unknown error — preserve a truncated raw so info isn't lost on new variants.
+  const trunc = m.length > 60 ? m.slice(0, 57) + '…' : m;
+  return `Failed — ${trunc || 'unknown'}`;
 }
 
 /**
@@ -67,6 +113,10 @@ export async function runAutoIntros({
   if (!primaryName || !primaryIntroBody) {
     log(`  ⚠ [${profileName}] ${connectedUrls.length} acceptance(s) found but Primary Person name/body missing — skipping auto-intro.`);
     result.skipped = connectedUrls.length;
+    _ops('WARN', 'Auto-intro skipped (primary missing)', {
+      account: profileName,
+      details: `${connectedUrls.length} lead(s) — primaryName="${primaryName}" primaryIntroBody set=${!!primaryIntroBody}`,
+    });
     return result;
   }
 
@@ -311,7 +361,7 @@ export async function runAutoIntros({
           ? 'Introduction Made'
           : interrupted
             ? `Skipped — ${interruptReason}`
-            : 'Failed',
+            : _friendlyIntroFailure(errMsg),
       sender: profileName,
       accountUsed: profileName,
       dateLastAction: _formatLocalDate(new Date()),
@@ -352,6 +402,17 @@ export async function runAutoIntros({
     } else {
       result.failed++;
       log(`  ⚠ [${profileName}] ${url}: Failed (${errMsg || 'unknown'})`);
+      // v2.57.x — surface every intro failure in the centralized Ops Log
+      // sheet. Without this, the Ops Log only shows campaign-start/end and
+      // operators discover failures by scrolling the leads-sheet Audit tab
+      // after the fact. INTRO_RECIPIENT_NOT_FOUND, MESSAGE_SEND_FAILED,
+      // INTRO_DROPDOWN_HANG, and every other actions.js intro throw lands
+      // here as errMsg.
+      _ops('ERROR', 'Intro failed', {
+        account: profileName,
+        leadUrl: url,
+        details: errMsg || 'unknown',
+      });
     }
 
     // v2.14.x: brief feed visit between IC DMs. Mirrors the organic

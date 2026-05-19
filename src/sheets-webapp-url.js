@@ -38,3 +38,12 @@ export const SOO_SHEET_GID = '992076199';
 // (running as Antonio) can append rows on every operator's behalf.
 export const OPS_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwWCNWNLTN0z9fWfvUZUwGICzXlg0CG0oBBwASZxqbFzzEnctBBJZRsHmn1dD0F-ANu/exec';
 export const CAMPAIGN_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzvwiF8QpfQmV8Lk_z0PQz4mOJQZUtRNhs8Y7Sq2q_z4XELsbKIfBhXaAvvmgJZuJ2Ucw/exec';
+
+// v2.57.x — Domains allowed to sign up to the Ortus Outreach app (operator
+// login). Replaces the previous "must be in the SoO sheet" check, which was
+// wrong: the SoO sheet is keyed to LinkedIn-account-owner emails (e.g.
+// jigar.chaudhary@ortus.solutions), not operator emails (e.g.
+// sam@ortusclub.com). Anyone with a Google Workspace email on one of these
+// domains is on the team and can sign up. SOO_BYPASS_EMAILS env stays as
+// an escape hatch for emergency / non-domain access.
+export const SIGNUP_ALLOWED_DOMAINS = ['ortusclub.com', 'ortus.solutions'];

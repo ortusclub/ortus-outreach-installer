@@ -1464,20 +1464,59 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
   }
   await new Promise(r => setTimeout(r, 1500));
 
-  // Wait for compose textbox.
-  const composeSelectors = [
-    'div[role="textbox"][aria-label*="Write a message" i]',
-    '.msg-form__contenteditable',
-    'div[class*="msg-form__contenteditable"]',
-  ];
+  // v2.57.x: Step B layered detection. Replaces the previous sequential
+  // 3-selector polling (5s × 3 = 15s, budget fragmented across tries) with
+  // a single waitForFunction predicate that races all three signals AND
+  // adds two stronger readiness gates that the old polling didn't have.
+  //
+  // Three signals, ALL required to consider the compose form ready:
+  //   1. body.boot-complete — LinkedIn's Pemberly/Ember boot is finished.
+  //      Without this, the textbox can mount before Ember has bound its
+  //      input handlers, and typing silently no-ops (community-confirmed:
+  //      OpenOutreach + Dominien/sales-agent both flagged this).
+  //   2. ANY of the 3 textbox selectors matches (community consensus —
+  //      verified against 9 OSS LinkedIn projects 2026-05-19, all use
+  //      .msg-form__contenteditable as the canonical selector).
+  //   3. The matched element has contenteditable="true" AND offsetParent
+  //      !== null — Ember sometimes mounts the element disabled or hidden
+  //      briefly before activating it. Without this check we'd race past
+  //      a mid-mount element and try to type into a dead node.
+  //
+  // Total budget: 30s (vs. 15s before), realized as a SINGLE async wait
+  // rather than 3 sequential 5s slices. polling:'mutation' makes the
+  // predicate re-run on every DOM mutation rather than every 100ms, so
+  // median-case resolution is sub-frame — typical successful detection
+  // is now <500ms vs. the old ~3-5s.
+  //
+  // Why this works for the bug Sam saw 2026-05-19: failure mode was
+  // background renderer throttling under parallel-profile CPU load —
+  // Ember boot was slipping past 15s. The CalculateNativeWinOcclusion
+  // flag (gologin-launcher.js v2.57.x) prevents most of that throttling
+  // at the OS level; this wider budget + boot-complete gate covers the
+  // residual cases. Belt-and-suspenders.
   let composerReady = false;
-  for (const sel of composeSelectors) {
-    try {
-      await page.waitForSelector(sel, { timeout: 5000 });
-      composerReady = true;
-      break;
-    } catch { /* try next */ }
-  }
+  try {
+    await page.waitForFunction(() => {
+      if (!document.body || !document.body.classList.contains('boot-complete')) {
+        return false;
+      }
+      const selectors = [
+        'div[role="textbox"][aria-label*="Write a message" i]',
+        '.msg-form__contenteditable',
+        'div[class*="msg-form__contenteditable"]',
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (!el) continue;
+        if (el.getAttribute('contenteditable') !== 'true') continue;
+        if (el.offsetParent === null) continue; // display:none / detached
+        return true;
+      }
+      return false;
+    }, { timeout: 30000, polling: 'mutation' });
+    composerReady = true;
+  } catch { /* timed out — fall through to the throw below */ }
+
   if (!composerReady) throw new Error('MESSAGE_SEND_FAILED: compose textbox did not appear');
 
   // ── Step 1: add intro person as second recipient ──

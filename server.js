@@ -39,7 +39,7 @@ import { checkDiskFree } from './src/disk-check.js';
 import {
   createUser, verifyCredentials, userExists,
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
-  isEmailAllowed,
+  isEmailAllowed, deleteUser,
 } from './src/auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,7 @@ app.use(cookieParser());
 const PUBLIC_PATHS = new Set([
   '/login.html', '/signup.html', '/electron-login.html',
   '/api/auth/login', '/api/auth/signup', '/api/auth/logout', '/api/auth/electron-login',
+  '/api/auth/reset',
   '/api/health',
   // help.html is a static onboarding manual with zero sensitive content —
   // safe to expose without auth so Electron's target="_blank" link works
@@ -88,13 +89,39 @@ app.post('/api/auth/signup', async (req, res) => {
     try {
       allowed = await isEmailAllowed(normalized);
     } catch (err) {
-      return res.status(503).json({ error: `Could not verify email against State of Operations: ${err.message}` });
+      return res.status(503).json({ error: `Could not verify email: ${err.message}` });
     }
-    if (!allowed) return res.status(403).json({ error: 'This email is not in the State of Operations — ask an admin to add you.' });
+    if (!allowed) return res.status(403).json({ error: 'This email isn\'t authorized — operators must use an @ortusclub.com or @ortus.solutions email.' });
 
     await createUser(normalized, password);
     await issueSessionCookie(res, normalized);
     res.json({ ok: true, email: normalized });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.57.x — Forgot-password reset. Wipes the user's password record so
+// they can re-sign-up with a new one. Campaigns, sheets, presets, and
+// notification prefs are NOT touched — they live in separate files keyed
+// by email and survive the wipe. Email must still pass isEmailAllowed,
+// so this can't be abused to wipe arbitrary accounts.
+app.post('/api/auth/reset', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    const normalized = (email || '').trim().toLowerCase();
+    if (!normalized.includes('@')) return res.status(400).json({ error: 'Enter a valid email' });
+
+    let allowed;
+    try {
+      allowed = await isEmailAllowed(normalized);
+    } catch (err) {
+      return res.status(503).json({ error: `Could not verify email: ${err.message}` });
+    }
+    if (!allowed) return res.status(403).json({ error: 'This email isn\'t authorized — operators must use an @ortusclub.com or @ortus.solutions email.' });
+
+    await deleteUser(normalized);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -120,9 +147,9 @@ app.post('/api/auth/electron-login', async (req, res) => {
     try {
       allowed = await isEmailAllowed(normalized);
     } catch (err) {
-      return res.status(503).json({ error: `Could not verify email against State of Operations: ${err.message}` });
+      return res.status(503).json({ error: `Could not verify email: ${err.message}` });
     }
-    if (!allowed) return res.status(403).json({ error: 'This email is not in the State of Operations — ask an admin to add you.' });
+    if (!allowed) return res.status(403).json({ error: 'This email isn\'t authorized — operators must use an @ortusclub.com or @ortus.solutions email.' });
 
     if (!(await userExists(normalized))) {
       // Auto-create with a random unguessable password — never used (no

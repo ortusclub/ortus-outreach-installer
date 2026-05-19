@@ -15,6 +15,7 @@ import { dirname } from 'node:path';
 
 import { fetchSoOData } from './soo.js';
 import { dataPath } from './paths.js';
+import { SIGNUP_ALLOWED_DOMAINS } from './sheets-webapp-url.js';
 
 const USERS_PATH = dataPath('users.json');
 const SECRET_PATH = dataPath('.session-secret');
@@ -62,6 +63,21 @@ export async function createUser(email, password) {
   users[normalized] = { passwordHash, createdAt: new Date().toISOString() };
   await saveUsers(users);
   return normalized;
+}
+
+// v2.57.x — Wipe a user's password record so they can re-sign-up. Used by
+// the /api/auth/reset endpoint as the "forgot password" recovery path.
+// Returns true if the user existed and was removed, false otherwise.
+// Only touches the password store — campaigns, sheets, presets, history,
+// notification prefs are all keyed elsewhere and stay intact.
+export async function deleteUser(email) {
+  const normalized = (email || '').trim().toLowerCase();
+  if (!normalized) return false;
+  const users = await loadUsers();
+  if (!users[normalized]) return false;
+  delete users[normalized];
+  await saveUsers(users);
+  return true;
 }
 
 export async function verifyCredentials(email, password) {
@@ -163,9 +179,9 @@ export async function isEmailAllowed(email) {
   const normalized = (email || '').trim().toLowerCase();
   if (!normalized.includes('@')) return false;
 
-  // SOO_BYPASS_EMAILS — comma-separated allowlist that skips the SoO check.
-  // For dev / emergency access when the SoO sheet is unreachable or
-  // unconfigured. Listed emails are still subject to the per-user store.
+  // SOO_BYPASS_EMAILS — comma-separated escape hatch for non-domain emails
+  // (dev, emergency, contractors with non-corporate emails). Highest priority
+  // so it always wins.
   const bypassRaw = (process.env.SOO_BYPASS_EMAILS || '').trim();
   if (bypassRaw) {
     const bypass = new Set(
@@ -174,6 +190,16 @@ export async function isEmailAllowed(email) {
     if (bypass.has(normalized)) return true;
   }
 
-  const allowed = await fetchAllowedEmails();
-  return allowed.has(normalized);
+  // v2.57.x — Domain-based signup allowlist (replaces the previous SoO sheet
+  // check). The SoO sheet is keyed to LinkedIn-account-owner emails, not
+  // operator login emails — so requiring a SoO match for signup was rejecting
+  // legitimate operators (e.g. sam@ortusclub.com). Anyone with an email on
+  // an allowed corporate domain can sign up. fetchAllowedEmails() is still
+  // exported below for any other caller that wants the SoO sheet contents
+  // directly (e.g. campaign-account selection), but signup no longer
+  // depends on it.
+  const domain = normalized.split('@')[1] || '';
+  if (SIGNUP_ALLOWED_DOMAINS.includes(domain)) return true;
+
+  return false;
 }

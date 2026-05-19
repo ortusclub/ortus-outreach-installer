@@ -39,16 +39,36 @@ process.env.ORTUS_DATA_DIR = userDataDir;
 process.env.ORTUS_ELECTRON_MODE = '1';
 
 // ── Pick a free port before importing the server ─────────────────────────────
-function pickFreePort() {
+// v2.57.x — Try a pinned port first, fall back to a random ephemeral port if
+// it's already taken. Why pinned: browser localStorage is partitioned by
+// origin (http://localhost:<port>), so a different random port every launch
+// wipes every piece of UI state we persist to localStorage — onboarding tour
+// completion flag, campaign drafts, identifier overrides, post-launch tip
+// silencing. Pinning the port keeps the origin stable across launches so
+// "remember me" UI state actually sticks. The random-port fallback preserves
+// the original safety: if something else on the user's machine is using
+// 7847, we degrade gracefully instead of failing to launch.
+const PINNED_PORT = 7847; // "ORTU" mnemonic; arbitrary unprivileged free port
+
+function _tryPort(port) {
   return new Promise((res, rej) => {
     const srv = createServer();
     srv.unref();
     srv.on('error', rej);
-    srv.listen(0, '127.0.0.1', () => {
-      const port = srv.address().port;
-      srv.close(() => res(port));
+    srv.listen(port, '127.0.0.1', () => {
+      const p = srv.address().port;
+      srv.close(() => res(p));
     });
   });
+}
+
+async function pickFreePort() {
+  try {
+    return await _tryPort(PINNED_PORT);
+  } catch (err) {
+    console.warn(`[main] Pinned port ${PINNED_PORT} unavailable (${err.code || err.message}); falling back to random port. UI localStorage state may not persist this session.`);
+    return _tryPort(0);
+  }
 }
 
 let mainWindow = null;

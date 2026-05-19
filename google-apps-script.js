@@ -172,7 +172,15 @@ var STATE_PALETTE = {
 // Without this, cells with a timestamp suffix slipped through the exact-match
 // rules below and rendered uncolored.
 var STATE_STARTS_WITH = [
-  { prefix: 'Still Pending',          state: 'pending' }
+  { prefix: 'Still Pending',          state: 'pending' },
+  // v2.57.x — Long-form Introduction Status failure values written by
+  // auto-intro.js _friendlyIntroFailure(): "Failed — Compose page didn't
+  // load", "Failed — Primary not in your connections", etc. Without this
+  // prefix rule the bare-"Failed" exact-match below only colors the legacy
+  // short value; the new explanatory variants slip through uncolored.
+  // Centralized here so every operator's sheets pick it up via
+  // prepareSheet — no per-sheet manual conditional-formatting setup needed.
+  { prefix: 'Failed —',                state: 'declined' }
 ];
 
 var STATE_VALUES = [

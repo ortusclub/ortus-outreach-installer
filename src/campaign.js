@@ -473,7 +473,10 @@ function setAction(label, opts = {}) {
 // log-writer.js). Fire-and-forget — never throws, never blocks. Reads
 // campaign context from the global. Silent no-op when OPS_LOG_WEBAPP_URL
 // is unset.
-function _ops(severity, eventName, extra) {
+// Exported v2.57.x so auto-intro.js can surface intro failures with the
+// same campaign key and severity classification, instead of those failures
+// being trapped inside auto-intro's catch and never reaching the Ops Log.
+export function _ops(severity, eventName, extra) {
   try {
     const e = extra || {};
     opsLogEvent(
