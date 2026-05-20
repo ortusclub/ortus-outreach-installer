@@ -450,6 +450,7 @@
         <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=..." oninput="updateSheetTabHint()" />
         <p class="sheet-tab-hint" id="sheet-tab-hint">Open the specific tab inside the sheet, then copy the URL from your browser address bar — it should include <code>#gid=…</code>.</p>
         <button class="btn btn-secondary" onclick="previewSheet()">Preview Sheet</button>
+        <button class="btn btn-secondary" onclick="openSheetInBrowser()">Open Sheet</button>
         <div id="sheet-preview" class="hidden" style="margin-top:12px"></div>
       </div>
     </div>
@@ -930,6 +931,7 @@
       <div id="account-queue" class="account-queue hidden"></div>
       <div class="live-bulk-check-row" style="display:flex; align-items:center; gap:12px; margin: 12px 0;">
         <button type="button" id="btn-bulk-check-live" class="btn btn-secondary btn-sm" onclick="bulkCheckNow()">Bulk check connections</button>
+        <button type="button" id="btn-open-sheet-cockpit" class="btn btn-secondary btn-sm" onclick="openRunningSheet()" disabled title="No campaign sheet URL available">Open sheet</button>
         <span class="bulk-check-status-msg" style="font-style: italic; color: var(--gray); font-size: 0.85rem;"></span>
       </div>
       <!-- v2.14.x: in-flight bulk-check panel (Variant A from public/sketches/

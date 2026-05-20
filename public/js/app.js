@@ -2121,6 +2121,36 @@ function updatePlaceholderTags() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sheet preview
 // ─────────────────────────────────────────────────────────────────────────────
+
+// "Open Sheet" buttons — pop the campaign Google Sheet in the operator's
+// default browser (Electron's setWindowOpenHandler routes window.open
+// http* calls through shell.openExternal). Two callsites:
+//   - Setup section, next to Preview Sheet — reads #sheet-url
+//   - Cockpit row, next to Bulk check connections — reads __cockpit.sheetUrl,
+//     auto-disabled when no URL is available
+function _isValidHttpUrl(u) {
+  return typeof u === 'string' && /^https?:\/\//i.test(u.trim());
+}
+function openSheetInBrowser() {
+  const url = (document.getElementById('sheet-url')?.value || '').trim();
+  if (!url) { alert('Enter a Google Sheet URL first.'); return; }
+  if (!_isValidHttpUrl(url)) { alert("That doesn't look like a valid URL."); return; }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+function openRunningSheet() {
+  const url = (__cockpit && __cockpit.sheetUrl) || '';
+  if (!url) { alert('No campaign sheet URL available yet.'); return; }
+  if (!_isValidHttpUrl(url)) { alert("Campaign sheet URL is invalid."); return; }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+function _refreshOpenSheetButtons() {
+  const btn = document.getElementById('btn-open-sheet-cockpit');
+  if (!btn) return;
+  const has = _isValidHttpUrl((__cockpit && __cockpit.sheetUrl) || '');
+  btn.disabled = !has;
+  btn.title = has ? 'Open the campaign sheet in your browser' : 'No campaign sheet URL available';
+}
+
 async function previewSheet() {
   const url = document.getElementById('sheet-url').value.trim();
   const preview = document.getElementById('sheet-preview');
@@ -3010,6 +3040,7 @@ const __cockpit = {
   monitoringCheckInProgress: false,
   profileIds: [],
   profileNames: [],
+  sheetUrl: '',
 };
 const COCKPIT_RING_CIRCUMFERENCE = 282.7; // 2πr where r=45
 
@@ -3103,6 +3134,8 @@ function updateCockpit(s) {
   __cockpit.participatingProfileIds = s.participatingProfileIds || [];
   __cockpit.profileIds = s.profileIds || [];
   __cockpit.profileNames = s.profileNames || [];
+  __cockpit.sheetUrl = s.sheetUrl || '';
+  _refreshOpenSheetButtons();
   renderCockpit();
   // Sidebar tips card lives in the Live Status right column. Re-render on
   // every poll so mode/state transitions (idle → running → monitoring → idle)
@@ -5420,6 +5453,9 @@ window.loadSelectedTemplate = loadSelectedTemplate;
 window.onModeChange = onModeChange;
 window.setModeByIndex = setModeByIndex;
 window.previewSheet = previewSheet;
+window.openSheetInBrowser = openSheetInBrowser;
+window.openRunningSheet = openRunningSheet;
+window._refreshOpenSheetButtons = _refreshOpenSheetButtons;
 window.refreshSoO = refreshSoO;
 window.requestNotificationPermission = requestNotificationPermission;
 window.saveCurrentAsPreset = saveCurrentAsPreset;

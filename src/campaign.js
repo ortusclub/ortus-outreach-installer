@@ -3261,6 +3261,7 @@ export function getCampaignStatus() {
     totalTargets: campaign.totalTargets || 0,
     mode: campaign.mode || '',
     name: campaign.name || '',
+    sheetUrl: campaign.sheetUrl || '',
     profileNames: campaign.profileNames || [],
     profileIds: campaign.profileIds || [],
     logs: campaign.logs.slice(-100),
