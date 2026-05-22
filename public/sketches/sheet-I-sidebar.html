@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet redesign — I. Sidebar-driven</title>
+<style>
+body { margin: 0; padding: 32px; background: #f8f9fa; font-family: Arial, 'Helvetica Neue', sans-serif; color: #202124; }
+.wrap { max-width: 1500px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+.sub { color: #5f6368; font-size: 13px; margin-bottom: 24px; }
+
+.panel { background: #fff; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+.toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #5f6368; }
+.toolbar .name { font-weight: 600; color: #202124; margin-right: 12px; }
+.tabs { display: flex; padding: 0 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; }
+.tabs span { padding: 6px 12px; border-right: 1px solid #e8eaed; }
+.tabs span.active { background: #fff; font-weight: 600; border-top: 2px solid #1a73e8; }
+
+.split { display: grid; grid-template-columns: 1fr 320px; }
+.grid-area { border-right: 1px solid #e8eaed; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { border: 1px solid #e8eaed; padding: 6px 10px; text-align: left; vertical-align: middle; height: 26px; }
+th { background: #f8f9fa; color: #5f6368; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+td.idx, th.idx { background: #f8f9fa; color: #80868b; text-align: center; font-weight: 600; width: 40px; }
+td.name { font-weight: 500; }
+td.muted { color: #80868b; }
+td.url a { color: #1a73e8; text-decoration: none; }
+tr.selected td { background: #e8f0fe; }
+tr.selected td.idx { background: #d2e3fc; color: #1a73e8; }
+
+.sidebar { background: #fafafa; padding: 16px; font-size: 13px; line-height: 1.5; }
+.sidebar h3 { font-size: 16px; font-weight: 500; margin: 0 0 4px; }
+.sidebar .meta { color: #5f6368; font-size: 12px; margin-bottom: 16px; }
+.sidebar .section-h { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #80868b; margin: 16px 0 8px; font-weight: 600; }
+.timeline { border-left: 2px solid #dadce0; padding-left: 12px; }
+.timeline .event { margin-bottom: 12px; position: relative; }
+.timeline .event::before { content: ''; position: absolute; left: -17px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: #dadce0; }
+.timeline .event.done::before { background: #34a853; }
+.timeline .event.waiting::before { background: #fbbc04; }
+.timeline .event.now::before { background: #1a73e8; box-shadow: 0 0 0 4px rgba(26,115,232,0.15); }
+.timeline .when { font-size: 11px; color: #80868b; }
+.timeline .what { font-weight: 500; }
+.timeline .who { color: #5f6368; font-size: 12px; }
+
+.next-cta { background: #1a73e8; color: #fff; border: 0; padding: 10px 14px; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; width: 100%; margin-top: 8px; }
+.secondary-cta { background: #fff; color: #1a73e8; border: 1px solid #dadce0; padding: 8px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; width: 100%; margin-top: 6px; }
+.note-card { background: #fff; border: 1px solid #e8eaed; border-radius: 4px; padding: 10px 12px; font-size: 12px; color: #5f6368; }
+.note-card .quote { color: #202124; font-style: italic; }
+.tag { display: inline-block; background: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 9px; font-size: 11px; margin-right: 4px; }
+
+.note { font-size: 12px; color: #5f6368; margin-top: 18px; line-height: 1.6; }
+.note code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-family: 'Roboto Mono', ui-monospace, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sheet redesign — I. Sidebar-driven</h1>
+  <p class="sub">Apps Script sidebar takes over. The grid stays minimal (Name + URL + Stage). Click any row → right panel shows full history, next action button, comment thread. Like Gmail's reading pane.</p>
+
+  <div class="panel">
+    <div class="toolbar"><span class="name">Outreach Pipeline</span><span>· File · Edit · View · Insert · Format · Data</span></div>
+    <div class="tabs"><span class="active">Pipeline</span><span>Audit Log</span><span>Senders</span></div>
+    <div class="split">
+      <div class="grid-area">
+        <table>
+          <thead>
+            <tr>
+              <th class="idx"></th>
+              <th>Lead</th>
+              <th>Stage</th>
+              <th>Sender</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="idx">2</td><td class="name">Sofia Gomez de Silva</td><td>DM Sent</td><td>abhinay.kumar@</td></tr>
+            <tr class="selected"><td class="idx">3</td><td class="name">Edwin Silva</td><td>Replied</td><td>iliya@</td></tr>
+            <tr><td class="idx">4</td><td class="name">Ravi Bhatia</td><td>Connected · DM Now</td><td>iliya@</td></tr>
+            <tr><td class="idx">5</td><td class="name">Mike Hendley</td><td>Connected · DM Now</td><td>zhelena@</td></tr>
+            <tr><td class="idx">6</td><td class="name">Carlos Reyes</td><td>Connect Pending</td><td>iliya@</td></tr>
+            <tr><td class="idx">7</td><td class="name">Aisha Khan</td><td>Connect Pending</td><td>iliya@</td></tr>
+            <tr><td class="idx">8</td><td class="name">Robert Michel</td><td>Send Connect</td><td class="muted">—</td></tr>
+            <tr><td class="idx">9</td><td class="name">Jonathan Brami</td><td>Done</td><td>milee.mel@</td></tr>
+            <tr><td class="idx">10</td><td class="name">Sven Bergstrom</td><td>Skipped</td><td>zhelena@</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sidebar">
+        <h3>Edwin Silva</h3>
+        <div class="meta">Director, IT Operations &amp; Infrastructure · Bayshore HealthCare<br><a href="#" style="color:#1a73e8">linkedin.com/in/edwinsilvait</a></div>
+
+        <span class="tag">1st degree</span>
+        <span class="tag">Toronto, ON</span>
+        <span class="tag">IT Leadership</span>
+
+        <div class="section-h">Reply received</div>
+        <div class="note-card"><span class="quote">"Thanks Iliya, happy to chat — does Tuesday work?"</span><br><span style="font-size:11px;color:#80868b">1d ago via LinkedIn</span></div>
+
+        <div class="section-h">Timeline</div>
+        <div class="timeline">
+          <div class="event now"><div class="when">1d ago</div><div class="what">Replied</div><div class="who">— Edwin Silva</div></div>
+          <div class="event done"><div class="when">2d ago</div><div class="what">DM sent (intro)</div><div class="who">via iliya@ · "Hi Edwin, introducing you to Antonio…"</div></div>
+          <div class="event done"><div class="when">3w ago</div><div class="what">Connect accepted</div><div class="who">— Edwin Silva</div></div>
+          <div class="event done"><div class="when">4w ago</div><div class="what">Connect sent</div><div class="who">via iliya@</div></div>
+        </div>
+
+        <div class="section-h">Next action</div>
+        <button class="next-cta">Read &amp; reply on LinkedIn ↗</button>
+        <button class="secondary-cta">Mark as Done</button>
+        <button class="secondary-cta">Skip permanently</button>
+
+        <div class="section-h">Notes</div>
+        <div class="note-card" style="font-style:italic">No notes yet — type to add</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>How this works in Sheets:</strong> Apps Script <code>SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(...))</code> docks an HTML panel on the right (320px wide). An <code>onSelectionChange</code> trigger detects the active row and the sidebar re-renders for that lead. <br>
+    <strong>The grid</strong> stays as plain Sheets columns (Name / Stage / Sender) — minimal noise. All audit detail lives in the sidebar. <br>
+    <strong>Action buttons</strong> in the sidebar fire Apps Script functions: open LinkedIn URL in a new tab, write to the Status column, append a note row, etc. <br>
+    <strong>Trade-off:</strong> only works inside Sheets desktop (the sidebar isn't great on mobile). But that's where the operator is anyway.
+  </div>
+</div>
+</body>
+</html>

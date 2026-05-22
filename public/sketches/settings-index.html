@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings block · sketches</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--ink:#fff;--gray:#999;--hl:rgba(255,255,255,0.15);--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--b);padding:64px 48px}
+.wrap{max-width:880px;margin:0 auto}
+h1{font-family:var(--d);font-weight:400;font-size:3rem;line-height:1;letter-spacing:0.01em;text-transform:uppercase;margin-bottom:8px}
+.sub{font-size:0.65rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:48px}
+.card{display:block;text-decoration:none;color:var(--ink);padding:24px 28px;margin-bottom:12px;border:1px solid var(--hl);transition:opacity 0.15s}
+.card:hover{opacity:0.75;border-color:var(--ink)}
+.card-label{font-size:0.58rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gray);margin-bottom:6px}
+.card-title{font-family:var(--d);font-size:1.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.card-desc{font-size:0.86rem;color:var(--gray);line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Settings block · sketches</h1>
+  <div class="sub">Five directions for rate · limit · summary</div>
+
+  <a class="card" href="settings-A-steppers.html">
+    <div class="card-label">Direction A</div>
+    <div class="card-title">Big-number steppers + hero summary</div>
+    <div class="card-desc">Huge "6" and "40" in Bebas Neue with round +/− buttons beside. Summary becomes a 3-cell hero strip: Actions · Duration · Finishes.</div>
+  </a>
+
+  <a class="card" href="settings-B-slider-preview.html">
+    <div class="card-label">Direction B</div>
+    <div class="card-title">Sliders with tick labels + live preview</div>
+    <div class="card-desc">Horizontal sliders with named ticks (Cautious / Standard / Aggressive). Current value large. Live projection panel below.</div>
+  </a>
+
+  <a class="card" href="settings-C-speed-tiers.html">
+    <div class="card-label">Direction C</div>
+    <div class="card-title">Speed preset tiers</div>
+    <div class="card-desc">Three cards for rate: Cautious 3 / Standard 6 / Aggressive 12. Pick one. Limit stays a slim slider below. Clean mental model.</div>
+  </a>
+
+  <a class="card" href="settings-D-timeline.html">
+    <div class="card-label">Direction D</div>
+    <div class="card-title">Visual campaign timeline</div>
+    <div class="card-desc">Rate + limit as compact cells. Below, a horizontal timeline with Start · Midway · Finish markers and times. Makes duration feel real.</div>
+  </a>
+
+  <a class="card" href="settings-E-cockpit.html">
+    <div class="card-label">Direction E</div>
+    <div class="card-title">Cockpit gauges</div>
+    <div class="card-desc">Two half-circle dials for rate and limit. Below, a 3-cell cockpit panel showing action count, duration, finish time. Most literal "command deck" take.</div>
+  </a>
+</div>
+</body>
+</html>

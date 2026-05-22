@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Redesign A — Mission Control · Ortus Outreach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #070908;
+    --panel: #0C100E;
+    --panel-2: #10150F;
+    --panel-hi: #141A14;
+    --hairline: rgba(159, 220, 183, 0.09);
+    --hairline-hi: rgba(159, 220, 183, 0.18);
+    --ink: #E8F3EC;
+    --ink-dim: #9AAA9F;
+    --gray: #5C6B60;
+    --phosphor: #3FEA8B;
+    --phosphor-dim: rgba(63, 234, 139, 0.35);
+    --amber: #FFB547;
+    --red: #FF5A5A;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; min-height: 100vh; }
+  body { background-image:
+    radial-gradient(ellipse at top, rgba(63, 234, 139, 0.025) 0%, transparent 55%),
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(159, 220, 183, 0.012) 3px 4px);
+  }
+
+  /* ─ Top rail ─ */
+  .top-rail {
+    height: 48px; display: grid; grid-template-columns: 280px 1fr 360px;
+    border-bottom: 1px solid var(--hairline);
+    align-items: center;
+    background: rgba(7, 9, 8, 0.85);
+    backdrop-filter: blur(10px);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .tr-brand { padding: 0 20px; display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--hairline); height: 100%; }
+  .tr-logo { width: 18px; height: 18px; border: 1.5px solid var(--phosphor); border-radius: 50%; position: relative; }
+  .tr-logo::after { content:''; position:absolute; inset:3px; border-radius:50%; background: var(--phosphor); opacity:0.7; }
+  .tr-wordmark { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; }
+  .tr-wordmark span { color: var(--gray); margin-left: 6px; }
+
+  .tr-mission { padding: 0 24px; display: flex; align-items: center; gap: 32px; }
+  .tr-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .tr-value { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.08em; color: var(--ink); }
+  .tr-value.phos { color: var(--phosphor); text-shadow: 0 0 12px var(--phosphor-dim); }
+
+  .tr-system { padding: 0 20px; border-left: 1px solid var(--hairline); height: 100%; display: flex; align-items: center; gap: 20px; }
+  .led { width: 6px; height: 6px; border-radius: 50%; background: var(--phosphor); box-shadow: 0 0 8px var(--phosphor); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  @keyframes tick { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+  @keyframes scan { 0% { transform: translateY(0); } 100% { transform: translateY(100vh); } }
+
+  /* ─ App shell ─ */
+  .app { display: grid; grid-template-columns: 280px 1fr 360px; min-height: calc(100vh - 48px); }
+
+  /* ─ Channel strip (left) ─ */
+  .cs { border-right: 1px solid var(--hairline); padding: 16px 0; overflow-y: auto; }
+  .cs-section { padding: 6px 20px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); border-bottom: 1px solid var(--hairline); margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .cs-section span { color: var(--phosphor); }
+  .lane { padding: 10px 20px; border-bottom: 1px solid var(--hairline); position: relative; cursor: pointer; transition: background 0.1s; }
+  .lane:hover { background: rgba(159, 220, 183, 0.02); }
+  .lane-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .lane-id { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--ink-dim); }
+  .lane-state { font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .lane-state.active { color: var(--phosphor); }
+  .lane-state.standby { color: var(--gray); }
+  .lane-state.fault { color: var(--red); }
+  .lane-name { font-size: 12px; font-weight: 500; margin-bottom: 6px; letter-spacing: -0.005em; }
+  .lane-meta { font-family: var(--mono); font-size: 10px; color: var(--gray); display: flex; gap: 12px; margin-bottom: 8px; }
+  .lane-meta strong { color: var(--ink-dim); font-weight: 500; }
+  .waveform { display: flex; gap: 2px; align-items: flex-end; height: 22px; }
+  .waveform i { flex: 1; background: var(--phosphor); opacity: 0.4; border-radius: 1px; }
+  .lane.standby .waveform i { background: var(--gray); opacity: 0.3; }
+  .lane.fault .waveform i { background: var(--red); opacity: 0.4; }
+
+  /* ─ Main cockpit ─ */
+  .cockpit { padding: 24px 28px 80px; overflow-y: auto; }
+  .cp-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--gray); margin-bottom: 4px; }
+  .cp-h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.015em; margin-bottom: 2px; }
+  .cp-h1 em { font-style: normal; color: var(--phosphor); text-shadow: 0 0 10px var(--phosphor-dim); }
+  .cp-sub { font-family: var(--mono); font-size: 11px; color: var(--gray); letter-spacing: 0.06em; margin-bottom: 24px; }
+
+  .panel {
+    border: 1px solid var(--hairline);
+    background: var(--panel);
+    margin-bottom: 14px;
+    position: relative;
+  }
+  .panel::before {
+    content:''; position: absolute; top: -1px; left: -1px; width: 8px; height: 8px;
+    border-top: 1px solid var(--phosphor); border-left: 1px solid var(--phosphor);
+  }
+  .panel::after {
+    content:''; position: absolute; bottom: -1px; right: -1px; width: 8px; height: 8px;
+    border-bottom: 1px solid var(--phosphor); border-right: 1px solid var(--phosphor);
+  }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid var(--hairline); }
+  .panel-num { font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; color: var(--phosphor); }
+  .panel-title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; }
+  .panel-status { font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); display: flex; align-items: center; gap: 8px; }
+  .panel-body { padding: 18px; }
+
+  /* Mode selector */
+  .mode-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 14px; }
+  .mode-cell { border: 1px solid var(--hairline); padding: 14px 10px; cursor: pointer; transition: all 0.15s; position: relative; }
+  .mode-cell:hover { border-color: var(--hairline-hi); background: var(--panel-hi); }
+  .mode-cell.active { border-color: var(--phosphor); background: rgba(63, 234, 139, 0.05); box-shadow: inset 0 0 0 1px var(--phosphor-dim); }
+  .mode-cell.active::before { content: '●'; position: absolute; top: 6px; right: 8px; font-size: 8px; color: var(--phosphor); }
+  .mode-num { font-family: var(--mono); font-size: 10px; color: var(--gray); letter-spacing: 0.15em; margin-bottom: 4px; }
+  .mode-name { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+  .mode-desc { font-family: var(--mono); font-size: 9px; color: var(--gray); letter-spacing: 0.02em; }
+
+  /* Steppers */
+  .steppers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .stepper { border: 1px solid var(--hairline); padding: 14px; background: var(--panel-2); }
+  .stepper-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; color: var(--gray); text-transform: uppercase; margin-bottom: 8px; }
+  .stepper-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .stepper-val { font-family: var(--mono); font-size: 32px; font-weight: 500; color: var(--phosphor); text-shadow: 0 0 10px var(--phosphor-dim); letter-spacing: -0.02em; }
+  .stepper-unit { font-family: var(--mono); font-size: 10px; color: var(--gray); letter-spacing: 0.15em; text-transform: uppercase; }
+  .stepper-ctrl { display: flex; gap: 4px; }
+  .stepper-btn { flex: 1; border: 1px solid var(--hairline); background: transparent; color: var(--ink-dim); height: 24px; font-family: var(--mono); font-size: 12px; cursor: pointer; transition: all 0.1s; }
+  .stepper-btn:hover { border-color: var(--phosphor); color: var(--phosphor); }
+
+  /* Summary readout */
+  .readout { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--hairline); background: var(--panel-2); padding: 18px; margin-top: 14px; }
+  .readout-cell { border-right: 1px dashed var(--hairline); padding: 0 16px; }
+  .readout-cell:last-child { border-right: none; }
+  .readout-cell:first-child { padding-left: 0; }
+  .readout-k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; color: var(--gray); text-transform: uppercase; margin-bottom: 6px; }
+  .readout-v { font-family: var(--mono); font-size: 28px; font-weight: 500; color: var(--ink); letter-spacing: -0.02em; }
+  .readout-v.accent { color: var(--phosphor); text-shadow: 0 0 12px var(--phosphor-dim); }
+  .readout-sub { font-family: var(--mono); font-size: 10px; color: var(--gray); margin-top: 4px; letter-spacing: 0.06em; }
+
+  /* Sheet + Template compact */
+  .field-row { display: flex; gap: 10px; align-items: stretch; }
+  .field-input { flex: 1; background: var(--panel-2); border: 1px solid var(--hairline); color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 10px 12px; letter-spacing: 0.02em; }
+  .field-input:focus { outline: none; border-color: var(--phosphor); box-shadow: 0 0 0 1px var(--phosphor-dim); }
+  .btn { border: 1px solid var(--hairline); background: transparent; color: var(--ink-dim); padding: 10px 16px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; transition: all 0.1s; }
+  .btn:hover { border-color: var(--phosphor); color: var(--phosphor); }
+  .btn.primary { border-color: var(--phosphor); color: var(--phosphor); background: rgba(63, 234, 139, 0.06); }
+  .btn.primary:hover { background: var(--phosphor); color: #051007; box-shadow: 0 0 20px var(--phosphor-dim); }
+  .btn.big { padding: 18px 32px; font-size: 12px; letter-spacing: 0.22em; }
+
+  /* Accounts grid compact */
+  .acct-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .acct { border: 1px solid var(--hairline); padding: 10px; font-family: var(--mono); font-size: 10px; cursor: pointer; position: relative; transition: all 0.1s; }
+  .acct:hover { border-color: var(--hairline-hi); }
+  .acct.sel { border-color: var(--phosphor); background: rgba(63, 234, 139, 0.04); }
+  .acct.sel::before { content: '✓'; position: absolute; top: 4px; right: 6px; color: var(--phosphor); font-size: 10px; }
+  .acct-id { color: var(--gray); letter-spacing: 0.1em; margin-bottom: 4px; }
+  .acct-name { color: var(--ink); font-size: 11px; letter-spacing: 0.02em; margin-bottom: 3px; }
+  .acct-state { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
+  .acct-state.ok { color: var(--phosphor); }
+  .acct-state.busy { color: var(--amber); }
+  .acct-state.off { color: var(--gray); }
+
+  /* Launch ignition */
+  .ignition { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; padding: 28px; border: 1px solid var(--phosphor); background: rgba(63, 234, 139, 0.03); }
+  .ig-stat { font-family: var(--mono); }
+  .ig-label { font-size: 10px; letter-spacing: 0.22em; color: var(--gray); text-transform: uppercase; margin-bottom: 8px; }
+  .ig-big { font-size: 44px; font-weight: 500; color: var(--phosphor); text-shadow: 0 0 16px var(--phosphor-dim); letter-spacing: -0.02em; margin-bottom: 4px; }
+  .ig-meta { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.08em; }
+  .ig-meta strong { color: var(--phosphor); font-weight: 500; }
+
+  /* ─ Telemetry wall (right) ─ */
+  .tw { border-left: 1px solid var(--hairline); padding: 16px; overflow-y: auto; background: rgba(7, 9, 8, 0.5); }
+  .tw-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .tile { border: 1px solid var(--hairline); padding: 12px; background: var(--panel); position: relative; }
+  .tile-k { font-family: var(--mono); font-size: 9px; letter-spacing: 0.22em; color: var(--gray); text-transform: uppercase; margin-bottom: 6px; }
+  .tile-v { font-family: var(--mono); font-size: 22px; font-weight: 500; letter-spacing: -0.015em; }
+  .tile-v.phos { color: var(--phosphor); }
+  .tile-v.amber { color: var(--amber); }
+  .tile-sub { font-family: var(--mono); font-size: 9px; color: var(--gray); margin-top: 4px; letter-spacing: 0.05em; }
+  .spark { height: 28px; margin-top: 6px; }
+  .spark polyline { fill: none; stroke: var(--phosphor); stroke-width: 1.2; }
+  .spark.amber polyline { stroke: var(--amber); }
+  .spark-fill { fill: url(#spark-grad); opacity: 0.3; }
+
+  .tw-block { border: 1px solid var(--hairline); padding: 14px; margin-bottom: 10px; background: var(--panel); }
+  .tw-block-label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.22em; color: var(--gray); text-transform: uppercase; margin-bottom: 10px; display: flex; justify-content: space-between; }
+  .gauge { height: 80px; position: relative; }
+  .gauge svg { width: 100%; height: 100%; }
+  .gauge-v { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 18px; color: var(--phosphor); text-shadow: 0 0 10px var(--phosphor-dim); }
+
+  /* ─ Bottom ticker ─ */
+  .ticker {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 40px;
+    background: rgba(7, 9, 8, 0.95); border-top: 1px solid var(--hairline);
+    display: grid; grid-template-columns: 280px 1fr 360px;
+    align-items: center;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    z-index: 20;
+  }
+  .tk-status { padding: 0 20px; display: flex; align-items: center; gap: 10px; border-right: 1px solid var(--hairline); height: 100%; }
+  .tk-status-text { font-family: var(--mono); font-size: 11px; color: var(--phosphor); letter-spacing: 0.15em; text-transform: uppercase; }
+  .tk-tape { overflow: hidden; height: 100%; display: flex; align-items: center; }
+  .tk-tape-inner { display: flex; gap: 40px; animation: tick 60s linear infinite; white-space: nowrap; padding-left: 24px; }
+  .tk-item { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); letter-spacing: 0.05em; }
+  .tk-item span { color: var(--phosphor); margin-right: 6px; }
+  .tk-item em { font-style: normal; color: var(--gray); }
+  .tk-launch { padding: 0 20px; display: flex; align-items: center; gap: 10px; border-left: 1px solid var(--hairline); height: 100%; justify-content: flex-end; }
+
+  .labelchip { display: inline-block; padding: 2px 6px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; border: 1px solid var(--hairline); color: var(--gray); }
+  .labelchip.phos { border-color: var(--phosphor); color: var(--phosphor); }
+
+  /* Scanline effect */
+  .scanline { position: fixed; inset: 0; pointer-events: none; z-index: 100; background: linear-gradient(to bottom, transparent 0%, rgba(63, 234, 139, 0.02) 50%, transparent 100%); height: 120px; animation: scan 6s linear infinite; opacity: 0.4; }
+
+  /* Placeholder tags in templates */
+  .ph-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .ph-tag { font-family: var(--mono); font-size: 10px; color: var(--phosphor); border: 1px solid var(--hairline); padding: 3px 8px; cursor: pointer; letter-spacing: 0.05em; }
+  .ph-tag:hover { background: rgba(63, 234, 139, 0.06); border-color: var(--phosphor); }
+
+  .tpl-ta { width: 100%; background: var(--panel-2); border: 1px solid var(--hairline); color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 10px 12px; letter-spacing: 0.02em; resize: vertical; line-height: 1.5; }
+  .tpl-ta:focus { outline: none; border-color: var(--phosphor); }
+</style>
+</head>
+<body>
+  <div class="scanline"></div>
+
+  <!-- TOP RAIL -->
+  <header class="top-rail">
+    <div class="tr-brand">
+      <div class="tr-logo"></div>
+      <div class="tr-wordmark">ORTUS OUTREACH<span>/ MCC</span></div>
+    </div>
+    <div class="tr-mission">
+      <div><div class="tr-label">Mission</div><div class="tr-value">042 · PRIMERA</div></div>
+      <div><div class="tr-label">T+</div><div class="tr-value phos">01:24:33</div></div>
+      <div><div class="tr-label">Rate</div><div class="tr-value">42 OPS/HR</div></div>
+      <div><div class="tr-label">Ceiling</div><div class="tr-value">280 / 40 ACCT</div></div>
+      <div><div class="tr-label">Errors</div><div class="tr-value">0.2%</div></div>
+    </div>
+    <div class="tr-system">
+      <div class="led"></div>
+      <div class="tr-value phos" style="font-size:11px">ALL SYSTEMS NOMINAL</div>
+      <div class="tr-value" style="font-size:11px; margin-left:auto">18 APR 14:32 UTC</div>
+    </div>
+  </header>
+
+  <div class="app">
+
+    <!-- CHANNEL STRIP (LEFT) -->
+    <aside class="cs">
+      <div class="cs-section">Channels <span>07 / 12</span></div>
+
+      <div class="lane active">
+        <div class="lane-head">
+          <div class="lane-id">CH / 01</div>
+          <div class="lane-state active">LIVE</div>
+        </div>
+        <div class="lane-name">marcus.r@ortusclub</div>
+        <div class="lane-meta"><span>24 / 40</span><span>ETA <strong>00:48</strong></span></div>
+        <div class="waveform">
+          <i style="height:40%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:85%"></i>
+          <i style="height:65%"></i><i style="height:90%"></i><i style="height:45%"></i><i style="height:75%"></i>
+          <i style="height:60%"></i><i style="height:95%"></i><i style="height:50%"></i><i style="height:80%"></i>
+          <i style="height:70%"></i><i style="height:55%"></i>
+        </div>
+      </div>
+
+      <div class="lane active">
+        <div class="lane-head">
+          <div class="lane-id">CH / 02</div>
+          <div class="lane-state active">LIVE</div>
+        </div>
+        <div class="lane-name">sofia.m@ortusclub</div>
+        <div class="lane-meta"><span>18 / 40</span><span>ETA <strong>01:06</strong></span></div>
+        <div class="waveform">
+          <i style="height:55%"></i><i style="height:80%"></i><i style="height:40%"></i><i style="height:65%"></i>
+          <i style="height:75%"></i><i style="height:50%"></i><i style="height:85%"></i><i style="height:45%"></i>
+          <i style="height:70%"></i><i style="height:60%"></i><i style="height:90%"></i><i style="height:55%"></i>
+          <i style="height:80%"></i><i style="height:65%"></i>
+        </div>
+      </div>
+
+      <div class="lane standby">
+        <div class="lane-head">
+          <div class="lane-id">CH / 03</div>
+          <div class="lane-state standby">STANDBY</div>
+        </div>
+        <div class="lane-name">alex.k@ortusclub</div>
+        <div class="lane-meta"><span>00 / 40</span><span>QUEUE <strong>02</strong></span></div>
+        <div class="waveform">
+          <i style="height:20%"></i><i style="height:25%"></i><i style="height:15%"></i><i style="height:22%"></i>
+          <i style="height:18%"></i><i style="height:24%"></i><i style="height:20%"></i><i style="height:26%"></i>
+          <i style="height:22%"></i><i style="height:18%"></i><i style="height:24%"></i><i style="height:20%"></i>
+          <i style="height:26%"></i><i style="height:22%"></i>
+        </div>
+      </div>
+
+      <div class="lane fault">
+        <div class="lane-head">
+          <div class="lane-id">CH / 04</div>
+          <div class="lane-state fault">FAULT</div>
+        </div>
+        <div class="lane-name">jana.l@ortusclub</div>
+        <div class="lane-meta"><span>07 / 40</span><span style="color:var(--red)">AUTH EXPIRED</span></div>
+        <div class="waveform">
+          <i style="height:40%"></i><i style="height:60%"></i><i style="height:30%"></i><i style="height:20%"></i>
+          <i style="height:15%"></i><i style="height:10%"></i><i style="height:10%"></i><i style="height:10%"></i>
+          <i style="height:10%"></i><i style="height:10%"></i><i style="height:10%"></i><i style="height:10%"></i>
+          <i style="height:10%"></i><i style="height:10%"></i>
+        </div>
+      </div>
+
+      <div class="lane active">
+        <div class="lane-head">
+          <div class="lane-id">CH / 05</div>
+          <div class="lane-state active">LIVE</div>
+        </div>
+        <div class="lane-name">theo.d@ortusclub</div>
+        <div class="lane-meta"><span>31 / 40</span><span>ETA <strong>00:22</strong></span></div>
+        <div class="waveform">
+          <i style="height:75%"></i><i style="height:60%"></i><i style="height:85%"></i><i style="height:50%"></i>
+          <i style="height:90%"></i><i style="height:65%"></i><i style="height:80%"></i><i style="height:55%"></i>
+          <i style="height:70%"></i><i style="height:95%"></i><i style="height:45%"></i><i style="height:75%"></i>
+          <i style="height:60%"></i><i style="height:85%"></i>
+        </div>
+      </div>
+
+      <div class="lane standby">
+        <div class="lane-head">
+          <div class="lane-id">CH / 06</div>
+          <div class="lane-state standby">HOLD</div>
+        </div>
+        <div class="lane-name">camila.v@ortusclub</div>
+        <div class="lane-meta"><span>00 / 40</span><span>PASSOVER <strong>CC</strong></span></div>
+        <div class="waveform">
+          <i style="height:15%"></i><i style="height:18%"></i><i style="height:20%"></i><i style="height:15%"></i>
+          <i style="height:22%"></i><i style="height:18%"></i><i style="height:20%"></i><i style="height:15%"></i>
+          <i style="height:22%"></i><i style="height:18%"></i><i style="height:20%"></i><i style="height:15%"></i>
+          <i style="height:22%"></i><i style="height:18%"></i>
+        </div>
+      </div>
+
+      <div class="lane active">
+        <div class="lane-head">
+          <div class="lane-id">CH / 07</div>
+          <div class="lane-state active">LIVE</div>
+        </div>
+        <div class="lane-name">noah.p@ortusclub</div>
+        <div class="lane-meta"><span>12 / 40</span><span>ETA <strong>01:38</strong></span></div>
+        <div class="waveform">
+          <i style="height:45%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:80%"></i>
+          <i style="height:60%"></i><i style="height:75%"></i><i style="height:50%"></i><i style="height:85%"></i>
+          <i style="height:65%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:45%"></i>
+          <i style="height:70%"></i><i style="height:60%"></i>
+        </div>
+      </div>
+    </aside>
+
+    <!-- COCKPIT (CENTER) -->
+    <main class="cockpit">
+      <div class="cp-title">Launch Control · Outreach Deck</div>
+      <h1 class="cp-h1">Primera · <em>Q2 Outreach</em></h1>
+      <div class="cp-sub">OPERATOR · MARCUS RIVERA &nbsp; · &nbsp; OBJECTIVE · 280 CONNECTS &nbsp; · &nbsp; WINDOW · 14:32 — 19:20 UTC</div>
+
+      <!-- I. MODE -->
+      <div class="panel">
+        <div class="panel-head">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="panel-num">/ I</div>
+            <div class="panel-title">Mission Profile</div>
+          </div>
+          <div class="panel-status"><span class="labelchip phos">ARMED</span></div>
+        </div>
+        <div class="panel-body">
+          <div class="mode-row">
+            <div class="mode-cell active">
+              <div class="mode-num">01 / 07</div>
+              <div class="mode-name">Connect Only</div>
+              <div class="mode-desc">INVITE w/ NOTE</div>
+            </div>
+            <div class="mode-cell">
+              <div class="mode-num">02 / 07</div>
+              <div class="mode-name">Check Status</div>
+              <div class="mode-desc">VERIFY ACCEPTS</div>
+            </div>
+            <div class="mode-cell">
+              <div class="mode-num">03 / 07</div>
+              <div class="mode-name">Message</div>
+              <div class="mode-desc">1ST DEG ONLY</div>
+            </div>
+            <div class="mode-cell">
+              <div class="mode-num">04 / 07</div>
+              <div class="mode-name">InMail</div>
+              <div class="mode-desc">PREMIUM CR.</div>
+            </div>
+            <div class="mode-cell">
+              <div class="mode-num">05 / 07</div>
+              <div class="mode-name">Open Profile</div>
+              <div class="mode-desc">FREE · DM</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- II. RATE -->
+      <div class="panel">
+        <div class="panel-head">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="panel-num">/ II</div>
+            <div class="panel-title">Rate &amp; Envelope</div>
+          </div>
+          <div class="panel-status"><span class="labelchip">NOMINAL</span></div>
+        </div>
+        <div class="panel-body">
+          <div class="steppers">
+            <div class="stepper">
+              <div class="stepper-label">Rate / acct / hr</div>
+              <div class="stepper-row">
+                <div class="stepper-val">06</div>
+                <div class="stepper-unit">OPS / HR</div>
+              </div>
+              <div class="stepper-ctrl">
+                <button class="stepper-btn">−</button>
+                <button class="stepper-btn">+</button>
+              </div>
+            </div>
+            <div class="stepper">
+              <div class="stepper-label">Ceiling / acct</div>
+              <div class="stepper-row">
+                <div class="stepper-val">40</div>
+                <div class="stepper-unit">MAX TOTAL</div>
+              </div>
+              <div class="stepper-ctrl">
+                <button class="stepper-btn">−</button>
+                <button class="stepper-btn">+</button>
+              </div>
+            </div>
+            <div class="stepper">
+              <div class="stepper-label">Jitter · inter-op</div>
+              <div class="stepper-row">
+                <div class="stepper-val">60</div>
+                <div class="stepper-unit">SEC ± 15%</div>
+              </div>
+              <div class="stepper-ctrl">
+                <button class="stepper-btn">−</button>
+                <button class="stepper-btn">+</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="readout">
+            <div class="readout-cell">
+              <div class="readout-k">Total ops</div>
+              <div class="readout-v accent">280</div>
+              <div class="readout-sub">ACROSS 07 ACCOUNTS</div>
+            </div>
+            <div class="readout-cell">
+              <div class="readout-k">Duration</div>
+              <div class="readout-v">4h 48m</div>
+              <div class="readout-sub">AT 06 / HR / ACCT</div>
+            </div>
+            <div class="readout-cell">
+              <div class="readout-k">Finishes</div>
+              <div class="readout-v">19:20</div>
+              <div class="readout-sub">LOCAL · UTC</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- III. SOURCE -->
+      <div class="panel">
+        <div class="panel-head">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="panel-num">/ III</div>
+            <div class="panel-title">Target Feed</div>
+          </div>
+          <div class="panel-status"><span class="labelchip phos">LOCKED · 312 ROWS</span></div>
+        </div>
+        <div class="panel-body">
+          <div class="field-row">
+            <input class="field-input" value="https://docs.google.com/spreadsheets/d/1a2b3c4d5e6f7g8h/edit" />
+            <button class="btn">Preview</button>
+            <button class="btn primary">Lock</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- IV. ACCOUNTS (short) -->
+      <div class="panel">
+        <div class="panel-head">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="panel-num">/ IV</div>
+            <div class="panel-title">Account Deployment</div>
+          </div>
+          <div class="panel-status"><span class="labelchip phos">07 SELECTED</span></div>
+        </div>
+        <div class="panel-body">
+          <div class="acct-grid">
+            <div class="acct sel"><div class="acct-id">A01</div><div class="acct-name">Marcus R.</div><div class="acct-state ok">READY</div></div>
+            <div class="acct sel"><div class="acct-id">A02</div><div class="acct-name">Sofia M.</div><div class="acct-state ok">READY</div></div>
+            <div class="acct sel"><div class="acct-id">A03</div><div class="acct-name">Alex K.</div><div class="acct-state ok">READY</div></div>
+            <div class="acct sel"><div class="acct-id">A04</div><div class="acct-name">Jana L.</div><div class="acct-state busy">REAUTH</div></div>
+            <div class="acct sel"><div class="acct-id">A05</div><div class="acct-name">Theo D.</div><div class="acct-state ok">READY</div></div>
+            <div class="acct sel"><div class="acct-id">A06</div><div class="acct-name">Camila V.</div><div class="acct-state busy">HOLD</div></div>
+            <div class="acct sel"><div class="acct-id">A07</div><div class="acct-name">Noah P.</div><div class="acct-state ok">READY</div></div>
+            <div class="acct"><div class="acct-id">A08</div><div class="acct-name">Iris T.</div><div class="acct-state off">OFFLINE</div></div>
+            <div class="acct"><div class="acct-id">A09</div><div class="acct-name">Dario B.</div><div class="acct-state off">OFFLINE</div></div>
+            <div class="acct"><div class="acct-id">A10</div><div class="acct-name">Yuki S.</div><div class="acct-state off">OFFLINE</div></div>
+            <div class="acct"><div class="acct-id">A11</div><div class="acct-name">Owen G.</div><div class="acct-state off">OFFLINE</div></div>
+            <div class="acct"><div class="acct-id">A12</div><div class="acct-name">Mira H.</div><div class="acct-state off">OFFLINE</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- V. TEMPLATES -->
+      <div class="panel">
+        <div class="panel-head">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="panel-num">/ V</div>
+            <div class="panel-title">Payload · Connection Note</div>
+          </div>
+          <div class="panel-status"><span class="labelchip">212 / 300</span></div>
+        </div>
+        <div class="panel-body">
+          <textarea class="tpl-ta" rows="3">Hi {firstName}, loved your piece on {company}'s platform play. Would value connecting — we run a small executive roundtable for founders in your space.</textarea>
+          <div class="ph-row">
+            <div class="ph-tag">{firstName}</div>
+            <div class="ph-tag">{lastName}</div>
+            <div class="ph-tag">{company}</div>
+            <div class="ph-tag">{title}</div>
+            <div class="ph-tag">{city}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VI. IGNITION -->
+      <div class="panel" style="margin-top: 24px; border-color: var(--phosphor-dim);">
+        <div class="panel-head" style="background: rgba(63, 234, 139, 0.04)">
+          <div style="display:flex; align-items:center; gap:12px">
+            <div class="panel-num">/ VI</div>
+            <div class="panel-title">Ignition</div>
+          </div>
+          <div class="panel-status"><span class="labelchip phos">ALL GREEN</span></div>
+        </div>
+        <div class="panel-body">
+          <div class="ignition">
+            <div>
+              <div class="ig-stat">
+                <div class="ig-label">On mark</div>
+                <div class="ig-big">T−00:00:04</div>
+                <div class="ig-meta"><strong>280</strong> OPS · <strong>07</strong> CHANNELS · ETA <strong>19:20 UTC</strong></div>
+              </div>
+            </div>
+            <button class="btn big primary">▶ Launch Mission</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- TELEMETRY WALL (RIGHT) -->
+    <aside class="tw">
+      <svg width="0" height="0">
+        <defs>
+          <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#3FEA8B" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#3FEA8B" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+      </svg>
+
+      <div class="tw-block">
+        <div class="tw-block-label">Mission Clock<span style="color:var(--phosphor)">T+01:24:33</span></div>
+        <div class="gauge">
+          <svg viewBox="0 0 100 60">
+            <path d="M 10 55 A 40 40 0 0 1 90 55" fill="none" stroke="rgba(159,220,183,0.1)" stroke-width="2"/>
+            <path d="M 10 55 A 40 40 0 0 1 62 18" fill="none" stroke="#3FEA8B" stroke-width="2" style="filter: drop-shadow(0 0 4px #3FEA8B)"/>
+            <circle cx="62" cy="18" r="2.5" fill="#3FEA8B"/>
+          </svg>
+          <div class="gauge-v">62%</div>
+        </div>
+        <div class="tile-sub" style="text-align:center">OF 4H 48M WINDOW</div>
+      </div>
+
+      <div class="tw-row">
+        <div class="tile">
+          <div class="tile-k">Throughput</div>
+          <div class="tile-v phos">42</div>
+          <div class="tile-sub">OPS / HR · Δ +03</div>
+          <svg class="spark" viewBox="0 0 80 28" preserveAspectRatio="none">
+            <polyline points="0,20 8,18 16,12 24,14 32,8 40,10 48,6 56,9 64,4 72,7 80,3"/>
+          </svg>
+        </div>
+        <div class="tile">
+          <div class="tile-k">Accept rate</div>
+          <div class="tile-v phos">34.8</div>
+          <div class="tile-sub">% · LAST 24H</div>
+          <svg class="spark" viewBox="0 0 80 28" preserveAspectRatio="none">
+            <polyline points="0,18 8,14 16,16 24,10 32,12 40,9 48,11 56,7 64,10 72,8 80,6"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="tw-row">
+        <div class="tile">
+          <div class="tile-k">Errors / 1k</div>
+          <div class="tile-v amber">2.1</div>
+          <div class="tile-sub">± 0.4 · WITHIN TOL</div>
+          <svg class="spark amber" viewBox="0 0 80 28" preserveAspectRatio="none">
+            <polyline points="0,20 8,22 16,18 24,20 32,16 40,14 48,18 56,12 64,14 72,10 80,12"/>
+          </svg>
+        </div>
+        <div class="tile">
+          <div class="tile-k">Credit burn</div>
+          <div class="tile-v phos">18 / 40</div>
+          <div class="tile-sub">INMAIL · MONTHLY</div>
+          <svg class="spark" viewBox="0 0 80 28" preserveAspectRatio="none">
+            <polyline points="0,24 8,22 16,20 24,18 32,15 40,13 48,12 56,10 64,8 72,7 80,6"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="tw-block">
+        <div class="tw-block-label">Passover<span>T−12D 04H</span></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+          <div>
+            <div style="font-family:var(--mono); font-size:10px; color:var(--gray); letter-spacing:0.1em">OP · IM · SN</div>
+            <div style="font-family:var(--mono); font-size:14px; color:var(--phosphor); margin-top:4px">OPEN</div>
+            <div style="font-family:var(--mono); font-size:9px; color:var(--gray); letter-spacing:0.1em; margin-top:2px">RESETS 01 MAY</div>
+          </div>
+          <div>
+            <div style="font-family:var(--mono); font-size:10px; color:var(--gray); letter-spacing:0.1em">CC</div>
+            <div style="font-family:var(--mono); font-size:14px; color:var(--amber); margin-top:4px">WARN</div>
+            <div style="font-family:var(--mono); font-size:9px; color:var(--gray); letter-spacing:0.1em; margin-top:2px">3 / 5 USED</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tw-block">
+        <div class="tw-block-label">Next Window<span>TUE 09:00</span></div>
+        <div style="font-family:var(--sans); font-size:13px; font-weight:500; margin-bottom:4px">Secunda · Q2 Outreach</div>
+        <div style="font-family:var(--mono); font-size:10px; color:var(--gray); letter-spacing:0.06em">MON–FRI · AUTO · 07 ACCT</div>
+      </div>
+
+      <div class="tw-block">
+        <div class="tw-block-label">Live Feed<span style="color:var(--phosphor)">● REC</span></div>
+        <div style="font-family:var(--mono); font-size:10px; line-height:1.8; color:var(--ink-dim)">
+          <div><span style="color:var(--gray)">14:32:08</span> <span style="color:var(--phosphor)">CH01</span> · connect ok · gianna.r</div>
+          <div><span style="color:var(--gray)">14:31:44</span> <span style="color:var(--phosphor)">CH02</span> · connect ok · marco.l</div>
+          <div><span style="color:var(--gray)">14:31:20</span> <span style="color:var(--phosphor)">CH05</span> · connect ok · paul.m</div>
+          <div><span style="color:var(--gray)">14:30:52</span> <span style="color:var(--amber)">CH04</span> · reauth required</div>
+          <div><span style="color:var(--gray)">14:30:18</span> <span style="color:var(--phosphor)">CH01</span> · connect ok · sara.t</div>
+          <div><span style="color:var(--gray)">14:29:44</span> <span style="color:var(--phosphor)">CH07</span> · connect ok · iana.f</div>
+          <div><span style="color:var(--gray)">14:29:12</span> <span style="color:var(--phosphor)">CH02</span> · connect ok · dev.k</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- BOTTOM TICKER -->
+  <div class="ticker">
+    <div class="tk-status">
+      <div class="led"></div>
+      <div class="tk-status-text">Mission Live</div>
+    </div>
+    <div class="tk-tape">
+      <div class="tk-tape-inner">
+        <div class="tk-item"><span>CH01</span>connect ok · gianna.r@bluebird <em>14:32:08</em></div>
+        <div class="tk-item"><span>CH02</span>connect ok · marco.l@helios <em>14:31:44</em></div>
+        <div class="tk-item"><span>CH05</span>connect ok · paul.m@northcut <em>14:31:20</em></div>
+        <div class="tk-item" style="color:var(--amber)"><span style="color:var(--amber)">CH04</span>reauth required · jana.l <em>14:30:52</em></div>
+        <div class="tk-item"><span>CH01</span>connect ok · sara.t@oxbow <em>14:30:18</em></div>
+        <div class="tk-item"><span>CH07</span>connect ok · iana.f@parallel <em>14:29:44</em></div>
+        <div class="tk-item"><span>CH02</span>connect ok · dev.k@eastside <em>14:29:12</em></div>
+        <div class="tk-item"><span>CH01</span>connect ok · gianna.r@bluebird <em>14:32:08</em></div>
+        <div class="tk-item"><span>CH02</span>connect ok · marco.l@helios <em>14:31:44</em></div>
+        <div class="tk-item"><span>CH05</span>connect ok · paul.m@northcut <em>14:31:20</em></div>
+      </div>
+    </div>
+    <div class="tk-launch">
+      <span class="labelchip phos">T−00:00:04</span>
+      <button class="btn primary">Abort</button>
+    </div>
+  </div>
+</body>
+</html>

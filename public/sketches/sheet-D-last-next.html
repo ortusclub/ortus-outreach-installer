@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet redesign — D. Last action / Next action</title>
+<style>
+body { margin: 0; padding: 32px; background: #f8f9fa; font-family: Arial, 'Helvetica Neue', sans-serif; color: #202124; }
+.wrap { max-width: 1500px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+.sub { color: #5f6368; font-size: 13px; margin-bottom: 24px; }
+.panel { background: #fff; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+.toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #5f6368; }
+.toolbar .name { font-weight: 600; color: #202124; margin-right: 12px; }
+.tabs { display: flex; padding: 0 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; }
+.tabs span { padding: 6px 12px; border-right: 1px solid #e8eaed; }
+.tabs span.active { background: #fff; font-weight: 600; border-top: 2px solid #1a73e8; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { border: 1px solid #e8eaed; padding: 6px 10px; text-align: left; vertical-align: middle; height: 26px; }
+th { background: #f8f9fa; color: #5f6368; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+td { white-space: nowrap; }
+td.idx, th.idx { background: #f8f9fa; color: #80868b; text-align: center; font-weight: 600; width: 40px; }
+
+td.last { color: #5f6368; }
+td.next { font-weight: 600; }
+.next-now      { background: #d9f1da; color: #0a6b27; }   /* bot will pick up */
+.next-wait     { background: #f3e8ff; color: #5b21b6; }   /* waiting on them */
+.next-done     { background: #eceff1; color: #5f6368; }   /* closed */
+.next-blocked  { background: #fce4e4; color: #a1252b; }
+.next-replied  { background: #fff2cc; color: #594400; font-weight: 700; }   /* operator turn */
+.next-firsttouch { background: #fff4d6; color: #8a5a00; }                      /* never touched */
+
+td.muted { color: #80868b; }
+td.url a { color: #1a73e8; text-decoration: none; }
+td.name { font-weight: 500; }
+
+.legend { display: flex; gap: 20px; margin-top: 16px; flex-wrap: wrap; font-size: 11px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 14px; border: 1px solid #dadce0; display: inline-block; }
+.note { font-size: 12px; color: #5f6368; margin-top: 18px; line-height: 1.6; }
+.note code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-family: 'Roboto Mono', ui-monospace, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sheet redesign — D. Last / Next action</h1>
+  <p class="sub">Two cells per row. <em>Last action</em> = what just happened. <em>Next action</em> = what should happen now (color-coded). Sort by Next to see your pile.</p>
+
+  <div class="panel">
+    <div class="toolbar"><span class="name">Outreach Pipeline</span><span>· File · Edit · View · Insert · Format · Data</span></div>
+    <div class="tabs"><span class="active">Pipeline</span><span>Audit Log</span><span>Senders</span><span>Replies</span></div>
+    <table>
+      <thead>
+        <tr>
+          <th class="idx"></th>
+          <th>Lead</th>
+          <th>Sender</th>
+          <th>Last action</th>
+          <th>Next action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="idx">2</td><td class="name">Edwin Silva</td><td>iliya@</td>
+          <td class="last">Replied · 1d ago</td><td class="next next-replied">Read & follow up</td>
+        </tr>
+        <tr><td class="idx">3</td><td class="name">Ravi Bhatia</td><td>iliya@</td>
+          <td class="last">Connect accepted · 2d ago</td><td class="next next-now">Send DM</td>
+        </tr>
+        <tr><td class="idx">4</td><td class="name">Mike Hendley</td><td>zhelena@</td>
+          <td class="last">Connect accepted · 3d ago</td><td class="next next-now">Send DM</td>
+        </tr>
+        <tr><td class="idx">5</td><td class="name">Sofia Gomez de Silva</td><td>abhinay.kumar@</td>
+          <td class="last">DM sent (intro) · today</td><td class="next next-wait">Wait for reply</td>
+        </tr>
+        <tr><td class="idx">6</td><td class="name">Tushar Poduval</td><td>kenya5@</td>
+          <td class="last">DM sent · today</td><td class="next next-wait">Wait for reply</td>
+        </tr>
+        <tr><td class="idx">7</td><td class="name">Carlos Reyes</td><td>iliya@</td>
+          <td class="last">Connect sent · 8d ago</td><td class="next next-wait">Wait — still pending</td>
+        </tr>
+        <tr><td class="idx">8</td><td class="name">Aisha Khan</td><td>iliya@</td>
+          <td class="last">Connect sent · 11d ago</td><td class="next next-wait">Wait — still pending</td>
+        </tr>
+        <tr><td class="idx">9</td><td class="name">Robert Michel</td><td class="muted">—</td>
+          <td class="last muted">never</td><td class="next next-firsttouch">Send Connect</td>
+        </tr>
+        <tr><td class="idx">10</td><td class="name">Patricia Liu</td><td class="muted">—</td>
+          <td class="last muted">never</td><td class="next next-firsttouch">Send Connect</td>
+        </tr>
+        <tr><td class="idx">11</td><td class="name">Jonathan Brami</td><td>milee.mel@</td>
+          <td class="last">Closed · replied 15d ago</td><td class="next next-done">Done</td>
+        </tr>
+        <tr><td class="idx">12</td><td class="name">Sven Bergstrom</td><td>zhelena@</td>
+          <td class="last">Skipped · not connectable</td><td class="next next-blocked">Blocked</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:#fff2cc"></i> Read &amp; follow up — high priority, your turn</span>
+    <span><i style="background:#d9f1da"></i> Bot's turn (Send DM, Send Connect)</span>
+    <span><i style="background:#fff4d6"></i> First touch — never contacted</span>
+    <span><i style="background:#f3e8ff"></i> Wait — pending response</span>
+    <span><i style="background:#eceff1"></i> Done</span>
+    <span><i style="background:#fce4e4"></i> Blocked</span>
+  </div>
+
+  <div class="note">
+    <strong>How this works in Sheets:</strong> bot writes <em>both</em> cells on every action. Last action ≈ free text ("Connect accepted · 2d ago"). Next action is one of a fixed set of values; conditional formatting paints background by value. <br>
+    <strong>Why it's nice:</strong> sort by Next column → all your "Send DM" rows clump together; same for "Read &amp; follow up". The operator never has to decode CC/OP/Message/InMail again. <br>
+    <strong>What goes away from view:</strong> CC, OP, Message, InMail status text — moved to a hidden Audit Log tab. The Pipeline tab is just Lead + Last + Next.
+  </div>
+</div>
+</body>
+</html>

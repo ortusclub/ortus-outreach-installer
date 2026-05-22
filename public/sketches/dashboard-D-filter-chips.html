@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dashboard D · Single list + filter chips</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:780px;line-height:1.5;margin-bottom:40px}
+
+.app{border:1px solid var(--hl);padding:32px 36px 56px;background:#050505}
+.app-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hl);padding-bottom:22px;margin-bottom:24px}
+.brand{font-family:var(--d);font-size:1.4rem;letter-spacing:0.04em}
+.brand small{color:var(--gray);font-family:var(--b);font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;margin-left:10px}
+.actions{display:flex;gap:10px}
+.btn{border:1px solid var(--hl);background:transparent;color:var(--ink);font-family:var(--b);font-size:0.64rem;letter-spacing:0.16em;text-transform:uppercase;padding:8px 14px;cursor:pointer;border-radius:9999px}
+.btn.gold{border-color:var(--gold);color:var(--gold)}
+.btn.danger{border-color:var(--red);color:var(--red)}
+
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.chip{border:1px solid var(--hl);border-radius:9999px;padding:8px 14px;font-size:0.7rem;letter-spacing:0.06em;color:var(--gray);cursor:pointer;display:flex;align-items:center;gap:8px}
+.chip:hover{color:var(--ink)}
+.chip.on{color:var(--ink);background:rgba(255,255,255,0.05);border-color:var(--ink)}
+.chip .ct{font-family:var(--d);font-size:0.78rem;letter-spacing:0.04em}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--gray)}
+.chip[data-state=active] .dot{background:var(--green)}
+.chip[data-state=monitoring] .dot{background:var(--gold)}
+.chip[data-state=queued] .dot{background:var(--ink)}
+.chip[data-state=draft] .dot{background:var(--gray);opacity:0.6}
+.chip[data-state=past] .dot{background:var(--gray);opacity:0.4}
+
+.toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 0 14px;border-bottom:1px solid var(--hls);margin-bottom:6px}
+.tool-l{display:flex;align-items:center;gap:18px;font-size:0.72rem}
+.tool-l .selall{display:flex;align-items:center;gap:8px;color:var(--gray);letter-spacing:0.06em}
+.tool-l .selall .check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;position:relative}
+.tool-l .selall .check.on{border-color:var(--gold);background:var(--gold)}
+.tool-l .selall .check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.tool-l .meta{font-size:0.62rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--gray)}
+.tool-r{display:flex;align-items:center;gap:10px}
+.search{background:transparent;border:1px solid var(--hl);color:var(--ink);padding:6px 12px;font-family:var(--b);font-size:0.72rem;border-radius:9999px;width:240px;outline:none}
+
+.bulkstrip{background:rgba(247,190,104,0.05);border:1px solid var(--gold);padding:10px 16px;margin:8px 0 16px;display:flex;justify-content:space-between;align-items:center;font-size:0.72rem}
+.bulkstrip .n{color:var(--gold);font-family:var(--d);font-size:1.05rem;margin-right:10px;letter-spacing:0.05em}
+
+.row{display:grid;grid-template-columns:28px 1fr 110px 130px 110px 90px 26px;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid var(--hls);font-size:0.78rem}
+.row.sel{background:rgba(247,190,104,0.05)}
+.check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;cursor:pointer;position:relative}
+.check.on{border-color:var(--gold);background:var(--gold)}
+.check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.name{font-weight:500}
+.name small{display:block;color:var(--gray);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;margin-top:3px}
+.status{font-family:var(--d);font-size:0.78rem;letter-spacing:0.06em;display:flex;align-items:center;gap:8px}
+.status .dot{width:6px;height:6px;border-radius:50%}
+.status.active .dot{background:var(--green)}
+.status.monitoring .dot{background:var(--gold)}
+.status.queued .dot{background:var(--ink)}
+.status.draft .dot{color:var(--gray);background:var(--gray);opacity:0.6}
+.status.past .dot{background:var(--gray);opacity:0.4}
+.mode{font-family:var(--d);font-size:0.82rem;color:var(--gray);letter-spacing:0.06em}
+.when{color:var(--gray);font-size:0.7rem}
+.met{font-family:var(--d);font-size:1.05rem;letter-spacing:0.06em}
+.met small{font-family:var(--b);font-size:0.56rem;letter-spacing:0.16em;color:var(--gray);text-transform:uppercase;display:block;margin-top:2px}
+.kebab{color:var(--gray);text-align:right;cursor:pointer;letter-spacing:0.2em}
+
+.notes{margin-top:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--hl)}
+.note{padding:22px 24px;border-right:1px solid var(--hl)}
+.note:last-child{border-right:none}
+.note-h{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.note p{font-size:0.78rem;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="crumbs"><a href="dashboard-index.html">← all alternatives</a> · DASHBOARD D · UNIFIED LIST + FILTER CHIPS</div>
+<h1>Unified list — chip filters on top</h1>
+<p class="deck">One single table with everything. Status chips at the top are toggleable filters — click Monitoring + Active to see both at once. Each row has a status pill so you always know what kind of campaign it is, even in mixed views. Bulk-select works across the whole list regardless of status.</p>
+
+<div class="app">
+  <div class="app-head">
+    <div class="brand">ORTUS OUTREACH<small>v2.51 · 55 CAMPAIGNS</small></div>
+    <div class="actions"><button class="btn gold">+ NEW CAMPAIGN</button></div>
+  </div>
+
+  <div class="chip-row">
+    <div class="chip on" data-state=active>ACTIVE <span class="ct">1</span></div>
+    <div class="chip on" data-state=monitoring>MONITORING <span class="ct">3</span></div>
+    <div class="chip" data-state=queued>QUEUED <span class="ct">2</span></div>
+    <div class="chip" data-state=draft>DRAFTS <span class="ct">2</span></div>
+    <div class="chip" data-state=past>PAST <span class="ct">47</span></div>
+    <div class="chip">ALL <span class="ct">55</span></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tool-l">
+      <span class="selall"><span class="check on"></span> SELECT ALL</span>
+      <span class="meta">SHOWING 4 OF 55 · ACTIVE + MONITORING</span>
+    </div>
+    <div class="tool-r">
+      <input class="search" type="text" placeholder="Search campaigns…" />
+    </div>
+  </div>
+
+  <div class="bulkstrip">
+    <div><span class="n">2</span>SELECTED · 1 ACTIVE + 1 MONITORING</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn">CLEAR</button>
+      <button class="btn">PAUSE</button>
+      <button class="btn danger">DELETE</button>
+    </div>
+  </div>
+
+  <div class="row sel">
+    <span class="check on"></span>
+    <div class="name">TAG_LONDON_I <small>27 / 50 SENT · STARTED 41M AGO</small></div>
+    <div class="status active"><span class="dot"></span>ACTIVE</div>
+    <span class="mode">CC + IC</span>
+    <span class="when">today</span>
+    <div class="met">27<small>SENT</small></div>
+    <span class="kebab">⋯</span>
+  </div>
+  <div class="row">
+    <span class="check"></span>
+    <div class="name">TAG_AUSTIN_II <small>DAY 3 / 7 · 2 / 7 ACCEPTED · NEXT 13M</small></div>
+    <div class="status monitoring"><span class="dot"></span>MONITOR</div>
+    <span class="mode">CC + IC</span>
+    <span class="when">3d ago</span>
+    <div class="met">2<small>INTRO</small></div>
+    <span class="kebab">⋯</span>
+  </div>
+  <div class="row sel">
+    <span class="check on"></span>
+    <div class="name">TAG_BERLIN_I <small>DAY 1 / 7 · 5 / 12 ACCEPTED · NEXT 7M</small></div>
+    <div class="status monitoring"><span class="dot"></span>MONITOR</div>
+    <span class="mode">CC + IC</span>
+    <span class="when">18h ago</span>
+    <div class="met">5<small>INTRO</small></div>
+    <span class="kebab">⋯</span>
+  </div>
+  <div class="row">
+    <span class="check"></span>
+    <div class="name">TAG_NYC_III <small>DAY 6 / 7 · 0 / 4 ACCEPTED · NEXT 4M</small></div>
+    <div class="status monitoring"><span class="dot"></span>MONITOR</div>
+    <span class="mode">CC + IC</span>
+    <span class="when">6d ago</span>
+    <div class="met">0<small>INTRO</small></div>
+    <span class="kebab">⋯</span>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <div class="note-h">FIX 1 — STATUS IS A COLUMN</div>
+    <p>Status is a pill column on every row, never ambiguous. Monitoring appears next to Active in mixed views — they're never confused.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">FIX 2 — SELECT ACROSS STATES</div>
+    <p>"Select all" picks every visible row regardless of status. Want to nuke 30 old past campaigns + 2 broken drafts in one shot? Three clicks: filter chips → select all → delete.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">TRADE-OFF</div>
+    <p>One unified list is the densest layout — easiest to bulk-edit, but you have to use filters to focus. Active and Monitoring are typically the most useful default chips selected.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

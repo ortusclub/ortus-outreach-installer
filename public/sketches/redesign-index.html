@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Redesign · Three Directions · Ortus Outreach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0A0A0C;
+    --panel: #141418;
+    --ink: #F5F5F7;
+    --ink-dim: #A8A8B4;
+    --gray: #6C6C78;
+    --hairline: rgba(255, 255, 255, 0.08);
+    --accent: #5B8BFF;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--ink); font-family: 'Inter', sans-serif; min-height: 100vh; }
+  body { background-image: radial-gradient(ellipse at top, rgba(91, 139, 255, 0.04) 0%, transparent 60%); }
+
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 60px 40px 80px; }
+
+  header.hero { margin-bottom: 60px; max-width: 760px; }
+  .hero-kicker { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); letter-spacing: 0.22em; text-transform: uppercase; margin-bottom: 20px; font-weight: 500; }
+  .hero-h1 { font-family: 'Fraunces', serif; font-weight: 300; font-size: 64px; line-height: 1.05; letter-spacing: -0.025em; margin-bottom: 18px; }
+  .hero-h1 em { font-style: italic; color: var(--accent); font-weight: 400; }
+  .hero-sub { font-size: 18px; line-height: 1.55; color: var(--ink-dim); max-width: 620px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--hairline);
+    border-radius: 18px; overflow: hidden; position: relative;
+    transition: transform 0.3s, box-shadow 0.3s;
+    cursor: pointer;
+    display: flex; flex-direction: column;
+  }
+  .card:hover { transform: translateY(-4px); box-shadow: 0 24px 60px rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.14); }
+  .card-preview {
+    height: 320px; position: relative; overflow: hidden;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .card-body { padding: 28px; flex: 1; display: flex; flex-direction: column; }
+  .card-tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; font-weight: 500; }
+  .card-title { font-family: 'Fraunces', serif; font-weight: 400; font-size: 32px; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 8px; }
+  .card-title em { font-style: italic; color: var(--accent); }
+  .card-lede { font-size: 14px; color: var(--ink-dim); line-height: 1.55; margin-bottom: 20px; font-family: 'Fraunces', serif; font-style: italic; }
+  .card-body p { font-size: 13px; color: var(--ink-dim); line-height: 1.6; margin-bottom: 16px; }
+  .card-body strong { color: var(--ink); font-weight: 500; }
+  .card-foot { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--hairline); display: flex; justify-content: space-between; align-items: center; }
+  .card-foot a { color: var(--accent); text-decoration: none; font-size: 14px; font-weight: 500; letter-spacing: -0.005em; }
+  .card-foot a:hover { text-decoration: underline; }
+  .card-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--gray); letter-spacing: 0.04em; }
+
+  /* Preview: Mission Control */
+  .preview-A { background: #080A09; }
+  .preview-A::before {
+    content:''; position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(0deg, transparent 0 3px, rgba(159, 220, 183, 0.04) 3px 4px);
+  }
+  .preview-A .grid-lines {
+    position: absolute; inset: 16px;
+    display: grid; grid-template-columns: 80px 1fr 100px; gap: 8px; height: calc(100% - 32px);
+  }
+  .preview-A .strip { background: rgba(63, 234, 139, 0.03); border: 1px solid rgba(63, 234, 139, 0.15); padding: 8px; }
+  .preview-A .strip-label { font-family: 'JetBrains Mono', monospace; font-size: 8px; color: #6A7970; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 4px; }
+  .preview-A .strip-lane { height: 10px; display: flex; gap: 1px; margin-bottom: 3px; align-items: flex-end; }
+  .preview-A .strip-lane i { flex: 1; background: #3FEA8B; opacity: 0.5; border-radius: 1px; }
+  .preview-A .main-panel { display: grid; gap: 6px; }
+  .preview-A .big-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 500;
+    color: #3FEA8B; text-shadow: 0 0 16px rgba(63, 234, 139, 0.6); letter-spacing: -0.02em;
+    background: rgba(63, 234, 139, 0.04); border: 1px solid rgba(63, 234, 139, 0.2);
+    padding: 14px; text-align: center;
+  }
+  .preview-A .mode-row { display: flex; gap: 3px; }
+  .preview-A .mode-cell { flex: 1; background: rgba(255,255,255,0.02); border: 1px solid rgba(159, 220, 183, 0.08); padding: 5px 4px; font-family: 'JetBrains Mono', monospace; font-size: 7px; color: #9AAA9F; text-align: center; letter-spacing: 0.1em; }
+  .preview-A .mode-cell.on { border-color: #3FEA8B; background: rgba(63, 234, 139, 0.1); color: #3FEA8B; }
+  .preview-A .telem { display: grid; grid-template-rows: 1fr 1fr; gap: 4px; }
+  .preview-A .tile { background: rgba(63, 234, 139, 0.03); border: 1px solid rgba(63, 234, 139, 0.1); padding: 6px; }
+  .preview-A .tile-k { font-family: 'JetBrains Mono', monospace; font-size: 6px; color: #6A7970; letter-spacing: 0.2em; text-transform: uppercase; }
+  .preview-A .tile-v { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #3FEA8B; text-shadow: 0 0 6px rgba(63, 234, 139, 0.5); margin-top: 2px; }
+  .preview-A .ticker-strip {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 18px;
+    background: rgba(0,0,0,0.6); border-top: 1px solid rgba(63, 234, 139, 0.2);
+    display: flex; align-items: center; padding: 0 8px; gap: 16px;
+    font-family: 'JetBrains Mono', monospace; font-size: 8px; color: #9AAA9F;
+    overflow: hidden; white-space: nowrap;
+  }
+  .preview-A .ticker-strip span { color: #3FEA8B; }
+
+  /* Preview: Editorial */
+  .preview-B { background: #F4EFE6; }
+  .preview-B .paper { padding: 20px; height: 100%; display: flex; flex-direction: column; }
+  .preview-B .edit-mast { border-bottom: 2px solid #161311; padding-bottom: 10px; margin-bottom: 14px; text-align: center; }
+  .preview-B .edit-mast-top { font-family: 'Inter'; font-size: 7px; color: #161311; letter-spacing: 0.3em; text-transform: uppercase; font-weight: 500; margin-bottom: 4px; }
+  .preview-B .edit-wordmark { font-family: 'Fraunces'; font-weight: 300; font-size: 38px; line-height: 1; letter-spacing: -0.02em; color: #161311; }
+  .preview-B .edit-wordmark em { font-style: italic; color: #7A2D2D; font-weight: 400; }
+  .preview-B .edit-body { display: grid; grid-template-columns: 60px 1fr 80px; gap: 14px; flex: 1; }
+  .preview-B .edit-folio { font-family: 'Fraunces'; font-size: 9px; }
+  .preview-B .edit-folio div { padding: 3px 0; border-bottom: 1px solid #C8BDA7; color: #161311; display: flex; justify-content: space-between; }
+  .preview-B .edit-folio div.on { color: #7A2D2D; }
+  .preview-B .edit-folio em { font-style: italic; color: #8C8376; }
+  .preview-B .edit-col { color: #161311; }
+  .preview-B .edit-numeral { font-family: 'Fraunces'; font-weight: 300; font-style: italic; font-size: 38px; color: #7A2D2D; line-height: 0.9; margin-bottom: 4px; }
+  .preview-B .edit-h { font-family: 'Fraunces'; font-weight: 400; font-size: 16px; line-height: 1.1; margin-bottom: 4px; letter-spacing: -0.01em; }
+  .preview-B .edit-h em { font-style: italic; color: #7A2D2D; }
+  .preview-B .edit-stand { font-family: 'Fraunces'; font-style: italic; font-size: 10px; color: #3A322C; line-height: 1.35; margin-bottom: 8px; }
+  .preview-B .edit-btn-row { display: grid; grid-template-columns: repeat(3, 1fr); padding: 8px 0; border-top: 1px solid #161311; border-bottom: 1px solid #161311; }
+  .preview-B .edit-btn-row > div { text-align: center; border-right: 1px solid #C8BDA7; padding: 0 4px; }
+  .preview-B .edit-btn-row > div:last-child { border-right: none; }
+  .preview-B .edit-bn-k { font-family: 'Inter'; font-size: 6px; color: #8C8376; letter-spacing: 0.22em; text-transform: uppercase; margin-bottom: 4px; }
+  .preview-B .edit-bn-v { font-family: 'Fraunces'; font-weight: 300; font-size: 22px; line-height: 1; letter-spacing: -0.02em; color: #161311; }
+  .preview-B .edit-bn-v em { font-style: italic; color: #7A2D2D; }
+  .preview-B .edit-right { font-family: 'Fraunces'; font-size: 8px; color: #161311; border-top: 2px solid #161311; padding-top: 4px; }
+  .preview-B .edit-right-t { font-family: 'Inter'; font-size: 6px; color: #3A322C; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 500; margin-bottom: 2px; }
+  .preview-B .edit-right-h { font-family: 'Fraunces'; font-weight: 500; font-size: 10px; line-height: 1.15; margin-bottom: 6px; }
+  .preview-B .edit-right-big { font-family: 'Fraunces'; font-weight: 300; font-size: 22px; line-height: 1; color: #161311; }
+  .preview-B .edit-right-big em { font-style: italic; color: #7A2D2D; }
+  .preview-B .byline-strip { position: absolute; bottom: 0; left: 0; right: 0; height: 22px; background: #161311; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-family: 'Inter'; font-size: 7px; color: #F4EFE6; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 500; }
+  .preview-B .byline-strip em { font-family: 'Fraunces'; font-style: italic; text-transform: none; letter-spacing: 0.02em; font-size: 9px; font-weight: 400; }
+
+  /* Preview: Physical */
+  .preview-C { background: #0B0B10; background-image: radial-gradient(ellipse at top left, rgba(91, 139, 255, 0.08) 0%, transparent 50%); }
+  .preview-C .phys { padding: 14px; height: 100%; display: grid; grid-template-columns: 50px 1fr 90px; gap: 10px; }
+  .preview-C .phys-nav { display: flex; flex-direction: column; gap: 4px; }
+  .preview-C .phys-nav-item { font-family: 'Inter'; font-size: 8px; color: #A8A8B4; padding: 4px 6px; border-radius: 4px; }
+  .preview-C .phys-nav-item.on { background: #18181F; color: #F5F5F7; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.4); }
+  .preview-C .phys-main { display: flex; flex-direction: column; gap: 8px; }
+  .preview-C .phys-card { background: linear-gradient(180deg, #18181F 0%, #13131A 100%); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .preview-C .phys-card-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .phys-card-t { font-family: 'Inter'; font-size: 9px; font-weight: 600; color: #F5F5F7; }
+  .phys-card-s { font-family: 'JetBrains Mono', monospace; font-size: 7px; color: #5B8BFF; border: 1px solid #5B8BFF; border-radius: 999px; padding: 1px 6px; }
+  .preview-C .phys-dial { display: flex; gap: 10px; align-items: center; }
+  .preview-C .phys-dial-knob { width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #252532 0%, #0F0F15 70%); position: relative; box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+  .preview-C .phys-dial-knob::before { content: ''; position: absolute; top: 4px; width: 2px; height: 6px; background: #5B8BFF; box-shadow: 0 0 4px rgba(91, 139, 255, 0.6); }
+  .preview-C .phys-opts { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .preview-C .phys-opt { font-family: 'Inter'; font-size: 8px; color: #A8A8B4; padding: 2px 4px; border-radius: 3px; }
+  .preview-C .phys-opt.on { background: #1E1E27; color: #F5F5F7; }
+  .preview-C .phys-steppers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .preview-C .phys-stepper { height: 36px; background: linear-gradient(180deg, #22222C 0%, #15151D 100%); border-radius: 4px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.4); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .preview-C .phys-stepper::before { content: ''; position: absolute; inset: 0; background-image: repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 4px); }
+  .preview-C .phys-stepper::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(91, 139, 255, 0.5); }
+  .preview-C .phys-stepper span { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #F5F5F7; font-weight: 500; z-index: 2; }
+  .preview-C .phys-gauge { width: 72px; height: 72px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #1E1E28 0%, #0C0C12 70%); box-shadow: inset 0 2px 0 rgba(255,255,255,0.05), 0 6px 16px rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; margin: 4px auto; }
+  .preview-C .phys-gauge svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .preview-C .phys-gauge-v { font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #F5F5F7; font-weight: 500; z-index: 2; letter-spacing: -0.02em; }
+  .preview-C .phys-right { display: flex; flex-direction: column; gap: 8px; }
+  .preview-C .phys-right-label { font-family: 'Inter'; font-size: 7px; color: #6C6C78; letter-spacing: 0.22em; text-transform: uppercase; text-align: center; font-weight: 600; }
+  .preview-C .phys-mini { background: linear-gradient(180deg, #1E1E27 0%, #13131A 100%); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 6px; text-align: center; }
+  .preview-C .phys-mini-k { font-family: 'Inter'; font-size: 6px; color: #6C6C78; letter-spacing: 0.15em; text-transform: uppercase; }
+  .preview-C .phys-mini-v { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #5B8BFF; font-weight: 500; margin-top: 2px; text-shadow: 0 0 6px rgba(91, 139, 255, 0.5); }
+  .preview-C .dock-strip { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); padding: 4px 8px; background: rgba(24, 24, 31, 0.92); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 8px; backdrop-filter: blur(10px); display: flex; gap: 4px; align-items: center; font-family: 'Inter'; font-size: 8px; color: #F5F5F7; }
+  .preview-C .dock-strip-btn { padding: 3px 8px; border-radius: 4px; background: linear-gradient(180deg, #5B8BFF 0%, #3D6FDD 100%); color: white; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 10px rgba(91, 139, 255, 0.4); }
+  .preview-C .dock-strip-led { width: 5px; height: 5px; border-radius: 50%; background: #34D399; box-shadow: 0 0 4px #34D399; }
+
+  /* tldr */
+  .tldr { margin-top: 80px; padding: 32px; border: 1px solid var(--hairline); border-radius: 16px; background: var(--panel); }
+  .tldr h3 { font-family: 'Fraunces', serif; font-weight: 400; font-size: 24px; margin-bottom: 14px; letter-spacing: -0.015em; }
+  .tldr h3 em { font-style: italic; color: var(--accent); }
+  .tldr p { font-size: 14px; line-height: 1.6; color: var(--ink-dim); margin-bottom: 10px; }
+  .tldr p strong { color: var(--ink); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="hero-kicker">Three directions · April 2026</div>
+    <h1 class="hero-h1">Ortus Outreach, <em>reimagined</em>.</h1>
+    <p class="hero-sub">Three takes on the same product, each punching for a different kind of quiet prestige. The information architecture is identical — only the rhythm and register change. Click any tile to open the sketch.</p>
+  </header>
+
+  <div class="grid">
+
+    <!-- A -->
+    <a class="card" href="redesign-A-mission-control.html">
+      <div class="card-preview preview-A">
+        <div class="grid-lines">
+          <div class="strip">
+            <div class="strip-label">CH 01</div>
+            <div class="strip-lane"><i style="height:40%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:85%"></i><i style="height:65%"></i><i style="height:90%"></i><i style="height:45%"></i><i style="height:75%"></i></div>
+            <div class="strip-label" style="margin-top:6px">CH 02</div>
+            <div class="strip-lane"><i style="height:55%"></i><i style="height:80%"></i><i style="height:40%"></i><i style="height:65%"></i><i style="height:75%"></i><i style="height:50%"></i><i style="height:85%"></i><i style="height:45%"></i></div>
+            <div class="strip-label" style="margin-top:6px">CH 03</div>
+            <div class="strip-lane"><i style="height:60%"></i><i style="height:45%"></i><i style="height:80%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:65%"></i><i style="height:75%"></i></div>
+            <div class="strip-label" style="margin-top:6px">CH 04</div>
+            <div class="strip-lane"><i style="height:30%;background:#FF5A5A"></i><i style="height:40%;background:#FF5A5A"></i><i style="height:20%;background:#FF5A5A"></i><i style="height:15%;background:#FF5A5A"></i><i style="height:10%;background:#FF5A5A"></i><i style="height:10%;background:#FF5A5A"></i><i style="height:10%;background:#FF5A5A"></i><i style="height:10%;background:#FF5A5A"></i></div>
+          </div>
+          <div class="main-panel">
+            <div class="big-num">280 <span style="font-size:10px; color:#6A7970; letter-spacing:0.2em">TOTAL OPS</span></div>
+            <div class="mode-row">
+              <div class="mode-cell on">01<br>CONN</div>
+              <div class="mode-cell">02<br>CHK</div>
+              <div class="mode-cell">03<br>MSG</div>
+              <div class="mode-cell">04<br>IM</div>
+              <div class="mode-cell">05<br>OP</div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px">
+              <div class="tile"><div class="tile-k">RATE</div><div class="tile-v">42 / HR</div></div>
+              <div class="tile"><div class="tile-k">DUR</div><div class="tile-v">4h 48</div></div>
+              <div class="tile"><div class="tile-k">ETA</div><div class="tile-v">19:20</div></div>
+            </div>
+          </div>
+          <div class="telem">
+            <div class="tile"><div class="tile-k">RATE</div><div class="tile-v">42</div></div>
+            <div class="tile"><div class="tile-k">ACCEPT</div><div class="tile-v">34.8%</div></div>
+            <div class="tile"><div class="tile-k">ERR</div><div class="tile-v" style="color:#FFB547; text-shadow:0 0 6px rgba(255,181,71,0.5)">2.1</div></div>
+            <div class="tile"><div class="tile-k">CREDIT</div><div class="tile-v">18 / 40</div></div>
+          </div>
+        </div>
+        <div class="ticker-strip">
+          <span>CH01</span>connect ok · gianna.r
+          <span>CH02</span>connect ok · marco.l
+          <span>CH05</span>connect ok · paul.m
+          <span style="color:#FFB547">CH04</span>reauth
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-tag">A · Mission Control</div>
+        <h2 class="card-title">Fly the <em>outreach.</em></h2>
+        <div class="card-lede">SpaceX Dragon console meets Bloomberg terminal.</div>
+        <p>Near-black surface, phosphor-green as data (never decoration). Accounts are <strong>channel strips</strong> with live waveforms. Numbers timestamped to the second. Bottom scrolls like a stock ticker.</p>
+        <p>Feels like something <strong>flown</strong>, not clicked. Best for operators who want to watch every lane at once.</p>
+        <div class="card-foot">
+          <span class="card-meta">IBM PLEX MONO · PHOSPHOR #3FEA8B</span>
+          <a>Open sketch →</a>
+        </div>
+      </div>
+    </a>
+
+    <!-- B -->
+    <a class="card" href="redesign-B-editorial.html">
+      <div class="card-preview preview-B">
+        <div class="paper">
+          <div class="edit-mast">
+            <div class="edit-mast-top">Ortus // Issue 042 · April 2026</div>
+            <div class="edit-wordmark">Ortus <em>Outreach</em></div>
+          </div>
+          <div class="edit-body">
+            <div class="edit-folio">
+              <div class="on"><span>Dispatch</span><em>I</em></div>
+              <div><span>Envelope</span><em>II</em></div>
+              <div><span>Ledger</span><em>III</em></div>
+              <div><span>Roster</span><em>IV</em></div>
+              <div><span>Note</span><em>V</em></div>
+              <div><span>Press</span><em>VI</em></div>
+            </div>
+            <div class="edit-col">
+              <div class="edit-numeral">II.</div>
+              <div class="edit-h">Slow is a <em>feature.</em></div>
+              <div class="edit-stand">Pick a pace you could keep for a quarter, and the numbers find you.</div>
+              <div class="edit-btn-row">
+                <div><div class="edit-bn-k">Total</div><div class="edit-bn-v"><em>280</em></div></div>
+                <div><div class="edit-bn-k">Takes</div><div class="edit-bn-v">4<em>h</em>48</div></div>
+                <div><div class="edit-bn-k">Ends</div><div class="edit-bn-v">19:20</div></div>
+              </div>
+            </div>
+            <div class="edit-right">
+              <div class="edit-right-t">Tonight</div>
+              <div class="edit-right-h">Primera, Q2 Outreach</div>
+              <div class="edit-right-t">Count</div>
+              <div class="edit-right-big"><em>112</em></div>
+              <div style="font-family:'Fraunces'; font-style:italic; font-size:7px; color:#8C8376; margin-top:2px">of 280 · steady</div>
+              <div class="edit-right-t" style="margin-top:8px">Passover</div>
+              <div style="font-family:'Fraunces'; font-weight:500; font-size:10px; color:#7A2D2D">Open</div>
+            </div>
+          </div>
+        </div>
+        <div class="byline-strip">
+          <span>● IN PRESS · <em>Primera</em> · T+01:24</span>
+          <span>Dispatch →</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-tag">B · Editorial</div>
+        <h2 class="card-title">Publish the <em>edition.</em></h2>
+        <div class="card-lede">A Monocle magazine that happens to run LinkedIn campaigns.</div>
+        <p>Warm cream paper, single oxblood accent, <strong>Fraunces serif</strong> throughout. Sections become articles with drop caps, standfirsts, pull-quotes. Launch is a letterpress dispatch button.</p>
+        <p>Stops feeling like software, starts feeling like you're <strong>publishing an edition</strong>. The biggest tonal leap from today — nobody in outreach looks like this.</p>
+        <div class="card-foot">
+          <span class="card-meta">FRAUNCES · OXBLOOD #7A2D2D · CREAM</span>
+          <a>Open sketch →</a>
+        </div>
+      </div>
+    </a>
+
+    <!-- C -->
+    <a class="card" href="redesign-C-physical.html">
+      <div class="card-preview preview-C">
+        <div class="phys">
+          <div class="phys-nav">
+            <div class="phys-nav-item on">01 Mode</div>
+            <div class="phys-nav-item">02 Rate</div>
+            <div class="phys-nav-item">03 Sheet</div>
+            <div class="phys-nav-item">04 Accts</div>
+            <div class="phys-nav-item">05 Tmpl</div>
+            <div class="phys-nav-item">06 Launch</div>
+          </div>
+          <div class="phys-main">
+            <div class="phys-card">
+              <div class="phys-card-h">
+                <div class="phys-card-t">Mode</div>
+                <div class="phys-card-s">● CONNECT</div>
+              </div>
+              <div class="phys-dial">
+                <div class="phys-dial-knob"></div>
+                <div class="phys-opts">
+                  <div class="phys-opt on">01 Connect</div>
+                  <div class="phys-opt">02 Verify</div>
+                  <div class="phys-opt">03 Message</div>
+                  <div class="phys-opt">04 InMail</div>
+                </div>
+              </div>
+            </div>
+            <div class="phys-card">
+              <div class="phys-card-h">
+                <div class="phys-card-t">Rate &amp; limits</div>
+                <div class="phys-card-s">NOMINAL</div>
+              </div>
+              <div class="phys-steppers">
+                <div class="phys-stepper"><span>06</span></div>
+                <div class="phys-stepper"><span>40</span></div>
+                <div class="phys-stepper"><span>60</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="phys-right">
+            <div class="phys-right-label">Today</div>
+            <div class="phys-gauge">
+              <svg viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="4"/>
+                <circle cx="50" cy="50" r="40" fill="none" stroke="#5B8BFF" stroke-width="4" stroke-linecap="round" stroke-dasharray="156 251" filter="drop-shadow(0 0 4px rgba(91, 139, 255, 0.8))"/>
+              </svg>
+              <div class="phys-gauge-v">62%</div>
+            </div>
+            <div class="phys-mini">
+              <div class="phys-mini-k">Rate</div>
+              <div class="phys-mini-v">42</div>
+            </div>
+            <div class="phys-mini">
+              <div class="phys-mini-k">Accept</div>
+              <div class="phys-mini-v">34.8%</div>
+            </div>
+          </div>
+        </div>
+        <div class="dock-strip">
+          <div class="dock-strip-led"></div>
+          <span>Running · T+01:24</span>
+          <div class="dock-strip-btn">Launch ↵</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-tag">C · Physical Device</div>
+        <h2 class="card-title">Hold the <em>hardware.</em></h2>
+        <div class="card-lede">The app feels like a piece of hardware sitting on your desk.</div>
+        <p>Linear × Arc × Teenage Engineering. Real depth. Panels have weight, <strong>knurled steppers</strong>, analog dials, buttons that depress. Electric-blue accent used for state.</p>
+        <p>Micro-motion everywhere — numbers roll, panels breathe, the run bar pulses. Feels <strong>alive without being busy</strong>. The most "app-like" of the three; ages best.</p>
+        <div class="card-foot">
+          <span class="card-meta">INTER · JB MONO · ELECTRIC #5B8BFF</span>
+          <a>Open sketch →</a>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <div class="tldr">
+    <h3>How to <em>read these.</em></h3>
+    <p>Each sketch keeps the current information architecture exactly as it is — <strong>Settings → Rate → Sheet → Accounts → Templates → Launch → Live Status</strong>. Only the register changes: the typography, the metaphor, the way a running campaign feels under your hands.</p>
+    <p><strong>A (Mission Control)</strong> is closest in spirit to today's monochrome deck — a natural evolution. <strong>B (Editorial)</strong> is the boldest tonal leap and probably the most ownable position. <strong>C (Physical)</strong> is the most conventionally "app"-like and likely the safest bet commercially.</p>
+    <p style="color: var(--ink); font-weight: 500">Pick one, pick two, or ask for a hybrid — the sketches are a forcing function for the decision, not the final build.</p>
+  </div>
+
+</div>
+</body>
+</html>

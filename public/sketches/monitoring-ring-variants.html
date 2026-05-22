@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Monitoring ring — countdown variants</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --green: #3fb950;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 48px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 22px;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    color: var(--gray);
+    font-size: 13px;
+    margin-bottom: 40px;
+    max-width: 720px;
+    line-height: 1.5;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 36px;
+    max-width: 1320px;
+  }
+  .card {
+    border: 1px solid var(--hairline);
+    padding: 32px 24px;
+    background: #fff;
+  }
+  .card-title {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+  .card-desc {
+    font-size: 12px;
+    color: var(--gray);
+    margin-bottom: 28px;
+    min-height: 32px;
+    line-height: 1.4;
+  }
+
+  /* The cockpit-style row: ring on left, label block on right */
+  .cockpit-row {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 16px 0;
+  }
+  .label-block {
+    flex: 1;
+    min-width: 0;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: #2a7a35;
+    margin-bottom: 8px;
+  }
+  .status-pill::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+  .label-block h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    margin-bottom: 12px;
+  }
+  .label-block .meta {
+    font-size: 12px;
+    color: var(--gray);
+    line-height: 1.7;
+  }
+  .label-block .meta b { color: var(--ink); font-weight: 400; }
+  .label-block .meta .row { display: flex; gap: 10px; }
+  .label-block .meta .row span:first-child {
+    width: 60px;
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--gray);
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     Ring base — green dashed circle (matches current production ring)
+     ───────────────────────────────────────────────────────────── */
+  .ring {
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    border: 4px dashed var(--green);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    flex-shrink: 0;
+    padding: 8px;
+  }
+  .ring .big {
+    font-family: var(--display);
+    font-weight: 400;
+    line-height: 0.95;
+    letter-spacing: 0.01em;
+    color: var(--ink);
+  }
+  .ring .small {
+    font-family: var(--display);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--gray);
+    margin-top: 2px;
+  }
+
+  /* ─────────── A: countdown big, days tiny footer ─────────── */
+  .ring-a .big { font-size: 38px; }
+  .ring-a .label { font-size: 9px; letter-spacing: 0.15em; color: var(--gray); margin-top: 4px; }
+  .ring-a .footer { font-size: 12px; color: var(--ink); margin-top: 6px; opacity: 0.6; }
+
+  /* ─────────── B: stacked — next on top, hairline divider, window below ─────────── */
+  .ring-b .big { font-size: 32px; }
+  .ring-b .divider {
+    width: 60%;
+    height: 1px;
+    background: var(--hairline);
+    margin: 6px 0;
+  }
+  .ring-b .secondary {
+    font-family: var(--display);
+    font-size: 14px;
+    color: var(--gray);
+    letter-spacing: 0.04em;
+  }
+
+  /* ─────────── C: progress-arc ring (depleting) + center number ─────────── */
+  .ring-c-wrap {
+    position: relative;
+    width: 130px;
+    height: 130px;
+    flex-shrink: 0;
+  }
+  .ring-c-wrap svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+  .ring-c-wrap .center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .ring-c-wrap .center .big {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 38px;
+    line-height: 0.95;
+  }
+  .ring-c-wrap .center .footer {
+    font-size: 11px;
+    color: var(--gray);
+    letter-spacing: 0.08em;
+    margin-top: 4px;
+  }
+
+  /* Show the user the production version for comparison */
+  .ring-current { border-style: dashed; }
+  .ring-current .big { font-size: 22px; }
+
+  .legend {
+    margin-top: 28px;
+    padding: 16px;
+    border: 1px solid var(--hairline-soft);
+    background: #fff;
+    font-size: 12px;
+    color: var(--gray);
+    line-height: 1.6;
+  }
+  .legend b { color: var(--ink); font-weight: 400; }
+</style>
+</head>
+<body>
+
+<h1>Monitoring Ring — Countdown Variants</h1>
+<p class="subtitle">
+Current production ring (top-left) shows the 7-day window as the headline figure.
+Operator feedback: the live countdown to next check is what matters minute-to-minute,
+not the slowly-changing window-left figure. Three variants flip the emphasis.
+</p>
+
+<div class="grid">
+
+  <!-- ─── Current production (for comparison) ─── -->
+  <div class="card">
+    <div class="card-title">CURRENT (PROD)</div>
+    <div class="card-desc">7-day window dominant, next check buried in side meta. The live countdown lives only in "in 6m" sub-text on the right.</div>
+    <div class="cockpit-row">
+      <div class="ring ring-current">
+        <div class="big">6D 23H</div>
+        <div class="small">WINDOW LEFT</div>
+      </div>
+      <div class="label-block">
+        <div class="status-pill">MONITORING</div>
+        <h2>WATCHING FOR ACCEPTANCES</h2>
+        <div class="meta">
+          <div class="row"><span>NEXT CHECK</span><span>16:21 · in 6m</span></div>
+          <div class="row"><span>ENDS</span><span>22 May, 16:06 · in 6d 23h</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── A: countdown headline, window as tiny footer ─── -->
+  <div class="card">
+    <div class="card-title">A · LIVE COUNTDOWN, WINDOW FOOTER</div>
+    <div class="card-desc">Big number = countdown to next check. Window-left shrinks to a single line under the label. Minimal change, maximum emphasis swap.</div>
+    <div class="cockpit-row">
+      <div class="ring ring-a">
+        <div class="big">6m</div>
+        <div class="label">NEXT CHECK</div>
+        <div class="footer">6d 23h</div>
+      </div>
+      <div class="label-block">
+        <div class="status-pill">MONITORING</div>
+        <h2>WATCHING FOR ACCEPTANCES</h2>
+        <div class="meta">
+          <div class="row"><span>NEXT CHECK</span><span>16:21 · in 6m</span></div>
+          <div class="row"><span>ENDS</span><span>22 May, 16:06 · in 6d 23h</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── B: stacked, hairline divider, two figures coequal ─── -->
+  <div class="card">
+    <div class="card-title">B · STACKED · HAIRLINE DIVIDER</div>
+    <div class="card-desc">Live countdown on top, hairline divider, window-left below at half size. Both still legible at a glance.</div>
+    <div class="cockpit-row">
+      <div class="ring ring-b">
+        <div class="big">6m</div>
+        <div class="divider"></div>
+        <div class="secondary">6d 23h</div>
+      </div>
+      <div class="label-block">
+        <div class="status-pill">MONITORING</div>
+        <h2>WATCHING FOR ACCEPTANCES</h2>
+        <div class="meta">
+          <div class="row"><span>NEXT CHECK</span><span>16:21 · in 6m</span></div>
+          <div class="row"><span>ENDS</span><span>22 May, 16:06 · in 6d 23h</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── C: progress arc + center number ─── -->
+  <div class="card">
+    <div class="card-title">C · ANIMATED PROGRESS ARC</div>
+    <div class="card-desc">Solid (not dashed) ring arc visually depletes as the next-check countdown ticks down. Center stays big "6m"; window-left as small footer inside the ring.</div>
+    <div class="cockpit-row">
+      <div class="ring-c-wrap">
+        <svg viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(0,0,0,0.06)" stroke-width="4"></circle>
+          <!-- 60% remaining arc -->
+          <circle cx="50" cy="50" r="46" fill="none" stroke="#3fb950" stroke-width="4"
+                  stroke-dasharray="289" stroke-dashoffset="115" stroke-linecap="round"></circle>
+        </svg>
+        <div class="center">
+          <div class="big">6m</div>
+          <div class="footer">6d 23h</div>
+        </div>
+      </div>
+      <div class="label-block">
+        <div class="status-pill">MONITORING</div>
+        <h2>WATCHING FOR ACCEPTANCES</h2>
+        <div class="meta">
+          <div class="row"><span>NEXT CHECK</span><span>16:21 · in 6m</span></div>
+          <div class="row"><span>ENDS</span><span>22 May, 16:06 · in 6d 23h</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <p><b>How the number updates:</b> ticks once per second when ≤ 1 min ("in 45s"), once per minute when &lt; 1 h ("in 6m"), once per 10 min when ≥ 1 h ("in 1h 23m"). Pure read of <code>nextCheckAt − now</code>.</p>
+  <p style="margin-top: 6px;"><b>Format:</b> A and B render "6m" / "1h 23m" / "45s" (text). C adds a depleting arc — but requires a 1Hz redraw when the value is &lt; 1 min, which is more JS cost.</p>
+</div>
+
+</body>
+</html>

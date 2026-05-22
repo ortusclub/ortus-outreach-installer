@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chips overhaul — A/B/C/D</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --gold: #F7BE68;
+    --red: #f85149;
+    --amber: #b9770e;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 48px 56px 120px;
+    -webkit-font-smoothing: antialiased;
+    font-weight: 400;
+  }
+
+  /* Page header */
+  .page-head { display: flex; align-items: baseline; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.6rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+
+  /* Variant heading */
+  .variant { margin-bottom: 64px; }
+  .variant-head { display: flex; align-items: baseline; gap: 18px; margin-bottom: 6px; }
+  .variant-letter { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; line-height: 1; }
+  .variant-name { font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink); }
+  .variant-desc { font-size: 0.85rem; color: var(--gray); margin-bottom: 22px; max-width: 760px; line-height: 1.5; }
+  .variant-pros { font-size: 0.7rem; letter-spacing: 0.04em; color: var(--gray); margin-bottom: 22px; }
+  .variant-pros b { color: var(--ink); font-weight: 500; }
+
+  /* Fleet block — matches .account-queue */
+  .fleet {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--hairline);
+    background: transparent;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto minmax(0, 1.6fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .row-num { font-size: 0.6rem; letter-spacing: 0.1em; color: var(--gray); text-align: right; }
+  .row-name { font-family: var(--display); font-size: 1rem; letter-spacing: 0.02em; }
+  .row.is-done .row-name { color: var(--gray); text-decoration: line-through; }
+
+  /* Chip — neutral base */
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    color: var(--gray);
+    white-space: nowrap;
+  }
+  .chip-running { color: var(--ink); border-color: var(--ink); }
+  .chip-done    { color: var(--gray-2); border-color: var(--hairline); }
+  .chip-attn    { color: var(--amber); border-color: rgba(185, 119, 14, 0.55); }
+  .chip-stop    { color: var(--gray); border-color: var(--hairline); }
+  .chip-block   { color: #c0392b; border-color: rgba(192, 57, 43, 0.5); }
+
+  /* Detail text */
+  .detail { font-size: 0.62rem; letter-spacing: 0.04em; color: var(--gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .detail-action { color: var(--amber); }
+
+  /* Action button */
+  .btn-ghost {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    font-family: var(--mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-ghost:hover { border-color: var(--ink); }
+
+  /* Reason chip (variant C) — wider, lowercase-friendly */
+  .chip-wide {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    padding: 4px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    color: var(--gray);
+    white-space: nowrap;
+    text-transform: none;
+  }
+  .chip-wide.is-running { color: var(--ink); border-color: var(--ink); }
+  .chip-wide.is-attn    { color: var(--amber); border-color: rgba(185, 119, 14, 0.55); }
+  .chip-wide.is-done    { color: var(--gray-2); }
+  .chip-wide.is-block   { color: #c0392b; border-color: rgba(192, 57, 43, 0.5); }
+
+  /* Variant D callout */
+  .callout {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 14px;
+    border: 1px solid rgba(185, 119, 14, 0.55);
+    border-radius: 0;
+    margin-bottom: 14px;
+  }
+  .callout-tag { font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--amber); }
+  .callout-body { font-size: 0.78rem; color: var(--ink); flex: 1; }
+  .callout-body b { font-family: var(--display); font-weight: 400; letter-spacing: 0.02em; }
+
+  /* Legend (? icon + popover always-open for the sketch) */
+  .legend-wrap { display: flex; gap: 22px; align-items: flex-start; margin-top: 18px; }
+  .help-ico {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border: 1px solid var(--hairline);
+    border-radius: 9999px; color: var(--gray);
+    font-size: 0.65rem; cursor: help; flex-shrink: 0;
+  }
+  .legend {
+    border: 1px solid var(--hairline);
+    padding: 14px 18px;
+    font-size: 0.7rem;
+    color: var(--ink);
+    flex: 1;
+    max-width: 720px;
+  }
+  .legend-head {
+    font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray);
+    margin-bottom: 10px;
+  }
+  .legend-row { display: grid; grid-template-columns: 130px 1fr; gap: 14px; align-items: center; padding: 5px 0; }
+  .legend-row + .legend-row { border-top: 1px solid var(--hairline-soft); }
+
+  /* nav between variants */
+  .topnav { position: sticky; top: 0; background: var(--bg); padding: 14px 0 14px; border-bottom: 1px solid var(--hairline); margin: -14px -56px 32px; padding-left: 56px; padding-right: 56px; z-index: 10; display: flex; gap: 22px; }
+  .topnav a { color: var(--gray); text-decoration: none; font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; }
+  .topnav a:hover { color: var(--ink); }
+
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <a href="#A">A · Lifecycle only</a>
+  <a href="#B">B · Status + Reason</a>
+  <a href="#C">C · Reason-first</a>
+  <a href="#D">D · Callout lane</a>
+  <a href="#legend">Legend</a>
+</div>
+
+<div class="page-head">
+  <div class="page-title">Chips Overhaul</div>
+  <div class="page-sub">Fleet status taxonomy · 4 variants · pick one</div>
+</div>
+
+<!-- ─── A ────────────────────────────────────────────────────────────────── -->
+<section class="variant" id="A">
+  <div class="variant-head">
+    <div class="variant-letter">A</div>
+    <div class="variant-name">Lifecycle only · reason as text</div>
+  </div>
+  <div class="variant-desc">
+    One pill per row, only carries the state (Queued / Sending / Stopped). Any
+    reason (limit hit, login needed, batch done) is plain text in the detail
+    column. Cleanest visual, but "Stopped" alone doesn't tell you if action is
+    needed.
+  </div>
+
+  <div class="fleet">
+    <div class="row is-running">
+      <span class="row-num">1</span>
+      <span class="row-name">LOUISA.VILLARIZA@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-running">Sending</span>
+      <span class="detail">18 / 50 · 2m ago</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">2</span>
+      <span class="row-name">HANNAH.SAMSON@ORTUS.SOLUTIONS</span>
+      <span class="chip">Queued</span>
+      <span class="detail"></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">3</span>
+      <span class="row-name">ABI.AGUSTIN@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-stop">Stopped</span>
+      <span class="detail">LinkedIn weekly cap (~100/wk)</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">4</span>
+      <span class="row-name">LHUZ.D@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-attn">Stopped</span>
+      <span class="detail detail-action">Needs login</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">5</span>
+      <span class="row-name">ANKIT.RATHOR@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-done">Stopped</span>
+      <span class="detail">Batch complete · 50/50</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+  </div>
+
+  <div class="variant-pros">
+    <b>Strength:</b> visually quietest · matches existing layout exactly · easy to ship&nbsp;&nbsp;&nbsp;
+    <b>Weakness:</b> "Stopped" is overloaded — operator must read detail to know if action is needed
+  </div>
+</section>
+
+<!-- ─── B ────────────────────────────────────────────────────────────────── -->
+<section class="variant" id="B">
+  <div class="variant-head">
+    <div class="variant-letter">B</div>
+    <div class="variant-name">Two pills · status + reason · amber accent on action</div>
+  </div>
+  <div class="variant-desc">
+    Status pill stays neutral. A second reason pill carries the only non-neutral
+    color (amber) when operator action is needed. Easier to scan a long fleet
+    for "what needs me" at a glance.
+  </div>
+
+  <div class="fleet">
+    <div class="row is-running">
+      <span class="row-num">1</span>
+      <span class="row-name">LOUISA.VILLARIZA@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-running">Sending</span>
+      <span class="detail"><span class="chip">18 / 50</span></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">2</span>
+      <span class="row-name">HANNAH.SAMSON@ORTUS.SOLUTIONS</span>
+      <span class="chip">Queued</span>
+      <span class="detail"></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">3</span>
+      <span class="row-name">ABI.AGUSTIN@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-done">Done</span>
+      <span class="detail"><span class="chip">LinkedIn weekly cap</span></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">4</span>
+      <span class="row-name">LHUZ.D@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-attn">Action</span>
+      <span class="detail"><span class="chip chip-attn">Needs login</span></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">5</span>
+      <span class="row-name">ANKIT.RATHOR@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-done">Done</span>
+      <span class="detail"><span class="chip">Batch · 50 / 50</span></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+  </div>
+
+  <div class="variant-pros">
+    <b>Strength:</b> "needs me" jumps out (the only amber row) · scales to many accounts&nbsp;&nbsp;&nbsp;
+    <b>Weakness:</b> two pills per row is more visual noise · slight tension with monochrome rule
+  </div>
+</section>
+
+<!-- ─── C ────────────────────────────────────────────────────────────────── -->
+<section class="variant" id="C">
+  <div class="variant-head">
+    <div class="variant-letter">C</div>
+    <div class="variant-name">Reason-first · the chip IS the message</div>
+  </div>
+  <div class="variant-desc">
+    No abstract state words. The chip says exactly what happened or what to do —
+    "Sending 18/50", "LinkedIn weekly cap", "Needs login". No glossary needed.
+    Chips vary in width which makes the fleet look slightly less grid-like, but
+    nothing is ambiguous.
+  </div>
+
+  <div class="fleet">
+    <div class="row is-running">
+      <span class="row-num">1</span>
+      <span class="row-name">LOUISA.VILLARIZA@ORTUS.SOLUTIONS</span>
+      <span class="chip-wide is-running">Sending · 18 / 50</span>
+      <span class="detail">2m ago · Katie Le Cras</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">2</span>
+      <span class="row-name">HANNAH.SAMSON@ORTUS.SOLUTIONS</span>
+      <span class="chip-wide">Waiting in queue</span>
+      <span class="detail"></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">3</span>
+      <span class="row-name">ABI.AGUSTIN@ORTUS.SOLUTIONS</span>
+      <span class="chip-wide is-done">LinkedIn weekly cap</span>
+      <span class="detail">Stops sending until next Mon</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">4</span>
+      <span class="row-name">LHUZ.D@ORTUS.SOLUTIONS</span>
+      <span class="chip-wide is-attn">Needs login</span>
+      <span class="detail">Session expired</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">5</span>
+      <span class="row-name">ANKIT.RATHOR@ORTUS.SOLUTIONS</span>
+      <span class="chip-wide is-done">Batch complete · 50 / 50</span>
+      <span class="detail">Resumes next run</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+  </div>
+
+  <div class="variant-pros">
+    <b>Strength:</b> zero translation — the chip explains itself · best for boss reading it cold&nbsp;&nbsp;&nbsp;
+    <b>Weakness:</b> chip widths vary · longer chips mean less room for detail column
+  </div>
+</section>
+
+<!-- ─── D ────────────────────────────────────────────────────────────────── -->
+<section class="variant" id="D">
+  <div class="variant-head">
+    <div class="variant-letter">D</div>
+    <div class="variant-name">Callout lane · "needs you" pulled above the fleet</div>
+  </div>
+  <div class="variant-desc">
+    Rows go back to simple lifecycle chips. Anything actionable — login needed,
+    rate limit page hit, captcha — is hoisted into a dedicated callout strip
+    above the fleet. The boss never has to scan all 5 rows to find what's
+    blocking him; the alert finds him.
+  </div>
+
+  <div class="callout">
+    <span class="callout-tag">▲ Needs you</span>
+    <span class="callout-body"><b>Lhuz.D</b> · session expired — log in to GoLogin browser</span>
+    <button class="btn-ghost">Open browser</button>
+  </div>
+
+  <div class="fleet">
+    <div class="row is-running">
+      <span class="row-num">1</span>
+      <span class="row-name">LOUISA.VILLARIZA@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-running">Sending</span>
+      <span class="detail">18 / 50 · 2m ago</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">2</span>
+      <span class="row-name">HANNAH.SAMSON@ORTUS.SOLUTIONS</span>
+      <span class="chip">Queued</span>
+      <span class="detail"></span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">3</span>
+      <span class="row-name">ABI.AGUSTIN@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-done">Done</span>
+      <span class="detail">LinkedIn weekly cap</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row">
+      <span class="row-num">4</span>
+      <span class="row-name">LHUZ.D@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-attn">Action</span>
+      <span class="detail detail-action">↑ see callout above</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+    <div class="row is-done">
+      <span class="row-num">5</span>
+      <span class="row-name">ANKIT.RATHOR@ORTUS.SOLUTIONS</span>
+      <span class="chip chip-done">Done</span>
+      <span class="detail">Batch · 50 / 50</span>
+      <span><button class="btn-ghost">Open browser</button></span>
+    </div>
+  </div>
+
+  <div class="variant-pros">
+    <b>Strength:</b> actionable items can't be missed even with 10+ accounts&nbsp;&nbsp;&nbsp;
+    <b>Weakness:</b> double-surfaces the same fact (row + callout) · more UI to build
+  </div>
+</section>
+
+<!-- ─── Legend ──────────────────────────────────────────────────────────── -->
+<section class="variant" id="legend">
+  <div class="variant-head">
+    <div class="variant-letter">?</div>
+    <div class="variant-name">Legend behind a help icon · same on every variant</div>
+  </div>
+  <div class="variant-desc">
+    Small <span class="help-ico">?</span> icon next to the "ACCOUNT QUEUE" label
+    in the main UI. Hover/click opens this card. Same content regardless of
+    which chip system we ship — it's just the glossary.
+  </div>
+
+  <div class="legend-wrap">
+    <span class="help-ico" style="margin-top:8px">?</span>
+    <div class="legend">
+      <div class="legend-head">Account status — what each label means</div>
+      <div class="legend-row">
+        <span class="chip">Queued</span>
+        <span class="detail" style="font-size:.7rem">Waiting its turn — will run when an earlier account finishes.</span>
+      </div>
+      <div class="legend-row">
+        <span class="chip chip-running">Sending</span>
+        <span class="detail" style="font-size:.7rem">Currently sending connection requests / messages.</span>
+      </div>
+      <div class="legend-row">
+        <span class="chip chip-done">Batch done</span>
+        <span class="detail" style="font-size:.7rem">Account finished its target for this run (e.g. 50 / 50). Resumes next run.</span>
+      </div>
+      <div class="legend-row">
+        <span class="chip chip-done">LinkedIn cap</span>
+        <span class="detail" style="font-size:.7rem">LinkedIn imposed a limit (weekly invites, InMail credits). Won't resume until LinkedIn lifts it.</span>
+      </div>
+      <div class="legend-row">
+        <span class="chip chip-attn">Action</span>
+        <span class="detail" style="font-size:.7rem">You need to do something — usually log into the GoLogin browser or solve a CAPTCHA.</span>
+      </div>
+      <div class="legend-row">
+        <span class="chip chip-block">Parked</span>
+        <span class="detail" style="font-size:.7rem">Account taken out of rotation mid-run (too many skips, rate-limit page). "Try again" to put back.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

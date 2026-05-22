@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings · C — Speed preset tiers</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--ink:#fff;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--green:#3fb950;--red:#f85149;--gold:#F7BE68;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:56px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+.label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+h2{font-family:var(--d);font-weight:400;font-size:2.4rem;line-height:1;text-transform:uppercase;margin-bottom:32px}
+
+.section-label{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:36px}
+.tier{border:1px solid var(--hl);background:transparent;padding:24px 28px;cursor:pointer;text-align:left;transition:opacity 0.15s;color:inherit;font-family:inherit}
+.tier:hover{opacity:0.75}
+.tier.active{border-color:var(--ink)}
+.tier-title{font-family:var(--d);font-size:1.5rem;line-height:1;text-transform:uppercase;color:var(--ink)}
+.tier-rate{font-family:var(--d);font-size:3rem;line-height:1;color:var(--gold);margin:18px 0 4px}
+.tier.active .tier-rate{color:var(--gold)}
+.tier:not(.active) .tier-rate{color:var(--gray)}
+.tier-rate-unit{font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray)}
+.tier-desc{font-size:0.66rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);line-height:1.7;margin-top:16px}
+
+.limit-field{padding:28px 0;border-top:1px solid var(--hl);border-bottom:1px solid var(--hl);margin-bottom:28px}
+.limit-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}
+.limit-label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.limit-value{font-family:var(--d);font-size:3.6rem;line-height:1}
+.track{height:2px;background:var(--hl);position:relative}
+.fill{position:absolute;inset:0 auto 0 0;background:var(--ink);height:100%}
+.thumb{position:absolute;width:14px;height:14px;border-radius:9999px;background:var(--ink);top:50%;transform:translate(-50%,-50%)}
+
+.summary{display:flex;gap:32px;padding:24px 0;border-top:1px solid var(--hl);margin-bottom:16px}
+.summary-item{flex:1}
+.summary-k{font-size:0.58rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.summary-v{font-family:var(--d);font-size:2.2rem;line-height:1;margin-top:8px}
+.summary-v.accent{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction C</div>
+  <h2>Speed preset tiers</h2>
+
+  <div class="section-label">Rate · pick a pace</div>
+  <div class="tiers">
+    <button class="tier">
+      <div class="tier-title">Cautious</div>
+      <div class="tier-rate">3</div>
+      <div class="tier-rate-unit">per account / hour</div>
+      <div class="tier-desc">Safest · use for new accounts or suspect ones</div>
+    </button>
+    <button class="tier active">
+      <div class="tier-title">Standard</div>
+      <div class="tier-rate">6</div>
+      <div class="tier-rate-unit">per account / hour</div>
+      <div class="tier-desc">Default · balanced volume and risk for daily outreach</div>
+    </button>
+    <button class="tier">
+      <div class="tier-title">Aggressive</div>
+      <div class="tier-rate">12</div>
+      <div class="tier-rate-unit">per account / hour</div>
+      <div class="tier-desc">Max volume · healthy aged accounts only</div>
+    </button>
+  </div>
+
+  <div class="limit-field">
+    <div class="limit-head">
+      <span class="limit-label">Limit · max per account</span>
+      <span class="limit-value">40</span>
+    </div>
+    <div class="track"><div class="fill" style="width:40%"></div><div class="thumb" style="left:40%"></div></div>
+  </div>
+
+  <div class="summary">
+    <div class="summary-item"><div class="summary-k">Actions</div><div class="summary-v accent">40</div></div>
+    <div class="summary-item"><div class="summary-k">Duration</div><div class="summary-v">6h 40m</div></div>
+    <div class="summary-item"><div class="summary-k">Finishes</div><div class="summary-v">18:50</div></div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Past-row Resume button — label sketches</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Tokens lifted verbatim from public/css/style.css (Bugatti command deck). */
+:root {
+  --bg: #0a0a0a;
+  --bg-soft: rgba(255, 255, 255, 0.03);
+  --ink: #fafafa;
+  --gray: #999999;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --gold: #F7BE68;
+  --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+  --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+body.theme-light {
+  --bg: #fafafa;
+  --bg-soft: #faf9f7;
+  --ink: #0a0a0a;
+  --gray: #999999;
+  --hairline: rgba(0, 0, 0, 0.15);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 48px 56px 120px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Page chrome */
+.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; flex-wrap: wrap; }
+.page-title { font-family: var(--display); font-size: 2.6rem; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1; }
+.page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 8px; }
+.theme-pill { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 6px 14px; border: 1px solid var(--hairline); border-radius: 9999px; background: transparent; color: var(--ink); cursor: pointer; }
+.theme-pill:hover { border-color: var(--ink); }
+
+.variant { margin-bottom: 56px; }
+.variant-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 14px; }
+.variant-tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+.variant-title { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.variant-meta { font-size: 0.78rem; color: var(--gray); line-height: 1.55; max-width: 820px; margin-bottom: 18px; }
+.variant-meta b { color: var(--ink); font-weight: 500; }
+
+/* Replica of the real past-section list container */
+.dash-panel {
+  border: 1px solid var(--hairline);
+  background: transparent;
+}
+.panel-head {
+  padding: 14px 18px;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gray);
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.panel-head .count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 7px;
+  border-radius: 9999px;
+  border: 1px solid var(--gold); color: var(--gold);
+  font-size: 0.62rem; letter-spacing: 0.06em;
+}
+
+/* Past row replica — matches .campaign-row + .campaign-row--with-edit.campaign-row-clickable */
+.campaign-row {
+  display: grid;
+  grid-template-columns: auto 2fr 1.4fr 1.4fr auto auto auto auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--hairline);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.campaign-row:last-child { border-bottom: 0; }
+.campaign-row:hover { background-color: var(--hairline); }
+
+.past-row-checkbox {
+  appearance: none;
+  width: 14px; height: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+}
+.campaign-row-name { font-family: var(--display); font-size: 1rem; color: var(--ink); letter-spacing: 0.02em; }
+.campaign-row-type, .campaign-row-progress {
+  font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray);
+}
+.campaign-row-status {
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase;
+  padding: 4px 10px; border: 1px solid var(--hairline); border-radius: 9999px;
+  color: var(--gray); white-space: nowrap; justify-self: end;
+}
+.campaign-row-status.is-stopped { color: var(--gray); border-color: var(--hairline); }
+
+.campaign-row-edit {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--gray);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+.campaign-row-edit:hover { border-color: var(--ink); color: var(--ink); }
+
+/* Gold treatment (Resume = Start, per design system rule) */
+.campaign-row-edit.is-gold { color: var(--gold); border-color: var(--gold); }
+.campaign-row-edit.is-gold:hover { background: var(--gold); color: var(--bg); border-color: var(--gold); }
+
+/* Hairline treatment (subtle, non-CTA) — for comparison */
+.campaign-row-edit.is-hairline { color: var(--ink); border-color: var(--hairline); }
+.campaign-row-edit.is-hairline:hover { border-color: var(--ink); color: var(--ink); }
+
+.past-row-delete {
+  background: transparent; border: none; color: var(--gray);
+  font-size: 1.1rem; cursor: pointer; padding: 0 6px;
+}
+.past-row-delete:hover { color: var(--ink); }
+
+/* Special treatment — STOPPED chip becomes the action */
+.campaign-row-status.is-stopped-action {
+  color: var(--gold); border-color: var(--gold);
+  cursor: pointer; transition: background-color 0.15s, color 0.15s;
+}
+.campaign-row-status.is-stopped-action::after {
+  content: "  ▸ RESUME";
+  margin-left: 6px;
+}
+.campaign-row-status.is-stopped-action:hover {
+  background: var(--gold); color: var(--bg);
+}
+
+footer.callout {
+  margin-top: 56px;
+  padding: 22px 24px;
+  border: 1px solid var(--hairline);
+  background: var(--bg-soft);
+}
+footer.callout h3 { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 10px; }
+footer.callout p { color: var(--gray); font-size: 0.82rem; line-height: 1.6; max-width: 820px; }
+footer.callout p + p { margin-top: 8px; }
+footer.callout code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; color: var(--ink); background: var(--hairline); padding: 1px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div>
+    <div class="page-title">Past-row Resume — label sketches</div>
+    <div class="page-sub">5 label variants · 2 treatment variants · real campaign-row CSS</div>
+  </div>
+  <button class="theme-pill" onclick="document.body.classList.toggle('theme-light')">Toggle theme</button>
+</div>
+
+<!-- CURRENT -->
+<div class="variant">
+  <div class="variant-head">
+    <span class="variant-tag">0 · Current</span>
+    <span class="variant-title">What ships today</span>
+  </div>
+  <div class="variant-meta">
+    Stopped past-campaign rows show <b>STOPPED chip + EDIT</b> only. No one-click resume on the row itself. The Resume button DOES exist in code but renders only when <code>endReason === 'stopped' &amp;&amp; !fullStop</code> — likely missing on your row because either (a) you used "Stop everything" in the CC+IC modal (sets <code>fullStop: true</code>), or (b) it's rendering into an undersized grid (style.css:4042 = 7 cols, but row has 8 cells when Resume is included → wraps invisibly).
+  </div>
+  <div class="dash-panel">
+    <div class="panel-head"><span>Past</span><span class="count">1</span></div>
+    <button class="campaign-row" type="button" onclick="event.preventDefault()">
+      <input type="checkbox" class="past-row-checkbox" onclick="event.stopPropagation()" />
+      <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+      <span class="campaign-row-type">CC + IB · 20 MAY, 13:11</span>
+      <span class="campaign-row-progress">1 PROCESSED</span>
+      <span class="campaign-row-status is-stopped">STOPPED</span>
+      <span></span>
+      <button class="campaign-row-edit" onclick="event.stopPropagation()">EDIT</button>
+      <button class="past-row-delete" onclick="event.stopPropagation()">&times;</button>
+    </button>
+  </div>
+</div>
+
+<!-- A · RESUME (gold) -->
+<div class="variant">
+  <div class="variant-head">
+    <span class="variant-tag">A · Recommended</span>
+    <span class="variant-title">RESUME · gold pill</span>
+  </div>
+  <div class="variant-meta">
+    Matches what the campaign actually does (picks up at 22/50, not 0/50). Gold treatment is consistent with the design-system rule "gold = Start CTA" — Resume <i>is</i> a Start. Already what the internal code calls it (<code>campaign-row-resume</code>). Click = one-shot resume, no modal.
+  </div>
+  <div class="dash-panel">
+    <div class="panel-head"><span>Past</span><span class="count">1</span></div>
+    <button class="campaign-row" type="button" onclick="event.preventDefault()">
+      <input type="checkbox" class="past-row-checkbox" onclick="event.stopPropagation()" />
+      <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+      <span class="campaign-row-type">CC + IB · 20 MAY, 13:11</span>
+      <span class="campaign-row-progress">1 PROCESSED</span>
+      <span class="campaign-row-status is-stopped">STOPPED</span>
+      <button class="campaign-row-edit is-gold" onclick="event.stopPropagation()">RESUME</button>
+      <button class="campaign-row-edit" onclick="event.stopPropagation()">EDIT</button>
+      <button class="past-row-delete" onclick="event.stopPropagation()">&times;</button>
+    </button>
+  </div>
+</div>
+
+<!-- B · CONTINUE (gold) -->
+<div class="variant">
+  <div class="variant-head">
+    <span class="variant-tag">B</span>
+    <span class="variant-title">CONTINUE · gold pill</span>
+  </div>
+  <div class="variant-meta">
+    Softer / friendlier than Resume. Reads as "keep going from where we left off". Same accuracy. <b>Trade-off:</b> 8 chars vs Resume's 6 — pill is slightly wider, eats a bit of horizontal space on narrow rows.
+  </div>
+  <div class="dash-panel">
+    <div class="panel-head"><span>Past</span><span class="count">1</span></div>
+    <button class="campaign-row" type="button" onclick="event.preventDefault()">
+      <input type="checkbox" class="past-row-checkbox" onclick="event.stopPropagation()" />
+      <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+      <span class="campaign-row-type">CC + IB · 20 MAY, 13:11</span>
+      <span class="campaign-row-progress">1 PROCESSED</span>
+      <span class="campaign-row-status is-stopped">STOPPED</span>
+      <button class="campaign-row-edit is-gold" onclick="event.stopPropagation()">CONTINUE</button>
+      <button class="campaign-row-edit" onclick="event.stopPropagation()">EDIT</button>
+      <button class="past-row-delete" onclick="event.stopPropagation()">&times;</button>
+    </button>
+  </div>
+</div>
+
+<!-- C · PICK UP (gold) -->
+<div class="variant">
+  <div class="variant-head">
+    <span class="variant-tag">C</span>
+    <span class="variant-title">PICK UP · gold pill</span>
+  </div>
+  <div class="variant-meta">
+    Most literal description of what happens — "pick up where you left off". Quotas preserved is implicit in the verb. <b>Trade-off:</b> two-word label is unusual in a pro-tool UI and can read as informal.
+  </div>
+  <div class="dash-panel">
+    <div class="panel-head"><span>Past</span><span class="count">1</span></div>
+    <button class="campaign-row" type="button" onclick="event.preventDefault()">
+      <input type="checkbox" class="past-row-checkbox" onclick="event.stopPropagation()" />
+      <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+      <span class="campaign-row-type">CC + IB · 20 MAY, 13:11</span>
+      <span class="campaign-row-progress">1 PROCESSED</span>
+      <span class="campaign-row-status is-stopped">STOPPED</span>
+      <button class="campaign-row-edit is-gold" onclick="event.stopPropagation()">PICK UP</button>
+      <button class="campaign-row-edit" onclick="event.stopPropagation()">EDIT</button>
+      <button class="past-row-delete" onclick="event.stopPropagation()">&times;</button>
+    </button>
+  </div>
+</div>
+
+<!-- D · RUN AGAIN (gold) -->
+<div class="variant">
+  <div class="variant-head">
+    <span class="variant-tag">D</span>
+    <span class="variant-title">RUN AGAIN · gold pill</span>
+  </div>
+  <div class="variant-meta">
+    Direct, no ambiguity in plain English. <b>Risk:</b> implies starting from zero. The campaign actually preserves per-account counts (e.g. resumes at 22/50, not 0/50). Operator could be surprised when their daily limit doesn't reset.
+  </div>
+  <div class="dash-panel">
+    <div class="panel-head"><span>Past</span><span class="count">1</span></div>
+    <button class="campaign-row" type="button" onclick="event.preventDefault()">
+      <input type="checkbox" class="past-row-checkbox" onclick="event.stopPropagation()" />
+      <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+      <span class="campaign-row-type">CC + IB · 20 MAY, 13:11</span>
+      <span class="campaign-row-progress">1 PROCESSED</span>
+      <span class="campaign-row-status is-stopped">STOPPED</span>
+      <button class="campaign-row-edit is-gold" onclick="event.stopPropagation()">RUN AGAIN</button>
+      <button class="campaign-row-edit" onclick="event.stopPropagation()">EDIT</button>
+      <button class="past-row-delete" onclick="event.stopPropagation()">&times;</button>
+    </button>
+  </div>
+</div>
+
+<!-- E · RESUME, hairline (non-gold) — design system stretch -->
+<div class="variant">
+  <div class="variant-head">
+    <span class="variant-tag">E · Treatment</span>
+    <span class="variant-title">RESUME · hairline (no gold)</span>
+  </div>
+  <div class="variant-meta">
+    Same label as A, but uses the standard hairline pill instead of gold. Reasoning: the gold-only-on-Start rule could be interpreted strictly — Start CTA in the wizard stays uniquely gold; past-row Resume is a softer affordance. <b>Trade-off:</b> visually demotes Resume, makes Resume + Edit feel equally weighted.
+  </div>
+  <div class="dash-panel">
+    <div class="panel-head"><span>Past</span><span class="count">1</span></div>
+    <button class="campaign-row" type="button" onclick="event.preventDefault()">
+      <input type="checkbox" class="past-row-checkbox" onclick="event.stopPropagation()" />
+      <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+      <span class="campaign-row-type">CC + IB · 20 MAY, 13:11</span>
+      <span class="campaign-row-progress">1 PROCESSED</span>
+      <span class="campaign-row-status is-stopped">STOPPED</span>
+      <button class="campaign-row-edit is-hairline" onclick="event.stopPropagation()">RESUME</button>
+      <button class="campaign-row-edit" onclick="event.stopPropagation()">EDIT</button>
+      <button class="past-row-delete" onclick="event.stopPropagation()">&times;</button>
+    </button>
+  </div>
+</div>
+
+<!-- F · STOPPED chip becomes the action -->
+<div class="variant">
+  <div class="variant-head">
+    <span class="variant-tag">F · Treatment</span>
+    <span class="variant-title">STOPPED ▸ RESUME (chip-as-button)</span>
+  </div>
+  <div class="variant-meta">
+    Combine state + action into the existing STOPPED chip. The chip becomes interactive: hover reveals the action, click resumes. One fewer pill in the row. <b>Trade-off:</b> less discoverable — operator has to learn that the chip is clickable. Also loses the "Edit then Start" path's symmetry (Edit is still a separate pill).
+  </div>
+  <div class="dash-panel">
+    <div class="panel-head"><span>Past</span><span class="count">1</span></div>
+    <button class="campaign-row" type="button" onclick="event.preventDefault()">
+      <input type="checkbox" class="past-row-checkbox" onclick="event.stopPropagation()" />
+      <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+      <span class="campaign-row-type">CC + IB · 20 MAY, 13:11</span>
+      <span class="campaign-row-progress">1 PROCESSED</span>
+      <span class="campaign-row-status is-stopped is-stopped-action" onclick="event.stopPropagation()">STOPPED</span>
+      <span></span>
+      <button class="campaign-row-edit" onclick="event.stopPropagation()">EDIT</button>
+      <button class="past-row-delete" onclick="event.stopPropagation()">&times;</button>
+    </button>
+  </div>
+</div>
+
+<footer class="callout">
+  <h3>Behavior — same for every variant</h3>
+  <p>Click on the new button = one-shot resume. <b>No modal</b>. The campaign reopens with the saved settings snapshot (sheet URL, templates, profile IDs, daily limit, sender mapping). Per-account counts are preserved so accounts pick up at <code>22/50</code>, not <code>0/50</code>.</p>
+  <p><b>Edit</b> pill keeps its current behavior — pre-fills the wizard so you can tweak before starting. The existing two-option resume modal (<code>resume-choice-modal</code>) becomes redundant and can be removed.</p>
+  <p>The same label should probably also replace <b>"Re-run with same settings"</b> in the past-campaign details modal (<code>public/index.html:1236</code>) for consistency.</p>
+</footer>
+
+</body>
+</html>

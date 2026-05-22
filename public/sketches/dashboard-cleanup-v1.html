@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dashboard cleanup — resume indicator · state pills · tab counters</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --bg-soft: #faf9f7;
+  --ink: #0a0a0a;
+  --gray: #999999;
+  --hairline: rgba(0, 0, 0, 0.15);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --gold: #F7BE68;
+  --green: #3fb950;
+  --red: #f85149;
+  --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+  --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --bg-soft: rgba(255, 255, 255, 0.03);
+  --ink: #fafafa;
+  --gray: #999999;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 48px 56px 120px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; flex-wrap: wrap; }
+.page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 6px; }
+.theme-pill { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 6px 14px; border: 1px solid var(--hairline); border-radius: 9999px; background: transparent; color: var(--ink); cursor: pointer; }
+.theme-pill:hover { border-color: var(--ink); }
+
+.section { margin-bottom: 72px; }
+.section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+.section-num { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+.section-title { font-family: var(--display); font-size: 1.8rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.section-desc { font-size: 0.82rem; color: var(--gray); line-height: 1.55; max-width: 900px; margin-bottom: 24px; }
+.section-desc b { color: var(--ink); font-weight: 500; }
+
+.variant { margin-bottom: 36px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.variant-tag { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+.variant-title { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.variant-note { font-size: 0.78rem; color: var(--gray); line-height: 1.55; max-width: 820px; margin-bottom: 14px; }
+.variant-note b { color: var(--ink); font-weight: 500; }
+
+/* —— Shared: dash panel + row shells ——————————————————————————————— */
+.dash-panel { border: 1px solid var(--hairline); background: transparent; }
+.panel-head { padding: 12px 18px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); border-bottom: 1px solid var(--hairline); }
+
+.campaign-row {
+  display: grid;
+  grid-template-columns: auto 2fr 1.4fr 1.4fr auto auto auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  cursor: pointer;
+}
+.campaign-row:last-child { border-bottom: 0; }
+.campaign-row:hover { background-color: var(--hairline-soft); }
+.past-row-checkbox { appearance: none; width: 14px; height: 14px; border: 1px solid var(--hairline); border-radius: 2px; background: transparent; cursor: pointer; }
+.campaign-row-name { font-family: var(--display); font-size: 1rem; color: var(--ink); letter-spacing: 0.02em; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.campaign-row-type, .campaign-row-progress { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: #555; }
+.campaign-row-status { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--hairline); border-radius: 9999px; color: var(--red); border-color: var(--red); white-space: nowrap; justify-self: end; }
+.campaign-row-edit { background: transparent; border: 1px solid rgba(0,0,0,0.4); color: #333; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 4px 12px; border-radius: 9999px; cursor: pointer; }
+.campaign-row-edit:hover { border-color: var(--ink); color: var(--ink); }
+.past-row-delete { background: transparent; border: none; color: var(--gray); font-size: 1.1rem; cursor: pointer; padding: 0 6px; }
+
+/* —— Resume indicator variants ——————————————————————————————— */
+.resumed-suffix-current { /* current: "(resumed)" in title */ }
+.resumed-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--gold); color: var(--gold);
+  border-radius: 9999px;
+  background: rgba(247, 190, 104, 0.08);
+}
+.resumed-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  font-size: 0.78rem;
+  color: var(--gold);
+}
+.resumed-icon[title]:hover { background: rgba(247, 190, 104, 0.15); border-radius: 9999px; }
+.resumed-run-tag {
+  font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--gray); margin-left: 6px;
+}
+
+/* —— ALL-tab state pill variants ——————————————————————————————— */
+.dash-row-pill {
+  display: inline-block;
+  font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase;
+  padding: 3px 9px;
+  border: 1px solid currentColor;
+  border-radius: 9999px;
+  margin-right: 8px;
+}
+.dash-row-pill.past { color: var(--ink); }
+.dash-row-pill.active { color: var(--green); }
+.dash-row-pill.queued { color: var(--ink); }
+
+/* Variant B — left rail */
+.row-rail { display: grid; grid-template-columns: 4px auto 2fr 1.4fr 1.4fr auto auto auto; gap: 18px; align-items: center; padding: 16px 0 16px 0; border-bottom: 1px solid var(--hairline); }
+.row-rail .rail { width: 4px; align-self: stretch; }
+.row-rail .rail.past { background: var(--ink); opacity: 0.35; }
+.row-rail .rail.active { background: var(--green); }
+.row-rail .rail.queued { background: var(--ink); }
+.row-rail .rail.monitoring { background: var(--gold); }
+.row-rail .rail.stopped { background: var(--red); }
+.row-rail > *:not(.rail) { padding-left: 0; }
+.row-rail > input.past-row-checkbox { margin-left: 14px; }
+.row-rail > .past-row-delete { margin-right: 18px; }
+.row-rail > .campaign-row-edit { }
+.row-rail > .campaign-row-status { justify-self: end; }
+
+/* Variant C — state folded into subtitle */
+.subtitle-with-state { display: inline-flex; gap: 6px; align-items: center; }
+.subtitle-state-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--ink); display: inline-block; }
+.subtitle-state-dot.past { background: rgba(0,0,0,0.35); }
+.subtitle-state-dot.active { background: var(--green); }
+.subtitle-state-dot.queued { background: var(--ink); }
+.subtitle-state-dot.monitoring { background: var(--gold); }
+
+/* Variant D — section headers (no inline pills) */
+.section-header-row {
+  font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--gray); padding: 14px 18px 6px;
+  border-bottom: 1px solid var(--hairline);
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-soft);
+}
+.section-header-row .ct {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline);
+  font-size: 0.58rem;
+}
+
+/* —— Tab counter variants ——————————————————————————————— */
+.tabs-strip {
+  display: flex; gap: 4px; border-bottom: 1px solid var(--hairline);
+  padding: 0 4px;
+}
+.tab {
+  font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+  padding: 14px 20px;
+  color: var(--gray);
+  border: 0; background: transparent;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--ink); border-bottom-color: var(--gold); }
+.tab .ct {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 7px;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline);
+  color: var(--gray);
+  font-size: 0.6rem;
+}
+.tab.on .ct { border-color: var(--gold); color: var(--gold); }
+.tab.empty .ct { opacity: 0.35; }
+
+/* Variant counter — number after the label, no pill */
+.tab--bare .ct { border: 0; padding: 0; min-width: 0; height: auto; color: var(--gray); }
+.tab--bare.on .ct { color: var(--gold); }
+
+/* Variant counter — separator only */
+.tab--sep { gap: 6px; }
+.tab--sep .ct { border: 0; padding: 0; min-width: 0; height: auto; }
+.tab--sep .ct::before { content: "·"; color: var(--gray); margin-right: 6px; }
+
+/* Variant counter — counts hidden when zero */
+.tab--hidezero .ct { border: 0; padding: 0; min-width: 0; height: auto; color: var(--gold); }
+.tab--hidezero .ct.zero { display: none; }
+
+/* Variant counter — count on active tab only */
+.tab--activeonly .ct { display: none; }
+.tab--activeonly.on .ct { display: inline-flex; border-color: var(--gold); color: var(--gold); }
+
+footer.callout { margin-top: 56px; padding: 22px 24px; border: 1px solid var(--hairline); background: var(--bg-soft); }
+footer.callout h3 { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 10px; }
+footer.callout p { color: var(--gray); font-size: 0.82rem; line-height: 1.6; max-width: 900px; }
+footer.callout p + p { margin-top: 8px; }
+footer.callout code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; color: var(--ink); background: var(--hairline-soft); padding: 1px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div>
+    <div class="page-title">Dashboard cleanup — v1</div>
+    <div class="page-sub">Resume indicator · ALL-tab state pills · tab counters</div>
+  </div>
+  <button class="theme-pill" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</div>
+
+<!-- ═══════════════ SECTION 1 — RESUME INDICATOR ═══════════════ -->
+<div class="section">
+  <div class="section-head">
+    <span class="section-num">1 · Resume indicator</span>
+    <span class="section-title">Replace "(resumed)" suffix</span>
+  </div>
+  <div class="section-desc">
+    Today, resuming a stopped campaign appends <code>(resumed)</code> to the name → <b>CC + IC - TEST QUEUE (RESUMED)</b>. The suffix is ugly and accumulates if you resume twice. Comes from <code>app.js:7850</code>: <code>name: c.name ? `${c.name} (resumed)` : ''</code>.
+  </div>
+
+  <!-- Current (reference) -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">0 · Current</span><span class="variant-title">"(resumed)" suffix</span></div>
+    <div class="dash-panel"><div class="panel-head">PAST</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="dash-row-pill past">PAST</span>CC + IC - TEST QUEUE (RESUMED)</div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- A · drop suffix entirely -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">1A · Recommended</span><span class="variant-title">No suffix · same name</span></div>
+    <div class="variant-note">Just keep the original name. The new timestamp (21 May vs 20 May) already distinguishes runs. <b>Pro:</b> cleanest, no text mangling, repeated resumes stay readable. <b>Con:</b> no visual cue that it's a continuation — only the timestamp tells the story.</div>
+    <div class="dash-panel"><div class="panel-head">PAST</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="dash-row-pill past">PAST</span>CC + IC - TEST QUEUE</div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- B · ↻ RESUMED chip next to name -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">1B</span><span class="variant-title">"↻ RESUMED" chip next to name</span></div>
+    <div class="variant-note">Small gold chip <i>after</i> the name signals lineage without polluting the title. <b>Pro:</b> clear at a glance, doesn't grow on multiple resumes (chip stays the same). <b>Con:</b> extra visual element on the row.</div>
+    <div class="dash-panel"><div class="panel-head">PAST</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="dash-row-pill past">PAST</span>CC + IC - TEST QUEUE <span class="resumed-chip">↻ Resumed</span></div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- C · icon-only ↻ -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">1C</span><span class="variant-title">Just a ↻ icon · tooltip on hover</span></div>
+    <div class="variant-note">Minimal icon glyph after the name. Tooltip reveals "Resumed from previous run". <b>Pro:</b> smallest footprint. <b>Con:</b> easy to miss; depends on hover discovery.</div>
+    <div class="dash-panel"><div class="panel-head">PAST</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="dash-row-pill past">PAST</span>CC + IC - TEST QUEUE <span class="resumed-icon" title="Resumed from previous run">↻</span></div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- D · numbered runs -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">1D</span><span class="variant-title">Numbered runs · "run 2"</span></div>
+    <div class="variant-note">Tracks how many times the campaign has been resumed. <b>Pro:</b> tells the whole story — operator sees this is the 2nd time this campaign ran. <b>Con:</b> requires tracking the count in history.json (small backend change).</div>
+    <div class="dash-panel"><div class="panel-head">PAST</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="dash-row-pill past">PAST</span>CC + IC - TEST QUEUE <span class="resumed-run-tag">· run 2</span></div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SECTION 2 — ALL-TAB STATE PILLS ═══════════════ -->
+<div class="section">
+  <div class="section-head">
+    <span class="section-num">2 · ALL tab</span>
+    <span class="section-title">Per-row state indicator</span>
+  </div>
+  <div class="section-desc">
+    On the <b>ALL</b> tab, every row gets a <code>dash-row-pill</code> prefix (PAST / ACTIVE / QUEUED / etc.) so you know which section it came from. The current rendering is a hairline-bordered text pill that eats horizontal space and adds visual weight. Source: <code>renderDashboardAll</code> at <code>app.js:9093</code>.
+  </div>
+
+  <!-- Current -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">0 · Current</span><span class="variant-title">Text pill in name cell</span></div>
+    <div class="dash-panel"><div class="panel-head">ALL</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="dash-row-pill active">ACTIVE</span>Cold sweep · Sam</div>
+        <span class="campaign-row-type">CONNECT ONLY · 21 MAY</span>
+        <span class="campaign-row-progress">12 / 50 SENT</span>
+        <span class="campaign-row-status" style="color:var(--green); border-color:var(--green);">RUNNING</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="dash-row-pill past">PAST</span>CC + IC - TEST QUEUE</div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- A · left rail color bar -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">2A · Recommended</span><span class="variant-title">Left rail · 4px colored bar</span></div>
+    <div class="variant-note">Thin vertical stripe on the left of each row, color-coded by state. <b>Pro:</b> zero horizontal space cost, scans instantly down the column, no text duplication. <b>Con:</b> color-blind users need a fallback (we can keep a tiny dot too).</div>
+    <div class="dash-panel"><div class="panel-head">ALL</div>
+      <div class="row-rail">
+        <span class="rail active"></span>
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name">Cold sweep · Sam</div>
+        <span class="campaign-row-type">CONNECT ONLY · 21 MAY</span>
+        <span class="campaign-row-progress">12 / 50 SENT</span>
+        <span class="campaign-row-status" style="color:var(--green); border-color:var(--green);">RUNNING</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+      <div class="row-rail">
+        <span class="rail past"></span>
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- B · state folded into subtitle line -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">2B</span><span class="variant-title">State folded into subtitle</span></div>
+    <div class="variant-note">Small colored dot + state word fold into the existing mode·date line. <b>Pro:</b> no new visual elements, name stays clean. <b>Con:</b> adds tokens to a line that's already busy.</div>
+    <div class="dash-panel"><div class="panel-head">ALL</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name">Cold sweep · Sam</div>
+        <span class="campaign-row-type"><span class="subtitle-with-state"><span class="subtitle-state-dot active"></span>ACTIVE</span> · CONNECT ONLY · 21 MAY</span>
+        <span class="campaign-row-progress">12 / 50 SENT</span>
+        <span class="campaign-row-status" style="color:var(--green); border-color:var(--green);">RUNNING</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+        <span class="campaign-row-type"><span class="subtitle-with-state"><span class="subtitle-state-dot past"></span>PAST</span> · CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- C · section headers (drop inline pills) -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">2C</span><span class="variant-title">Section headers · drop inline pills</span></div>
+    <div class="variant-note">Group rows by state with small headers (ACTIVE · 1, PAST · 2, etc.) and remove the per-row pill entirely. <b>Pro:</b> easiest to scan for "what's running right now?". <b>Con:</b> only works in the ALL tab; doesn't help if you want to mix-sort by date.</div>
+    <div class="dash-panel"><div class="panel-head">ALL</div>
+      <div class="section-header-row">ACTIVE <span class="ct">1</span></div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name">Cold sweep · Sam</div>
+        <span class="campaign-row-type">CONNECT ONLY · 21 MAY</span>
+        <span class="campaign-row-progress">12 / 50 SENT</span>
+        <span class="campaign-row-status" style="color:var(--green); border-color:var(--green);">RUNNING</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+      <div class="section-header-row">PAST <span class="ct">2</span></div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name">CC + IC - TEST QUEUE</div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- D · tiny dot, no text -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">2D</span><span class="variant-title">Dot only · no text</span></div>
+    <div class="variant-note">6px colored dot before the name. <b>Pro:</b> very compact. <b>Con:</b> requires legend; users may not learn what dot = what state.</div>
+    <div class="dash-panel"><div class="panel-head">ALL</div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="subtitle-state-dot active" style="margin-right:6px"></span>Cold sweep · Sam</div>
+        <span class="campaign-row-type">CONNECT ONLY · 21 MAY</span>
+        <span class="campaign-row-progress">12 / 50 SENT</span>
+        <span class="campaign-row-status" style="color:var(--green); border-color:var(--green);">RUNNING</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+      <div class="campaign-row">
+        <input type="checkbox" class="past-row-checkbox" />
+        <div class="campaign-row-name"><span class="subtitle-state-dot past" style="margin-right:6px"></span>CC + IC - TEST QUEUE</div>
+        <span class="campaign-row-type">CC + IB · 21 MAY, 15:01</span>
+        <span class="campaign-row-progress">0 PROCESSED</span>
+        <span class="campaign-row-status">STOPPED</span>
+        <button class="campaign-row-edit">EDIT</button>
+        <button class="past-row-delete">×</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SECTION 3 — TAB COUNTERS ═══════════════ -->
+<div class="section">
+  <div class="section-head">
+    <span class="section-num">3 · Tab bar</span>
+    <span class="section-title">Counter chip alternatives</span>
+  </div>
+  <div class="section-desc">
+    Current tab strip: each tab has a hairline pill <code>(0)</code> next to its name. <b>Visual:</b> 7 pills competing for attention, most showing 0. <b>Slowness:</b> separate issue — counters are derived from DOM nodes (<code>dashUpdateCounts</code>, <code>app.js:8715</code>) and only update when <code>dashRefreshAll</code> fires. We can fix that with an optimistic local update + a debounced reconcile. Visual fixes are below.
+  </div>
+
+  <!-- Current -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">0 · Current</span><span class="variant-title">Hairline pill per tab</span></div>
+    <div class="tabs-strip">
+      <button class="tab"><span>Active</span><span class="ct">0</span></button>
+      <button class="tab"><span>Monitoring</span><span class="ct">0</span></button>
+      <button class="tab"><span>Queued</span><span class="ct">0</span></button>
+      <button class="tab"><span>Schedules</span><span class="ct">0</span></button>
+      <button class="tab"><span>Drafts</span><span class="ct">0</span></button>
+      <button class="tab"><span>Past</span><span class="ct">3</span></button>
+      <button class="tab on"><span>All</span><span class="ct">3</span></button>
+    </div>
+  </div>
+
+  <!-- A · bare number, no pill -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">3A · Recommended</span><span class="variant-title">Bare number · no pill border</span></div>
+    <div class="variant-note">Drop the pill border around each count. Number sits inline next to the label, lighter and quieter. Active tab's count goes gold. <b>Pro:</b> calmer strip, fewer visual elements. <b>Con:</b> very subtly de-emphasizes counts (probably the right call when most are 0).</div>
+    <div class="tabs-strip">
+      <button class="tab tab--bare"><span>Active</span><span class="ct">0</span></button>
+      <button class="tab tab--bare"><span>Monitoring</span><span class="ct">0</span></button>
+      <button class="tab tab--bare"><span>Queued</span><span class="ct">0</span></button>
+      <button class="tab tab--bare"><span>Schedules</span><span class="ct">0</span></button>
+      <button class="tab tab--bare"><span>Drafts</span><span class="ct">0</span></button>
+      <button class="tab tab--bare"><span>Past</span><span class="ct">3</span></button>
+      <button class="tab tab--bare on"><span>All</span><span class="ct">3</span></button>
+    </div>
+  </div>
+
+  <!-- B · hide zero counts -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">3B</span><span class="variant-title">Hide zeros · gold when non-zero</span></div>
+    <div class="variant-note">Only show the number when there's something. Empty tabs read as plain labels. <b>Pro:</b> very clean — the strip lights up only when there's actually work in a bucket. <b>Con:</b> labels visibly shift width when a count appears/disappears; could be jumpy if counts change while you watch.</div>
+    <div class="tabs-strip">
+      <button class="tab tab--hidezero"><span>Active</span><span class="ct zero">0</span></button>
+      <button class="tab tab--hidezero"><span>Monitoring</span><span class="ct zero">0</span></button>
+      <button class="tab tab--hidezero"><span>Queued</span><span class="ct zero">0</span></button>
+      <button class="tab tab--hidezero"><span>Schedules</span><span class="ct zero">0</span></button>
+      <button class="tab tab--hidezero"><span>Drafts</span><span class="ct zero">0</span></button>
+      <button class="tab tab--hidezero"><span>Past</span><span class="ct">3</span></button>
+      <button class="tab tab--hidezero on"><span>All</span><span class="ct">3</span></button>
+    </div>
+  </div>
+
+  <!-- C · count on active tab only -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">3C</span><span class="variant-title">Count on active tab only</span></div>
+    <div class="variant-note">Numbers only show on the currently-selected tab. Inactive tabs are plain labels. <b>Pro:</b> least visual noise. <b>Con:</b> you lose at-a-glance "is there anything in Queued right now?" — you have to click in.</div>
+    <div class="tabs-strip">
+      <button class="tab tab--activeonly"><span>Active</span><span class="ct">0</span></button>
+      <button class="tab tab--activeonly"><span>Monitoring</span><span class="ct">0</span></button>
+      <button class="tab tab--activeonly"><span>Queued</span><span class="ct">0</span></button>
+      <button class="tab tab--activeonly"><span>Schedules</span><span class="ct">0</span></button>
+      <button class="tab tab--activeonly"><span>Drafts</span><span class="ct">0</span></button>
+      <button class="tab tab--activeonly"><span>Past</span><span class="ct">3</span></button>
+      <button class="tab tab--activeonly on"><span>All</span><span class="ct">3</span></button>
+    </div>
+  </div>
+
+  <!-- D · separator dot -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">3D</span><span class="variant-title">Label · count (separator dot)</span></div>
+    <div class="variant-note">No pill, no chip — just <code>LABEL · N</code> like a breadcrumb. <b>Pro:</b> reads as one tight unit per tab. <b>Con:</b> the dots compete with the section's <code>·</code> separators elsewhere in the UI.</div>
+    <div class="tabs-strip">
+      <button class="tab tab--sep"><span>Active</span><span class="ct">0</span></button>
+      <button class="tab tab--sep"><span>Monitoring</span><span class="ct">0</span></button>
+      <button class="tab tab--sep"><span>Queued</span><span class="ct">0</span></button>
+      <button class="tab tab--sep"><span>Schedules</span><span class="ct">0</span></button>
+      <button class="tab tab--sep"><span>Drafts</span><span class="ct">0</span></button>
+      <button class="tab tab--sep"><span>Past</span><span class="ct">3</span></button>
+      <button class="tab tab--sep on"><span>All</span><span class="ct">3</span></button>
+    </div>
+  </div>
+</div>
+
+<footer class="callout">
+  <h3>About the "slow updating" complaint</h3>
+  <p>That's not a CSS problem — it's a refresh cadence problem. The tab counters are derived from DOM nodes by <code>dashUpdateCounts()</code> (<code>app.js:8715</code>) and only re-run when one of the panel refresh functions fires (<code>refreshActiveCampaign</code>, <code>refreshDashboardQueue</code>, the past-list refresh, etc.). If a campaign finishes and the past list hasn't re-fetched yet, the count stays stale.</p>
+  <p><b>Fix path (independent of which sketch you pick):</b> after any state-changing action (start, stop, queue add/remove, history append), tell the dashboard to optimistically bump the affected counter immediately, then reconcile with the next full refresh. That removes the perceived lag without changing how counts are computed.</p>
+</footer>
+
+</body>
+</html>

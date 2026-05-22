@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch A — Editorial Dark | Ortus Outreach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a09;
+    --bg-raised: #14140f;
+    --gold: #F7BE68;
+    --gold-dim: #C5A255;
+    --hairline: rgba(197, 162, 85, 0.22);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --ink: #fafaf9;
+    --muted: #8b867a;
+    --serif: 'Cormorant Garamond', Georgia, serif;
+    --sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --green: #3fb950;
+    --red: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 1120px; margin: 0 auto; padding: 48px 40px 120px; }
+
+  /* ── Masthead ── */
+  .masthead {
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 32px; margin-bottom: 48px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+  }
+  .wordmark {
+    font-family: var(--serif); font-weight: 500;
+    font-size: 2.6rem; letter-spacing: 0.02em; line-height: 1;
+    color: var(--ink);
+  }
+  .wordmark em {
+    font-style: italic; color: var(--gold); font-weight: 400;
+  }
+  .wordmark-sub {
+    font-family: var(--sans); font-size: 0.7rem; letter-spacing: 0.28em;
+    text-transform: uppercase; color: var(--muted); margin-top: 10px;
+  }
+  .masthead-aside { text-align: right; font-size: 0.75rem; color: var(--muted); }
+  .masthead-aside strong { color: var(--gold); font-weight: 500; letter-spacing: 0.05em; }
+
+  /* ── Section ── */
+  .section { margin-bottom: 56px; }
+  .section-label {
+    font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.3em;
+    text-transform: uppercase; color: var(--gold-dim);
+    margin-bottom: 6px;
+  }
+  .section-title {
+    font-family: var(--serif); font-weight: 500;
+    font-size: 1.9rem; margin: 0 0 4px 0; letter-spacing: 0.01em;
+  }
+  .section-desc { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+  .hairline { height: 1px; background: var(--hairline); margin: 20px 0; }
+
+  /* ── Buttons ── */
+  .btn {
+    font-family: var(--sans); font-size: 0.8rem; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 10px 20px;
+    background: transparent; color: var(--ink);
+    border: 1px solid var(--hairline); border-radius: 2px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn:hover { border-color: var(--gold); color: var(--gold); }
+  .btn-primary {
+    background: var(--gold); color: #0a0a09; border-color: var(--gold); font-weight: 500;
+  }
+  .btn-primary:hover { background: transparent; color: var(--gold); }
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  /* ── Profile chips ── */
+  .profile-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--hairline-soft);
+    border: 1px solid var(--hairline-soft);
+  }
+  .profile-chip {
+    background: var(--bg); padding: 14px 16px;
+    cursor: pointer; transition: background 0.15s;
+    position: relative;
+  }
+  .profile-chip:hover { background: var(--bg-raised); }
+  .profile-chip.selected { background: var(--bg-raised); }
+  .profile-chip.selected::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 2px; background: var(--gold);
+  }
+  .chip-name { font-weight: 500; font-size: 0.85rem; letter-spacing: 0.01em; }
+  .chip-email { color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+  .chip-tag {
+    display: inline-block; margin-top: 6px; padding: 2px 8px;
+    background: rgba(247, 190, 104, 0.08);
+    color: var(--gold); border: 1px solid var(--hairline);
+    font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+
+  /* ── Passover banner ── */
+  .passover {
+    display: flex; gap: 32px; padding: 14px 20px; margin-bottom: 24px;
+    border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+    font-family: var(--serif); font-size: 1rem;
+  }
+  .passover-group { display: flex; align-items: baseline; gap: 10px; }
+  .passover-label {
+    font-family: var(--sans); font-size: 0.65rem; letter-spacing: 0.25em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .passover-value { color: var(--gold); font-style: italic; }
+  .passover-value.closed { color: var(--muted); }
+
+  /* ── Form controls ── */
+  label {
+    display: block; font-size: 0.7rem; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 16px 0 6px;
+  }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; background: transparent; border: none;
+    border-bottom: 1px solid var(--hairline);
+    padding: 10px 0; color: var(--ink); font-family: var(--sans);
+    font-size: 0.95rem;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-bottom-color: var(--gold);
+  }
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23C5A255' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 4px center;
+  }
+
+  /* ── Live status strip ── */
+  .status-strip {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .stat { padding: 20px 0; text-align: left; border-right: 1px solid var(--hairline-soft); padding-left: 20px; }
+  .stat:last-child { border-right: none; }
+  .stat-label {
+    font-size: 0.62rem; letter-spacing: 0.25em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stat-value {
+    font-family: var(--serif); font-size: 2rem; font-weight: 500;
+    color: var(--ink); line-height: 1.2; margin-top: 6px;
+  }
+  .stat-value.gold { color: var(--gold); }
+  .stat-value.muted { font-size: 0.95rem; color: var(--muted); font-family: var(--sans); }
+
+  /* ── History table ── */
+  .ledger { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .ledger th {
+    text-align: left; padding: 14px 16px;
+    font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .ledger td {
+    padding: 14px 16px; border-bottom: 1px solid var(--hairline-soft);
+    color: var(--ink);
+  }
+  .ledger td.ok { color: var(--green); font-variant-numeric: tabular-nums; }
+  .ledger td.err { color: var(--red); font-variant-numeric: tabular-nums; }
+  .ledger td.dim { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ── CTA row ── */
+  .cta-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 28px 0; border-top: 1px solid var(--hairline);
+    margin-top: 48px;
+  }
+  .cta-blurb { font-family: var(--serif); font-size: 1.3rem; color: var(--ink); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Masthead -->
+  <div class="masthead">
+    <div>
+      <div class="wordmark">Ortus <em>Outreach</em></div>
+      <div class="wordmark-sub">LinkedIn Automation · v2.6.0</div>
+    </div>
+    <div class="masthead-aside">
+      Signed in as <strong>info@ortus.solutions</strong><br>
+      17 April 2026 · 10:12 PH
+    </div>
+  </div>
+
+  <!-- Passover banner -->
+  <div class="passover">
+    <div class="passover-group">
+      <span class="passover-label">OP / InMail / Sales Nav</span>
+      <span class="passover-value">Passover Active — closes in 14d</span>
+    </div>
+    <div class="passover-group">
+      <span class="passover-label">CC</span>
+      <span class="passover-value">Passover Active — closes in 3d</span>
+    </div>
+  </div>
+
+  <!-- Section 1 — Accounts -->
+  <div class="section">
+    <div class="section-label">01 · Accounts</div>
+    <h2 class="section-title">Select GoLogin Profiles</h2>
+    <p class="section-desc">Choose which accounts participate in this campaign. Selection order determines execution order.</p>
+
+    <div class="btn-row" style="margin-bottom:20px">
+      <button class="btn">Select All Visible</button>
+      <button class="btn">Deselect All</button>
+      <button class="btn">Refresh</button>
+    </div>
+
+    <div class="profile-grid">
+      <div class="profile-chip selected">
+        <div class="chip-name">Dennis Peralta</div>
+        <div class="chip-email">dennis.peralta@ortus.solutions</div>
+        <span class="chip-tag">Executive</span>
+      </div>
+      <div class="profile-chip selected">
+        <div class="chip-name">Kyra Delacruz</div>
+        <div class="chip-email">kyra.delacruz@ortus.solutions</div>
+        <span class="chip-tag">Assigned</span>
+      </div>
+      <div class="profile-chip">
+        <div class="chip-name">Jerianne C.</div>
+        <div class="chip-email">jeriannec@ortus.solutions</div>
+      </div>
+      <div class="profile-chip selected">
+        <div class="chip-name">Asad Uzzaman</div>
+        <div class="chip-email">asaduzzaman.r@ortus.solutions</div>
+        <span class="chip-tag">Executive</span>
+      </div>
+      <div class="profile-chip">
+        <div class="chip-name">Altini</div>
+        <div class="chip-email">altini@ortus.solutions</div>
+      </div>
+      <div class="profile-chip">
+        <div class="chip-name">Mizanur R.</div>
+        <div class="chip-email">mizanur.rahman@ortus.solutions</div>
+      </div>
+      <div class="profile-chip selected">
+        <div class="chip-name">Local Browser</div>
+        <div class="chip-email">Chrome · persistent profile</div>
+        <span class="chip-tag">Local</span>
+      </div>
+      <div class="profile-chip">
+        <div class="chip-name">Ortus Founder</div>
+        <div class="chip-email">founder@ortus.solutions</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 2 — Settings -->
+  <div class="section">
+    <div class="section-label">02 · Settings</div>
+    <h2 class="section-title">Campaign Configuration</h2>
+    <p class="section-desc">Rate, limits, and mode. Values flow through all selected profiles.</p>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+      <div>
+        <label>Campaign Mode</label>
+        <select>
+          <option>Connect Only</option>
+          <option>Message Only</option>
+          <option>Connect + Message</option>
+          <option>Auto (everything)</option>
+        </select>
+
+        <label>Connections per account / hour</label>
+        <input type="number" value="6" />
+
+        <label>Max connections per account</label>
+        <input type="number" value="40" />
+      </div>
+      <div style="padding-left: 40px; border-left: 1px solid var(--hairline);">
+        <div class="section-label" style="margin-bottom: 12px">Estimate</div>
+        <div style="font-family: var(--serif); font-size: 1.6rem; line-height: 1.4;">
+          ≈ 120 connections<br>
+          across 3 accounts<br>
+          <span style="color: var(--gold); font-style: italic;">in 4h 20m</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live status -->
+  <div class="section">
+    <div class="section-label">Live</div>
+    <h2 class="section-title">Current Run</h2>
+    <div class="status-strip">
+      <div class="stat"><div class="stat-label">Status</div><div class="stat-value gold">Running</div></div>
+      <div class="stat"><div class="stat-label">Mode</div><div class="stat-value muted">Connect Only</div></div>
+      <div class="stat"><div class="stat-label">Account</div><div class="stat-value muted">kyra.delacruz</div></div>
+      <div class="stat"><div class="stat-label">Progress</div><div class="stat-value">36</div></div>
+      <div class="stat"><div class="stat-label">Total</div><div class="stat-value">87</div></div>
+      <div class="stat"><div class="stat-label">Errors</div><div class="stat-value" style="color: var(--red);">2</div></div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div class="cta-row">
+    <div class="cta-blurb">“The campaign runs while you do the work that matters.”</div>
+    <div class="btn-row">
+      <button class="btn">Stop</button>
+      <button class="btn btn-primary">Start Campaign</button>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="section" style="margin-top:64px">
+    <div class="section-label">Ledger</div>
+    <h2 class="section-title">Campaign History</h2>
+    <table class="ledger">
+      <thead><tr>
+        <th>Date</th><th>Mode</th><th>Profiles</th><th>Success</th><th>Errors</th><th>Duration</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="dim">2026-04-16 13:23</td><td>Open Profile</td><td>dennis.peralta</td><td class="ok">0</td><td class="err">0</td><td class="dim">32m</td></tr>
+        <tr><td class="dim">2026-04-16 11:29</td><td>Open Profile</td><td>dennis.peralta</td><td class="ok">0</td><td class="err">3</td><td class="dim">69m</td></tr>
+        <tr><td class="dim">2026-04-15 13:34</td><td>Message Only</td><td>Local Browser</td><td class="ok">6</td><td class="err">1</td><td class="dim">15m</td></tr>
+        <tr><td class="dim">2026-04-15 09:28</td><td>Connect Only</td><td>dennis.peralta</td><td class="ok">10</td><td class="err">0</td><td class="dim">43m</td></tr>
+        <tr><td class="dim">2026-04-13 11:00</td><td>Connect Only</td><td>kyra.delacruz</td><td class="ok">36</td><td class="err">0</td><td class="dim">143m</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>

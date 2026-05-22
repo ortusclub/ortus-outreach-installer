@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet redesign — K. Grouped collapsible rows</title>
+<style>
+body { margin: 0; padding: 32px; background: #f8f9fa; font-family: Arial, 'Helvetica Neue', sans-serif; color: #202124; }
+.wrap { max-width: 1500px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+.sub { color: #5f6368; font-size: 13px; margin-bottom: 24px; }
+.panel { background: #fff; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+.toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #5f6368; }
+.toolbar .name { font-weight: 600; color: #202124; margin-right: 12px; }
+.tabs { display: flex; padding: 0 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; }
+.tabs span { padding: 6px 12px; border-right: 1px solid #e8eaed; }
+.tabs span.active { background: #fff; font-weight: 600; border-top: 2px solid #1a73e8; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { border: 1px solid #e8eaed; padding: 6px 10px; text-align: left; vertical-align: middle; height: 26px; }
+th { background: #f8f9fa; color: #5f6368; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+td.idx, th.idx { background: #f8f9fa; color: #80868b; text-align: center; font-weight: 600; width: 40px; }
+td.gutter, th.gutter { width: 24px; background: #f8f9fa; text-align: center; color: #80868b; font-size: 11px; padding: 0; }
+
+.group-header td { font-weight: 700; padding: 10px 12px; font-size: 12px; cursor: pointer; }
+.group-header .caret { display: inline-block; width: 14px; color: #5f6368; }
+.group-header .count { color: #5f6368; font-weight: 500; margin-left: 8px; }
+.group-header.priority { background: #fff2cc; }
+.group-header.now      { background: #d9f1da; }
+.group-header.first    { background: #fff4d6; }
+.group-header.wait     { background: #f3e8ff; }
+.group-header.sent     { background: #cfe9fc; }
+.group-header.done     { background: #eceff1; color: #5f6368; }
+.group-header.blocked  { background: #fce4e4; color: #a1252b; }
+
+td.muted { color: #80868b; }
+td.url a { color: #1a73e8; text-decoration: none; }
+td.name { font-weight: 500; padding-left: 24px; }
+
+.collapsed { display: none; }
+
+.note { font-size: 12px; color: #5f6368; margin-top: 18px; line-height: 1.6; }
+.note code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-family: 'Roboto Mono', ui-monospace, monospace; font-size: 11px; }
+</style>
+<script>
+function toggleGroup(id) {
+  document.querySelectorAll('.grp-' + id).forEach(r => r.classList.toggle('collapsed'));
+  const h = document.getElementById('h-' + id);
+  if (h) h.querySelector('.caret').textContent = h.querySelector('.caret').textContent === '▾' ? '▸' : '▾';
+}
+</script>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sheet redesign — K. Grouped collapsible rows</h1>
+  <p class="sub">All leads on one tab, grouped by stage with collapsible headers. Click ▾ to expand a stage. Always see counts. (Sketches show "Connected · DM Now" expanded; the rest collapsed.)</p>
+
+  <div class="panel">
+    <div class="toolbar"><span class="name">Outreach Pipeline</span><span>· File · Edit · View · Insert · Format · Data</span></div>
+    <div class="tabs"><span class="active">Pipeline</span><span>Audit Log</span><span>Senders</span></div>
+    <table>
+      <thead>
+        <tr>
+          <th class="gutter"></th>
+          <th class="idx"></th>
+          <th>Lead</th>
+          <th>Sender</th>
+          <th>Last action</th>
+          <th>Days</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Replied — operator's turn -->
+        <tr id="h-replied" class="group-header priority" onclick="toggleGroup('replied')">
+          <td class="gutter">▸</td><td colspan="5"><span class="caret">▸</span> 📩 Replied — read &amp; respond <span class="count">2</span></td>
+        </tr>
+        <tr class="grp-replied collapsed"><td class="gutter">3</td><td class="idx">3</td><td class="name">Edwin Silva</td><td>iliya@</td><td>Replied 1d ago</td><td>1d</td></tr>
+        <tr class="grp-replied collapsed"><td class="gutter">4</td><td class="idx">4</td><td class="name">Andrea Prashad</td><td>christian.saguid@</td><td>Replied 6h ago</td><td>0d</td></tr>
+
+        <!-- DM Now — bot's next pick -->
+        <tr id="h-now" class="group-header now" onclick="toggleGroup('now')">
+          <td class="gutter">▾</td><td colspan="5"><span class="caret">▾</span> ✓ Connected · DM Now <span class="count">4</span></td>
+        </tr>
+        <tr class="grp-now"><td class="gutter">5</td><td class="idx">5</td><td class="name">Ravi Bhatia</td><td>iliya@</td><td>Connect accepted 2d ago</td><td>2d</td></tr>
+        <tr class="grp-now"><td class="gutter">6</td><td class="idx">6</td><td class="name">Mike Hendley</td><td>zhelena@</td><td>Connect accepted 3d ago</td><td>3d</td></tr>
+        <tr class="grp-now"><td class="gutter">7</td><td class="idx">7</td><td class="name">Patricia Liu</td><td>milee.mel@</td><td>Connect accepted 4d ago</td><td>4d</td></tr>
+        <tr class="grp-now"><td class="gutter">8</td><td class="idx">8</td><td class="name">Daniel Park</td><td>kenya5@</td><td>Connect accepted 5d ago</td><td>5d</td></tr>
+
+        <!-- Send Connect -->
+        <tr id="h-first" class="group-header first" onclick="toggleGroup('first')">
+          <td class="gutter">▸</td><td colspan="5"><span class="caret">▸</span> 🆕 Never contacted — Send Connect <span class="count">312</span></td>
+        </tr>
+
+        <!-- Pending -->
+        <tr id="h-wait" class="group-header wait" onclick="toggleGroup('wait')">
+          <td class="gutter">▸</td><td colspan="5"><span class="caret">▸</span> ⏳ Connect Pending <span class="count">47</span></td>
+        </tr>
+
+        <!-- DM Sent -->
+        <tr id="h-sent" class="group-header sent" onclick="toggleGroup('sent')">
+          <td class="gutter">▸</td><td colspan="5"><span class="caret">▸</span> 💬 DM Sent — awaiting reply <span class="count">28</span></td>
+        </tr>
+
+        <!-- Done -->
+        <tr id="h-done" class="group-header done" onclick="toggleGroup('done')">
+          <td class="gutter">▸</td><td colspan="5"><span class="caret">▸</span> ✓ Done <span class="count">183</span></td>
+        </tr>
+
+        <!-- Blocked -->
+        <tr id="h-blocked" class="group-header blocked" onclick="toggleGroup('blocked')">
+          <td class="gutter">▸</td><td colspan="5"><span class="caret">▸</span> ✗ Skipped / Blocked <span class="count">81</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <strong>How this works in Sheets:</strong> use Sheets' native row grouping (<code>Data → Group rows</code>). The bot writes a hidden <code>Group Key</code> column with the stage name, then a sort + group operation creates the collapsible buckets. Group headers are merged cells with the count formula <code>=COUNTIF(GroupKey, "Replied")</code>. <br>
+    <strong>Why it's nice:</strong> always see the funnel shape (counts per stage). One click drops you into a stage. Replied and DM Now stay open; the 600 long-tail rows hide. <br>
+    <strong>Trade-off:</strong> Sheets row grouping has quirks — the +/- toggles live in a thin gutter on the LEFT (like the gray gutter in this sketch) and don't always look this clean.
+  </div>
+</div>
+</body>
+</html>

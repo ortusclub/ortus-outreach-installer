@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ortus Outreach — UI Sketches</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #0a0a09; color: #fafaf9; font-family: 'Inter', sans-serif; line-height: 1.6; padding: 64px 40px; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-family: 'Cormorant Garamond', serif; font-size: 2.6rem; font-weight: 500; margin: 0 0 8px; }
+  h1 em { color: #F7BE68; font-style: italic; font-weight: 400; }
+  .sub { color: #8b867a; font-size: 0.7rem; letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 48px; }
+  .card { display: block; padding: 28px 32px; margin-bottom: 16px; background: #14140f; border: 1px solid rgba(197, 162, 85, 0.22); border-radius: 8px; color: #fafaf9; text-decoration: none; transition: all 0.2s; }
+  .card:hover { border-color: #F7BE68; transform: translateY(-1px); }
+  .card-label { font-size: 0.62rem; letter-spacing: 0.3em; text-transform: uppercase; color: #C5A255; margin-bottom: 6px; }
+  .card-title { font-family: 'Cormorant Garamond', serif; font-size: 1.6rem; font-weight: 500; margin: 0 0 6px; }
+  .card-desc { color: #c9c5bd; font-size: 0.88rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ortus <em>Outreach</em> · Sketches</h1>
+  <div class="sub">Three Directions · Pick One</div>
+
+  <a class="card" href="A-editorial-dark.html">
+    <div class="card-label">Direction A</div>
+    <div class="card-title">Editorial Dark</div>
+    <div class="card-desc">Dark luxury. Cormorant headings + Inter body. Gold hairlines and accents over black. Reads like a magazine spread in dark mode — generous whitespace, numbered sections, masthead-style header. Power-user density preserved.</div>
+  </a>
+
+  <a class="card" href="B-private-club-light.html">
+    <div class="card-label">Direction B</div>
+    <div class="card-title">Private Club Light</div>
+    <div class="card-desc">Cream background (#fafaf9), dark ink, deep gold. Centered masthead with wordmark divider, Roman numeral sections, pill buttons, gold-wash accent areas. Feels like a member portal at a private club.</div>
+  </a>
+
+  <a class="card" href="C-command-deck.html">
+    <div class="card-label">Direction C</div>
+    <div class="card-title">Command Deck</div>
+    <div class="card-desc">Restructured layout: sticky sidebar nav with Roman-numeralled sections, main-area panels, hero stats, live feed, sticky "run bar" footer. Still dark + gold. Best for day-to-day operators who jump between sections and need overview at a glance.</div>
+  </a>
+
+  <a class="card" href="ic-preflight-toggle-v1.html">
+    <div class="card-label">Sketch · 2026-05-21</div>
+    <div class="card-title">IC Pre-flight Bulk-Check Toggle — Placement</div>
+    <div class="card-desc">Re-expose the "Run Check Status first" toggle for IC (introduce_back) that was removed in v2.58.x — backend at src/campaign.js:1710 still supports it. Three placement variants: exact DM clone, clone with crossref note, clone with live state-pill of the existing "all leads already connected" checkbox.</div>
+  </a>
+
+  <a class="card" href="dashboard-cleanup-v1.html">
+    <div class="card-label">Sketch · 2026-05-21</div>
+    <div class="card-title">Dashboard Cleanup — Resume · State Pills · Tab Counts</div>
+    <div class="card-desc">Three sections with side-by-side variants: (1) replacing the "(resumed)" name suffix with cleaner indicators, (2) replacing the ALL-tab text pill with left rails / dots / section headers, (3) calmer tab counter treatments. Built with the real campaign-row CSS. Footer covers why the counters feel "slow" (refresh cadence, not styling).</div>
+  </a>
+
+  <a class="card" href="past-row-resume-labels.html">
+    <div class="card-label">Sketch · 2026-05-21</div>
+    <div class="card-title">Past-row Resume — Label Sketches</div>
+    <div class="card-desc">5 label variants (RESUME, CONTINUE, PICK UP, RUN AGAIN, RESUME-hairline) + 1 "chip-as-button" treatment for the one-click resume button on stopped past-campaign rows. Built with the real campaign-row CSS so it renders 1:1 with the dashboard. Click pills to feel hover states; toggle theme top-right.</div>
+  </a>
+
+  <a class="card" href="bulk-check-inline-status.html">
+    <div class="card-label">Sketch · 2026-05-17</div>
+    <div class="card-title">Bulk Check — Inline Status Variants</div>
+    <div class="card-desc">Four ways to handle the area next to the "Bulk check connections" button while a sweep is running. All variants pipe full log lines into the main log panel; they differ in what (if anything) sits inline next to the button — quiet pill, progress bar, per-account ticker, or a floating toast.</div>
+  </a>
+
+  <a class="card" href="sheet-visual-cleanup.html">
+    <div class="card-label">Sketch · 2026-05-17</div>
+    <div class="card-title">Sheet Visual Cleanup</div>
+    <div class="card-desc">Four variants to reduce visual noise in the operator-facing Google Sheet. Sheets-realistic mockups using only cell fills, borders, and font weights (no HTML pills). Three of the four are pure conditional-formatting changes — no Apps Script touched.</div>
+  </a>
+
+  <a class="card" href="sheet-no-truncation.html">
+    <div class="card-label">Sketch · 2026-05-17</div>
+    <div class="card-title">Sheet — Kill the Truncation</div>
+    <div class="card-desc">Same saturated colors and bold weight as today — only column widths and wrap policy change. Three layout strategies to get rid of "…" everywhere: auto-fit all columns, wrap long content, or strategic widths with URL-only wrap. Pure spreadsheet formatting, no code changes.</div>
+  </a>
+
+  <a class="card" href="central-logs.html">
+    <div class="card-label">Sketch · 2026-05-17</div>
+    <div class="card-title">Central Logs — Operations &amp; Campaigns</div>
+    <div class="card-desc">Two new tabs visible to the whole team: per-event operations &amp; errors log (color-tinted by severity), and a campaign activity log with per-operator summary band at the top. Data sourced from existing structures the bot already captures — nothing invented. Open questions listed at the bottom of the sketch.</div>
+  </a>
+</div>
+</body>
+</html>

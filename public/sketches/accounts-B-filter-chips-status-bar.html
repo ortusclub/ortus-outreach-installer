@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Accounts · Direction B — Filter chips + status bar</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { --bg:#000; --ink:#fff; --gray:#999; --hairline:rgba(255,255,255,0.15); --hairline-soft:rgba(255,255,255,0.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68; --display:'Bebas Neue',sans-serif; --mono:'JetBrains Mono',monospace; --body:'Inter',sans-serif; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--ink); font-family:var(--body); -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1280px; margin:0 auto; padding:48px; }
+.label { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); margin-bottom:14px; }
+h2 { font-family:var(--display); font-weight:400; font-size:2.4rem; line-height:1; letter-spacing:0.01em; text-transform:uppercase; margin-bottom:32px; }
+
+.toolbar { display:flex; gap:12px; margin-bottom:16px; }
+.toolbar input { flex:1; background:transparent; border:none; border-bottom:1px solid var(--hairline); padding:10px 0; color:var(--ink); font-size:0.9rem; }
+.toolbar input:focus { outline:none; border-bottom-color:var(--ink); }
+.btn { padding:10px 20px; border:1px solid var(--hairline); border-radius:9999px; background:transparent; font-family:var(--mono); font-size:0.65rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--ink); cursor:pointer; font-weight:400; transition:opacity 0.15s; }
+.btn:hover { opacity:0.6; }
+
+.chips { display:flex; gap:8px; flex-wrap:wrap; padding:16px 0; border-bottom:1px solid var(--hairline); margin-bottom:20px; }
+.chip { padding:8px 16px; border:1px solid var(--hairline); border-radius:9999px; background:transparent; font-family:var(--mono); font-size:0.62rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); cursor:pointer; font-weight:400; display:flex; align-items:center; gap:10px; }
+.chip:hover { color:var(--ink); }
+.chip.active { color:var(--ink); border-color:var(--ink); }
+.chip .count { color:var(--gray); font-size:0.58rem; padding-left:6px; border-left:1px solid var(--hairline); }
+.chip.active .count { color:var(--ink); border-left-color:var(--ink); }
+
+.grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:1px; background:var(--hairline); border:1px solid var(--hairline); }
+.card { background:var(--bg); padding:14px 16px; cursor:pointer; position:relative; display:flex; flex-direction:column; gap:6px; transition:opacity 0.15s; }
+.card:hover { opacity:0.75; }
+.card.selected { background:var(--hairline-soft); }
+.card.selected::before { content:''; position:absolute; top:0; bottom:0; left:0; width:2px; background:var(--ink); }
+.card-head { display:flex; align-items:center; gap:10px; }
+.card-head input[type=checkbox] { accent-color:var(--ink); width:14px; height:14px; flex-shrink:0; }
+.card-name { font-size:0.88rem; color:var(--ink); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card-meta { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.12em; color:var(--gray); text-transform:uppercase; }
+
+.status-bar { display:grid; grid-template-columns:1fr 1fr 1fr; gap:2px; margin-top:8px; height:4px; }
+.status-seg { height:100%; background:var(--hairline); border-radius:2px; position:relative; }
+.status-seg.avail { background:var(--green); }
+.status-seg.in-use, .status-seg.used { background:var(--gold); }
+.status-seg.na { background:var(--red); opacity:0.5; }
+.status-legend { display:flex; justify-content:space-between; font-family:var(--mono); font-size:0.52rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--gray); margin-top:4px; }
+
+.footer-strip { display:flex; justify-content:space-between; padding:20px 0 0; font-family:var(--mono); font-size:0.65rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction B</div>
+  <h2>Filter chips + status bar</h2>
+
+  <div class="toolbar">
+    <input type="text" placeholder="Search by name, email, or @assignee…" />
+    <button class="btn">Refresh</button>
+  </div>
+
+  <div class="chips">
+    <button class="chip active">All <span class="count">302</span></button>
+    <button class="chip">My Assigned <span class="count">14</span></button>
+    <button class="chip">Pool <span class="count">256</span></button>
+    <button class="chip">Available <span class="count">198</span></button>
+    <button class="chip">In use <span class="count">104</span></button>
+    <button class="chip">Problem <span class="count">7</span></button>
+    <button class="chip">Selected only <span class="count">3</span></button>
+  </div>
+
+  <div class="grid">
+    <div class="card selected">
+      <div class="card-head">
+        <input type="checkbox" checked>
+        <span class="card-name">Local Browser</span>
+      </div>
+      <div class="card-meta">System Chrome · active</div>
+    </div>
+
+    <div class="card selected">
+      <div class="card-head">
+        <input type="checkbox" checked>
+        <span class="card-name">dennis.peralta@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Executive · 32m ago</div>
+      <div class="status-bar"><div class="status-seg avail"></div><div class="status-seg avail"></div><div class="status-seg used"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+
+    <div class="card selected">
+      <div class="card-head">
+        <input type="checkbox" checked>
+        <span class="card-name">kyra.delacruz@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Assigned · Ton</div>
+      <div class="status-bar"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg used"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <input type="checkbox">
+        <span class="card-name">asaduzzaman.r@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Pool · 5h ago</div>
+      <div class="status-bar"><div class="status-seg in-use"></div><div class="status-seg in-use"></div><div class="status-seg avail"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <input type="checkbox">
+        <span class="card-name">junie.almeda@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Assigned · Ton</div>
+      <div class="status-bar"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg used"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <input type="checkbox">
+        <span class="card-name">jerianne.c@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Pool · 3d ago</div>
+      <div class="status-bar"><div class="status-seg avail"></div><div class="status-seg avail"></div><div class="status-seg avail"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <input type="checkbox">
+        <span class="card-name">alfhea.rabacal@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Pool · 2w ago</div>
+      <div class="status-bar"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <input type="checkbox">
+        <span class="card-name">sophie.pascua@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Assigned · Aima</div>
+      <div class="status-bar"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg avail"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <input type="checkbox">
+        <span class="card-name">francis.zuzartee@ortus.solutions</span>
+      </div>
+      <div class="card-meta">Pool · 3w ago</div>
+      <div class="status-bar"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div>
+      <div class="status-legend"><span>OP</span><span>IN</span><span>CC</span></div>
+    </div>
+  </div>
+
+  <div class="footer-strip">
+    <span>3 selected / 302 total · filtered by All</span>
+    <span>Hover a card for full SoO details</span>
+  </div>
+</div>
+</body>
+</html>

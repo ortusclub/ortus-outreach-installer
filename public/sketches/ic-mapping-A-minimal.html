@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IC sheet mapping · Variant A · Minimal</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 48px 56px;
+    min-height: 100vh;
+  }
+  .page-head { padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 8px; }
+
+  .section { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 24px; }
+
+  /* The actual sketch — IC mapping block */
+  .ic-mapping {
+    margin-top: 14px;
+    padding-top: 20px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .ic-mapping__instruction {
+    font-size: 0.9rem;
+    color: var(--ink);
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+  .ic-mapping__instruction em { font-style: italic; font-weight: 600; }
+
+  .ic-mapping__field { margin-bottom: 8px; }
+  .ic-mapping__label {
+    font-size: 0.75rem;
+    color: var(--gray);
+    margin-bottom: 6px;
+    display: block;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .ic-mapping__select {
+    width: 100%;
+    max-width: 480px;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    background: white;
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+  }
+  .ic-mapping__select:disabled { color: var(--gray); background-color: var(--hairline-soft); }
+  .ic-mapping__hint {
+    font-size: 0.75rem;
+    color: var(--gray);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+  .ic-mapping__hint code { font-family: var(--mono); font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 5px; }
+
+  .ic-mapping__divider {
+    border-top: 1px solid var(--hairline-soft);
+    margin: 18px 0 14px;
+  }
+
+  .ic-mapping__check {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    cursor: pointer;
+  }
+  .ic-mapping__check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--ink); }
+  .ic-mapping__check-label { font-size: 0.9rem; color: var(--ink); line-height: 1.4; }
+  .ic-mapping__check-hint { font-size: 0.75rem; color: var(--gray); margin-top: 3px; line-height: 1.45; }
+
+  .stage { background: white; padding: 32px 36px; border: 1px solid var(--hairline); max-width: 760px; }
+
+  .notes { margin-top: 28px; font-size: 0.85rem; color: var(--gray-2); line-height: 1.6; max-width: 760px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1 class="page-title">IC Sheet Mapping · Variant A · Minimal</h1>
+    <p class="page-sub">No "SHEET MAPPING" pill. Instruction as a regular bold lead-in. Tight spacing. Hairline divider between dropdown and checkbox so the two questions don't blur.</p>
+  </div>
+
+  <div class="stage">
+    <h2 class="section">2. Google Sheet tab URL</h2>
+    <div style="color: var(--gray); font-size: 0.85rem;">[sheet URL input, hint, Preview/Open buttons appear here]</div>
+
+    <!-- This is the IC mapping block -->
+    <div class="ic-mapping">
+      <p class="ic-mapping__instruction">
+        <b>Press <em>Preview Sheet</em> first</b>, then choose the column header for the LinkedIn 1st connections.
+      </p>
+
+      <div class="ic-mapping__field">
+        <label class="ic-mapping__label" for="col">LinkedIn 1st-connection column</label>
+        <select class="ic-mapping__select" id="col" disabled>
+          <option>— Preview the sheet first to load columns —</option>
+        </select>
+        <p class="ic-mapping__hint">Cell values must match a GoLogin profile display name (e.g. <code>alecx@ortus.solutions</code>).</p>
+      </div>
+
+      <div class="ic-mapping__divider"></div>
+
+      <label class="ic-mapping__check">
+        <input type="checkbox" />
+        <div>
+          <div class="ic-mapping__check-label">All leads in this sheet are already connected</div>
+          <div class="ic-mapping__check-hint">Skip the <code>Stage = "Connected · DM Now"</code> filter for sheets without a Stage column.</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>Design choices.</b> Dropped the all-caps "INTRODUCTION CAMPAIGN · SHEET MAPPING" pill — the operator is already in IC mode, so naming the mode again is noise. Bold/italic in the instruction give emphasis without competing with the section title. Dropdown is disabled with a clear placeholder until preview runs. Hairline divider between the two questions so the second one doesn't feel jammed in.
+  </div>
+</body>
+</html>

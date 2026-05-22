@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dashboard B · Interactive prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:780px;line-height:1.5;margin-bottom:32px}
+.deck b{color:var(--ink);font-weight:500}
+
+.app{border:1px solid var(--hl);padding:36px 40px 60px;background:#050505;position:relative;min-height:760px}
+.app-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hl);padding-bottom:22px;margin-bottom:28px}
+.brand{font-family:var(--d);font-size:1.4rem;letter-spacing:0.04em}
+.brand small{color:var(--gray);font-family:var(--b);font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;margin-left:10px}
+.actions{display:flex;gap:10px}
+.btn{border:1px solid var(--hl);background:transparent;color:var(--ink);font-family:var(--b);font-size:0.66rem;letter-spacing:0.16em;text-transform:uppercase;padding:9px 16px;cursor:pointer;border-radius:9999px;transition:all 0.12s ease}
+.btn:hover{border-color:var(--ink)}
+.btn.gold{border-color:var(--gold);color:var(--gold)}
+.btn.gold:hover{background:rgba(247,190,104,0.08)}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.btn.danger:hover{background:rgba(248,81,73,0.08)}
+.btn:disabled{opacity:0.35;cursor:not-allowed}
+.btn:disabled:hover{border-color:var(--hl);background:transparent}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid var(--hl);gap:0}
+.tab{padding:18px 26px;font-family:var(--d);font-size:1.05rem;letter-spacing:0.06em;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:baseline;gap:8px;background:transparent;border-left:none;border-right:none;border-top:none;font-weight:400;transition:color 0.12s}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--ink);border-bottom-color:var(--gold)}
+.tab .ct{font-family:var(--b);font-size:0.62rem;letter-spacing:0.18em;color:var(--gray);padding:2px 8px;border:1px solid var(--hl);border-radius:9999px}
+.tab.on .ct{border-color:var(--gold);color:var(--gold)}
+.tab .new{background:var(--gold);color:#000;border-radius:9999px;padding:1px 6px;font-size:0.55rem;font-weight:700}
+
+/* Toolbar */
+.toolbar{display:flex;justify-content:space-between;align-items:center;padding:18px 0 14px;border-bottom:1px solid var(--hls)}
+.tool-l{display:flex;align-items:center;gap:18px;font-size:0.72rem}
+.tool-l .selall{display:flex;align-items:center;gap:8px;color:var(--gray);letter-spacing:0.06em;cursor:pointer;user-select:none}
+.tool-l .selall:hover{color:var(--ink)}
+.tool-l .selall .check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;position:relative;transition:all 0.12s}
+.tool-l .selall .check.on{border-color:var(--gold);background:var(--gold)}
+.tool-l .selall .check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.tool-l .selall .check.some{border-color:var(--gold);background:rgba(247,190,104,0.4)}
+.tool-l .selall .check.some::after{content:"–";position:absolute;color:#000;font-size:11px;left:3px;top:-3px;font-weight:700}
+.tool-r{display:flex;align-items:center;gap:10px}
+.search{background:transparent;border:1px solid var(--hl);color:var(--ink);padding:6px 12px;font-family:var(--b);font-size:0.72rem;border-radius:9999px;width:240px;outline:none;transition:border-color 0.12s}
+.search:focus{border-color:var(--ink)}
+.search::placeholder{color:var(--gray)}
+
+/* Bulk strip */
+.bulkstrip{background:rgba(247,190,104,0.05);border:1px solid var(--gold);padding:10px 16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center;font-size:0.72rem;animation:slideDown 0.2s ease}
+@keyframes slideDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.bulkstrip .n{color:var(--gold);font-family:var(--d);font-size:1.05rem;margin-right:10px;letter-spacing:0.05em}
+.bulkstrip-r{display:flex;gap:8px}
+
+/* Rows */
+.list{min-height:380px}
+.row{display:grid;grid-template-columns:28px 1fr 130px 140px 110px 100px 32px;align-items:center;gap:14px;padding:16px 6px;border-bottom:1px solid var(--hls);font-size:0.78rem;cursor:pointer;transition:background 0.1s}
+.row:hover{background:rgba(255,255,255,0.02)}
+.row.sel{background:rgba(247,190,104,0.05)}
+.row.sel:hover{background:rgba(247,190,104,0.08)}
+.row.removing{animation:fadeOut 0.25s forwards}
+@keyframes fadeOut{to{opacity:0;transform:scaleY(0.6);padding-top:0;padding-bottom:0;border-bottom-width:0}}
+.check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;cursor:pointer;position:relative;transition:all 0.12s}
+.check.on{border-color:var(--gold);background:var(--gold)}
+.check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.name{font-weight:500;letter-spacing:0.01em}
+.name small{display:block;color:var(--gray);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;margin-top:3px}
+.tag{display:inline-block;font-family:var(--d);font-size:0.78rem;letter-spacing:0.08em;padding:3px 10px;border:1px solid var(--hl);border-radius:9999px;text-align:center}
+.tag.amber{color:var(--gold);border-color:var(--gold)}
+.tag.green{color:var(--green);border-color:var(--green)}
+.tag.gray{color:var(--gray)}
+.tag.red{color:var(--red);border-color:var(--red)}
+.mode{font-family:var(--d);font-size:0.84rem;color:var(--gray);letter-spacing:0.06em}
+.when{color:var(--gray);font-size:0.7rem}
+.met{font-family:var(--d);font-size:1.05rem;letter-spacing:0.06em;text-align:right}
+.met small{font-family:var(--b);font-size:0.56rem;letter-spacing:0.16em;color:var(--gray);text-transform:uppercase;display:block;margin-top:2px}
+.kebab{color:var(--gray);text-align:right;cursor:pointer;letter-spacing:0.2em}
+.kebab:hover{color:var(--ink)}
+
+.empty{text-align:center;padding:60px 20px;color:var(--gray);font-size:0.84rem;letter-spacing:0.04em}
+.empty .big{font-family:var(--d);font-size:1.4rem;letter-spacing:0.06em;color:var(--gray);margin-bottom:8px;text-transform:uppercase}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;background:#0a0a0a;border:1px solid var(--gold);color:var(--ink);padding:14px 20px;font-size:0.78rem;letter-spacing:0.04em;border-radius:4px;animation:toastIn 0.25s ease;z-index:100;max-width:380px}
+@keyframes toastIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.toast .lbl{font-family:var(--d);font-size:0.72rem;letter-spacing:0.18em;color:var(--gold);margin-bottom:4px}
+
+/* Confirm dialog */
+.dialog-bg{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:200;animation:fadeIn 0.15s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.dialog{background:#0a0a0a;border:1px solid var(--red);padding:30px 36px;max-width:480px;width:90%}
+.dialog h2{font-family:var(--d);font-size:1.4rem;letter-spacing:0.06em;color:var(--red);margin-bottom:14px;text-transform:uppercase}
+.dialog p{font-size:0.86rem;line-height:1.55;margin-bottom:18px}
+.dialog p b{color:var(--ink)}
+.dialog .preview{border:1px solid var(--hls);padding:10px 14px;margin-bottom:20px;font-size:0.74rem;color:var(--gray);max-height:120px;overflow:auto}
+.dialog .preview span{display:block;padding:2px 0}
+.dialog-actions{display:flex;justify-content:flex-end;gap:10px}
+
+/* Tab helpers */
+[data-tab-panel]{display:none}
+[data-tab-panel].on{display:block}
+
+.notes{margin-top:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--hl)}
+.note{padding:22px 24px;border-right:1px solid var(--hl)}
+.note:last-child{border-right:none}
+.note-h{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.note p{font-size:0.78rem;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="crumbs"><a href="dashboard-index.html">← all alternatives</a> · DASHBOARD B · INTERACTIVE PROTOTYPE</div>
+<h1>B — interactive</h1>
+<p class="deck">Click the tabs. Click any row's checkbox or the row itself to toggle selection. <b>Select all</b> picks every visible row in the current tab. Type in <b>Search</b> to filter. Hit <b>Delete</b> to remove selected rows (with confirmation). State is local — refresh to reset.</p>
+
+<div class="app">
+  <div class="app-head">
+    <div class="brand">ORTUS OUTREACH<small>v2.51 PROTOTYPE</small></div>
+    <div class="actions"><button class="btn gold" onclick="toast('Would open the New Campaign wizard.')">+ NEW CAMPAIGN</button></div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab" data-tab="active">Active <span class="ct" id="ct-active">—</span></button>
+    <button class="tab on" data-tab="monitoring">Monitoring <span class="ct" id="ct-monitoring">—</span> <span class="new" id="badge-monitoring">2 new</span></button>
+    <button class="tab" data-tab="queued">Queued <span class="ct" id="ct-queued">—</span></button>
+    <button class="tab" data-tab="drafts">Drafts <span class="ct" id="ct-drafts">—</span></button>
+    <button class="tab" data-tab="past">Past <span class="ct" id="ct-past">—</span></button>
+  </div>
+
+  <div class="toolbar">
+    <div class="tool-l">
+      <span class="selall" id="selall"><span class="check" id="selall-check"></span> SELECT ALL</span>
+    </div>
+    <div class="tool-r">
+      <input class="search" id="search" type="text" placeholder="Search this list…" />
+    </div>
+  </div>
+
+  <div id="bulkstrip-container"></div>
+
+  <div class="list" id="list"></div>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <div class="note-h">TRY THIS — BULK DELETE</div>
+    <p>1. Click <b>Past</b> tab. 2. Click <b>Select all</b>. 3. Click <b>Delete</b>. You'll see a confirmation listing the names. Cancel → no harm done.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">TRY THIS — SEARCH</div>
+    <p>Go to <b>Past</b>, type "tokyo" or "tag" in the search box. List filters live. Selection persists when you clear search.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">TRY THIS — MONITORING</div>
+    <p>The <b>Monitoring</b> tab is its own thing now, not buried in Past. Each row shows its day count and next-check time so you know the rhythm at a glance.</p>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ─── Data ────────────────────────────────────────────────────────────────
+const data = {
+  active: [
+    { id:'a1', name:'TAG_LONDON_I', sub:'27 / 50 SENT · STARTED 41M AGO', tag:{txt:'RUNNING',cls:'green'}, mode:'CC + IC', when:'today', metricN:'27', metricL:'SENT' },
+  ],
+  monitoring: [
+    { id:'m1', name:'TAG_AUSTIN_II', sub:'2 / 7 ACCEPTED · NEXT CHECK 13M', tag:{txt:'DAY 3 / 7',cls:'amber'}, mode:'CC + IC', when:'3d ago', metricN:'2', metricL:'INTRO' },
+    { id:'m2', name:'TAG_BERLIN_I', sub:'5 / 12 ACCEPTED · NEXT CHECK 7M', tag:{txt:'DAY 1 / 7',cls:'amber'}, mode:'CC + IC', when:'18h ago', metricN:'5', metricL:'INTRO' },
+    { id:'m3', name:'TAG_NYC_III', sub:'0 / 4 ACCEPTED · NEXT CHECK 4M', tag:{txt:'DAY 6 / 7',cls:'amber'}, mode:'CC + IC', when:'6d ago', metricN:'0', metricL:'INTRO' },
+  ],
+  queued: [
+    { id:'q1', name:'TAG_PARIS_I', sub:'BUILT · WAITING FOR A FREE SLOT', tag:{txt:'QUEUED',cls:'gray'}, mode:'CONNECT', when:'queued 12m ago', metricN:'—', metricL:'OF 80' },
+    { id:'q2', name:'TAG_MILAN_II', sub:'BUILT · WAITING FOR A FREE SLOT', tag:{txt:'QUEUED',cls:'gray'}, mode:'CC + IC', when:'queued 5m ago', metricN:'—', metricL:'OF 30' },
+  ],
+  drafts: [
+    { id:'d1', name:'TAG_DUBAI_I', sub:'TEMPLATES INCOMPLETE', tag:{txt:'DRAFT',cls:'gray'}, mode:'CC + IC', when:'saved 2d ago', metricN:'—', metricL:'' },
+    { id:'d2', name:'untitled', sub:'NEEDS NAME', tag:{txt:'DRAFT',cls:'gray'}, mode:'—', when:'saved 14h ago', metricN:'—', metricL:'' },
+  ],
+  past: [
+    { id:'p1', name:'TAG_TOKYO_II', sub:'48 / 50 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'CONNECT', when:'May 16', metricN:'48', metricL:'SENT' },
+    { id:'p2', name:'TAG_MADRID_I', sub:'30 / 30 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'CC + IC', when:'May 14', metricN:'30', metricL:'SENT' },
+    { id:'p3', name:'TAG_SYDNEY_III', sub:'18 / 50 SENT', tag:{txt:'STOPPED',cls:'red'}, mode:'CC + IC', when:'May 13', metricN:'18', metricL:'SENT' },
+    { id:'p4', name:'TAG_LISBON_I', sub:'22 / 22 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'MESSAGE', when:'May 11', metricN:'22', metricL:'SENT' },
+    { id:'p5', name:'TAG_HK_I', sub:'12 / 12 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'INTRO BACK', when:'May 9', metricN:'12', metricL:'SENT' },
+    { id:'p6', name:'TAG_AMSTERDAM_I', sub:'47 / 50 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'CC + IC', when:'May 8', metricN:'47', metricL:'SENT' },
+    { id:'p7', name:'TAG_SF_II', sub:'5 / 50 SENT', tag:{txt:'STOPPED',cls:'red'}, mode:'CONNECT', when:'May 7', metricN:'5', metricL:'SENT' },
+    { id:'p8', name:'TAG_PARIS_PILOT', sub:'10 / 10 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'CC + IC', when:'May 6', metricN:'10', metricL:'SENT' },
+    { id:'p9', name:'TAG_TORONTO_I', sub:'42 / 50 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'CONNECT', when:'May 4', metricN:'42', metricL:'SENT' },
+    { id:'p10', name:'TAG_MIAMI_I', sub:'35 / 50 SENT', tag:{txt:'DONE',cls:'gray'}, mode:'CC + IC', when:'May 2', metricN:'35', metricL:'SENT' },
+  ],
+};
+
+// ─── State ────────────────────────────────────────────────────────────────
+let currentTab = 'monitoring';
+const selection = new Set(); // ids selected (across all tabs)
+let searchQuery = '';
+
+// ─── Rendering ────────────────────────────────────────────────────────────
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+function visibleRows(){
+  const rows = data[currentTab] || [];
+  if(!searchQuery) return rows;
+  const q = searchQuery.toLowerCase();
+  return rows.filter(r => r.name.toLowerCase().includes(q) || r.mode.toLowerCase().includes(q) || r.sub.toLowerCase().includes(q) || r.when.toLowerCase().includes(q));
+}
+
+function renderRows(){
+  const rows = visibleRows();
+  const list = document.getElementById('list');
+  if(rows.length === 0){
+    list.innerHTML = `<div class="empty"><div class="big">${searchQuery ? 'No matches' : 'Nothing here'}</div>${searchQuery ? 'Try a different search term.' : 'New campaigns will appear here.'}</div>`;
+    return;
+  }
+  list.innerHTML = rows.map(r => {
+    const sel = selection.has(r.id);
+    const metricSmall = r.metricL ? `<small>${r.metricL}</small>` : '';
+    return `<div class="row ${sel ? 'sel' : ''}" data-id="${r.id}">
+      <span class="check ${sel ? 'on' : ''}"></span>
+      <div class="name">${escapeHtml(r.name)} <small>${escapeHtml(r.sub)}</small></div>
+      <span class="tag ${r.tag.cls}">${escapeHtml(r.tag.txt)}</span>
+      <span class="mode">${escapeHtml(r.mode)}</span>
+      <span class="when">${escapeHtml(r.when)}</span>
+      <div class="met">${escapeHtml(r.metricN)}${metricSmall}</div>
+      <span class="kebab">⋯</span>
+    </div>`;
+  }).join('');
+  // attach handlers
+  list.querySelectorAll('.row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if(e.target.classList.contains('kebab')){
+        e.stopPropagation();
+        toast('Would open campaign detail.');
+        return;
+      }
+      toggleSelection(row.dataset.id);
+    });
+  });
+}
+
+function renderTabs(){
+  for(const k of Object.keys(data)){
+    const el = document.getElementById('ct-' + k);
+    if(el) el.textContent = data[k].length;
+  }
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('on', t.dataset.tab === currentTab);
+  });
+  // Hide "2 new" badge if monitoring has no rows
+  const badge = document.getElementById('badge-monitoring');
+  if(badge) badge.style.display = data.monitoring.length > 0 ? '' : 'none';
+}
+
+function renderSelectAll(){
+  const visible = visibleRows();
+  const visibleIds = visible.map(r => r.id);
+  const selectedVisible = visibleIds.filter(id => selection.has(id));
+  const check = document.getElementById('selall-check');
+  check.classList.remove('on', 'some');
+  if(visible.length > 0 && selectedVisible.length === visible.length){
+    check.classList.add('on');
+  } else if(selectedVisible.length > 0){
+    check.classList.add('some');
+  }
+}
+
+function renderBulkStrip(){
+  const visibleIds = visibleRows().map(r => r.id);
+  const selectedVisibleCt = visibleIds.filter(id => selection.has(id)).length;
+  const totalSel = selection.size;
+  const container = document.getElementById('bulkstrip-container');
+  if(totalSel === 0){
+    container.innerHTML = '';
+    return;
+  }
+  const acrossNote = totalSel > selectedVisibleCt ? ` · ${totalSel - selectedVisibleCt} IN OTHER TABS` : '';
+  container.innerHTML = `<div class="bulkstrip">
+    <div><span class="n">${totalSel}</span>SELECTED${acrossNote}</div>
+    <div class="bulkstrip-r">
+      <button class="btn" onclick="clearSelection()">CLEAR</button>
+      ${currentTab === 'monitoring' ? '<button class="btn" onclick="toast(\'Would pause watch on selected.\')">PAUSE WATCH</button>' : ''}
+      <button class="btn danger" onclick="confirmDelete()">DELETE</button>
+    </div>
+  </div>`;
+}
+
+function render(){
+  renderTabs();
+  renderRows();
+  renderSelectAll();
+  renderBulkStrip();
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────
+function setTab(tab){
+  currentTab = tab;
+  // Clear search when switching tabs — feels right
+  searchQuery = '';
+  document.getElementById('search').value = '';
+  render();
+}
+
+function toggleSelection(id){
+  if(selection.has(id)) selection.delete(id);
+  else selection.add(id);
+  render();
+}
+
+function clearSelection(){
+  selection.clear();
+  render();
+}
+
+function toggleSelectAll(){
+  const visible = visibleRows();
+  const visibleIds = visible.map(r => r.id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every(id => selection.has(id));
+  if(allSelected){
+    visibleIds.forEach(id => selection.delete(id));
+  } else {
+    visibleIds.forEach(id => selection.add(id));
+  }
+  render();
+}
+
+function confirmDelete(){
+  const ids = Array.from(selection);
+  const allRows = Object.values(data).flat();
+  const names = ids.map(id => (allRows.find(r => r.id === id) || {}).name || id);
+  const previewHtml = names.map(n => `<span>· ${escapeHtml(n)}</span>`).join('');
+  const dlg = document.createElement('div');
+  dlg.className = 'dialog-bg';
+  dlg.innerHTML = `<div class="dialog">
+    <h2>Delete ${ids.length} campaign${ids.length === 1 ? '' : 's'}?</h2>
+    <p>This removes <b>${ids.length}</b> campaign${ids.length === 1 ? '' : 's'} from the dashboard. The Google Sheet rows are not affected.</p>
+    <div class="preview">${previewHtml}</div>
+    <div class="dialog-actions">
+      <button class="btn" id="dlg-cancel">CANCEL</button>
+      <button class="btn danger" id="dlg-confirm">DELETE ${ids.length}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(dlg);
+  document.getElementById('dlg-cancel').onclick = () => dlg.remove();
+  dlg.onclick = (e) => { if(e.target === dlg) dlg.remove(); };
+  document.getElementById('dlg-confirm').onclick = () => {
+    dlg.remove();
+    deleteSelected();
+  };
+}
+
+function deleteSelected(){
+  // Mark rows as removing for animation, then remove from data
+  const ids = Array.from(selection);
+  document.querySelectorAll('.row').forEach(el => {
+    if(selection.has(el.dataset.id)) el.classList.add('removing');
+  });
+  setTimeout(() => {
+    for(const k of Object.keys(data)){
+      data[k] = data[k].filter(r => !selection.has(r.id));
+    }
+    selection.clear();
+    render();
+    toast(`Deleted ${ids.length} campaign${ids.length === 1 ? '' : 's'}.`);
+  }, 250);
+}
+
+function toast(msg){
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<div class="lbl">PROTOTYPE</div>${escapeHtml(msg)}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.style.opacity = '0', 2400);
+  setTimeout(() => el.remove(), 2700);
+}
+
+// ─── Wire-up ──────────────────────────────────────────────────────────────
+document.getElementById('tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab');
+  if(tab) setTab(tab.dataset.tab);
+});
+document.getElementById('selall').addEventListener('click', toggleSelectAll);
+document.getElementById('search').addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

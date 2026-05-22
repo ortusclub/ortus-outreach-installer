@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stop choice modal — CC+IC only</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --gold: #F7BE68;
+    --amber: #b9770e;
+    --amber-line: rgba(185, 119, 14, 0.55);
+    --red: #c0392b;
+    --red-line: rgba(192, 57, 43, 0.5);
+    --pink: #f6c8c4;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 48px 56px 120px;
+    -webkit-font-smoothing: antialiased;
+    font-weight: 400;
+  }
+
+  .page-head { display: flex; align-items: baseline; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.6rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+
+  .topnav { position: sticky; top: 0; background: var(--bg); padding: 14px 0; border-bottom: 1px solid var(--hairline); margin: -14px -56px 32px; padding-left: 56px; padding-right: 56px; z-index: 10; display: flex; gap: 22px; }
+  .topnav a { color: var(--gray); text-decoration: none; font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; }
+  .topnav a:hover { color: var(--ink); }
+
+  .section { margin-bottom: 64px; }
+  .section-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  .section-title { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .section-counter { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  .section-desc { font-size: 0.85rem; color: var(--gray); margin-bottom: 22px; max-width: 760px; line-height: 1.5; }
+  .section-pros { font-size: 0.7rem; letter-spacing: 0.02em; color: var(--gray); margin-top: 18px; }
+  .section-pros b { color: var(--ink); font-weight: 500; }
+
+  /* ─── Modal staging ──────────────────────────────────────────────────── */
+  .modal-stage {
+    background: rgba(0,0,0,0.7);
+    border: 1px dashed var(--hairline);
+    padding: 60px 40px;
+    display: flex;
+    justify-content: center;
+  }
+  .modal-card {
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    padding: 38px 44px 30px;
+    max-width: 580px;
+    width: 100%;
+    position: relative;
+  }
+  .modal-eyebrow { font-size: 0.55rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .modal-title { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.02em; line-height: 1; margin-bottom: 8px; }
+  .modal-sub { font-size: 0.78rem; color: var(--gray); margin-bottom: 26px; line-height: 1.55; }
+  .modal-close {
+    position: absolute; top: 14px; right: 18px;
+    background: transparent; border: 0; color: var(--gray);
+    font-size: 1.4rem; cursor: pointer;
+  }
+  .modal-close:hover { color: var(--ink); }
+  .modal-cancel {
+    background: transparent; border: 0; color: var(--gray);
+    font-family: var(--mono); font-size: 0.62rem;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    cursor: pointer; padding: 8px 12px;
+  }
+  .modal-cancel:hover { color: var(--ink); }
+  .modal-cancel-row { text-align: center; margin-top: 14px; }
+
+  /* ─── Buttons ─────────────────────────────────────────────────────────── */
+  .btn {
+    background: transparent; color: var(--ink); border: 1px solid var(--hairline);
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 14px 22px; border-radius: 9999px; cursor: pointer; white-space: nowrap;
+    transition: opacity 0.15s, border-color 0.15s, background 0.15s, color 0.15s;
+    width: 100%;
+    font-weight: 500;
+  }
+  .btn:hover { border-color: var(--ink); }
+  .btn--monitor {
+    color: var(--ink);
+    border-color: var(--ink);
+  }
+  .btn--monitor:hover { background: var(--ink); color: var(--bg); }
+  .btn--stop {
+    color: var(--red);
+    border-color: var(--red-line);
+  }
+  .btn--stop:hover { background: var(--red); color: var(--ink); border-color: var(--red); }
+
+  /* ─── V1 — Stacked buttons ───────────────────────────────────────────── */
+  .v1-actions { display: flex; flex-direction: column; gap: 10px; }
+  .v1-helper {
+    font-size: 0.65rem; color: var(--gray); margin-top: 4px; line-height: 1.5;
+    padding-left: 14px; padding-bottom: 8px;
+  }
+  .v1-helper b { color: var(--ink); font-weight: 500; }
+
+  /* ─── V2 — Choice cards ──────────────────────────────────────────────── */
+  .v2-cards { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .choice-card {
+    border: 1px solid var(--hairline);
+    padding: 18px 20px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    text-align: left;
+    background: transparent;
+    color: inherit;
+    font-family: var(--mono);
+    width: 100%;
+    display: block;
+  }
+  .choice-card:hover { border-color: var(--ink); }
+  .choice-card.is-stop:hover { border-color: var(--red); }
+  .choice-card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .choice-card-title {
+    font-family: var(--display);
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .choice-card.is-stop .choice-card-title { color: var(--red); }
+  .choice-card.is-monitor .choice-card-title { color: var(--ink); }
+  .choice-card-arrow { color: var(--gray); font-size: 1rem; }
+  .choice-card-desc { font-size: 0.72rem; color: var(--gray); line-height: 1.5; }
+  .choice-card-meta {
+    margin-top: 10px;
+    display: flex; gap: 14px;
+    font-size: 0.6rem; letter-spacing: 0.04em; color: var(--gray);
+  }
+  .choice-card-meta b { color: var(--ink); font-weight: 500; }
+
+  /* ─── V3 — Compact horizontal pills ──────────────────────────────────── */
+  .v3-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .v3-pill {
+    border: 1px solid var(--hairline);
+    padding: 16px 18px;
+    cursor: pointer;
+    background: transparent;
+    color: inherit;
+    font-family: var(--mono);
+    text-align: left;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .v3-pill-title {
+    font-size: 0.62rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gray);
+    margin-bottom: 4px;
+  }
+  .v3-pill-headline {
+    font-family: var(--display);
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+    margin-bottom: 8px;
+  }
+  .v3-pill-sub { font-size: 0.65rem; color: var(--gray); line-height: 1.45; }
+  .v3-pill.is-stop:hover { border-color: var(--red); color: var(--red); }
+  .v3-pill.is-stop:hover .v3-pill-headline { color: var(--red); }
+  .v3-pill.is-monitor:hover { border-color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <a href="#v1">V1 · Stacked buttons</a>
+  <a href="#v2">V2 · Choice cards</a>
+  <a href="#v3">V3 · Compact pills</a>
+  <a href="#non-cc-ic">Non-CC+IC (reference)</a>
+</div>
+
+<div class="page-head">
+  <div class="page-title">Stop choice modal</div>
+  <div class="page-sub">CC + Introduce Back only · pick the layout</div>
+</div>
+
+<section class="section">
+  <div class="section-desc" style="max-width: 820px;">
+    Today the Stop confirmation modal asks one yes/no. For
+    <b style="color:var(--ink)">Connect + Introduce Back</b> campaigns specifically,
+    you want a third path: <i>stop sending new connection requests, but keep the
+    monitoring loop alive</i> so already-sent invites still get bulk-checked every 6h
+    and intro DMs still auto-fire when invitations are accepted. Other modes
+    (Connect only, Message only, Check status) keep the existing simple modal —
+    see "Non-CC+IC" at the bottom for the unchanged version.
+  </div>
+</section>
+
+<!-- ─── V1 — Stacked full-width buttons ────────────────────────────────── -->
+<section class="section" id="v1">
+  <div class="section-head">
+    <div class="section-title">V1 · Stacked buttons</div>
+    <div class="section-counter">Direct · least clicks · helper text under each</div>
+  </div>
+
+  <div class="modal-stage">
+    <div class="modal-card">
+      <button class="modal-close" type="button">&times;</button>
+      <div class="modal-eyebrow">Stop campaign · Connect + Introduce Back</div>
+      <h2 class="modal-title">What kind of stop?</h2>
+      <p class="modal-sub">
+        You've sent <b style="color:var(--ink)">46 connection requests</b> across 4 accounts.
+        Some haven't been accepted yet — choose what happens to them.
+      </p>
+
+      <div class="v1-actions">
+        <button class="btn btn--monitor">Stop sending · keep monitoring</button>
+        <div class="v1-helper">
+          Stops new connection requests immediately. <b>Bulk-checks fire now</b>,
+          then every 6 h for the next 7 days. Auto-intro DMs still fire when an
+          invitation gets accepted.
+        </div>
+
+        <button class="btn btn--stop">Stop everything</button>
+        <div class="v1-helper">
+          Full halt. No more sends, no more bulk-checks, no auto-intros.
+          Pending invitations stay pending — you'll have to track acceptances
+          manually if you change your mind.
+        </div>
+      </div>
+
+      <div class="modal-cancel-row">
+        <button class="modal-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-pros">
+    <b>Strength:</b> reads top-to-bottom in 8 seconds · helper text under each button is non-modal so the operator never has to hover/tap to learn what it does.&nbsp;&nbsp;&nbsp;
+    <b>Weakness:</b> the modal is tall — 2 buttons + 2 helpers + cancel.
+  </div>
+</section>
+
+<!-- ─── V2 — Choice cards ──────────────────────────────────────────────── -->
+<section class="section" id="v2">
+  <div class="section-head">
+    <div class="section-title">V2 · Choice cards</div>
+    <div class="section-counter">Click anywhere on the card · most editorial</div>
+  </div>
+
+  <div class="modal-stage">
+    <div class="modal-card">
+      <button class="modal-close" type="button">&times;</button>
+      <div class="modal-eyebrow">Stop campaign · Connect + Introduce Back</div>
+      <h2 class="modal-title">What kind of stop?</h2>
+      <p class="modal-sub">
+        46 invitations sent · 12 already accepted · 34 still pending.
+      </p>
+
+      <div class="v2-cards">
+
+        <button class="choice-card is-monitor" type="button">
+          <div class="choice-card-head">
+            <span class="choice-card-title">Stop sending · keep monitoring</span>
+            <span class="choice-card-arrow">→</span>
+          </div>
+          <div class="choice-card-desc">
+            No new connection requests. Bulk-check fires immediately, then every
+            6 hours for 7 days. Auto-intro DMs still fire when invitations get
+            accepted.
+          </div>
+          <div class="choice-card-meta">
+            <span>Browsers close · <b>Monitoring active</b></span>
+          </div>
+        </button>
+
+        <button class="choice-card is-stop" type="button">
+          <div class="choice-card-head">
+            <span class="choice-card-title">Stop everything</span>
+            <span class="choice-card-arrow">→</span>
+          </div>
+          <div class="choice-card-desc">
+            Full halt. No more sends, no more checks, no auto-intros. Pending
+            invitations stay pending — you'll track acceptances yourself if you
+            change your mind.
+          </div>
+          <div class="choice-card-meta">
+            <span>Browsers close · <b>Nothing scheduled</b></span>
+          </div>
+        </button>
+
+      </div>
+
+      <div class="modal-cancel-row">
+        <button class="modal-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-pros">
+    <b>Strength:</b> reads like a luxury menu · the whole card is the click target so finger-friendly · "what happens after" meta strip at the bottom answers the operator's real question.&nbsp;&nbsp;&nbsp;
+    <b>Weakness:</b> two big cards is the most visual real-estate of the three.
+  </div>
+</section>
+
+<!-- ─── V3 — Compact horizontal pills ──────────────────────────────────── -->
+<section class="section" id="v3">
+  <div class="section-head">
+    <div class="section-title">V3 · Compact horizontal pills</div>
+    <div class="section-counter">Tightest footprint · side-by-side comparison</div>
+  </div>
+
+  <div class="modal-stage">
+    <div class="modal-card">
+      <button class="modal-close" type="button">&times;</button>
+      <div class="modal-eyebrow">Stop campaign · Connect + Introduce Back</div>
+      <h2 class="modal-title">What kind of stop?</h2>
+      <p class="modal-sub">46 invitations sent · 34 still pending acceptance.</p>
+
+      <div class="v3-row">
+        <button class="v3-pill is-monitor" type="button">
+          <div class="v3-pill-headline">Stop sending,<br/>keep monitoring</div>
+          <div class="v3-pill-sub">Bulk-check fires now, then every 6 h for 7 days. Auto-intro DMs still fire on accept.</div>
+        </button>
+        <button class="v3-pill is-stop" type="button">
+          <div class="v3-pill-headline">Stop<br/>everything</div>
+          <div class="v3-pill-sub">No sends, no checks, no DMs. Pending invites stay pending.</div>
+        </button>
+      </div>
+
+      <div class="modal-cancel-row">
+        <button class="modal-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-pros">
+    <b>Strength:</b> tightest modal · side-by-side comparison · "Recommended" eyebrow gently nudges to the safer option.&nbsp;&nbsp;&nbsp;
+    <b>Weakness:</b> less room for the "what happens after" detail · two long card headlines stacked on two lines feels less polished than V2.
+  </div>
+</section>
+
+<!-- ─── Reference: existing modal for other modes ──────────────────────── -->
+<section class="section" id="non-cc-ic">
+  <div class="section-head">
+    <div class="section-title">Non-CC+IC modes · unchanged</div>
+    <div class="section-counter">Connect only · Message only · Check status</div>
+  </div>
+  <div class="section-desc">
+    For all other modes the current modal stays exactly as is — there's no
+    monitoring phase to preserve, so the third option doesn't apply.
+  </div>
+
+  <div class="modal-stage">
+    <div class="modal-card" style="max-width: 480px;">
+      <button class="modal-close" type="button">&times;</button>
+      <h2 class="modal-title">Stop campaign?</h2>
+      <p class="modal-sub">
+        All running browsers will be force-closed and the current run will end.
+        Any leads already sent today are saved — leads in progress will roll
+        back to "not attempted".
+      </p>
+      <div class="v1-actions" style="flex-direction: row; gap: 10px;">
+        <button class="btn" type="button" style="border-color: var(--hairline);">Cancel</button>
+        <button class="btn btn--stop" type="button">Yes, stop campaign</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

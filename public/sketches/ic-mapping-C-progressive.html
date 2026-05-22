@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IC sheet mapping · Variant C · Progressive disclosure</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 48px 56px; min-height: 100vh; }
+  .page-head { padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 8px; }
+  .section { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 24px; }
+  .stage { background: white; padding: 32px 36px; border: 1px solid var(--hairline); max-width: 760px; }
+
+  /* State A — before preview */
+  .ic-empty {
+    margin-top: 14px;
+    padding: 18px 20px;
+    border: 1px dashed var(--hairline);
+    text-align: center;
+  }
+  .ic-empty__icon { font-size: 1.4rem; opacity: 0.4; margin-bottom: 6px; }
+  .ic-empty__lead { font-size: 0.95rem; color: var(--ink); font-weight: 600; margin-bottom: 4px; }
+  .ic-empty__sub { font-size: 0.8rem; color: var(--gray); }
+
+  /* State B — after preview */
+  .ic-filled { margin-top: 14px; padding-top: 18px; border-top: 1px solid var(--hairline); }
+  .ic-filled__row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 24px;
+    align-items: start;
+    margin-bottom: 18px;
+  }
+  .ic-filled__label-block { padding-top: 9px; }
+  .ic-filled__label {
+    font-family: var(--display);
+    font-size: 0.85rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .ic-filled__sub { font-size: 0.7rem; color: var(--gray); line-height: 1.45; }
+  .ic-filled__sub code { font-family: var(--mono); font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 5px; }
+
+  .ic-filled__select {
+    width: 100%;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    background: white;
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+  }
+  .ic-filled__select.is-detected { border-color: var(--ink); }
+
+  .ic-filled__check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding-top: 4px; }
+  .ic-filled__check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--ink); }
+  .ic-filled__check-label { font-size: 0.9rem; color: var(--ink); line-height: 1.4; }
+  .ic-filled__check-hint { font-size: 0.7rem; color: var(--gray); margin-top: 3px; line-height: 1.45; }
+
+  .auto-detected {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gold); margin-top: 6px;
+  }
+  .auto-detected::before { content: '●'; font-size: 8px; }
+
+  .state-label {
+    font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--gray); margin: 32px 0 8px;
+  }
+
+  .notes { margin-top: 28px; font-size: 0.85rem; color: var(--gray-2); line-height: 1.6; max-width: 760px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1 class="page-title">IC Sheet Mapping · Variant C · Progressive disclosure</h1>
+    <p class="page-sub">Two-state design. Before Preview Sheet: a single muted call-to-action telling the operator to press Preview. After Preview: the actual form, with auto-detected column highlighted.</p>
+  </div>
+
+  <p class="state-label">Before Preview Sheet has been pressed</p>
+  <div class="stage">
+    <h2 class="section">2. Google Sheet tab URL</h2>
+    <div style="color: var(--gray); font-size: 0.85rem;">[sheet URL input, hint, Preview/Open buttons appear here]</div>
+
+    <div class="ic-empty">
+      <div class="ic-empty__icon">↓</div>
+      <div class="ic-empty__lead">Press <em>Preview Sheet</em> to load the column list.</div>
+      <div class="ic-empty__sub">You'll pick which column holds the LinkedIn 1st-connection sender.</div>
+    </div>
+  </div>
+
+  <p class="state-label">After Preview Sheet has been pressed</p>
+  <div class="stage">
+    <h2 class="section">2. Google Sheet tab URL</h2>
+    <div style="color: var(--gray); font-size: 0.85rem;">[preview table appears here]</div>
+
+    <div class="ic-filled">
+      <div class="ic-filled__row">
+        <div class="ic-filled__label-block">
+          <div class="ic-filled__label">1st Connection<br>Column</div>
+          <div class="ic-filled__sub">Cell values must match a GoLogin profile name (e.g. <code>alecx@ortus.solutions</code>).</div>
+        </div>
+        <div>
+          <select class="ic-filled__select is-detected">
+            <option value="">— Use "Sender" column —</option>
+            <option>First Name</option>
+            <option>Last Name</option>
+            <option selected>LinkedIn 1st Connections</option>
+            <option>LinkedIn URL</option>
+            <option>Stage</option>
+          </select>
+          <div class="auto-detected">Auto-detected from header name</div>
+        </div>
+      </div>
+
+      <div class="ic-filled__row">
+        <div class="ic-filled__label-block">
+          <div class="ic-filled__label">Stage<br>filter</div>
+          <div class="ic-filled__sub">Skip the Stage column requirement.</div>
+        </div>
+        <div>
+          <label class="ic-filled__check">
+            <input type="checkbox" />
+            <div>
+              <div class="ic-filled__check-label">All leads in this sheet are already connected</div>
+              <div class="ic-filled__check-hint">Drops the <code>Stage = "Connected · DM Now"</code> filter. Already-sent rows still blocked by <code>Introduction Status = "IC Sent"</code>.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>Design choices.</b> The pre-preview state is just a hint, not a form. Operators don't see a dropdown that can't be used. Post-preview, a two-column "label / control" layout pulls labels into a left rail so the controls breathe — same shape as professional settings panels. The "auto-detected" gold dot reuses the only accent color in the design system, applied only on a positive event.
+  </div>
+</body>
+</html>

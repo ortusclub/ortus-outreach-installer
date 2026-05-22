@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Redesign C — Physical Device · Ortus Outreach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0B10;
+    --bg-2: #0F0F15;
+    --panel: #18181F;
+    --panel-hi: #1E1E27;
+    --panel-lo: #13131A;
+    --bevel-top: rgba(255, 255, 255, 0.06);
+    --bevel-bottom: rgba(0, 0, 0, 0.5);
+    --hairline: rgba(255, 255, 255, 0.06);
+    --hairline-hi: rgba(255, 255, 255, 0.14);
+    --ink: #F5F5F7;
+    --ink-dim: #A8A8B4;
+    --gray: #6C6C78;
+    --accent: #5B8BFF;
+    --accent-2: #7BA3FF;
+    --accent-glow: rgba(91, 139, 255, 0.5);
+    --success: #34D399;
+    --warn: #FBBF24;
+    --danger: #F87171;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+    --shadow-drop: 0 1px 0 rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.3);
+    --shadow-lift: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 14px 34px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+  body {
+    background-image:
+      radial-gradient(ellipse at top left, rgba(91, 139, 255, 0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(91, 139, 255, 0.03) 0%, transparent 55%);
+    background-attachment: fixed;
+  }
+
+  @keyframes pulse-ring {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow), inset 0 0 0 1px var(--accent); }
+    50% { box-shadow: 0 0 0 8px rgba(91, 139, 255, 0), inset 0 0 0 1px var(--accent); }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes roll { 0% { transform: translateY(100%); opacity: 0; } 50% { opacity: 1;} 100% { transform: translateY(0); opacity: 1; } }
+
+  /* ─ Top rail ─ */
+  .rail {
+    height: 56px; background: var(--bg-2); border-bottom: 1px solid var(--hairline);
+    display: flex; align-items: center; padding: 0 20px; gap: 20px;
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(20px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding-right: 20px; border-right: 1px solid var(--hairline); height: 100%; display: flex; align-items: center; }
+  .brand-mark { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--panel-hi) 0%, var(--panel-lo) 100%); box-shadow: var(--shadow-inset); display: flex; align-items: center; justify-content: center; }
+  .brand-mark::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent-glow); animation: pulse-dot 2.2s infinite; }
+  .brand-name { font-size: 14px; font-weight: 600; letter-spacing: -0.015em; }
+  .brand-name em { font-style: normal; color: var(--ink-dim); font-weight: 500; margin-left: 4px; }
+
+  .env-chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--hairline-hi); font-family: var(--mono); font-size: 10px; color: var(--ink-dim); letter-spacing: 0.04em; display: flex; align-items: center; gap: 6px; }
+  .env-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+  .rail-spacer { flex: 1; }
+
+  .rail-metric { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; padding-right: 16px; border-right: 1px solid var(--hairline); height: 32px; justify-content: center; }
+  .rail-metric:last-of-type { border-right: none; }
+  .rail-k { font-size: 10px; color: var(--gray); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 500; }
+  .rail-v { font-family: var(--mono); font-size: 13px; color: var(--ink); font-weight: 500; letter-spacing: -0.01em; }
+  .rail-v.on { color: var(--accent); }
+
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #5B8BFF 0%, #2D4FAA 100%); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: white; margin-left: 12px; box-shadow: var(--shadow-inset); }
+
+  /* ─ App shell ─ */
+  .app { display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; min-height: calc(100vh - 56px); }
+
+  /* ─ Nav panel ─ */
+  .nav { border-right: 1px solid var(--hairline); padding: 20px 14px 100px; overflow-y: auto; }
+  .nav-section { font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--gray); padding: 14px 10px 8px; font-weight: 600; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 13px; color: var(--ink-dim); cursor: pointer; transition: all 0.12s; margin-bottom: 1px; font-weight: 500; position: relative; }
+  .nav-item:hover { background: var(--panel-lo); color: var(--ink); }
+  .nav-item.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-inset); }
+  .nav-item.on::before { content:''; position:absolute; left:-14px; top:8px; bottom:8px; width:2px; background: var(--accent); border-radius: 0 2px 2px 0; }
+  .nav-num { font-family: var(--mono); font-size: 10px; color: var(--gray); width: 18px; font-weight: 500; }
+  .nav-item.on .nav-num { color: var(--accent); }
+  .nav-kbd { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--gray); background: var(--panel-lo); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--hairline); }
+
+  .nav-brand-block { padding: 0 10px 14px; border-bottom: 1px solid var(--hairline); margin-bottom: 6px; }
+  .nav-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 2px; }
+  .nav-subtitle { font-size: 11px; color: var(--gray); font-family: var(--mono); }
+
+  /* ─ Main stage ─ */
+  .stage { padding: 28px 32px 120px; overflow-y: auto; }
+  .stage-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+  .stage-title { font-size: 28px; font-weight: 600; letter-spacing: -0.022em; line-height: 1.15; }
+  .stage-title em { font-style: normal; color: var(--accent); }
+  .stage-subtitle { font-size: 13px; color: var(--ink-dim); margin-top: 6px; line-height: 1.5; }
+  .stage-actions { display: flex; gap: 8px; }
+
+  /* Cards (physical panels) */
+  .card {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-lo) 100%);
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--shadow-drop);
+    position: relative;
+    margin-bottom: 16px;
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+  .card::before {
+    content:''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: var(--bevel-top);
+    border-radius: 14px 14px 0 0;
+  }
+  .card:hover { box-shadow: var(--shadow-lift); }
+  .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .card-tag { display: flex; align-items: center; gap: 10px; }
+  .card-num { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.04em; }
+  .card-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .card-status { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); padding: 4px 10px; border: 1px solid var(--hairline); border-radius: 999px; display: flex; align-items: center; gap: 6px; }
+  .card-status.on { color: var(--accent); border-color: var(--accent); }
+  .card-status.on::before { content:''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); animation: pulse-dot 2s infinite; }
+
+  /* Mode dial */
+  .dial-row { display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: center; }
+  .dial {
+    width: 180px; height: 180px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, #252532 0%, #16161D 70%);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.08), inset 0 -2px 0 rgba(0,0,0,0.6), 0 10px 24px rgba(0,0,0,0.5);
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .dial::before {
+    content:''; position: absolute; inset: 14px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 25%, #1F1F28 0%, #0F0F15 80%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .dial-knob {
+    position: absolute; width: 90px; height: 90px; border-radius: 50%;
+    background: linear-gradient(180deg, #2A2A35 0%, #1A1A22 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.6), 0 4px 10px rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+  .dial-indicator {
+    position: absolute; top: 12px; width: 3px; height: 18px;
+    background: var(--accent); border-radius: 2px;
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+  .dial-label { font-family: var(--mono); font-size: 9px; color: var(--gray); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 2px; }
+  .dial-value { font-size: 11px; font-weight: 600; color: var(--ink); }
+  .dial-tick { position: absolute; width: 2px; height: 6px; background: var(--gray); top: 4px; left: 50%; transform-origin: center 86px; opacity: 0.5; }
+  .dial-tick.on { background: var(--accent); box-shadow: 0 0 4px var(--accent-glow); opacity: 1; height: 9px; }
+
+  .dial-opts { display: flex; flex-direction: column; gap: 2px; }
+  .dial-opt { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background 0.12s; }
+  .dial-opt:hover { background: var(--panel-lo); }
+  .dial-opt.on { background: var(--panel-hi); }
+  .dial-opt-num { font-family: var(--mono); font-size: 10px; color: var(--gray); letter-spacing: 0.04em; }
+  .dial-opt.on .dial-opt-num { color: var(--accent); }
+  .dial-opt-name { font-size: 13px; font-weight: 500; }
+  .dial-opt-meta { font-family: var(--mono); font-size: 10px; color: var(--gray); letter-spacing: 0.02em; }
+
+  /* Knurled steppers */
+  .steppers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .knurl-stepper { text-align: center; padding: 6px; }
+  .knurl-label { font-size: 11px; color: var(--ink-dim); margin-bottom: 12px; letter-spacing: 0.01em; font-weight: 500; }
+  .knurl {
+    position: relative; width: 100%; height: 72px; border-radius: 8px;
+    background: linear-gradient(180deg, #22222C 0%, #15151D 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.4), 0 4px 10px rgba(0,0,0,0.4);
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    cursor: ns-resize;
+  }
+  .knurl::before {
+    content:''; position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 6px);
+    pointer-events: none;
+  }
+  .knurl::after {
+    content:''; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--accent) 20%, var(--accent) 80%, transparent 100%);
+    opacity: 0.35; transform: translateY(-0.5px);
+    box-shadow: 0 0 6px var(--accent-glow);
+  }
+  .knurl-val { font-family: var(--mono); font-size: 36px; font-weight: 500; color: var(--ink); letter-spacing: -0.02em; z-index: 2; }
+  .knurl-unit { font-family: var(--mono); font-size: 10px; color: var(--gray); letter-spacing: 0.2em; text-transform: uppercase; margin-top: 6px; }
+
+  /* Summary row */
+  .summary {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    background: var(--panel-lo); border: 1px solid var(--hairline);
+    border-radius: 10px; padding: 18px; margin-top: 18px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+  .sum-cell { padding: 0 18px; border-right: 1px solid var(--hairline); }
+  .sum-cell:first-child { padding-left: 0; }
+  .sum-cell:last-child { border-right: none; }
+  .sum-k { font-size: 11px; color: var(--gray); text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; margin-bottom: 6px; }
+  .sum-v { font-family: var(--mono); font-size: 28px; font-weight: 500; letter-spacing: -0.02em; line-height: 1; }
+  .sum-v.on { color: var(--accent); text-shadow: 0 0 14px var(--accent-glow); }
+  .sum-sub { font-size: 11px; color: var(--ink-dim); margin-top: 6px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-radius: 8px;
+    background: linear-gradient(180deg, var(--panel-hi) 0%, var(--panel) 100%);
+    border: 1px solid var(--hairline-hi);
+    color: var(--ink); font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.12s;
+    box-shadow: var(--shadow-inset), 0 1px 2px rgba(0,0,0,0.3);
+    font-family: var(--sans);
+  }
+  .btn:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+  .btn:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+  .btn.ghost { background: transparent; border-color: var(--hairline); color: var(--ink-dim); }
+  .btn.ghost:hover { border-color: var(--hairline-hi); color: var(--ink); }
+  .btn.primary {
+    background: linear-gradient(180deg, var(--accent) 0%, #3D6FDD 100%);
+    border-color: #4878E0;
+    color: white;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 16px var(--accent-glow);
+  }
+  .btn.primary:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 6px 24px var(--accent-glow); }
+  .btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 6px; }
+  .btn-lg { padding: 14px 26px; font-size: 14px; border-radius: 10px; font-weight: 600; }
+  .btn-icon { width: 32px; height: 32px; padding: 0; justify-content: center; }
+
+  /* Input */
+  .input {
+    width: 100%;
+    background: linear-gradient(180deg, var(--panel-lo) 0%, #0F0F15 100%);
+    border: 1px solid var(--hairline);
+    border-radius: 8px; color: var(--ink);
+    padding: 11px 14px; font-size: 13px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+    font-family: var(--sans);
+  }
+  .input:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 2px 4px rgba(0,0,0,0.2), 0 0 0 3px var(--accent-glow); }
+  .input::placeholder { color: var(--gray); }
+
+  /* Accounts grid */
+  .acct-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .acct {
+    padding: 14px; border-radius: 10px;
+    background: linear-gradient(180deg, var(--panel-hi) 0%, var(--panel-lo) 100%);
+    border: 1px solid var(--hairline);
+    cursor: pointer; transition: all 0.15s;
+    position: relative;
+    box-shadow: var(--shadow-drop);
+  }
+  .acct:hover { transform: translateY(-1px); border-color: var(--hairline-hi); }
+  .acct.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow), var(--shadow-drop); }
+  .acct-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .acct-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #3B4A6A 0%, #1F2940 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600; color: var(--ink);
+    box-shadow: var(--shadow-inset);
+  }
+  .acct-check { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px var(--accent-glow); }
+  .acct-check::before { content: '✓'; font-size: 11px; color: white; font-weight: 700; }
+  .acct-name { font-size: 13px; font-weight: 500; margin-bottom: 4px; letter-spacing: -0.005em; }
+  .acct-email { font-family: var(--mono); font-size: 10px; color: var(--gray); letter-spacing: 0.02em; margin-bottom: 10px; }
+  .acct-stats { display: flex; gap: 12px; font-family: var(--mono); font-size: 10px; color: var(--ink-dim); }
+  .acct-stats strong { color: var(--ink); font-weight: 500; }
+  .acct-led { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success); display: inline-block; margin-right: 4px; animation: pulse-dot 2s infinite; }
+  .acct-led.off { background: var(--gray); box-shadow: none; animation: none; }
+  .acct-led.warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+
+  /* Template */
+  .ta {
+    width: 100%;
+    background: linear-gradient(180deg, var(--panel-lo) 0%, #0F0F15 100%);
+    border: 1px solid var(--hairline);
+    border-radius: 10px; color: var(--ink);
+    padding: 14px; font-size: 13px; line-height: 1.6;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+    font-family: var(--sans);
+    resize: vertical;
+  }
+  .ta:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 2px 4px rgba(0,0,0,0.2), 0 0 0 3px var(--accent-glow); }
+
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--panel-lo); border: 1px solid var(--hairline);
+    color: var(--accent-2); font-family: var(--mono); font-size: 11px;
+    cursor: pointer; transition: all 0.12s;
+  }
+  .chip:hover { border-color: var(--accent); }
+
+  /* ─ Device face (right) ─ */
+  .device { border-left: 1px solid var(--hairline); padding: 24px 20px; overflow-y: auto; background: var(--bg-2); }
+
+  .face {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-lo) 100%);
+    border: 1px solid var(--hairline);
+    border-radius: 18px;
+    padding: 20px; margin-bottom: 16px;
+    box-shadow: var(--shadow-drop);
+    position: relative;
+  }
+  .face::before {
+    content:''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: var(--bevel-top); border-radius: 18px 18px 0 0;
+  }
+  .face-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.22em; color: var(--gray); font-weight: 600; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .face-label span { font-family: var(--mono); color: var(--accent); letter-spacing: 0.04em; }
+
+  /* Big analog status gauge */
+  .gauge-big {
+    width: 100%; aspect-ratio: 1;
+    background: radial-gradient(circle at 30% 25%, #1E1E28 0%, #0C0C12 70%);
+    border-radius: 50%;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.05), inset 0 -2px 0 rgba(0,0,0,0.6), 0 10px 30px rgba(0,0,0,0.5);
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+  .gauge-big svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .gauge-big svg circle.track { fill: none; stroke: rgba(255,255,255,0.05); stroke-width: 6; }
+  .gauge-big svg circle.fill { fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 282 534; filter: drop-shadow(0 0 6px var(--accent-glow)); animation: slow-fill 2s ease-out; }
+  @keyframes slow-fill { from { stroke-dasharray: 0 534; } }
+  .gauge-center { position: relative; z-index: 2; text-align: center; }
+  .gauge-kicker { font-family: var(--mono); font-size: 10px; color: var(--gray); letter-spacing: 0.22em; text-transform: uppercase; margin-bottom: 6px; }
+  .gauge-big-v { font-family: var(--mono); font-size: 52px; font-weight: 500; letter-spacing: -0.03em; color: var(--ink); line-height: 1; }
+  .gauge-big-v em { font-style: normal; font-size: 24px; color: var(--ink-dim); }
+  .gauge-big-sub { font-size: 11px; color: var(--ink-dim); margin-top: 8px; letter-spacing: 0.01em; }
+  .gauge-tick { position: absolute; width: 2px; height: 5px; background: var(--gray); top: 10px; left: 50%; transform-origin: center calc(50% - 10px); opacity: 0.4; }
+
+  /* Mini readouts */
+  .mini-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mini {
+    padding: 14px; border-radius: 12px;
+    background: linear-gradient(180deg, var(--panel-hi) 0%, var(--panel-lo) 100%);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-drop);
+  }
+  .mini-k { font-size: 10px; color: var(--gray); text-transform: uppercase; letter-spacing: 0.15em; font-weight: 600; margin-bottom: 8px; }
+  .mini-v { font-family: var(--mono); font-size: 24px; font-weight: 500; letter-spacing: -0.02em; line-height: 1; }
+  .mini-v.on { color: var(--accent); }
+  .mini-sub { font-size: 11px; color: var(--ink-dim); margin-top: 4px; font-family: var(--mono); }
+
+  .feed { font-family: var(--mono); font-size: 11px; line-height: 1.85; color: var(--ink-dim); }
+  .feed div { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--hairline); }
+  .feed div:last-child { border-bottom: none; }
+  .feed time { color: var(--gray); flex-shrink: 0; font-size: 10px; }
+  .feed em { font-style: normal; color: var(--accent); }
+
+  /* Bottom dock */
+  .dock {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px; padding: 8px;
+    background: rgba(24, 24, 31, 0.92);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--hairline-hi);
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+    z-index: 30;
+    min-width: 560px;
+  }
+  .dock-status { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-right: 1px solid var(--hairline); }
+  .dock-status-led { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 10px var(--success); animation: pulse-dot 2s infinite; }
+  .dock-status-text { font-size: 13px; font-weight: 500; }
+  .dock-status-meta { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); letter-spacing: 0.02em; }
+  .dock-spacer { flex: 1; }
+
+  .dock-btn {
+    padding: 8px 12px; border-radius: 10px; border: 1px solid var(--hairline);
+    background: transparent; color: var(--ink-dim); font-size: 12px; font-weight: 500;
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    transition: all 0.12s;
+  }
+  .dock-btn:hover { background: var(--panel); border-color: var(--hairline-hi); color: var(--ink); }
+
+  .dock-launch {
+    padding: 10px 22px; border-radius: 10px;
+    background: linear-gradient(180deg, var(--accent) 0%, #3D6FDD 100%);
+    color: white; font-weight: 600; font-size: 13px;
+    border: 1px solid #4878E0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 4px 20px var(--accent-glow);
+    cursor: pointer; display: flex; align-items: center; gap: 8px;
+    transition: all 0.12s;
+  }
+  .dock-launch:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 8px 30px var(--accent-glow); }
+  .dock-launch:active { transform: translateY(1px); }
+
+  .count-badge {
+    font-family: var(--mono); font-size: 10px; padding: 2px 8px;
+    background: rgba(255,255,255,0.15); border-radius: 999px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+  <!-- RAIL -->
+  <header class="rail">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">Ortus<em>Outreach</em></div>
+    </div>
+    <div class="env-chip">Production · v2.0</div>
+
+    <div class="rail-spacer"></div>
+
+    <div class="rail-metric">
+      <div class="rail-k">Today</div>
+      <div class="rail-v on">112</div>
+    </div>
+    <div class="rail-metric">
+      <div class="rail-k">Rate</div>
+      <div class="rail-v">42 / hr</div>
+    </div>
+    <div class="rail-metric">
+      <div class="rail-k">Errors</div>
+      <div class="rail-v">0.2%</div>
+    </div>
+    <div class="rail-metric">
+      <div class="rail-k">Passover</div>
+      <div class="rail-v">OPEN</div>
+    </div>
+
+    <div class="avatar">MR</div>
+  </header>
+
+  <div class="app">
+
+    <!-- NAV -->
+    <aside class="nav">
+      <div class="nav-brand-block">
+        <div class="nav-title">Primera</div>
+        <div class="nav-subtitle">Q2 Outreach · Mission 042</div>
+      </div>
+
+      <div class="nav-section">Campaign</div>
+      <div class="nav-item on"><span class="nav-num">01</span><span>Mode</span><span class="nav-kbd">1</span></div>
+      <div class="nav-item"><span class="nav-num">02</span><span>Rate &amp; limits</span><span class="nav-kbd">2</span></div>
+      <div class="nav-item"><span class="nav-num">03</span><span>Sheet</span><span class="nav-kbd">3</span></div>
+      <div class="nav-item"><span class="nav-num">04</span><span>Accounts</span><span class="nav-kbd">4</span></div>
+      <div class="nav-item"><span class="nav-num">05</span><span>Templates</span><span class="nav-kbd">5</span></div>
+      <div class="nav-item"><span class="nav-num">06</span><span>Launch</span><span class="nav-kbd">6</span></div>
+
+      <div class="nav-section">Review</div>
+      <div class="nav-item"><span class="nav-num">—</span><span>Live status</span></div>
+      <div class="nav-item"><span class="nav-num">—</span><span>History</span></div>
+      <div class="nav-item"><span class="nav-num">—</span><span>Schedules</span></div>
+      <div class="nav-item"><span class="nav-num">—</span><span>Server log</span></div>
+
+      <div class="nav-section">System</div>
+      <div class="nav-item"><span class="nav-num">—</span><span>Theme</span><span class="nav-kbd" style="background: var(--accent); color: white; border-color: transparent;">dark</span></div>
+      <div class="nav-item"><span class="nav-num">—</span><span>Notifications</span></div>
+      <div class="nav-item"><span class="nav-num">—</span><span>Sign out</span></div>
+    </aside>
+
+    <!-- STAGE -->
+    <main class="stage">
+
+      <div class="stage-head">
+        <div>
+          <div style="font-family: var(--mono); font-size: 11px; color: var(--gray); letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600;">Campaign Console</div>
+          <h1 class="stage-title">Primera · <em>Q2 Outreach</em></h1>
+          <div class="stage-subtitle">Seven accounts loaded · 280 connections scheduled · concludes 19:20</div>
+        </div>
+        <div class="stage-actions">
+          <button class="btn ghost btn-sm">⌘K Search</button>
+          <button class="btn btn-sm">Load preset</button>
+        </div>
+      </div>
+
+      <!-- 01 MODE -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-tag">
+            <div class="card-num">01</div>
+            <div class="card-title">Mode</div>
+          </div>
+          <div class="card-status on">Connect only</div>
+        </div>
+        <div class="dial-row">
+          <div class="dial">
+            <div class="dial-indicator"></div>
+            <div class="dial-tick on"></div>
+            <div class="dial-tick" style="transform: translateX(-50%) rotate(51deg)"></div>
+            <div class="dial-tick" style="transform: translateX(-50%) rotate(102deg)"></div>
+            <div class="dial-tick" style="transform: translateX(-50%) rotate(153deg)"></div>
+            <div class="dial-tick" style="transform: translateX(-50%) rotate(204deg)"></div>
+            <div class="dial-knob">
+              <div class="dial-label">Mode</div>
+              <div class="dial-value">Connect</div>
+            </div>
+          </div>
+          <div class="dial-opts">
+            <div class="dial-opt on">
+              <div class="dial-opt-num">01</div>
+              <div><div class="dial-opt-name">Connect only</div></div>
+              <div class="dial-opt-meta">Invite · note</div>
+            </div>
+            <div class="dial-opt">
+              <div class="dial-opt-num">02</div>
+              <div><div class="dial-opt-name">Verify acceptances</div></div>
+              <div class="dial-opt-meta">Audit</div>
+            </div>
+            <div class="dial-opt">
+              <div class="dial-opt-num">03</div>
+              <div><div class="dial-opt-name">Message follow-up</div></div>
+              <div class="dial-opt-meta">1st-degree</div>
+            </div>
+            <div class="dial-opt">
+              <div class="dial-opt-num">04</div>
+              <div><div class="dial-opt-name">InMail</div></div>
+              <div class="dial-opt-meta">Premium credits</div>
+            </div>
+            <div class="dial-opt">
+              <div class="dial-opt-num">05</div>
+              <div><div class="dial-opt-name">Open Profile</div></div>
+              <div class="dial-opt-meta">Free</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 02 RATE -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-tag">
+            <div class="card-num">02</div>
+            <div class="card-title">Rate &amp; limits</div>
+          </div>
+          <div class="card-status">Within envelope</div>
+        </div>
+        <div class="steppers">
+          <div class="knurl-stepper">
+            <div class="knurl-label">Per account / hour</div>
+            <div class="knurl">
+              <div class="knurl-val">06</div>
+            </div>
+            <div class="knurl-unit">Connections / hr</div>
+          </div>
+          <div class="knurl-stepper">
+            <div class="knurl-label">Daily ceiling</div>
+            <div class="knurl">
+              <div class="knurl-val">40</div>
+            </div>
+            <div class="knurl-unit">Max · total</div>
+          </div>
+          <div class="knurl-stepper">
+            <div class="knurl-label">Inter-op jitter</div>
+            <div class="knurl">
+              <div class="knurl-val">60</div>
+            </div>
+            <div class="knurl-unit">Seconds ± 15%</div>
+          </div>
+        </div>
+
+        <div class="summary">
+          <div class="sum-cell">
+            <div class="sum-k">Total ops</div>
+            <div class="sum-v on">280</div>
+            <div class="sum-sub">across 7 accounts</div>
+          </div>
+          <div class="sum-cell">
+            <div class="sum-k">Duration</div>
+            <div class="sum-v">4h 48m</div>
+            <div class="sum-sub">at 6 / hour / account</div>
+          </div>
+          <div class="sum-cell">
+            <div class="sum-k">Concludes</div>
+            <div class="sum-v">19:20</div>
+            <div class="sum-sub">today · local time</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 03 SHEET -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-tag">
+            <div class="card-num">03</div>
+            <div class="card-title">Source sheet</div>
+          </div>
+          <div class="card-status on">Locked · 312 rows</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;">
+          <input class="input" value="https://docs.google.com/spreadsheets/d/1a2b3c4d5e6f7g8h/edit" />
+          <button class="btn">Preview</button>
+          <button class="btn primary btn-sm">Lock</button>
+        </div>
+      </div>
+
+      <!-- 04 ACCOUNTS -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-tag">
+            <div class="card-num">04</div>
+            <div class="card-title">Accounts</div>
+          </div>
+          <div class="card-status on">7 of 12 selected</div>
+        </div>
+        <div style="display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;">
+          <button class="btn btn-sm" style="background: var(--accent); border-color: var(--accent); color: white;">All · 12</button>
+          <button class="btn ghost btn-sm">Assigned · 4</button>
+          <button class="btn ghost btn-sm">Pool · 8</button>
+          <button class="btn ghost btn-sm">Ready · 7</button>
+        </div>
+        <div class="acct-grid">
+          <div class="acct sel">
+            <div class="acct-head">
+              <div class="acct-avatar">MR</div>
+              <div class="acct-check"></div>
+            </div>
+            <div class="acct-name">Marcus Rivera</div>
+            <div class="acct-email">marcus.r@ortusclub</div>
+            <div class="acct-stats"><span><span class="acct-led"></span>Live</span><span><strong>24</strong> / 40</span></div>
+          </div>
+          <div class="acct sel">
+            <div class="acct-head">
+              <div class="acct-avatar">SM</div>
+              <div class="acct-check"></div>
+            </div>
+            <div class="acct-name">Sofia Martín</div>
+            <div class="acct-email">sofia.m@ortusclub</div>
+            <div class="acct-stats"><span><span class="acct-led"></span>Live</span><span><strong>18</strong> / 40</span></div>
+          </div>
+          <div class="acct sel">
+            <div class="acct-head">
+              <div class="acct-avatar">AK</div>
+              <div class="acct-check"></div>
+            </div>
+            <div class="acct-name">Alex Köhler</div>
+            <div class="acct-email">alex.k@ortusclub</div>
+            <div class="acct-stats"><span><span class="acct-led"></span>Ready</span><span><strong>00</strong> / 40</span></div>
+          </div>
+          <div class="acct sel">
+            <div class="acct-head">
+              <div class="acct-avatar">JL</div>
+              <div class="acct-check"></div>
+            </div>
+            <div class="acct-name">Jana Lovrić</div>
+            <div class="acct-email">jana.l@ortusclub</div>
+            <div class="acct-stats"><span><span class="acct-led warn"></span>Reauth</span><span><strong>07</strong> / 40</span></div>
+          </div>
+          <div class="acct sel">
+            <div class="acct-head">
+              <div class="acct-avatar">TD</div>
+              <div class="acct-check"></div>
+            </div>
+            <div class="acct-name">Theo Davies</div>
+            <div class="acct-email">theo.d@ortusclub</div>
+            <div class="acct-stats"><span><span class="acct-led"></span>Live</span><span><strong>31</strong> / 40</span></div>
+          </div>
+          <div class="acct sel">
+            <div class="acct-head">
+              <div class="acct-avatar">CV</div>
+              <div class="acct-check"></div>
+            </div>
+            <div class="acct-name">Camila Vela</div>
+            <div class="acct-email">camila.v@ortusclub</div>
+            <div class="acct-stats"><span><span class="acct-led warn"></span>Hold</span><span><strong>00</strong> / 40</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 05 TEMPLATES -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-tag">
+            <div class="card-num">05</div>
+            <div class="card-title">Connection note</div>
+          </div>
+          <div class="card-status">212 / 300</div>
+        </div>
+        <textarea class="ta" rows="3">Hi {firstName}, loved your piece on {company}'s platform play. Would value connecting — we run a small executive roundtable for founders in your space.</textarea>
+        <div class="chip-row">
+          <div class="chip">{firstName}</div>
+          <div class="chip">{lastName}</div>
+          <div class="chip">{company}</div>
+          <div class="chip">{title}</div>
+          <div class="chip">{city}</div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- DEVICE (RIGHT) -->
+    <aside class="device">
+
+      <div class="face">
+        <div class="face-label"><span>Mission</span><span>T+01:24:33</span></div>
+        <div class="gauge-big">
+          <svg viewBox="0 0 200 200">
+            <circle class="track" cx="100" cy="100" r="85"/>
+            <circle class="fill" cx="100" cy="100" r="85"/>
+          </svg>
+          <div class="gauge-center">
+            <div class="gauge-kicker">Today</div>
+            <div class="gauge-big-v">112<em>/280</em></div>
+            <div class="gauge-big-sub">62% of today's envelope</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mini-row" style="margin-bottom: 10px;">
+        <div class="mini">
+          <div class="mini-k">Rate</div>
+          <div class="mini-v on">42</div>
+          <div class="mini-sub">/ hr · ↑ 3</div>
+        </div>
+        <div class="mini">
+          <div class="mini-k">Accept</div>
+          <div class="mini-v on">34.8%</div>
+          <div class="mini-sub">+2.1 pts</div>
+        </div>
+      </div>
+      <div class="mini-row" style="margin-bottom: 16px;">
+        <div class="mini">
+          <div class="mini-k">Errors</div>
+          <div class="mini-v" style="color: var(--warn)">2.1</div>
+          <div class="mini-sub">/ 1k · in tol.</div>
+        </div>
+        <div class="mini">
+          <div class="mini-k">Credits</div>
+          <div class="mini-v">18 <span style="color:var(--gray); font-size:14px">/40</span></div>
+          <div class="mini-sub">InMail · month</div>
+        </div>
+      </div>
+
+      <div class="face">
+        <div class="face-label"><span>Passover</span><span>—12d 04h</span></div>
+        <div class="mini-row" style="background: transparent; padding: 0;">
+          <div>
+            <div class="mini-k">OP · IM · SN</div>
+            <div class="mini-v on" style="font-size: 18px;">Open</div>
+            <div class="mini-sub">resets 01 May</div>
+          </div>
+          <div>
+            <div class="mini-k">CC</div>
+            <div class="mini-v" style="color: var(--warn); font-size: 18px;">3 / 5</div>
+            <div class="mini-sub">weekly · watch</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="face">
+        <div class="face-label"><span>Live feed</span><span style="color: var(--success)">● rec</span></div>
+        <div class="feed">
+          <div><time>14:32</time><span><em>Marcus</em> connect · gianna.r</span></div>
+          <div><time>14:31</time><span><em>Sofia</em> connect · marco.l</span></div>
+          <div><time>14:31</time><span><em>Theo</em> connect · paul.m</span></div>
+          <div><time>14:30</time><span style="color: var(--warn)"><em style="color:var(--warn)">Jana</em> reauth needed</span></div>
+          <div><time>14:30</time><span><em>Marcus</em> connect · sara.t</span></div>
+          <div><time>14:29</time><span><em>Noah</em> connect · iana.f</span></div>
+          <div><time>14:29</time><span><em>Sofia</em> connect · dev.k</span></div>
+        </div>
+      </div>
+
+      <div class="face" style="margin-bottom: 100px;">
+        <div class="face-label"><span>Next up</span><span>Tue 09:00</span></div>
+        <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Secunda · Q2 Outreach</div>
+        <div style="font-size: 12px; color: var(--ink-dim); font-family: var(--mono); letter-spacing: 0.02em;">Mon–Fri · auto · 7 accounts</div>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <!-- DOCK (BOTTOM) -->
+  <div class="dock">
+    <div class="dock-status">
+      <div class="dock-status-led"></div>
+      <div>
+        <div class="dock-status-text">Running</div>
+        <div class="dock-status-meta">Primera · T+01:24</div>
+      </div>
+    </div>
+    <div class="dock-spacer"></div>
+    <button class="dock-btn">
+      <span>Presets</span>
+      <span class="count-badge" style="background: var(--panel); color: var(--ink-dim)">4</span>
+    </button>
+    <button class="dock-btn">View status</button>
+    <button class="dock-launch">
+      <span>Launch campaign</span>
+      <span class="count-badge">280</span>
+    </button>
+  </div>
+
+</body>
+</html>

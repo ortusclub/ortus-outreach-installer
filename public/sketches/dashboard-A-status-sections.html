@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dashboard A · Status sections + always-on select</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 140px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:780px;line-height:1.5;margin-bottom:40px}
+
+.app{border:1px solid var(--hl);padding:36px 40px 60px;background:#050505;position:relative}
+.app-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hl);padding-bottom:22px;margin-bottom:36px}
+.brand{font-family:var(--d);font-size:1.4rem;letter-spacing:0.04em}
+.brand small{color:var(--gray);font-family:var(--b);font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;margin-left:10px}
+.actions{display:flex;gap:10px}
+.btn{border:1px solid var(--hl);background:transparent;color:var(--ink);font-family:var(--b);font-size:0.66rem;letter-spacing:0.16em;text-transform:uppercase;padding:9px 16px;cursor:pointer;border-radius:9999px}
+.btn.gold{border-color:var(--gold);color:var(--gold)}
+
+.sect{margin-bottom:34px}
+.sect-h{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--hls);padding-bottom:10px;margin-bottom:14px}
+.sect-t{font-family:var(--d);font-size:1.15rem;letter-spacing:0.05em}
+.sect-t .count{color:var(--gray);font-size:0.66rem;letter-spacing:0.16em;margin-left:10px}
+.sect-meta{font-size:0.62rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray)}
+.sect-meta .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--green);margin-right:8px;vertical-align:middle}
+.sect-meta .dot.amber{background:var(--gold)}
+.sect-meta .dot.gray{background:var(--gray)}
+
+.row{display:grid;grid-template-columns:28px 1fr 110px 120px 110px 32px;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid var(--hls);font-size:0.78rem}
+.row:hover{background:rgba(255,255,255,0.02)}
+.row.sel{background:rgba(247,190,104,0.05);border-bottom-color:rgba(247,190,104,0.25)}
+.check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;display:inline-block;cursor:pointer;position:relative}
+.check.on{border-color:var(--gold);background:var(--gold)}
+.check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.name{font-weight:500;letter-spacing:0.01em}
+.name small{color:var(--gray);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;display:block;margin-top:3px}
+.mode{font-family:var(--d);font-size:0.84rem;letter-spacing:0.06em;color:var(--gray)}
+.when{color:var(--gray);font-size:0.7rem;letter-spacing:0.04em}
+.metric{font-family:var(--d);font-size:1rem;letter-spacing:0.06em}
+.metric small{font-family:var(--b);font-size:0.58rem;letter-spacing:0.16em;color:var(--gray);text-transform:uppercase;margin-left:4px}
+.kebab{color:var(--gray);text-align:right;cursor:pointer;letter-spacing:0.2em}
+
+/* Bulk bar — slides up from the bottom when selection is non-empty */
+.bulkbar{position:absolute;left:0;right:0;bottom:0;background:rgba(247,190,104,0.07);border-top:1px solid var(--gold);padding:14px 40px;display:flex;justify-content:space-between;align-items:center}
+.bulkbar-l{font-size:0.72rem;letter-spacing:0.06em}
+.bulkbar-l .n{color:var(--gold);font-family:var(--d);font-size:1.2rem;margin-right:8px}
+.bulkbar-r{display:flex;gap:8px}
+.bulkbar-r .btn.danger{border-color:var(--red);color:var(--red)}
+
+.notes{margin-top:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--hl)}
+.note{padding:22px 24px;border-right:1px solid var(--hl)}
+.note:last-child{border-right:none}
+.note-h{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.note p{font-size:0.78rem;line-height:1.55}
+.note small{display:block;margin-top:10px;font-size:0.6rem;color:var(--gray);letter-spacing:0.14em;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="crumbs"><a href="dashboard-index.html">← all alternatives</a> · DASHBOARD A · STATUS SECTIONS + ALWAYS-ON SELECT</div>
+<h1>Status sections — Monitoring promoted, select always visible</h1>
+<p class="deck">The closest evolution of the current layout. Each status gets its own section (Active, Monitoring, Queued, Drafts, Past). Every row has a tiny checkbox column always visible (no "Manage" toggle to hunt for). The bulk-action bar slides up from the bottom of the page the moment one or more rows are selected — works across sections.</p>
+
+<div class="app">
+  <div class="app-head">
+    <div class="brand">ORTUS OUTREACH<small>v2.51</small></div>
+    <div class="actions"><button class="btn gold">+ NEW CAMPAIGN</button></div>
+  </div>
+
+  <!-- Active -->
+  <div class="sect">
+    <div class="sect-h">
+      <div class="sect-t">Active <span class="count">1</span></div>
+      <div class="sect-meta"><span class="dot"></span>RUNNING NOW</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_LONDON_I <small>RUNNING · 27 / 50 SENT</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">started 41m ago</div>
+      <div class="metric">27<small>SENT</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+  </div>
+
+  <!-- Monitoring — promoted to its own section -->
+  <div class="sect">
+    <div class="sect-h">
+      <div class="sect-t">Monitoring <span class="count">3</span></div>
+      <div class="sect-meta"><span class="dot amber"></span>WATCHING FOR ACCEPTANCES · NEXT CHECK 13M</div>
+    </div>
+    <div class="row sel">
+      <div class="check on"></div>
+      <div class="name">TAG_AUSTIN_II <small>2 / 7 ACCEPTED · DAY 3 OF 7</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">started 3d ago</div>
+      <div class="metric">2<small>INTRO</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_BERLIN_I <small>5 / 12 ACCEPTED · DAY 1 OF 7</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">started 18h ago</div>
+      <div class="metric">5<small>INTRO</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row sel">
+      <div class="check on"></div>
+      <div class="name">TAG_NYC_III <small>0 / 4 ACCEPTED · DAY 6 OF 7</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">started 6d ago</div>
+      <div class="metric">0<small>INTRO</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+  </div>
+
+  <!-- Queued -->
+  <div class="sect">
+    <div class="sect-h">
+      <div class="sect-t">Queued <span class="count">2</span></div>
+      <div class="sect-meta"><span class="dot gray"></span>WAITING FOR A FREE SLOT</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_PARIS_I <small>BUILT · WAITING</small></div>
+      <div class="mode">CONNECT</div>
+      <div class="when">queued 12m ago</div>
+      <div class="metric">—<small>OF 80</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_MILAN_II <small>BUILT · WAITING</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">queued 5m ago</div>
+      <div class="metric">—<small>OF 30</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+  </div>
+
+  <!-- Drafts -->
+  <div class="sect">
+    <div class="sect-h">
+      <div class="sect-t">Drafts <span class="count">2</span></div>
+      <div class="sect-meta"><span class="dot gray"></span>NOT YET LAUNCHED</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_DUBAI_I <small>DRAFT — TEMPLATES INCOMPLETE</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">saved 2d ago</div>
+      <div class="metric">—</div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">untitled <small>DRAFT — NEEDS NAME</small></div>
+      <div class="mode">—</div>
+      <div class="when">saved 14h ago</div>
+      <div class="metric">—</div>
+      <div class="kebab">⋯</div>
+    </div>
+  </div>
+
+  <!-- Past -->
+  <div class="sect">
+    <div class="sect-h">
+      <div class="sect-t">Past <span class="count">47</span></div>
+      <div class="sect-meta"><span class="dot gray"></span>COMPLETED · SHOWING 5 OF 47</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_TOKYO_II <small>DONE · 48 / 50 SENT</small></div>
+      <div class="mode">CONNECT</div>
+      <div class="when">May 16</div>
+      <div class="metric">48<small>SENT</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_MADRID_I <small>DONE · 30 / 30 SENT</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">May 14</div>
+      <div class="metric">30<small>SENT</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_SYDNEY_III <small>STOPPED · 18 / 50 SENT</small></div>
+      <div class="mode">CC + IC</div>
+      <div class="when">May 13</div>
+      <div class="metric">18<small>SENT</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_LISBON_I <small>DONE · 22 / 22 SENT</small></div>
+      <div class="mode">MESSAGE</div>
+      <div class="when">May 11</div>
+      <div class="metric">22<small>SENT</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+    <div class="row">
+      <div class="check"></div>
+      <div class="name">TAG_HK_I <small>DONE · 12 / 12 SENT</small></div>
+      <div class="mode">INTRO BACK</div>
+      <div class="when">May 9</div>
+      <div class="metric">12<small>SENT</small></div>
+      <div class="kebab">⋯</div>
+    </div>
+  </div>
+
+  <!-- Bulk bar -->
+  <div class="bulkbar">
+    <div class="bulkbar-l"><span class="n">2</span>SELECTED · ACROSS 1 SECTION</div>
+    <div class="bulkbar-r">
+      <button class="btn">CLEAR</button>
+      <button class="btn">EXPORT</button>
+      <button class="btn danger">DELETE</button>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <div class="note-h">FIX 1 — MONITORING PROMOTED</div>
+    <p>Monitoring campaigns get their own top-level section between Active and Queued — same visual weight as Active. The "next check in Nm" lives in the section header so you see the rhythm without opening a card.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">FIX 2 — SELECT ALWAYS ON</div>
+    <p>Tiny checkbox column on every row, every section. No "Manage" toggle to find. Selection persists across sections — pick two monitoring + three past, hit Delete, done.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">TRADE-OFF</div>
+    <p>Closest to today's mental model — minimum re-learning. Density similar. Risk: still scrolly when there are many drafts/past. Search/collapse stays in Past as today.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

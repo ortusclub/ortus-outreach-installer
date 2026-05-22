@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch C — Command Deck | Ortus Outreach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a09;
+    --bg-panel: #14140f;
+    --bg-elev: #1a1a15;
+    --gold: #F7BE68;
+    --gold-dim: #C5A255;
+    --ink: #fafaf9;
+    --ink-soft: #c9c5bd;
+    --muted: #8b867a;
+    --hairline: rgba(197, 162, 85, 0.18);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --green: #3fb950;
+    --red: #f85149;
+    --serif: 'Cormorant Garamond', Georgia, serif;
+    --sans: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  /* Layout */
+  .app {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--bg-panel); border-right: 1px solid var(--hairline);
+    padding: 32px 0; position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .sidebar-brand { padding: 0 28px 28px; border-bottom: 1px solid var(--hairline-soft); }
+  .sidebar-wordmark {
+    font-family: var(--serif); font-weight: 500; font-size: 1.6rem;
+    line-height: 1; letter-spacing: 0.02em;
+  }
+  .sidebar-wordmark em { color: var(--gold); font-style: italic; }
+  .sidebar-sub {
+    font-size: 0.6rem; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--muted); margin-top: 10px;
+  }
+
+  .sidebar-nav { padding: 20px 0; flex: 1; overflow-y: auto; }
+  .nav-section-label {
+    font-size: 0.58rem; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--muted); padding: 16px 28px 8px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 28px; color: var(--ink-soft); cursor: pointer;
+    font-size: 0.88rem; border-left: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .nav-item:hover { color: var(--gold); background: var(--bg-elev); }
+  .nav-item.active {
+    color: var(--gold); border-left-color: var(--gold); background: var(--bg-elev);
+    font-weight: 500;
+  }
+  .nav-num {
+    font-family: var(--serif); font-style: italic; font-size: 0.9rem;
+    color: var(--gold-dim); width: 16px;
+  }
+  .nav-item.active .nav-num { color: var(--gold); }
+
+  .sidebar-footer { padding: 20px 28px; border-top: 1px solid var(--hairline-soft); }
+  .user-chip { font-size: 0.75rem; color: var(--muted); }
+  .user-chip strong { color: var(--ink); display: block; }
+
+  /* ── Main ── */
+  .main { padding: 40px 56px 120px; overflow-y: auto; }
+  .main-header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 32px; padding-bottom: 24px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .page-label {
+    font-size: 0.62rem; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--gold-dim); margin-bottom: 4px;
+  }
+  .page-title {
+    font-family: var(--serif); font-weight: 500; font-size: 2.2rem;
+    margin: 0; letter-spacing: 0.01em;
+  }
+  .page-desc { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+
+  /* Passover strip */
+  .passover-strip {
+    display: flex; gap: 28px; margin-bottom: 32px;
+    background: var(--bg-panel); border: 1px solid var(--hairline);
+    border-radius: 6px; padding: 14px 22px;
+  }
+  .passover-group { display: flex; align-items: baseline; gap: 10px; flex: 1; }
+  .passover-label {
+    font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted);
+  }
+  .passover-value {
+    font-family: var(--serif); font-style: italic; font-size: 1rem; color: var(--gold);
+  }
+  .passover-value.closed { color: var(--muted); }
+
+  /* Quick stats hero */
+  .hero-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+    border-radius: 8px; overflow: hidden;
+    margin-bottom: 40px;
+  }
+  .hero-stat { background: var(--bg-panel); padding: 24px 28px; }
+  .hero-stat-label { font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  .hero-stat-value { font-family: var(--serif); font-size: 2rem; font-weight: 500; color: var(--ink); line-height: 1.2; margin-top: 8px; }
+  .hero-stat-value.gold { color: var(--gold); }
+  .hero-stat-value.small { font-size: 1rem; color: var(--ink-soft); font-family: var(--sans); }
+  .hero-stat-delta { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+  .hero-stat-delta.up { color: var(--green); }
+
+  /* Panel */
+  .panel {
+    background: var(--bg-panel); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 28px; margin-bottom: 24px;
+  }
+  .panel-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--hairline-soft);
+  }
+  .panel-title {
+    font-family: var(--serif); font-weight: 500; font-size: 1.4rem;
+    margin: 0; letter-spacing: 0.01em;
+  }
+
+  /* Buttons */
+  .btn {
+    font-family: var(--sans); font-size: 0.72rem; letter-spacing: 0.1em;
+    text-transform: uppercase; padding: 8px 16px;
+    background: transparent; color: var(--ink-soft);
+    border: 1px solid var(--hairline); border-radius: 4px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn:hover { border-color: var(--gold); color: var(--gold); }
+  .btn-primary {
+    background: var(--gold); color: #0a0a09; border-color: var(--gold); font-weight: 500;
+  }
+  .btn-primary:hover { background: var(--gold-dim); }
+  .btn-row { display: flex; gap: 10px; }
+
+  /* Profile grid */
+  .profile-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .profile-card {
+    background: var(--bg-elev); border: 1px solid var(--hairline-soft);
+    border-radius: 4px; padding: 14px 16px; cursor: pointer; transition: all 0.15s;
+    position: relative;
+  }
+  .profile-card:hover { border-color: var(--hairline); }
+  .profile-card.selected { border-color: var(--gold); background: rgba(247, 190, 104, 0.04); }
+  .chip-name { font-weight: 500; font-size: 0.88rem; }
+  .chip-email { color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+  .chip-tag {
+    display: inline-block; margin-top: 8px; padding: 2px 8px;
+    color: var(--gold); border: 1px solid var(--hairline);
+    font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+
+  /* Activity feed */
+  .feed-item {
+    display: grid; grid-template-columns: 60px 1fr auto; gap: 16px;
+    padding: 12px 0; border-bottom: 1px solid var(--hairline-soft);
+    font-size: 0.85rem;
+  }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-time { color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+  .feed-dot { color: var(--green); }
+  .feed-dot.err { color: var(--red); }
+  .feed-dot.neu { color: var(--gold); }
+
+  /* Ledger */
+  .ledger { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .ledger th {
+    text-align: left; padding: 12px 14px;
+    font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .ledger td {
+    padding: 12px 14px; border-bottom: 1px solid var(--hairline-soft);
+    color: var(--ink-soft);
+  }
+  .ledger td.ok { color: var(--green); font-variant-numeric: tabular-nums; }
+  .ledger td.err { color: var(--red); font-variant-numeric: tabular-nums; }
+  .ledger td.dim { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Sticky run bar */
+  .run-bar {
+    position: fixed; bottom: 0; left: 260px; right: 0;
+    background: var(--bg-panel); border-top: 1px solid var(--hairline);
+    padding: 16px 56px;
+    display: flex; justify-content: space-between; align-items: center;
+    z-index: 10;
+  }
+  .run-status {
+    display: flex; gap: 32px; align-items: center;
+  }
+  .run-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 0 4px rgba(63, 185, 80, 0.18);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(63, 185, 80, 0.18); }
+    50% { box-shadow: 0 0 0 8px rgba(63, 185, 80, 0.08); }
+  }
+  .run-info { font-size: 0.85rem; }
+  .run-info strong { font-family: var(--serif); color: var(--gold); font-size: 1rem; font-style: italic; }
+
+  .grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">v2.6.0</div>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-section-label">Campaign</div>
+      <div class="nav-item active"><span class="nav-num">I.</span>Overview</div>
+      <div class="nav-item"><span class="nav-num">II.</span>Accounts</div>
+      <div class="nav-item"><span class="nav-num">III.</span>Sheet &amp; Targets</div>
+      <div class="nav-item"><span class="nav-num">IV.</span>Configuration</div>
+      <div class="nav-item"><span class="nav-num">V.</span>Templates</div>
+
+      <div class="nav-section-label">Operations</div>
+      <div class="nav-item"><span class="nav-num">VI.</span>History</div>
+      <div class="nav-item"><span class="nav-num">VII.</span>Schedules</div>
+      <div class="nav-item"><span class="nav-num">VIII.</span>Server Log</div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        17 April 2026 · 10:12 PH
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="main">
+
+    <div class="main-header">
+      <div>
+        <div class="page-label">Section I</div>
+        <h1 class="page-title">Overview</h1>
+        <div class="page-desc">Campaign activity and what's currently running across your team.</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn">Stop</button>
+        <button class="btn btn-primary">Start Campaign</button>
+      </div>
+    </div>
+
+    <!-- Passover strip -->
+    <div class="passover-strip">
+      <div class="passover-group">
+        <span class="passover-label">OP · InMail · Sales Nav</span>
+        <span class="passover-value">Active — closes in 14d</span>
+      </div>
+      <div class="passover-group">
+        <span class="passover-label">CC</span>
+        <span class="passover-value">Active — closes in 3d</span>
+      </div>
+    </div>
+
+    <!-- Hero stats -->
+    <div class="hero-stats">
+      <div class="hero-stat">
+        <div class="hero-stat-label">Today</div>
+        <div class="hero-stat-value gold">36</div>
+        <div class="hero-stat-delta up">↑ 12 vs. yesterday</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-label">This Week</div>
+        <div class="hero-stat-value">214</div>
+        <div class="hero-stat-delta">across 6 profiles</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-label">Errors · 24h</div>
+        <div class="hero-stat-value" style="color: var(--red);">7</div>
+        <div class="hero-stat-delta">3 captchas</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-label">Next Schedule</div>
+        <div class="hero-stat-value small">Tomorrow · 09:00</div>
+        <div class="hero-stat-delta">Daily outreach</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Active profiles -->
+      <div class="panel">
+        <div class="panel-head">
+          <h3 class="panel-title">Active Accounts</h3>
+          <button class="btn">Manage</button>
+        </div>
+        <div class="profile-grid">
+          <div class="profile-card selected">
+            <div class="chip-name">Dennis Peralta</div>
+            <div class="chip-email">dennis.peralta@…</div>
+            <span class="chip-tag">Executive</span>
+          </div>
+          <div class="profile-card selected">
+            <div class="chip-name">Kyra Delacruz</div>
+            <div class="chip-email">kyra.delacruz@…</div>
+            <span class="chip-tag">Assigned</span>
+          </div>
+          <div class="profile-card selected">
+            <div class="chip-name">Asad Uzzaman</div>
+            <div class="chip-email">asaduzzaman.r@…</div>
+            <span class="chip-tag">Executive</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live feed -->
+      <div class="panel">
+        <div class="panel-head">
+          <h3 class="panel-title">Live Feed</h3>
+          <span style="font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold);">● Running</span>
+        </div>
+        <div class="feed-item"><span class="feed-time">10:12</span><span><span class="feed-dot">●</span> Connected with <strong>Mark Santos</strong> (Goldman)</span><span class="feed-time">kyra</span></div>
+        <div class="feed-item"><span class="feed-time">10:09</span><span><span class="feed-dot">●</span> Connected with <strong>Lina Chen</strong> (JPM)</span><span class="feed-time">kyra</span></div>
+        <div class="feed-item"><span class="feed-time">10:06</span><span><span class="feed-dot neu">●</span> Captcha — pausing account</span><span class="feed-time">dennis</span></div>
+        <div class="feed-item"><span class="feed-time">10:04</span><span><span class="feed-dot">●</span> Connected with <strong>Rafael Cruz</strong></span><span class="feed-time">asad</span></div>
+        <div class="feed-item"><span class="feed-time">10:01</span><span><span class="feed-dot err">●</span> Skipped (already connected)</span><span class="feed-time">kyra</span></div>
+      </div>
+    </div>
+
+    <!-- History preview -->
+    <div class="panel" style="margin-top: 20px;">
+      <div class="panel-head">
+        <h3 class="panel-title">Recent Campaigns</h3>
+        <div class="btn-row">
+          <button class="btn">View All</button>
+          <button class="btn">Download CSV</button>
+        </div>
+      </div>
+      <table class="ledger">
+        <thead><tr>
+          <th>Date</th><th>Mode</th><th>Profiles</th><th>Success</th><th>Errors</th><th>Duration</th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="dim">2026-04-16 13:23</td><td>Open Profile</td><td>dennis.peralta</td><td class="ok">0</td><td class="err">0</td><td class="dim">32m</td></tr>
+          <tr><td class="dim">2026-04-15 13:34</td><td>Message Only</td><td>Local Browser</td><td class="ok">6</td><td class="err">1</td><td class="dim">15m</td></tr>
+          <tr><td class="dim">2026-04-15 09:28</td><td>Connect Only</td><td>dennis.peralta</td><td class="ok">10</td><td class="err">0</td><td class="dim">43m</td></tr>
+          <tr><td class="dim">2026-04-13 11:00</td><td>Connect Only</td><td>kyra.delacruz</td><td class="ok">36</td><td class="err">0</td><td class="dim">143m</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- Sticky run bar -->
+  <div class="run-bar">
+    <div class="run-status">
+      <span class="run-dot"></span>
+      <div class="run-info">
+        <span class="passover-label">Running</span> · <strong>Connect Only</strong> · kyra.delacruz · <strong>36</strong>/87
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn">Pause</button>
+      <button class="btn btn-primary">Stop</button>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

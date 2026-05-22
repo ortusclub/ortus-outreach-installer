@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Accounts · Direction C — Library + Queue</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { --bg:#000; --ink:#fff; --gray:#999; --hairline:rgba(255,255,255,0.15); --hairline-soft:rgba(255,255,255,0.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68; --display:'Bebas Neue',sans-serif; --mono:'JetBrains Mono',monospace; --body:'Inter',sans-serif; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--ink); font-family:var(--body); -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1400px; margin:0 auto; padding:48px; }
+.label { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); margin-bottom:14px; }
+h2 { font-family:var(--display); font-weight:400; font-size:2.4rem; line-height:1; letter-spacing:0.01em; text-transform:uppercase; margin-bottom:32px; }
+
+.split { display:grid; grid-template-columns:1fr 1px 460px; gap:32px; align-items:start; }
+.split-divider { background:var(--hairline); width:1px; align-self:stretch; }
+
+.pane-head { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; }
+.pane-head .count { color:var(--ink); }
+
+.search { width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); padding:10px 0; color:var(--ink); font-size:0.9rem; margin-bottom:18px; }
+.search:focus { outline:none; border-bottom-color:var(--ink); }
+
+.library { border-top:1px solid var(--hairline); max-height:640px; overflow-y:auto; }
+.lib-row { display:grid; grid-template-columns: 40px 2fr 100px; align-items:center; padding:10px 12px; gap:12px; border-bottom:1px solid var(--hairline-soft); cursor:pointer; transition:opacity 0.15s; }
+.lib-row:hover { opacity:0.7; background:var(--hairline-soft); }
+.lib-row.in-queue { opacity:0.35; }
+.lib-row input[type=checkbox] { accent-color:var(--ink); width:14px; height:14px; }
+.lib-row .name { font-size:0.9rem; color:var(--ink); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.lib-row .meta { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.1em; color:var(--gray); text-transform:uppercase; margin-top:2px; }
+.lib-row .soo { display:flex; gap:4px; justify-content:flex-end; }
+.dot { width:7px; height:7px; border-radius:9999px; border:1px solid var(--hairline); }
+.dot.avail { background:var(--green); border-color:var(--green); }
+.dot.in-use, .dot.used { background:var(--gold); border-color:var(--gold); }
+.dot.na { background:transparent; border-color:var(--red); }
+
+/* Queue */
+.queue { border:1px solid var(--hairline); border-radius:0; padding:24px; }
+.queue-title { font-family:var(--display); font-weight:400; font-size:1.4rem; line-height:1; letter-spacing:0.01em; text-transform:uppercase; margin-bottom:4px; }
+.queue-sub { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); margin-bottom:20px; }
+.queue-list { border-top:1px solid var(--hairline); }
+.queue-item { display:grid; grid-template-columns:32px 1fr 20px; align-items:center; padding:14px 0; gap:10px; border-bottom:1px solid var(--hairline-soft); cursor:grab; }
+.queue-item:last-child { border-bottom:none; }
+.q-order { font-family:var(--display); font-size:1.2rem; color:var(--ink); text-align:center; line-height:1; }
+.q-name { font-size:0.85rem; color:var(--ink); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.q-meta { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.1em; color:var(--gray); text-transform:uppercase; }
+.q-remove { color:var(--gray); cursor:pointer; text-align:center; font-size:1.1rem; }
+.q-remove:hover { color:var(--red); }
+.queue-empty { font-family:var(--mono); font-size:0.65rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); text-align:center; padding:40px 0; }
+.queue-footer { border-top:1px solid var(--hairline); margin-top:16px; padding-top:16px; font-family:var(--mono); font-size:0.6rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); display:flex; justify-content:space-between; }
+.queue-footer strong { color:var(--ink); font-weight:400; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction C</div>
+  <h2>Library + queue (split view)</h2>
+
+  <div class="split">
+    <div class="library-pane">
+      <div class="pane-head"><span>Library · all accounts</span><span class="count">302</span></div>
+      <input type="text" class="search" placeholder="Search by name, email, or @assignee…" />
+
+      <div class="library">
+        <div class="lib-row in-queue">
+          <input type="checkbox" checked>
+          <div>
+            <div class="name">Local Browser</div>
+            <div class="meta">System Chrome</div>
+          </div>
+          <div class="soo"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        </div>
+        <div class="lib-row in-queue">
+          <input type="checkbox" checked>
+          <div>
+            <div class="name">dennis.peralta@ortus.solutions</div>
+            <div class="meta">Executive · 32m</div>
+          </div>
+          <div class="soo"><span class="dot avail"></span><span class="dot avail"></span><span class="dot used"></span></div>
+        </div>
+        <div class="lib-row in-queue">
+          <input type="checkbox" checked>
+          <div>
+            <div class="name">kyra.delacruz@ortus.solutions</div>
+            <div class="meta">Assigned · Ton</div>
+          </div>
+          <div class="soo"><span class="dot na"></span><span class="dot na"></span><span class="dot used"></span></div>
+        </div>
+        <div class="lib-row">
+          <input type="checkbox">
+          <div>
+            <div class="name">asaduzzaman.r@ortus.solutions</div>
+            <div class="meta">Pool · 5h</div>
+          </div>
+          <div class="soo"><span class="dot in-use"></span><span class="dot in-use"></span><span class="dot avail"></span></div>
+        </div>
+        <div class="lib-row">
+          <input type="checkbox">
+          <div>
+            <div class="name">junie.almeda@ortus.solutions</div>
+            <div class="meta">Assigned · Ton</div>
+          </div>
+          <div class="soo"><span class="dot na"></span><span class="dot na"></span><span class="dot used"></span></div>
+        </div>
+        <div class="lib-row">
+          <input type="checkbox">
+          <div>
+            <div class="name">jerianne.c@ortus.solutions</div>
+            <div class="meta">Pool · 3d</div>
+          </div>
+          <div class="soo"><span class="dot avail"></span><span class="dot avail"></span><span class="dot avail"></span></div>
+        </div>
+        <div class="lib-row">
+          <input type="checkbox">
+          <div>
+            <div class="name">sophie.pascua@ortus.solutions</div>
+            <div class="meta">Assigned · Aima</div>
+          </div>
+          <div class="soo"><span class="dot na"></span><span class="dot na"></span><span class="dot avail"></span></div>
+        </div>
+        <div class="lib-row">
+          <input type="checkbox">
+          <div>
+            <div class="name">alfhea.rabacal@ortus.solutions</div>
+            <div class="meta">Pool · 2w</div>
+          </div>
+          <div class="soo"><span class="dot na"></span><span class="dot na"></span><span class="dot na"></span></div>
+        </div>
+        <div class="lib-row">
+          <input type="checkbox">
+          <div>
+            <div class="name">francis.zuzartee@ortus.solutions</div>
+            <div class="meta">Pool · 3w</div>
+          </div>
+          <div class="soo"><span class="dot na"></span><span class="dot na"></span><span class="dot na"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="split-divider"></div>
+
+    <div class="queue-pane">
+      <div class="queue">
+        <div class="queue-title">Execution queue</div>
+        <div class="queue-sub">Drag to reorder · tap × to remove</div>
+        <div class="queue-list">
+          <div class="queue-item">
+            <span class="q-order">1</span>
+            <div>
+              <div class="q-name">Local Browser</div>
+              <div class="q-meta">System Chrome</div>
+            </div>
+            <span class="q-remove">×</span>
+          </div>
+          <div class="queue-item">
+            <span class="q-order">2</span>
+            <div>
+              <div class="q-name">dennis.peralta@ortus.solutions</div>
+              <div class="q-meta">Executive</div>
+            </div>
+            <span class="q-remove">×</span>
+          </div>
+          <div class="queue-item">
+            <span class="q-order">3</span>
+            <div>
+              <div class="q-name">kyra.delacruz@ortus.solutions</div>
+              <div class="q-meta">Assigned · Ton</div>
+            </div>
+            <span class="q-remove">×</span>
+          </div>
+        </div>
+        <div class="queue-footer"><span>3 accounts queued</span><span><strong>≈ 120</strong> total actions</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

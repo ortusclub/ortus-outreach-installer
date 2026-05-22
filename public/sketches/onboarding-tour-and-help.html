@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onboarding tour + Help page — sketches</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --card: #111111;
+    --ink: #fafafa;
+    --gray: #8a8a8a;
+    --gray-2: #555;
+    --hairline: rgba(255,255,255,0.12);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --green: #3fb950;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 36px 44px 100px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    color: var(--gray);
+    font-size: 13px;
+    margin-bottom: 28px;
+    max-width: 820px;
+  }
+  h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.08em;
+    margin-top: 40px;
+    margin-bottom: 6px;
+  }
+  h2 .num {
+    display: inline-block;
+    width: 30px;
+    color: var(--gold);
+    font-size: 22px;
+  }
+  .variant-desc {
+    color: var(--gray);
+    font-size: 12px;
+    margin-bottom: 16px;
+    max-width: 760px;
+    line-height: 1.6;
+  }
+
+  .stage {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .stage-label {
+    position: absolute; top: 6px; right: 10px;
+    font-family: var(--display); font-size: 9px;
+    letter-spacing: 0.16em; color: var(--gray-2);
+    z-index: 100;
+  }
+
+  /* ────────────────────────────────────────────────────────────────
+     A · SIDEBAR + HELP POPOVER MOCK
+     ──────────────────────────────────────────────────────────────── */
+  .app-mock {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: 540px;
+    background: var(--bg);
+  }
+  .mock-sidebar {
+    background: var(--card);
+    border-right: 1px solid var(--hairline);
+    padding: 18px 0;
+  }
+  .mock-brand {
+    padding: 0 18px 18px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .mock-wordmark {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.3rem;
+    font-weight: 500;
+  }
+  .mock-wordmark em { color: var(--gold); font-style: italic; }
+  .mock-sub { font-size: 0.62rem; color: var(--gray); letter-spacing: 0.18em; margin-top: 2px; }
+  .mock-nav { padding: 14px 0; }
+  .mock-section-label {
+    padding: 14px 18px 6px;
+    font-family: var(--display); font-size: 9px;
+    letter-spacing: 0.16em; color: var(--gray);
+  }
+  .mock-nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 18px;
+    font-size: 0.78rem;
+    color: var(--ink);
+    cursor: pointer;
+    position: relative;
+  }
+  .mock-nav-item:hover { background: rgba(255,255,255,0.03); }
+  .mock-nav-item .roman { color: var(--gray); font-family: var(--display); font-size: 0.72rem; min-width: 22px; }
+  .mock-nav-item.help-item {
+    color: var(--gold);
+    border-left: 2px solid var(--gold);
+    padding-left: 16px;
+  }
+  .mock-nav-item.help-item .roman { color: var(--gold); }
+
+  /* Help popover */
+  .help-popover {
+    position: absolute;
+    left: 100%;
+    top: 0;
+    margin-left: 8px;
+    background: var(--card);
+    border: 1px solid var(--gold);
+    width: 240px;
+    z-index: 10;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+  }
+  .help-popover-title {
+    font-family: var(--display);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--gray);
+    padding: 10px 14px 6px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .help-pop-item {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 8px;
+    padding: 10px 14px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .help-pop-item:last-child { border-bottom: none; }
+  .help-pop-item:hover { background: rgba(247,190,104,0.08); }
+  .help-pop-item .icon { font-size: 0.9rem; }
+  .help-pop-item.first-time { color: var(--gold); }
+  .help-pop-item.disabled-state { color: var(--gray-2); text-decoration: line-through; }
+  .help-pop-note {
+    font-size: 0.62rem;
+    color: var(--gray);
+    padding: 8px 14px;
+    line-height: 1.4;
+    background: rgba(247,190,104,0.04);
+    border-top: 1px solid var(--hairline-soft);
+  }
+
+  .mock-main {
+    padding: 24px;
+    color: var(--gray);
+    font-size: 0.85rem;
+  }
+  .mock-main h3 {
+    font-family: var(--display);
+    font-size: 1.2rem;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
+  .mock-section {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    padding: 16px 20px;
+    margin-bottom: 14px;
+  }
+  .mock-section.spotlit {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 4px rgba(247,190,104,0.12);
+    position: relative;
+    z-index: 6;
+  }
+  .mock-section-title {
+    font-family: var(--display);
+    font-size: 0.88rem;
+    letter-spacing: 0.08em;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
+  .mock-input {
+    background: transparent;
+    border: 1px solid var(--hairline);
+    padding: 6px 10px;
+    color: var(--ink);
+    font-size: 0.78rem;
+    width: 100%;
+    font-family: var(--mono);
+  }
+
+  /* Tour overlay + callout */
+  .tour-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    backdrop-filter: blur(2px);
+    z-index: 5;
+    pointer-events: none;
+  }
+  .tour-callout {
+    position: absolute;
+    background: var(--card);
+    border: 1px solid var(--gold);
+    padding: 16px 18px 14px;
+    width: 280px;
+    z-index: 7;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.6);
+  }
+  .tour-callout .step {
+    font-family: var(--display); font-size: 10px;
+    letter-spacing: 0.14em; color: var(--gold);
+    margin-bottom: 6px;
+  }
+  .tour-callout h4 {
+    font-family: var(--display); font-weight: 400;
+    font-size: 1rem; margin-bottom: 8px;
+    color: var(--ink);
+  }
+  .tour-callout p { font-size: 0.78rem; color: #ddd; line-height: 1.55; }
+  .tour-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 14px; gap: 8px;
+  }
+  .tour-skip {
+    font-size: 0.7rem; color: var(--gray);
+    background: transparent; border: none; cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    font-family: var(--mono);
+  }
+  .tour-nav { display: flex; gap: 6px; }
+  .tour-btn {
+    font-family: var(--display);
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    padding: 6px 12px;
+    cursor: pointer;
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--ink);
+  }
+  .tour-btn.primary {
+    background: var(--gold);
+    color: #000;
+    border-color: var(--gold);
+  }
+  /* Arrow pointing from callout to spotlight */
+  .tour-arrow {
+    position: absolute;
+    width: 18px; height: 18px;
+    background: var(--card);
+    border-left: 1px solid var(--gold);
+    border-bottom: 1px solid var(--gold);
+    transform: rotate(45deg);
+  }
+
+  /* ────────────────────────────────────────────────────────────────
+     B · TOUR STATES — 3 frames
+     ──────────────────────────────────────────────────────────────── */
+  .frames {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 1200px) { .frames { grid-template-columns: 1fr; } }
+  .frame-title {
+    font-family: var(--display);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--gray);
+    padding: 8px 0;
+  }
+
+  /* ────────────────────────────────────────────────────────────────
+     C · HELP PAGE LAYOUT
+     ──────────────────────────────────────────────────────────────── */
+  .help-page-mock {
+    background: var(--bg);
+    color: var(--ink);
+    padding: 32px 40px;
+  }
+  .hp-eyebrow {
+    font-family: var(--display);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--gold);
+    margin-bottom: 6px;
+  }
+  .hp-h1 {
+    font-family: var(--display);
+    font-size: 2.2rem;
+    margin-bottom: 6px;
+  }
+  .hp-lead {
+    color: var(--gray);
+    font-size: 0.9rem;
+    max-width: 640px;
+    margin-bottom: 32px;
+  }
+  .hp-section {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 28px;
+    padding: 28px 0;
+    border-top: 1px solid var(--hairline-soft);
+  }
+  .hp-step-num {
+    font-family: var(--display);
+    font-size: 3rem;
+    color: var(--gold);
+    line-height: 1;
+  }
+  .hp-step-title {
+    font-family: var(--display);
+    font-size: 1.3rem;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .hp-step-sub {
+    color: var(--gray);
+    font-size: 0.76rem;
+    letter-spacing: 0.12em;
+    margin-bottom: 12px;
+  }
+  .hp-screenshot {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--gray-2);
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    margin-bottom: 14px;
+  }
+  .hp-body {
+    font-size: 0.88rem;
+    color: #ddd;
+    line-height: 1.6;
+    max-width: 680px;
+  }
+  .hp-callouts {
+    list-style: none;
+    margin-top: 12px;
+    padding: 0;
+  }
+  .hp-callouts li {
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 0.82rem;
+    color: #ccc;
+  }
+  .hp-callouts .num {
+    font-family: var(--display);
+    color: var(--gold);
+    font-size: 0.9rem;
+  }
+  .hp-cta {
+    margin-top: 28px;
+    padding: 22px 24px;
+    background: var(--card);
+    border: 1px solid var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  .hp-cta-text { font-size: 0.88rem; color: #ddd; }
+  .hp-replay-btn {
+    font-family: var(--display);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    padding: 10px 20px;
+    background: var(--gold);
+    color: #000;
+    border: none;
+    cursor: pointer;
+  }
+
+  .annot {
+    margin-top: 14px;
+    padding: 12px 16px;
+    background: rgba(247,190,104,0.05);
+    border-left: 2px solid var(--gold);
+    font-size: 0.78rem;
+    color: #d4c19a;
+    line-height: 1.55;
+  }
+
+  /* ────────────────────────────────────────────────────────────────
+     MOBILE — collapse fixed grids, tighten paddings, scale type
+     ──────────────────────────────────────────────────────────────── */
+  @media (max-width: 720px) {
+    body { padding: 20px 16px 60px; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 14px; margin-top: 28px; }
+    .subtitle, .variant-desc { font-size: 12px; }
+
+    /* Sidebar mock stacks above main */
+    .app-mock {
+      grid-template-columns: 1fr;
+      min-height: 0;
+    }
+    .mock-sidebar {
+      border-right: none;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .mock-main { padding: 18px; }
+
+    /* Help popover — sit BELOW the Help button on mobile, full-width */
+    .help-popover {
+      position: static;
+      width: 100%;
+      margin-left: 0;
+      margin-top: 8px;
+    }
+
+    /* Tour frames stack (already had a 1200 px breakpoint, this one tightens
+       internal sizing on phone width). */
+    .stage[style*="height: 380px"] { height: auto !important; min-height: 340px; }
+    .tour-callout {
+      width: calc(100% - 32px);
+      left: 16px !important;
+      right: 16px !important;
+      top: auto !important;
+      bottom: 16px;
+      max-width: 320px;
+    }
+    .tour-arrow { display: none; }
+
+    /* Help page: section num + content stack vertically */
+    .help-page-mock { padding: 22px 16px; }
+    .hp-section {
+      grid-template-columns: 1fr;
+      gap: 6px;
+      padding: 22px 0;
+    }
+    .hp-step-num { font-size: 2.2rem; }
+    .hp-h1 { font-size: 1.7rem; }
+    .hp-screenshot { height: 120px; font-size: 9px; }
+    .hp-cta {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+    .hp-replay-btn { width: 100%; padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>ONBOARDING TOUR + HELP — SKETCHES</h1>
+<p class="subtitle">
+Three visual checks before I build: (A) sidebar Help button + popover menu, (B) tour overlay
+in action at three different steps to show spotlight + callout positioning, (C) help page layout.
+All in the Bugatti monochrome aesthetic; gold reserved for tour focus + CTA.
+</p>
+
+<!-- ───────────────────────────────────────────────────────────────
+     A · Sidebar Help button + popover
+     ─────────────────────────────────────────────────────────────── -->
+<h2><span class="num">A</span> SIDEBAR HELP BUTTON + POPOVER</h2>
+<p class="variant-desc">
+New nav item between <b>Review</b> and <b>Dev tools</b>. Click → popover opens to the right.
+Three items: Take the tour (first-time), Open the manual (the static help page), Replay tour
+(only appears after the tour has been completed at least once).
+</p>
+
+<div class="stage">
+  <div class="stage-label">SIDEBAR · COMPLETED-TOUR STATE</div>
+  <div class="app-mock">
+    <div class="mock-sidebar">
+      <div class="mock-brand">
+        <div class="mock-wordmark">Ortus <em>Outreach</em></div>
+        <div class="mock-sub">LINKEDIN · 2.14.x</div>
+      </div>
+      <div class="mock-nav">
+        <div class="mock-section-label">CAMPAIGN</div>
+        <div class="mock-nav-item"><span class="roman">I.</span>Campaign Type</div>
+        <div class="mock-nav-item"><span class="roman">II.</span>Data</div>
+        <div class="mock-nav-item"><span class="roman">III.</span>LinkedIn Accounts</div>
+        <div class="mock-nav-item"><span class="roman">IV.</span>Campaign Settings</div>
+        <div class="mock-nav-item"><span class="roman">V.</span>Launch</div>
+        <div class="mock-nav-item"><span class="roman"></span>Live Status</div>
+
+        <div class="mock-section-label">REVIEW</div>
+        <div class="mock-nav-item"><span class="roman"></span>Open log</div>
+
+        <div class="mock-section-label">HELP</div>
+        <div class="mock-nav-item help-item">
+          <span class="roman">?</span>Help
+          <div class="help-popover">
+            <div class="help-popover-title">HELP</div>
+            <div class="help-pop-item"><span class="icon">📘</span><span>Take the tour</span></div>
+            <div class="help-pop-item"><span class="icon">📄</span><span>Open the manual</span></div>
+            <div class="help-pop-item"><span class="icon">🔁</span><span>Replay tour</span></div>
+            <div class="help-pop-note">"Replay tour" appears only after the tour has been completed at least once. Clears the localStorage flag and re-runs the overlay.</div>
+          </div>
+        </div>
+
+        <div class="mock-section-label">DEV TOOLS</div>
+        <div class="mock-nav-item"><span class="roman"></span>Preview intro DM</div>
+      </div>
+    </div>
+    <div class="mock-main">
+      <h3>Main area — wizard contents.</h3>
+      <p>The Help popover anchors to the sidebar button. Click outside dismisses. Esc dismisses.</p>
+    </div>
+  </div>
+</div>
+
+<div class="annot">
+First-launch (no <code>ortusTourCompleted</code> flag): the tour auto-fires on app open, so the popover entry is mostly for replay + manual access. New operators experience the tour without needing to find this menu.
+</div>
+
+<!-- ───────────────────────────────────────────────────────────────
+     B · Tour overlay states
+     ─────────────────────────────────────────────────────────────── -->
+<h2><span class="num">B</span> TOUR OVERLAY · 3 STATES</h2>
+<p class="variant-desc">
+Each step: dim the entire app, cut a hole in the dimming around the target section
+(<code>clip-path: polygon()</code>), pop a callout with arrow pointing at the hole. Real DOM —
+no library, ~200 lines.
+</p>
+
+<div class="frames">
+
+  <!-- Frame 1: First step -->
+  <div>
+    <div class="frame-title">STEP 1 OF 5 · CAMPAIGN TYPE</div>
+    <div class="stage" style="height: 380px;">
+      <div class="stage-label">SPOTLIGHT TOP</div>
+      <div class="app-mock" style="grid-template-columns: 0 1fr; min-height: 380px;">
+        <div></div>
+        <div class="mock-main" style="position:relative; padding: 18px;">
+          <div class="mock-section spotlit" style="position:relative;">
+            <div class="mock-section-title">I · CAMPAIGN TYPE</div>
+            <select class="mock-input">
+              <option>Connect Only</option>
+              <option>Connect + Introduce Back</option>
+              <option>Message Only</option>
+            </select>
+          </div>
+          <div class="mock-section" style="opacity:0.35"><div class="mock-section-title">II · DATA</div></div>
+          <div class="mock-section" style="opacity:0.35"><div class="mock-section-title">III · ACCOUNTS</div></div>
+          <div class="tour-overlay" style="clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 16%, 100% 16%, 100% 32%, 0 32%);"></div>
+          <div class="tour-callout" style="left: 320px; top: 96px;">
+            <div class="tour-arrow" style="left: -10px; top: 24px;"></div>
+            <div class="step">STEP 1 / 5</div>
+            <h4>PICK WHAT YOUR CAMPAIGN DOES</h4>
+            <p>Each mode behaves differently. Connect, message, intro, InMail, Open Profile — the modal that fires on Start will explain that mode's specifics.</p>
+            <div class="tour-foot">
+              <button class="tour-skip">Skip tour</button>
+              <div class="tour-nav">
+                <button class="tour-btn primary">NEXT →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Frame 2: Middle step -->
+  <div>
+    <div class="frame-title">STEP 3 OF 5 · ACCOUNTS</div>
+    <div class="stage" style="height: 380px;">
+      <div class="stage-label">SPOTLIGHT MID · CALLOUT SIDE</div>
+      <div class="app-mock" style="grid-template-columns: 0 1fr; min-height: 380px;">
+        <div></div>
+        <div class="mock-main" style="position:relative; padding: 18px;">
+          <div class="mock-section" style="opacity:0.35"><div class="mock-section-title">I · CAMPAIGN TYPE</div></div>
+          <div class="mock-section" style="opacity:0.35"><div class="mock-section-title">II · DATA</div></div>
+          <div class="mock-section spotlit">
+            <div class="mock-section-title">III · LINKEDIN ACCOUNTS</div>
+            <div style="display:flex; gap:8px; margin-top: 8px; flex-wrap: wrap;">
+              <span style="padding: 4px 10px; border:1px solid var(--gold); font-size: 0.72rem;">kenya5@ortus</span>
+              <span style="padding: 4px 10px; border:1px solid var(--hairline); font-size: 0.72rem; color: var(--gray);">nitin.kumar@ortus</span>
+              <span style="padding: 4px 10px; border:1px solid var(--hairline); font-size: 0.72rem; color: var(--gray);">rilany.darang@ortus</span>
+            </div>
+          </div>
+          <div class="mock-section" style="opacity:0.35"><div class="mock-section-title">IV · SETTINGS</div></div>
+          <div class="tour-overlay" style="clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 36%, 100% 36%, 100% 60%, 0 60%);"></div>
+          <div class="tour-callout" style="right: 28px; top: 64px;">
+            <div class="tour-arrow" style="left: -10px; top: 48px;"></div>
+            <div class="step">STEP 3 / 5</div>
+            <h4>SELECT ACCOUNTS</h4>
+            <p>Pick which GoLogin profiles run this campaign. Multiple accounts rotate through the lead list — the more accounts, the higher the daily throughput.</p>
+            <div class="tour-foot">
+              <button class="tour-skip">Skip</button>
+              <div class="tour-nav">
+                <button class="tour-btn">← BACK</button>
+                <button class="tour-btn primary">NEXT →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Frame 3: Final step -->
+  <div>
+    <div class="frame-title">STEP 5 OF 5 · LAUNCH</div>
+    <div class="stage" style="height: 380px;">
+      <div class="stage-label">SPOTLIGHT BOTTOM · FINISH</div>
+      <div class="app-mock" style="grid-template-columns: 0 1fr; min-height: 380px;">
+        <div></div>
+        <div class="mock-main" style="position:relative; padding: 18px;">
+          <div class="mock-section" style="opacity:0.35"><div class="mock-section-title">III · ACCOUNTS</div></div>
+          <div class="mock-section" style="opacity:0.35"><div class="mock-section-title">IV · SETTINGS</div></div>
+          <div class="mock-section spotlit">
+            <div class="mock-section-title">V · LAUNCH</div>
+            <input class="mock-input" placeholder="e.g. TAG_CITY_I" style="margin-bottom:10px;">
+            <button style="background: var(--gold); color:#000; border:none; font-family:var(--display); padding: 8px 18px; letter-spacing: 0.1em; font-size: 0.78rem;">START CAMPAIGN</button>
+          </div>
+          <div class="tour-overlay" style="clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 56%, 100% 56%, 100% 88%, 0 88%);"></div>
+          <div class="tour-callout" style="left: 28px; top: 140px;">
+            <div class="tour-arrow" style="right: -10px; bottom: 24px; transform: rotate(225deg);"></div>
+            <div class="step">STEP 5 / 5</div>
+            <h4>NAME IT, THEN PRESS START</h4>
+            <p>Name your campaign so you can find it in the dashboard later. Press Start — the cockpit takes over and a mode-specific tips modal fires.</p>
+            <div class="tour-foot">
+              <button class="tour-skip">Skip</button>
+              <div class="tour-nav">
+                <button class="tour-btn">← BACK</button>
+                <button class="tour-btn primary">FINISH</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="annot">
+Sequence: <b>scroll target into view</b> → compute its <code>getBoundingClientRect()</code> →
+build a polygon clip-path that punches a hole at that rect → render callout positioned near
+the hole. On resize/scroll the clip-path + callout are re-positioned. <b>Skip</b> finishes the
+tour and sets the completion flag. <b>Back</b> on step 1 is hidden; <b>Next</b> on step 5
+becomes <b>Finish</b>.
+</div>
+
+<!-- ───────────────────────────────────────────────────────────────
+     C · Help page layout
+     ─────────────────────────────────────────────────────────────── -->
+<h2><span class="num">C</span> HELP PAGE · public/help.html</h2>
+<p class="variant-desc">
+Single scrollable page, one numbered section per wizard step + one "after launch" closer.
+Each section: big numeral · title · screenshot placeholder · explanation · numbered callouts.
+Bottom of page: a gold-bordered "Replay tour" CTA.
+</p>
+
+<div class="stage">
+  <div class="stage-label">HELP PAGE · MOCK</div>
+  <div class="help-page-mock">
+    <div class="hp-eyebrow">ORTUS OUTREACH · MANUAL</div>
+    <h1 class="hp-h1">GETTING STARTED</h1>
+    <p class="hp-lead">
+      Five sections in the wizard. Each does one thing. Skim this once and you'll know
+      where everything lives. Each section below mirrors what the interactive tour shows you,
+      so you can come back here later if you forget.
+    </p>
+
+    <!-- Step 1 -->
+    <div class="hp-section">
+      <div class="hp-step-num">I</div>
+      <div>
+        <div class="hp-step-title">CAMPAIGN TYPE</div>
+        <div class="hp-step-sub">PICK WHAT YOUR CAMPAIGN DOES</div>
+        <div class="hp-screenshot">[ SCREENSHOT · Section I — Mode dropdown + description ]</div>
+        <div class="hp-body">
+          Choose the action this campaign performs. Connect requests, follow-up DMs, 3-way
+          intros, InMail, Open Profile messages, or background checks. Each has different
+          rules — they're explained in the launch modal that fires when you press Start.
+        </div>
+        <ul class="hp-callouts">
+          <li><span class="num">1</span><span>The dropdown surfaces only modes available for your sheet (some require specific columns).</span></li>
+          <li><span class="num">2</span><span>Switching modes hides/shows the right Settings sub-sections below.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="hp-section">
+      <div class="hp-step-num">II</div>
+      <div>
+        <div class="hp-step-title">DATA</div>
+        <div class="hp-step-sub">YOUR GOOGLE SHEET</div>
+        <div class="hp-screenshot">[ SCREENSHOT · Section II — Sheet URL input + tab hint ]</div>
+        <div class="hp-body">
+          Paste the full Google Sheet URL — including the <code>#gid=...</code> tab if the
+          sheet has multiple tabs. Ortus reads rows from this sheet and writes back the
+          Stage column. The LinkedIn URL column is auto-detected if it's named
+          <code>LinkedIn URL</code>.
+        </div>
+        <ul class="hp-callouts">
+          <li><span class="num">1</span><span>Sheet must be shared with the Apps Script account (Ortus's Google account).</span></li>
+          <li><span class="num">2</span><span>Column header typos with trailing spaces silently break variable substitution.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="hp-section">
+      <div class="hp-step-num">III</div>
+      <div>
+        <div class="hp-step-title">LINKEDIN ACCOUNTS</div>
+        <div class="hp-step-sub">WHO SENDS</div>
+        <div class="hp-screenshot">[ SCREENSHOT · Section III — Account chips + status badges ]</div>
+        <div class="hp-body">
+          Select GoLogin profiles to use. Multiple accounts rotate through the lead list —
+          throughput scales with accounts. Each chip shows the account's status (active,
+          parked, weekly-limited, needs login) so you know which ones are healthy before
+          launch.
+        </div>
+        <ul class="hp-callouts">
+          <li><span class="num">1</span><span>Click any account to open its browser and re-auth if LinkedIn logged it out.</span></li>
+          <li><span class="num">2</span><span>Parked accounts auto-rejoin on the next campaign or after manual "Retry".</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="hp-section">
+      <div class="hp-step-num">IV</div>
+      <div>
+        <div class="hp-step-title">CAMPAIGN SETTINGS</div>
+        <div class="hp-step-sub">TEMPLATES · PACING · TRACKING</div>
+        <div class="hp-screenshot">[ SCREENSHOT · Section IV — Templates with variable chips ]</div>
+        <div class="hp-body">
+          Write the message templates. Variable chips substitute from sheet columns at send
+          time — click a chip to insert it at the cursor. Daily limit + pacing live here for
+          CC modes (other modes have no daily cap). For CC+IC: Acceptance Tracking window and
+          auto-check cadence.
+        </div>
+        <ul class="hp-callouts">
+          <li><span class="num">1</span><span>Hover any chip to preview what it'll resolve to for the first row of your sheet.</span></li>
+          <li><span class="num">2</span><span>Connect notes have a 200-character LinkedIn limit; counter is shown live.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="hp-section">
+      <div class="hp-step-num">V</div>
+      <div>
+        <div class="hp-step-title">LAUNCH</div>
+        <div class="hp-step-sub">NAME · START · MONITOR</div>
+        <div class="hp-screenshot">[ SCREENSHOT · Section V — Campaign name input + Start button ]</div>
+        <div class="hp-body">
+          Give the campaign a name (used in the dashboard later) and press Start. The cockpit
+          takes over: live progress, account queue, log, and the mode-specific tips card in
+          the right column. A modal fires once explaining the things to know about this mode.
+        </div>
+        <ul class="hp-callouts">
+          <li><span class="num">1</span><span>Campaign name supports the same placeholder syntax — e.g. <code>TAG_CITY_I</code>.</span></li>
+          <li><span class="num">2</span><span>Once Start is pressed, the wizard collapses and the Live Status section expands.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- After launch closer -->
+    <div class="hp-section">
+      <div class="hp-step-num" style="color: var(--ink); font-size: 2.2rem;">VI</div>
+      <div>
+        <div class="hp-step-title">AFTER LAUNCH</div>
+        <div class="hp-step-sub">LIVE STATUS · TIPS · STOP</div>
+        <div class="hp-screenshot">[ SCREENSHOT · Live Status panel with sidebar tips card ]</div>
+        <div class="hp-body">
+          The cockpit shows live state. The right-column tips card carries one-liner reminders
+          specific to the running mode. "Bulk Check Connections" fires an off-schedule
+          acceptance sweep. Pressing "Stop Campaign" opens the right modal for the current
+          mode (Stop vs. End Monitoring vs. CC+IC two-way stop).
+        </div>
+        <ul class="hp-callouts">
+          <li><span class="num">1</span><span>Closing the laptop lid pauses sending — sends resume when you reopen.</span></li>
+          <li><span class="num">2</span><span>Live Status survives app restart for CC+IC monitoring runs (state persists to disk).</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <div class="hp-cta">
+      <div class="hp-cta-text">
+        Want to walk through these sections in the live app instead?
+      </div>
+      <button class="hp-replay-btn">🔁 REPLAY THE TOUR</button>
+    </div>
+  </div>
+</div>
+
+<div class="annot">
+The 6 screenshot placeholders above (<code>[ SCREENSHOT · ... ]</code>) are drop-in spots —
+when the operator wants to add real screenshots later, they paste them in. v1 ships with the
+placeholders so the page is usable immediately and screenshots can come later without re-shipping
+the page structure. The tour does NOT need screenshots — it uses the real DOM.
+</div>
+
+<h2 style="margin-top:48px">SUMMARY</h2>
+<p style="font-size:13px; max-width:760px; color:#ddd">
+Tour spotlight + callouts on the real wizard DOM (~200 lines of CSS+JS). Sidebar Help popover
+with 3 items. Static help page (<code>public/help.html</code>) mirrors the tour content with
+screenshot placeholders + a Replay button. First-launch trigger auto-fires; after the operator
+finishes or skips once, <code>localStorage.ortusTourCompleted = '1'</code> silences it.
+</p>
+
+</body>
+</html>

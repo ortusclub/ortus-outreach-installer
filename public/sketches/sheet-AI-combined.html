@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet redesign — A + I combined (Single Stage + Sidebar)</title>
+<style>
+body { margin: 0; padding: 32px; background: #f8f9fa; font-family: Arial, 'Helvetica Neue', sans-serif; color: #202124; }
+.wrap { max-width: 1500px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+.sub { color: #5f6368; font-size: 13px; margin-bottom: 24px; }
+
+.panel { background: #fff; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+.toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #5f6368; }
+.toolbar .name { font-weight: 600; color: #202124; margin-right: 12px; }
+.tabs { display: flex; padding: 0 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; }
+.tabs span { padding: 6px 12px; border-right: 1px solid #e8eaed; }
+.tabs span.active { background: #fff; font-weight: 600; border-top: 2px solid #1a73e8; }
+
+.split { display: grid; grid-template-columns: 1fr 380px; }
+.grid-area { border-right: 1px solid #e8eaed; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { border: 1px solid #e8eaed; padding: 6px 10px; text-align: left; vertical-align: middle; height: 26px; }
+th { background: #f8f9fa; color: #5f6368; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+td.idx, th.idx { background: #f8f9fa; color: #80868b; text-align: center; font-weight: 600; width: 40px; }
+
+/* Stage column — color by value (Sheets conditional formatting) */
+.stage { font-weight: 600; }
+.stage.send-connect    { background: #fff4d6; color: #8a5a00; }    /* yellow */
+.stage.connect-pending { background: #f3e8ff; color: #5b21b6; }    /* purple */
+.stage.dm-now          { background: #d9f1da; color: #0a6b27; }    /* green */
+.stage.dm-sent         { background: #cfe9fc; color: #0b5394; }    /* blue */
+.stage.ic-sent         { background: #d2f0ed; color: #035c52; }    /* teal */
+.stage.inm-sent        { background: #ffe0b3; color: #8a4500; }    /* orange */
+.stage.op-sent         { background: #e3f1fc; color: #265d8c; }    /* light blue */
+.stage.replied         { background: #fff2cc; color: #594400; font-weight: 700; } /* gold */
+.stage.done            { background: #eceff1; color: #5f6368; }    /* gray */
+.stage.skipped         { background: #fce4e4; color: #a1252b; }    /* red */
+
+td.muted { color: #80868b; }
+td.url a { color: #1a73e8; text-decoration: none; }
+td.name { font-weight: 500; }
+tr.selected td { background: #e8f0fe; }
+tr.selected td.idx { background: #d2e3fc; color: #1a73e8; }
+tr.selected td.stage.replied { background: #f7e89a; }
+
+/* Sidebar */
+.sidebar { background: #fafafa; padding: 16px; font-size: 13px; line-height: 1.5; max-height: 720px; overflow-y: auto; }
+.sidebar h3 { font-size: 16px; font-weight: 500; margin: 0 0 4px; }
+.sidebar .meta { color: #5f6368; font-size: 12px; margin-bottom: 12px; }
+.sidebar .meta a { color: #1a73e8; text-decoration: none; }
+.sidebar .section-h { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #80868b; margin: 18px 0 8px; font-weight: 600; }
+
+.tag { display: inline-block; background: #e8f0fe; color: #1a73e8; padding: 2px 8px; border-radius: 9px; font-size: 11px; margin-right: 4px; margin-bottom: 4px; }
+
+/* Conversation thread — full text */
+.thread { background: #fff; border: 1px solid #e8eaed; border-radius: 4px; padding: 0; }
+.msg { padding: 12px; border-bottom: 1px solid #f1f3f4; }
+.msg:last-child { border-bottom: 0; }
+.msg-from { font-weight: 600; color: #202124; font-size: 12px; }
+.msg-when { color: #80868b; font-size: 11px; margin-left: 6px; }
+.msg-body { margin-top: 6px; color: #202124; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+.msg.outbound { background: #f7faff; }
+.msg.inbound  { background: #fff; }
+.msg.inbound  .msg-from { color: #1a73e8; }
+
+/* Timeline */
+.timeline { border-left: 2px solid #dadce0; padding-left: 12px; }
+.timeline .event { margin-bottom: 12px; position: relative; font-size: 12px; }
+.timeline .event::before { content: ''; position: absolute; left: -17px; top: 4px; width: 8px; height: 8px; border-radius: 50%; background: #dadce0; }
+.timeline .event.done::before { background: #34a853; }
+.timeline .event.now::before { background: #fbbc04; box-shadow: 0 0 0 4px rgba(251,188,4,0.2); }
+.timeline .when { font-size: 11px; color: #80868b; }
+.timeline .what { font-weight: 500; color: #202124; }
+.timeline .who  { color: #5f6368; font-size: 11px; }
+
+.next-cta { background: #1a73e8; color: #fff; border: 0; padding: 10px 14px; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; width: 100%; margin-top: 8px; }
+.secondary-cta { background: #fff; color: #1a73e8; border: 1px solid #dadce0; padding: 8px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; width: 100%; margin-top: 6px; }
+
+.legend { display: flex; gap: 14px; margin-top: 16px; flex-wrap: wrap; font-size: 11px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 14px; border: 1px solid #dadce0; display: inline-block; }
+
+.note { font-size: 12px; color: #5f6368; margin-top: 18px; line-height: 1.6; }
+.note code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-family: 'Roboto Mono', ui-monospace, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sheet redesign — A + I combined</h1>
+  <p class="sub">Grid: single Stage column with color-coded next-action priority. Right sidebar (Apps Script panel): full conversation thread, timeline, action buttons. Click any row → sidebar updates.</p>
+
+  <div class="panel">
+    <div class="toolbar"><span class="name">Outreach Pipeline</span><span>· File · Edit · View · Insert · Format · Data</span></div>
+    <div class="tabs"><span class="active">Pipeline</span><span>Audit Log</span><span>Senders</span><span>Replies</span></div>
+    <div class="split">
+      <div class="grid-area">
+        <table>
+          <thead>
+            <tr>
+              <th class="idx"></th>
+              <th>First Name</th>
+              <th>Last Name</th>
+              <th>Stage</th>
+              <th>Sender</th>
+              <th>Days</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="idx">2</td><td>Sofia</td><td>Gomez de Silva</td><td class="stage ic-sent">IC Sent</td><td>abhinay.kumar@</td><td class="muted">today</td></tr>
+            <tr class="selected"><td class="idx">3</td><td>Edwin</td><td>Silva</td><td class="stage replied">Replied</td><td>iliya@</td><td class="muted">1d</td></tr>
+            <tr><td class="idx">4</td><td>Andrea</td><td>Prashad</td><td class="stage replied">Replied</td><td>christian.saguid@</td><td class="muted">6h</td></tr>
+            <tr><td class="idx">5</td><td>Ravi</td><td>Bhatia</td><td class="stage dm-now">Connected · DM Now</td><td>iliya@</td><td class="muted">2d</td></tr>
+            <tr><td class="idx">6</td><td>Mike</td><td>Hendley</td><td class="stage dm-now">Connected · DM Now</td><td>zhelena@</td><td class="muted">3d</td></tr>
+            <tr><td class="idx">7</td><td>Carlos</td><td>Reyes</td><td class="stage connect-pending">Connect Pending</td><td>iliya@</td><td class="muted">8d</td></tr>
+            <tr><td class="idx">8</td><td>Aisha</td><td>Khan</td><td class="stage connect-pending">Connect Pending</td><td>iliya@</td><td class="muted">11d</td></tr>
+            <tr><td class="idx">9</td><td>Robert</td><td>Michel</td><td class="stage send-connect">Send Connect</td><td class="muted">—</td><td class="muted">—</td></tr>
+            <tr><td class="idx">10</td><td>Patricia</td><td>Liu</td><td class="stage dm-sent">DM Sent</td><td>kenya5@</td><td class="muted">today</td></tr>
+            <tr><td class="idx">11</td><td>Brian</td><td>O'Connor</td><td class="stage inm-sent">InM Sent</td><td>iliya@</td><td class="muted">2d</td></tr>
+            <tr><td class="idx">12</td><td>Lina</td><td>Rocco</td><td class="stage op-sent">OP Sent</td><td>zhelena@</td><td class="muted">4d</td></tr>
+            <tr><td class="idx">13</td><td>Jonathan</td><td>Brami</td><td class="stage done">Done</td><td>milee.mel@</td><td class="muted">15d</td></tr>
+            <tr><td class="idx">14</td><td>Sven</td><td>Bergstrom</td><td class="stage skipped">Skipped — not connectable</td><td>zhelena@</td><td class="muted">21d</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Right sidebar (Apps Script HTMLOutput) -->
+      <div class="sidebar">
+        <h3>Edwin Silva</h3>
+        <div class="meta">
+          Director, IT Operations &amp; Infrastructure · Bayshore HealthCare<br>
+          Toronto, Ontario · <a href="#">linkedin.com/in/edwinsilvait</a>
+        </div>
+
+        <div class="section-h">Conversation</div>
+        <div class="thread">
+          <div class="msg outbound">
+            <span class="msg-from">Iliya · iliya@ortus.solutions</span>
+            <span class="msg-when">2d ago · DM</span>
+            <div class="msg-body">Hi Edwin, thanks for connecting. I wanted to send this across while it is fresh.
+
+We're hosting a private roundtable in Toronto on May 14th — 12 IT leaders from healthcare and finance discussing how AI is changing infrastructure decisions. Some of the senior leaders confirmed include CTOs from Sun Life, TD Securities, Bayshore HealthCare, and a few others.
+
+Because we are keeping this group strictly limited to ensure high-quality conversation, attendance is complimentary but by invitation only and subject to final partner approval.
+
+You can view the full agenda and request your invitation at the link below:
+
+https://luma.com/8r85ilht
+
+Let me know if you have any questions.
+
+Best,
+Iliya</div>
+          </div>
+
+          <div class="msg inbound">
+            <span class="msg-from">Edwin Silva</span>
+            <span class="msg-when">1d ago · reply</span>
+            <div class="msg-body">Thanks Iliya, happy to chat — does Tuesday work?
+
+I'm in town until Friday and have a couple of slots open. The agenda looks great, and the Sun Life and TD folks are exactly the kind of conversation I'd value being in the room for.
+
+Could you also share who else is confirmed from the AI/data side? I'm curious whether anyone from Microsoft Health or Google Cloud is expected — we're mid-evaluation between the two and a frank room would be useful.
+
+Let me know what time on Tuesday works and I'll block it. Bayshore is about 25 mins from downtown so flexible on location.
+
+Cheers,
+Edwin</div>
+          </div>
+        </div>
+
+        <div class="section-h">Timeline</div>
+        <div class="timeline">
+          <div class="event now"><div class="when">1d ago</div><div class="what">Replied</div><div class="who">— Edwin Silva (above)</div></div>
+          <div class="event done"><div class="when">2d ago</div><div class="what">DM sent</div><div class="who">via iliya@ortus.solutions</div></div>
+          <div class="event done"><div class="when">3w ago</div><div class="what">Connect accepted</div><div class="who">— Edwin Silva</div></div>
+          <div class="event done"><div class="when">4w ago</div><div class="what">Connect sent</div><div class="who">via iliya@ortus.solutions</div></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:#fff4d6;border-color:#e8c970"></i> Send Connect</span>
+    <span><i style="background:#f3e8ff;border-color:#c4a4f5"></i> Connect Pending</span>
+    <span><i style="background:#d9f1da;border-color:#75c389"></i> Connected · DM Now</span>
+    <span><i style="background:#cfe9fc;border-color:#7fb6e6"></i> DM Sent</span>
+    <span><i style="background:#d2f0ed;border-color:#7ec5bd"></i> IC Sent</span>
+    <span><i style="background:#ffe0b3;border-color:#e0a060"></i> InM Sent</span>
+    <span><i style="background:#e3f1fc;border-color:#9bc1de"></i> OP Sent</span>
+    <span><i style="background:#fff2cc;border-color:#e6c870"></i> Replied — your turn</span>
+    <span><i style="background:#eceff1;border-color:#c0c4c8"></i> Done</span>
+    <span><i style="background:#fce4e4;border-color:#e6a8a8"></i> Skipped</span>
+  </div>
+
+  <div class="note">
+    <strong>How the full conversation gets there (path b confirmed):</strong> a separate <code>Replies</code> tab in the same sheet. One row per message (inbound or outbound) keyed by lead URL. Schema:
+    <code>Lead URL · Timestamp · Direction (in/out) · Sender (Ortus account or lead) · Body</code>. The bot polls inbox via the existing <code>getConversationsPage()</code> in <code>src/linkedin/helpers.js</code> and appends new rows; the sidebar filters <code>Replies</code> by the active lead's URL and renders the full thread above (sorted oldest→newest). <br>
+    <strong>Pipeline tab</strong> keeps no per-message data — just <code>Stage</code>, <code>Sender</code>, <code>Days since last action</code>. Clean, scannable. <br>
+    <strong>No action buttons</strong> in the sidebar. It's read-only context — the operator opens LinkedIn directly to reply.
+  </div>
+</div>
+</body>
+</html>

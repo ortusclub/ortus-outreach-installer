@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dashboard redesign — 5 alternatives</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:64px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+h1{font-family:var(--d);font-weight:400;font-size:3.2rem;line-height:1;text-transform:uppercase;margin-bottom:10px}
+.deck{font-size:0.92rem;color:var(--gray);max-width:760px;line-height:1.6;margin-bottom:40px}
+.deck strong{color:var(--ink);font-weight:500}
+
+.brief{border:1px solid var(--hl);padding:22px 28px;margin-bottom:36px;display:grid;grid-template-columns:repeat(2,1fr);gap:24px}
+.brief-h{font-family:var(--d);font-size:0.9rem;letter-spacing:0.18em;color:var(--gold);margin-bottom:8px}
+.brief p{font-size:0.84rem;line-height:1.55}
+
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.card{border:1px solid var(--hl);padding:22px 26px;text-decoration:none;color:var(--ink);display:block;cursor:pointer;transition:border-color 0.15s}
+.card:hover{border-color:var(--gold)}
+.card .tag{font-size:0.56rem;letter-spacing:0.24em;color:var(--gold);text-transform:uppercase;margin-bottom:8px}
+.card h2{font-family:var(--d);font-size:1.5rem;letter-spacing:0.04em;margin-bottom:8px}
+.card .sub{font-size:0.82rem;color:var(--gray);line-height:1.5;margin-bottom:14px}
+.card .traits{display:flex;flex-wrap:wrap;gap:6px;font-size:0.6rem;letter-spacing:0.14em;text-transform:uppercase}
+.card .trait{padding:3px 9px;border:1px solid var(--hls);border-radius:9999px;color:var(--gray)}
+.card .trait.good{color:var(--ink);border-color:var(--hl)}
+.card.full{grid-column:1 / -1}
+
+.rec{margin-top:36px;border:1px solid var(--gold);padding:22px 28px}
+.rec-h{font-family:var(--d);font-size:1rem;letter-spacing:0.18em;color:var(--gold);margin-bottom:10px}
+.rec p{font-size:0.86rem;line-height:1.6}
+.rec p strong{color:var(--gold);font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="crumbs">DASHBOARD REDESIGN · 5 ALTERNATIVES · 2026-05-18</div>
+<h1>Five ways to lay this out</h1>
+<p class="deck">The current dashboard has five stacked sections (Active, Queued, Schedules, Drafts, Past) where <strong>Monitoring campaigns are buried inside Past</strong> — even though they're still actively running. Bulk delete exists but is hidden behind a small trash-icon toggle on the Past section header. These five sketches fix both, each with a different organizing principle.</p>
+
+<div class="brief">
+  <div>
+    <div class="brief-h">PROBLEMS TO FIX</div>
+    <p>1. Monitoring campaigns appear in "Past" but they're still running. They need their own home.</p>
+    <p>2. Deleting multiple campaigns is painful — has to be done one at a time unless you find the small trash-toggle button.</p>
+  </div>
+  <div>
+    <div class="brief-h">CONSTRAINTS</div>
+    <p>Bugatti command-deck design system — monochrome, hairline borders, gold on key CTAs only. Vanilla HTML/CSS/JS (no React). Must work in the Electron shell at ≥1100px wide.</p>
+  </div>
+</div>
+
+<div class="grid">
+  <a class="card" href="dashboard-A-status-sections.html">
+    <div class="tag">ALTERNATIVE A</div>
+    <h2>Status sections + always-on select</h2>
+    <p class="sub">Stacked sections (Active / Monitoring / Queued / Drafts / Past), each row has a tiny check column always visible. Closest to today's layout.</p>
+    <div class="traits"><span class="trait good">FAMILIAR</span><span class="trait good">LOW RE-LEARNING</span><span class="trait">SCROLLY</span></div>
+  </a>
+
+  <a class="card" href="dashboard-B-tabs.html">
+    <div class="tag">ALTERNATIVE B</div>
+    <h2>Tabbed views</h2>
+    <p class="sub">Five tabs at the top — pick one, the page becomes that list. Bulk-select toolbar always visible. Per-tab search.</p>
+    <div class="traits"><span class="trait good">FOCUSED</span><span class="trait good">FAST SEARCH</span><span class="trait">ONE STATE AT A TIME</span></div>
+  </a>
+
+  <a class="card" href="dashboard-C-sidebar.html">
+    <div class="tag">ALTERNATIVE C</div>
+    <h2>Sidebar nav (mailbox-style)</h2>
+    <p class="sub">Left sidebar with categories and counts (like Gmail folders). Right pane = active list. Most "app-like".</p>
+    <div class="traits"><span class="trait good">COUNTS ALWAYS VISIBLE</span><span class="trait good">KEYBOARD SHORTCUTS</span><span class="trait">SIDEBAR EATS WIDTH</span></div>
+  </a>
+
+  <a class="card" href="dashboard-D-filter-chips.html">
+    <div class="tag">ALTERNATIVE D</div>
+    <h2>Unified list + filter chips</h2>
+    <p class="sub">One table. Status chips at top act as filters (toggle multiple). Most flexible for bulk operations across states.</p>
+    <div class="traits"><span class="trait good">DENSEST</span><span class="trait good">CROSS-STATE BULK</span><span class="trait">REQUIRES FILTERING</span></div>
+  </a>
+
+  <a class="card full" href="dashboard-E-lanes.html">
+    <div class="tag">ALTERNATIVE E</div>
+    <h2>Status lanes (kanban-style)</h2>
+    <p class="sub">Four horizontal lanes (NOW → WATCHING → QUEUE → DONE). Cards in each lane have a small checkbox top-right. Visual lifecycle — campaigns literally flow left to right.</p>
+    <div class="traits"><span class="trait good">MOST VISUAL</span><span class="trait good">LIFECYCLE OBVIOUS</span><span class="trait">NEEDS WIDE SCREEN</span><span class="trait">DENSE PAST GETS HIDDEN</span></div>
+  </a>
+</div>
+
+<div class="rec">
+  <div class="rec-h">QUICK READ</div>
+  <p>If you mostly care about minimum disruption: <strong>A</strong>. If you spend most of your time in one section at a time: <strong>B</strong>. If you check the dashboard often and want counts always visible: <strong>C</strong>. If you bulk-edit a lot and want one unified table: <strong>D</strong>. If you want the most visually-distinct lifecycle view: <strong>E</strong>.</p>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,1164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet migration — what Sam's PR #15 does to your sheet</title>
+<style>
+  :root {
+    --ink: #202124;
+    --gray: #5f6368;
+    --hairline: #d0d7de;
+    --hairline-soft: #e8eaed;
+    --bg: #fafafa;
+    --added-bg: #e6f4ea;
+    --added-fg: #1e6c33;
+    --added-border: #34a853;
+    --renamed-bg: #fff4d6;
+    --renamed-fg: #8a5a00;
+    --renamed-border: #f9ab00;
+    --deleted-bg: #fce4e4;
+    --deleted-fg: #a1252b;
+    --deleted-border: #d93025;
+    --kept-bg: #f1f3f4;
+    --kept-fg: #5f6368;
+    --kept-border: #bdc1c6;
+    --data-loss-bg: #fef0f0;
+    --data-loss-border: #b71c1c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 24px 48px;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 500;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+  .sub {
+    font-size: 13px;
+    color: var(--gray);
+    margin-bottom: 24px;
+  }
+  /* DATA LOSS BANNER */
+  .alert {
+    background: var(--data-loss-bg);
+    border: 2px solid var(--data-loss-border);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-bottom: 28px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .alert-icon {
+    font-size: 22px;
+    line-height: 1;
+  }
+  .alert-content {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .alert-content strong {
+    color: var(--data-loss-border);
+  }
+  .alert-content code {
+    background: #fff;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    border: 1px solid var(--hairline);
+  }
+
+  /* ─── Section 1: Column transformation diagram ─── */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gray);
+    margin: 32px 0 14px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .col-flow {
+    display: grid;
+    grid-template-columns: 1fr 50px 1fr;
+    gap: 0;
+    align-items: stretch;
+    background: #fff;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .col-flow-header {
+    background: var(--kept-bg);
+    color: var(--kept-fg);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .col-flow-arrow-header {
+    background: var(--kept-bg);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .col-flow-side {
+    padding: 0;
+  }
+  .col-flow-side ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .col-flow-row {
+    display: flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 13px;
+    gap: 10px;
+  }
+  .col-flow-row:last-child { border-bottom: none; }
+  .col-flow-row .col-letter {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 10px;
+    color: var(--gray);
+    background: var(--hairline-soft);
+    padding: 2px 5px;
+    border-radius: 2px;
+    min-width: 18px;
+    text-align: center;
+  }
+  .col-flow-row .col-tag {
+    margin-left: auto;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 3px;
+    color: #fff;
+  }
+  .col-flow-row.is-kept           { background: #fff; }
+  .col-flow-row.is-renamed        { background: var(--renamed-bg); }
+  .col-flow-row.is-deleted        { background: var(--deleted-bg); }
+  .col-flow-row.is-deleted-safe   { background: #fff3e0; }
+  .col-flow-row.is-data-loss      { background: var(--data-loss-bg); border-left: 4px solid var(--data-loss-border); padding-left: 10px; }
+  .col-flow-row.is-added          { background: var(--added-bg); }
+  .col-flow-row.is-spacer         { background: #fafafa; color: var(--gray); font-style: italic; font-size: 11px; }
+
+  .col-flow-row .col-tag.renamed      { background: var(--renamed-border); }
+  .col-flow-row .col-tag.deleted      { background: var(--deleted-border); }
+  .col-flow-row .col-tag.deleted-safe { background: #f57c00; }
+  .col-flow-row .col-tag.data-loss    { background: var(--data-loss-border); }
+  .col-flow-row .col-tag.added        { background: var(--added-border); }
+  .col-flow-row .col-tag.kept         { background: var(--kept-border); color: #fff; }
+
+  /* Arrow column */
+  .arrows {
+    background: var(--bg);
+    border-left: 1px solid var(--hairline);
+    border-right: 1px solid var(--hairline);
+    display: flex;
+    flex-direction: column;
+  }
+  .arrows .arrow-cell {
+    height: 44px;
+    border-bottom: 1px solid var(--hairline-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'SF Mono', Menlo, monospace;
+    color: var(--gray);
+    font-size: 18px;
+  }
+  .arrows .arrow-cell:last-child { border-bottom: none; }
+  .arrows .arrow-cell.renamed    { color: var(--renamed-border); }
+  .arrows .arrow-cell.deleted    { color: var(--deleted-border); }
+  .arrows .arrow-cell.data-loss  { color: var(--data-loss-border); }
+  .arrows .arrow-cell.added      { color: var(--added-border); }
+  .arrows .arrow-cell.kept       { color: var(--kept-border); }
+  .arrows .arrow-cell.spacer     { color: transparent; }
+
+  .col-name      { font-weight: 500; }
+  .col-name.struck { text-decoration: line-through; color: var(--gray); }
+  .col-name.muted { color: var(--gray); }
+  .col-name.bold  { font-weight: 600; }
+
+  /* ─── Section 2: Example row walkthrough ─── */
+  .row-card {
+    background: #fff;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin-top: 16px;
+  }
+  .row-card h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 14px;
+    color: var(--gray);
+    letter-spacing: 0.04em;
+  }
+  .row-card h3 .lead-name {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .pair-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 14px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+    align-items: center;
+    font-size: 13px;
+  }
+  .pair-row:last-child { border-bottom: none; }
+  .pair-key {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    color: var(--gray);
+  }
+  .pair-key.is-renamed { color: var(--renamed-fg); }
+  .pair-key.is-added   { color: var(--added-fg); }
+  .pair-key.is-deleted { color: var(--deleted-fg); text-decoration: line-through; }
+  .pair-key.is-data-loss { color: var(--data-loss-border); font-weight: 600; }
+  .pair-val .before-after {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .pair-val .badge-val {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-size: 12px;
+    background: #f8f9fa;
+    border: 1px solid var(--hairline);
+    font-family: inherit;
+  }
+  .pair-val .badge-val.stage-pending   { background: #e8def8; color: #5e35b1; border-color: #d1c4e9; }
+  .pair-val .badge-val.stage-connected { background: #ceead6; color: #1e6c33; border-color: #aedcb6; }
+  .pair-val .badge-val.stage-skipped   { background: #fad2cf; color: #b3261e; border-color: #f4b4ad; }
+  .pair-val .badge-val.cc-yellow       { background: #fff4d6; color: #8a5a00; border-color: #f9ab00; }
+  .pair-val .badge-val.status-tone     { background: #e6f3e8; color: #1e6c33; border-color: #aedcb6; }
+  .pair-val .badge-val.status-skipped  { background: #f1f3f4; color: #5f6368; border-color: #bdc1c6; }
+  .pair-val .badge-val.lost            { background: #fff; color: var(--deleted-fg); text-decoration: line-through; border-color: var(--deleted-border); border-style: dashed; }
+  .pair-val .badge-val.empty           { background: #fff; color: #bdbdbd; font-style: italic; border-style: dashed; }
+  .pair-val .arrow-inline {
+    color: var(--gray);
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 13px;
+  }
+  .pair-note {
+    font-size: 11px;
+    color: var(--gray);
+    margin-left: 8px;
+    font-style: italic;
+  }
+
+  /* ─── Section 3: Notes ─── */
+  .notes {
+    margin-top: 28px;
+    padding: 18px 22px;
+    background: #fff;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+  }
+  .notes h4 {
+    margin: 14px 0 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--gray);
+  }
+  .notes h4:first-child { margin-top: 0; }
+  .notes ol, .notes ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .notes li { margin: 6px 0; }
+  .notes code {
+    background: #f1f3f4;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: 'SF Mono', Menlo, monospace;
+  }
+
+  /* ─── Section 4: New tab card ─── */
+  .new-tab {
+    background: #fff;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin-top: 20px;
+  }
+  .new-tab h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .new-tab h3 .added-pill {
+    background: var(--added-border);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin-left: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .new-tab p {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--gray);
+    line-height: 1.55;
+  }
+  .new-tab .mini-table {
+    border-collapse: collapse;
+    font-size: 11px;
+    width: 100%;
+  }
+  .new-tab .mini-table th {
+    background: var(--kept-bg);
+    color: var(--kept-fg);
+    font-weight: 600;
+    padding: 6px 10px;
+    border: 1px solid var(--hairline);
+    text-align: left;
+  }
+  .new-tab .mini-table td {
+    padding: 6px 10px;
+    border: 1px solid var(--hairline-soft);
+  }
+</style>
+</head>
+<body>
+
+<h1>What Sam's PR #15 does to your sheet</h1>
+<div class="sub">Plain-English walkthrough — your columns today, what happens to each one, what's there after.</div>
+
+<!-- ─── DATA LOSS BANNER ─── -->
+<div class="alert">
+  <div class="alert-icon">⚠</div>
+  <div class="alert-content">
+    <strong>One column gets wiped without migration — flag this with Sam first.</strong><br>
+    Your sheet's <code>Date Last Action</code> column (with values like <em>"May 6th, 09:56"</em> on every processed row) gets deleted by the migration. The new <code>Date of Last Action</code> + <code>Time of Last Action</code> columns are added empty. Every historical timestamp on your sheet is lost.
+  </div>
+</div>
+
+<!-- ─── SECTION 1: Real sheet layout, today vs. after ─── -->
+<div class="section-title">1. Your sheet today, and your sheet after Sam's migration</div>
+
+<!-- styles scoped to this section's tables -->
+<style>
+  .sheet-pane h4 {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--gray);
+  }
+  .sheet-frame {
+    background: #fff;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    overflow: hidden;
+  }
+  .sheet-tabbar {
+    display: flex;
+    padding: 6px 8px 0;
+    background: #fff;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 11px;
+  }
+  .sheet-tabbar > div {
+    padding: 5px 11px;
+    color: var(--gray);
+  }
+  .sheet-tabbar > div.active {
+    background: #e8f0fe;
+    color: #1a73e8;
+    font-weight: 500;
+    border: 1px solid var(--hairline);
+    border-bottom: none;
+    border-radius: 2px 2px 0 0;
+  }
+  .sheet-tabbar > div.new {
+    color: var(--added-fg);
+    font-weight: 500;
+  }
+  .sheet-tabbar > div.new::after {
+    content: '+ NEW';
+    background: var(--added-border);
+    color: #fff;
+    font-size: 8px;
+    padding: 1px 4px;
+    margin-left: 5px;
+    border-radius: 2px;
+    letter-spacing: 0.04em;
+  }
+  .real-grid {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 10.5px;
+    table-layout: auto;
+  }
+  .real-grid thead .col-letter-cell {
+    background: var(--kept-bg);
+    color: var(--gray);
+    text-align: center;
+    font-weight: 500;
+    font-size: 9.5px;
+    border: 1px solid var(--hairline);
+    padding: 2px 6px;
+    height: 16px;
+  }
+  .real-grid thead .header-cell {
+    background: var(--kept-bg);
+    font-weight: 600;
+    padding: 5px 9px;
+    border: 1px solid var(--hairline);
+    white-space: nowrap;
+    position: relative;
+    text-align: left;
+  }
+  .real-grid thead .header-cell.is-renamed   { background: var(--renamed-bg); border-bottom: 2px solid var(--renamed-border); }
+  .real-grid thead .header-cell.is-deleted   { background: var(--deleted-bg); border-bottom: 2px solid var(--deleted-border); text-decoration: line-through; color: var(--gray); }
+  .real-grid thead .header-cell.is-data-loss { background: var(--data-loss-bg); border-bottom: 2px solid var(--data-loss-border); text-decoration: line-through; color: var(--data-loss-border); }
+  .real-grid thead .header-cell.is-added     { background: var(--added-bg); border-bottom: 2px solid var(--added-border); }
+  .real-grid thead .header-cell .change-marker {
+    display: block;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-top: 2px;
+    color: var(--gray);
+    text-decoration: none;
+  }
+  .real-grid thead .header-cell.is-renamed   .change-marker { color: var(--renamed-border); }
+  .real-grid thead .header-cell.is-deleted   .change-marker { color: var(--deleted-border); }
+  .real-grid thead .header-cell.is-data-loss .change-marker { color: var(--data-loss-border); }
+  .real-grid thead .header-cell.is-added     .change-marker { color: var(--added-border); }
+  .real-grid tbody td {
+    padding: 5px 9px;
+    border: 1px solid var(--hairline-soft);
+    white-space: nowrap;
+    background: #fff;
+  }
+  .real-grid tbody td.row-num-cell {
+    background: var(--kept-bg);
+    text-align: center;
+    color: var(--gray);
+    font-weight: 500;
+    font-size: 9.5px;
+    width: 24px;
+    border: 1px solid var(--hairline);
+  }
+  .real-grid td.stage-pending   { background: #e8def8 !important; color: #5e35b1; }
+  .real-grid td.stage-connected { background: #ceead6 !important; color: #1e6c33; }
+  .real-grid td.stage-skipped   { background: #fad2cf !important; color: #b3261e; }
+  .real-grid td.cc-yellow       { background: #fff4d6 !important; color: #8a5a00; }
+  .real-grid td.cc-yellow-light { background: #fffaeb !important; color: #8a5a00; }
+  .real-grid td.status-tone     { background: #e6f3e8 !important; color: #4a7a54; }
+  .real-grid td.status-skipped  { background: #f1f3f4 !important; color: #888; }
+  .real-grid td.lost-cell       { color: var(--deleted-fg); text-decoration: line-through; background: #fff !important; }
+  .real-grid td.empty-cell      { color: #bdbdbd; font-style: italic; }
+  .real-grid td.dash-cell       { color: #bdbdbd; text-align: center; }
+  .real-grid td.url-cell        { color: #1a73e8; text-decoration: underline; }
+  .scroll-x { overflow-x: auto; background: #fff; }
+  .sheet-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  .arrow-strip {
+    margin: 8px 0 4px;
+    text-align: center;
+    color: var(--gray);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+</style>
+
+<div class="sheet-cols">
+  <!-- ─────── TODAY (identical to your real sheet) ─────── -->
+  <div class="sheet-pane">
+    <h4>Your sheet today</h4>
+    <div class="sheet-frame">
+      <div class="sheet-tabbar">
+        <div class="active">Sheet1</div>
+        <div>Audit Log</div>
+        <div>Replies</div>
+      </div>
+      <div class="scroll-x">
+        <table class="real-grid">
+          <thead>
+            <tr>
+              <th class="col-letter-cell"></th>
+              <th class="col-letter-cell">A</th>
+              <th class="col-letter-cell">B</th>
+              <th class="col-letter-cell">C</th>
+              <th class="col-letter-cell">D</th>
+              <th class="col-letter-cell">E</th>
+              <th class="col-letter-cell">F</th>
+              <th class="col-letter-cell">G</th>
+              <th class="col-letter-cell">H</th>
+              <th class="col-letter-cell">I</th>
+              <th class="col-letter-cell">J</th>
+              <th class="col-letter-cell">K</th>
+              <th class="col-letter-cell">L</th>
+            </tr>
+            <tr>
+              <th class="col-letter-cell">1</th>
+              <th class="header-cell">First Name</th>
+              <th class="header-cell">Last Name</th>
+              <th class="header-cell">Linkedin URL</th>
+              <th class="header-cell">Stage</th>
+              <th class="header-cell">Sender</th>
+              <th class="header-cell">Status</th>
+              <th class="header-cell">CC</th>
+              <th class="header-cell">OP</th>
+              <th class="header-cell">Message</th>
+              <th class="header-cell">InMail</th>
+              <th class="header-cell">Account Used</th>
+              <th class="header-cell">Date Last Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-num-cell">2</td>
+              <td>Christopher</td>
+              <td>Kendrick</td>
+              <td class="url-cell">linkedin.com/in/ACwAAALu6iMBl5…</td>
+              <td class="stage-pending">Connect Pending</td>
+              <td>You</td>
+              <td class="status-tone">Check Done.</td>
+              <td class="cc-yellow-light">You</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td>You</td>
+              <td>May 6th, 09:56</td>
+            </tr>
+            <tr>
+              <td class="row-num-cell">7</td>
+              <td>Claire-Anne</td>
+              <td>Bundy</td>
+              <td class="url-cell">linkedin.com/in/claire-anne-bundy-14521b3</td>
+              <td class="stage-pending">Connect Pending</td>
+              <td>irwinkath.rengm…</td>
+              <td class="status-tone">Check Done.</td>
+              <td class="cc-yellow">irwinkath.rengm…</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td>irwinkath.rengm…</td>
+              <td>May 6th, 09:57</td>
+            </tr>
+            <tr>
+              <td class="row-num-cell">23</td>
+              <td>Cory</td>
+              <td>Longman</td>
+              <td class="url-cell">linkedin.com/in/corylongman</td>
+              <td class="stage-skipped">Skipped</td>
+              <td>wali.hassan@or…</td>
+              <td class="status-skipped">Skipped</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td>wali.hassan@or…</td>
+              <td>May 4th, 23:33</td>
+            </tr>
+            <tr>
+              <td class="row-num-cell">32</td>
+              <td>D.</td>
+              <td>Gray</td>
+              <td class="url-cell">linkedin.com/in/karl-abbott-0b44a47</td>
+              <td class="stage-connected">Connected · DM Now</td>
+              <td>lenard.mendoza@…</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="cc-yellow">lenard.mendoza@…</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td>lenard.mendoza@…</td>
+              <td>May 4th, 23:50</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:8px;font-size:11px;">
+      12 columns. E–L are hidden by default in your view; shown here so the comparison is complete.
+    </div>
+  </div>
+
+  <!-- ─────── AFTER MIGRATION ─────── -->
+  <div class="sheet-pane">
+    <h4>Your sheet after Sam's migration runs</h4>
+    <div class="sheet-frame">
+      <div class="sheet-tabbar">
+        <div class="active">Sheet1</div>
+        <div>Audit Log</div>
+        <div>Replies</div>
+        <div class="new">Recent Connections</div>
+      </div>
+      <div class="scroll-x">
+        <table class="real-grid">
+          <thead>
+            <tr>
+              <th class="col-letter-cell"></th>
+              <th class="col-letter-cell">A</th>
+              <th class="col-letter-cell">B</th>
+              <th class="col-letter-cell">C</th>
+              <th class="col-letter-cell">D</th>
+              <th class="col-letter-cell">E</th>
+              <th class="col-letter-cell">F</th>
+              <th class="col-letter-cell">G</th>
+              <th class="col-letter-cell">H</th>
+              <th class="col-letter-cell">I</th>
+              <th class="col-letter-cell">J</th>
+              <th class="col-letter-cell">K</th>
+              <th class="col-letter-cell">L</th>
+              <th class="col-letter-cell">M</th>
+              <th class="col-letter-cell">N</th>
+              <th class="col-letter-cell">O</th>
+              <th class="col-letter-cell">P</th>
+            </tr>
+            <tr>
+              <th class="col-letter-cell">1</th>
+              <th class="header-cell">First Name</th>
+              <th class="header-cell">Last Name</th>
+              <th class="header-cell">Linkedin URL</th>
+              <th class="header-cell">Stage</th>
+              <th class="header-cell is-renamed">Connected Status<span class="change-marker">was CC</span></th>
+              <th class="header-cell">OP</th>
+              <th class="header-cell">Message</th>
+              <th class="header-cell">InMail</th>
+              <th class="header-cell is-renamed">Connection Request Status<span class="change-marker">was Status</span></th>
+              <th class="header-cell">Account Used</th>
+              <th class="header-cell is-added">Date of Last Action<span class="change-marker">new</span></th>
+              <th class="header-cell is-added">Time of Last Action<span class="change-marker">new</span></th>
+              <th class="header-cell is-added">LinkedIn URN<span class="change-marker">new</span></th>
+              <th class="header-cell is-added">Membership ID<span class="change-marker">new</span></th>
+              <th class="header-cell is-added">Open Profile<span class="change-marker">new</span></th>
+              <th class="header-cell is-added">Connected<span class="change-marker">new</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-num-cell">2</td>
+              <td>Christopher</td>
+              <td>Kendrick</td>
+              <td class="url-cell">linkedin.com/in/ACwAAALu6iMBl5…</td>
+              <td class="stage-pending">Connect Pending</td>
+              <td>You</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td>Check Done.</td>
+              <td>You</td>
+              <td class="lost-cell">May 6th, 09:56</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+            </tr>
+            <tr>
+              <td class="row-num-cell">7</td>
+              <td>Claire-Anne</td>
+              <td>Bundy</td>
+              <td class="url-cell">linkedin.com/in/claire-anne-bundy-14521b3</td>
+              <td class="stage-pending">Connect Pending</td>
+              <td>irwinkath.rengm…</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td>Check Done.</td>
+              <td>irwinkath.rengm…</td>
+              <td class="lost-cell">May 6th, 09:57</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+            </tr>
+            <tr>
+              <td class="row-num-cell">23</td>
+              <td>Cory</td>
+              <td>Longman</td>
+              <td class="url-cell">linkedin.com/in/corylongman</td>
+              <td class="stage-skipped">Skipped</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td>Skipped</td>
+              <td>wali.hassan@or…</td>
+              <td class="lost-cell">May 4th, 23:33</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+            </tr>
+            <tr>
+              <td class="row-num-cell">32</td>
+              <td>D.</td>
+              <td>Gray</td>
+              <td class="url-cell">linkedin.com/in/karl-abbott-0b44a47</td>
+              <td class="stage-connected">Connected · DM Now</td>
+              <td>lenard.mendoza@…</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="dash-cell">—</td>
+              <td class="empty-cell">(blank)</td>
+              <td>lenard.mendoza@…</td>
+              <td class="lost-cell">May 4th, 23:50</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+              <td class="empty-cell">(blank)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:8px;font-size:11px;">
+      16 columns. <strong>Sender</strong> (column E today) is gone — its data is duplicated in <strong>Account Used</strong>. <strong>Date Last Action</strong> (column L today) is gone — <span style="color:var(--data-loss-border);"><strong>data lost</strong></span>, no replacement value. Yellow / green / red cell coloring on <strong>Connected Status</strong> is gone (Sam's color rule still looks for the old "CC" name).
+    </div>
+  </div>
+</div>
+
+<div class="arrow-strip">↓ Same data shown row-by-row below ↓</div>
+
+<!-- ─── COLUMN GLOSSARY ─── -->
+<div class="section-title">What each column means</div>
+
+<style>
+  .glossary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    background: #fff;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 16px 20px;
+  }
+  .gloss-card {
+    border-left: 3px solid var(--hairline);
+    padding: 4px 12px 4px 12px;
+  }
+  .gloss-card.stage    { border-left-color: #5e35b1; }
+  .gloss-card.status   { border-left-color: #4a7a54; }
+  .gloss-card.cc       { border-left-color: #f9ab00; }
+  .gloss-card.op       { border-left-color: #1a73e8; }
+  .gloss-card.message  { border-left-color: #1a73e8; }
+  .gloss-card.inmail   { border-left-color: #1a73e8; }
+  .gloss-card.account  { border-left-color: #5f6368; }
+  .gloss-card.dateLast { border-left-color: #5f6368; }
+  .gloss-card.urn      { border-left-color: var(--added-border); }
+  .gloss-card.member   { border-left-color: var(--added-border); }
+  .gloss-card.openp    { border-left-color: var(--added-border); }
+  .gloss-card.connected{ border-left-color: var(--added-border); }
+  .gloss-card h5 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .gloss-card h5 .meta {
+    font-weight: 400;
+    color: var(--gray);
+    font-size: 11px;
+    margin-left: 6px;
+  }
+  .gloss-card p {
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .gloss-card .examples {
+    font-size: 11px;
+    color: var(--gray);
+    line-height: 1.6;
+  }
+  .gloss-card .examples code {
+    background: #f1f3f4;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 10.5px;
+    color: var(--ink);
+  }
+  .gloss-card .examples .v {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 2px;
+    margin-right: 4px;
+    margin-bottom: 2px;
+    font-family: inherit;
+    font-size: 10.5px;
+  }
+  .v.purple { background: #e8def8; color: #5e35b1; }
+  .v.green  { background: #ceead6; color: #1e6c33; }
+  .v.red    { background: #fad2cf; color: #b3261e; }
+  .v.gray   { background: #f1f3f4; color: #5f6368; }
+  .v.yellow { background: #fff4d6; color: #8a5a00; }
+  .v.tone   { background: #e6f3e8; color: #4a7a54; }
+</style>
+
+<div class="glossary">
+
+  <div class="gloss-card stage">
+    <h5>Stage <span class="meta">column D</span></h5>
+    <p>The workflow state of the lead. This is what the bot reads to decide whether to process each row, and what it writes back after an action. <strong>It's the single source of truth</strong> for "where is this lead in the funnel."</p>
+    <div class="examples">
+      <span class="v purple">Connect Pending</span> — invite sent, waiting for accept<br>
+      <span class="v green">Connected · DM Now</span> — accepted, ready for follow-up DM<br>
+      <span class="v red">Skipped</span> — bot couldn't process (URL invalid, profile gone, etc.)<br>
+      <span class="v gray">DM Sent</span> / <span class="v gray">IC Sent</span> / <span class="v gray">OP Sent</span> / <span class="v gray">InM Sent</span> — done<br>
+      <span class="v">(blank)</span> — never touched, eligible for connect campaign
+    </div>
+  </div>
+
+  <div class="gloss-card status">
+    <h5>Status <span class="meta">column F (renamed → Connection Request Status)</span></h5>
+    <p>An action-level marker the bot stamps after each operation. Tells the operator <strong>what the bot did on the last action</strong>. Less important than Stage — mostly informational.</p>
+    <div class="examples">
+      <span class="v tone">Check Done.</span> — finished a check_status pass (Stage updated separately)<br>
+      <span class="v tone">DM Sent</span> / <span class="v tone">OP Sent</span> — followed up<br>
+      <span class="v gray">Done</span> — generic "action completed"<br>
+      <span class="v gray">Skipped</span> — action couldn't be performed
+    </div>
+  </div>
+
+  <div class="gloss-card cc">
+    <h5>CC <span class="meta">column G (renamed → Connected Status)</span></h5>
+    <p>The connection-status verdict from a Check Status run. <strong>Tells you whether the invite was accepted.</strong> Catch-all conditional formatting colors any non-blank value yellow (= "invite pending").</p>
+    <div class="examples">
+      <span class="v green">Connected</span> — invite accepted, lead is 1st-degree now<br>
+      <span class="v yellow">Still Pending (2026-05-09 14:23)</span> — checked, not yet accepted<br>
+      <span class="v red">Connection Declined</span> — declined or invite withdrawn<br>
+      <span class="v yellow">email@ortus.solutions</span> — legacy data from older bot version<br>
+      <em>Sam's PR adds:</em> <span class="v yellow">Sent</span> (legacy), <span class="v red">Unreachable</span>
+    </div>
+  </div>
+
+  <div class="gloss-card op">
+    <h5>OP <span class="meta">column H</span></h5>
+    <p>Open Profile message — a free DM you can send to "Open Profile" members without connecting. The bot writes a <code>=HYPERLINK("sent")</code> formula to this cell when it has sent an OP message.</p>
+    <div class="examples">
+      <code>—</code> — placeholder, no action taken<br>
+      <code>sent</code> (clickable) — bot sent an OP message
+    </div>
+  </div>
+
+  <div class="gloss-card message">
+    <h5>Message <span class="meta">column I</span></h5>
+    <p>Follow-up DM to a 1st-degree connection. The bot writes <code>=HYPERLINK("sent")</code> here when the message_only campaign (or introduce_back) sends a DM.</p>
+    <div class="examples">
+      <code>—</code> — placeholder, no action taken<br>
+      <code>sent</code> (clickable) — bot sent a DM
+    </div>
+  </div>
+
+  <div class="gloss-card inmail">
+    <h5>InMail <span class="meta">column J</span></h5>
+    <p>Premium InMail (paid). Used in the inmail_only campaign for cold outreach to non-connected leads. Consumes InMail credits per send.</p>
+    <div class="examples">
+      <code>—</code> — placeholder, no action taken<br>
+      <code>sent</code> (clickable) — bot sent an InMail
+    </div>
+  </div>
+
+  <div class="gloss-card account">
+    <h5>Account Used <span class="meta">column K</span></h5>
+    <p>The GoLogin profile / email that performed the action. Replaces the now-deprecated Sender column. <strong>Tells you "which of our team's accounts handled this lead."</strong></p>
+    <div class="examples">
+      <code>You</code> — your local browser<br>
+      <code>matt.adcock@ortus.solutions</code> — a specific team account
+    </div>
+  </div>
+
+  <div class="gloss-card dateLast">
+    <h5>Date Last Action <span class="meta">column L (deleted by Sam, replaced by 2 new cols)</span></h5>
+    <p>Combined date+time of the bot's most recent write to this row. Sam splits this into <strong>Date of Last Action</strong> + <strong>Time of Last Action</strong> — but doesn't migrate existing values.</p>
+    <div class="examples">
+      <code>May 6th, 09:56</code> — last action timestamp<br>
+      <em>After migration:</em> <code>2026-05-06</code> + <code>09:56:00</code> on rows the bot touches next
+    </div>
+  </div>
+
+  <div class="gloss-card urn">
+    <h5>LinkedIn URN <span class="meta">new — Sam's PR #15</span></h5>
+    <p>The bare ACoAA… identifier LinkedIn uses internally for the lead's profile. Captured at connect-time. Used to dedupe / reconcile leads in the Recent Connections sidecar tab.</p>
+    <div class="examples"><code>ACoAABcD…q1K</code></div>
+  </div>
+
+  <div class="gloss-card member">
+    <h5>LinkedIn Membership ID <span class="meta">new — Sam's PR #15</span></h5>
+    <p>Numeric internal member number (from <code>urn:li:member:NNN</code>). Blank if LinkedIn didn't expose it on this entity.</p>
+    <div class="examples"><code>854312770</code></div>
+  </div>
+
+  <div class="gloss-card openp">
+    <h5>Open Profile <span class="meta">new — Sam's PR #15</span></h5>
+    <p>Yes/No flag — whether this lead is an "Open Profile" member (i.e. accepts free InMails without connecting). Detected at connect-time. Useful filter for OP-message campaigns.</p>
+    <div class="examples"><code>Yes</code> / <code>No</code></div>
+  </div>
+
+  <div class="gloss-card connected">
+    <h5>Connected <span class="meta">new — Sam's PR #15</span></h5>
+    <p>Yes/No flag — whether the lead is currently a 1st-degree connection of the account that processed them. Updated by the post-campaign acceptance-tracking sweep (runs every 6h for N days after campaign ends).</p>
+    <div class="examples"><code>Yes</code> / <code>No</code></div>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 2: Example row walkthrough ─── -->
+<div class="section-title">2. What happens to one row — Christopher Kendrick (Row 2)</div>
+
+<div class="row-card">
+  <h3>Sample row: <span class="lead-name">Christopher Kendrick</span> — already had check_status run on him</h3>
+
+  <div class="pair-row">
+    <div class="pair-key">First Name</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val">Christopher</span>
+        <span class="arrow-inline">=</span>
+        <span class="badge-val">Christopher</span>
+      </span>
+      <span class="pair-note">unchanged</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key">Last Name</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val">Kendrick</span>
+        <span class="arrow-inline">=</span>
+        <span class="badge-val">Kendrick</span>
+      </span>
+      <span class="pair-note">unchanged</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key">Stage</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val stage-pending">Connect Pending</span>
+        <span class="arrow-inline">=</span>
+        <span class="badge-val stage-pending">Connect Pending</span>
+      </span>
+      <span class="pair-note">unchanged, keeps purple highlight</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key is-deleted">Sender</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val">You</span>
+        <span class="arrow-inline">→ ✗</span>
+        <span class="badge-val empty">(column gone)</span>
+      </span>
+      <span class="pair-note">"You" still lives in Account Used (no real loss)</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key is-renamed">Status → Connection Request Status</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val status-tone">Check Done.</span>
+        <span class="arrow-inline">→</span>
+        <span class="badge-val status-tone">Check Done.</span>
+      </span>
+      <span class="pair-note">column renamed, value identical</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key is-renamed">CC → Connected Status</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val cc-yellow">You</span>
+        <span class="arrow-inline">→</span>
+        <span class="badge-val">You</span>
+      </span>
+      <span class="pair-note">column renamed; yellow highlight is lost (see Issue #2 below); value identical; future check_status run overwrites with <em>Connected</em> / <em>Still Pending (...)</em> / <em>Connection Declined</em></span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key">OP / Message / InMail</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val">— — —</span>
+        <span class="arrow-inline">=</span>
+        <span class="badge-val">— — —</span>
+      </span>
+      <span class="pair-note">unchanged dashes</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key">Account Used</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val">You</span>
+        <span class="arrow-inline">=</span>
+        <span class="badge-val">You</span>
+      </span>
+      <span class="pair-note">unchanged</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key is-data-loss">Date Last Action</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="badge-val">May 6th, 09:56</span>
+        <span class="arrow-inline">→ ✗</span>
+        <span class="badge-val lost">May 6th, 09:56</span>
+      </span>
+      <span class="pair-note"><strong style="color:var(--data-loss-border);">LOST.</strong> No replacement value; new Date+Time columns are empty for this row.</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key is-added">+ Date of Last Action</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="arrow-inline">(didn't exist)</span>
+        <span class="arrow-inline">+</span>
+        <span class="badge-val empty">(blank)</span>
+      </span>
+      <span class="pair-note">column added, but this row stays blank until next bot action</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key is-added">+ Time of Last Action</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="arrow-inline">(didn't exist)</span>
+        <span class="arrow-inline">+</span>
+        <span class="badge-val empty">(blank)</span>
+      </span>
+      <span class="pair-note">same — column added empty</span>
+    </div>
+  </div>
+
+  <div class="pair-row">
+    <div class="pair-key is-added">+ LinkedIn URN / Membership ID / Open Profile / Connected</div>
+    <div class="pair-val">
+      <span class="before-after">
+        <span class="arrow-inline">(didn't exist)</span>
+        <span class="arrow-inline">+</span>
+        <span class="badge-val empty">(blank × 4)</span>
+      </span>
+      <span class="pair-note">4 new metadata columns; populated only when the bot connects to this lead in the future</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SECTION 3: New sidecar tab ─── -->
+<div class="section-title">3. + One new tab appears</div>
+
+<div class="new-tab">
+  <h3>"Recent Connections" tab <span class="added-pill">new</span></h3>
+  <p>A new sidecar tab next to Sheet1 / Audit Log / Replies. The bot writes here when it runs a "bulk connection check" against LinkedIn (a Voyager API sweep). All accounts share this one tab — each account refreshes only its own rows (column A = account email).</p>
+  <table class="mini-table">
+    <thead>
+      <tr>
+        <th>Account</th>
+        <th>First Name</th>
+        <th>Last Name</th>
+        <th>Public ID</th>
+        <th>LinkedIn URN</th>
+        <th>Member ID</th>
+        <th>Connected At</th>
+        <th>Fetched At</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>irwinkath.rengma@…</td>
+        <td>Claire-Anne</td>
+        <td>Bundy</td>
+        <td>claire-anne-bundy-14521b3</td>
+        <td>ACoAAArRH…q2X</td>
+        <td>478291364</td>
+        <td>2026-05-09T14:23:11Z</td>
+        <td>2026-05-11T09:00:00Z</td>
+      </tr>
+      <tr>
+        <td>lenard.mendoza@…</td>
+        <td>D.</td>
+        <td>Gray</td>
+        <td>karl-abbott-0b44a47</td>
+        <td>ACoAAAxYZ…m9K</td>
+        <td>621478395</td>
+        <td>2026-05-04T23:50:00Z</td>
+        <td>2026-05-11T09:00:00Z</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ─── SECTION 4: Notes for Sam ─── -->
+<div class="section-title">4. Questions to send Sam before deploying</div>
+
+<div class="notes">
+  <h4>Issue #1 — Data loss on Date Last Action</h4>
+  <ul>
+    <li>My sheet has a single combined <code>Date Last Action</code> column (values like "May 6th, 09:56"), not separate <code>Date</code> + <code>Time</code> columns. Your <code>COLUMN_RENAMES</code> handles the latter but not the former — <code>OLD_COLUMNS_TO_REMOVE</code> deletes <code>Date Last Action</code> without migration. <strong>Every existing date stamp would be wiped.</strong> Can you add a split-migration step? (The underlying cell values are real Date objects so Apps Script can format them.)</li>
+  </ul>
+
+  <h4>Issue #2 — Connected Status loses its coloring</h4>
+  <ul>
+    <li><code>applyCCFormatting</code> still looks for the <code>"CC"</code> header but the migration renames the column to <code>"Connected Status"</code>. After deploy, the green / yellow / red conditional formatting silently no-ops on the renamed column. The catch-all "any non-blank = yellow invite pending" rule also goes away. Worth updating the function to read the new header (or both).</li>
+  </ul>
+
+  <h4>Issue #3 — Missing entries in MODE_TRACKING_COLUMNS</h4>
+  <ul>
+    <li><code>introduce_back</code> and <code>post_amplification</code> aren't in <code>MODE_TRACKING_COLUMNS</code>. Both fall back to the full <code>TRACKING_COLUMNS</code> list, so an <code>introduce_back</code> run on a fresh sheet adds unused InMail / OP / Reply columns. Worth adding mode-specific entries — message_only's subset would suit introduce_back; post_amplification probably shouldn't write to the sheet at all.</li>
+  </ul>
+
+  <h4>Issue #4 — Probable typo in COLUMN_RENAMES</h4>
+  <ul>
+    <li><code>{ from: 'Connected', to: 'Connected' }</code> looks like a typo — probably meant <code>Connected Already → Connected</code> to migrate the legacy column? As written it's an idempotent no-op.</li>
+  </ul>
+</div>
+
+</body>
+</html>

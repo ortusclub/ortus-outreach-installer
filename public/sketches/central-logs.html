@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Central Logs — Two Sheets, Two Apps Scripts</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a09;
+    --panel: #14140f;
+    --ink: #fafaf9;
+    --muted: #8b867a;
+    --hairline: rgba(255,255,255,0.10);
+    --gold: #C5A255;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    line-height: 1.55;
+    padding: 56px 32px 96px;
+  }
+  .wrap { max-width: 1480px; margin: 0 auto; }
+  h1 { font-family: 'Cormorant Garamond', serif; font-size: 2.2rem; font-weight: 500; margin: 0 0 4px; }
+  h1 em { color: var(--gold); font-style: italic; font-weight: 400; }
+  h2 { font-family: 'Cormorant Garamond', serif; font-size: 1.5rem; font-weight: 500; margin: 0 0 8px; color: var(--ink); }
+  h2 em { color: var(--gold); font-style: italic; font-weight: 400; }
+  .sub { color: var(--muted); font-size: 0.65rem; letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 8px; }
+  .intro { color: #c9c5bd; font-size: 0.92rem; margin: 0 0 16px; max-width: 880px; }
+  .rule { color: var(--muted); font-size: 0.78rem; font-style: italic; margin: 0 0 32px; max-width: 880px; border-left: 2px solid var(--gold); padding-left: 12px; }
+  code { font-family: 'SF Mono', Menlo, monospace; font-size: 0.82rem; background: rgba(255,255,255,0.05); padding: 1px 6px; border-radius: 3px; }
+  .variant { margin-bottom: 64px; padding-bottom: 48px; border-bottom: 1px solid var(--hairline); }
+  .variant:last-child { border-bottom: 0; padding-bottom: 0; }
+  .variant-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 4px; }
+  .variant-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .variant-desc { color: #c9c5bd; font-size: 0.86rem; margin: 0 0 14px; max-width: 1080px; }
+  .variant-desc strong { color: var(--ink); }
+  .variant-desc .note {
+    display: block;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-left: 2px solid #6da26d;
+    background: rgba(109, 162, 109, 0.06);
+    font-size: 0.78rem;
+    color: #c9c5bd;
+  }
+
+  /* ── Sheets-realistic frame ── */
+  .sheet-frame {
+    background: #ffffff;
+    color: #202124;
+    font-family: 'Arial', 'Helvetica Neue', Helvetica, sans-serif;
+    font-size: 12.5px;
+    border: 1px solid #c0c4cc;
+    overflow-x: auto;
+  }
+  table.sheet { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  table.sheet th, table.sheet td {
+    border: 1px solid #e8eaed;
+    padding: 3px 6px;
+    text-align: left;
+    vertical-align: middle;
+    height: 22px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.sheet thead .col-letter,
+  table.sheet .row-num {
+    background: #f8f9fa;
+    color: #5f6368;
+    font-weight: 500;
+    text-align: center;
+    font-size: 11px;
+    padding: 2px 4px;
+    width: 36px;
+  }
+  table.sheet thead .col-letter { border-bottom: 1px solid #c0c4cc; }
+  table.sheet .row-num { border-right: 1px solid #c0c4cc; }
+  table.sheet thead .col-header td {
+    background: #f1f3f4;
+    font-weight: 700;
+    color: #202124;
+    border-bottom: 1px solid #c0c4cc;
+  }
+  .lnk { color: #1a73e8; text-decoration: underline; }
+  .mono { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px; }
+
+  .sev-info {}
+  .sev-warn { background: #fff4d6; color: #8a5a00; font-weight: 700; }
+  .sev-error { background: #fce4e4; color: #a1252b; font-weight: 700; }
+
+  /* Sheets toolbar mock (for showing the custom menu) */
+  .sheet-toolbar {
+    background: #ffffff;
+    border: 1px solid #c0c4cc;
+    border-bottom: 0;
+    padding: 4px 14px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    font-size: 12.5px;
+    color: #3c4043;
+    height: 28px;
+  }
+  .menu-item { color: #3c4043; }
+  .menu-item.custom {
+    color: #1967d2;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+  .menu-item.custom:hover { background: #e8f0fe; border: 1px solid #d2e3fc; }
+  /* Dropdown mock for the custom menu */
+  .menu-dropdown {
+    position: relative;
+    margin-left: -2px;
+  }
+  .menu-dropdown-body {
+    background: #ffffff;
+    border: 1px solid #d0d4dc;
+    box-shadow: 0 2px 8px rgba(60, 64, 67, 0.15);
+    border-radius: 4px;
+    padding: 6px 0;
+    width: 320px;
+    font-size: 12.5px;
+    color: #3c4043;
+    margin-top: 8px;
+  }
+  .menu-dropdown-body .item {
+    padding: 8px 16px;
+    cursor: default;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .menu-dropdown-body .item:hover { background: #f1f3f4; }
+  .menu-dropdown-body .item.danger:hover { background: #fce4e4; color: #a1252b; }
+  .menu-dropdown-body .divider { height: 1px; background: #e8eaed; margin: 4px 0; }
+  .menu-dropdown-body .item .glyph { width: 16px; text-align: center; color: #5f6368; }
+
+  /* Sheet tabs along the bottom (Sheets-style) */
+  .sheet-tabs {
+    background: #f8f9fa;
+    border: 1px solid #c0c4cc;
+    border-top: 0;
+    padding: 4px 8px;
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+    font-size: 12px;
+    color: #3c4043;
+    overflow-x: auto;
+  }
+  .sheet-tab {
+    padding: 4px 14px;
+    background: transparent;
+    color: #5f6368;
+    border-right: 1px solid #e8eaed;
+    white-space: nowrap;
+  }
+  .sheet-tab.active {
+    background: #ffffff;
+    color: #1967d2;
+    font-weight: 600;
+    border-top: 2px solid #1967d2;
+    margin-top: -4px;
+    padding-top: 8px;
+  }
+  .sheet-tab.add { color: #5f6368; padding: 4px 10px; border-right: 0; }
+
+  /* Summary panel inside a tab */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: #fff4d6;
+    border: 1px solid #c0c4cc;
+    border-bottom: 0;
+  }
+  .summary-cell {
+    padding: 10px 14px;
+    border-right: 1px solid #e0d8b0;
+    background: #fffbe6;
+  }
+  .summary-cell:last-child { border-right: 0; }
+  .summary-label {
+    font-size: 10px;
+    color: #8a5a00;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .summary-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #202124;
+    font-variant-numeric: tabular-nums;
+  }
+  .summary-sub { font-size: 11px; color: #5f6368; }
+
+  /* Modal mock for the confirm dialog */
+  .modal-mock {
+    background: #ffffff;
+    border: 1px solid #c0c4cc;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    max-width: 440px;
+    padding: 24px 28px;
+    color: #202124;
+    font-size: 13px;
+    margin: 16px auto 0;
+  }
+  .modal-mock h3 { font-family: inherit; font-size: 16px; margin: 0 0 10px; }
+  .modal-mock .body { color: #5f6368; margin-bottom: 18px; }
+  .modal-mock .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .modal-mock .btn {
+    padding: 6px 16px;
+    font-size: 13px;
+    border-radius: 4px;
+    border: 1px solid #dadce0;
+    background: #ffffff;
+    color: #1a73e8;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .modal-mock .btn.danger {
+    background: #d93025;
+    color: #ffffff;
+    border-color: #d93025;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="sub">Sketch · 2026-05-17 · revised</div>
+  <h1>Central <em>Logs</em> · Two Sheets, Two Apps Scripts</h1>
+  <p class="intro">
+    Two brand-new Google Sheets, each with its own dedicated Apps Script deployment. The campaign master sheet is left untouched.
+    <br><br>
+    <strong>Sheet 1 — Ortus Operations Log:</strong> per-campaign diagnostics. <strong>One tab per campaign run.</strong> Each tab holds every operation + error for that run. A custom menu in the sheet provides a one-click "Delete all log tabs" action so the operator can clear stale runs without manual right-click.
+    <br><br>
+    <strong>Sheet 2 — Ortus Campaign Activity:</strong> one sheet, one tab, one row per completed campaign. Per-operator summary band at the top. Cross-campaign analytics (how many campaigns each operator ran, how many leads each is reaching).
+  </p>
+  <p class="rule">
+    Bot's <code>.env</code> grows by two URLs: <code>OPS_LOG_WEBAPP_URL</code> + <code>CAMPAIGN_LOG_WEBAPP_URL</code>. Each Apps Script is container-bound to its own sheet — no <code>openById</code> needed.
+  </p>
+
+  <!-- ──────────────── SHEET 1: OPERATIONS LOG ──────────────── -->
+  <div class="variant">
+    <div class="variant-head">
+      <span class="variant-label">Sheet 1 of 2</span>
+      <h2>Ortus Operations <em>Log</em> · tab per campaign</h2>
+    </div>
+    <p class="variant-desc">
+      Each new campaign creates a new tab. Tab name: <code>{campaign-name} · {YYYY-MM-DD HH:mm}</code>. Inside the tab, one row per event with severity-tinted rows. When the operator is done with old runs they hit the custom menu → "Delete all log tabs" and the sheet resets to just the "Index" tab.
+      <span class="note">
+        <strong>Custom menu</strong> — the Apps Script's <code>onOpen</code> trigger registers an "Ortus Logs" menu in the sheet's top bar. Operator clicks it → "Delete all log tabs" → confirmation dialog → all per-campaign tabs deleted. Index tab survives.
+      </span>
+    </p>
+
+    <!-- Top bar: menu visible, "Ortus Logs" dropdown open -->
+    <div class="sheet-toolbar">
+      <span class="menu-item">File</span>
+      <span class="menu-item">Edit</span>
+      <span class="menu-item">View</span>
+      <span class="menu-item">Insert</span>
+      <span class="menu-item">Format</span>
+      <span class="menu-item">Data</span>
+      <span class="menu-item">Tools</span>
+      <span class="menu-item">Extensions</span>
+      <span class="menu-item">Help</span>
+      <span class="menu-item custom" style="border:1px solid #d2e3fc; background:#e8f0fe;">Ortus Logs ▾</span>
+    </div>
+
+    <!-- Custom menu dropdown -->
+    <div style="display:flex; align-items:flex-start;">
+      <div style="flex:1;">
+        <div class="sheet-frame" style="border-top:0;">
+          <table class="sheet" style="width:1380px;">
+            <colgroup>
+              <col style="width:36px"><col style="width:150px"><col style="width:170px"><col style="width:80px"><col style="width:200px"><col style="width:240px"><col style="width:200px"><col style="width:300px">
+            </colgroup>
+            <thead>
+              <tr class="col-letter"><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th></tr>
+              <tr class="col-header">
+                <td class="row-num">1</td>
+                <td>Timestamp</td>
+                <td>Operator</td>
+                <td>Severity</td>
+                <td>Ortus Account</td>
+                <td>Event</td>
+                <td>Lead URL</td>
+                <td>Details</td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="row-num">2</td><td class="mono">2026-05-17 09:14:02</td><td>antonio@ortus.solutions</td><td class="sev-info">INFO</td><td>kenya5@ortus.solutions</td><td>Campaign started</td><td></td><td>320 leads · mode: connect_and_introduce</td></tr>
+              <tr><td class="row-num">3</td><td class="mono">2026-05-17 09:14:18</td><td>antonio@ortus.solutions</td><td class="sev-info">INFO</td><td>kenya5@ortus.solutions</td><td>Connection sent</td><td><span class="lnk">linkedin.com/in/pinkysalaria</span></td><td></td></tr>
+              <tr><td class="row-num">4</td><td class="mono">2026-05-17 09:14:42</td><td>antonio@ortus.solutions</td><td class="sev-warn">WARN</td><td>kenya5@ortus.solutions</td><td>Skipped: Weekly invitation limit</td><td><span class="lnk">linkedin.com/in/jamin-mukh…</span></td><td>4 remaining today, parked until Mon</td></tr>
+              <tr><td class="row-num">5</td><td class="mono">2026-05-17 09:15:01</td><td>antonio@ortus.solutions</td><td class="sev-info">INFO</td><td>jhonadel.calingao@ortus.solutions</td><td>Connection sent</td><td><span class="lnk">linkedin.com/in/kyra-delac…</span></td><td></td></tr>
+              <tr><td class="row-num">6</td><td class="mono">2026-05-17 09:16:14</td><td>antonio@ortus.solutions</td><td class="sev-error">ERROR</td><td>kenya5@ortus.solutions</td><td>Browser launch failed</td><td></td><td>GoLogin: profile not found (404). Account parked.</td></tr>
+              <tr><td class="row-num">7</td><td class="mono">2026-05-17 09:18:22</td><td>antonio@ortus.solutions</td><td class="sev-warn">WARN</td><td>jhonadel.calingao@ortus.solutions</td><td>Session expired</td><td></td><td>li_at cookie invalid · operator re-login required</td></tr>
+              <tr><td class="row-num">8</td><td class="mono">2026-05-17 09:21:50</td><td>antonio@ortus.solutions</td><td class="sev-info">INFO</td><td>rilany.darang@ortus.solutions</td><td>Acceptance confirmed</td><td><span class="lnk">linkedin.com/in/garibnath-…</span></td><td>via bulk-check</td></tr>
+              <tr><td class="row-num">9</td><td class="mono">2026-05-17 09:25:33</td><td>antonio@ortus.solutions</td><td class="sev-info">INFO</td><td>rilany.darang@ortus.solutions</td><td>Intro DM sent</td><td><span class="lnk">linkedin.com/in/garibnath-…</span></td><td>{primary name} = Edward Howard</td></tr>
+              <tr><td class="row-num">10</td><td class="mono">2026-05-17 10:18:30</td><td>antonio@ortus.solutions</td><td class="sev-info">INFO</td><td>kenya5@ortus.solutions</td><td>Campaign ended</td><td></td><td>Stopped by operator · 47 processed · 2 errors · 1h 04m</td></tr>
+              <tr><td class="row-num">11</td><td class="mono">2026-05-17 10:18:45</td><td>antonio@ortus.solutions</td><td class="sev-info">INFO</td><td>kenya5@ortus.solutions</td><td>Monitoring started</td><td></td><td>Window: 7 days · cadence: 60min</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="sheet-tabs">
+          <span class="sheet-tab" style="background:#fffbe6;">📋 Index</span>
+          <span class="sheet-tab active">UK CFO Spring '26 · 2026-05-17 09:14</span>
+          <span class="sheet-tab">EU Fintech · 2026-05-17 08:55</span>
+          <span class="sheet-tab">APAC Hospitality '26 · 2026-05-16 17:30</span>
+          <span class="sheet-tab">UK CFO Spring '26 · 2026-05-16 14:00</span>
+          <span class="sheet-tab">EU Fintech · 2026-05-15 11:45</span>
+          <span class="sheet-tab">UK CFO Spring '26 · 2026-05-15 09:10</span>
+          <span class="sheet-tab add">+</span>
+        </div>
+      </div>
+
+      <!-- Dropdown next to the table mockup -->
+      <div class="menu-dropdown" style="margin-left:-280px; margin-top:0;">
+        <div class="menu-dropdown-body">
+          <div class="item">
+            <span class="glyph">📋</span>
+            <div>
+              <div>Open Index tab</div>
+              <div style="font-size:11px; color:#5f6368;">List of every per-campaign tab with row counts</div>
+            </div>
+          </div>
+          <div class="item">
+            <span class="glyph">📤</span>
+            <div>
+              <div>Export errors as CSV</div>
+              <div style="font-size:11px; color:#5f6368;">All rows where Severity = ERROR, across all tabs</div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="item danger">
+            <span class="glyph" style="color:#a1252b;">🗑</span>
+            <div>
+              <div style="color:#a1252b; font-weight:600;">Delete all log tabs</div>
+              <div style="font-size:11px; color:#5f6368;">Removes every per-campaign tab. Index stays.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirmation modal mock -->
+    <div class="modal-mock">
+      <h3>Delete all log tabs?</h3>
+      <div class="body">
+        This will remove <strong>6 per-campaign tabs</strong> (oldest: 2026-05-15 09:10 · newest: 2026-05-17 09:14).
+        <br><br>
+        The Index tab will be kept. Deleted tabs can't be recovered.
+      </div>
+      <div class="actions">
+        <button class="btn">Cancel</button>
+        <button class="btn danger">Delete 6 tabs</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ──────────────── SHEET 2: CAMPAIGN ACTIVITY ──────────────── -->
+  <div class="variant">
+    <div class="variant-head">
+      <span class="variant-label">Sheet 2 of 2</span>
+      <h2>Ortus Campaign <em>Activity</em></h2>
+    </div>
+    <p class="variant-desc">
+      Single sheet, single tab. One row appended per completed campaign run. Sourced from <code>data/campaign-history.json</code> that the bot already writes at <code>src/campaign.js:2772</code> — we just mirror that entry to this sheet when the campaign closes. Summary band at top uses spreadsheet <code>COUNTIF</code> / <code>SUMIF</code> for per-operator aggregates — no extra writes, just formulas referencing the table below.
+    </p>
+
+    <!-- Summary band -->
+    <div class="summary-grid">
+      <div class="summary-cell">
+        <div class="summary-label">Total campaigns this week</div>
+        <div class="summary-value">14</div>
+        <div class="summary-sub">across 4 operators</div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Total leads attempted</div>
+        <div class="summary-value">1,847</div>
+        <div class="summary-sub">avg 132 / campaign</div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Top operator this week</div>
+        <div class="summary-value">antonio</div>
+        <div class="summary-sub">6 campaigns · 812 leads</div>
+      </div>
+      <div class="summary-cell">
+        <div class="summary-label">Most-used mode</div>
+        <div class="summary-value">connect_and_introduce</div>
+        <div class="summary-sub">9 of 14 campaigns</div>
+      </div>
+    </div>
+
+    <div class="sheet-frame" style="border-top:0;">
+      <table class="sheet" style="width:1640px;">
+        <colgroup>
+          <col style="width:36px"><col style="width:120px"><col style="width:170px"><col style="width:180px"><col style="width:170px"><col style="width:200px"><col style="width:100px"><col style="width:100px"><col style="width:90px"><col style="width:100px"><col style="width:120px"><col style="width:300px">
+        </colgroup>
+        <thead>
+          <tr class="col-letter"><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th><th>I</th><th>J</th><th>K</th></tr>
+          <tr class="col-header">
+            <td class="row-num">1</td>
+            <td>Started</td>
+            <td>Operator</td>
+            <td>Campaign Name</td>
+            <td>Mode</td>
+            <td>Profiles Used</td>
+            <td>Total Leads</td>
+            <td>Processed</td>
+            <td>Errors</td>
+            <td>Duration</td>
+            <td>End Reason</td>
+            <td>Templates Used (preview)</td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="row-num">2</td><td class="mono">2026-05-17 09:14</td><td>antonio@ortus.solutions</td><td>UK CFO Spring '26</td><td>connect_and_introduce</td><td>kenya5, jhonadel, rilany, nitin</td><td>320</td><td>47</td><td>2</td><td>1h 04m</td><td>Stopped</td><td>"Hi {first name} — saw your post on cost dynamics last week…"</td></tr>
+          <tr><td class="row-num">3</td><td class="mono">2026-05-17 08:55</td><td>jess@ortus.solutions</td><td>EU Fintech</td><td>connect_only</td><td>rilany.darang</td><td>120</td><td>120</td><td>0</td><td>0h 22m</td><td>Completed</td><td>"Hi {first name}, found your work at {company} fascinating…"</td></tr>
+          <tr><td class="row-num">4</td><td class="mono">2026-05-16 17:30</td><td>sam@ortus.solutions</td><td>APAC Hospitality '26</td><td>inmail_only</td><td>nitin.kumar</td><td>85</td><td>85</td><td>3</td><td>1h 51m</td><td>Completed</td><td>InMail: "Quick intro from Ortus" · "{first name}, hope this finds…"</td></tr>
+          <tr><td class="row-num">5</td><td class="mono">2026-05-16 14:00</td><td>antonio@ortus.solutions</td><td>UK CFO Spring '26 (resume)</td><td>connect_and_introduce</td><td>kenya5, jhonadel</td><td>280</td><td>112</td><td>1</td><td>2h 18m</td><td>Completed</td><td>"Hi {first name} — saw your post on cost dynamics last week…"</td></tr>
+          <tr><td class="row-num">6</td><td class="mono">2026-05-15 11:45</td><td>jess@ortus.solutions</td><td>EU Fintech</td><td>message_only</td><td>rilany.darang</td><td>62</td><td>62</td><td>0</td><td>0h 28m</td><td>Completed</td><td>Follow-up: "Following up on my note from last week…"</td></tr>
+          <tr><td class="row-num">7</td><td class="mono">2026-05-15 09:10</td><td>antonio@ortus.solutions</td><td>UK CFO Spring '26</td><td>connect_and_introduce</td><td>kenya5, jhonadel, rilany, nitin, brixter</td><td>500</td><td>178</td><td>5</td><td>3h 47m</td><td>Errored</td><td>"Hi {first name} — saw your post on cost dynamics last week…"</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="sheet-tabs">
+      <span class="sheet-tab active">Campaign Activity</span>
+      <span class="sheet-tab add">+</span>
+    </div>
+  </div>
+
+  <!-- ──────────────── OPEN QUESTIONS ──────────────── -->
+  <div class="variant" style="border-bottom:0; margin-bottom:0;">
+    <div class="variant-head">
+      <span class="variant-label">Before building</span>
+      <h2>Open <em>questions</em></h2>
+    </div>
+    <p class="variant-desc">
+      Decisions I won't make alone — answer these and I can wire it up.
+    </p>
+
+    <table style="width:100%; border-collapse:collapse; font-size:0.86rem; color:#c9c5bd;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--hairline); color:var(--gold); font-size:0.62rem; letter-spacing:0.2em; text-transform:uppercase;">
+          <th style="padding:10px 12px; text-align:left; width:60px;">#</th>
+          <th style="padding:10px 12px; text-align:left;">Question</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--hairline); vertical-align:top;">
+          <td style="padding:12px 12px; color:var(--gold); font-weight:600;">Q1</td>
+          <td style="padding:12px 12px;">
+            <strong>Resumed campaigns — new tab or append?</strong> When an operator hits "Resume" on a stopped CC+IC campaign, does it:<br>
+            <em>(a)</em> Append rows to the original campaign's tab (one tab = one campaign name, all sessions).<br>
+            <em>(b)</em> Open a new tab named <code>{name} · {start} (resumed)</code>. Cleaner per-session telemetry, more tabs to manage.<br>
+            (a) is more readable as "the story of this campaign"; (b) is more accurate as "what happened in this session."
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--hairline); vertical-align:top;">
+          <td style="padding:12px 12px; color:var(--gold); font-weight:600;">Q2</td>
+          <td style="padding:12px 12px;">
+            <strong>Operations Log write cadence.</strong> Writing to the Apps Script web app costs ~500-1500ms per call.<br>
+            <em>(a)</em> <strong>Per-event</strong> — every operation/error POSTs immediately. Real-time visibility, ~1s lag per row stamp.<br>
+            <em>(b)</em> <strong>Batched (30s)</strong> — bot buffers events, flushes every 30s and at campaign end. Imperceptible per-event latency, errors visible within ~30s.<br>
+            For diagnostic use (b) is enough. (a) only matters if you'd watch the sheet live to catch something mid-run.
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--hairline); vertical-align:top;">
+          <td style="padding:12px 12px; color:var(--gold); font-weight:600;">Q3</td>
+          <td style="padding:12px 12px;">
+            <strong>Privacy on Campaign Activity templates column.</strong> Showing the full template body means every operator can read every other's connection notes verbatim.<br>
+            <em>(a)</em> Full body in the cell (operators see each other's copy — useful for "what's working?").<br>
+            <em>(b)</em> First 60 chars + "…" (recognise it, can't reuse it).<br>
+            <em>(c)</em> Template name only (e.g., "Connection note · v3"). Requires operators to name templates first.
+          </td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--hairline); vertical-align:top;">
+          <td style="padding:12px 12px; color:var(--gold); font-weight:600;">Q4</td>
+          <td style="padding:12px 12px;">
+            <strong>What does the Index tab show?</strong> One row per per-campaign tab in the Operations Log. Suggested columns: Tab name · Started · Operator · Total events · Errors · Warnings · Link (clickable jump to the tab). Confirm — or strip it down.
+          </td>
+        </tr>
+        <tr style="vertical-align:top;">
+          <td style="padding:12px 12px; color:var(--gold); font-weight:600;">Q5</td>
+          <td style="padding:12px 12px;">
+            <strong>"Delete all log tabs" — guard rails.</strong> Anyone with edit access on the sheet can fire the menu item.<br>
+            <em>(a)</em> Just the confirmation dialog (shown above).<br>
+            <em>(b)</em> Dialog + require typing the word <code>DELETE</code> to confirm (extra friction).<br>
+            <em>(c)</em> Restrict to the deploying account only — Apps Script's <code>Session.getActiveUser()</code> check. Other operators see "Only the script owner can delete tabs."
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</body>
+</html>

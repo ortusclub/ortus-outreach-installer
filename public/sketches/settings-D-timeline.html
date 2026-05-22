@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings · D — Visual timeline</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--ink:#fff;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--green:#3fb950;--red:#f85149;--gold:#F7BE68;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:56px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+.label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+h2{font-family:var(--d);font-weight:400;font-size:2.4rem;line-height:1;text-transform:uppercase;margin-bottom:40px}
+
+.inputs{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--hl);border-top:1px solid var(--hl);border-bottom:1px solid var(--hl);margin-bottom:40px}
+.input-cell{background:var(--bg);padding:24px 32px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:24px}
+.input-label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.input-sub{font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);margin-top:6px}
+.input-number{font-family:var(--d);font-size:4rem;line-height:1;color:var(--ink)}
+
+.timeline-wrap{margin-bottom:32px}
+.tl-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:28px}
+.tl-head-left{font-family:var(--d);font-size:1.6rem;line-height:1;text-transform:uppercase}
+.tl-head-right{font-size:0.62rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray)}
+
+.timeline{position:relative;height:80px;margin:12px 0 16px}
+.tl-bar{position:absolute;top:50%;left:0;right:0;height:2px;background:var(--hl);transform:translateY(-50%)}
+.tl-fill{position:absolute;top:50%;left:0;height:2px;background:var(--gold);transform:translateY(-50%);width:100%}
+.tl-marker{position:absolute;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:9999px;background:var(--ink)}
+.tl-marker.start{left:0}
+.tl-marker.mid{left:50%}
+.tl-marker.end{left:100%;background:var(--gold)}
+.tl-labels{display:flex;justify-content:space-between;position:absolute;bottom:0;left:0;right:0}
+.tl-labels>div{text-align:center;transform:translateX(-50%);position:absolute}
+.tl-labels>div:first-child{left:0;transform:translateX(0)}
+.tl-labels>div:last-child{left:100%;transform:translateX(-100%)}
+.tl-labels>div:nth-child(2){left:50%}
+.tl-time{font-family:var(--d);font-size:1.4rem;line-height:1;color:var(--ink)}
+.tl-note{font-size:0.58rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--gray);margin-top:4px}
+
+.hero{background:var(--hls);border:1px solid var(--hl);padding:32px 36px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-bottom:24px}
+.hero-k{font-size:0.58rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.hero-v{font-family:var(--d);font-size:2.8rem;line-height:1;margin-top:10px}
+.hero-v.accent{color:var(--gold)}
+
+.warnings{display:flex;flex-direction:column;gap:6px;padding:16px 0;border-top:1px solid var(--hl)}
+.warn-line{font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray)}
+.warn-line::before{content:'⚠';color:var(--gold);margin-right:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction D</div>
+  <h2>Visual campaign timeline</h2>
+
+  <div class="inputs">
+    <div class="input-cell">
+      <div>
+        <div class="input-label">Rate</div>
+        <div class="input-sub">Per account / hour</div>
+      </div>
+      <div class="input-number">6</div>
+    </div>
+    <div class="input-cell">
+      <div>
+        <div class="input-label">Limit</div>
+        <div class="input-sub">Max total per account</div>
+      </div>
+      <div class="input-number">40</div>
+    </div>
+  </div>
+
+  <div class="timeline-wrap">
+    <div class="tl-head">
+      <div class="tl-head-left">Campaign timeline</div>
+      <div class="tl-head-right">1 account · 40 actions · 6 / hour</div>
+    </div>
+    <div class="timeline">
+      <div class="tl-bar"></div>
+      <div class="tl-fill"></div>
+      <div class="tl-marker start"></div>
+      <div class="tl-marker mid"></div>
+      <div class="tl-marker end"></div>
+      <div class="tl-labels">
+        <div><div class="tl-time">Now</div><div class="tl-note">Start</div></div>
+        <div><div class="tl-time">15:30</div><div class="tl-note">~20 done</div></div>
+        <div><div class="tl-time">18:50</div><div class="tl-note">Finish</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div><div class="hero-k">Actions</div><div class="hero-v accent">40</div></div>
+    <div><div class="hero-k">Duration</div><div class="hero-v">6h 40m</div></div>
+    <div><div class="hero-k">Finishes</div><div class="hero-v">18:50</div></div>
+  </div>
+
+  <div class="warnings">
+    <div class="warn-line">Keep laptop open until the campaign finishes</div>
+    <div class="warn-line">Do not close the browser windows that open — they run the campaign</div>
+  </div>
+</div>
+</body>
+</html>

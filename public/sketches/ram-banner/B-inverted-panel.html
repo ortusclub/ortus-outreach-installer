@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAM Banner — Sketch B: Inverted Panel</title>
+<style>
+  :root {
+    --ink: #111;
+    --ink-dim: #6b6b6b;
+    --paper: #fafafa;
+    --hairline: #e6e6e6;
+    --hairline-soft: #f0f0f0;
+    --gold: #b89770;
+    --inverse-bg: #111;
+    --inverse-ink: #fafafa;
+  }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; }
+
+  /* Mock dashboard chrome */
+  .header { padding: 24px 32px 16px; border-bottom: 1px solid var(--hairline); }
+  .header__title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .header__sub { font-size: 11px; color: var(--ink-dim); margin-top: 2px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .stats { display: flex; gap: 32px; margin-top: 16px; }
+  .stat { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .stat strong { display: block; font-size: 18px; color: var(--ink); margin-top: 2px; font-weight: 600; }
+
+  /* The banner — inline panel, sits between header and main content */
+  .ram-panel {
+    margin: 16px 32px;
+    background: var(--inverse-bg); color: var(--inverse-ink);
+    padding: 18px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    border: 1px solid var(--ink);
+  }
+  .ram-panel__main { display: flex; align-items: center; gap: 18px; }
+  .ram-panel__icon { width: 36px; height: 36px; border: 1px solid var(--inverse-ink); border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; flex-shrink: 0; }
+  .ram-panel__text {  }
+  .ram-panel__title { font-size: 14px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+  .ram-panel__sub { font-size: 12px; color: rgba(250,250,250,0.7); margin-top: 4px; letter-spacing: 0.01em; }
+  .ram-panel__meter { display: flex; align-items: center; gap: 12px; }
+  .ram-panel__bar { width: 160px; height: 4px; background: rgba(250,250,250,0.15); position: relative; }
+  .ram-panel__bar-fill { position: absolute; top: 0; left: 0; height: 100%; width: 1.25%; background: var(--inverse-ink); }
+  .ram-panel__num { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; }
+  .ram-panel__close { background: transparent; border: 1px solid rgba(250,250,250,0.4); color: var(--inverse-ink); padding: 6px 14px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; margin-left: 16px; }
+  .ram-panel__close:hover { border-color: var(--inverse-ink); }
+
+  .body { padding: 8px 32px; color: var(--ink-dim); font-size: 13px; line-height: 1.5; max-width: 600px; }
+
+  /* Annotation */
+  .anno { position: fixed; bottom: 24px; right: 24px; background: var(--ink); color: var(--inverse-ink); padding: 12px 16px; max-width: 320px; font-size: 11px; line-height: 1.5; border: 1px solid var(--ink); }
+  .anno strong { display: block; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header__title">The Ortus Outreach</div>
+  <div class="header__sub">Campaign cockpit</div>
+  <div class="stats">
+    <div class="stat">Today<strong>14</strong></div>
+    <div class="stat">7-day<strong>67</strong></div>
+    <div class="stat">Errors<strong>0</strong></div>
+    <div class="stat">Passover<strong>—</strong></div>
+  </div>
+</div>
+
+<div class="ram-panel">
+  <div class="ram-panel__main">
+    <div class="ram-panel__icon">!</div>
+    <div class="ram-panel__text">
+      <div class="ram-panel__title">Free up some RAM now</div>
+      <div class="ram-panel__sub">Chromium can't allocate memory for new profiles · campaign may fail under this load</div>
+    </div>
+  </div>
+  <div class="ram-panel__meter">
+    <div class="ram-panel__bar"><div class="ram-panel__bar-fill"></div></div>
+    <div class="ram-panel__num">0.1 / 8 GB</div>
+    <button class="ram-panel__close">Dismiss</button>
+  </div>
+</div>
+
+<div class="body">
+  Mock dashboard body — banner above is what shows when free RAM drops below ~500 MB or load average exceeds CPU threshold.
+</div>
+
+<div class="anno">
+  <strong>Sketch B — Inverted Panel</strong>
+  Bordered black panel inset within the dashboard, between header and content. Live RAM meter on the right updates in real-time. More substantial presence than the strip but doesn't pin to viewport.
+</div>
+
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAM Banner — Sketch A: Top Strip</title>
+<style>
+  :root {
+    --ink: #111;
+    --ink-dim: #6b6b6b;
+    --paper: #fafafa;
+    --hairline: #e6e6e6;
+    --hairline-soft: #f0f0f0;
+    --gold: #b89770;
+    --inverse-bg: #111;
+    --inverse-ink: #fafafa;
+  }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; }
+
+  /* The banner — sticks to top of viewport */
+  .ram-banner {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--inverse-bg); color: var(--inverse-ink);
+    padding: 10px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    border-bottom: 1px solid var(--ink);
+  }
+  .ram-banner__msg { display: flex; align-items: center; gap: 16px; }
+  .ram-banner__msg::before { content: '!'; font-weight: 700; font-size: 14px; width: 18px; height: 18px; border: 1px solid var(--inverse-ink); border-radius: 9999px; display: inline-flex; align-items: center; justify-content: center; }
+  .ram-banner__detail { color: rgba(250,250,250,0.7); text-transform: none; letter-spacing: 0.02em; font-size: 11px; }
+  .ram-banner__close { background: transparent; border: 1px solid rgba(250,250,250,0.4); color: var(--inverse-ink); padding: 4px 10px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+  .ram-banner__close:hover { border-color: var(--inverse-ink); }
+
+  /* Mock dashboard chrome below — just enough for context */
+  .header { padding: 24px 32px 16px; border-bottom: 1px solid var(--hairline); }
+  .header__title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .header__sub { font-size: 11px; color: var(--ink-dim); margin-top: 2px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .stats { display: flex; gap: 32px; margin-top: 16px; }
+  .stat { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .stat strong { display: block; font-size: 18px; color: var(--ink); margin-top: 2px; font-weight: 600; }
+  .body { padding: 24px 32px; color: var(--ink-dim); font-size: 13px; line-height: 1.5; max-width: 600px; }
+
+  /* Annotation for the sketch */
+  .anno { position: fixed; bottom: 24px; right: 24px; background: var(--ink); color: var(--inverse-ink); padding: 12px 16px; max-width: 320px; font-size: 11px; line-height: 1.5; border: 1px solid var(--ink); }
+  .anno strong { display: block; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="ram-banner">
+  <div class="ram-banner__msg">
+    <span>Free up some RAM now</span>
+    <span class="ram-banner__detail">0.1 GB free of 8 GB · campaign may fail under this load</span>
+  </div>
+  <button class="ram-banner__close">Dismiss</button>
+</div>
+
+<div class="header">
+  <div class="header__title">The Ortus Outreach</div>
+  <div class="header__sub">Campaign cockpit</div>
+  <div class="stats">
+    <div class="stat">Today<strong>14</strong></div>
+    <div class="stat">7-day<strong>67</strong></div>
+    <div class="stat">Errors<strong>0</strong></div>
+    <div class="stat">Passover<strong>—</strong></div>
+  </div>
+</div>
+
+<div class="body">
+  Mock dashboard body — banner above is what shows when free RAM drops below ~500 MB or load average exceeds CPU threshold.
+</div>
+
+<div class="anno">
+  <strong>Sketch A — Top Strip</strong>
+  Black hairline bar pinned to top of viewport. Always-visible while critical, dismissible per session. Re-appears on next critical poll if still bad. Most subtle of the three.
+</div>
+
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Queue · Variant C · Side-by-side + position picker</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --gold: #F7BE68;
+    --red: #f85149;
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 48px 56px; }
+
+  .page-head { padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 8px; max-width: 720px; line-height: 1.5; }
+  .stage-label { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin: 28px 0 12px; }
+
+  .btn { padding: 12px 24px; border: 1px solid var(--ink); border-radius: 9999px; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 400; background: transparent; color: var(--ink); cursor: pointer; }
+  .btn-secondary { border-color: var(--hairline); }
+  .btn-start { background: var(--ink); color: var(--gold); border-color: var(--ink); }
+  .btn-pause { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 500; }
+  .btn-stop { background: var(--red); color: #fff; border-color: var(--red); font-weight: 500; }
+  .btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+  .section { background: var(--bg); padding: 32px 40px; border-bottom: 1px solid var(--hairline); max-width: 1100px; }
+  .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 28px; }
+  .section-caret { color: var(--ink); font-size: 0.9rem; }
+  .section-title { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .section-state { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); }
+  .launch-hero { display: grid; grid-template-columns: 1fr auto; gap: 48px; align-items: start; }
+  .launch-number { font-family: var(--display); font-size: 5.5rem; line-height: 1; color: var(--ink); }
+  .launch-caption { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 14px; line-height: 1.7; max-width: 220px; }
+  .launch-caption strong { color: var(--ink); font-weight: 500; }
+  .launch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 22px; }
+  .launch-mode-toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px; gap: 4px; }
+  .launch-mode-btn { background: transparent; border: none; cursor: pointer; padding: 8px 20px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); border-radius: 9999px; }
+  .launch-mode-btn.active { background: var(--ink); color: var(--bg); }
+  .launch-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+  /* Dashboard */
+  .dash-shell { background: var(--bg); border: 1px solid var(--hairline); max-width: 1100px; }
+  .dash-tabs { display: flex; gap: 28px; padding: 18px 30px; border-bottom: 1px solid var(--hairline); align-items: center; }
+  .dash-tab { background: transparent; border: 0; color: var(--gray); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; padding: 4px 0; }
+  .dash-tab.active { color: var(--ink); border-bottom: 1px solid var(--ink); }
+  .dash-tab-ct { margin-left: 6px; font-size: 0.55rem; border: 1px solid var(--hairline); border-radius: 9999px; padding: 1px 7px; }
+
+  .campaign-row {
+    display: grid;
+    grid-template-columns: 130px 2fr 1.4fr auto auto;
+    gap: 18px;
+    align-items: center;
+    padding: 16px 30px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .campaign-row:hover { background-color: var(--hairline-soft); }
+  .qpos {
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gray);
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    padding: 4px 12px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .qpos:hover { border-color: var(--ink); color: var(--ink); }
+  .qpos.is-next { color: var(--bg); background: var(--ink); border-color: var(--ink); }
+  .qpos-editor {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 6px 3px 12px;
+    border: 1px solid var(--ink);
+    border-radius: 9999px;
+    background: var(--bg);
+  }
+  .qpos-editor__label { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  .qpos-editor__input {
+    width: 38px;
+    border: 0; outline: 0;
+    font-family: var(--mono); font-size: 0.85rem; text-align: center;
+    color: var(--ink);
+    background: transparent;
+  }
+  .qpos-editor__btn {
+    border: 0; background: var(--ink); color: var(--bg);
+    border-radius: 9999px;
+    font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase;
+    padding: 6px 10px; cursor: pointer;
+  }
+
+  .campaign-row-name { font-family: var(--display); font-size: 1rem; color: var(--ink); }
+  .campaign-row-meta { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-top: 2px; }
+  .campaign-row-status { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--hairline); border-radius: 9999px; color: var(--gray); }
+  .row-actions { display: flex; gap: 6px; }
+  .icon-btn { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; color: var(--ink); padding: 0 14px; height: 30px; font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; }
+  .icon-btn--ghost { width: 30px; padding: 0; font-size: 14px; color: var(--gray); }
+  .icon-btn:hover { border-color: var(--ink); }
+
+  .notes { margin-top: 32px; font-size: 0.85rem; color: var(--gray-2); line-height: 1.6; max-width: 820px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1 class="page-title">Queue · Variant C · Side-by-side + position picker</h1>
+    <p class="page-sub">Buttons same as A. Reorder is the differentiator: each row's position pill is clickable → opens a tiny inline editor "Move to position __" so the operator can jump multiple positions in one move.</p>
+  </div>
+
+  <div class="stage-label">Section 6 — Launch</div>
+  <div class="section">
+    <div class="section-head">
+      <span class="section-caret">▾</span>
+      <h2 class="section-title">6. Launch</h2>
+      <span class="section-state">Ready</span>
+    </div>
+    <div class="launch-hero">
+      <div>
+        <div class="launch-number">2</div>
+        <div class="launch-caption">Number of accounts being used: <strong>2</strong> · <strong>2/day</strong> · 1 in sheet · ETA <strong>3 min</strong></div>
+      </div>
+      <div class="launch-right">
+        <div class="launch-mode-toggle">
+          <button class="launch-mode-btn active">Now</button>
+          <button class="launch-mode-btn">Schedule</button>
+        </div>
+        <div class="launch-actions">
+          <button class="btn btn-start">Start Campaign</button>
+          <button class="btn btn-secondary">Add to Queue</button>
+          <button class="btn btn-pause" disabled>Pause</button>
+          <button class="btn btn-stop" disabled>Stop Campaign</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-label">Dashboard · Queued tab — normal state (click any position pill to jump)</div>
+  <div class="dash-shell">
+    <div class="dash-tabs">
+      <button class="dash-tab">Active <span class="dash-tab-ct">1</span></button>
+      <button class="dash-tab active">Queued <span class="dash-tab-ct">4</span></button>
+      <button class="dash-tab">Schedules <span class="dash-tab-ct">2</span></button>
+      <button class="dash-tab">Drafts <span class="dash-tab-ct">5</span></button>
+      <button class="dash-tab">Past <span class="dash-tab-ct">28</span></button>
+    </div>
+
+    <div class="campaign-row">
+      <button class="qpos is-next">Next up</button>
+      <div>
+        <div class="campaign-row-name">Q1 outreach · cohort A</div>
+        <div class="campaign-row-meta">CC + IB · 4 accounts · 1,200 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row">
+      <button class="qpos">Position 2</button>
+      <div>
+        <div class="campaign-row-name">Cold outreach · gov-tech</div>
+        <div class="campaign-row-meta">IC · 2 accounts · 67 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row">
+      <button class="qpos">Position 3</button>
+      <div>
+        <div class="campaign-row-name">Follow-up batch</div>
+        <div class="campaign-row-meta">Message Only · 6 accounts · 480 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row">
+      <button class="qpos">Position 4</button>
+      <div>
+        <div class="campaign-row-name">Connect + intro · tier-2</div>
+        <div class="campaign-row-meta">CC + IB · 3 accounts · 320 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-label">Dashboard · Queued tab — operator clicked "Position 4" (inline editor open)</div>
+  <div class="dash-shell">
+    <div class="dash-tabs">
+      <button class="dash-tab">Active <span class="dash-tab-ct">1</span></button>
+      <button class="dash-tab active">Queued <span class="dash-tab-ct">4</span></button>
+      <button class="dash-tab">Schedules <span class="dash-tab-ct">2</span></button>
+      <button class="dash-tab">Drafts <span class="dash-tab-ct">5</span></button>
+      <button class="dash-tab">Past <span class="dash-tab-ct">28</span></button>
+    </div>
+
+    <div class="campaign-row">
+      <button class="qpos is-next">Next up</button>
+      <div>
+        <div class="campaign-row-name">Q1 outreach · cohort A</div>
+        <div class="campaign-row-meta">CC + IB · 4 accounts · 1,200 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row">
+      <button class="qpos">Position 2</button>
+      <div>
+        <div class="campaign-row-name">Cold outreach · gov-tech</div>
+        <div class="campaign-row-meta">IC · 2 accounts · 67 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row">
+      <button class="qpos">Position 3</button>
+      <div>
+        <div class="campaign-row-name">Follow-up batch</div>
+        <div class="campaign-row-meta">Message Only · 6 accounts · 480 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row" style="background: var(--hairline-soft);">
+      <span class="qpos-editor">
+        <span class="qpos-editor__label">Move to</span>
+        <input class="qpos-editor__input" type="number" value="2" min="1" max="4">
+        <button class="qpos-editor__btn">Go</button>
+      </span>
+      <div>
+        <div class="campaign-row-name">Connect + intro · tier-2</div>
+        <div class="campaign-row-meta">CC + IB · 3 accounts · 320 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>Design choices.</b> Pills match the app exactly (12px 24px padding, 9999 radius, mono caps). Editor swaps the position pill in-place — same shape, just expanded — so the row stays the same height. Faster than ↑↓ when queues grow long (5+ items). No drag dependency.
+  </div>
+</body>
+</html>

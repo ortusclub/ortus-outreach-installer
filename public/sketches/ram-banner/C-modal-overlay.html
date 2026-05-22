@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAM Banner — Sketch C: Modal Overlay</title>
+<style>
+  :root {
+    --ink: #111;
+    --ink-dim: #6b6b6b;
+    --paper: #fafafa;
+    --hairline: #e6e6e6;
+    --hairline-soft: #f0f0f0;
+    --gold: #b89770;
+    --inverse-bg: #111;
+    --inverse-ink: #fafafa;
+  }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; }
+
+  /* Mock dashboard chrome (visible behind modal, dimmed) */
+  .header { padding: 24px 32px 16px; border-bottom: 1px solid var(--hairline); }
+  .header__title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .header__sub { font-size: 11px; color: var(--ink-dim); margin-top: 2px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .stats { display: flex; gap: 32px; margin-top: 16px; }
+  .stat { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .stat strong { display: block; font-size: 18px; color: var(--ink); margin-top: 2px; font-weight: 600; }
+  .body { padding: 24px 32px; color: var(--ink-dim); font-size: 13px; line-height: 1.5; max-width: 600px; }
+
+  /* The overlay */
+  .ram-overlay { position: fixed; inset: 0; background: rgba(17,17,17,0.55); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .ram-overlay__card { background: var(--paper); border: 1px solid var(--ink); padding: 32px 36px; max-width: 480px; width: 100%; }
+  .ram-overlay__eyebrow { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 12px; }
+  .ram-overlay__title { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; margin-bottom: 12px; }
+  .ram-overlay__body { font-size: 13px; line-height: 1.6; color: var(--ink-dim); margin-bottom: 24px; }
+  .ram-overlay__meter { display: flex; align-items: baseline; gap: 12px; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--hairline); }
+  .ram-overlay__num { font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .ram-overlay__num-sub { font-size: 12px; color: var(--ink-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .ram-overlay__bar { width: 100%; height: 6px; background: var(--hairline); margin: 16px 0 8px; position: relative; }
+  .ram-overlay__bar-fill { position: absolute; top: 0; left: 0; height: 100%; width: 1.25%; background: var(--ink); }
+  .ram-overlay__bar-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-dim); letter-spacing: 0.04em; text-transform: uppercase; }
+  .ram-overlay__actions { display: flex; gap: 12px; justify-content: flex-end; }
+  .ram-overlay__btn { padding: 10px 18px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; border: 1px solid var(--ink); background: transparent; color: var(--ink); }
+  .ram-overlay__btn--primary { background: var(--ink); color: var(--inverse-ink); }
+
+  /* Annotation */
+  .anno { position: fixed; bottom: 24px; right: 24px; background: var(--ink); color: var(--inverse-ink); padding: 12px 16px; max-width: 320px; font-size: 11px; line-height: 1.5; border: 1px solid var(--ink); z-index: 200; }
+  .anno strong { display: block; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header__title">The Ortus Outreach</div>
+  <div class="header__sub">Campaign cockpit</div>
+  <div class="stats">
+    <div class="stat">Today<strong>14</strong></div>
+    <div class="stat">7-day<strong>67</strong></div>
+    <div class="stat">Errors<strong>0</strong></div>
+    <div class="stat">Passover<strong>—</strong></div>
+  </div>
+</div>
+
+<div class="body">
+  Mock dashboard body — modal overlay above blocks interaction until the user takes action. Most aggressive of the three sketches.
+</div>
+
+<div class="ram-overlay">
+  <div class="ram-overlay__card">
+    <div class="ram-overlay__eyebrow">Resource warning</div>
+    <div class="ram-overlay__title">Free up some RAM now</div>
+    <div class="ram-overlay__body">Chromium can't reliably allocate memory for new profiles at this load. Recent campaigns have failed under similar conditions. Close some apps (browser tabs, GoLogin Desktop, video calls) and recheck.</div>
+
+    <div class="ram-overlay__meter">
+      <div>
+        <div class="ram-overlay__num">0.1<span class="ram-overlay__num-sub" style="margin-left: 4px;">GB free</span></div>
+        <div class="ram-overlay__bar"><div class="ram-overlay__bar-fill"></div></div>
+        <div class="ram-overlay__bar-label"><span>0 GB</span><span>8 GB total</span></div>
+      </div>
+    </div>
+
+    <div class="ram-overlay__actions">
+      <button class="ram-overlay__btn">Continue anyway</button>
+      <button class="ram-overlay__btn ram-overlay__btn--primary">Recheck</button>
+    </div>
+  </div>
+</div>
+
+<div class="anno">
+  <strong>Sketch C — Modal Overlay</strong>
+  Centered card with semi-opaque backdrop. Most prominent — interrupts whatever the operator was doing. Two-button: "Recheck" (after closing apps) or "Continue anyway" (acknowledges risk). Trigger only on critical thresholds, not yellow warnings.
+</div>
+
+</body>
+</html>

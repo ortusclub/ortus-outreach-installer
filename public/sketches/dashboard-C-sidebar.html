@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dashboard C · Sidebar nav</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:780px;line-height:1.5;margin-bottom:40px}
+
+.app{border:1px solid var(--hl);background:#050505;display:grid;grid-template-columns:240px 1fr;min-height:760px}
+
+.side{border-right:1px solid var(--hl);padding:28px 0}
+.side-brand{padding:0 22px 24px;border-bottom:1px solid var(--hls);font-family:var(--d);font-size:1.2rem;letter-spacing:0.04em}
+.side-brand small{display:block;color:var(--gray);font-family:var(--b);font-size:0.58rem;letter-spacing:0.18em;text-transform:uppercase;margin-top:4px}
+.side-grp{padding:18px 0 6px}
+.side-grp-h{padding:6px 22px;font-size:0.56rem;letter-spacing:0.24em;text-transform:uppercase;color:var(--gray);margin-bottom:6px}
+.side-item{padding:9px 22px;font-size:0.82rem;color:var(--ink);cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-left:2px solid transparent}
+.side-item:hover{background:rgba(255,255,255,0.03)}
+.side-item.on{border-left-color:var(--gold);background:rgba(247,190,104,0.05);color:var(--ink)}
+.side-item.on .ct{color:var(--gold)}
+.side-item .ct{font-family:var(--d);font-size:0.95rem;letter-spacing:0.04em;color:var(--gray)}
+.side-item .new{background:var(--gold);color:#000;border-radius:9999px;padding:1px 7px;font-size:0.55rem;font-weight:700;margin-left:8px}
+.side-foot{padding:22px;margin-top:auto;font-size:0.68rem;color:var(--gray);border-top:1px solid var(--hls)}
+
+.main{padding:32px 36px 40px;display:flex;flex-direction:column;min-height:760px}
+.main-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--hl)}
+.main-h1{font-family:var(--d);font-size:1.8rem;letter-spacing:0.04em}
+.main-h1 .sub{font-family:var(--b);font-size:0.62rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--gray);margin-left:12px}
+.actions{display:flex;gap:10px}
+.btn{border:1px solid var(--hl);background:transparent;color:var(--ink);font-family:var(--b);font-size:0.64rem;letter-spacing:0.16em;text-transform:uppercase;padding:8px 14px;cursor:pointer;border-radius:9999px}
+.btn.gold{border-color:var(--gold);color:var(--gold)}
+.btn.danger{border-color:var(--red);color:var(--red)}
+
+.toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 0;margin-bottom:6px}
+.tool-l{display:flex;align-items:center;gap:18px;font-size:0.72rem}
+.tool-l .selall{display:flex;align-items:center;gap:8px;color:var(--gray);letter-spacing:0.06em}
+.tool-l .selall .check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;position:relative}
+.tool-l .selall .check.on{border-color:var(--gold);background:var(--gold)}
+.tool-l .selall .check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.search{background:transparent;border:1px solid var(--hl);color:var(--ink);padding:6px 12px;font-family:var(--b);font-size:0.72rem;border-radius:9999px;width:220px;outline:none}
+
+.bulkstrip{background:rgba(247,190,104,0.05);border:1px solid var(--gold);padding:10px 16px;margin:6px 0 18px;display:flex;justify-content:space-between;align-items:center;font-size:0.72rem}
+.bulkstrip .n{color:var(--gold);font-family:var(--d);font-size:1.05rem;margin-right:10px;letter-spacing:0.05em}
+
+.row{display:grid;grid-template-columns:28px 1fr 130px 110px 90px 26px;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid var(--hls);font-size:0.78rem}
+.row.sel{background:rgba(247,190,104,0.05)}
+.check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;cursor:pointer;position:relative}
+.check.on{border-color:var(--gold);background:var(--gold)}
+.check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.name{font-weight:500}
+.name small{display:block;color:var(--gray);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;margin-top:3px}
+.mode{font-family:var(--d);font-size:0.82rem;color:var(--gray);letter-spacing:0.06em}
+.when{color:var(--gray);font-size:0.7rem}
+.met{font-family:var(--d);font-size:1.05rem;letter-spacing:0.06em}
+.met small{font-family:var(--b);font-size:0.56rem;letter-spacing:0.16em;color:var(--gray);text-transform:uppercase;display:block;margin-top:2px}
+.kebab{color:var(--gray);text-align:right;cursor:pointer;letter-spacing:0.2em}
+
+.notes{margin-top:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--hl)}
+.note{padding:22px 24px;border-right:1px solid var(--hl)}
+.note:last-child{border-right:none}
+.note-h{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.note p{font-size:0.78rem;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="crumbs"><a href="dashboard-index.html">← all alternatives</a> · DASHBOARD C · SIDEBAR NAV</div>
+<h1>Sidebar — mailbox-style navigation</h1>
+<p class="deck">Left sidebar lists every campaign state with a count, like Gmail folders. Right pane is the active list. Each row has a checkbox; bulk-action strip slides in when anything is selected. The sidebar makes counts and totals visible at a glance — you see "Monitoring 3" without scrolling.</p>
+
+<div class="app">
+
+  <aside class="side">
+    <div class="side-brand">ORTUS OUTREACH<small>v2.51</small></div>
+
+    <div class="side-grp">
+      <div class="side-grp-h">Running</div>
+      <div class="side-item">Active <span class="ct">1</span></div>
+      <div class="side-item on">Monitoring <span class="ct">3</span> <span class="new">2</span></div>
+    </div>
+
+    <div class="side-grp">
+      <div class="side-grp-h">Pipeline</div>
+      <div class="side-item">Queued <span class="ct">2</span></div>
+      <div class="side-item">Drafts <span class="ct">2</span></div>
+    </div>
+
+    <div class="side-grp">
+      <div class="side-grp-h">Archive</div>
+      <div class="side-item">Past <span class="ct">47</span></div>
+      <div class="side-item">All campaigns <span class="ct">55</span></div>
+    </div>
+
+    <div class="side-foot">
+      Tip: ⌘+1..6 jumps between sections. ⌘+A selects all in the current list.
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="main-head">
+      <div class="main-h1">MONITORING <span class="sub">3 ACTIVE · NEXT TICK 4 MIN</span></div>
+      <div class="actions"><button class="btn gold">+ NEW CAMPAIGN</button></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="tool-l">
+        <span class="selall"><span class="check on"></span> SELECT ALL</span>
+      </div>
+      <input class="search" type="text" placeholder="Search Monitoring…" />
+    </div>
+
+    <div class="bulkstrip">
+      <div><span class="n">2</span>SELECTED</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn">CLEAR</button>
+        <button class="btn">PAUSE WATCH</button>
+        <button class="btn danger">DELETE</button>
+      </div>
+    </div>
+
+    <div class="row sel">
+      <span class="check on"></span>
+      <div class="name">TAG_AUSTIN_II <small>DAY 3 / 7 · 2 / 7 ACCEPTED · NEXT 13M</small></div>
+      <span class="mode">CC + IC</span>
+      <span class="when">3d ago</span>
+      <div class="met">2<small>INTRO</small></div>
+      <span class="kebab">⋯</span>
+    </div>
+    <div class="row">
+      <span class="check"></span>
+      <div class="name">TAG_BERLIN_I <small>DAY 1 / 7 · 5 / 12 ACCEPTED · NEXT 7M</small></div>
+      <span class="mode">CC + IC</span>
+      <span class="when">18h ago</span>
+      <div class="met">5<small>INTRO</small></div>
+      <span class="kebab">⋯</span>
+    </div>
+    <div class="row sel">
+      <span class="check on"></span>
+      <div class="name">TAG_NYC_III <small>DAY 6 / 7 · 0 / 4 ACCEPTED · NEXT 4M</small></div>
+      <span class="mode">CC + IC</span>
+      <span class="when">6d ago</span>
+      <div class="met">0<small>INTRO</small></div>
+      <span class="kebab">⋯</span>
+    </div>
+  </main>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <div class="note-h">FIX 1 — MONITORING TOP-LEVEL</div>
+    <p>Sidebar makes every state a peer. Counts are always visible — "Monitoring 3" sits next to "Active 1" so you see the full picture without scrolling.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">FIX 2 — KEYBOARD-FIRST</div>
+    <p>⌘+A selects all in current list, Delete removes them. Sidebar persists when switching tabs so context is preserved — useful when bouncing between Past and Monitoring.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">TRADE-OFF</div>
+    <p>Most "app-like" feel — closer to Linear / Notion than to the current page. Slightly wider browser window needed (sidebar uses ~240px). Best if the dashboard is used heavily multiple times a day.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings · A — Big-number steppers + hero summary</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--ink:#fff;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--green:#3fb950;--red:#f85149;--gold:#F7BE68;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);-webkit-font-smoothing:antialiased;padding:56px}
+.wrap{max-width:1120px;margin:0 auto}
+.label{font-family:var(--b);font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+h2{font-family:var(--d);font-weight:400;font-size:2.4rem;line-height:1;letter-spacing:0.01em;text-transform:uppercase;margin-bottom:40px}
+
+.steppers{display:grid;grid-template-columns:1fr 1fr;gap:1px;border-top:1px solid var(--hl);border-bottom:1px solid var(--hl);background:var(--hl);margin-bottom:32px}
+.stepper{background:var(--bg);padding:32px 36px}
+.stepper-label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.stepper-row{display:flex;align-items:center;gap:20px}
+.stepper-value{font-family:var(--d);font-size:6rem;line-height:0.9;color:var(--ink);font-weight:400;letter-spacing:0.01em;flex:1}
+.stepper-ctrl{display:flex;flex-direction:column;gap:8px}
+.step-btn{width:40px;height:40px;border:1px solid var(--hl);background:transparent;color:var(--ink);font-family:var(--d);font-size:1.4rem;cursor:pointer;border-radius:9999px;transition:opacity 0.15s;line-height:1}
+.step-btn:hover{opacity:0.6;border-color:var(--ink)}
+.stepper-unit{font-size:0.68rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray);margin-top:10px}
+
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--hl);border:1px solid var(--hl);margin-bottom:24px}
+.sum{background:var(--bg);padding:28px 32px}
+.sum-label{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:12px}
+.sum-value{font-family:var(--d);font-size:3.4rem;line-height:1;color:var(--ink);font-weight:400}
+.sum-value.accent{color:var(--gold)}
+.sum-sub{font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);margin-top:10px}
+
+.warnings{display:flex;flex-direction:column;gap:6px;padding:16px 0;border-top:1px solid var(--hl)}
+.warn-line{font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);display:flex;gap:10px;align-items:center}
+.warn-line::before{content:'⚠';color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction A</div>
+  <h2>Big-number steppers + hero summary</h2>
+
+  <div class="steppers">
+    <div class="stepper">
+      <div class="stepper-label">Rate · per account / hour</div>
+      <div class="stepper-row">
+        <div class="stepper-value">6</div>
+        <div class="stepper-ctrl">
+          <button class="step-btn">+</button>
+          <button class="step-btn">−</button>
+        </div>
+      </div>
+      <div class="stepper-unit">Connections</div>
+    </div>
+    <div class="stepper">
+      <div class="stepper-label">Limit · per account</div>
+      <div class="stepper-row">
+        <div class="stepper-value">40</div>
+        <div class="stepper-ctrl">
+          <button class="step-btn">+</button>
+          <button class="step-btn">−</button>
+        </div>
+      </div>
+      <div class="stepper-unit">Maximum total</div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="sum">
+      <div class="sum-label">Actions</div>
+      <div class="sum-value accent">40</div>
+      <div class="sum-sub">across 1 account</div>
+    </div>
+    <div class="sum">
+      <div class="sum-label">Duration</div>
+      <div class="sum-value">6h 40m</div>
+      <div class="sum-sub">at 6 / hour</div>
+    </div>
+    <div class="sum">
+      <div class="sum-label">Finishes</div>
+      <div class="sum-value">18:50</div>
+      <div class="sum-sub">local time</div>
+    </div>
+  </div>
+
+  <div class="warnings">
+    <div class="warn-line">Keep laptop open until the campaign finishes</div>
+    <div class="warn-line">Do not close the browser windows that open — they run the campaign</div>
+  </div>
+</div>
+</body>
+</html>

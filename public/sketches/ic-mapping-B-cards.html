@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IC sheet mapping · Variant B · Two cards</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 48px 56px; min-height: 100vh; }
+  .page-head { padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 8px; }
+  .section { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 24px; }
+
+  .stage { background: white; padding: 32px 36px; border: 1px solid var(--hairline); max-width: 760px; }
+
+  /* Two-card IC mapping */
+  .ic-cards { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 16px; }
+  .ic-card {
+    border: 1px solid var(--hairline);
+    padding: 18px 20px;
+    background: white;
+  }
+  .ic-card__head {
+    display: flex; align-items: baseline; gap: 8px;
+    font-family: var(--display);
+    font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .ic-card__step {
+    font-size: 0.6rem; letter-spacing: 0.16em; color: var(--gray);
+    border: 1px solid var(--hairline); padding: 1px 6px;
+  }
+  .ic-card__instruction {
+    font-size: 0.85rem;
+    color: var(--gray-2);
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .ic-card__instruction b { color: var(--ink); font-weight: 600; }
+  .ic-card__instruction em { font-style: italic; }
+
+  .ic-card__select {
+    width: 100%;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    background: white;
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+  }
+  .ic-card__select:disabled { color: var(--gray); background-color: var(--hairline-soft); }
+  .ic-card__hint {
+    font-size: 0.72rem;
+    color: var(--gray);
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+  .ic-card__hint code { font-family: var(--mono); font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 5px; }
+
+  .ic-card__check {
+    display: flex; gap: 10px; align-items: flex-start; cursor: pointer; margin-top: 6px;
+  }
+  .ic-card__check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--ink); }
+  .ic-card__check-label { font-size: 0.9rem; color: var(--ink); line-height: 1.4; }
+  .ic-card__check-hint { font-size: 0.72rem; color: var(--gray); margin-top: 3px; line-height: 1.45; }
+
+  .notes { margin-top: 28px; font-size: 0.85rem; color: var(--gray-2); line-height: 1.6; max-width: 760px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1 class="page-title">IC Sheet Mapping · Variant B · Two cards</h1>
+    <p class="page-sub">Two distinct cards with display-font headers ("COLUMN MAPPING", "ALREADY CONNECTED"). Each carries its own intent. Bold instruction lives only in the first card where it applies.</p>
+  </div>
+
+  <div class="stage">
+    <h2 class="section">2. Google Sheet tab URL</h2>
+    <div style="color: var(--gray); font-size: 0.85rem;">[sheet URL input, hint, Preview/Open buttons appear here]</div>
+
+    <div class="ic-cards">
+      <!-- Card 1: column mapping -->
+      <div class="ic-card">
+        <div class="ic-card__head">
+          <span class="ic-card__step">Step 1</span>
+          <span>Column mapping</span>
+        </div>
+        <p class="ic-card__instruction">
+          <b>Press <em>Preview Sheet</em> first</b>, then choose the column header for the LinkedIn 1st connections.
+        </p>
+        <select class="ic-card__select" disabled>
+          <option>— Preview the sheet first to load columns —</option>
+        </select>
+        <p class="ic-card__hint">Cell values must match a GoLogin profile display name (e.g. <code>alecx@ortus.solutions</code>). Rows whose sender doesn't match are skipped.</p>
+      </div>
+
+      <!-- Card 2: optional toggle -->
+      <div class="ic-card">
+        <div class="ic-card__head">
+          <span class="ic-card__step">Step 2</span>
+          <span>Already connected? <span style="text-transform: lowercase; letter-spacing: 0.04em; font-size: 0.55rem; color: var(--gray); font-family: var(--mono);">— optional</span></span>
+        </div>
+        <label class="ic-card__check">
+          <input type="checkbox" />
+          <div>
+            <div class="ic-card__check-label">All leads in this sheet are already connected</div>
+            <div class="ic-card__check-hint">Skip the <code>Stage = "Connected · DM Now"</code> filter for sheets without a Stage column. Already-sent rows still blocked by <code>Introduction Status = "IC Sent"</code>.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>Design choices.</b> Two cards = two clear questions. Tiny "Step 1 / Step 2" pills give a sense of order without being heavy-handed. The optional flag is right in the second card's header so the operator knows they can skip it. Both cards live inside the Google Sheet section so it's a sub-block, not a competing top-level section.
+  </div>
+</body>
+</html>

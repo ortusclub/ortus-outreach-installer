@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post-launch best-practices — A + B (smart values)</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --green: #3fb950;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 40px 48px 100px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    color: var(--gray);
+    font-size: 13px;
+    margin-bottom: 36px;
+    max-width: 820px;
+  }
+  h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.06em;
+    margin-top: 44px;
+    margin-bottom: 8px;
+  }
+  h2 .num {
+    display: inline-block;
+    width: 28px;
+    color: var(--green);
+    font-size: 22px;
+  }
+  .variant-desc {
+    color: var(--gray);
+    font-size: 12px;
+    margin-bottom: 18px;
+    max-width: 760px;
+    line-height: 1.6;
+  }
+  .stage {
+    background: #fff;
+    border: 1px solid var(--hairline);
+    padding: 32px;
+    position: relative;
+    margin-bottom: 24px;
+  }
+  .frame-label {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-family: var(--display);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--gray);
+  }
+
+  /* Highlight wrapper for dynamic-token values */
+  .dyn {
+    background: rgba(247,190,104,0.30);
+    padding: 0 4px;
+    border-radius: 2px;
+    cursor: help;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     VARIANT A — Modal
+     ───────────────────────────────────────────────────────────── */
+  .modal-bg {
+    background: rgba(0,0,0,0.5);
+    padding: 56px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal {
+    background: #fff;
+    width: 560px;
+    border: 1px solid var(--hairline);
+    padding: 32px 36px 28px;
+  }
+  .modal-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(63,185,80,0.12);
+    color: #2a7a35;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-family: var(--display);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+  }
+  .modal-pill::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+  .modal h3 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: 0.02em;
+    margin: 10px 0 18px;
+    line-height: 1.05;
+  }
+  .modal ul {
+    list-style: none;
+    margin: 16px 0 24px;
+    padding: 0;
+  }
+  .modal ul li {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .modal ul li:last-child { border-bottom: none; }
+  .modal ul li b { font-weight: 600; }
+  .modal ul li .icon { font-size: 14px; }
+  .modal-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .modal-foot label {
+    font-size: 12px;
+    color: var(--gray);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .modal-foot button {
+    background: var(--ink);
+    color: var(--bg);
+    border: none;
+    padding: 10px 22px;
+    font-family: var(--display);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     VARIANT B — Cockpit card
+     ───────────────────────────────────────────────────────────── */
+  .cockpit-mock {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 24px;
+    background: var(--bg);
+    border: 1px solid var(--hairline-soft);
+    padding: 16px;
+    min-height: 320px;
+  }
+  .cockpit-mock .main {
+    background: #fff;
+    border: 1px solid var(--hairline);
+    padding: 24px;
+  }
+  .cockpit-mock .right {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .tip-card {
+    background: #fff;
+    border: 1px solid var(--hairline);
+    padding: 14px 16px;
+  }
+  .tip-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
+  .tip-title {
+    font-family: var(--display);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--ink);
+  }
+  .tip-caret {
+    color: var(--gray);
+    font-size: 12px;
+  }
+  .tip-card ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .tip-card ul li {
+    padding: 7px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 12px;
+    line-height: 1.5;
+    color: #333;
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 8px;
+  }
+  .tip-card ul li:last-child { border-bottom: none; }
+  .tip-card .icon { display: inline-block; }
+
+  .mini-cockpit {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .mini-ring {
+    width: 84px; height: 84px; border-radius: 50%;
+    border: 3px dashed var(--green);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: var(--display);
+    flex-shrink: 0;
+  }
+  .mini-ring .big { font-size: 20px; }
+  .mini-ring .small { font-size: 8px; letter-spacing: 0.12em; color: var(--gray); }
+  .mini-ring .foot { font-size: 10px; color: var(--gray); margin-top: 2px; }
+  .mini-meta { flex: 1; min-width: 0; }
+  .mini-meta .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--display); font-size: 10px;
+    letter-spacing: 0.12em; color: #2a7a35;
+  }
+  .mini-meta .pill::before {
+    content: ''; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--green);
+  }
+  .mini-meta h4 {
+    font-family: var(--display); font-weight: 400;
+    font-size: 18px; margin: 4px 0;
+  }
+  .mini-meta .row {
+    display: flex; gap: 10px; font-size: 11px; color: var(--gray);
+  }
+  .mini-meta .row b { color: var(--ink); font-weight: 400; }
+
+  /* ─────────────────────────────────────────────────────────────
+     ANNOTATION / KEY
+     ───────────────────────────────────────────────────────────── */
+  .key {
+    margin: 28px 0 0;
+    padding: 20px 24px;
+    background: #fff;
+    border: 1px solid var(--hairline);
+  }
+  .key h3 {
+    font-family: var(--display);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+  }
+  .key table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .key th, .key td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--hairline);
+    vertical-align: top;
+  }
+  .key th {
+    font-family: var(--display);
+    font-weight: 400;
+    color: var(--gray);
+    letter-spacing: 0.06em;
+    font-size: 10px;
+  }
+  .key td code {
+    background: rgba(0,0,0,0.05);
+    padding: 1px 5px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<h1>POST-LAUNCH TIPS · A + B Combined</h1>
+<p class="subtitle">
+Modal (A) fires once when the operator clicks Start. Cockpit card (B) stays available in the right
+pane while the campaign runs. Both pull from the same tip content. Numbers below in
+<span class="dyn">gold highlight</span> are read from the live campaign object — they update
+to whatever the operator chose in the wizard. The static "15 s" pre-fire offset is the only
+hardcoded number.
+</p>
+
+<!-- ─────── VARIANT A · MODAL ─────── -->
+<h2><span class="num">A</span> MODAL — Fires once per session after Start</h2>
+<p class="variant-desc">
+Mode-aware copy: CC+IC tips below. localStorage flag silences after "Don't show again."
+Dismissable via the GOT IT button or Esc key.
+</p>
+
+<div class="stage modal-bg">
+  <div class="frame-label" style="color: rgba(255,255,255,0.7)">MODAL · STAGE</div>
+  <div class="modal">
+    <span class="modal-pill">CAMPAIGN STARTED</span>
+    <h3>YOU'RE LIVE. A FEW THINGS TO KNOW.</h3>
+    <ul>
+      <li>
+        <span class="icon">💻</span>
+        <span><b>Keep the lid open.</b> The bot needs the screen unlocked while sending. Close the lid and sending pauses — monitoring resumes when you reopen.</span>
+      </li>
+      <li>
+        <span class="icon">⏰</span>
+        <span><b>15-second heads-up before each check.</b> You'll get a macOS notification + cockpit ⏰ line 15 s before every auto-check. Mute via System Settings → Notifications → Ortus if it gets noisy.</span>
+      </li>
+      <li>
+        <span class="icon">🔁</span>
+        <span><b>Monitoring runs for <span class="dyn" title="reads campaign.monitoringUntil − sendingEndedAt">7 days</span>.</b> Once sending wraps, Ortus quietly re-checks LinkedIn every <span class="dyn" title="reads campaign.checkIntervalMinutes">15 min</span> looking for new acceptances and firing the IC DM. The cockpit ring shows the next-check countdown.</span>
+      </li>
+      <li>
+        <span class="icon">⛔</span>
+        <span><b>Two ways to stop.</b> "Stop sending" halts new connects but keeps monitoring active. "Stop everything" ends both. Default favours stopping just sending.</span>
+      </li>
+      <li>
+        <span class="icon">📋</span>
+        <span><b>Sheet column headers matter.</b> Empty trailing columns can produce a stray <code>{}</code> chip in templates. We filter those now, but a typo like <code>"first name "</code> (trailing space) still breaks substitution silently.</span>
+      </li>
+      <li>
+        <span class="icon">📞</span>
+        <span><b>Click "Bulk Check Connections" anytime</b> in the cockpit to fire an off-schedule sweep + IC DMs. Useful if you don't want to wait the full <span class="dyn" title="reads campaign.checkIntervalMinutes">15 min</span> cadence.</span>
+      </li>
+    </ul>
+    <div class="modal-foot">
+      <label><input type="checkbox"> Don't show this again</label>
+      <button>GOT IT</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─────── VARIANT B · COCKPIT CARD ─────── -->
+<h2><span class="num">B</span> RIGHT-PANE TIPS CARD — Always available</h2>
+<p class="variant-desc">
+The same card lives in the right pane <b>regardless of campaign state</b> — monitoring, sending,
+idle, or wizard view. Below are both stages: B1 during a live monitoring run (dynamic values read
+from <code>campaign.*</code>) and B2 in the idle/dashboard view (dynamic values read from the
+wizard's current cadence + tracking-days selectors, or fall back to generic phrasing if the
+wizard isn't filled).
+</p>
+
+<p style="margin-top: 14px; font-family: var(--display); font-size: 11px; letter-spacing: 0.12em; color: var(--gray);">B1 · DURING MONITORING</p>
+
+<div class="stage cockpit-mock">
+  <div class="frame-label">COCKPIT VIEW · MOCK</div>
+  <div class="main">
+    <div class="mini-cockpit">
+      <div class="mini-ring">
+        <div class="big"><span class="dyn">15m</span></div>
+        <div class="small">NEXT CHECK</div>
+        <div class="foot"><span class="dyn">6d 23h</span></div>
+      </div>
+      <div class="mini-meta">
+        <div class="pill">MONITORING</div>
+        <h4>WATCHING FOR ACCEPTANCES</h4>
+        <div class="row"><b>NEXT</b><span>16:21 · in <span class="dyn">15m</span></span></div>
+        <div class="row"><b>ENDS</b><span>22 May · in <span class="dyn">6d 23h</span></span></div>
+      </div>
+    </div>
+    <div style="border-top: 1px solid var(--hairline); margin-top: 16px; padding-top: 12px; color: var(--gray); font-size: 11px;">
+      [Log lines, sent counter, account list — unchanged]
+    </div>
+  </div>
+  <div class="right">
+    <div class="tip-card">
+      <div class="tip-head">
+        <span class="tip-title">▾ TIPS FOR THIS RUN</span>
+        <span class="tip-caret">collapse</span>
+      </div>
+      <ul>
+        <li><span class="icon">💻</span><span>Keep the lid open while sending.</span></li>
+        <li><span class="icon">⏰</span><span>15 s heads-up before each cycle.</span></li>
+        <li><span class="icon">🔁</span><span>Monitoring runs for <span class="dyn">7 days</span>, every <span class="dyn">15 min</span>.</span></li>
+        <li><span class="icon">⛔</span><span>"Stop sending" ≠ "Stop everything".</span></li>
+        <li><span class="icon">📋</span><span>Watch sheet header typos.</span></li>
+        <li><span class="icon">📞</span><span>Bulk Check Connections fires anytime.</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ─────── B2 · DASHBOARD IDLE ─────── -->
+<p style="margin-top: 28px; font-family: var(--display); font-size: 11px; letter-spacing: 0.12em; color: var(--gray);">B2 · DASHBOARD / IDLE (NO CAMPAIGN RUNNING)</p>
+
+<div class="stage cockpit-mock">
+  <div class="frame-label">DASHBOARD VIEW · MOCK</div>
+  <div class="main">
+    <div class="mini-cockpit">
+      <div class="mini-ring" style="border-color: var(--hairline);">
+        <div class="big" style="color: var(--gray);">—</div>
+        <div class="small">IDLE</div>
+      </div>
+      <div class="mini-meta">
+        <div class="pill" style="background: rgba(0,0,0,0.04); color: var(--gray);"><span style="background: var(--gray); width: 6px; height: 6px; border-radius: 50%; display: inline-block;"></span>&nbsp;IDLE</div>
+        <h4>NO CAMPAIGN RUNNING</h4>
+        <div class="row"><b>LEAD</b><span>—</span></div>
+        <div class="row"><b>ACCOUNT</b><span>—</span></div>
+        <div class="row"><b>MODE</b><span>—</span></div>
+      </div>
+    </div>
+    <div style="border-top: 1px solid var(--hairline); margin-top: 16px; padding-top: 12px; color: var(--gray); font-size: 11px;">
+      [Sent today: 0 of 0 · Errors: 0 · "Bulk Check Connections" button — unchanged]
+    </div>
+  </div>
+  <div class="right">
+    <div class="tip-card">
+      <div class="tip-head">
+        <span class="tip-title">▾ BEST PRACTICES</span>
+        <span class="tip-caret">collapse</span>
+      </div>
+      <ul>
+        <li><span class="icon">💻</span><span>Keep the lid open while sending.</span></li>
+        <li><span class="icon">⏰</span><span>15 s heads-up before each cycle.</span></li>
+        <li><span class="icon">🔁</span><span>Monitoring runs for <span class="dyn" title="reads wizard's acceptance-tracking-days dropdown, OR 7 if not set">7 days</span>, every <span class="dyn" title="reads wizard's cadence dropdown, OR generic phrasing if not set">15 min</span>.</span></li>
+        <li><span class="icon">⛔</span><span>"Stop sending" ≠ "Stop everything".</span></li>
+        <li><span class="icon">📋</span><span>Watch sheet header typos.</span></li>
+        <li><span class="icon">📞</span><span>Bulk Check Connections fires anytime.</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<p style="margin-top: 14px; font-size: 12px; color: var(--gray); max-width: 760px; line-height: 1.6;">
+B2 lives in the SAME right-pane slot as B1 — operators see the tips whether they're configuring
+a new run (wizard view) or watching a live one (cockpit view). Title pill flips from
+"TIPS FOR THIS RUN" (live) → "BEST PRACTICES" (idle) so the wording fits the context.
+</p>
+
+<!-- ─────── KEY ─────── -->
+<div class="key">
+  <h3>WHAT'S DYNAMIC vs HARDCODED</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 30%">Token in tip text</th>
+        <th style="width: 35%">Reads from</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="dyn">Monitoring runs for X days</span></td>
+        <td><b>Live run (B1):</b> <code>campaign.monitoringUntil − sendingEndedAt</code><br><b>Idle / wizard (B2):</b> <code>document.getElementById('acceptance-tracking-days').value</code><br><b>Fallback:</b> 7 days</td>
+        <td>Renders "5 days", "7 days", "12 days", etc. — whatever the operator selected. If wizard isn't filled, falls back to the system default.</td>
+      </tr>
+      <tr>
+        <td><span class="dyn">every X min</span></td>
+        <td><b>Live run (B1):</b> <code>campaign.checkIntervalMinutes</code><br><b>Idle / wizard (B2):</b> <code>document.getElementById('check-cadence').value</code><br><b>Fallback:</b> generic phrasing "every cycle"</td>
+        <td>Formatted same way as the ring countdown — "15 min", "30 min", "1h", "2h". If the cadence dropdown isn't visible (non-CC+IC mode), uses generic phrasing.</td>
+      </tr>
+      <tr>
+        <td><span class="dyn">in 15m / 6d 23h</span> (cockpit ring)</td>
+        <td><code>nextCheckAt − now</code> / <code>monitoringUntil − now</code></td>
+        <td>Already live in the cockpit. Tip card just reuses the same render so values stay in sync if cadence is changed mid-run.</td>
+      </tr>
+      <tr>
+        <td><b>15-second pre-fire</b></td>
+        <td><code>PRE_FIRE_OFFSET_MS</code> in campaign.js</td>
+        <td>Hardcoded constant. Not operator-facing. If we ever expose this, the tip text would template it too — for now stays "15 s".</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="margin-top: 14px; font-size: 12px; color: var(--gray); line-height: 1.6;">
+  Implementation note: tip content lives in a single JS object/array. The modal renders the
+  same source as the cockpit card. Substitution happens at render-time via a tiny templating
+  helper that reads <code>campaign.checkIntervalMinutes</code> and
+  <code>campaign.monitoringUntil</code> directly from the cockpit state — no duplicated copy
+  between A and B.
+  </p>
+</div>
+
+</body>
+</html>

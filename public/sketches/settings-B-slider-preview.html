@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings · B — Sliders with live preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--ink:#fff;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--green:#3fb950;--red:#f85149;--gold:#F7BE68;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:56px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+.label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+h2{font-family:var(--d);font-weight:400;font-size:2.4rem;line-height:1;text-transform:uppercase;margin-bottom:40px}
+
+.field{padding:32px 0;border-top:1px solid var(--hl)}
+.field:last-of-type{border-bottom:1px solid var(--hl);margin-bottom:32px}
+.field-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px}
+.field-label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.field-value{font-family:var(--d);font-size:3.8rem;line-height:1;color:var(--ink)}
+.field-unit{font-size:0.7rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--gray);margin-left:8px;vertical-align:top}
+
+.slider-track{height:2px;background:var(--hl);position:relative;margin:20px 0 8px}
+.slider-fill{position:absolute;inset:0 auto 0 0;background:var(--gold);height:100%}
+.slider-thumb{position:absolute;width:16px;height:16px;border-radius:9999px;background:var(--ink);top:50%;transform:translate(-50%,-50%);cursor:grab}
+.slider-ticks{display:flex;justify-content:space-between;font-size:0.55rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gray);margin-top:12px}
+
+.projection{background:var(--hls);border:1px solid var(--hl);padding:28px 32px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;align-items:center;margin-bottom:24px}
+.proj-label{font-size:0.58rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.proj-value{font-family:var(--d);font-size:2.4rem;line-height:1;color:var(--ink);margin-top:8px}
+.proj-value.accent{color:var(--gold)}
+
+.warnings{display:flex;flex-direction:column;gap:6px;padding:16px 0;border-top:1px solid var(--hl)}
+.warn-line{font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray)}
+.warn-line::before{content:'⚠';color:var(--gold);margin-right:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction B</div>
+  <h2>Sliders with live preview</h2>
+
+  <div class="field">
+    <div class="field-head">
+      <span class="field-label">Rate · connections per account / hour</span>
+      <span><span class="field-value">6</span><span class="field-unit">/ hr</span></span>
+    </div>
+    <div class="slider-track">
+      <div class="slider-fill" style="width:20%"></div>
+      <div class="slider-thumb" style="left:20%"></div>
+    </div>
+    <div class="slider-ticks">
+      <span>1</span><span>Cautious</span><span>Standard</span><span>Aggressive</span><span>30</span>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="field-head">
+      <span class="field-label">Limit · max per account (total)</span>
+      <span><span class="field-value">40</span><span class="field-unit">total</span></span>
+    </div>
+    <div class="slider-track">
+      <div class="slider-fill" style="width:40%"></div>
+      <div class="slider-thumb" style="left:40%"></div>
+    </div>
+    <div class="slider-ticks">
+      <span>1</span><span>25</span><span>50</span><span>75</span><span>100</span>
+    </div>
+  </div>
+
+  <div class="projection">
+    <div><div class="proj-label">Actions</div><div class="proj-value accent">40</div></div>
+    <div><div class="proj-label">Duration</div><div class="proj-value">6h 40m</div></div>
+    <div><div class="proj-label">Finishes at</div><div class="proj-value">18:50</div></div>
+  </div>
+
+  <div class="warnings">
+    <div class="warn-line">Keep laptop open until the campaign finishes</div>
+    <div class="warn-line">Do not close the browser windows that open — they run the campaign</div>
+  </div>
+</div>
+</body>
+</html>

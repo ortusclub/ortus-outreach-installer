@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post-launch tips — layout options (a / b / c)</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --card: #111111;
+    --ink: #fafafa;
+    --gray: #8a8a8a;
+    --gray-2: #555;
+    --hairline: rgba(255,255,255,0.12);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --green: #3fb950;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 36px 44px 100px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 26px;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    color: var(--gray);
+    font-size: 13px;
+    margin-bottom: 24px;
+    max-width: 820px;
+  }
+  h2 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.08em;
+    margin-top: 36px;
+    margin-bottom: 6px;
+  }
+  h2 .num {
+    display: inline-block;
+    width: 30px;
+    color: var(--gold);
+    font-size: 22px;
+  }
+  .variant-desc {
+    color: var(--gray);
+    font-size: 12px;
+    margin-bottom: 16px;
+    max-width: 760px;
+    line-height: 1.6;
+  }
+  .pros-cons {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin-top: 14px; font-size: 12px;
+  }
+  .pros-cons div b {
+    display: block; font-family: var(--display); font-size: 11px;
+    letter-spacing: 0.1em; color: var(--gray); margin-bottom: 4px;
+  }
+  .pros-cons .good { color: #9eebab; }
+  .pros-cons .bad  { color: #f0a8a8; }
+
+  /* Stage */
+  .stage {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stage::before {
+    content: 'CANVAS · MOCK';
+    position: absolute; top: 6px; left: 10px;
+    font-family: var(--display); font-size: 9px;
+    letter-spacing: 0.16em; color: var(--gray-2);
+  }
+
+  /* Cockpit chrome (matches real DOM but simplified) */
+  .ck-panel {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    padding: 22px 24px;
+  }
+  .ck-top { display: flex; gap: 20px; align-items: center; }
+  .ck-ring {
+    width: 96px; height: 96px; border-radius: 50%;
+    border: 3px dashed var(--green);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-family: var(--display);
+    flex-shrink: 0;
+  }
+  .ck-ring .big   { font-size: 22px; }
+  .ck-ring .small { font-size: 9px; letter-spacing: 0.14em; color: var(--gray); margin-top: -2px; }
+  .ck-ring .foot  { font-size: 10px; color: var(--gray); margin-top: 4px; }
+  .ck-info { flex: 1; min-width: 0; }
+  .ck-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--display); font-size: 10px;
+    letter-spacing: 0.14em; color: #9eebab;
+  }
+  .ck-pill::before { content:''; width:6px; height:6px; border-radius:50%; background: var(--green); }
+  .ck-h4 { font-family: var(--display); font-weight: 400; font-size: 20px; margin: 6px 0 6px; letter-spacing: 0.02em; }
+  .ck-row { font-size: 11px; color: var(--gray); margin-top: 2px; }
+  .ck-row b { color: var(--ink); font-weight: 400; margin-right: 6px; font-family: var(--display); letter-spacing: 0.08em; font-size: 10px; }
+
+  .ck-stats { display: flex; gap: 28px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--hairline-soft); }
+  .ck-stat-l { font-family: var(--display); font-size: 9px; letter-spacing: 0.14em; color: var(--gray); }
+  .ck-stat-v { font-family: var(--display); font-size: 18px; margin-top: 2px; }
+  .ck-stat-v .of { color: var(--gray); font-size: 12px; }
+
+  .ck-queue {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--hairline-soft);
+    color: var(--gray); font-size: 11px;
+  }
+  .ck-log {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #050505;
+    border: 1px solid var(--hairline-soft);
+    color: var(--gray); font-size: 10px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    line-height: 1.55;
+  }
+
+  /* Tips card */
+  .tip-card {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    padding: 14px 16px;
+  }
+  .tip-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .tip-title {
+    font-family: var(--display); font-size: 11px;
+    letter-spacing: 0.14em; color: var(--ink);
+  }
+  .tip-caret { color: var(--gray); font-size: 11px; }
+  .tip-card ul { list-style: none; }
+  .tip-card ul li {
+    padding: 8px 0; border-bottom: 1px solid var(--hairline-soft);
+    font-size: 12px; line-height: 1.5; color: #ddd;
+    display: grid; grid-template-columns: 22px 1fr; gap: 8px;
+  }
+  .tip-card ul li:last-child { border-bottom: none; }
+  .tip-card .icon { display: inline-block; }
+  .dyn {
+    background: rgba(247,190,104,0.30);
+    padding: 0 4px; border-radius: 2px;
+  }
+
+  /* ───── Variant (a) — 2-col grid right ───── */
+  .a-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 18px;
+  }
+
+  /* ───── Variant (b) — stacked below ───── */
+  .b-stack { display: flex; flex-direction: column; gap: 18px; }
+
+  /* ───── Variant (c) — responsive (shown at two widths) ───── */
+  .c-wide { display: grid; grid-template-columns: 1fr 320px; gap: 18px; max-width: 100%; }
+  .c-narrow {
+    display: flex; flex-direction: column; gap: 14px;
+    max-width: 480px; margin-top: 18px;
+    border: 1px dashed var(--hairline);
+    padding: 12px; position: relative;
+  }
+  .c-narrow::before {
+    content: 'SAME CARD · NARROW VIEWPORT ≤ 1100PX';
+    position: absolute; top: -10px; left: 14px;
+    background: var(--bg); padding: 0 8px;
+    font-family: var(--display); font-size: 9px;
+    letter-spacing: 0.14em; color: var(--gray);
+  }
+
+  .annot {
+    margin-top: 10px; padding: 10px 12px;
+    background: rgba(247,190,104,0.05);
+    border-left: 2px solid var(--gold);
+    font-size: 11px; color: #d4c19a;
+  }
+</style>
+</head>
+<body>
+
+<h1>POST-LAUNCH TIPS · LAYOUT OPTIONS</h1>
+<p class="subtitle">
+Three placements for the right-pane tips card (Variant B of the previous sketch). Modal (Variant A)
+is unchanged across all three — it's just a one-shot overlay on Start. The question here is purely
+<i>where the persistent tips card lives once the modal is dismissed</i>.
+</p>
+
+<!-- ───── (a) ───── -->
+<h2><span class="num">a</span> 2-COLUMN — TIPS RIGHT OF THE COCKPIT</h2>
+<p class="variant-desc">
+Live Status becomes a 2-column grid. Cockpit + log on the left (1fr), tips card on the right (320 px fixed).
+Matches the original A+B sketch 1:1. Requires changing the Live Status DOM/CSS to a grid container.
+</p>
+
+<div class="stage">
+  <div class="a-grid">
+    <div class="ck-panel">
+      <div class="ck-top">
+        <div class="ck-ring">
+          <div class="big">48m</div>
+          <div class="small">NEXT CHECK</div>
+          <div class="foot">6d 17h</div>
+        </div>
+        <div class="ck-info">
+          <div class="ck-pill">MONITORING</div>
+          <div class="ck-h4">WATCHING FOR ACCEPTANCES</div>
+          <div class="ck-row"><b>NEXT</b>22:30 · in 48m</div>
+          <div class="ck-row"><b>ENDS</b>23 May, 15:30 · in 6d 17h</div>
+        </div>
+      </div>
+      <div class="ck-stats">
+        <div>
+          <div class="ck-stat-l">SENT TODAY</div>
+          <div class="ck-stat-v">0<span class="of"> of </span>0</div>
+        </div>
+        <div>
+          <div class="ck-stat-l">ERRORS</div>
+          <div class="ck-stat-v">0</div>
+        </div>
+      </div>
+      <div class="ck-queue">› Account queue (5 profiles) · [Open Browser] …</div>
+      <div class="ck-log">[16:05:48] [kenya5] Check now: 0 Connected, 30 Still Pending<br>[16:05:48] [nitin.kumar] Check now — bulk check pass starting…</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-head">
+        <span class="tip-title">▾ TIPS FOR THIS RUN</span>
+        <span class="tip-caret">collapse</span>
+      </div>
+      <ul>
+        <li><span class="icon">💻</span><span>Keep the lid open while sending.</span></li>
+        <li><span class="icon">⏰</span><span>15 s heads-up before each cycle.</span></li>
+        <li><span class="icon">🔁</span><span>Monitoring runs for <span class="dyn">7 days</span>, every <span class="dyn">15 min</span>.</span></li>
+        <li><span class="icon">⛔</span><span>"Stop sending" ≠ "Stop everything".</span></li>
+        <li><span class="icon">📋</span><span>Watch sheet header typos.</span></li>
+        <li><span class="icon">📞</span><span>Bulk Check Connections fires anytime.</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="pros-cons">
+  <div><b>PROS</b><div class="good">+ Tips always visible without scrolling.<br>+ Doesn't lengthen the page.<br>+ Matches the original sketch.</div></div>
+  <div><b>CONS</b><div class="bad">− Squeezes cockpit to ~70 % width on smaller laptops.<br>− Requires Live Status DOM/CSS refactor (new grid wrapper).<br>− On 1280 × 800 (MacBook Air 13"), cockpit log gets narrow.</div></div>
+</div>
+
+<!-- ───── (b) ───── -->
+<h2><span class="num">b</span> STACKED — TIPS FULL-WIDTH BELOW THE COCKPIT</h2>
+<p class="variant-desc">
+Tips card slots in as a sibling element <i>below</i> the cockpit-panel + above the bulk-check-row.
+Same width as cockpit. No layout refactor — just <code>&lt;div class="tip-card"&gt;</code> inserted
+into the existing column flow. Card is collapsible so it doesn't push the log too far down once
+operators have read it.
+</p>
+
+<div class="stage">
+  <div class="b-stack">
+    <div class="ck-panel">
+      <div class="ck-top">
+        <div class="ck-ring">
+          <div class="big">48m</div>
+          <div class="small">NEXT CHECK</div>
+          <div class="foot">6d 17h</div>
+        </div>
+        <div class="ck-info">
+          <div class="ck-pill">MONITORING</div>
+          <div class="ck-h4">WATCHING FOR ACCEPTANCES</div>
+          <div class="ck-row"><b>NEXT</b>22:30 · in 48m</div>
+          <div class="ck-row"><b>ENDS</b>23 May, 15:30 · in 6d 17h</div>
+        </div>
+      </div>
+      <div class="ck-stats">
+        <div>
+          <div class="ck-stat-l">SENT TODAY</div>
+          <div class="ck-stat-v">0<span class="of"> of </span>0</div>
+        </div>
+        <div>
+          <div class="ck-stat-l">ERRORS</div>
+          <div class="ck-stat-v">0</div>
+        </div>
+      </div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-head">
+        <span class="tip-title">▾ TIPS FOR THIS RUN</span>
+        <span class="tip-caret">collapse</span>
+      </div>
+      <ul>
+        <li><span class="icon">💻</span><span>Keep the lid open while sending.</span></li>
+        <li><span class="icon">⏰</span><span>15 s heads-up before each cycle.</span></li>
+        <li><span class="icon">🔁</span><span>Monitoring runs for <span class="dyn">7 days</span>, every <span class="dyn">15 min</span>.</span></li>
+        <li><span class="icon">⛔</span><span>"Stop sending" ≠ "Stop everything".</span></li>
+        <li><span class="icon">📋</span><span>Watch sheet header typos.</span></li>
+        <li><span class="icon">📞</span><span>Bulk Check Connections fires anytime.</span></li>
+      </ul>
+    </div>
+    <div class="ck-queue" style="padding-left:24px">› Account queue (5 profiles) · [Open Browser] …</div>
+    <div class="ck-log">[16:05:48] [kenya5] Check now: 0 Connected, 30 Still Pending<br>[16:05:48] [nitin.kumar] Check now — bulk check pass starting…</div>
+  </div>
+</div>
+<div class="pros-cons">
+  <div><b>PROS</b><div class="good">+ Zero layout refactor — just one new card.<br>+ Cockpit keeps its full width on every screen.<br>+ Tips collapse to a one-line bar after first read.<br>+ Works inside the existing collapsible section.</div></div>
+  <div><b>CONS</b><div class="bad">− Adds vertical height (~6 lines when expanded).<br>− Tips scroll out of view if operator scrolls down to the log.<br>− Doesn't sit next to the ring (slightly less "dashboard"-feeling).</div></div>
+</div>
+
+<!-- ───── (c) ───── -->
+<h2><span class="num">c</span> RESPONSIVE — RIGHT ON WIDE, STACKED ON NARROW</h2>
+<p class="variant-desc">
+Hybrid of (a) and (b). Same CSS grid as (a) <i>above 1100 px viewport</i>; collapses to the stacked
+form (b) below that breakpoint. The 1100 px line is where the cockpit log starts feeling cramped at
+320 px-occupied. Matches the laptops the operators actually use (MacBook Air 13" = 1280 px, 14"
+Pro = 1512 px).
+</p>
+
+<div class="stage">
+  <div class="c-wide">
+    <div class="ck-panel">
+      <div class="ck-top">
+        <div class="ck-ring">
+          <div class="big">48m</div>
+          <div class="small">NEXT CHECK</div>
+          <div class="foot">6d 17h</div>
+        </div>
+        <div class="ck-info">
+          <div class="ck-pill">MONITORING</div>
+          <div class="ck-h4">WATCHING FOR ACCEPTANCES</div>
+          <div class="ck-row"><b>NEXT</b>22:30 · in 48m</div>
+          <div class="ck-row"><b>ENDS</b>23 May, 15:30 · in 6d 17h</div>
+        </div>
+      </div>
+      <div class="ck-stats">
+        <div>
+          <div class="ck-stat-l">SENT TODAY</div>
+          <div class="ck-stat-v">0<span class="of"> of </span>0</div>
+        </div>
+        <div>
+          <div class="ck-stat-l">ERRORS</div>
+          <div class="ck-stat-v">0</div>
+        </div>
+      </div>
+      <div class="ck-log">[16:05:48] [kenya5] Check now: 0 Connected …</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-head">
+        <span class="tip-title">▾ TIPS FOR THIS RUN</span>
+        <span class="tip-caret">collapse</span>
+      </div>
+      <ul>
+        <li><span class="icon">💻</span><span>Keep the lid open while sending.</span></li>
+        <li><span class="icon">⏰</span><span>15 s heads-up before each cycle.</span></li>
+        <li><span class="icon">🔁</span><span>Monitoring runs for <span class="dyn">7 days</span>, every <span class="dyn">15 min</span>.</span></li>
+        <li><span class="icon">⛔</span><span>"Stop sending" ≠ "Stop everything".</span></li>
+        <li><span class="icon">📋</span><span>Watch sheet header typos.</span></li>
+        <li><span class="icon">📞</span><span>Bulk Check Connections fires anytime.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="c-narrow">
+    <div class="ck-panel" style="padding: 16px;">
+      <div class="ck-top">
+        <div class="ck-ring" style="width:72px;height:72px"><div class="big" style="font-size:18px">48m</div><div class="small">NEXT</div></div>
+        <div class="ck-info">
+          <div class="ck-pill">MONITORING</div>
+          <div class="ck-h4" style="font-size:16px">WATCHING FOR ACCEPTANCES</div>
+          <div class="ck-row"><b>NEXT</b>22:30 · in 48m</div>
+        </div>
+      </div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-head">
+        <span class="tip-title">▾ TIPS FOR THIS RUN</span>
+        <span class="tip-caret">collapse</span>
+      </div>
+      <ul>
+        <li><span class="icon">💻</span><span>Keep the lid open while sending.</span></li>
+        <li><span class="icon">⏰</span><span>15 s heads-up before each cycle.</span></li>
+        <li><span class="icon">🔁</span><span>Monitoring runs for <span class="dyn">7 days</span>, every <span class="dyn">15 min</span>.</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="annot">
+  CSS-only logic: <code>@media (max-width: 1100px) { .live-status-grid { grid-template-columns: 1fr; } }</code>.
+  No JS needed. The same DOM nodes just re-flow.
+</div>
+<div class="pros-cons">
+  <div><b>PROS</b><div class="good">+ Best of both worlds: dashboard feel on big screens, no squeeze on small.<br>+ Tips never disappear — they reflow.<br>+ Future-proofs the sidebar real estate.</div></div>
+  <div><b>CONS</b><div class="bad">− Slightly more CSS to maintain.<br>− Two layouts to QA when iterating on the cockpit.<br>− If you only ever work on one laptop size, the conditional layout is overkill.</div></div>
+</div>
+
+<h2 style="margin-top:48px">RECOMMENDATION</h2>
+<p style="font-size:13px; max-width:760px; color:#ddd">
+For a 3-operator app on MacBooks the simpler <b>(b) stacked</b> path is the safer ship — no layout
+refactor, collapses cleanly, and tips are still right next to the cockpit when expanded. Pick
+<b>(a)</b> if you specifically want the "command-deck with sidebar" feel. <b>(c)</b> is the
+"properly responsive" answer but pays its tax in CSS branches we don't currently need.
+</p>
+
+</body>
+</html>

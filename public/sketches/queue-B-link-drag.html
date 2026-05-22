@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Queue · Variant B · Link + drag</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --gold: #F7BE68;
+    --red: #f85149;
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 48px 56px; }
+
+  .page-head { padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 8px; max-width: 720px; line-height: 1.5; }
+  .stage-label { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin: 28px 0 12px; }
+
+  .btn {
+    padding: 12px 24px;
+    border: 1px solid var(--ink);
+    border-radius: 9999px;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 400;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .btn-secondary { border-color: var(--hairline); }
+  .btn-start { background: var(--ink); color: var(--gold); border-color: var(--ink); }
+  .btn-pause { background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 500; }
+  .btn-stop { background: var(--red); color: #fff; border-color: var(--red); font-weight: 500; }
+  .btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+  /* Section + launch hero (same as A) */
+  .section { background: var(--bg); padding: 32px 40px; border-bottom: 1px solid var(--hairline); max-width: 1100px; }
+  .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 28px; }
+  .section-caret { color: var(--ink); font-size: 0.9rem; }
+  .section-title { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .section-state { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); }
+  .launch-hero { display: grid; grid-template-columns: 1fr auto; gap: 48px; align-items: start; }
+  .launch-number { font-family: var(--display); font-size: 5.5rem; line-height: 1; color: var(--ink); }
+  .launch-caption { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 14px; line-height: 1.7; max-width: 220px; }
+  .launch-caption strong { color: var(--ink); font-weight: 500; }
+  .launch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 22px; }
+  .launch-mode-toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px; gap: 4px; }
+  .launch-mode-btn { background: transparent; border: none; cursor: pointer; padding: 8px 20px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); border-radius: 9999px; }
+  .launch-mode-btn.active { background: var(--ink); color: var(--bg); }
+
+  /* Variant B: Start primary, queue as a SMALL link UNDER the button cluster */
+  .launch-actions {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
+  }
+  .launch-actions-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .queue-link {
+    background: transparent; border: 0; cursor: pointer;
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--gray);
+    padding: 4px 0;
+    border-bottom: 1px dotted var(--gray);
+  }
+  .queue-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+  /* Dashboard queue with drag handles */
+  .dash-shell { background: var(--bg); border: 1px solid var(--hairline); max-width: 1100px; }
+  .dash-tabs { display: flex; gap: 28px; padding: 18px 30px; border-bottom: 1px solid var(--hairline); align-items: center; }
+  .dash-tab { background: transparent; border: 0; color: var(--gray); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; padding: 4px 0; }
+  .dash-tab.active { color: var(--ink); border-bottom: 1px solid var(--ink); }
+  .dash-tab-ct { margin-left: 6px; font-size: 0.55rem; border: 1px solid var(--hairline); border-radius: 9999px; padding: 1px 7px; }
+
+  .queue-hint { padding: 10px 30px; font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); border-bottom: 1px solid var(--hairline-soft); background: var(--hairline-soft); }
+
+  .campaign-row {
+    display: grid;
+    grid-template-columns: 30px 90px 2fr 1.4fr auto auto;
+    gap: 18px;
+    align-items: center;
+    padding: 16px 30px;
+    border-bottom: 1px solid var(--hairline);
+    cursor: grab;
+  }
+  .campaign-row:hover { background-color: var(--hairline-soft); }
+  .campaign-row.is-dragging { opacity: 0.4; cursor: grabbing; }
+  .campaign-row.is-drop-target { box-shadow: 0 -2px 0 0 var(--ink) inset; }
+  .qhandle { color: var(--gray); font-size: 18px; cursor: grab; user-select: none; line-height: 1; }
+  .qhandle:hover { color: var(--ink); }
+  .campaign-row-position { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  .campaign-row-position.is-next { color: var(--ink); font-weight: 500; }
+  .campaign-row-name { font-family: var(--display); font-size: 1rem; color: var(--ink); }
+  .campaign-row-meta { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-top: 2px; }
+  .campaign-row-status { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--hairline); border-radius: 9999px; color: var(--gray); }
+  .row-actions { display: flex; gap: 6px; }
+  .icon-btn { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; color: var(--ink); padding: 0 14px; height: 30px; font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; }
+  .icon-btn--ghost { width: 30px; padding: 0; font-size: 14px; color: var(--gray); }
+  .icon-btn:hover { border-color: var(--ink); }
+
+  .notes { margin-top: 32px; font-size: 0.85rem; color: var(--gray-2); line-height: 1.6; max-width: 820px; }
+  .notes b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1 class="page-title">Queue · Variant B · Link + drag</h1>
+    <p class="page-sub">Start Campaign keeps its prominent gold pill. "Or queue for later" is a small dotted link underneath the action cluster. Queue rows are drag-to-reorder with a ≡ handle.</p>
+  </div>
+
+  <div class="stage-label">Section 6 — Launch</div>
+  <div class="section">
+    <div class="section-head">
+      <span class="section-caret">▾</span>
+      <h2 class="section-title">6. Launch</h2>
+      <span class="section-state">Ready</span>
+    </div>
+    <div class="launch-hero">
+      <div>
+        <div class="launch-number">2</div>
+        <div class="launch-caption">Number of accounts being used: <strong>2</strong> · <strong>2/day</strong> · 1 in sheet · ETA <strong>3 min</strong></div>
+      </div>
+      <div class="launch-right">
+        <div class="launch-mode-toggle">
+          <button class="launch-mode-btn active">Now</button>
+          <button class="launch-mode-btn">Schedule</button>
+        </div>
+        <div class="launch-actions">
+          <div class="launch-actions-row">
+            <button class="btn btn-start">Start Campaign</button>
+            <button class="btn btn-pause" disabled>Pause</button>
+            <button class="btn btn-stop" disabled>Stop Campaign</button>
+          </div>
+          <button class="queue-link">↳ Or queue for later</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-label">Dashboard · Queued tab (drag rows by ≡ to reorder)</div>
+  <div class="dash-shell">
+    <div class="dash-tabs">
+      <button class="dash-tab">Active <span class="dash-tab-ct">1</span></button>
+      <button class="dash-tab active">Queued <span class="dash-tab-ct">3</span></button>
+      <button class="dash-tab">Schedules <span class="dash-tab-ct">2</span></button>
+      <button class="dash-tab">Drafts <span class="dash-tab-ct">5</span></button>
+      <button class="dash-tab">Past <span class="dash-tab-ct">28</span></button>
+    </div>
+    <div class="queue-hint">Drag rows by the ≡ handle to reorder. The top row runs next.</div>
+
+    <div class="campaign-row">
+      <span class="qhandle">≡</span>
+      <span class="campaign-row-position is-next">Next up</span>
+      <div>
+        <div class="campaign-row-name">Q1 outreach · cohort A</div>
+        <div class="campaign-row-meta">CC + IB · 4 accounts · 1,200 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row is-dragging">
+      <span class="qhandle">≡</span>
+      <span class="campaign-row-position">Position 2</span>
+      <div>
+        <div class="campaign-row-name">Cold outreach · gov-tech</div>
+        <div class="campaign-row-meta">IC · 2 accounts · 67 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+
+    <div class="campaign-row is-drop-target">
+      <span class="qhandle">≡</span>
+      <span class="campaign-row-position">Position 3</span>
+      <div>
+        <div class="campaign-row-name">Follow-up batch</div>
+        <div class="campaign-row-meta">Message Only · 6 accounts · 480 leads</div>
+      </div>
+      <div></div>
+      <span class="campaign-row-status">Queued</span>
+      <div class="row-actions">
+        <button class="icon-btn">Edit</button>
+        <button class="icon-btn icon-btn--ghost" aria-label="Remove">×</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>Design choices.</b> Start Campaign stays the visual focus — operators want to fire campaigns most of the time. "Or queue for later" is a quiet dotted link below the cluster, doesn't compete with the gold pill. Reorder swaps the ↑↓ pills for a single ≡ drag handle — feels more direct, but adds HTML5 drag JS and loses the keyboard arrow path.
+  </div>
+</body>
+</html>

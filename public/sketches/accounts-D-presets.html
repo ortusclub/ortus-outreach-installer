@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Accounts · Direction D — Preset shortcuts</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { --bg:#000; --ink:#fff; --gray:#999; --hairline:rgba(255,255,255,0.15); --hairline-soft:rgba(255,255,255,0.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68; --display:'Bebas Neue',sans-serif; --mono:'JetBrains Mono',monospace; --body:'Inter',sans-serif; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--ink); font-family:var(--body); -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1280px; margin:0 auto; padding:48px; }
+.label { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); margin-bottom:14px; }
+h2 { font-family:var(--display); font-weight:400; font-size:2.4rem; line-height:1; letter-spacing:0.01em; text-transform:uppercase; margin-bottom:32px; }
+
+.presets { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:32px; }
+.preset {
+  background:transparent; border:1px solid var(--hairline); cursor:pointer;
+  padding:32px 28px; text-align:left; transition:opacity 0.15s; position:relative;
+  display:flex; flex-direction:column; justify-content:space-between; min-height:200px;
+}
+.preset:hover { opacity:0.75; }
+.preset.active { border-color:var(--ink); }
+.preset.active::before { content:''; position:absolute; top:0; left:0; width:100%; height:2px; background:var(--ink); }
+
+.preset-number { font-family:var(--display); font-size:4rem; line-height:1; color:var(--gray); }
+.preset.active .preset-number { color:var(--ink); }
+.preset-label { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); margin-bottom:12px; }
+.preset-title { font-family:var(--display); font-size:1.8rem; line-height:1; letter-spacing:0.01em; text-transform:uppercase; color:var(--ink); margin-bottom:10px; }
+.preset-desc { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); line-height:1.7; }
+
+.confirm { border-top:1px solid var(--hairline); padding-top:24px; }
+.confirm-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px; }
+.confirm-title { font-family:var(--display); font-size:1.6rem; line-height:1; text-transform:uppercase; }
+.confirm-sub { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--gray); }
+.pill-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+.pill { padding:6px 14px; border:1px solid var(--ink); border-radius:9999px; background:transparent; font-family:var(--body); font-size:0.78rem; color:var(--ink); display:flex; align-items:center; gap:8px; }
+.pill .x { color:var(--gray); cursor:pointer; font-size:0.9rem; }
+.pill .x:hover { color:var(--red); }
+
+.override { margin-top:28px; padding-top:24px; border-top:1px solid var(--hairline); }
+.override-head { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; }
+.override-toggle { cursor:pointer; }
+.override-toggle:hover { color:var(--ink); }
+
+.manual-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:1px; background:var(--hairline); border:1px solid var(--hairline); max-height:320px; overflow-y:auto; }
+.manual-card { background:var(--bg); padding:10px 14px; cursor:pointer; font-size:0.85rem; color:var(--ink); display:flex; align-items:center; gap:10px; transition:opacity 0.15s; }
+.manual-card:hover { opacity:0.7; }
+.manual-card input { accent-color:var(--ink); width:14px; height:14px; }
+.manual-card .name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction D</div>
+  <h2>Preset shortcuts</h2>
+
+  <div class="presets">
+    <button class="preset active">
+      <div>
+        <div class="preset-label">Shortcut 01</div>
+        <div class="preset-title">My Assigned</div>
+      </div>
+      <div>
+        <div class="preset-number">14</div>
+        <div class="preset-desc">Only profiles assigned to you · Includes Dennis, Kyra, Jerianne, 11 more</div>
+      </div>
+    </button>
+
+    <button class="preset">
+      <div>
+        <div class="preset-label">Shortcut 02</div>
+        <div class="preset-title">Pool</div>
+      </div>
+      <div>
+        <div class="preset-number">256</div>
+        <div class="preset-desc">All unassigned profiles in the shared pool · Default for daily outreach</div>
+      </div>
+    </button>
+
+    <button class="preset">
+      <div>
+        <div class="preset-label">Shortcut 03</div>
+        <div class="preset-title">5 Fresh</div>
+      </div>
+      <div>
+        <div class="preset-number">5</div>
+        <div class="preset-desc">5 accounts with zero activity in the last 48h · Auto-rotated</div>
+      </div>
+    </button>
+  </div>
+
+  <div class="confirm">
+    <div class="confirm-head">
+      <div class="confirm-title">14 accounts queued</div>
+      <div class="confirm-sub">From "My Assigned" · tap × to drop · click a preset to switch</div>
+    </div>
+    <div class="pill-row">
+      <span class="pill">Local Browser <span class="x">×</span></span>
+      <span class="pill">dennis.peralta <span class="x">×</span></span>
+      <span class="pill">kyra.delacruz <span class="x">×</span></span>
+      <span class="pill">jerianne.c <span class="x">×</span></span>
+      <span class="pill">sophie.pascua <span class="x">×</span></span>
+      <span class="pill">asaduzzaman.r <span class="x">×</span></span>
+      <span class="pill">junie.almeda <span class="x">×</span></span>
+      <span class="pill">+ 7 more</span>
+    </div>
+  </div>
+
+  <div class="override">
+    <div class="override-head">
+      <span>Manual override · pick individual accounts</span>
+      <span class="override-toggle">▾ Show 302 accounts</span>
+    </div>
+    <div class="manual-grid">
+      <label class="manual-card"><input type="checkbox" checked> <span class="name">Local Browser</span></label>
+      <label class="manual-card"><input type="checkbox" checked> <span class="name">dennis.peralta@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox" checked> <span class="name">kyra.delacruz@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">asaduzzaman.r@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">junie.almeda@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">jerianne.c@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">alfhea.rabacal@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">francis.zuzartee@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">sheila.segovia@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">ara.malicdem@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">sophie.pascua@ortus.solutions</span></label>
+      <label class="manual-card"><input type="checkbox"> <span class="name">emmanuel.millave@ortus.solutions</span></label>
+    </div>
+  </div>
+</div>
+</body>
+</html>

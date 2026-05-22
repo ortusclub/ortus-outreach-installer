@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Live Status — Concept Sketches</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999;
+    --hairline: rgba(255,255,255,0.15);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --gold: #F7BE68;
+    --green: #3fb950;
+    --red: #f85149;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); padding: 40px; min-height: 100vh; }
+  .page-title { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; }
+  .page-sub { color: var(--gray); font-size: 0.9rem; margin-bottom: 56px; max-width: 700px; }
+
+  .concept { margin-bottom: 72px; max-width: 980px; }
+  .concept-header { display: flex; align-items: baseline; gap: 16px; margin-bottom: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline); }
+  .concept-letter { font-family: var(--display); font-size: 1.4rem; color: var(--gold); }
+  .concept-name { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.04em; text-transform: uppercase; }
+  .concept-tag { color: var(--gray); font-size: 0.78rem; font-family: var(--mono); margin-left: auto; }
+  .concept-notes { color: var(--gray); font-size: 0.8rem; margin: 14px 0 24px; line-height: 1.5; }
+  .concept-notes b { color: var(--ink); font-weight: 600; }
+
+  /* ───────────────────────────────────────────────────
+     A — BROADCAST: massive cinematic banner
+     ─────────────────────────────────────────────────── */
+  .a-banner {
+    border: 1px solid var(--hairline);
+    padding: 56px 48px 48px;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  }
+  .a-action {
+    font-family: var(--display);
+    font-size: 4.2rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 1;
+    margin-bottom: 18px;
+  }
+  .a-action .dots::after {
+    content: '';
+    display: inline-block;
+    width: 1.4em;
+    text-align: left;
+    animation: dots 1.4s steps(4, end) infinite;
+  }
+  @keyframes dots {
+    0%   { content: ''; }
+    25%  { content: '.'; }
+    50%  { content: '..'; }
+    75%  { content: '...'; }
+    100% { content: ''; }
+  }
+  .a-detail { color: var(--gray); font-size: 0.95rem; letter-spacing: 0.03em; }
+  .a-bar { margin-top: 28px; height: 2px; background: var(--hairline-soft); position: relative; overflow: hidden; }
+  .a-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gold); transition: width 0.5s linear; }
+  .a-bar.indeterminate .a-bar-fill {
+    width: 30% !important;
+    animation: slide 1.6s ease-in-out infinite;
+  }
+  @keyframes slide {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  .a-countdown {
+    margin-top: 14px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--gold);
+    letter-spacing: 0.06em;
+  }
+
+  /* ───────────────────────────────────────────────────
+     B — COCKPIT: circular gauge with countdown ring
+     ─────────────────────────────────────────────────── */
+  .b-cockpit {
+    border: 1px solid var(--hairline);
+    padding: 48px;
+    display: flex;
+    align-items: center;
+    gap: 48px;
+  }
+  .b-ring { position: relative; width: 180px; height: 180px; flex-shrink: 0; }
+  .b-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .b-ring-bg { fill: none; stroke: var(--hairline); stroke-width: 4; }
+  .b-ring-fg { fill: none; stroke: var(--gold); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.5s linear; }
+  .b-ring-center {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .b-ring-num { font-family: var(--display); font-size: 3.2rem; line-height: 1; color: var(--ink); }
+  .b-ring-unit { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; color: var(--gray); margin-top: 4px; text-transform: uppercase; }
+  .b-info { flex: 1; min-width: 0; }
+  .b-label-small { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; color: var(--gray); text-transform: uppercase; margin-bottom: 8px; }
+  .b-action { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.1; margin-bottom: 16px; }
+  .b-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 18px; font-size: 0.85rem; }
+  .b-meta-label { color: var(--gray); font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; align-self: center; }
+  .b-meta-value { color: var(--ink); }
+  .b-pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 8px; vertical-align: middle; animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.85); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
+  /* ───────────────────────────────────────────────────
+     C — TICKER: terminal-style live heartbeat strip
+     ─────────────────────────────────────────────────── */
+  .c-ticker {
+    border: 1px solid var(--hairline);
+    padding: 0;
+    overflow: hidden;
+  }
+  .c-bar {
+    display: flex;
+    align-items: stretch;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    background: rgba(255,255,255,0.02);
+  }
+  .c-prefix {
+    background: var(--ink);
+    color: var(--bg);
+    padding: 18px 16px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+  }
+  .c-prefix-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 8px; animation: pulse 1.2s ease-in-out infinite; }
+  .c-content {
+    flex: 1;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    overflow: hidden;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .c-action { color: var(--ink); }
+  .c-action .dots::after {
+    content: '';
+    display: inline-block;
+    width: 1em;
+    text-align: left;
+    color: var(--gold);
+    animation: dots 1s steps(4, end) infinite;
+  }
+  .c-sep { color: var(--gray); }
+  .c-meta { color: var(--gray); }
+  .c-timer {
+    margin-left: auto;
+    color: var(--gold);
+    font-variant-numeric: tabular-nums;
+    padding-left: 24px;
+    border-left: 1px solid var(--hairline);
+    padding: 6px 0 6px 24px;
+  }
+  .c-second-row {
+    padding: 12px 24px;
+    border-top: 1px solid var(--hairline-soft);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--gray);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .c-progress { flex: 1; height: 2px; background: var(--hairline-soft); position: relative; overflow: hidden; }
+  .c-progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--gold); transition: width 0.5s linear; }
+
+  /* Demo controls — let user step through example states */
+  .controls { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .ctrl {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    padding: 6px 14px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .ctrl:hover { border-color: var(--ink); }
+  .ctrl.active { background: var(--ink); color: var(--bg); }
+
+  .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 0.78rem; font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<h1 class="page-title">Live Status — Concept Sketches</h1>
+<p class="page-sub">
+  Three approaches to "what is the campaign doing RIGHT NOW", each designed so an impatient operator
+  glancing across the room can tell at a glance whether the system is working or stuck. All sketches
+  share the existing monochrome command-deck aesthetic — gold accent, hairline borders, Bebas display.
+  Click a state below each concept to see how it responds.
+</p>
+
+<!-- ════════════════════════════════════════════════ A — BROADCAST ════ -->
+<section class="concept">
+  <div class="concept-header">
+    <span class="concept-letter">A</span>
+    <span class="concept-name">Broadcast</span>
+    <span class="concept-tag">cinematic banner — read across a room</span>
+  </div>
+  <p class="concept-notes">
+    <b>Best for:</b> someone who wants to glance at the screen from their desk and just see "is it doing something?".
+    Massive Bebas display label fills the visual field. Animated dots <code style="color:var(--gold)">.</code><code style="color:var(--gold)">.</code><code style="color:var(--gold)">.</code> never stop, even when state hasn't changed in a while — proves the loop is alive.
+    For waits, the gold bar slides as a countdown; for indeterminate steps (loading a page) it animates as a back-and-forth indeterminate pulse.
+    <br><br>
+    <b>Trade-off:</b> takes the most vertical space. Probably wants its own dedicated panel under Live Status.
+  </p>
+
+  <div class="a-banner">
+    <div class="a-action" id="a-action">SENDING INVITATION<span class="dots"></span></div>
+    <div class="a-detail" id="a-detail">Tim Zuidema · via kenya5@ortus.solutions</div>
+    <div class="a-bar" id="a-bar">
+      <div class="a-bar-fill" id="a-bar-fill" style="width:35%"></div>
+    </div>
+    <div class="a-countdown" id="a-countdown">— 47s remaining —</div>
+  </div>
+  <div class="controls">
+    <button class="ctrl active" data-set="a" data-state="sending">Sending invitation</button>
+    <button class="ctrl" data-set="a" data-state="waiting">Waiting (84s)</button>
+    <button class="ctrl" data-set="a" data-state="round-sleep">Round sleep (27 min)</button>
+    <button class="ctrl" data-set="a" data-state="loading">Loading lead page</button>
+    <button class="ctrl" data-set="a" data-state="paused">Paused</button>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════ B — COCKPIT ══════ -->
+<section class="concept">
+  <div class="concept-header">
+    <span class="concept-letter">B</span>
+    <span class="concept-name">Cockpit</span>
+    <span class="concept-tag">circular ring — precise, technical</span>
+  </div>
+  <p class="concept-notes">
+    <b>Best for:</b> operators who like instrumentation. Big circular gauge with the countdown number inside, ring depletes clockwise as time passes.
+    For non-timed actions, ring becomes a slow rotating arc instead — still visibly moving so the operator knows it's alive.
+    Right side shows action label + structured metadata (lead, sender, mode). Green pulsing dot = "loop is still ticking".
+    <br><br>
+    <b>Trade-off:</b> compact and information-dense, but less dramatic than A. Better for power users than for someone glancing from the kitchen.
+  </p>
+
+  <div class="b-cockpit">
+    <div class="b-ring">
+      <svg viewBox="0 0 100 100">
+        <circle class="b-ring-bg" cx="50" cy="50" r="45"></circle>
+        <circle class="b-ring-fg" id="b-ring-fg" cx="50" cy="50" r="45"
+                stroke-dasharray="282.7" stroke-dashoffset="100"></circle>
+      </svg>
+      <div class="b-ring-center">
+        <div class="b-ring-num" id="b-ring-num">47</div>
+        <div class="b-ring-unit" id="b-ring-unit">seconds</div>
+      </div>
+    </div>
+    <div class="b-info">
+      <div class="b-label-small"><span class="b-pulse"></span>Live</div>
+      <div class="b-action" id="b-action">Sending invitation</div>
+      <div class="b-meta">
+        <div class="b-meta-label">Lead</div>     <div class="b-meta-value" id="b-lead">Tim Zuidema</div>
+        <div class="b-meta-label">Account</div>  <div class="b-meta-value" id="b-account">kenya5@ortus.solutions</div>
+        <div class="b-meta-label">Mode</div>     <div class="b-meta-value">Connect</div>
+      </div>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="ctrl active" data-set="b" data-state="sending">Sending invitation</button>
+    <button class="ctrl" data-set="b" data-state="waiting">Waiting (84s)</button>
+    <button class="ctrl" data-set="b" data-state="round-sleep">Round sleep (27 min)</button>
+    <button class="ctrl" data-set="b" data-state="loading">Loading lead page</button>
+    <button class="ctrl" data-set="b" data-state="paused">Paused</button>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════ C — TICKER ═══════ -->
+<section class="concept">
+  <div class="concept-header">
+    <span class="concept-letter">C</span>
+    <span class="concept-name">Ticker</span>
+    <span class="concept-tag">terminal-style heartbeat strip</span>
+  </div>
+  <p class="concept-notes">
+    <b>Best for:</b> operators who want a single thin status bar that's always present, like a deployment log.
+    Mono font, single-line, pulsing green "LIVE" dot, animated trailing dots that NEVER stop.
+    Dedicated countdown column on the right for waits. Optional second row with a thin progress bar for the current step.
+    <br><br>
+    <b>Trade-off:</b> least visually loud. If the operator is across the room they may not see the dots moving. Best when the dashboard is the active window.
+  </p>
+
+  <div class="c-ticker">
+    <div class="c-bar">
+      <div class="c-prefix"><span class="c-prefix-dot"></span>LIVE</div>
+      <div class="c-content">
+        <span class="c-action" id="c-action">Sending invitation<span class="dots"></span></span>
+        <span class="c-sep">→</span>
+        <span class="c-meta" id="c-meta">Tim Zuidema · kenya5@ortus.solutions</span>
+        <span class="c-timer" id="c-timer">47s</span>
+      </div>
+    </div>
+    <div class="c-second-row">
+      <span id="c-substep">Connect button clicked → waiting for confirmation toast</span>
+      <span class="c-progress"><span class="c-progress-fill" id="c-progress-fill" style="width:35%"></span></span>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="ctrl active" data-set="c" data-state="sending">Sending invitation</button>
+    <button class="ctrl" data-set="c" data-state="waiting">Waiting (84s)</button>
+    <button class="ctrl" data-set="c" data-state="round-sleep">Round sleep (27 min)</button>
+    <button class="ctrl" data-set="c" data-state="loading">Loading lead page</button>
+    <button class="ctrl" data-set="c" data-state="paused">Paused</button>
+  </div>
+</section>
+
+<div class="footer">
+  Sketches are static mockups — no backend. The countdowns above are simulated. In production we'd poll
+  /api/campaign/status every 1s and feed currentAction + remainingMs into whichever concept you pick.
+</div>
+
+<script>
+  // State definitions for each demo
+  const STATES = {
+    sending: {
+      action: 'Sending invitation',
+      detail: 'Tim Zuidema · via kenya5@ortus.solutions',
+      lead: 'Tim Zuidema',
+      account: 'kenya5@ortus.solutions',
+      substep: 'Connect button clicked → waiting for confirmation toast',
+      countdownSec: null, // indeterminate
+      barIndeterminate: true,
+    },
+    waiting: {
+      action: 'Waiting before next lead',
+      detail: 'kenya5@ortus.solutions · throttled 2x',
+      lead: '—',
+      account: 'kenya5@ortus.solutions',
+      substep: 'Throttled 2x · load1 7.5 → delays doubled',
+      countdownSec: 84,
+    },
+    'round-sleep': {
+      action: 'Round complete — next round in',
+      detail: 'All 4 accounts done · resume scheduled',
+      lead: '—',
+      account: 'all profiles parked',
+      substep: 'Idle — browsers parked at about:blank to free RAM',
+      countdownSec: 27 * 60,
+    },
+    loading: {
+      action: 'Loading lead page',
+      detail: 'Tim Zuidema · linkedin.com/in/tim-zuidema',
+      lead: 'Tim Zuidema',
+      account: 'kenya5@ortus.solutions',
+      substep: 'Navigating to profile → waiting for DOM',
+      countdownSec: null,
+      barIndeterminate: true,
+    },
+    paused: {
+      action: 'Paused',
+      detail: 'browsers stay open — press Resume to continue',
+      lead: 'Tim Zuidema (mid-batch)',
+      account: 'kenya5@ortus.solutions',
+      substep: 'Awaiting resume signal',
+      countdownSec: null,
+      barIndeterminate: false,
+    },
+  };
+
+  // Active per-set countdown timers
+  const tickers = { a: null, b: null, c: null };
+  const RING_CIRCUMFERENCE = 282.7; // 2πr where r=45
+
+  function applyState(setLetter, stateName) {
+    const s = STATES[stateName];
+    if (!s) return;
+    if (tickers[setLetter]) { clearInterval(tickers[setLetter]); tickers[setLetter] = null; }
+
+    if (setLetter === 'a') {
+      document.getElementById('a-action').innerHTML = s.action.toUpperCase() + '<span class="dots"></span>';
+      document.getElementById('a-detail').textContent = s.detail;
+      const bar = document.getElementById('a-bar');
+      const fill = document.getElementById('a-bar-fill');
+      const cd = document.getElementById('a-countdown');
+      if (s.countdownSec != null) {
+        bar.classList.remove('indeterminate');
+        const total = s.countdownSec;
+        let remaining = total;
+        const update = () => {
+          const pct = ((total - remaining) / total) * 100;
+          fill.style.width = pct + '%';
+          cd.textContent = '— ' + formatTime(remaining) + ' remaining —';
+          remaining--;
+          if (remaining < 0) { clearInterval(tickers.a); tickers.a = null; }
+        };
+        update();
+        tickers.a = setInterval(update, 1000);
+      } else {
+        bar.classList.add('indeterminate');
+        fill.style.width = '30%';
+        cd.textContent = stateName === 'paused' ? '— paused —' : '— in progress —';
+      }
+    }
+
+    if (setLetter === 'b') {
+      document.getElementById('b-action').textContent = s.action;
+      document.getElementById('b-lead').textContent = s.lead;
+      document.getElementById('b-account').textContent = s.account;
+      const ringFg = document.getElementById('b-ring-fg');
+      const ringNum = document.getElementById('b-ring-num');
+      const ringUnit = document.getElementById('b-ring-unit');
+      if (s.countdownSec != null) {
+        const total = s.countdownSec;
+        let remaining = total;
+        const update = () => {
+          const pct = (total - remaining) / total;
+          ringFg.style.strokeDashoffset = (RING_CIRCUMFERENCE * (1 - pct)).toString();
+          if (remaining >= 60) {
+            ringNum.textContent = Math.ceil(remaining / 60);
+            ringUnit.textContent = 'minutes';
+          } else {
+            ringNum.textContent = remaining;
+            ringUnit.textContent = 'seconds';
+          }
+          remaining--;
+          if (remaining < 0) { clearInterval(tickers.b); tickers.b = null; }
+        };
+        update();
+        tickers.b = setInterval(update, 1000);
+      } else {
+        // Indeterminate — slow rotating arc
+        ringFg.style.strokeDashoffset = (RING_CIRCUMFERENCE * 0.7).toString();
+        ringNum.textContent = stateName === 'paused' ? '||' : '◐';
+        ringUnit.textContent = stateName === 'paused' ? 'paused' : 'working';
+      }
+    }
+
+    if (setLetter === 'c') {
+      document.getElementById('c-action').innerHTML = s.action + '<span class="dots"></span>';
+      document.getElementById('c-meta').textContent = s.detail;
+      document.getElementById('c-substep').textContent = s.substep;
+      const timer = document.getElementById('c-timer');
+      const fill = document.getElementById('c-progress-fill');
+      if (s.countdownSec != null) {
+        const total = s.countdownSec;
+        let remaining = total;
+        const update = () => {
+          timer.textContent = formatTime(remaining);
+          fill.style.width = (((total - remaining) / total) * 100) + '%';
+          remaining--;
+          if (remaining < 0) { clearInterval(tickers.c); tickers.c = null; }
+        };
+        update();
+        tickers.c = setInterval(update, 1000);
+      } else {
+        timer.textContent = stateName === 'paused' ? '⏸' : '···';
+        fill.style.width = '35%';
+      }
+    }
+  }
+
+  function formatTime(s) {
+    if (s >= 60) {
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return m + 'm ' + r.toString().padStart(2, '0') + 's';
+    }
+    return s + 's';
+  }
+
+  // Wire up controls
+  document.querySelectorAll('.ctrl').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const set = btn.dataset.set;
+      const state = btn.dataset.state;
+      document.querySelectorAll('.ctrl[data-set="' + set + '"]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyState(set, state);
+    });
+  });
+
+  // Initialize all three to "sending"
+  applyState('a', 'sending');
+  applyState('b', 'sending');
+  applyState('c', 'sending');
+</script>
+
+</body>
+</html>

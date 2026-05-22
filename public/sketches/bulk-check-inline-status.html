@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bulk Check — Inline Status Variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a09;
+    --panel: #14140f;
+    --panel-2: #1a1a14;
+    --ink: #fafaf9;
+    --muted: #8b867a;
+    --hairline: rgba(255,255,255,0.10);
+    --hairline-strong: rgba(255,255,255,0.20);
+    --gold: #C5A255;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    line-height: 1.55;
+    padding: 56px 32px 96px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 2.2rem;
+    font-weight: 500;
+    margin: 0 0 4px;
+  }
+  h1 em { color: var(--gold); font-style: italic; font-weight: 400; }
+  .sub {
+    color: var(--muted);
+    font-size: 0.65rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .intro {
+    color: #c9c5bd;
+    font-size: 0.92rem;
+    margin: 0 0 40px;
+    max-width: 680px;
+  }
+  .intro code {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 0.82rem;
+    background: rgba(255,255,255,0.05);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  .variant {
+    margin-bottom: 56px;
+    padding-bottom: 56px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .variant:last-child { border-bottom: 0; }
+  .variant-head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 4px;
+  }
+  .variant-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+  .variant-name {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.6rem;
+    font-weight: 500;
+  }
+  .variant-desc {
+    color: #c9c5bd;
+    font-size: 0.86rem;
+    margin: 0 0 22px;
+    max-width: 720px;
+  }
+  .variant-desc .pros, .variant-desc .cons {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.78rem;
+  }
+  .variant-desc .pros::before { content: "+ "; color: #6da26d; font-weight: 600; }
+  .variant-desc .cons::before { content: "− "; color: #a26d6d; font-weight: 600; }
+
+  /* The "live-status" mock frame — looks like the real cockpit area */
+  .frame {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 24px 28px;
+  }
+  .frame + .frame { margin-top: 14px; }
+  .frame-head {
+    font-size: 0.58rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+
+  /* Real-app button approximation */
+  .btn {
+    font-family: inherit;
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 9px 18px;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--ink); }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .btn.running {
+    border-color: var(--hairline-strong);
+    background: rgba(255,255,255,0.02);
+  }
+
+  /* Spinners */
+  .spin {
+    display: inline-block;
+    width: 11px; height: 11px;
+    border: 1.5px solid rgba(255,255,255,0.2);
+    border-top-color: var(--ink);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+    vertical-align: -1px;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── CURRENT STATE ─── */
+  .row-current {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .current-status {
+    font-style: italic;
+    color: var(--muted);
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    margin-top: 4px;
+  }
+
+  /* ─── VARIANT A: Quiet pill ─── */
+  .row-a { display: flex; align-items: center; gap: 14px; }
+  .a-status {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+  }
+  .a-stop {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.7rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+  }
+  .a-stop:hover { color: var(--ink); }
+
+  /* ─── VARIANT B: Determinate progress bar ─── */
+  .row-b { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .b-bar {
+    flex: 1;
+    min-width: 220px;
+    height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 9999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .b-bar-fill {
+    height: 100%;
+    background: var(--ink);
+    width: 60%;
+    transition: width 0.4s ease;
+  }
+  .b-count {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.06em;
+  }
+  .b-count strong { color: var(--ink); font-weight: 500; }
+
+  /* ─── VARIANT C: Per-account ticker ─── */
+  .row-c { display: flex; align-items: flex-start; gap: 18px; }
+  .c-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    border-left: 1px solid var(--hairline);
+    padding-left: 16px;
+  }
+  .c-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .c-item .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    flex-shrink: 0;
+  }
+  .c-item.active .dot {
+    background: var(--ink);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.08);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .c-item.done .dot { background: #6da26d; }
+  .c-item.done { color: var(--ink); }
+  .c-item.active { color: var(--ink); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .c-item .name { flex: 1; }
+  .c-item .micro {
+    font-size: 0.66rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  /* ─── VARIANT D: Toast (no inline status) ─── */
+  .row-d { display: flex; align-items: center; gap: 14px; }
+  .d-hint {
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  .toast {
+    position: relative;
+    margin-top: 18px;
+    margin-left: auto;
+    max-width: 360px;
+    background: var(--panel-2);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 6px;
+    padding: 14px 18px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+  }
+  .toast-head {
+    font-size: 0.58rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .toast-body {
+    font-size: 0.86rem;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+  }
+  .toast-bar {
+    margin-top: 10px;
+    height: 2px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+  .toast-bar-fill {
+    height: 100%;
+    background: var(--ink);
+    width: 60%;
+  }
+  .toast-foot {
+    margin-top: 6px;
+    font-size: 0.66rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+  .toast-row { display: flex; justify-content: flex-end; }
+
+  /* ─── Log panel mock (shared across all variants) ─── */
+  .log-panel {
+    background: #0e0e0a;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 14px 18px;
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 0.72rem;
+    color: #c9c5bd;
+    line-height: 1.7;
+    max-height: 220px;
+    overflow: auto;
+  }
+  .log-panel .entry { padding: 1px 0; }
+  .log-panel .ts { color: var(--muted); margin-right: 8px; }
+  .log-panel .new { color: var(--ink); }
+  .log-panel .marker { color: var(--gold); margin-right: 6px; font-weight: 600; }
+  .log-panel-head {
+    font-size: 0.58rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 18px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .log-panel-head .new-badge {
+    font-size: 0.55rem;
+    color: var(--gold);
+    border: 1px solid var(--gold);
+    padding: 1px 6px;
+    border-radius: 9999px;
+    letter-spacing: 0.18em;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="sub">Sketch · 2026-05-17</div>
+  <h1>Bulk Check — <em>Inline Status</em></h1>
+  <p class="intro">
+    Today, pressing <code>BULK CHECK CONNECTIONS</code> dumps multi-line log text into the italic span next to the button, while the main log panel below stays empty for those lines. The shared requirement across all variants: <strong>all bulk-check log lines also flow into the main <code>#log-panel</code></strong> (with a "📡 Bulk check" marker so they're scannable). The four variants below differ only in what — if anything — sits next to the button itself.
+  </p>
+
+  <!-- ──────────────── CURRENT STATE ──────────────── -->
+  <div class="variant">
+    <div class="variant-head">
+      <span class="variant-label">Today</span>
+      <span class="variant-name">Inline log spew (the thing to fix)</span>
+    </div>
+    <p class="variant-desc">
+      Stream of bulk-check lines pushed into a span next to the button as italic, multi-line text. Visually competes with the button and bleeds into surrounding layout.
+    </p>
+
+    <div class="frame">
+      <div class="frame-head">Live status · Today</div>
+      <div class="row-current">
+        <button class="btn" disabled>Bulk check connections</button>
+        <div class="current-status">📡 Manual bulk Connection Status check — sweeping 5 account(s)…
+📡 [kenya5@ortus.solutions] Launching browser…
+
+(running…)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ──────────────── VARIANT A ──────────────── -->
+  <div class="variant">
+    <div class="variant-head">
+      <span class="variant-label">Variant A</span>
+      <span class="variant-name">Quiet pill — running indicator only</span>
+    </div>
+    <p class="variant-desc">
+      Inline area shows a single discreet line: spinner + "Sweeping 5 accounts…". No counts, no per-line text. Operator looks at the main log for detail. Cleanest, lowest-effort. Button itself disabled while running.
+      <span class="pros">Trivial to build — uses existing setStatus() with one short string.</span>
+      <span class="cons">No progress signal at a glance; the operator has to read the log to know "are we 2 of 5 or 4 of 5?".</span>
+    </p>
+
+    <div class="frame">
+      <div class="frame-head">Live status · While sweeping</div>
+      <div class="row-a">
+        <button class="btn running" disabled>Bulk check connections</button>
+        <div class="a-status"><span class="spin"></span>Sweeping 5 accounts…</div>
+        <div class="a-stop">CANCEL</div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-head">Live status · Done</div>
+      <div class="row-a">
+        <button class="btn">Bulk check connections</button>
+        <div class="a-status" style="font-style:normal; color:var(--ink);">12 marked Connected, 3 marked Still Pending (of 47 fetched)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ──────────────── VARIANT B ──────────────── -->
+  <div class="variant">
+    <div class="variant-head">
+      <span class="variant-label">Variant B</span>
+      <span class="variant-name">Determinate progress bar</span>
+    </div>
+    <p class="variant-desc">
+      Thin monochrome bar fills as accounts complete. Tabular "3 / 5" counter. We can derive this from the existing log stream (each <code>[name] Launching browser…</code> = account started; each <code>📡</code> with a profile name in a "done" line = account completed).
+      <span class="pros">Real progress at a glance. Sweeps that quietly hang on one account become visible because the bar stops moving.</span>
+      <span class="cons">Requires a small parser to map log lines → "this account is done". Per-account counters can drift if the log format changes; needs a test.</span>
+    </p>
+
+    <div class="frame">
+      <div class="frame-head">Live status · While sweeping</div>
+      <div class="row-b">
+        <button class="btn running" disabled>Bulk check connections</button>
+        <div class="b-bar"><div class="b-bar-fill" style="width: 60%"></div></div>
+        <div class="b-count"><strong>3</strong> / 5 accounts · <span style="color:var(--muted)">sweeping…</span></div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-head">Live status · Done</div>
+      <div class="row-b">
+        <button class="btn">Bulk check connections</button>
+        <div class="b-bar"><div class="b-bar-fill" style="width: 100%; background:#6da26d"></div></div>
+        <div class="b-count"><strong>5</strong> / 5 · <span style="color:var(--ink)">12 Connected · 3 Pending · 47 fetched</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ──────────────── VARIANT C ──────────────── -->
+  <div class="variant">
+    <div class="variant-head">
+      <span class="variant-label">Variant C</span>
+      <span class="variant-name">Per-account ticker (boarding-pass style)</span>
+    </div>
+    <p class="variant-desc">
+      A short list materialises next to the button — one row per selected account, each with a dot (idle/active/done) and the account email. Most informative variant. Best when the operator wants to see "which account is the slow one".
+      <span class="pros">Per-account visibility — instantly shows which account is stuck or failed. Names are already known at click-time (selectedProfileIds + profiles map).</span>
+      <span class="cons">Takes the most vertical space — 5 accounts ≈ 90px tall. Could feel cluttered on the live status pane during an active campaign. Hidden behind a disclosure?</span>
+    </p>
+
+    <div class="frame">
+      <div class="frame-head">Live status · While sweeping</div>
+      <div class="row-c">
+        <button class="btn running" disabled style="align-self:flex-start;">Bulk check connections</button>
+        <div class="c-list">
+          <div class="c-item done"><span class="dot"></span><span class="name">kenya1@ortus.solutions</span><span class="micro">12 fetched · 4 stamped</span></div>
+          <div class="c-item done"><span class="dot"></span><span class="name">kenya2@ortus.solutions</span><span class="micro">9 fetched · 2 stamped</span></div>
+          <div class="c-item done"><span class="dot"></span><span class="name">kenya3@ortus.solutions</span><span class="micro">8 fetched · 1 stamped</span></div>
+          <div class="c-item active"><span class="dot"></span><span class="name">kenya4@ortus.solutions</span><span class="micro">sweeping…</span></div>
+          <div class="c-item"><span class="dot"></span><span class="name">kenya5@ortus.solutions</span><span class="micro">queued</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ──────────────── VARIANT D ──────────────── -->
+  <div class="variant">
+    <div class="variant-head">
+      <span class="variant-label">Variant D</span>
+      <span class="variant-name">No inline — floating progress toast</span>
+    </div>
+    <p class="variant-desc">
+      The button area collapses to a tiny "running…" hint. Progress lives in a small floating card that slides in from the corner (similar pattern to the existing <code>showCampaignToast</code>). Detail in the main log as always. Decouples bulk-check status from the live-status panel entirely.
+      <span class="pros">Cockpit area stays totally clean during an active campaign. Bulk-check progress is visible no matter what tab/section the operator is on (the toast is global).</span>
+      <span class="cons">Two surfaces (button + corner) for one action — might be a beat confusing. Toast may overlap with existing campaign toasts unless we stack them.</span>
+    </p>
+
+    <div class="frame">
+      <div class="frame-head">Live status · While sweeping (button area)</div>
+      <div class="row-d">
+        <button class="btn running" disabled>Bulk check connections</button>
+        <span class="d-hint"><span class="spin"></span>running — see progress card</span>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-head">Floating progress card (bottom-right of viewport)</div>
+      <div class="toast-row">
+        <div class="toast">
+          <div class="toast-head">Bulk check · sweeping</div>
+          <div class="toast-body"><span class="spin" style="margin-right:8px"></span>3 of 5 accounts swept</div>
+          <div class="toast-bar"><div class="toast-bar-fill" style="width:60%"></div></div>
+          <div class="toast-foot">kenya4@ortus.solutions · 47 fetched so far</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ──────────────── SHARED: log panel ──────────────── -->
+  <div class="variant" style="border-bottom:0; margin-bottom:0;">
+    <div class="variant-head">
+      <span class="variant-label">Shared by all variants</span>
+      <span class="variant-name">Main log panel receives every bulk-check line</span>
+    </div>
+    <p class="variant-desc">
+      Regardless of which inline variant we ship, bulk-check log lines flow into the main <code>#log-panel</code>, prefixed with a <code>📡</code> marker so they're scannable. "Copy log" and "Clear log" still apply. This is the part the operator already trusts.
+    </p>
+
+    <div class="log-panel-head">
+      Log panel <span class="new-badge">+ NEW LINES FROM BULK CHECK</span>
+    </div>
+    <div class="log-panel">
+      <div class="entry"><span class="ts">11:24:58</span>Waiting to start…</div>
+      <div class="entry new"><span class="ts">11:25:00</span><span class="marker">📡</span>Manual bulk Connection Status check — sweeping 5 account(s)…</div>
+      <div class="entry new"><span class="ts">11:25:01</span><span class="marker">📡</span>[kenya1@ortus.solutions] Launching browser…</div>
+      <div class="entry new"><span class="ts">11:25:18</span><span class="marker">📡</span>[kenya1@ortus.solutions] Sweep done · 12 fetched · 4 stamped</div>
+      <div class="entry new"><span class="ts">11:25:19</span><span class="marker">📡</span>[kenya2@ortus.solutions] Launching browser…</div>
+      <div class="entry new"><span class="ts">11:25:36</span><span class="marker">📡</span>[kenya2@ortus.solutions] Sweep done · 9 fetched · 2 stamped</div>
+      <div class="entry new"><span class="ts">11:25:38</span><span class="marker">📡</span>[kenya3@ortus.solutions] Launching browser…</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

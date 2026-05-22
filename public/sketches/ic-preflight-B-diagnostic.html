@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IC preflight popup · Variant B · Diagnostic</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafafa;
+    --ink: #0a0a0a;
+    --gray: #999999;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --gold: #F7BE68;
+    --red: #c0392b;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: #e8e8e8;
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 48px 56px 120px;
+  }
+  .page-head { padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.6rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 8px; }
+  .stage-label { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-bottom: 18px; }
+
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 40px;
+    margin-bottom: 64px;
+  }
+  .backdrop {
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 36px;
+    min-height: 540px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal {
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    max-width: 560px;
+    width: 100%;
+    padding: 32px 36px 28px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .modal-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--display); font-size: 0.7rem; letter-spacing: 0.16em;
+    color: var(--ink); padding: 4px 10px;
+    border: 1px solid var(--red);
+    margin-bottom: 14px;
+  }
+  .modal-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+  .modal-title { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 14px; line-height: 1.05; }
+  .modal-body { font-size: 0.95rem; color: var(--ink); line-height: 1.55; margin-bottom: 20px; }
+  .modal-body p { margin-bottom: 10px; }
+  .modal-body .muted { color: var(--gray); font-size: 0.85rem; }
+
+  /* Diagnostic breakdown table */
+  .diag-table {
+    border: 1px solid var(--hairline);
+    margin-bottom: 22px;
+    background: white;
+  }
+  .diag-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--hairline-soft);
+    align-items: baseline;
+    gap: 16px;
+  }
+  .diag-row:last-child { border-bottom: 0; }
+  .diag-row__name { font-family: var(--mono); }
+  .diag-row__name code { background: rgba(0,0,0,0.05); padding: 1px 6px; font-size: 0.85em; }
+  .diag-row__count { font-size: 0.65rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .diag-footer {
+    padding: 8px 14px;
+    font-size: 0.7rem;
+    color: var(--gray);
+    border-top: 1px solid var(--hairline);
+    font-style: italic;
+  }
+
+  .modal-actions { display: flex; justify-content: flex-end; }
+  .btn {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 10px 22px;
+    background: var(--ink);
+    color: var(--bg);
+    border: 1px solid var(--ink);
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    min-width: 120px;
+  }
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1 class="page-title">IC Preflight Popup · Variant B · Diagnostic</h1>
+    <p class="page-sub">Same modal style as A, but the "no match" case shows the actual top unmatched names + row counts so the operator sees exactly what's wrong.</p>
+  </div>
+
+  <div class="stage-label">Case 1 — Sender column not selected (every row blank)</div>
+  <div class="stage">
+    <div class="backdrop">
+      <div class="modal" role="dialog">
+        <div class="modal-pill">Cannot start</div>
+        <h3 class="modal-title">No sender column selected</h3>
+        <div class="modal-body">
+          <p>All 67 rows in your sheet have a blank sender value.</p>
+          <p class="muted">In Section 2, pick the column that contains the LinkedIn 1st Connections (e.g. <i>LinkedIn 1st Connections</i>), then try again.</p>
+        </div>
+        <div class="diag-table">
+          <div class="diag-row">
+            <span class="diag-row__name"><code>(blank)</code> — no sender value</span>
+            <span class="diag-row__count">67 rows</span>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-label">Case 2 — Sender values don't match any GoLogin profile</div>
+  <div class="stage">
+    <div class="backdrop">
+      <div class="modal" role="dialog">
+        <div class="modal-pill">Cannot start</div>
+        <h3 class="modal-title">No matching GoLogin profile</h3>
+        <div class="modal-body">
+          <p>Your sheet has sender values, but none of them match a GoLogin profile in this workspace.</p>
+        </div>
+        <div class="diag-table">
+          <div class="diag-row"><span class="diag-row__name"><code>alecx@ortus.solutions</code></span><span class="diag-row__count">23 rows</span></div>
+          <div class="diag-row"><span class="diag-row__name"><code>marco@ortus.com</code></span><span class="diag-row__count">14 rows</span></div>
+          <div class="diag-row"><span class="diag-row__name"><code>sam@ortusclub.com</code></span><span class="diag-row__count">11 rows</span></div>
+          <div class="diag-row"><span class="diag-row__name"><code>jenny.l@ortus.solutions</code></span><span class="diag-row__count">8 rows</span></div>
+          <div class="diag-row"><span class="diag-row__name"><code>(blank)</code></span><span class="diag-row__count">3 rows</span></div>
+          <div class="diag-footer">+ 2 more unmatched senders · 67 total rows</div>
+        </div>
+        <div class="modal-body" style="margin-bottom: 16px;">
+          <p class="muted">Check that the Sender column values exactly match your GoLogin profile display names (case-sensitive).</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

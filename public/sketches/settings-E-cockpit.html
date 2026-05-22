@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Settings · E — Cockpit gauges</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--ink:#fff;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--green:#3fb950;--red:#f85149;--gold:#F7BE68;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:56px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+.label{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+h2{font-family:var(--d);font-weight:400;font-size:2.4rem;line-height:1;text-transform:uppercase;margin-bottom:40px}
+
+.gauges{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px}
+.gauge{border:1px solid var(--hl);padding:32px;text-align:center}
+.gauge-label{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:24px}
+.dial{position:relative;width:200px;height:110px;margin:0 auto 12px;overflow:hidden}
+.dial-arc{position:absolute;inset:0;width:200px;height:200px;border-radius:50%;border:2px solid var(--hl);border-bottom-color:transparent;border-right-color:transparent;transform:rotate(45deg)}
+.dial-arc.fill{border-color:var(--gold);clip-path:polygon(0 0,50% 0,50% 50%,0 50%);transform:rotate(45deg)}
+.dial-value{position:absolute;inset:auto 0 0 0;text-align:center;font-family:var(--d);font-size:4.4rem;line-height:1;color:var(--ink)}
+.dial-unit{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-top:16px}
+.dial-range{display:flex;justify-content:space-between;font-size:0.54rem;letter-spacing:0.16em;text-transform:uppercase;color:var(--gray);margin-top:14px}
+
+.cockpit{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--hl);background:var(--hls)}
+.cockpit-cell{padding:22px 28px;border-right:1px solid var(--hl)}
+.cockpit-cell:last-child{border-right:none}
+.ck-k{font-size:0.56rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray)}
+.ck-v{font-family:var(--d);font-size:2.4rem;line-height:1;margin-top:10px}
+.ck-v.accent{color:var(--gold)}
+
+.warnings{margin-top:24px;padding:14px 0;border-top:1px solid var(--hl);display:flex;flex-direction:column;gap:6px}
+.warn-line{font-size:0.66rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray)}
+.warn-line::before{content:'⚠';color:var(--gold);margin-right:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction E</div>
+  <h2>Cockpit gauges</h2>
+
+  <div class="gauges">
+    <div class="gauge">
+      <div class="gauge-label">Rate</div>
+      <div class="dial">
+        <div class="dial-arc"></div>
+        <div class="dial-arc fill" style="clip-path:polygon(0 0,60% 0,60% 50%,0 50%)"></div>
+        <div class="dial-value">6</div>
+      </div>
+      <div class="dial-unit">Per account / hour</div>
+      <div class="dial-range"><span>1</span><span>15</span><span>30</span></div>
+    </div>
+
+    <div class="gauge">
+      <div class="gauge-label">Limit</div>
+      <div class="dial">
+        <div class="dial-arc"></div>
+        <div class="dial-arc fill" style="clip-path:polygon(0 0,80% 0,80% 50%,0 50%)"></div>
+        <div class="dial-value">40</div>
+      </div>
+      <div class="dial-unit">Max per account</div>
+      <div class="dial-range"><span>1</span><span>50</span><span>100</span></div>
+    </div>
+  </div>
+
+  <div class="cockpit">
+    <div class="cockpit-cell"><div class="ck-k">Total actions</div><div class="ck-v accent">40</div></div>
+    <div class="cockpit-cell"><div class="ck-k">Duration</div><div class="ck-v">6h 40m</div></div>
+    <div class="cockpit-cell"><div class="ck-k">Finishes at</div><div class="ck-v">18:50</div></div>
+  </div>
+
+  <div class="warnings">
+    <div class="warn-line">Keep laptop open until the campaign finishes</div>
+    <div class="warn-line">Do not close the browser windows that open — they run the campaign</div>
+  </div>
+</div>
+</body>
+</html>

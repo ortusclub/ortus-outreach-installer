@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bulk Check — Streaming (Live Status fit)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Match the actual cockpit tokens from public/css/style.css */
+  :root {
+    --bg: #0a0a0a;
+    --bg-soft: rgba(255, 255, 255, 0.03);
+    --ink: #fafafa;
+    --gray: #999999;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --green: #3fb950;
+    --red: #f85149;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    line-height: 1.55;
+    padding: 40px 32px 80px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  .crumb {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.24em;
+    color: var(--gray);
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-size: 2rem;
+    letter-spacing: 0.04em;
+    margin: 0 0 6px;
+    font-weight: 400;
+  }
+  .intro {
+    color: #c9c5bd;
+    font-size: 0.84rem;
+    margin: 0 0 36px;
+    max-width: 760px;
+  }
+  .intro code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.76rem;
+    background: rgba(255,255,255,0.05);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ─── shared cockpit primitives ─── */
+  .section {
+    margin-bottom: 56px;
+    padding-bottom: 56px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .section:last-child { border-bottom: 0; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 4px;
+  }
+  .section-tag {
+    font-size: 0.6rem;
+    letter-spacing: 0.3em;
+    color: var(--gold);
+  }
+  .section-name {
+    font-family: var(--display);
+    font-size: 1.4rem;
+    letter-spacing: 0.04em;
+    font-weight: 400;
+  }
+  .section-desc {
+    color: #c9c5bd;
+    font-size: 0.8rem;
+    margin: 0 0 22px;
+    max-width: 780px;
+  }
+  .pros, .cons { display: block; margin-top: 6px; font-size: 0.74rem; }
+  .pros strong { color: var(--green); }
+  .cons strong { color: var(--gold); }
+
+  /* Mimic Live Status panel container */
+  .panel-card {
+    background: var(--bg-soft);
+    border: 1px solid var(--hairline);
+    padding: 22px 26px;
+  }
+  .pill-btn {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    padding: 10px 20px;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .pill-btn:hover { border-color: var(--ink); }
+  .pill-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 0.58rem;
+    letter-spacing: 0.18em;
+    color: var(--gray);
+    background: transparent;
+  }
+  .pill-status.queued { color: var(--gray); }
+  .pill-status.running {
+    color: var(--gold);
+    border-color: rgba(247, 190, 104, 0.35);
+  }
+  .pill-status.done {
+    color: var(--green);
+    border-color: rgba(63, 185, 80, 0.35);
+  }
+  .pill-status.failed {
+    color: var(--red);
+    border-color: rgba(248, 81, 73, 0.35);
+  }
+  .pulse {
+    width: 6px; height: 6px;
+    border-radius: 9999px;
+    background: currentColor;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+  .label-mini {
+    font-family: var(--mono);
+    font-size: 0.56rem;
+    letter-spacing: 0.22em;
+    color: var(--gray);
+    text-transform: uppercase;
+  }
+  .num-big {
+    font-family: var(--display);
+    font-size: 2.4rem;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .num-big.muted { color: var(--gray); }
+  .doing {
+    color: var(--gray);
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-style: italic;
+  }
+  .doing strong { color: var(--ink); font-weight: 500; font-style: normal; }
+  .progress-bar {
+    height: 2px;
+    background: rgba(255,255,255,0.06);
+    margin-top: 18px;
+    overflow: hidden;
+  }
+  .progress-bar > span {
+    display: block;
+    height: 100%;
+    background: var(--gold);
+  }
+  .hr {
+    border: 0;
+    border-top: 1px solid var(--hairline-soft);
+    margin: 14px 0;
+  }
+  .row { display: flex; }
+  .row.between { justify-content: space-between; align-items: center; }
+  .row.center { align-items: center; gap: 14px; }
+  .grow { flex: 1; }
+
+  /* Per-account row matching the existing ACCOUNT QUEUE pattern */
+  .acct-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto auto;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 0.82rem;
+  }
+  .acct-row:last-child { border-bottom: 0; }
+  .acct-row .idx {
+    font-family: var(--mono);
+    color: var(--gray);
+    font-size: 0.72rem;
+  }
+  .acct-row .name {
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .acct-row .result {
+    font-size: 0.74rem;
+    color: var(--gray);
+    font-family: var(--mono);
+    text-align: right;
+  }
+  .acct-row .result .num {
+    color: var(--ink);
+    font-family: var(--display);
+    font-size: 1.1rem;
+    letter-spacing: 0.04em;
+    margin-right: 2px;
+  }
+
+  /* Variant A — Stat strip */
+  .stat-strip { display: flex; gap: 44px; align-items: flex-end; flex-wrap: wrap; }
+  .stat-strip .stat { display: flex; flex-direction: column; gap: 4px; min-width: 90px; }
+  .stat-strip .label-mini { font-size: 0.52rem; }
+  .stat-strip .running-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--gold);
+    font-size: 0.56rem;
+    letter-spacing: 0.22em;
+    margin-left: auto;
+  }
+
+  /* Variant C — Mini monitoring card */
+  .mini-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 30px;
+    align-items: center;
+  }
+  .mini-ring {
+    width: 110px; height: 110px;
+    border-radius: 9999px;
+    border: 2px dashed var(--gold);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  .mini-ring .num {
+    font-family: var(--display);
+    font-size: 2rem;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .mini-ring .lbl {
+    font-family: var(--mono);
+    font-size: 0.5rem;
+    letter-spacing: 0.22em;
+    color: var(--gray);
+  }
+  .mini-rows .kv {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 12px;
+    padding: 5px 0;
+    font-size: 0.78rem;
+  }
+  .mini-rows .kv .k {
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.2em;
+    color: var(--gray);
+    text-transform: uppercase;
+    align-self: center;
+  }
+  .mini-rows .kv .v { color: var(--ink); }
+  .mini-rows .kv .v .num {
+    font-family: var(--display);
+    font-size: 1.05rem;
+    margin-right: 6px;
+  }
+  .mini-rows .kv .v em {
+    color: var(--gray);
+    font-style: italic;
+    font-size: 0.74rem;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="crumb">PROTOTYPE · LIVE STATUS · BULK CHECK</div>
+  <h1>BULK CHECK STREAMING — IN-PANEL FIT</h1>
+  <p class="intro">
+    Three drop-in panels for the area below <code>BULK CHECK CONNECTIONS</code> in the Live Status pane.
+    Each variant uses the cockpit's actual tokens (Bebas Neue display, Hanken Grotesk mono labels,
+    gold accent, hairline borders, monochrome) so the sketch is one-to-one with what would ship.
+    All three replace the plain <code>📡 Manual bulk Connection Status check — sweeping 3 account(s)…</code>
+    text dump with a structured panel. The final-result card from commit 1ae7af4 stays; these only
+    redesign the in-flight phase.
+  </p>
+
+  <!-- ─────────────── VARIANT A ─────────────── -->
+  <div class="section">
+    <div class="section-head">
+      <span class="section-tag">VARIANT A</span>
+      <span class="section-name">STAT STRIP + DOING-LINE</span>
+    </div>
+    <p class="section-desc">
+      Three numeric stats above one italic line that names the account currently sweeping. Numbers
+      tick up live as accounts finish. Thin gold progress bar at the bottom (N of M done). Same
+      surface stays visible after the sweep completes — the numbers freeze, the doing-line is
+      replaced by "completed in <em>Ns</em>" and the pill changes to <span class="pill-status done"><span class="pulse" style="animation:none"></span>DONE</span>.
+      <span class="pros"><strong>PROS</strong> · smallest vertical footprint (~110px). Numbers identical to the final card so the surface feels continuous from in-flight → done.</span>
+      <span class="cons"><strong>CONS</strong> · loses per-account detail while running — operator sees only one name at a time.</span>
+    </p>
+
+    <div class="panel-card">
+      <div class="row between" style="margin-bottom: 16px;">
+        <button class="pill-btn">BULK CHECK CONNECTIONS</button>
+        <span class="pill-status running"><span class="pulse"></span>RUNNING · 2 OF 3</span>
+      </div>
+      <hr class="hr" />
+      <div class="stat-strip">
+        <div class="stat">
+          <div class="num-big">5</div>
+          <div class="label-mini">CONNECTED</div>
+        </div>
+        <div class="stat">
+          <div class="num-big muted">18</div>
+          <div class="label-mini">STILL PENDING</div>
+        </div>
+        <div class="stat">
+          <div class="num-big muted">160</div>
+          <div class="label-mini">FETCHED</div>
+        </div>
+      </div>
+      <hr class="hr" />
+      <div class="doing">
+        <span class="pulse" style="color: var(--gold)"></span>
+        <span><strong>FRANCO.ESPINO@ORTUS.SOLUTIONS</strong> · sweeping recent connections…</span>
+      </div>
+      <div class="progress-bar"><span style="width: 66%"></span></div>
+    </div>
+  </div>
+
+  <!-- ─────────────── VARIANT B ─────────────── -->
+  <div class="section">
+    <div class="section-head">
+      <span class="section-tag">VARIANT B</span>
+      <span class="section-name">REUSE THE ACCOUNT QUEUE PATTERN</span>
+    </div>
+    <p class="section-desc">
+      The same numbered row pattern the Live Status pane already uses for ACCOUNT QUEUE, repurposed
+      as the bulk-check progress display. The right-side status pill animates through
+      <span class="pill-status queued">QUEUED</span> →
+      <span class="pill-status running"><span class="pulse"></span>SWEEPING</span> →
+      <span class="pill-status done"><span class="pulse" style="animation:none"></span>DONE</span>.
+      Once each account finishes, its row shows the per-account result (e.g. "2 CONNECTED · 7 PENDING").
+      A header line above the rows carries the running totals.
+      <span class="pros"><strong>PROS</strong> · zero new visual vocabulary — feels native to the panel. Operator sees per-account contribution AND can spot a stuck or failed account at a glance.</span>
+      <span class="cons"><strong>CONS</strong> · taller (~ 180-220px for 3 accounts). No big display numbers — the totals are inline text in the header.</span>
+    </p>
+
+    <div class="panel-card">
+      <div class="row between" style="margin-bottom: 16px;">
+        <button class="pill-btn">BULK CHECK CONNECTIONS</button>
+        <span class="pill-status running"><span class="pulse"></span>RUNNING · 2 OF 3</span>
+      </div>
+      <div class="label-mini" style="margin-bottom: 8px;">
+        BULK CHECK · 5 CONNECTED · 18 STILL PENDING · 160 FETCHED
+      </div>
+      <div class="acct-row">
+        <span class="idx">1</span>
+        <span class="name">marife.espeleta@ortus.solutions</span>
+        <span class="result"><span class="num">2</span>CONNECTED · <span class="num">7</span>PENDING</span>
+        <span class="pill-status done"><span class="pulse" style="animation:none"></span>DONE</span>
+      </div>
+      <div class="acct-row">
+        <span class="idx">2</span>
+        <span class="name">franco.espino@ortus.solutions</span>
+        <span class="result">sweeping… <span class="num">38</span>fetched</span>
+        <span class="pill-status running"><span class="pulse"></span>SWEEPING</span>
+      </div>
+      <div class="acct-row">
+        <span class="idx">3</span>
+        <span class="name">ayush.goswami@ortus.solutions</span>
+        <span class="result">—</span>
+        <span class="pill-status queued">QUEUED</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────── VARIANT C ─────────────── -->
+  <div class="section">
+    <div class="section-head">
+      <span class="section-tag">VARIANT C</span>
+      <span class="section-name">MINI MONITORING CARD (LEFT-HAND ECHO)</span>
+    </div>
+    <p class="section-desc">
+      Echoes the existing "MONITORING / WATCHING FOR ACCEPTANCES" card layout: a dashed circular
+      indicator on the left (here used as a progress ring — N of M done), and key/value rows on the
+      right. Reuses the exact card structure the operator already learned for the monitoring state,
+      just with bulk-check semantics. The same surface flips to the final result when the sweep
+      completes — the ring becomes a solid-line "DONE" badge.
+      <span class="pros"><strong>PROS</strong> · maximum visual continuity with the existing Live Status card. Big display number is prominent (matches "3M NEXT CHECK" treatment). No new component to learn.</span>
+      <span class="cons"><strong>CONS</strong> · per-account detail is missing (same as A). The ring's progress-fraction meaning differs from the monitoring ring's time-remaining meaning — could confuse a quick reader.</span>
+    </p>
+
+    <div class="panel-card">
+      <div class="row between" style="margin-bottom: 18px;">
+        <button class="pill-btn">BULK CHECK CONNECTIONS</button>
+        <span class="pill-status running"><span class="pulse"></span>RUNNING</span>
+      </div>
+      <div class="mini-card">
+        <div class="mini-ring">
+          <div class="num">2/3</div>
+          <div class="lbl">DONE</div>
+        </div>
+        <div class="mini-rows">
+          <div class="kv">
+            <span class="k">CONNECTED</span>
+            <span class="v"><span class="num">5</span></span>
+          </div>
+          <div class="kv">
+            <span class="k">STILL PENDING</span>
+            <span class="v"><span class="num">18</span></span>
+          </div>
+          <div class="kv">
+            <span class="k">FETCHED</span>
+            <span class="v"><span class="num">160</span></span>
+          </div>
+          <div class="kv">
+            <span class="k">NOW</span>
+            <span class="v"><em>franco.espino@ortus.solutions — sweeping recent connections…</em></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="color: var(--gray); font-size: 0.74rem; margin-top: 32px; text-align: center;">
+    Sketches only · no JS wired up · tokens match <code>public/css/style.css</code>
+  </div>
+</div>
+</body>
+</html>

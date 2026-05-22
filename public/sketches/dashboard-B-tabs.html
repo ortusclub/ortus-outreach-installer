@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dashboard B · Tabbed views</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0a;--ink:#fafafa;--gray:#999;--hl:rgba(255,255,255,0.15);--hls:rgba(255,255,255,0.06);--gold:#F7BE68;--green:#3fb950;--red:#f85149;--d:'Bebas Neue',sans-serif;--b:'Hanken Grotesk',sans-serif;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--b);padding:48px 56px 96px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+.crumbs{font-size:0.62rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gray);margin-bottom:14px}
+.crumbs a{color:var(--gray);text-decoration:none;border-bottom:1px solid var(--hl)}
+h1{font-family:var(--d);font-weight:400;font-size:2.6rem;line-height:1;text-transform:uppercase;margin-bottom:8px}
+.deck{font-size:0.85rem;color:var(--gray);max-width:780px;line-height:1.5;margin-bottom:40px}
+
+.app{border:1px solid var(--hl);padding:36px 40px 60px;background:#050505;position:relative}
+.app-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--hl);padding-bottom:22px;margin-bottom:28px}
+.brand{font-family:var(--d);font-size:1.4rem;letter-spacing:0.04em}
+.brand small{color:var(--gray);font-family:var(--b);font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;margin-left:10px}
+.actions{display:flex;gap:10px}
+.btn{border:1px solid var(--hl);background:transparent;color:var(--ink);font-family:var(--b);font-size:0.66rem;letter-spacing:0.16em;text-transform:uppercase;padding:9px 16px;cursor:pointer;border-radius:9999px}
+.btn.gold{border-color:var(--gold);color:var(--gold)}
+.btn.danger{border-color:var(--red);color:var(--red)}
+
+/* Tab bar */
+.tabs{display:flex;border-bottom:1px solid var(--hl);gap:0;margin-bottom:0}
+.tab{padding:18px 26px;font-family:var(--d);font-size:1.05rem;letter-spacing:0.06em;color:var(--gray);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:baseline;gap:8px}
+.tab.on{color:var(--ink);border-bottom-color:var(--gold)}
+.tab .ct{font-family:var(--b);font-size:0.62rem;letter-spacing:0.18em;color:var(--gray);padding:2px 8px;border:1px solid var(--hl);border-radius:9999px}
+.tab.on .ct{border-color:var(--gold);color:var(--gold)}
+.tab .new{background:var(--gold);color:#000;border-radius:9999px;padding:1px 6px;font-size:0.55rem;font-weight:600}
+
+/* Toolbar */
+.toolbar{display:flex;justify-content:space-between;align-items:center;padding:18px 0 14px;border-bottom:1px solid var(--hls)}
+.tool-l{display:flex;align-items:center;gap:18px;font-size:0.72rem}
+.tool-l .selall{display:flex;align-items:center;gap:8px;color:var(--gray);letter-spacing:0.06em}
+.tool-l .selall .check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px}
+.tool-l .selall .check.on{border-color:var(--gold);background:var(--gold);position:relative}
+.tool-l .selall .check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.tool-l .filt{color:var(--gray);font-size:0.62rem;letter-spacing:0.16em;text-transform:uppercase;display:flex;gap:14px}
+.tool-l .filt a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--hl);padding-bottom:1px}
+.tool-r{display:flex;align-items:center;gap:10px}
+.search{background:transparent;border:1px solid var(--hl);color:var(--ink);padding:6px 12px;font-family:var(--b);font-size:0.72rem;border-radius:9999px;width:240px;outline:none}
+
+.bulkstrip{background:rgba(247,190,104,0.05);border:1px solid var(--gold);padding:10px 16px;margin:14px 0;display:flex;justify-content:space-between;align-items:center;font-size:0.72rem}
+.bulkstrip .n{color:var(--gold);font-family:var(--d);font-size:1.05rem;margin-right:10px;letter-spacing:0.05em}
+.bulkstrip-r{display:flex;gap:8px}
+
+.row{display:grid;grid-template-columns:28px 1fr 130px 140px 110px 100px 32px;align-items:center;gap:14px;padding:16px 6px;border-bottom:1px solid var(--hls);font-size:0.78rem}
+.row.sel{background:rgba(247,190,104,0.05)}
+.check{width:14px;height:14px;border:1px solid var(--hl);border-radius:2px;cursor:pointer;position:relative}
+.check.on{border-color:var(--gold);background:var(--gold)}
+.check.on::after{content:"✓";position:absolute;color:#000;font-size:11px;left:1px;top:-3px;font-weight:700}
+.name{font-weight:500}
+.name small{display:block;color:var(--gray);font-size:0.62rem;letter-spacing:0.14em;text-transform:uppercase;margin-top:3px}
+.tag{display:inline-block;font-family:var(--d);font-size:0.78rem;letter-spacing:0.08em;padding:3px 10px;border:1px solid var(--hl);border-radius:9999px}
+.tag.amber{color:var(--gold);border-color:var(--gold)}
+.tag.green{color:var(--green);border-color:var(--green)}
+.tag.gray{color:var(--gray)}
+.mode{font-family:var(--d);font-size:0.84rem;color:var(--gray);letter-spacing:0.06em}
+.when{color:var(--gray);font-size:0.7rem}
+.met{font-family:var(--d);font-size:1.05rem;letter-spacing:0.06em}
+.met small{font-family:var(--b);font-size:0.56rem;letter-spacing:0.16em;color:var(--gray);text-transform:uppercase;display:block;margin-top:2px}
+.kebab{color:var(--gray);text-align:right;cursor:pointer;letter-spacing:0.2em}
+
+.notes{margin-top:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--hl)}
+.note{padding:22px 24px;border-right:1px solid var(--hl)}
+.note:last-child{border-right:none}
+.note-h{font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+.note p{font-size:0.78rem;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="crumbs"><a href="dashboard-index.html">← all alternatives</a> · DASHBOARD B · TABBED VIEWS</div>
+<h1>Tabbed views — one type of campaign at a time</h1>
+<p class="deck">Five horizontal tabs at the top — Active, Monitoring, Queued, Drafts, Past. Click one; the page becomes a clean focused list of just that type. No more scrolling past three sections to find what you want. Bulk-select is the default — every row has a checkbox, "Select all" lives in the toolbar, a strip appears above the list when anything is selected.</p>
+
+<div class="app">
+  <div class="app-head">
+    <div class="brand">ORTUS OUTREACH<small>v2.51</small></div>
+    <div class="actions"><button class="btn gold">+ NEW CAMPAIGN</button></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">Active <span class="ct">1</span></div>
+    <div class="tab on">Monitoring <span class="ct">3</span> <span class="new">2 new</span></div>
+    <div class="tab">Queued <span class="ct">2</span></div>
+    <div class="tab">Drafts <span class="ct">2</span></div>
+    <div class="tab">Past <span class="ct">47</span></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tool-l">
+      <span class="selall"><span class="check on"></span> SELECT ALL</span>
+      <span class="filt">FILTER: <a>ALL MODES</a> · <a>ALL ACCOUNTS</a></span>
+    </div>
+    <div class="tool-r">
+      <input class="search" type="text" placeholder="Search this list…" />
+    </div>
+  </div>
+
+  <div class="bulkstrip">
+    <div><span class="n">3</span>SELECTED</div>
+    <div class="bulkstrip-r">
+      <button class="btn">CLEAR</button>
+      <button class="btn">PAUSE WATCH</button>
+      <button class="btn danger">DELETE</button>
+    </div>
+  </div>
+
+  <!-- Monitoring tab content -->
+  <div class="row sel">
+    <span class="check on"></span>
+    <div class="name">TAG_AUSTIN_II <small>2 / 7 ACCEPTED · NEXT CHECK 13M</small></div>
+    <span class="tag amber">DAY 3 / 7</span>
+    <span class="mode">CC + IC</span>
+    <span class="when">3d ago</span>
+    <div class="met">2<small>INTRO</small></div>
+    <span class="kebab">⋯</span>
+  </div>
+  <div class="row sel">
+    <span class="check on"></span>
+    <div class="name">TAG_BERLIN_I <small>5 / 12 ACCEPTED · NEXT CHECK 7M</small></div>
+    <span class="tag amber">DAY 1 / 7</span>
+    <span class="mode">CC + IC</span>
+    <span class="when">18h ago</span>
+    <div class="met">5<small>INTRO</small></div>
+    <span class="kebab">⋯</span>
+  </div>
+  <div class="row sel">
+    <span class="check on"></span>
+    <div class="name">TAG_NYC_III <small>0 / 4 ACCEPTED · NEXT CHECK 4M</small></div>
+    <span class="tag amber">DAY 6 / 7</span>
+    <span class="mode">CC + IC</span>
+    <span class="when">6d ago</span>
+    <div class="met">0<small>INTRO</small></div>
+    <span class="kebab">⋯</span>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <div class="note-h">FIX 1 — MONITORING IS A TAB</div>
+    <p>Equal-weight tab between Active and Queued. Includes a "next check in" hint in each card's subtext. The tab itself shows a small badge when there are unseen monitoring events.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">FIX 2 — SELECT-FIRST</div>
+    <p>Every row already has a checkbox. "Select all" is the leftmost item in the toolbar. Bulk-action strip appears above the list — visible, not hidden behind a menu.</p>
+  </div>
+  <div class="note">
+    <div class="note-h">TRADE-OFF</div>
+    <p>Forces a context-switch to see other categories. Best when you spend most of your time in one tab. Search is per-tab — scoped, faster.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

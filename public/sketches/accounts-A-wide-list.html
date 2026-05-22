@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Accounts · Direction A — Wide list</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { --bg:#000; --ink:#fff; --gray:#999; --hairline:rgba(255,255,255,0.15); --hairline-soft:rgba(255,255,255,0.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68; --display:'Bebas Neue',sans-serif; --mono:'JetBrains Mono',monospace; --body:'Inter',sans-serif; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--ink); font-family:var(--body); -webkit-font-smoothing:antialiased; }
+.wrap { max-width:1280px; margin:0 auto; padding:48px; }
+h2 { font-family:var(--display); font-weight:400; font-size:2.4rem; line-height:1; letter-spacing:0.01em; text-transform:uppercase; margin-bottom:32px; }
+.label { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); margin-bottom:14px; }
+.toolbar { display:flex; gap:12px; margin-bottom:24px; align-items:center; flex-wrap:wrap; }
+.toolbar input { flex:1; min-width:200px; background:transparent; border:none; border-bottom:1px solid var(--hairline); padding:10px 0; color:var(--ink); font-family:var(--body); font-size:0.9rem; }
+.toolbar input:focus { outline:none; border-bottom-color:var(--ink); }
+.btn { padding:10px 20px; border:1px solid var(--hairline); border-radius:9999px; background:transparent; font-family:var(--mono); font-size:0.65rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--ink); cursor:pointer; font-weight:400; transition:opacity 0.15s; }
+.btn:hover { opacity:0.6; }
+.btn.primary { border-color:var(--ink); }
+
+.list { border-top:1px solid var(--hairline); border-bottom:1px solid var(--hairline); }
+.list-header, .list-row { display:grid; grid-template-columns: 40px 2fr 1fr 140px 120px 60px; align-items:center; padding:14px 16px; gap:16px; border-bottom:1px solid var(--hairline-soft); }
+.list-header { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.22em; text-transform:uppercase; color:var(--gray); cursor:pointer; user-select:none; border-bottom:1px solid var(--hairline); }
+.list-header span.sort-active { color:var(--ink); }
+.list-row:hover { background:var(--hairline-soft); }
+.list-row.selected { background:var(--hairline-soft); }
+.list-row.selected::before { content:''; position:absolute; left:0; width:2px; top:0; bottom:0; background:var(--ink); }
+.list-row { position:relative; }
+
+.list-row input[type=checkbox] { accent-color:var(--ink); width:14px; height:14px; }
+.name { font-size:0.92rem; color:var(--ink); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.assignee { font-family:var(--mono); font-size:0.66rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); }
+.soo-dots { display:flex; gap:8px; }
+.dot { width:10px; height:10px; border-radius:9999px; border:1px solid var(--hairline); position:relative; }
+.dot.avail { background:var(--green); border-color:var(--green); }
+.dot.in-use, .dot.used { background:var(--gold); border-color:var(--gold); }
+.dot.na { background:transparent; border-color:var(--red); }
+.dot-label { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.1em; color:var(--gray); text-transform:uppercase; align-self:center; }
+.last-active { font-family:var(--mono); font-size:0.64rem; letter-spacing:0.1em; color:var(--gray); text-transform:uppercase; }
+.order { font-family:var(--display); font-size:1.2rem; color:var(--ink); text-align:center; }
+.order:empty { color:var(--gray); }
+.footer-strip { display:flex; justify-content:space-between; align-items:center; padding:16px 0; font-family:var(--mono); font-size:0.65rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); }
+.legend { display:flex; gap:18px; }
+.legend-item { display:flex; align-items:center; gap:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="label">Direction A</div>
+  <h2>Wide list with sortable columns</h2>
+
+  <div class="toolbar">
+    <input type="text" placeholder="Search by name, email, or @assignee…" />
+    <button class="btn">Select all visible</button>
+    <button class="btn">Deselect all</button>
+    <button class="btn">Refresh</button>
+  </div>
+
+  <div class="list">
+    <div class="list-header">
+      <span></span>
+      <span class="sort-active">Name ↓</span>
+      <span>Assignee</span>
+      <span>OP · InMail · CC</span>
+      <span>Last active</span>
+      <span>#</span>
+    </div>
+
+    <div class="list-row selected">
+      <input type="checkbox" checked />
+      <span class="name">Local Browser</span>
+      <span class="assignee">System Chrome</span>
+      <span class="soo-dots">—</span>
+      <span class="last-active">Active now</span>
+      <span class="order">1</span>
+    </div>
+    <div class="list-row selected">
+      <input type="checkbox" checked />
+      <span class="name">dennis.peralta@ortus.solutions</span>
+      <span class="assignee">Executive</span>
+      <span class="soo-dots">
+        <span class="dot avail" title="OP available"></span>
+        <span class="dot avail" title="InMail available"></span>
+        <span class="dot used" title="CC used"></span>
+      </span>
+      <span class="last-active">32m ago</span>
+      <span class="order">2</span>
+    </div>
+    <div class="list-row selected">
+      <input type="checkbox" checked />
+      <span class="name">kyra.delacruz@ortus.solutions</span>
+      <span class="assignee">Assigned · Ton</span>
+      <span class="soo-dots">
+        <span class="dot na"></span>
+        <span class="dot na"></span>
+        <span class="dot used"></span>
+      </span>
+      <span class="last-active">2h ago</span>
+      <span class="order">3</span>
+    </div>
+    <div class="list-row">
+      <input type="checkbox" />
+      <span class="name">asaduzzaman.r@ortus.solutions</span>
+      <span class="assignee">Pool</span>
+      <span class="soo-dots">
+        <span class="dot in-use"></span>
+        <span class="dot in-use"></span>
+        <span class="dot avail"></span>
+      </span>
+      <span class="last-active">5h ago</span>
+      <span class="order"></span>
+    </div>
+    <div class="list-row">
+      <input type="checkbox" />
+      <span class="name">junie.almeda@ortus.solutions</span>
+      <span class="assignee">Assigned · Ton</span>
+      <span class="soo-dots">
+        <span class="dot na"></span>
+        <span class="dot na"></span>
+        <span class="dot used"></span>
+      </span>
+      <span class="last-active">Yesterday</span>
+      <span class="order"></span>
+    </div>
+    <div class="list-row">
+      <input type="checkbox" />
+      <span class="name">jerianne.c@ortus.solutions</span>
+      <span class="assignee">Pool</span>
+      <span class="soo-dots">
+        <span class="dot avail"></span>
+        <span class="dot avail"></span>
+        <span class="dot avail"></span>
+      </span>
+      <span class="last-active">3d ago</span>
+      <span class="order"></span>
+    </div>
+    <div class="list-row">
+      <input type="checkbox" />
+      <span class="name">sophie.pascua@ortus.solutions</span>
+      <span class="assignee">Assigned · Aima</span>
+      <span class="soo-dots">
+        <span class="dot na"></span>
+        <span class="dot na"></span>
+        <span class="dot avail"></span>
+      </span>
+      <span class="last-active">1w ago</span>
+      <span class="order"></span>
+    </div>
+    <div class="list-row">
+      <input type="checkbox" />
+      <span class="name">alfhea.rabacal@ortus.solutions</span>
+      <span class="assignee">Pool</span>
+      <span class="soo-dots">
+        <span class="dot na"></span>
+        <span class="dot na"></span>
+        <span class="dot na"></span>
+      </span>
+      <span class="last-active">2w ago</span>
+      <span class="order"></span>
+    </div>
+    <div class="list-row">
+      <input type="checkbox" />
+      <span class="name">francis.zuzartee@ortus.solutions</span>
+      <span class="assignee">Pool</span>
+      <span class="soo-dots">
+        <span class="dot na"></span>
+        <span class="dot na"></span>
+        <span class="dot na"></span>
+      </span>
+      <span class="last-active">3w ago</span>
+      <span class="order"></span>
+    </div>
+  </div>
+
+  <div class="footer-strip">
+    <span>3 selected / 302 total</span>
+    <div class="legend">
+      <span class="legend-item"><span class="dot avail"></span> Available</span>
+      <span class="legend-item"><span class="dot in-use"></span> In use / Used</span>
+      <span class="legend-item"><span class="dot na"></span> N/A</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

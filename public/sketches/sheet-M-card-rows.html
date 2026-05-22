@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet redesign — M. Card-rows (merged cells)</title>
+<style>
+body { margin: 0; padding: 32px; background: #f8f9fa; font-family: Arial, 'Helvetica Neue', sans-serif; color: #202124; }
+.wrap { max-width: 1500px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+.sub { color: #5f6368; font-size: 13px; margin-bottom: 24px; }
+.panel { background: #fff; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+.toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #5f6368; }
+.toolbar .name { font-weight: 600; color: #202124; margin-right: 12px; }
+.tabs { display: flex; padding: 0 12px; border-bottom: 1px solid #e8eaed; font-size: 12px; }
+.tabs span { padding: 6px 12px; border-right: 1px solid #e8eaed; }
+.tabs span.active { background: #fff; font-weight: 600; border-top: 2px solid #1a73e8; }
+
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { border: 1px solid #e8eaed; padding: 8px 12px; text-align: left; vertical-align: middle; }
+th { background: #f8f9fa; color: #5f6368; font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; height: 24px; }
+td.idx, th.idx { background: #f8f9fa; color: #80868b; text-align: center; font-weight: 600; width: 40px; vertical-align: top; padding-top: 12px; }
+
+/* Each "card-row" actually spans 2 sheet rows merged. We fake it with multi-line cells. */
+.card-cell { padding: 8px 12px 10px; line-height: 1.5; }
+.card-cell .name { font-weight: 600; font-size: 13px; color: #202124; }
+.card-cell .headline { color: #5f6368; font-size: 11px; margin-top: 1px; }
+.card-cell .meta-row { color: #5f6368; font-size: 12px; margin-top: 4px; }
+.card-cell .meta-row .stage { font-weight: 600; color: #202124; }
+
+.stage-pill { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; margin-right: 6px; }
+.s-replied { background: #fff2cc; color: #594400; }
+.s-dm-now  { background: #d9f1da; color: #0a6b27; }
+.s-dm-sent { background: #cfe9fc; color: #0b5394; }
+.s-pending { background: #f3e8ff; color: #5b21b6; }
+.s-first   { background: #fff4d6; color: #8a5a00; }
+.s-done    { background: #eceff1; color: #5f6368; }
+.s-blocked { background: #fce4e4; color: #a1252b; }
+
+td.url-cell { vertical-align: top; padding-top: 12px; }
+td.url-cell a { color: #1a73e8; text-decoration: none; font-size: 12px; }
+td.next-cell { vertical-align: top; padding-top: 12px; font-weight: 500; }
+
+.next-now      { color: #0a6b27; }
+.next-wait     { color: #5b21b6; }
+.next-replied  { color: #594400; font-weight: 700; }
+.next-done     { color: #80868b; }
+
+.note { font-size: 12px; color: #5f6368; margin-top: 18px; line-height: 1.6; }
+.note code { background: #f1f3f4; padding: 1px 6px; border-radius: 3px; font-family: 'Roboto Mono', ui-monospace, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Sheet redesign — M. Card-rows (merged cells)</h1>
+  <p class="sub">Each lead is one taller "card-row" with multiline content. Reads like a contacts app — name + headline on top, status + last action underneath. Sheet rows are taller (~50px) but the page condenses information vertically.</p>
+
+  <div class="panel">
+    <div class="toolbar"><span class="name">Outreach Pipeline</span><span>· File · Edit · View · Insert · Format · Data</span></div>
+    <div class="tabs"><span class="active">Pipeline</span><span>Audit Log</span><span>Senders</span></div>
+    <table>
+      <thead>
+        <tr>
+          <th class="idx"></th>
+          <th style="width:380px">Lead</th>
+          <th style="width:280px">LinkedIn</th>
+          <th style="width:200px">Sender</th>
+          <th>Next action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="idx">2</td>
+          <td class="card-cell">
+            <div class="name">Edwin Silva</div>
+            <div class="headline">Director, IT Operations &amp; Infrastructure · Bayshore HealthCare</div>
+            <div class="meta-row"><span class="stage-pill s-replied">Replied</span> 1d ago — "Thanks Iliya, happy to chat — does Tuesday work?"</div>
+          </td>
+          <td class="url-cell"><a>linkedin.com/in/edwinsilvait</a></td>
+          <td class="url-cell">iliya@ortus.solutions</td>
+          <td class="next-cell next-replied">Read &amp; reply ↗</td>
+        </tr>
+
+        <tr><td class="idx">3</td>
+          <td class="card-cell">
+            <div class="name">Sofia Gomez de Silva</div>
+            <div class="headline">Founder · GoldenSlice Capital</div>
+            <div class="meta-row"><span class="stage-pill s-dm-sent">DM Sent</span> Intro to Antonio · today</div>
+          </td>
+          <td class="url-cell"><a>linkedin.com/in/sofia-gomez-…</a></td>
+          <td class="url-cell">abhinay.kumar@ortus.solutions</td>
+          <td class="next-cell next-wait">Wait for reply</td>
+        </tr>
+
+        <tr><td class="idx">4</td>
+          <td class="card-cell">
+            <div class="name">Ravi Bhatia</div>
+            <div class="headline">VP Engineering · Apex Systems</div>
+            <div class="meta-row"><span class="stage-pill s-dm-now">Connected · DM Now</span> Connect accepted 2d ago</div>
+          </td>
+          <td class="url-cell"><a>linkedin.com/in/ravibhatia</a></td>
+          <td class="url-cell">iliya@ortus.solutions</td>
+          <td class="next-cell next-now">Bot will pick up</td>
+        </tr>
+
+        <tr><td class="idx">5</td>
+          <td class="card-cell">
+            <div class="name">Mike Hendley</div>
+            <div class="headline">CTO · Northbridge Group</div>
+            <div class="meta-row"><span class="stage-pill s-dm-now">Connected · DM Now</span> Connect accepted 3d ago</div>
+          </td>
+          <td class="url-cell"><a>linkedin.com/in/mikehendley</a></td>
+          <td class="url-cell">zhelena@gmail.com</td>
+          <td class="next-cell next-now">Bot will pick up</td>
+        </tr>
+
+        <tr><td class="idx">6</td>
+          <td class="card-cell">
+            <div class="name">Carlos Reyes</div>
+            <div class="headline">Director of Strategy · Acme Holdings</div>
+            <div class="meta-row"><span class="stage-pill s-pending">Connect Pending</span> Sent 8d ago by Iliya</div>
+          </td>
+          <td class="url-cell"><a>linkedin.com/in/carlos-reyes-…</a></td>
+          <td class="url-cell">iliya@ortus.solutions</td>
+          <td class="next-cell next-wait">Wait — still pending</td>
+        </tr>
+
+        <tr><td class="idx">7</td>
+          <td class="card-cell">
+            <div class="name">Robert Michel</div>
+            <div class="headline">Managing Partner · Riverstone Advisors</div>
+            <div class="meta-row"><span class="stage-pill s-first">Never contacted</span> Loaded today</div>
+          </td>
+          <td class="url-cell"><a>linkedin.com/in/robert-michel-…</a></td>
+          <td class="url-cell" style="color:#80868b">— (auto-route on next run)</td>
+          <td class="next-cell next-now">Send Connect</td>
+        </tr>
+
+        <tr><td class="idx">8</td>
+          <td class="card-cell">
+            <div class="name">Jonathan Brami</div>
+            <div class="headline">CEO · Brami &amp; Co.</div>
+            <div class="meta-row"><span class="stage-pill s-done">Done</span> Replied &amp; closed · 15d ago</div>
+          </td>
+          <td class="url-cell"><a>linkedin.com/in/jonathan-brami</a></td>
+          <td class="url-cell">milee.mel@ortus.solutions</td>
+          <td class="next-cell next-done">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <strong>How this works in Sheets:</strong> set the row height to ~50px and use <code>Format → Wrapping → Wrap</code> on the Lead column. Bot writes the cell with embedded line breaks (<code>CHAR(10)</code>): <code>="Edwin Silva" &amp; CHAR(10) &amp; "Director · Bayshore" &amp; CHAR(10) &amp; "Replied 1d ago"</code>. <br>
+    <strong>The stage pill</strong> is its own column to its left (1 word per cell, conditional formatting paints it), or done with rich-text formatting on the same cell (<code>SpreadsheetApp Range.setRichTextValue</code>). <br>
+    <strong>Why it's nice:</strong> the lead's name + headline + status all live in one visual block. Less left-right scanning. Looks more modern than a flat grid. <br>
+    <strong>Trade-off:</strong> Sheets is awkward at multiline cells — copy/paste, sorting, and filtering all behave a bit differently. Best for read-mostly views.
+  </div>
+</div>
+</body>
+</html>

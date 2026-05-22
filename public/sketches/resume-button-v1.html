@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Resume button — v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999999;
+    --gray-2: #6a6a6a;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --gold: #F7BE68;
+    --amber: #b9770e;
+    --amber-line: rgba(185, 119, 14, 0.55);
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 48px 56px 120px;
+    -webkit-font-smoothing: antialiased;
+    font-weight: 400;
+  }
+
+  .page-head { display: flex; align-items: baseline; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+  .page-title { font-family: var(--display); font-size: 2.6rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+
+  .topnav { position: sticky; top: 0; background: var(--bg); padding: 14px 0; border-bottom: 1px solid var(--hairline); margin: -14px -56px 32px; padding-left: 56px; padding-right: 56px; z-index: 10; display: flex; gap: 22px; }
+  .topnav a { color: var(--gray); text-decoration: none; font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; }
+  .topnav a:hover { color: var(--ink); }
+
+  .section { margin-bottom: 64px; }
+  .section-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  .section-title { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.02em; text-transform: uppercase; }
+  .section-counter { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  .section-desc { font-size: 0.85rem; color: var(--gray); margin-bottom: 22px; max-width: 760px; line-height: 1.5; }
+
+  /* ─── Buttons ─────────────────────────────────────────────────────────── */
+  .btn {
+    background: transparent; color: var(--ink); border: 1px solid var(--hairline);
+    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 9px 20px; border-radius: 9999px; cursor: pointer; white-space: nowrap;
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+  .btn:hover { border-color: var(--ink); }
+  .btn--small { font-size: 0.55rem; padding: 4px 10px; letter-spacing: 0.12em; }
+  /* Resume = primary, gold like Start. The only chip/btn allowed gold per design. */
+  .btn--resume {
+    background: transparent;
+    color: var(--gold);
+    border-color: var(--gold);
+  }
+  .btn--resume:hover { background: var(--gold); color: var(--bg); }
+
+  /* ─── Cockpit panel (idle/stopped) ────────────────────────────────────── */
+  .cockpit {
+    border: 1px solid var(--hairline);
+    padding: 32px 28px;
+    display: grid;
+    grid-template-columns: 240px 1fr auto;
+    gap: 32px;
+    align-items: center;
+    max-width: 1100px;
+  }
+  .cockpit-ring {
+    width: 200px; height: 200px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .cockpit-ring--stopped { border-color: var(--amber-line); }
+  .ring-num { font-family: var(--display); font-size: 4rem; line-height: 1; color: var(--gray); }
+  .ring-unit { font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-top: 4px; }
+  .ring-tag {
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    background: var(--bg); padding: 0 10px;
+    font-size: 0.55rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--amber);
+  }
+  .cockpit-body { display: flex; flex-direction: column; gap: 14px; }
+  .cockpit-label { font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  .cockpit-title { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; line-height: 1.1; }
+  .cockpit-meta { font-size: 0.72rem; color: var(--gray); }
+  .cockpit-meta b { color: var(--ink); font-weight: 500; }
+
+  .cockpit-actions { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ─── Past campaigns list ─────────────────────────────────────────────── */
+  .past-list { border-top: 1px solid var(--hairline); }
+  .past-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1.4fr) 140px 180px 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 14px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .past-num { font-size: 0.6rem; letter-spacing: 0.1em; color: var(--gray); text-align: right; }
+  .past-name { font-family: var(--display); font-size: 1rem; letter-spacing: 0.02em; }
+  .past-date { font-size: 0.62rem; letter-spacing: 0.04em; color: var(--gray); }
+  .past-meta { font-size: 0.62rem; letter-spacing: 0.04em; color: var(--gray); }
+  .past-meta b { color: var(--ink); font-weight: 500; }
+  .past-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .end-chip {
+    font-family: var(--mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    color: var(--gray);
+    white-space: nowrap;
+    justify-self: start;
+  }
+  .end-chip--stopped   { color: var(--amber); border-color: var(--amber-line); }
+  .end-chip--completed { color: var(--gray-2); }
+  .end-chip--errored   { color: #c0392b; border-color: rgba(192,57,43,.5); }
+
+  /* ─── Modal ───────────────────────────────────────────────────────────── */
+  .modal-backdrop {
+    background: rgba(0,0,0,0.7);
+    border: 1px dashed var(--hairline);
+    padding: 60px 40px;
+    display: flex;
+    justify-content: center;
+  }
+  .modal {
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    padding: 40px 44px 36px;
+    max-width: 560px;
+    width: 100%;
+  }
+  .modal-eyebrow { font-size: 0.55rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .modal-title { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.02em; line-height: 1; margin-bottom: 6px; }
+  .modal-sub { font-size: 0.78rem; color: var(--gray); margin-bottom: 28px; line-height: 1.5; }
+  .modal-section { margin-bottom: 24px; }
+  .modal-label { font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .modal-summary {
+    border: 1px solid var(--hairline);
+    padding: 14px 16px;
+    font-size: 0.72rem;
+    line-height: 1.7;
+    color: var(--ink);
+  }
+  .modal-summary-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; }
+  .modal-summary-row + .modal-summary-row { border-top: 1px solid var(--hairline-soft); padding-top: 6px; margin-top: 6px; }
+  .modal-summary-row span:first-child { color: var(--gray); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .modal-summary-row b { font-weight: 500; }
+  .modal-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 28px; }
+  .modal-actions .btn { padding: 14px 22px; font-size: 0.72rem; letter-spacing: 0.16em; }
+  .modal-cancel { background: transparent; border: 0; color: var(--gray); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer; margin-top: 14px; }
+  .modal-cancel:hover { color: var(--ink); }
+
+  /* per-account count strip used both in cockpit and modal */
+  .acct-strip { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.65rem; color: var(--gray); }
+  .acct-strip span b { color: var(--ink); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <a href="#runbar">Runbar</a>
+  <a href="#cockpit">Cockpit (stopped)</a>
+  <a href="#past">Past list</a>
+  <a href="#modal">Choice dialog</a>
+</div>
+
+<div class="page-head">
+  <div class="page-title">Resume button · v1</div>
+  <div class="page-sub">Cockpit · past list · resume-choice modal</div>
+</div>
+
+<!-- ─── Runbar (bottom action strip) ────────────────────────────────────── -->
+<section class="section" id="runbar">
+  <div class="section-head">
+    <div class="section-title">Runbar · stopped state</div>
+    <div class="section-counter">Status pill changes · Resume replaces Start · Pause/Stop hidden</div>
+  </div>
+  <div class="section-desc">
+    Today's runbar (top mock) shows IDLE · VIEW STATUS · START CAMPAIGN · PAUSE
+    · STOP CAMPAIGN · SAVED CONFIGS. When the last campaign ended with
+    `endReason === 'stopped'`, the bar transitions to the bottom layout —
+    Pause/Stop hide (nothing's running), Resume takes the gold slot, and a
+    neutral "New" pill is the escape hatch to start fresh. Shown in light
+    theme to match the live app.
+  </div>
+
+  <div class="runbar-mock">
+    <div class="runbar-label">Today (idle)</div>
+    <div class="runbar runbar--light">
+      <div class="runbar-status">
+        <span class="status-dot status-dot--idle"></span>
+        <span class="status-label">Idle</span>
+      </div>
+      <button class="runbar-btn runbar-btn--ghost">View status</button>
+      <button class="runbar-btn runbar-btn--start">Start campaign</button>
+      <button class="runbar-btn runbar-btn--ghost">Pause</button>
+      <button class="runbar-btn runbar-btn--stop">Stop campaign</button>
+      <div class="runbar-spacer"></div>
+      <button class="runbar-btn runbar-btn--ghost">Saved configs <span class="runbar-badge">6</span></button>
+    </div>
+
+    <div class="runbar-label" style="margin-top: 32px;">Stopped + resumable (proposed)</div>
+    <div class="runbar runbar--light">
+      <div class="runbar-status">
+        <span class="status-dot status-dot--stopped"></span>
+        <span class="status-label status-label--stopped">Stopped</span>
+      </div>
+      <button class="runbar-btn runbar-btn--ghost">View status</button>
+      <button class="runbar-btn runbar-btn--resume">Resume</button>
+      <button class="runbar-btn runbar-btn--ghost">New</button>
+      <div class="runbar-spacer"></div>
+      <button class="runbar-btn runbar-btn--ghost">Saved configs <span class="runbar-badge">6</span></button>
+    </div>
+
+    <div class="runbar-label" style="margin-top: 32px;">Stopped + resumable (dark theme)</div>
+    <div class="runbar">
+      <div class="runbar-status">
+        <span class="status-dot status-dot--stopped"></span>
+        <span class="status-label status-label--stopped">Stopped</span>
+      </div>
+      <button class="runbar-btn runbar-btn--ghost">View status</button>
+      <button class="runbar-btn runbar-btn--resume">Resume</button>
+      <button class="runbar-btn runbar-btn--ghost">New</button>
+      <div class="runbar-spacer"></div>
+      <button class="runbar-btn runbar-btn--ghost">Saved configs <span class="runbar-badge">6</span></button>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Runbar mockup — matches the live runbar's pill style */
+  .runbar-mock {
+    border: 1px dashed var(--hairline);
+    padding: 28px 24px;
+  }
+  .runbar-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gray);
+    margin-bottom: 12px;
+  }
+  .runbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 22px;
+    border: 1px solid var(--hairline);
+    border-radius: 0;
+    background: var(--bg);
+  }
+  .runbar--light {
+    background: #fafafa;
+    color: #0a0a0a;
+    border-color: rgba(0,0,0,0.15);
+  }
+  .runbar-status { display: flex; align-items: center; gap: 10px; margin-right: 6px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 9999px; background: #999; }
+  .status-dot--stopped { background: var(--amber); }
+  .status-label {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #999;
+  }
+  .status-label--stopped { color: var(--amber); }
+
+  .runbar-btn {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 10px 22px;
+    border-radius: 9999px;
+    cursor: pointer;
+    white-space: nowrap;
+    background: transparent;
+    color: inherit;
+    border: 1px solid rgba(0,0,0,0.18);
+  }
+  .runbar--light .runbar-btn--ghost { color: #0a0a0a; border-color: rgba(0,0,0,0.18); }
+  .runbar:not(.runbar--light) .runbar-btn--ghost { color: var(--ink); border-color: var(--hairline); }
+
+  .runbar-btn--start {
+    background: #0a0a0a;
+    color: var(--gold);
+    border-color: #0a0a0a;
+  }
+  .runbar--light .runbar-btn--start {
+    background: #0a0a0a;
+    color: var(--gold);
+    border-color: #0a0a0a;
+  }
+  .runbar-btn--stop {
+    background: #f6c8c4;
+    color: #6b1a13;
+    border-color: #f6c8c4;
+  }
+  /* Resume = gold pill (same gold treatment as Start; Resume IS a Start) */
+  .runbar-btn--resume {
+    background: var(--gold);
+    color: #0a0a0a;
+    border-color: var(--gold);
+    font-weight: 500;
+  }
+  .runbar-btn--resume:hover { opacity: 0.9; }
+
+  .runbar-spacer { flex: 1; }
+  .runbar-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 1px solid currentColor;
+    font-size: 0.55rem;
+    margin-left: 6px;
+    padding: 0 6px;
+  }
+</style>
+
+<!-- ─── Cockpit ─────────────────────────────────────────────────────────── -->
+<section class="section" id="cockpit">
+  <div class="section-head">
+    <div class="section-title">Cockpit · stopped state</div>
+    <div class="section-counter">replaces Idle when last run ended in 'stopped'</div>
+  </div>
+  <div class="section-desc">
+    When `endReason === 'stopped'`, the cockpit shows a "Resume" CTA in gold
+    (treated as a Start) alongside the standard "New campaign" path.
+    Per-account counts are pulled from `state.processed` (entries with
+    `date = today`).
+  </div>
+
+  <div class="cockpit">
+    <div class="cockpit-ring cockpit-ring--stopped">
+      <div class="ring-tag">Stopped</div>
+      <div class="ring-num">102</div>
+      <div class="ring-unit">processed</div>
+    </div>
+    <div class="cockpit-body">
+      <div class="cockpit-label">Last campaign</div>
+      <div class="cockpit-title">Pharma · Tier 1 GMs</div>
+      <div class="cockpit-meta">Connect &amp; Introduce · 5 accounts · stopped <b>9 minutes ago</b></div>
+      <div class="acct-strip">
+        <span>Louisa <b>22/50</b></span>
+        <span>·</span>
+        <span>Ankit <b>26/50</b></span>
+        <span>·</span>
+        <span>Abi <b>24/50</b></span>
+        <span>·</span>
+        <span>Hannah <b>25/50</b></span>
+        <span>·</span>
+        <span>Lhuz <b>5/50</b></span>
+      </div>
+    </div>
+    <div class="cockpit-actions">
+      <button class="btn btn--resume">Resume</button>
+      <button class="btn">New campaign</button>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Past campaigns list ────────────────────────────────────────────── -->
+<section class="section" id="past">
+  <div class="section-head">
+    <div class="section-title">Past campaigns · list</div>
+    <div class="section-counter">Resume only appears on 'stopped' rows</div>
+  </div>
+  <div class="section-desc">
+    Each row carries an end-state chip. The Resume CTA renders only when
+    `endReason === 'stopped'`. Completed and errored rows still get the
+    existing "Re-run" path (not a true resume — fresh counts).
+  </div>
+
+  <div class="past-list">
+
+    <div class="past-row">
+      <span class="past-num">1</span>
+      <span class="past-name">Pharma · Tier 1 GMs</span>
+      <span class="end-chip end-chip--stopped">Stopped</span>
+      <span class="past-date">Today · 14:42 · 9m ago</span>
+      <span class="past-meta">5 accts · 102 sent · <b>148 leads remaining</b></span>
+      <span class="past-actions">
+        <button class="btn btn--small btn--resume">Resume</button>
+      </span>
+    </div>
+
+    <div class="past-row">
+      <span class="past-num">2</span>
+      <span class="past-name">Construction · UK MDs</span>
+      <span class="end-chip end-chip--completed">Completed</span>
+      <span class="past-date">Today · 11:08</span>
+      <span class="past-meta">3 accts · 150 sent · batch complete</span>
+      <span class="past-actions">
+        <button class="btn btn--small">Re-run</button>
+      </span>
+    </div>
+
+    <div class="past-row">
+      <span class="past-num">3</span>
+      <span class="past-name">Insurance · APAC</span>
+      <span class="end-chip end-chip--stopped">Stopped</span>
+      <span class="past-date">Yesterday · 17:21</span>
+      <span class="past-meta">4 accts · 78 sent · stopped manually</span>
+      <span class="past-actions">
+        <button class="btn btn--small btn--resume">Resume</button>
+      </span>
+    </div>
+
+    <div class="past-row">
+      <span class="past-num">4</span>
+      <span class="past-name">Hospitality · Tier 2</span>
+      <span class="end-chip end-chip--errored">Errored</span>
+      <span class="past-date">Yesterday · 09:54</span>
+      <span class="past-meta">2 accts · 14 sent · fatal error</span>
+      <span class="past-actions">
+        <button class="btn btn--small">Re-run</button>
+      </span>
+    </div>
+
+    <div class="past-row">
+      <span class="past-num">5</span>
+      <span class="past-name">Banking · EMEA Q2</span>
+      <span class="end-chip end-chip--completed">Completed</span>
+      <span class="past-date">May 11 · 16:33</span>
+      <span class="past-meta">5 accts · 200 sent · batch complete</span>
+      <span class="past-actions">
+        <button class="btn btn--small">Re-run</button>
+      </span>
+    </div>
+
+  </div>
+</section>
+
+<!-- ─── Choice dialog ──────────────────────────────────────────────────── -->
+<section class="section" id="modal">
+  <div class="section-head">
+    <div class="section-title">Resume · choice dialog</div>
+    <div class="section-counter">Triggered by any Resume button</div>
+  </div>
+  <div class="section-desc">
+    Asks the operator whether to resume with identical settings (the fast
+    path — one click and it's running) or to edit something first (re-opens
+    the wizard prefilled, like the existing "Re-run with same settings"
+    flow).
+  </div>
+
+  <div class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-eyebrow">Resume campaign</div>
+      <div class="modal-title">Pharma · Tier 1 GMs</div>
+      <div class="modal-sub">Stopped 9 minutes ago. State is preserved — accounts will pick up at their current daily totals.</div>
+
+      <div class="modal-section">
+        <div class="modal-label">What you'd be resuming</div>
+        <div class="modal-summary">
+          <div class="modal-summary-row">
+            <span>Sheet</span>
+            <span><b>Pharma Tier 1 GMs · Sheet1</b></span>
+          </div>
+          <div class="modal-summary-row">
+            <span>Mode</span>
+            <span><b>Connect &amp; Introduce</b></span>
+          </div>
+          <div class="modal-summary-row">
+            <span>Accounts</span>
+            <span><b>5</b> · Louisa, Ankit, Abi, Hannah, Lhuz</span>
+          </div>
+          <div class="modal-summary-row">
+            <span>Daily limit</span>
+            <span><b>50/account</b></span>
+          </div>
+          <div class="modal-summary-row">
+            <span>Done today</span>
+            <span>
+              <b>Louisa 22/50</b> · <b>Ankit 26/50</b> · <b>Abi 24/50</b> · <b>Hannah 25/50</b> · <b>Lhuz 5/50</b>
+            </span>
+          </div>
+          <div class="modal-summary-row">
+            <span>Remaining</span>
+            <span><b>148 leads</b> in sheet · <b>118 send-slots</b> across today</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn--resume">Resume now · same settings</button>
+        <button class="btn">Edit settings first</button>
+      </div>
+      <div style="text-align:center">
+        <button class="modal-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</body>
+</html>
