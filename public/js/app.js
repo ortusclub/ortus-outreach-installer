@@ -3470,6 +3470,12 @@ function updateCockpit(s) {
   __cockpit.action = s.currentAction || null;
   __cockpit.mode = s.mode || null;
   __cockpit.pName = s.currentProfile || null;
+  // v2.58.x — runbar mirror reads __cockpit.name to populate the identity
+  // slot. Without this assignment the runbar permanently showed
+  // "Untitled · CC+IB" even when /api/campaign/status returned a real
+  // campaign name (the dashboard active row was rendering correctly
+  // because it reads from the fetch response directly).
+  __cockpit.name = s.name || '';
   __cockpit.state = nextState;
 
   if (justEnded) {
