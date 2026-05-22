@@ -1585,10 +1585,11 @@ function onModeChange() {
     renderPostAmpTemplates();
   } else {
     // Reset Start CTA back to default when leaving auto-routed modes.
-    ['btn-start', 'btn-start-rb'].forEach(id => {
-      const b = document.getElementById(id);
-      if (b) b.textContent = 'Start Campaign';
-    });
+    // v2.57.7: only resets the section-5 Start button. The runbar's
+    // Start button (#btn-start-rb) keeps its short label "Start" — it
+    // lives in the tight grouped strip where "Start Campaign" wraps.
+    const startMain = document.getElementById('btn-start');
+    if (startMain) startMain.textContent = 'Start Campaign';
   }
 
   // Persist last-used mode
@@ -3674,13 +3675,19 @@ function renderCockpit() {
 
 function formatMode(m) {
   if (!m) return '—';
+  // v2.57.7: added connect_and_introduce + introduce_back so the runbar
+  // doesn't leak raw enums into the UI (was rendering as
+  // "CONNECT_AND_INTRODUCE" — uppercased + wrapping the action strip).
   const map = {
     connect_only: 'Connect',
+    connect_and_introduce: 'CC+IB',
+    introduce_back: 'IC',
     message_only: 'Message',
     inmail_only: 'InMail',
     open_profile_only: 'Open Profile',
     check_status: 'Check Status',
     check_dms: 'Check DMs',
+    post_amplification: 'Post amp',
     auto: 'Auto',
   };
   return map[m] || m;
@@ -4780,12 +4787,17 @@ async function toggleScheduleEnabled(id, enabled) {
 
 async function deleteSchedule(id) {
   if (!confirm('Delete this schedule?')) return;
+  // v2.57.7: optimistic removal so the row disappears immediately from
+  // both the Schedules panel and the ALL-tab clone.
+  document.querySelectorAll(`.campaign-row[data-campaign-id="${CSS.escape(id)}"]`)
+    .forEach((el) => el.remove());
   try {
     const res = await fetch('/api/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
     const data = await res.json();
     if (data.deleted) {
       if (typeof fetchSchedules === 'function') await fetchSchedules();
       if (typeof refreshDashboardSchedules === 'function') await refreshDashboardSchedules();
+      if (typeof renderDashboardAll === 'function') renderDashboardAll();
     }
   } catch (err) {
     alert('Failed to delete schedule: ' + err.message);
@@ -4985,6 +4997,9 @@ function initScrollSpy() {
 function initRunBarMirror() {
   const bar = document.getElementById('run-bar-status');
   const txt = document.getElementById('run-bar-text');
+  // v2.57.7: top line of the two-line status stack — shows the running
+  // campaign's name. Empty in idle state (CSS hides empty via :empty).
+  const nameEl = document.getElementById('run-bar-name');
   const statusSection = document.getElementById('nav-status');
   if (!bar || !txt) return;
   let wasRunning = false;
@@ -4993,18 +5008,29 @@ function initRunBarMirror() {
     const monitoring = !running && __cockpit.state === 'monitoring';
     bar.classList.toggle('running', running);
     bar.classList.toggle('monitoring', monitoring);
-    const profile = (__cockpit.action && __cockpit.action.account) || __cockpit.pName || '';
     const mode = formatMode(__cockpit.mode);
     const today = document.getElementById('st-today')?.textContent || '0';
     const total = document.getElementById('st-total')?.textContent || '0';
+    const cName = (__cockpit.name || '').trim();
+    // v2.57.7: when no campaign name is set, fold the mode into the
+    // identity slot ("Untitled · CC+IB") and drop it from the status
+    // text. Avoids duplication and gives a hint of what kind of campaign
+    // is live even when it's nameless.
+    const identity = cName || `Untitled · ${mode}`;
     if (running) {
       const label = __cockpit.paused ? 'Paused' : (__cockpit.pauseRequested ? 'Pausing…' : 'Running');
-      txt.innerHTML = `<strong>${label}</strong> · ${mode} · ${profile} · ${today}/${total}`;
+      if (nameEl) nameEl.textContent = identity;
+      // Status text strips the profile name (was too long, wrapped the
+      // action strip) and only shows mode when a real name is set —
+      // otherwise the mode already sits in the identity slot.
+      const modePart = cName ? `${mode} · ` : '';
+      txt.innerHTML = `<strong>${label}</strong> · ${modePart}${today}/${total}`;
     } else if (monitoring) {
       // v2.13.14 — surface monitoring countdown in the sticky toolbar.
-      // Matches the format in the Schedule card so the operator sees
-      // the same "next 04:35 · ends in 6d 23h" no matter where they look.
       // v2.14.x — when a bulk-check is mid-fire, swap to "checking now…".
+      // v2.57.7 — also surface the campaign name on the top line so the
+      // operator sees which campaign is being monitored.
+      if (nameEl) nameEl.textContent = identity;
       if (__cockpit.monitoringCheckInProgress) {
         txt.innerHTML = `<strong>Monitoring</strong> <span class="run-bar-meta-mono">checking now…</span>`;
       } else {
@@ -5016,7 +5042,10 @@ function initRunBarMirror() {
         txt.innerHTML = `<strong>Monitoring</strong> <span class="run-bar-meta-mono">next ${nextStr} · ends in ${endsStr}</span>`;
       }
     } else {
-      txt.textContent = 'Idle';
+      // v2.57.7 — idle: clear the name line so the status stack collapses
+      // to the single "Idle · no campaign" row.
+      if (nameEl) nameEl.textContent = '';
+      txt.textContent = 'Idle · no campaign';
     }
 
     // Right-pane status mirror
@@ -5399,6 +5428,90 @@ async function onNotifPrefChange(key, value) {
 }
 window.onNotifPrefChange = onNotifPrefChange;
 
+// ── v2.58.x — Per-operator timezone ────────────────────────────────────
+// Confirms on first launch after this update lands (skippable; re-prompts
+// next launch). Saving stores the choice via /api/operator-prefs and the
+// bot then sends `tz` on every Apps Script write so timestamps land in
+// the launcher's local time.
+
+function _detectLocalTz() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+  catch { return ''; }
+}
+
+function _populateTzSelect(selectedTz) {
+  const sel = document.getElementById('op-tz-select');
+  if (!sel) return;
+  let zones = [];
+  try {
+    // Intl.supportedValuesOf — available in Chromium 111+. Electron 33
+    // ships Chromium 130 so this is safe per package.json.
+    zones = Intl.supportedValuesOf('timeZone') || [];
+  } catch { zones = []; }
+  if (!zones.length) zones = [selectedTz || 'UTC'];
+  // Ensure the detected/selected value is in the list (defensive — if the
+  // runtime has a weird tz, we still want to render it as the current option).
+  if (selectedTz && !zones.includes(selectedTz)) zones.unshift(selectedTz);
+  sel.innerHTML = zones.map(tz => `<option value="${tz}"${tz === selectedTz ? ' selected' : ''}>${tz}</option>`).join('');
+}
+
+function openOpTzModal() {
+  const modal = document.getElementById('op-tz-modal');
+  if (!modal) return;
+  // Read the current stored tz off the sidebar (already populated by loadOperatorPrefs).
+  // If empty, fall back to the OS-detected zone.
+  const cur = document.getElementById('op-tz-current')?.textContent?.trim();
+  const preselected = (cur && cur !== '—') ? cur : _detectLocalTz();
+  _populateTzSelect(preselected);
+  modal.classList.remove('hidden');
+}
+function closeOpTzModal() {
+  document.getElementById('op-tz-modal')?.classList.add('hidden');
+}
+async function saveOpTzFromModal() {
+  const sel = document.getElementById('op-tz-select');
+  const tz = sel?.value || '';
+  if (!tz) { closeOpTzModal(); return; }
+  try {
+    const res = await fetch('/api/operator-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tz }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const stored = data?.prefs?.tz || tz;
+      const cur = document.getElementById('op-tz-current');
+      if (cur) cur.textContent = stored;
+    }
+  } catch (err) {
+    console.warn('[op-tz] save failed:', err?.message || err);
+  }
+  closeOpTzModal();
+}
+
+async function loadOperatorPrefs() {
+  try {
+    const res = await fetch('/api/operator-prefs');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tz = data?.prefs?.tz || '';
+    const cur = document.getElementById('op-tz-current');
+    if (cur) cur.textContent = tz || '—';
+    // First-launch behavior: blank stored tz → show modal pre-filled with
+    // the detected OS zone. Skip-link in the modal just dismisses; nothing
+    // gets persisted, so the modal re-fires on next launch (user's choice).
+    if (!tz) {
+      _populateTzSelect(_detectLocalTz());
+      document.getElementById('op-tz-modal')?.classList.remove('hidden');
+    }
+  } catch { /* silent — feature stays unconfigured until next launch */ }
+}
+
+window.openOpTzModal = openOpTzModal;
+window.closeOpTzModal = closeOpTzModal;
+window.saveOpTzFromModal = saveOpTzFromModal;
+
 function initServerDesktopNotifier() {
   // Poll every 60s — the post-campaign scheduler ticks every 30 min, so a
   // minute of latency on a popup is well within the user's tolerance and
@@ -5437,6 +5550,7 @@ if ('Notification' in window && Notification.permission === 'granted') {
 initScheduleNotifier();
 initServerDesktopNotifier();
 loadNotificationPrefs();
+loadOperatorPrefs();
 
 // Open Profile toggle listener
 document.getElementById('open-profile-msg')?.addEventListener('change', () => {
@@ -6666,6 +6780,11 @@ async function refreshDashboardDrafts() {
 async function deleteDraft(id) {
   if (!id) return;
   if (!confirm('Delete this draft?')) return;
+  // v2.57.7: optimistic removal — drops the row from every visible
+  // instance (source panel + ALL-tab clone) before the network call so
+  // the operator sees instant feedback instead of a stale row.
+  document.querySelectorAll(`.campaign-row[data-campaign-id="${CSS.escape(id)}"]`)
+    .forEach((el) => el.remove());
   try {
     await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
   } catch (err) {
@@ -6679,6 +6798,7 @@ async function deleteDraft(id) {
     }
   } catch {}
   refreshDashboardDrafts();
+  if (typeof renderDashboardAll === 'function') renderDashboardAll();
 }
 window.deleteDraft = deleteDraft;
 
@@ -7368,6 +7488,10 @@ function enqueuePendingDeletes(newIdxs, baseLabel) {
 
   // Re-render so the queued rows disappear immediately.
   refreshPastCampaigns();
+  // v2.57.7: also re-clone source rows into the ALL tab so the queued-
+  // delete row disappears from there too (without this, operator has to
+  // tab-switch and back to see it gone).
+  if (typeof renderDashboardAll === 'function') renderDashboardAll();
   // baseLabel parameter retained for future per-batch labelling; merged
   // count above replaces it for now.
   void baseLabel;
@@ -7381,6 +7505,7 @@ function undoPendingDeletes() {
   pastPendingDeletes = [];
   hideUndoToast();
   refreshPastCampaigns();
+  if (typeof renderDashboardAll === 'function') renderDashboardAll();
 }
 
 async function commitPendingDeletes() {
@@ -7405,6 +7530,7 @@ async function commitPendingDeletes() {
     }
   } finally {
     refreshPastCampaigns();
+    if (typeof renderDashboardAll === 'function') renderDashboardAll();
   }
 }
 
@@ -7868,7 +7994,12 @@ window.closeResumeChoiceModal = closeResumeChoiceModal;
 // _todayPrefix block).
 async function resumeWithSameSettings() {
   if (_resumeChoiceIdx == null) return;
-  const entry = (pastCampaignsCache || []).find(e => e.idx === _resumeChoiceIdx);
+  // v2.57.7: capture the source index BEFORE closeResumeChoiceModal()
+  // clears it. We delete the old past entry once the resume starts so
+  // the dashboard doesn't accumulate duplicates (FIFO — only the most
+  // recent run of a given campaign survives).
+  const oldIdx = _resumeChoiceIdx;
+  const entry = (pastCampaignsCache || []).find(e => e.idx === oldIdx);
   if (!entry || !entry.c.settings) {
     if (typeof showCampaignToast === 'function') {
       showCampaignToast('This campaign has no saved settings — use "Edit settings first" instead.', 5000);
@@ -7918,6 +8049,25 @@ async function resumeWithSameSettings() {
     }
     // Refresh state so cockpit/runbar reflect the running campaign.
     if (typeof startPolling === 'function') startPolling();
+
+    // v2.57.7: now that the resume has started, delete the source past
+    // entry so the dashboard collapses to a single row per campaign.
+    // FIFO behaviour requested by operator — without this, every resume
+    // doubles the past list with near-duplicate entries.
+    if (Number.isInteger(oldIdx) && oldIdx >= 0) {
+      try {
+        await fetch('/api/history/delete-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ indexes: [oldIdx] }),
+        });
+        if (typeof refreshPastCampaigns === 'function') await refreshPastCampaigns();
+        if (typeof renderDashboardAll === 'function') renderDashboardAll();
+        if (typeof dashRefreshAll === 'function') dashRefreshAll();
+      } catch (delErr) {
+        console.warn('[resume] failed to delete source past entry:', delErr.message);
+      }
+    }
   } catch (err) {
     if (typeof showCampaignToast === 'function') {
       showCampaignToast(`Resume failed: ${err.message}`, 6000);
@@ -9003,73 +9153,92 @@ if (document.readyState === 'loading') {
 }
 
 /** Open a confirmation dialog for the current selection. On confirm, deletes
- *  past campaigns via /api/history/delete-batch. Non-past selections in v1
- *  are skipped with a toast — operator should use per-row delete for those. */
+ *  every deletable selection — past (history-batch), drafts (per-id), queued
+ *  (per-id), schedules (per-id). Active and live-monitoring rows can't be
+ *  deleted and are flagged as skipped.
+ *  v2.57.7: was past-only; extended to all four deletable states. */
 function dashBulkDelete() {
   if (_dashSelection.size === 0) return;
   const ids = Array.from(_dashSelection);
 
-  // Partition selection into past (deletable in v1) vs other (skipped in v1)
-  const pastRows = [];
-  const otherRows = [];
+  // Partition selection by row state. A row that has data-history-idx is
+  // routed to the past bucket regardless of its display state (e.g. a
+  // history entry currently in monitoring sub-state — still deletable
+  // via history-delete-batch).
+  const buckets = { past: [], draft: [], queued: [], schedule: [], skipped: [] };
   ids.forEach((id) => {
     const row = document.querySelector(`.campaign-row[data-campaign-id="${CSS.escape(id)}"]`);
     if (!row) return;
     const state = row.dataset.state || '';
-    if (state === 'past' || state === 'stopped' || state === 'completed' || state === 'failed') {
-      const idx = row.dataset.historyIdx;
-      if (idx !== undefined && idx !== '') pastRows.push({ id, idx: Number(idx), row });
+    const hIdxRaw = row.dataset.historyIdx;
+    const hIdx = (hIdxRaw !== undefined && hIdxRaw !== '') ? Number(hIdxRaw) : null;
+    if (Number.isInteger(hIdx) && hIdx >= 0) {
+      buckets.past.push({ id, idx: hIdx, row });
+    } else if (state === 'draft') {
+      buckets.draft.push({ id, row });
+    } else if (state === 'queued') {
+      buckets.queued.push({ id, row });
+    } else if (state === 'schedules' || state === 'schedule') {
+      buckets.schedule.push({ id, row });
     } else {
-      otherRows.push({ id, state, row });
+      // active, live-monitoring (not tied to a history entry), unknown — skip
+      buckets.skipped.push({ id, state, row });
     }
   });
 
-  // If nothing in selection is deletable, just toast and bail
-  if (pastRows.length === 0) {
-    const msg = otherRows.length > 0
-      ? 'Bulk delete only works for Past campaigns in this release. Use per-row delete for the others.'
+  const deletableCount = buckets.past.length + buckets.draft.length + buckets.queued.length + buckets.schedule.length;
+  if (deletableCount === 0) {
+    const msg = buckets.skipped.length > 0
+      ? `Cannot delete ${buckets.skipped.length} selected row${buckets.skipped.length === 1 ? '' : 's'} — running or live-monitoring campaigns can't be removed.`
       : 'Nothing to delete.';
     if (typeof window.showToast === 'function') window.showToast(msg);
     else alert(msg);
     return;
   }
 
-  // Build the dialog
-  const names = pastRows.map(({ row, id }) => {
+  // Build per-bucket count line for the modal header
+  const parts = [];
+  if (buckets.past.length)     parts.push(`${buckets.past.length} past`);
+  if (buckets.draft.length)    parts.push(`${buckets.draft.length} draft${buckets.draft.length === 1 ? '' : 's'}`);
+  if (buckets.queued.length)   parts.push(`${buckets.queued.length} queued`);
+  if (buckets.schedule.length) parts.push(`${buckets.schedule.length} schedule${buckets.schedule.length === 1 ? '' : 's'}`);
+  const breakdown = parts.join(' · ');
+
+  // Names for the preview list (escape-safe via textContent below)
+  const allRows = [...buckets.past, ...buckets.draft, ...buckets.queued, ...buckets.schedule];
+  const names = allRows.map(({ row, id }) => {
     const nameEl = row.querySelector('.campaign-row-name, .campaign-row-name-text');
-    return nameEl ? (nameEl.textContent || id).trim() : id;
+    const raw = nameEl ? (nameEl.textContent || '').trim() : '';
+    return raw || '(unnamed)';
   });
 
   const bg = document.createElement('div');
   bg.className = 'dash-dialog-bg';
   bg.innerHTML = `
     <div class="dash-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-dialog-h">
-      <h2 id="dash-dialog-h">Delete ${pastRows.length} past campaign${pastRows.length === 1 ? '' : 's'}?</h2>
-      <p>This removes <b>${pastRows.length}</b> past campaign${pastRows.length === 1 ? '' : 's'} from the dashboard. <b>Google Sheet rows are not affected.</b></p>
+      <h2 id="dash-dialog-h">Delete ${deletableCount} campaign${deletableCount === 1 ? '' : 's'}?</h2>
+      <p>${breakdown}. ${buckets.past.length > 0 ? '<b>Google Sheet rows are not affected.</b>' : ''}</p>
       <div class="dash-dialog-preview"></div>
       <div class="dash-dialog-actions">
         <button type="button" class="btn btn-secondary" id="dash-dialog-cancel">CANCEL</button>
-        <button type="button" class="btn btn-stop" id="dash-dialog-confirm">DELETE ${pastRows.length}</button>
+        <button type="button" class="btn btn-stop" id="dash-dialog-confirm">DELETE ${deletableCount}</button>
       </div>
     </div>
   `;
-  // Populate preview with escaped names (no innerHTML — safer)
   const preview = bg.querySelector('.dash-dialog-preview');
   for (const name of names) {
     const span = document.createElement('span');
     span.textContent = `· ${name}`;
     preview.appendChild(span);
   }
-  // If there are skipped rows, append a note
-  if (otherRows.length > 0) {
+  if (buckets.skipped.length > 0) {
     const note = document.createElement('span');
     note.style.cssText = 'display:block; padding-top:6px; color: rgba(255,255,255,0.5); font-size:0.66rem; letter-spacing:0.06em;';
-    note.textContent = `(${otherRows.length} non-past row${otherRows.length === 1 ? '' : 's'} in selection will NOT be deleted — bulk delete supports past only in v1.)`;
+    note.textContent = `(${buckets.skipped.length} active / live-monitoring row${buckets.skipped.length === 1 ? '' : 's'} in selection will NOT be deleted.)`;
     preview.appendChild(note);
   }
   document.body.appendChild(bg);
 
-  // Focus the cancel button by default — safer than focusing the destructive one
   const cancelBtn = bg.querySelector('#dash-dialog-cancel');
   const confirmBtn = bg.querySelector('#dash-dialog-confirm');
   cancelBtn.focus();
@@ -9086,40 +9255,82 @@ function dashBulkDelete() {
 
   confirmBtn.onclick = async () => {
     close();
-    await dashPerformBulkDelete(pastRows);
+    await dashPerformBulkDelete(buckets);
   };
 }
 
-/** Perform the actual deletion via /api/history/delete-batch. Refreshes the
- *  past list + dashboard state on completion. */
-async function dashPerformBulkDelete(pastRows) {
-  const indexes = pastRows.map((r) => r.idx).filter((n) => Number.isInteger(n) && n >= 0);
-  if (indexes.length === 0) return;
+/** Run the deletes for every populated bucket in parallel. Past uses the
+ *  existing batch endpoint; drafts/queued/schedules iterate per-id since
+ *  they don't have batch endpoints. Refreshes all relevant panels on
+ *  completion and reports a single toast.
+ *  v2.57.7: optimistically removes rows from the DOM up-front (both the
+ *  source panel AND any ALL-tab clones) so the operator sees instant
+ *  feedback instead of having to tab-switch to refresh the view. If a
+ *  delete fails, the source-panel refresh later restores the row from
+ *  server state — and renderDashboardAll re-clones it into ALL. */
+async function dashPerformBulkDelete(buckets) {
+  // Optimistic removal — hits every visible instance of each id (source
+  // row + ALL-tab clone). Server delete kicks off right after.
+  const allRows = [...buckets.past, ...buckets.draft, ...buckets.queued, ...buckets.schedule];
+  for (const r of allRows) {
+    document.querySelectorAll(`.campaign-row[data-campaign-id="${CSS.escape(r.id)}"]`)
+      .forEach((el) => el.remove());
+  }
+
+  const tasks = [];
   let succeeded = 0;
   let failed = 0;
-  try {
-    const resp = await fetch('/api/history/delete-batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ indexes }),
-    });
-    if (resp.ok) {
-      succeeded = indexes.length;
-    } else {
-      failed = indexes.length;
+
+  // Past — batch endpoint
+  if (buckets.past.length > 0) {
+    const indexes = buckets.past.map((r) => r.idx).filter((n) => Number.isInteger(n) && n >= 0);
+    if (indexes.length > 0) {
+      tasks.push(
+        fetch('/api/history/delete-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ indexes }),
+        }).then((r) => { if (r.ok) succeeded += indexes.length; else failed += indexes.length; })
+          .catch(() => { failed += indexes.length; })
+      );
     }
-  } catch {
-    failed = indexes.length;
   }
+
+  // Per-bucket sequential helper that aggregates pass/fail counts
+  const perId = (rows, endpointFn) => {
+    return Promise.all(rows.map((r) =>
+      fetch(endpointFn(r.id), { method: 'DELETE' })
+        .then((resp) => { if (resp.ok) succeeded += 1; else failed += 1; })
+        .catch(() => { failed += 1; })
+    ));
+  };
+
+  if (buckets.draft.length > 0)    tasks.push(perId(buckets.draft,    (id) => `/api/drafts/${encodeURIComponent(id)}`));
+  if (buckets.queued.length > 0)   tasks.push(perId(buckets.queued,   (id) => `/api/queue/${encodeURIComponent(id)}`));
+  if (buckets.schedule.length > 0) tasks.push(perId(buckets.schedule, (id) => `/api/schedules/${encodeURIComponent(id)}`));
+
+  await Promise.all(tasks);
+
   // Drop the just-deleted ids from the selection set
-  for (const r of pastRows) _dashSelection.delete(r.id);
-  // Refresh the past list — this is the standard refresh function from the
-  // existing code; it re-fetches /api/history and re-renders the past panel.
-  try { if (typeof refreshPastCampaigns === 'function') await refreshPastCampaigns(); } catch {}
+  for (const bucket of [buckets.past, buckets.draft, buckets.queued, buckets.schedule]) {
+    for (const r of bucket) _dashSelection.delete(r.id);
+  }
+
+  // Refresh every panel that might have had rows removed.
+  try { if (typeof refreshPastCampaigns === 'function')   await refreshPastCampaigns(); }   catch {}
+  try { if (typeof refreshDashboardDrafts === 'function') await refreshDashboardDrafts(); } catch {}
+  try { if (typeof refreshDashboardQueue === 'function')  await refreshDashboardQueue(); }  catch {}
+  try { if (typeof refreshDashboardSchedules === 'function') await refreshDashboardSchedules(); } catch {}
   if (typeof dashRefreshAll === 'function') dashRefreshAll();
+  // v2.57.7: re-clone source rows into the ALL tab so its content reflects
+  // the just-refreshed source panels. Without this, if the operator is on
+  // ALL and a delete fails (network), the ALL clone of the row stays gone
+  // even though the source panel still has it — drift between tabs.
+  if (typeof renderDashboardAll === 'function') renderDashboardAll();
+
   const msg = failed === 0
-    ? `Deleted ${succeeded} past campaign${succeeded === 1 ? '' : 's'}.`
-    : `Delete failed (${failed} unaffected). Try again.`;
+    ? `Deleted ${succeeded} campaign${succeeded === 1 ? '' : 's'}.`
+    : `Delete failed (${failed} unaffected, ${succeeded} succeeded). Try again.`;
   if (typeof window.showToast === 'function') window.showToast(msg);
 }
 

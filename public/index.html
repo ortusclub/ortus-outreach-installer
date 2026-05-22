@@ -64,6 +64,19 @@
       </div>
 
       <div class="edit-toggle-group">
+        <div class="edit-toggle-label">Timezone</div>
+        <div class="notif-state-rows">
+          <div class="notif-row">
+            <span class="notif-row-k">Sheet timestamps</span>
+            <span id="op-tz-current" class="notif-row-v">—</span>
+          </div>
+          <div class="notif-actions">
+            <button type="button" class="btn btn-sm" onclick="openOpTzModal()">Change</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="edit-toggle-group">
         <div class="edit-toggle-label">Notifications</div>
         <div class="notif-state-rows" id="notif-state-rows">
           <div class="notif-row">
@@ -1187,29 +1200,44 @@
 
     <!-- Sticky run bar -->
     <div class="run-bar" id="run-bar">
+      <!-- v2.57.7: runbar restructured (variant C from
+           public/sketches/runbar-clarity-v1.html).
+           - Two-line status slot shows the live campaign NAME on top and
+             the status text below (was: just "Idle" text).
+           - Buttons grouped into labeled clusters: Run / View / Recovery /
+             Configs, with thin separators between groups, so intent is
+             obvious at a glance.
+           - "Restore" relabelled "Force restart" — clearer it's the panic
+             button, not a Resume synonym.
+           - All button IDs preserved (#btn-start-rb, #btn-pause-rb,
+             #btn-stop-rb, #btn-restore-rb) so existing JS keeps working. -->
       <div class="run-status" id="run-bar-status">
         <span class="state-dot"></span>
-        <span id="run-bar-text">Idle</span>
+        <span class="run-status-stack">
+          <span class="run-status-name" id="run-bar-name"></span>
+          <span class="run-status-text" id="run-bar-text">Idle</span>
+        </span>
       </div>
       <div class="run-bar-actions">
-        <button type="button" class="btn btn-sm" onclick="scrollToSection('nav-status')">View Status</button>
+        <div class="runbar-group runbar-group--first">
+          <span class="runbar-group-label">Run</span>
+          <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start</button>
+          <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
+          <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers.">Stop</button>
+        </div>
 
-        <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start Campaign</button>
-        <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
-        <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers.">Stop Campaign</button>
+        <div class="runbar-group">
+          <span class="runbar-group-label">View</span>
+          <button type="button" class="btn btn-sm" onclick="scrollToSection('nav-status')">Status</button>
+        </div>
 
-        <!-- v2.14.x: Restore — always-visible "panic button" for when a
-             campaign is stuck and Stop / Pause aren't responding. Force-
-             kills browsers, force-resets in-memory state, then re-launches
-             with the same settings (today's per-account counts are seeded
-             from state.processed so accounts pick up where they left off). -->
-        <span class="run-bar-divider" aria-hidden="true"></span>
-        <button type="button" id="btn-restore-rb" class="btn btn-sm btn-restore" onclick="confirmRestoreCampaign()" title="Force-restart the campaign engine. Use when Stop / Pause aren't responding."><span class="ico-restore" aria-hidden="true">↻</span> Restore</button>
+        <div class="runbar-group runbar-group--recovery">
+          <span class="runbar-group-label">Recovery</span>
+          <button type="button" id="btn-restore-rb" class="btn btn-sm btn-restore" onclick="confirmRestoreCampaign()" title="Force-restart the campaign engine. Use when Stop / Pause aren't responding."><span class="ico-restore" aria-hidden="true">↻</span> Force restart</button>
+        </div>
 
-        <!-- Saved configs — pushed to the far right, smaller. Stores the
-             whole wizard form (mode/accounts/sheet/templates/limits) under
-             a name you can re-load later. -->
-        <div class="preset-pill" id="preset-pill">
+        <div class="runbar-group runbar-group--last">
+          <div class="preset-pill" id="preset-pill">
           <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, campaign limit per account).">
             <span>Saved configs</span>
             <span class="preset-pill-count" id="preset-pill-count">0</span>
@@ -1232,6 +1260,7 @@
             </div>
           </div>
         </div>
+        </div><!-- /.runbar-group--last -->
       </div>
     </div>
 
@@ -1284,6 +1313,27 @@
       </div>
       <div style="text-align:center; margin-top: 12px;">
         <button type="button" class="modal-cancel-link" onclick="closeIcPreflightModal()">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.58.x — Operator timezone confirmation. Fires on first dashboard
+       render after login when no tz preference is saved yet. Skip is allowed
+       (re-prompts on next launch); saving stores the choice via
+       /api/operator-prefs and the bot then sends `tz` on every sheet write. -->
+  <div id="op-tz-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeOpTzModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="op-tz-title">
+      <h3 id="op-tz-title" class="modal-title">Confirm your timezone</h3>
+      <div class="modal-body">
+        <p style="margin: 0 0 12px;">Sheet timestamps will be written in this timezone. Auto-detected from your laptop — change if it's wrong.</p>
+        <label for="op-tz-select" style="display:block; font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; color: #8b867a; margin-bottom: 6px;">Timezone</label>
+        <select id="op-tz-select" style="width: 100%; padding: 10px 12px; background: #14140f; color: #fafaf9; border: 1px solid rgba(197,162,85,0.3); border-radius: 6px; font-family: inherit; font-size: 0.9rem;"></select>
+      </div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-primary" onclick="saveOpTzFromModal()">Save</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" onclick="closeOpTzModal()">Skip for now</button>
       </div>
     </div>
   </div>
