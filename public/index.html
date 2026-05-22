@@ -279,7 +279,7 @@
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="connect_and_introduce">Connect + Introduce Back</option>
         <option value="message_only">Message Only (follow-ups)</option>
-        <option value="introduce_back">Introduce Back (3-way intro DM)</option>
+        <option value="introduce_back">Introduction Campaign (3-way intro DM)</option>
         <option value="inmail_only">InMail Only</option>
         <option value="open_profile_only">Open Profile Message (free)</option>
         <option value="check_dms">Check DMs (scan inboxes for replies)</option>
@@ -346,7 +346,7 @@
             <div id="daily-limit-knob">
               <div class="alpha-knob-label">Connections per account per day</div>
               <div class="alpha-knob-row">
-                <input class="alpha-knob-input" type="number" id="daily-limit-input" value="50" min="1" max="500" oninput="alphaSyncDailyLimit()" />
+                <input class="alpha-knob-input" type="number" id="daily-limit-input" value="50" min="1" max="500" oninput="alphaSyncDailyLimit()" onblur="alphaBlurDailyLimit()" />
                 <div class="step-col">
                   <button type="button" class="step-btn" onclick="alphaStepDaily(5)">+</button>
                   <button type="button" class="step-btn" onclick="alphaStepDaily(-5)">−</button>
@@ -447,11 +447,60 @@
       <h2 class="section-toggle" onclick="toggleSection('nav-sheet')"><span class="caret">▾</span> <span data-edit="h2-sheet">2. Google Sheet tab URL</span> <span class="section-summary" id="summary-sheet"></span></h2>
       <div class="collapsible-body">
         <label for="sheet-url">Public Google Sheet with LinkedIn URLs</label>
-        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=..." oninput="updateSheetTabHint()" />
+        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=..." oninput="updateSheetTabHint(); _refreshOpenSheetButtons && _refreshOpenSheetButtons()" />
         <p class="sheet-tab-hint" id="sheet-tab-hint">Open the specific tab inside the sheet, then copy the URL from your browser address bar — it should include <code>#gid=…</code>.</p>
         <button class="btn btn-secondary" onclick="previewSheet()">Preview Sheet</button>
         <button class="btn btn-secondary" onclick="openSheetInBrowser()">Open Sheet</button>
         <div id="sheet-preview" class="hidden" style="margin-top:12px"></div>
+
+        <!-- v2.58.x — IC sheet mapping (Variant C — progressive disclosure).
+             Two states:
+               1. #ic-extras-empty (default): dashed hint card telling the
+                  operator to press Preview Sheet first. No form controls.
+               2. #ic-extras-filled (hidden by default): two-column form with
+                  column dropdown + "all leads connected" checkbox. Shown by
+                  previewSheet() once the column list is known.
+             Both states are wrapped in #ic-extras whose visibility is gated
+             by onModeChange (mode === 'introduce_back'). -->
+        <div id="ic-extras" style="display:none; margin-top:10px;">
+          <!-- Empty state -->
+          <div id="ic-extras-empty" class="ic-empty">
+            <div class="ic-empty__icon">↓</div>
+            <div class="ic-empty__lead">Press <em>Preview Sheet</em> to load the column list.</div>
+            <div class="ic-empty__sub">You'll pick which column holds the LinkedIn 1st-connection sender.</div>
+          </div>
+
+          <!-- Filled state (after preview) -->
+          <div id="ic-extras-filled" class="ic-filled hidden">
+            <div class="ic-row">
+              <div class="ic-label-block">
+                <div class="ic-label">1st Connection<br>Column</div>
+                <div class="ic-sub">Cell values must match a GoLogin profile display name (e.g. <code>alecx@ortus.solutions</code>). Rows whose sender doesn't match are skipped.</div>
+              </div>
+              <div>
+                <select id="ic-sender-col-select" class="ic-select" onchange="_icSenderColManualPick()">
+                  <option value="">— Use "Sender" column —</option>
+                </select>
+                <div id="ic-auto-detected-badge" class="ic-auto-detected hidden">Auto-detected from header name</div>
+              </div>
+            </div>
+            <div class="ic-row">
+              <div class="ic-label-block">
+                <div class="ic-label">Stage<br>Filter</div>
+                <div class="ic-sub">Skip the Stage column requirement so a plain sheet works.</div>
+              </div>
+              <div>
+                <label class="ic-check">
+                  <input type="checkbox" id="ic-all-connected-toggle" />
+                  <div>
+                    <div class="ic-check-label">All leads in this sheet are already connected</div>
+                    <div class="ic-check-hint">Drops the <code>Stage = "Connected · DM Now"</code> filter. Already-sent rows still blocked by <code>Introduction Status = "IC Sent"</code>.</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -528,7 +577,7 @@
          segment toggle that used to live inside Message Only is
          gone — selecting this mode IS the introMode toggle. -->
     <div class="section" id="nav-introduce-back" style="display:none">
-      <h2 class="section-toggle"><span data-edit="h2-introduce-back">2c. Introduce Back — Coverage</span></h2>
+      <h2 class="section-toggle"><span data-edit="h2-introduce-back">2c. Introduction Campaign — Coverage</span></h2>
       <div style="padding: 0 0 8px;">
         <div id="ib-loading" style="color:var(--gray); font-size:12px; padding:14px 0;">Loading coverage from sheet…</div>
         <div id="ib-content" style="display:none">
@@ -546,14 +595,21 @@
         <div id="ib-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
       </div>
 
-      <!-- Pre-flight Check Status — opt-in (default ON). Same behaviour as the
-           Message Only callout. -->
+      <!-- v2.57.7 — IC pre-flight bulk-check toggle reinstated (variant B
+           from public/sketches/ic-preflight-toggle-v1.html). Mirrors the
+           DM toggle at section 2b — same green-tinted block, default ON,
+           same Voyager bulk-check path (src/campaign.js:1709-1745). The
+           crossref footnote points operators to the "all leads already
+           connected" checkbox in section 2 so they know what each control
+           is for: that one filters the SHEET; this one verifies LIVE
+           LinkedIn connection state. Both can be on at once. -->
       <div style="margin-top:20px; padding:14px 18px; background:#f0f7f4; border-left:3px solid #34a853;">
         <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
           <input type="checkbox" id="preflight-check-toggle-ib" checked style="margin-top:3px; width:16px; height:16px; flex-shrink:0; accent-color:#34a853;" />
           <div>
             <div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:0.95rem;">Run Check Status first</div>
-            <div style="color:var(--gray); font-size:12px; line-height:1.55;">Sweeps each account's recent connections at campaign start. Newly-accepted leads become eligible for the 3-way intro DM in this same run — no need to run a separate Check Status campaign first. Adds ~5–15s per account to startup.</div>
+            <div style="color:var(--gray); font-size:12px; line-height:1.55;">Sweeps each account's recent connections at campaign start. Newly-accepted leads become eligible for intro DMs in this same run. Adds ~5–15s per account to startup.</div>
+            <div style="margin-top:10px; padding:8px 10px; background:rgba(0,0,0,0.04); border-left:2px solid var(--hairline); color:var(--gray); font-size:11.5px; line-height:1.5;">Separate from the <b style="color:var(--ink)">"All leads in this sheet are already connected"</b> checkbox in section 2 (Sheet). That checkbox controls the <code style="font-family:ui-monospace,Menlo,monospace; font-size:0.92em; background:rgba(0,0,0,0.05); padding:1px 5px;">Stage = "Connected · DM Now"</code> filter; this toggle controls whether each account does a Voyager bulk-check at startup. Both can be on at once.</div>
           </div>
         </label>
       </div>
@@ -834,6 +890,7 @@
           <div class="launch-panel panel-active" id="launch-now-panel">
             <div class="launch-actions">
               <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
+              <button id="btn-queue" class="btn btn-secondary" onclick="addToQueueCampaign()" title="Stage this campaign to run after the current one (or as soon as you press Run next)">Add to Queue</button>
               <button id="btn-pause" class="btn btn-secondary" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open">Pause</button>
               <button id="btn-stop" class="btn btn-stop" onclick="confirmStopCampaign()" disabled>Stop Campaign</button>
               <!-- 2.9.5: standalone Check DMs button removed. Check DMs is now
@@ -1207,6 +1264,26 @@
       </div>
       <div style="text-align:center; margin-top: 12px;">
         <button type="button" class="modal-cancel-link" onclick="closeResumeChoiceModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.58.x — IC preflight modal. Fires when /api/campaign/preflight-ic-senders
+       returns ok=false, BEFORE the campaign actually starts. Two states driven
+       by data-reason: 'no_column' (every row blank) and 'no_match' (rows have
+       values but none match a GoLogin profile). Action buttons jump to the
+       column dropdown / open the sheet. -->
+  <div id="ic-preflight-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeIcPreflightModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ic-preflight-title">
+      <span class="ptm-pill modal-pill--alert">CANNOT START</span>
+      <h3 id="ic-preflight-title" class="modal-title">No sender column selected</h3>
+      <div id="ic-preflight-body" class="modal-body"></div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-primary" id="ic-preflight-primary" onclick="_icPreflightPrimary()">Take me to the column picker</button>
+        <button type="button" class="btn btn-secondary hidden" id="ic-preflight-secondary" onclick="_icPreflightSecondary()">Pick a different column</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" onclick="closeIcPreflightModal()">Dismiss</button>
       </div>
     </div>
   </div>

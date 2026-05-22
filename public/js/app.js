@@ -73,6 +73,7 @@ const PREVIEW_FIELD_LABELS = {
   opProfileSubject: 'Open Profile Subject',
   opProfileBody: 'Open Profile Body',
   introTitle: 'Group conversation title',
+  primaryIntroBody: 'Intro DM Body',
 };
 
 // Collects the same form state that startCampaign() sends to /api/campaign/start.
@@ -83,9 +84,24 @@ function gatherCampaignFormState() {
   const mode = document.getElementById('campaign-mode').value;
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
 
+  // v2.59.x — Per-mode preview suppression. Both intro flows (IC and
+  // CC+IC) do NOT use tpl-followup in their actual UI; surfacing leftover
+  // Follow-up Message text in the preview confused operators about what
+  // gets sent. For IC the body comes from primary-intro-body (with tpl-
+  // followup fallback); for CC+IC the body also comes from primary-intro-
+  // body (sent post-acceptance via runAutoIntros).
+  const _isIc   = mode === 'introduce_back';
+  const _isCcIc = mode === 'connect_and_introduce';
+  const _isIntroFlow = _isIc || _isCcIc;
+  const _tplFollow = document.getElementById('tpl-followup').value;
+  const _primaryIntro = document.getElementById('primary-intro-body')?.value || '';
+  const _icResolvedBody = _primaryIntro || _tplFollow; // mirror startCampaign:2668
+
   const templates = {
     connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
-    followUp1: document.getElementById('tpl-followup').value,
+    // Intro flows suppress Follow-up Message because the body is shown
+    // separately as Intro DM Body. Other modes pass tpl-followup through.
+    followUp1: _isIntroFlow ? '' : _tplFollow,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
@@ -93,9 +109,26 @@ function gatherCampaignFormState() {
     // 2.8.50: Introduction Messages sub-mode of message_only
     // v2.11.13: read from introModeActive (in-memory) instead of localStorage
     // because Chrome enterprise/privacy enforcement can block storage reads.
-    introMode: mode === 'introduce_back',
+    introMode: _isIc,
     introName: document.getElementById('intro-name')?.value?.trim() || '',
     introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
+    // For IC, send the resolved body (primary-intro-body OR tpl-followup
+    // fallback). For CC+IC and any other mode that uses it, send the raw
+    // primary-intro-body value.
+    primaryIntroBody: _isIc ? _icResolvedBody : _primaryIntro,
+    // v2.59.x — Route the right name into templates.primaryName based on
+    // mode so primary-* token substitution matches what outreach.js does
+    // at send time. In IC mode the operator fills `intro-name` (Sam Adcock);
+    // in CC+IC they fill `primary-person-name`. The chip vocabulary is the
+    // same in both modes ({primary first name}, etc.) so we just route the
+    // active source. Prevents stale leftover values from one mode leaking
+    // into the other's preview.
+    primaryName: _isIc
+      ? (document.getElementById('intro-name')?.value?.trim() || '')
+      : (document.getElementById('primary-person-name')?.value?.trim() || ''),
+    primaryUrl:  _isIc
+      ? ''
+      : (document.getElementById('primary-person-url')?.value?.trim() || ''),
   };
 
   const senderFirstNames = {};
@@ -104,12 +137,22 @@ function gatherCampaignFormState() {
     senderFirstNames[id] = resolveSenderFirstName(id, pName);
   }
 
+  // v2.59.x — Send mode + senderColumn so the backend preview can do per-
+  // row sender lookups for IC and message_only (where the sender comes
+  // from the sheet, not the wizard's profile picker). senderColumn mirrors
+  // startCampaign's IC-only override at app.js:2708-2710.
+  const senderColumn = (mode === 'introduce_back')
+    ? (document.getElementById('ic-sender-col-select')?.value || '')
+    : '';
+
   return {
     sheetUrl,
     linkedinColumn,
     templates,
     profileIds: [...selectedProfileIds],
     senderFirstNames,
+    mode,
+    senderColumn,
   };
 }
 
@@ -117,6 +160,11 @@ function gatherCampaignFormState() {
 function getPreviewDisabledReason() {
   const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
   if (!sheetUrl) return { disabled: true, reason: 'Enter a Google Sheet URL first' };
+  // v2.59.x — Include the IC/CC+IC fields too. Previously this list only
+  // covered the 6 "classic" templates, so IC operators with only the Intro
+  // DM Body filled in saw the button stay silently disabled — Preview just
+  // didn't fire on click. Group Conversation Title also counts since it's
+  // a rendered template.
   const anyTemplate = [
     document.getElementById('tpl-note')?.value,
     document.getElementById('tpl-followup')?.value,
@@ -124,6 +172,8 @@ function getPreviewDisabledReason() {
     document.getElementById('tpl-inmail-body')?.value,
     document.getElementById('tpl-op-subject')?.value,
     document.getElementById('tpl-op-body')?.value,
+    document.getElementById('primary-intro-body')?.value,
+    document.getElementById('intro-title')?.value,
   ].some(v => v && v.trim());
   if (!anyTemplate) return { disabled: true, reason: 'Fill in at least one template to preview' };
   return { disabled: false, reason: null };
@@ -245,6 +295,10 @@ document.addEventListener('DOMContentLoaded', () => {
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
     'tpl-op-subject', 'tpl-op-body',
+    // v2.59.x — IC / CC+IC fields. Without these, typing into Intro DM Body
+    // didn't update the Preview button state until something else (mode
+    // change, etc.) re-ran refreshPreviewButtonState.
+    'primary-intro-body', 'intro-title',
   ];
   for (const id of watchIds) {
     const el = document.getElementById(id);
@@ -1387,7 +1441,10 @@ function onModeChange() {
   message.style.display = 'none';
   inmail.style.display = 'none';
   if (op) op.style.display = 'none';
-  if (intro) intro.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  // v2.58.x — Show the Intro DM Body section for IC too (was CC+IC only).
+  // IC now uses the same template section as CC+IC for the body: Title
+  // appears first, Body second — matching CC+IC's order exactly.
+  if (intro) intro.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   const cadenceBlock = document.getElementById('check-cadence-block');
   if (cadenceBlock) cadenceBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
@@ -1398,6 +1455,14 @@ function onModeChange() {
   // v2.14.x: variable chips are mode-aware (CC+IC hides {intro X},
   // IB hides {primary X}). Refresh on every mode change.
   try { updatePlaceholderTags(); } catch (_) {}
+
+  // v2.58.x — IC-only sheet-mapping extras (sender column + "all connected"
+  // toggle). Block lives inside the sheet preview, rendered by previewSheet.
+  // Visibility is mode-gated here so it never appears for other campaigns.
+  try {
+    const icExtras = document.getElementById('ic-extras');
+    if (icExtras) icExtras.style.display = (mode === 'introduce_back') ? '' : 'none';
+  } catch (_) {}
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
   // the connect_only Yes/No toggle. See applyTemplateUIVisibility.
@@ -1422,10 +1487,15 @@ function onModeChange() {
   if (mode === 'connect_only') {
     if (addNoteOn) connect.style.display = '';
     else connect.style.display = 'none';
-  } else if (mode === 'message_only' || mode === 'introduce_back') {
-    // v2.11.17: introduce_back uses the same Follow-up Message template
-    // as message_only; the template is the body of the 3-way DM.
+  } else if (mode === 'message_only') {
+    // Message Only: standalone follow-up DM, uses the Follow-up Message template.
     message.style.display = '';
+  } else if (mode === 'introduce_back') {
+    // v2.58.x — IC mirrors CC+IC's template UI: Group Conversation Title
+    // first, Intro DM Body second (same `tpl-intro-section` / primary-intro-body
+    // field that CC+IC uses). The Follow-up Message section stays hidden.
+    // At submit time, primary-intro-body's value is routed to followUp1 so
+    // the existing backend code path (templates.followUpMessage) is unchanged.
   } else if (mode === 'inmail_only') {
     inmail.style.display = '';
     // Show OP template as an optional fallback — if filled, InMail mode will
@@ -1997,11 +2067,11 @@ const MODE_LIST = [
   // 3-way intro group thread with the configured intro person.
   {
     value: 'introduce_back',
-    name: 'Introduce Back',
+    name: 'Introduction Campaign',
     bullets: [
       '3-way group DM',
       'Adds your intro person automatically',
-      'Resumes from sheet\'s Connected · DM Now leads',
+      'Runs on a sheet of already-connected leads',
     ],
   },
   // v3.0: Post Amplification — paste a LinkedIn post URL, picked GoLogin
@@ -2101,10 +2171,17 @@ function updatePlaceholderTags() {
   const introChips   = ['intro first name', 'intro last name'];
   const primaryChips = ['primary full name', 'primary first name', 'primary last name', 'primary url'];
 
+  // v2.58.x — IC mode now mirrors CC+IC's chip layout: show {primary ...}
+  // chips, hide {intro ...} chips. Both intro flows present the same
+  // template variables so operators don't have to learn two vocabularies.
+  // outreach.js's IC fast-path maps templates.introName into both intro-*
+  // AND primary-* substitution keys, so existing presets that still use
+  // {intro X} keep working — the chip UI is what changed.
+  const isIntroFlow = isCcIc || isIb;
   const extras = [
     ...senderChips,
-    ...(isCcIc ? [] : introChips),
-    ...(isIb   ? [] : primaryChips),
+    ...(isIntroFlow ? [] : introChips),
+    ...(isIntroFlow ? primaryChips : (isIb ? [] : primaryChips)),
   ];
 
   const sheetCols = (Array.isArray(sheetColumns) ? sheetColumns : [])
@@ -2138,17 +2215,27 @@ function openSheetInBrowser() {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 function openRunningSheet() {
-  const url = (__cockpit && __cockpit.sheetUrl) || '';
-  if (!url) { alert('No campaign sheet URL available yet.'); return; }
-  if (!_isValidHttpUrl(url)) { alert("Campaign sheet URL is invalid."); return; }
+  // Prefer the running campaign's actual sheetUrl so the cockpit button
+  // always opens the live sheet even if the operator has since edited
+  // the setup input. Fall back to the setup input so the button is
+  // usable BEFORE a campaign has started.
+  const running = ((__cockpit && __cockpit.sheetUrl) || '').trim();
+  const setup = (document.getElementById('sheet-url')?.value || '').trim();
+  const url = running || setup;
+  if (!url) { alert('Enter a Google Sheet URL first.'); return; }
+  if (!_isValidHttpUrl(url)) { alert("That doesn't look like a valid URL."); return; }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 function _refreshOpenSheetButtons() {
   const btn = document.getElementById('btn-open-sheet-cockpit');
   if (!btn) return;
-  const has = _isValidHttpUrl((__cockpit && __cockpit.sheetUrl) || '');
+  const running = _isValidHttpUrl((__cockpit && __cockpit.sheetUrl) || '');
+  const setup = _isValidHttpUrl((document.getElementById('sheet-url')?.value || '').trim());
+  const has = running || setup;
   btn.disabled = !has;
-  btn.title = has ? 'Open the campaign sheet in your browser' : 'No campaign sheet URL available';
+  btn.title = running
+    ? 'Open the running campaign sheet in your browser'
+    : (setup ? 'Open the sheet you entered above' : 'Enter a sheet URL first');
 }
 
 async function previewSheet() {
@@ -2194,6 +2281,39 @@ async function previewSheet() {
     });
     html += `</select></div>`;
 
+    // v2.58.x — IC-only extras: sender-column picker + "all leads already
+    // connected" checkbox. Rendered inline next to the URL picker so it
+    // sits in the same visual block. Visibility is toggled by
+    // updateIcExtrasVisibility(), wired into onModeChange(). Block is
+    // hidden in non-IC modes so other campaigns are unaffected.
+    //
+    // Auto-detect for the sender column:
+    //   1. Header match (case-insensitive): prefer headers commonly used by
+    //      Ortus operators — 'Sender', 'LinkedIn 1st Connections', 'Account',
+    //      'Account Used', 'Owner'.
+    //   2. Value match: first column whose sample rows contain '@' (email-
+    //      style values, e.g. alecx@ortus.solutions).
+    //   3. Fallback: no preselection — operator picks manually.
+    let autoSenderCol = null;
+    const SENDER_HEADER_PRIORITY = [
+      'sender', 'linkedin 1st connections', 'linkedin 1st connection',
+      'account used', 'account', 'owner',
+    ];
+    for (const wanted of SENDER_HEADER_PRIORITY) {
+      const found = data.columns.find((c) => (c || '').toString().trim().toLowerCase() === wanted);
+      if (found && found !== autoDetectCol) { autoSenderCol = found; break; }
+    }
+    if (!autoSenderCol && data.preview && data.preview.length > 0) {
+      for (const col of data.columns) {
+        if (col === autoDetectCol) continue;
+        for (const row of data.preview) {
+          const val = (row[col] || '').toString();
+          if (val.includes('@')) { autoSenderCol = col; break; }
+        }
+        if (autoSenderCol) break;
+      }
+    }
+
     preview.innerHTML = html;
     sheetColumns = data.columns;
     window.sheetTotalRows = typeof data.totalRows === 'number' ? data.totalRows : null;
@@ -2201,6 +2321,37 @@ async function previewSheet() {
     try { if (typeof updateSectionSummaries === 'function') updateSectionSummaries(); } catch (_) {}
     updatePlaceholderTags();
     updateCampaignSummary();
+
+    // v2.58.x — IC sheet mapping (Variant C — progressive disclosure).
+    // Flip the empty state hidden, show the filled form, populate dropdown
+    // options. Auto-detect badge appears only if the operator hasn't already
+    // manually picked a column (tracked via data-manual-pick).
+    try {
+      const empty = document.getElementById('ic-extras-empty');
+      const filled = document.getElementById('ic-extras-filled');
+      const sel = document.getElementById('ic-sender-col-select');
+      const badge = document.getElementById('ic-auto-detected-badge');
+      if (empty) empty.classList.add('hidden');
+      if (filled) filled.classList.remove('hidden');
+      if (sel) {
+        const isManual = sel.dataset.manualPick === '1';
+        const cur = sel.value;
+        const keepCur = isManual && cur && data.columns.includes(cur);
+        const chosen = keepCur ? cur : (autoSenderCol || '');
+        const opts = [`<option value="">— Use "Sender" column —</option>`];
+        data.columns.forEach((col) => {
+          const selected = (col === chosen) ? 'selected' : '';
+          opts.push(`<option value="${escHtml(col)}" ${selected}>${escHtml(col)}</option>`);
+        });
+        sel.innerHTML = opts.join('');
+        // Badge shows only when we did the auto-detect, not when the
+        // operator manually picked. Manual pick state survives across
+        // preview re-runs (operator's choice is sticky).
+        const showBadge = !isManual && !!autoSenderCol && chosen === autoSenderCol;
+        sel.classList.toggle('is-detected', showBadge);
+        if (badge) badge.classList.toggle('hidden', !showBadge);
+      }
+    } catch (_) {}
   } catch (err) {
     preview.innerHTML = `<p style="color:#f85149">${escHtml(err.message)}</p>`;
   }
@@ -2222,17 +2373,49 @@ function alphaStepLeads(_delta) { updateCampaignSummary(); }
 
 // Campaign-limit-per-account (was "Daily limit"). Mirrors the visible input to
 // the hidden #daily-limit input that app.js submits to the backend.
+// v2.60.x: oninput-safe sync. The previous version auto-rewrote an empty
+// or sub-1 field back to 50 on EVERY keystroke, which made it impossible
+// to backspace the existing value to type a new one (delete last digit →
+// field empty → handler refills with 50 → can't ever go blank). Now:
+//  - empty / in-progress input is allowed during typing (no rewrite)
+//  - upper bound (500) is clamped live so "9999" can't sneak through
+//  - lower bound + default fallback runs on blur via alphaBlurDailyLimit
 function alphaSyncDailyLimit() {
+  const visEl = document.getElementById('daily-limit-input');
+  const hidEl = document.getElementById('daily-limit');
+  if (!visEl || !hidEl) return;
+  const raw = visEl.value;
+  if (raw === '' || raw === '-') {
+    updateCampaignSummary();
+    return;
+  }
+  let v = parseInt(raw, 10);
+  if (!Number.isFinite(v)) {
+    updateCampaignSummary();
+    return;
+  }
+  if (v > 500) {
+    visEl.value = '500';
+    v = 500;
+  }
+  hidEl.value = String(v);
+  updateCampaignSummary();
+}
+
+// Blur-time clamp + fallback. Restores 50 when the field is empty/invalid
+// so we never submit a blank or below-min value to the backend.
+function alphaBlurDailyLimit() {
   const visEl = document.getElementById('daily-limit-input');
   const hidEl = document.getElementById('daily-limit');
   if (!visEl || !hidEl) return;
   let v = parseInt(visEl.value, 10);
   if (!Number.isFinite(v) || v < 1) v = 50;
   v = Math.max(1, Math.min(500, v));
-  if (parseInt(visEl.value, 10) !== v) visEl.value = String(v);
+  visEl.value = String(v);
   hidEl.value = String(v);
   updateCampaignSummary();
 }
+window.alphaBlurDailyLimit = alphaBlurDailyLimit;
 
 function alphaStepDaily(delta) {
   const visEl = document.getElementById('daily-limit-input');
@@ -2437,7 +2620,8 @@ function stepInput(inputId, delta) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
-async function startCampaign() {
+async function addToQueueCampaign() { return startCampaign({ queueOnly: true }); }
+async function startCampaign(opts = {}) {
   // 2.9.5: when mode is check_dms, this is a separate flow with its own
   // endpoint and no campaign templates. Delegate to startCheckDms() and
   // return — the rest of this function only applies to outreach campaigns.
@@ -2453,8 +2637,13 @@ async function startCampaign() {
 
   // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
   // the sheet's Account Used column. UI selection ignored — skip validation.
+  // v2.58.x: introduce_back (Introduction Campaign) is also auto-routed from
+  // the chosen Sender column — the profile picker is hidden for this mode
+  // (see onModeChange at line ~1459), so requiring a manual pick was a
+  // pre-existing gate bug that surfaced once IC ran on a no-Stage sheet.
   const _modeForValidation = _modeEarly;
-  if (_modeForValidation !== 'check_status' && _modeForValidation !== 'message_only' && selectedProfileIds.length === 0) {
+  const _autoRoutedModes = new Set(['check_status', 'message_only', 'introduce_back']);
+  if (!_autoRoutedModes.has(_modeForValidation) && selectedProfileIds.length === 0) {
     alert('Select at least one GoLogin profile.'); return;
   }
   const sheetUrl = document.getElementById('sheet-url').value.trim();
@@ -2501,21 +2690,40 @@ async function startCampaign() {
     }
   }
 
-  // Resolve sender first names per profile (SoO column D, or local-browser input)
+  // v2.58.x — IC validation: intro-name (the primary person) + Intro DM Body
+  // (primary-intro-body) must both be filled. Same gate as CC+IC's primary
+  // checks above but scoped to IC's actual fields.
+  if (_mode === 'introduce_back') {
+    const _icName = (document.getElementById('intro-name')?.value || '').trim();
+    const _icBody = (document.getElementById('primary-intro-body')?.value || '').trim();
+    if (!_icName || !_icBody) {
+      const missing = [];
+      if (!_icName) missing.push('• Intro person — full LinkedIn name');
+      if (!_icBody) missing.push('• Intro DM Body');
+      alert(
+        "Introduction Campaign can't start without these fields.\n\n" +
+        'Missing:\n' + missing.join('\n') + '\n\n' +
+        'Fill in the missing field(s) and try again.'
+      );
+      const firstEmpty = !_icName ? 'intro-name' : 'primary-intro-body';
+      const el = document.getElementById(firstEmpty);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => el.focus(), 400);
+      }
+      return;
+    }
+  }
+
+  // Resolve sender first names per profile (SoO column D, or local-browser input).
+  // Resolver runs silently — the operator-facing preview popup was dropped
+  // in favour of the post-launch tips card. Sheet-snapshot disclaimer lives
+  // there now too.
   const senderFirstNames = {};
-  const missing = [];
-  const preview = [];
   for (const id of selectedProfileIds) {
     const pName = selectedProfileNames[id] || id;
-    const first = resolveSenderFirstName(id, pName);
-    senderFirstNames[id] = first;
-    preview.push(`  • ${pName}  →  ${first || '(none)'}`);
-    if (!first) missing.push(pName);
+    senderFirstNames[id] = resolveSenderFirstName(id, pName);
   }
-  const previewMsg = `Sender first names that will be used (from SoO column D):\n\n${preview.join('\n')}\n\n` +
-    (missing.length ? `⚠ ${missing.length} profile(s) have no first name and will fall back to the profile name prefix.\n\n` : '') +
-    `Start campaign?`;
-  if (!confirm(previewMsg)) return;
 
   const mode = document.getElementById('campaign-mode').value;
 
@@ -2539,9 +2747,16 @@ async function startCampaign() {
   // If the user answered "No" to the "add a note while connecting?" question,
   // drop the connection note regardless of what's in the textarea.
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
+  // v2.58.x — IC routes its body through primary-intro-body (CC+IC's body
+  // field) so the wizard shows the SAME Intro DM Body section as CC+IC.
+  // Backend still reads templates.followUpMessage (via the followUp1 alias
+  // in campaign.js:1187), so we map the value here. Other modes unchanged.
+  const _icBody = (mode === 'introduce_back')
+    ? (document.getElementById('primary-intro-body')?.value || document.getElementById('tpl-followup').value || '')
+    : document.getElementById('tpl-followup').value;
   const templates = {
     connectionNote: ((mode === 'connect_only' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
-    followUp1: document.getElementById('tpl-followup').value,
+    followUp1: _icBody,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
@@ -2573,6 +2788,15 @@ async function startCampaign() {
     delayMin,
     delayMax,
     linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
+    // v2.58.x — Introduction Campaign (introduce_back) optional overrides.
+    // Both are read regardless of mode; the server only honors them when
+    // mode === 'introduce_back' so other campaigns are unaffected.
+    senderColumn: (mode === 'introduce_back')
+      ? (document.getElementById('ic-sender-col-select')?.value || '')
+      : '',
+    allLeadsConnected: (mode === 'introduce_back')
+      ? !!document.getElementById('ic-all-connected-toggle')?.checked
+      : false,
     senderFirstNames,
     // 2.9.8: parallel-accounts knob. Server only honors it when ≥5
     // accounts are selected and the toggle is on.
@@ -2588,12 +2812,14 @@ async function startCampaign() {
     name: (document.getElementById('campaign-name-input')?.value || '').trim(),
     // Pre-flight Check Status sweep. Toggle lives inside each mode's
     // coverage section (Section 2b for message_only, 2c for
-    // introduce_back). Only one is visible at a time — read whichever
-    // is checked. Server-side gated to the two modes anyway.
-    preflightCheckStatus: !!(
-      document.getElementById('preflight-check-toggle-mo')?.checked ||
-      document.getElementById('preflight-check-toggle-ib')?.checked
-    ),
+    // introduce_back). v2.57.7 — IC toggle (preflight-check-toggle-ib)
+    // reinstated; read whichever toggle matches the current mode. Server
+    // ignores the field for any other mode.
+    preflightCheckStatus: (() => {
+      if (mode === 'message_only')   return !!document.getElementById('preflight-check-toggle-mo')?.checked;
+      if (mode === 'introduce_back') return !!document.getElementById('preflight-check-toggle-ib')?.checked;
+      return false;
+    })(),
     // v2.14.x: operator-chosen cadence for the monitoring auto-trigger.
     // Only relevant for CC+IC mode; server clamps to [15, 360] and ignores
     // the field for non-CC+IC modes.
@@ -2604,12 +2830,131 @@ async function startCampaign() {
     })(),
   };
 
-  await submitStartCampaign(body);
+  // v2.58.x — IC preflight: catch "no sender column" / "no matching profile"
+  // cases BEFORE the campaign starts, so the operator gets a targeted popup
+  // instead of finding the failure in the post-start log rail.
+  if (body.mode === 'introduce_back') {
+    const ok = await _runIcPreflight(body.sheetUrl, body.senderColumn);
+    if (!ok) return; // modal shown by _runIcPreflight; operator must fix
+  }
+
+  await submitStartCampaign(body, opts);
 }
 
-async function submitStartCampaign(body) {
+async function _runIcPreflight(sheetUrl, senderColumn) {
   try {
-    const res = await fetch('/api/campaign/start', {
+    const res = await fetch('/api/campaign/preflight-ic-senders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheetUrl, senderColumn: senderColumn || '' }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      alert(`Could not validate sender column:\n\n${data.error}`);
+      return false;
+    }
+    if (data.ok) return true;
+    _showIcPreflightModal(data);
+    return false;
+  } catch (err) {
+    alert(`Preflight check failed: ${err.message}`);
+    return false;
+  }
+}
+
+function _showIcPreflightModal(data) {
+  const modal = document.getElementById('ic-preflight-modal');
+  const title = document.getElementById('ic-preflight-title');
+  const bodyEl = document.getElementById('ic-preflight-body');
+  const primary = document.getElementById('ic-preflight-primary');
+  const secondary = document.getElementById('ic-preflight-secondary');
+  if (!modal || !title || !bodyEl || !primary || !secondary) return;
+
+  modal.dataset.reason = data.reason || '';
+
+  if (data.reason === 'no_column') {
+    title.textContent = 'No sender column selected';
+    bodyEl.innerHTML =
+      `<p>All ${data.totalRows} rows in your sheet have a blank sender value.</p>` +
+      `<p style="color: var(--gray); font-size: 0.85rem; margin-top: 10px;">` +
+      `Pick the column that contains the LinkedIn 1st connections in Section 2, then try again.</p>`;
+    primary.textContent = 'Take me to the column picker';
+    secondary.classList.add('hidden');
+  } else {
+    // no_match
+    const list = (data.unmatched || []).map(u =>
+      `<li><code>${escHtml(u.name)}</code> &mdash; ${u.count} row${u.count === 1 ? '' : 's'}</li>`
+    ).join('');
+    const extra = (data.unmatched || []).length === 5 ? ' (top 5 shown)' : '';
+    title.textContent = 'No matching GoLogin profile';
+    bodyEl.innerHTML =
+      `<p>Your sheet has sender values, but none match a GoLogin profile in this workspace.</p>` +
+      (list ? `<ul style="margin: 12px 0 0; padding-left: 20px; font-size: 0.85rem; color: var(--ink);">${list}</ul>` : '') +
+      `<p style="color: var(--gray); font-size: 0.8rem; margin-top: 10px;">` +
+      `${data.totalRows} total row${data.totalRows === 1 ? '' : 's'}${extra}. Check that the Sender column values exactly match your GoLogin profile display names (case-sensitive).</p>`;
+    primary.textContent = 'Open sheet to fix';
+    secondary.classList.remove('hidden');
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function closeIcPreflightModal() {
+  const modal = document.getElementById('ic-preflight-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function _icPreflightPrimary() {
+  const modal = document.getElementById('ic-preflight-modal');
+  const reason = modal?.dataset?.reason || '';
+  closeIcPreflightModal();
+  if (reason === 'no_match') {
+    // Open the sheet so the operator can fix the Sender column values
+    if (typeof openSheetInBrowser === 'function') openSheetInBrowser();
+  } else {
+    // no_column → scroll + focus the IC column dropdown
+    _icPreflightScrollToColumnPicker();
+  }
+}
+
+function _icPreflightSecondary() {
+  closeIcPreflightModal();
+  _icPreflightScrollToColumnPicker();
+}
+
+// v2.58.x — Called from the IC sender-column dropdown's onchange. Marks
+// the picker as "manually chosen" so subsequent previewSheet() runs don't
+// stomp on the operator's pick, and hides the gold "Auto-detected" badge.
+function _icSenderColManualPick() {
+  const sel = document.getElementById('ic-sender-col-select');
+  const badge = document.getElementById('ic-auto-detected-badge');
+  if (sel) {
+    sel.dataset.manualPick = '1';
+    sel.classList.remove('is-detected');
+  }
+  if (badge) badge.classList.add('hidden');
+}
+
+function _icPreflightScrollToColumnPicker() {
+  const sel = document.getElementById('ic-sender-col-select');
+  if (!sel) {
+    // The IC extras block is rendered by previewSheet(); if not present,
+    // scroll to the sheet section so the operator can press Preview first.
+    document.getElementById('nav-sheet')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  sel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => sel.focus(), 350);
+}
+
+async function submitStartCampaign(body, opts = {}) {
+  // v2.59.x — Add to Queue routes to /api/campaign/queue-only, which always
+  // queues and never auto-drains. The regular Start path is unchanged: it
+  // hits /api/campaign/start which fires immediately if idle, queues if a
+  // campaign is already running.
+  const url = opts.queueOnly ? '/api/campaign/queue-only' : '/api/campaign/start';
+  try {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -2617,13 +2962,13 @@ async function submitStartCampaign(body) {
 
     if (!res.ok) {
       const txt = await res.text();
-      alert(`Could not start campaign:\n\n${txt}`);
+      alert(`Could not ${opts.queueOnly ? 'queue' : 'start'} campaign:\n\n${txt}`);
       return;
     }
 
     const data = await res.json();
     if (data.error) { alert(`Error: ${data.error}`); return; }
-    if (!data.ok) { alert(data.message || 'Could not start campaign.'); return; }
+    if (!data.ok) { alert(data.message || `Could not ${opts.queueOnly ? 'queue' : 'start'} campaign.`); return; }
 
     // Whether the campaign starts now or gets queued, the draft has been
     // consumed. Drop it from the Drafts list and clear the active id.
@@ -2635,7 +2980,8 @@ async function submitStartCampaign(body) {
       }
     } catch {}
 
-    // Server queued the campaign because another one is already running.
+    // Server queued the campaign — either explicit queue-only, or because
+    // another campaign was already running on the regular start path.
     if (data.queued) {
       alert(data.message || 'Added to queue.');
       if (typeof saveLastUsedPreset === 'function') saveLastUsedPreset();
@@ -3359,25 +3705,45 @@ async function showBrowsers() {
   }
 }
 
+// v2.59.x — Swap the gold class between Start and Add to Queue based on
+// whether a campaign is currently running. Idle: Start is gold, Queue is
+// outlined. Running: Start is dimmed/outlined, Queue is gold. Called from
+// setCampaignButtons (status-driven) and updateWizardQueueState (wizard
+// entry, before polling kicks in).
+function _applyLaunchButtonClasses(running) {
+  const startBtn = document.getElementById('btn-start');
+  const queueBtn = document.getElementById('btn-queue');
+  if (!startBtn || !queueBtn) return;
+  if (running) {
+    startBtn.classList.remove('btn-start');
+    startBtn.classList.add('btn-secondary');
+    queueBtn.classList.remove('btn-secondary');
+    queueBtn.classList.add('btn-start');
+  } else {
+    startBtn.classList.remove('btn-secondary');
+    startBtn.classList.add('btn-start');
+    queueBtn.classList.remove('btn-start');
+    queueBtn.classList.add('btn-secondary');
+  }
+}
+
 function setCampaignButtons(running, paused = false, pauseRequested = false) {
-  // Queue mode: wizard's btn-start is repurposed as "Add to Queue" — keep
-  // it enabled even when a campaign runs, so the operator can stage the
-  // queued one. Detected by the visible queue banner (set by
-  // updateWizardQueueState).
-  const queueBanner = document.getElementById('wizard-queue-banner');
-  const inQueueMode = queueBanner && queueBanner.style.display !== 'none';
+  // v2.59.x — Side-by-side Start + Add to Queue pills (Variant A). Start
+  // is always present and shows the campaign-can-fire intent (gold when
+  // idle, dimmed when one is already running). btn-queue is always enabled
+  // — the operator can stage a queued campaign regardless of state — and
+  // takes the gold treatment while something is running, so it's the
+  // visually-active action in that moment. _applyLaunchButtonClasses
+  // handles the gold class swap so the wizard-poller and the status-poller
+  // both stay in sync.
   ['btn-start', 'btn-start-rb'].forEach(id => {
     const b = document.getElementById(id);
     if (!b) return;
-    // btn-start in the wizard becomes Add to Queue in queue mode → don't
-    // disable. btn-start-rb is in the persistent run-bar and represents
-    // starting the *active* campaign, so keep the original disable rule.
-    if (id === 'btn-start' && inQueueMode) {
-      b.disabled = false;
-    } else {
-      b.disabled = running;
-    }
+    b.disabled = running;
   });
+  const queueBtn = document.getElementById('btn-queue');
+  if (queueBtn) queueBtn.disabled = false;
+  _applyLaunchButtonClasses(running);
   // v2.14.x: Stop button is now enabled during monitoring too, not just
   // while sending. The bottom-bar Stop was previously dead during monitoring,
   // and the only way to halt was a hidden "✕ Stop monitoring" button buried
@@ -5085,6 +5451,19 @@ document.addEventListener('focusin', (e) => {
   if (section) _lastFocusedField.set(section, el);
 });
 
+// v2.59.x — Chip click was silently failing when the operator switched
+// modes: _lastFocusedField cached the previously-focused INPUT/TEXTAREA,
+// which may now live in a hidden .tpl-section. We'd write the chip text
+// into the invisible element and the operator saw nothing happen. Now we
+// only honor the cached field if it's still rendered AND visible, else
+// fall through to data-target.
+function _isElementVisible(el) {
+  if (!el || !el.isConnected) return false;
+  // offsetParent is null for elements with display:none (or any ancestor
+  // hidden the same way). Cheap visibility test that catches the .tpl-
+  // section mode-swap case.
+  return el.offsetParent !== null;
+}
 document.addEventListener('click', (e) => {
   const tag = e.target.closest('.placeholder-tags .tag');
   if (!tag) return;
@@ -5092,7 +5471,8 @@ document.addEventListener('click', (e) => {
   const section = container?.closest('.section');
   const targetId = container?.dataset.target;
   const fallback = targetId ? document.getElementById(targetId) : null;
-  const field = (section && _lastFocusedField.get(section)) || fallback;
+  const cached = section ? _lastFocusedField.get(section) : null;
+  const field = _isElementVisible(cached) ? cached : fallback;
   if (!field) return;
   const val = tag.dataset.val;
   if (typeof field.selectionStart === 'number') {
@@ -5128,6 +5508,9 @@ function collectCurrentConfig() {
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
+    // v2.58.x — IC-only sheet-mapping overrides (saved & restored across runs).
+    senderColumn: getV('ic-sender-col-select'),
+    allLeadsConnected: !!document.getElementById('ic-all-connected-toggle')?.checked,
     templates: {
       connectionNote: getV('tpl-note'),
       followUp1: getV('tpl-followup'),
@@ -5167,6 +5550,23 @@ function applyPresetConfig(config) {
   setV('within-batch-min', config.delayMin ?? 15);
   setV('within-batch-max', config.delayMax ?? 45);
   if (config.linkedinColumn) setV('linkedin-col-select', config.linkedinColumn);
+  // v2.58.x — restore IC-only sheet-mapping picks. Dropdown + checkbox only
+  // exist after a sheet preview renders them, so we defer the restore via
+  // requestAnimationFrame to give the wizard a chance to populate columns.
+  if (config.senderColumn || config.allLeadsConnected) {
+    requestAnimationFrame(() => {
+      try {
+        if (config.senderColumn) {
+          const sel = document.getElementById('ic-sender-col-select');
+          if (sel) sel.value = config.senderColumn;
+        }
+        if (config.allLeadsConnected) {
+          const tog = document.getElementById('ic-all-connected-toggle');
+          if (tog) tog.checked = true;
+        }
+      } catch (_) {}
+    });
+  }
 
   const opCheck = document.getElementById('open-profile-msg');
   if (opCheck) opCheck.checked = !!config.messageOpenProfiles;
@@ -5456,6 +5856,11 @@ window.previewSheet = previewSheet;
 window.openSheetInBrowser = openSheetInBrowser;
 window.openRunningSheet = openRunningSheet;
 window._refreshOpenSheetButtons = _refreshOpenSheetButtons;
+window.closeIcPreflightModal = closeIcPreflightModal;
+window._icPreflightPrimary = _icPreflightPrimary;
+window._icPreflightSecondary = _icPreflightSecondary;
+window._icSenderColManualPick = _icSenderColManualPick;
+window.addToQueueCampaign = addToQueueCampaign;
 window.refreshSoO = refreshSoO;
 window.requestNotificationPermission = requestNotificationPermission;
 window.saveCurrentAsPreset = saveCurrentAsPreset;
@@ -6110,7 +6515,7 @@ const DASHBOARD_MODE_LABELS = {
   open_profile_only: 'Open Profile Message',
   check_dms: 'Check DMs',
   connect_and_introduce: 'CC + IB',
-  introduce_back: 'IB',
+  introduce_back: 'IC',
 };
 function dashboardModeLabel(value) {
   return DASHBOARD_MODE_LABELS[value] || value || '—';
@@ -6189,9 +6594,12 @@ function applyRoute() {
 // (server already enforces this) — say so out loud so the operator knows
 // they're not editing the active campaign.
 async function updateWizardQueueState() {
+  // v2.59.x — Side-by-side Start + Add to Queue pills replaced the
+  // relabel-on-running approach. This poller now just (a) shows the banner
+  // explaining what queue mode does and (b) keeps the gold-class swap in
+  // sync from the wizard side (setCampaignButtons covers the status-poll
+  // side; both stay aligned).
   const banner = document.getElementById('wizard-queue-banner');
-  const startBtn = document.getElementById('btn-start');
-  if (!banner && !startBtn) return;
   let isRunning = false;
   let runningName = '';
   try {
@@ -6207,30 +6615,10 @@ async function updateWizardQueueState() {
     const detail = document.getElementById('wizard-queue-banner-detail');
     if (detail && isRunning) {
       const ref = runningName ? `"${runningName}"` : 'A campaign';
-      detail.textContent = `${ref} is currently running — this one will be added to the queue and start automatically when there's a free slot.`;
+      detail.textContent = `${ref} is currently running — either button on this page will add this campaign to the queue.`;
     }
   }
-  if (startBtn) {
-    if (isRunning) {
-      startBtn.textContent = 'Add to Queue';
-      startBtn.classList.add('btn-queue');
-      // Force-enable: setCampaignButtons disables btn-start while a
-      // campaign runs (correct for the "single-campaign" world). In queue
-      // mode the operator IS clicking it intentionally to enqueue, so we
-      // override that disable.
-      startBtn.disabled = false;
-    } else {
-      startBtn.textContent = 'Start Campaign';
-      startBtn.classList.remove('btn-queue');
-      // Don't touch disabled here — let setCampaignButtons own it when
-      // we're back to single-campaign mode.
-    }
-  }
-  // Live Status section is always visible on the wizard route — that's where
-  // the log panel + Copy/Clear Log + Show Browsers buttons live. Prior
-  // attempts to hide it mid-run also hid those controls, which the operator
-  // needs even while a campaign is running. CSS already hides the section
-  // on the dashboard route via the #wizard-view parent.
+  _applyLaunchButtonClasses(isRunning);
 }
 window.updateWizardQueueState = updateWizardQueueState;
 function goCreateCampaign() { window.location.hash = '#/new'; }
@@ -6319,40 +6707,207 @@ async function refreshDashboardQueue() {
   const list = document.getElementById('queued-campaign-list');
   if (!list) return;
   try {
-    const data = await fetch('/api/queue').then((r) => r.json());
-    const queue = Array.isArray(data?.queue) ? data.queue : [];
+    const [queueData, statusData] = await Promise.all([
+      fetch('/api/queue').then((r) => r.json()).catch(() => null),
+      fetch('/api/campaign/status').then((r) => r.json()).catch(() => null),
+    ]);
+    const queue = Array.isArray(queueData?.queue) ? queueData.queue : [];
+    const isRunning = !!(statusData && (statusData.running || statusData.paused));
     if (queue.length === 0) {
       list.innerHTML = '<p class="empty-state">No queued campaigns.</p>';
       return;
     }
-    list.innerHTML = queue.map((q, idx) => {
+    // v2.59.x — Header: drag-hint + Run next pill. Run next is visible only
+    // when no campaign is running AND queue has items, so the operator can
+    // explicitly drain the head from idle (otherwise the queue waits for
+    // the next /api/campaign/start to drain it).
+    const header = [];
+    if (!isRunning && queue.length > 0) {
+      header.push(`
+        <div class="queue-tab-actions">
+          <button type="button" class="queue-run-next" onclick="runNextQueuedCampaign()" title="Start the next queued campaign now">▶ Run next</button>
+        </div>
+      `);
+    }
+    header.push(`<div class="queue-hint">Drag rows by the ≡ handle to reorder. The top row runs next.</div>`);
+
+    const rows = queue.map((q, idx) => {
       const name = q.name || '(unnamed)';
       const modeLabel = dashboardModeLabel(q.mode || '');
       const accountCount = (q.profileIds || []).length;
       const accountLabel = accountCount ? `${accountCount} account${accountCount === 1 ? '' : 's'}` : '';
       const positionLabel = idx === 0 ? 'Next up' : `Position ${idx + 1}`;
-      const isFirst = idx === 0;
-      const isLast = idx === queue.length - 1;
+      const id = escHtml(q.id || '');
       return `
-        <div class="campaign-row campaign-row--with-edit" data-campaign-id="${escHtml(q.id || '')}" data-state="queued">
+        <div class="campaign-row campaign-row--queue" data-campaign-id="${id}" data-state="queued"
+             draggable="true"
+             ondragstart="_queueDragStart(event)"
+             ondragover="_queueDragOver(event)"
+             ondragleave="_queueDragLeave(event)"
+             ondrop="_queueDrop(event)"
+             ondragend="_queueDragEnd(event)">
+          <span class="qhandle" aria-hidden="true">≡</span>
           <span class="campaign-row-name">${escHtml(name)}</span>
           <span class="campaign-row-type">${escHtml(modeLabel)}${accountLabel ? ' · ' + accountLabel : ''}</span>
           <span class="campaign-row-progress">${escHtml(positionLabel)}</span>
           <span class="campaign-row-status">Queued</span>
           <span class="campaign-row-actions">
-            <button type="button" class="campaign-row-edit" onclick="editQueuedCampaign('${escHtml(q.id)}')" title="Edit this queued campaign">Edit</button>
-            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="moveQueuedCampaign('${escHtml(q.id)}','up')" title="Move up" aria-label="Move up" ${isFirst ? 'disabled' : ''}>↑</button>
-            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="moveQueuedCampaign('${escHtml(q.id)}','down')" title="Move down" aria-label="Move down" ${isLast ? 'disabled' : ''}>↓</button>
-            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="cancelQueuedCampaign('${escHtml(q.id)}')" title="Remove from queue" aria-label="Remove from queue">×</button>
+            <button type="button" class="campaign-row-edit" onclick="editQueuedCampaign('${id}')" title="Edit this queued campaign">Edit</button>
+            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="cancelQueuedCampaign('${id}')" title="Remove from queue" aria-label="Remove from queue">×</button>
           </span>
         </div>
       `;
     }).join('');
+    list.innerHTML = header.join('') + rows;
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load queue.</p>';
   }
   if (typeof dashRefreshAll === 'function') dashRefreshAll();
 }
+
+// v2.59.x — Drag-to-reorder for the dashboard's Queued tab. The dragged
+// row is visually moved between siblings as the operator drags; on drop
+// the new full order is POSTed atomically to /api/queue/reorder. Server
+// returns 409 on mismatch (concurrent pop/cancel between our fetch and
+// drop) — we surface that with a refresh and a brief alert.
+let _queueDragId = null;
+
+function _queueDragStart(ev) {
+  const row = ev.currentTarget;
+  _queueDragId = row.getAttribute('data-campaign-id') || null;
+  if (!_queueDragId) { ev.preventDefault(); return; }
+  row.classList.add('is-dragging');
+  ev.dataTransfer.effectAllowed = 'move';
+  // Required for Firefox to treat this as a real drag.
+  try { ev.dataTransfer.setData('text/plain', _queueDragId); } catch {}
+}
+
+function _queueDragOver(ev) {
+  if (!_queueDragId) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  const target = ev.currentTarget;
+  if (target.getAttribute('data-campaign-id') === _queueDragId) return;
+  const rect = target.getBoundingClientRect();
+  const above = ev.clientY < rect.top + rect.height / 2;
+  target.classList.toggle('is-drop-target-above', above);
+  target.classList.toggle('is-drop-target-below', !above);
+}
+
+function _queueDragLeave(ev) {
+  const target = ev.currentTarget;
+  target.classList.remove('is-drop-target-above', 'is-drop-target-below');
+}
+
+async function _queueDrop(ev) {
+  ev.preventDefault();
+  if (!_queueDragId) return;
+  const target = ev.currentTarget;
+  target.classList.remove('is-drop-target-above', 'is-drop-target-below');
+  if (target.getAttribute('data-campaign-id') === _queueDragId) {
+    _queueDragId = null;
+    return;
+  }
+  const container = target.parentElement;
+  const draggedRow = container?.querySelector(`.campaign-row--queue[data-campaign-id="${CSS.escape(_queueDragId)}"]`);
+  if (!draggedRow || !container) { _queueDragId = null; return; }
+  const rect = target.getBoundingClientRect();
+  const above = ev.clientY < rect.top + rect.height / 2;
+  if (above) container.insertBefore(draggedRow, target);
+  else container.insertBefore(draggedRow, target.nextSibling);
+
+  // v2.59.x — POST the new order RIGHT HERE (in drop, not dragend). dragend
+  // can fire on an orphaned element if the row was moved/replaced, and we
+  // were losing the POST that way. drop is the commit moment — capture the
+  // new order, persist it, and only after the server confirms refresh from
+  // truth. Visible toast + console log so a failed reorder is obvious.
+  const ids = Array.from(container.querySelectorAll('.campaign-row--queue[data-campaign-id]'))
+    .map(r => r.getAttribute('data-campaign-id'))
+    .filter(Boolean);
+  console.log('[queue-reorder] new order:', ids);
+  _queueDragId = null;
+  if (ids.length === 0) { refreshDashboardQueue(); return; }
+  try {
+    const res = await fetch('/api/queue/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn('[queue-reorder] failed:', res.status, data);
+      if (data.reason === 'mismatch') {
+        _showQueueToast('Queue changed — refreshed', 2500);
+      } else {
+        _showQueueToast(`Could not save order: ${data.error || res.statusText}`, 4000);
+      }
+    } else {
+      console.log('[queue-reorder] saved');
+      _showQueueToast('New order saved', 1800);
+    }
+  } catch (err) {
+    console.warn('[queue-reorder] error:', err);
+    _showQueueToast(`Reorder failed: ${err.message}`, 4000);
+  }
+  refreshDashboardQueue();
+}
+
+// dragend now only handles visual cleanup — the POST moved into drop.
+function _queueDragEnd(ev) {
+  const row = ev.currentTarget;
+  row.classList.remove('is-dragging');
+  const container = row.parentElement;
+  if (container) {
+    container.querySelectorAll('.is-drop-target-above, .is-drop-target-below').forEach(el => {
+      el.classList.remove('is-drop-target-above', 'is-drop-target-below');
+    });
+  }
+  _queueDragId = null;
+}
+
+// v2.59.x — Lightweight toast for queue-reorder feedback. Anchored above
+// the Queued tab so it doesn't compete with the sticky run-bar at the
+// bottom. Self-clears after `ms` ms.
+function _showQueueToast(msg, ms = 2000) {
+  let toast = document.getElementById('queue-reorder-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'queue-reorder-toast';
+    toast.style.cssText = 'position:fixed;top:18px;right:18px;z-index:9999;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:9999px;font-family:var(--mono);font-size:0.62rem;letter-spacing:0.16em;text-transform:uppercase;box-shadow:0 4px 18px rgba(0,0,0,0.18);opacity:0;transition:opacity 0.2s ease;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  requestAnimationFrame(() => { toast.style.opacity = '1'; });
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => {
+    toast.style.opacity = '0';
+  }, ms);
+}
+
+window._queueDragStart = _queueDragStart;
+window._queueDragOver = _queueDragOver;
+window._queueDragLeave = _queueDragLeave;
+window._queueDrop = _queueDrop;
+window._queueDragEnd = _queueDragEnd;
+
+async function runNextQueuedCampaign() {
+  try {
+    const res = await fetch('/api/queue/run-next', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      alert(`Could not run next: ${data.error || res.statusText}`);
+      return;
+    }
+    if (!data.ok && data.message) {
+      alert(data.message);
+    }
+  } catch (err) {
+    alert(`Run-next failed: ${err.message}`);
+  }
+  refreshDashboardQueue();
+  if (typeof refreshActiveCampaign === 'function') refreshActiveCampaign();
+}
+window.runNextQueuedCampaign = runNextQueuedCampaign;
 
 async function cancelQueuedCampaign(id) {
   if (!id) return;
@@ -6641,6 +7196,11 @@ async function refreshActiveCampaign() {
   try {
     const status = await fetch('/api/campaign/status').then((r) => r.json());
     const isActive = status && (status.running || status.paused);
+    // v2.59.x — When a queued campaign drains in the background, the prior
+    // campaign's pollStatus already stopped polling (idle → stop). Restart
+    // it here so setCampaignButtons fires and the run-bar's Stop pill
+    // re-enables. startPolling is idempotent — no-op if already ticking.
+    if (isActive && typeof startPolling === 'function') startPolling();
     if (!isActive) {
       // Surface a saved draft name so the operator can see what they staged in
       // the wizard before clicking Start. Cleared via the row's × button.
@@ -7074,16 +7634,24 @@ async function refreshPastCampaigns() {
                         : reason === 'errored' ? 'is-errored'
                         : 'is-done';
       const checked = pastSelectedIdxs.has(idx) ? 'checked' : '';
-      // v2.14.x: Resume button — only on stopped entries that DIDN'T pick
-      // "Stop everything" (fullStop flag set by the CC+IC stop-choice
-      // modal). Full-halt stops are semantically "I'm done with this
-      // campaign" — no Resume offered. Opens a choice modal asking whether
-      // to resume with identical settings (instant) or pre-fill the wizard
-      // for tweaks. Completed campaigns are NOT resumable (they hit their
-      // target — operator re-runs as a fresh campaign via the existing
-      // details-modal "Re-run" CTA).
-      const restartBtn = (reason === 'stopped' && !c.fullStop)
-        ? `<button type="button" class="campaign-row-edit campaign-row-resume" onclick="event.stopPropagation(); openResumeChoice(${idx})" title="Resume this campaign — pick up where it stopped">Resume</button>`
+      // v2.60.x: STOPPED chip becomes the resume action (variant F). The
+      // status pill itself is the affordance — no separate Resume pill —
+      // so the grid keeps 7 columns and rows can't wrap. Click = one-shot
+      // resume with the saved settings snapshot (no modal). The previous
+      // resume-choice modal is bypassed; the Edit pill below already
+      // covers the "edit settings first" path.
+      //
+      // Gating: any stopped entry with a saved settings snapshot. The
+      // v2.14.x fullStop gate is dropped per operator request — every
+      // stopped row gets resume, including campaigns where the operator
+      // picked "Stop everything" in the CC+IC stop-choice modal. Resume
+      // starts a fresh run with the saved settings; monitoring/auto-
+      // intros that were cancelled by "Stop everything" stay cancelled
+      // (the new run re-arms them from scratch).
+      const canResume = reason === 'stopped' && !!c.settings;
+      const statusClasses = canResume ? `${reasonClass} is-stopped-action` : reasonClass;
+      const statusAttrs = canResume
+        ? `role="button" tabindex="0" title="Resume this campaign — pick up where it stopped" onclick="event.stopPropagation(); resumeFromPastRow(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();resumeFromPastRow(${idx});}"`
         : '';
       const rowState = c.state === 'monitoring' ? 'monitoring' : (c.state || 'past');
       return `
@@ -7092,8 +7660,7 @@ async function refreshPastCampaigns() {
           <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
           <span class="campaign-row-type">${escHtml(subtitle)}</span>
           <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
-          <span class="campaign-row-status ${reasonClass}">${reasonLabel}</span>
-          ${restartBtn}
+          <span class="campaign-row-status ${statusClasses}" ${statusAttrs}>${reasonLabel}</span>
           <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the campaign page">Edit</button>
           <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
         </div>
@@ -7321,7 +7888,10 @@ async function resumeWithSameSettings() {
     delayMax: s.delayMax ?? 45,
     linkedinColumn: s.linkedinColumn || '',
     concurrency: s.concurrency ?? 1,
-    name: c.name ? `${c.name} (resumed)` : '',
+    // v2.60.x: don't suffix "(resumed)" — keeps the name clean across
+    // multiple resumes. The new past-history entry's timestamp + the
+    // original entry's STOPPED ▸ RESUME chip together tell the story.
+    name: c.name || '',
     // v2.52.0: carry forward the operator-chosen monitoring cadence so resume
     // doesn't silently fall back to the server's 60-min default. Pre-v2.52
     // history entries don't have the field — undefined here lets the server
@@ -7355,6 +7925,17 @@ async function resumeWithSameSettings() {
   }
 }
 window.resumeWithSameSettings = resumeWithSameSettings;
+
+// v2.60.x: One-shot resume entry point used by the chip-as-button on past
+// rows (variant F). Sets the module-scoped _resumeChoiceIdx so the
+// existing resumeWithSameSettings() can find the entry, then calls it
+// directly — no modal. The Edit pill on the past row remains the path
+// for "I want to tweak settings before starting again".
+function resumeFromPastRow(idx) {
+  _resumeChoiceIdx = idx;
+  resumeWithSameSettings();
+}
+window.resumeFromPastRow = resumeFromPastRow;
 
 // Edit-first path — close the choice modal and fall through to the
 // existing wizard-prefill flow (rerunPastCampaign already does this for

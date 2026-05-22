@@ -19,7 +19,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
-import { getQueue, addToQueue, removeFromQueue, moveInQueue, popNext as popNextQueued } from './src/campaign-queue.js';
+import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, popNext as popNextQueued } from './src/campaign-queue.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
@@ -391,6 +391,13 @@ app.post('/api/templates/preview', async (req, res) => {
       templates = {},
       profileIds = [],
       senderFirstNames = {},
+      // v2.59.x — IC + message_only resolve {senderFirstName} per-row from
+      // the sheet's sender column (the real send path does this). Without
+      // mode + senderColumn the preview falls back to the operator's
+      // locally-selected profile, which is the wrong identity for these
+      // modes (each row can have a different sender).
+      mode = '',
+      senderColumn = '',
     } = req.body || {};
 
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
@@ -406,6 +413,11 @@ app.post('/api/templates/preview', async (req, res) => {
       opProfileSubject: templates.openProfileSubject || templates.opSubject || '',
       opProfileBody: templates.openProfileBody || templates.opBody || '',
       introTitle: templates.introTitle || '',
+      // v2.59.x — Render the Intro DM Body as its own preview field so IC
+      // and CC+IC operators can see what they typed. Send-path routing
+      // differs by mode (IC via followUpMessage, CC+IC via runAutoIntros'
+      // primaryIntroBody) but the preview just needs to show the text.
+      primaryIntroBody: templates.primaryIntroBody || '',
     };
 
     // v2.11.14: extract intro-mode signals so the preview can mirror the
@@ -442,6 +454,26 @@ app.post('/api/templates/preview', async (req, res) => {
     const profileId = profileIds[0] || '';
     const pName = profileId; // no live GoLogin session in preview — id stands in for name
 
+    // v2.59.x — Build SoO email → firstName map for per-row sender lookup
+    // in IC and message_only previews. Done once per request, so picking 3
+    // rows from a sheet of any size costs one SoO fetch. Failures are
+    // logged but non-fatal — preview falls back to the old profileIds[0]
+    // resolution if SoO is unreachable.
+    const _wantsPerRowSender = (mode === 'introduce_back' || mode === 'message_only');
+    const _soOFirstByName = {};
+    if (_wantsPerRowSender) {
+      try {
+        const soo = await fetchSoOData();
+        for (const acct of (soo && soo.accounts) || []) {
+          if (acct && acct.email) {
+            _soOFirstByName[acct.email.toLowerCase().trim()] = (acct.firstName || '').toString().trim();
+          }
+        }
+      } catch (err) {
+        console.warn('[preview] SoO fetch for per-row sender failed:', err.message);
+      }
+    }
+
     const previews = picked.map(({ row, url }) => {
       // Mirror campaign.js:603-612 data construction.
       const data = { ...row };
@@ -449,8 +481,27 @@ app.post('/api/templates/preview', async (req, res) => {
       data.lastName  = row['Last Name']  || row['lastName']  || row['last_name']  || '';
       data.company   = row['Company']    || row['company']   || '';
       data.title     = row['Title']      || row['title']     || row['Job Title']  || '';
-      data.senderName = pName || '';
-      const resolvedFirst = senderFirstNames[profileId];
+      // v2.59.x — Per-row sender lookup for IC and message_only. The sheet
+      // tells us which account owns each lead; the real send path uses
+      // getSenderName(row, senderColumn) — we mirror that exactly here so
+      // {senderFirstName} and {senderName} in the preview match what will
+      // actually be sent. For CC+IC and other modes we keep the old logic
+      // (resolvedFirst from selectedProfileIds → senderFirstNames map).
+      let _perRowSender = '';
+      if (_wantsPerRowSender) {
+        if (senderColumn && row[senderColumn] != null) {
+          _perRowSender = row[senderColumn].toString().trim();
+        }
+        if (!_perRowSender) {
+          _perRowSender = (row.Sender || row.sender || '').toString().trim();
+        }
+      }
+      const _perRowFirst = _perRowSender
+        ? (_soOFirstByName[_perRowSender.toLowerCase()] || '')
+        : '';
+
+      data.senderName = _perRowSender || pName || '';
+      const resolvedFirst = _perRowFirst || senderFirstNames[profileId];
       // v2.11.14: friendlier fallback for local-browser — if the operator
       // hasn't set a localBrowserFirstName yet, prefer "You" over the raw
       // profile id string so the preview reads naturally.
@@ -475,6 +526,28 @@ app.post('/api/templates/preview', async (req, res) => {
         data['intro_last_name']   = introLast;
       }
 
+      // v2.59.x — Primary-person substitution for CC+IC (and IC, which
+      // shares the same chip vocabulary). Mirrors what auto-intro.js does
+      // at send time so {primary full name} / {primary first name} /
+      // {primary last name} / {primary url} resolve in the preview.
+      const primaryName = (templates.primaryName || '').toString().trim();
+      const primaryUrl  = (templates.primaryUrl  || '').toString().trim();
+      if (primaryName) {
+        const pTokens = primaryName.split(/\s+/);
+        const pFirst  = pTokens[0] || '';
+        const pLast   = pTokens.slice(1).join(' ');
+        data['primary full name'] = primaryName;
+        data['primary name']      = primaryName; // legacy alias
+        data['primary first name'] = pFirst;
+        data['primaryFirstName']   = pFirst;
+        data['primary last name']  = pLast;
+        data['primaryLastName']    = pLast;
+      }
+      if (primaryUrl) {
+        data['primary url'] = primaryUrl;
+        data['primaryUrl']  = primaryUrl;
+      }
+
       // For each field, scan the raw template for {placeholders}, compute
       // unresolved ones, then render.
       const warnings = [];
@@ -487,6 +560,7 @@ app.post('/api/templates/preview', async (req, res) => {
         opProfileSubject: 'Open Profile Subject',
         opProfileBody: 'Open Profile Body',
         introTitle: 'Group conversation title',
+        primaryIntroBody: 'Intro DM Body',
       };
       for (const [key, raw] of Object.entries(tpl)) {
         if (!raw) { rendered[key] = ''; continue; }
@@ -531,7 +605,10 @@ app.post('/api/templates/preview', async (req, res) => {
 function buildCampaignConfig(body) {
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
           delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
-          acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes } = body || {};
+          acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes,
+          // v2.58.x — Introduction Campaign (introduce_back) sheet-mapping overrides.
+          // Read for every campaign but only honored downstream when mode === 'introduce_back'.
+          senderColumn, allLeadsConnected } = body || {};
   let concurrencyClean = 1;
   if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
     const n = Math.min(5, Number(concurrency));
@@ -547,6 +624,10 @@ function buildCampaignConfig(body) {
     delayMin: delayMin ? Number(delayMin) : undefined,
     delayMax: delayMax ? Number(delayMax) : undefined,
     linkedinColumn: linkedinColumn || '',
+    // v2.58.x — IC-only overrides. Frontend already clears these for
+    // non-IC modes; backend coerces here too for defence-in-depth.
+    senderColumn: (mode === 'introduce_back') ? (typeof senderColumn === 'string' ? senderColumn : '') : '',
+    allLeadsConnected: (mode === 'introduce_back') ? !!allLeadsConnected : false,
     senderFirstNames: senderFirstNames || {},
     concurrency: concurrencyClean,
     name: typeof name === 'string' ? name : '',
@@ -664,6 +745,56 @@ app.post('/api/campaign/start', async (req, res) => {
   }
 });
 
+// v2.58.x — IC preflight: validate that the sheet's sender column resolves
+// to at least one matched GoLogin profile BEFORE starting. Mirrors the
+// matching logic at src/campaign.js:1502-1564 but synchronous, no campaign
+// side-effects. Lets the UI show a targeted modal instead of the operator
+// finding the failure only in the post-start log rail.
+app.post('/api/campaign/preflight-ic-senders', async (req, res) => {
+  try {
+    const { sheetUrl, senderColumn } = req.body || {};
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    const rows = await fetchSheet(sheetUrl);
+    const token = process.env.GOLOGIN_API_TOKEN;
+    const profiles = token ? await getProfiles(token) : [];
+    const nameToId = {};
+    for (const p of profiles) nameToId[p.name] = p.id;
+    nameToId['You'] = 'local-browser';
+    nameToId['Local Browser'] = 'local-browser';
+    nameToId['local-browser'] = 'local-browser';
+    nameToId['local-browser - manual'] = 'local-browser';
+
+    const matched = new Map();
+    const unmatched = new Map();
+    let blanks = 0;
+    for (const row of rows) {
+      let acct = '';
+      if (senderColumn && row && row[senderColumn] != null) {
+        acct = row[senderColumn].toString().trim();
+      }
+      if (!acct) acct = (row?.Sender || row?.sender || '').toString().trim();
+      if (!acct) { blanks++; continue; }
+      if (nameToId[acct]) matched.set(acct, (matched.get(acct) || 0) + 1);
+      else unmatched.set(acct, (unmatched.get(acct) || 0) + 1);
+    }
+
+    const totalRows = rows.length;
+    if (matched.size > 0) {
+      return res.json({ ok: true, totalRows, matchedCount: matched.size });
+    }
+    const reason = (blanks === totalRows) ? 'no_column' : 'no_match';
+    const unmatchedArr = [...unmatched.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }));
+    res.json({ ok: false, reason, totalRows, blanks, unmatched: unmatchedArr });
+  } catch (err) {
+    console.error('IC preflight error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get a single queued campaign's full config (used by the dashboard Edit
 // button — full payload, not the trimmed summary the list returns).
 app.get('/api/queue/:id', async (req, res) => {
@@ -716,6 +847,89 @@ app.post('/api/queue/:id/move', async (req, res) => {
     const newIndex = await moveInQueue(req.params.id, dir);
     if (newIndex === -1) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, newIndex });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.59.x — Atomic full-order reorder for drag-and-drop in the dashboard.
+// Body: { ids: ["q_xxx", "q_yyy", ...] } in the desired new order. Validates
+// the ids match the current queue exactly so a concurrent pop/cancel can't
+// silently corrupt the order — client refreshes and retries on mismatch.
+app.post('/api/queue/reorder', async (req, res) => {
+  try {
+    const ids = req.body && req.body.ids;
+    if (!Array.isArray(ids)) {
+      return res.status(400).json({ error: 'ids array required' });
+    }
+    const result = await reorderQueue(ids);
+    if (!result.ok) {
+      if (result.reason === 'mismatch') {
+        return res.status(409).json({ error: 'Queue changed — refresh and retry', reason: 'mismatch' });
+      }
+      return res.status(400).json({ error: 'Invalid input', reason: result.reason || 'unknown' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.59.x — Add a campaign to the queue WITHOUT auto-draining. Mirrors the
+// validation of /api/campaign/start but skips the running-or-empty branches
+// — the operator clicks "Add to Queue" intentionally, even when idle, to
+// stage runs without firing one immediately. Drain via /api/queue/run-next
+// or wait for the next launchCampaign() chain.
+app.post('/api/campaign/queue-only', async (req, res) => {
+  try {
+    if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
+    if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
+
+    const body = req.body || {};
+    const { profileIds, sheetUrl, dailyLimit, mode } = body;
+
+    if (mode !== 'check_status' && mode !== 'message_only' && mode !== 'introduce_back' && !profileIds?.length) {
+      return res.status(400).json({ error: 'profileIds required' });
+    }
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
+
+    const config = buildCampaignConfig(body);
+    const owner = req.user;
+
+    try { await writeDraftName(''); } catch { /* non-fatal */ }
+
+    const entry = await addToQueue(config, owner);
+    const position = (await getQueue()).length;
+    res.json({
+      ok: true,
+      queued: true,
+      queueId: entry.id,
+      message: position === 1
+        ? 'Added to queue. Press "Run next" or start another campaign to drain it.'
+        : `Added to queue (position ${position}).`,
+    });
+  } catch (err) {
+    console.error('Queue-only error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.59.x — Explicitly drain the head of the queue when no campaign is
+// running. Used by the dashboard's "Run next" pill, which is visible only
+// when idle + non-empty queue. No-op (with a friendly response) if a
+// campaign is already running — the queue will chain when it finishes.
+app.post('/api/queue/run-next', async (_req, res) => {
+  try {
+    if (campaign.running) {
+      return res.json({ ok: false, reason: 'running', message: 'A campaign is already running.' });
+    }
+    const queue = await getQueue();
+    if (queue.length === 0) {
+      return res.json({ ok: false, reason: 'empty', message: 'Queue is empty.' });
+    }
+    runNextFromQueue().catch(err => console.error('Run-next drain failed:', err.message));
+    res.json({ ok: true, message: 'Draining next queued campaign…' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

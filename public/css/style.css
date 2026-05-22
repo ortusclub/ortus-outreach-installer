@@ -2191,6 +2191,76 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   content: ''; width: 6px; height: 6px; border-radius: 50%;
   background: var(--gold);
 }
+/* v2.58.x — alert variant: red border + red dot. Used by the IC preflight
+   modal when the campaign cannot start. */
+.ptm-pill.modal-pill--alert { border-color: var(--red); }
+.ptm-pill.modal-pill--alert::before { background: var(--red); }
+
+/* v2.58.x — IC sheet-mapping block (Section 2). Progressive disclosure:
+   empty state until previewSheet runs, filled state after. */
+.ic-empty {
+  padding: 18px 20px;
+  border: 1px dashed var(--hairline);
+  text-align: center;
+}
+.ic-empty__icon { font-size: 1.4rem; opacity: 0.4; margin-bottom: 6px; }
+.ic-empty__lead { font-size: 0.95rem; color: var(--ink); font-weight: 600; margin-bottom: 4px; }
+.ic-empty__lead em { font-style: italic; }
+.ic-empty__sub { font-size: 0.8rem; color: var(--gray); }
+
+.ic-filled { padding-top: 18px; border-top: 1px solid var(--hairline); }
+.ic-filled.hidden { display: none; }
+.ic-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+.ic-row:last-child { margin-bottom: 0; }
+.ic-label-block { padding-top: 9px; }
+.ic-label {
+  font-family: var(--display);
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.ic-sub { font-size: 0.7rem; color: var(--gray); line-height: 1.45; }
+.ic-sub code { font-family: var(--mono); font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 5px; }
+.ic-select {
+  width: 100%;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  background: white;
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+.ic-select.is-detected { border-color: var(--ink); }
+.ic-check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding-top: 4px; }
+.ic-check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--ink); }
+.ic-check-label { font-size: 0.9rem; color: var(--ink); line-height: 1.4; }
+.ic-check-hint { font-size: 0.7rem; color: var(--gray); margin-top: 3px; line-height: 1.45; }
+.ic-check-hint code { font-family: var(--mono); font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 5px; }
+.ic-auto-detected {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--gold); margin-top: 6px;
+}
+.ic-auto-detected.hidden { display: none; }
+.ic-auto-detected::before { content: '●'; font-size: 8px; }
+@media (max-width: 600px) {
+  .ic-row { grid-template-columns: 1fr; }
+  .ic-label-block { padding-top: 0; }
+}
 .ptm-title { font-size: 1.6rem; margin-bottom: 18px; line-height: 1.05; }
 .ptm-body { margin-bottom: 22px; }
 .ptm-list { list-style: none; margin: 0; padding: 0; }
@@ -3905,6 +3975,68 @@ body.route-dashboard .sidebar-nav { display: none; }
 .campaign-row--with-edit {
   grid-template-columns: 2fr 1.4fr 1.4fr auto auto;
 }
+
+/* v2.59.x — Queued rows are drag-to-reorder. 6 cols: handle, name, type,
+   position, status, actions. Cursor is grab everywhere on the row so the
+   handle isn't the only hit target — the whole row reacts. */
+.campaign-row--queue {
+  grid-template-columns: 28px 2fr 1.4fr 1.4fr auto auto;
+  cursor: grab;
+}
+.campaign-row--queue.is-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+  background-color: var(--hairline);
+}
+.campaign-row--queue.is-drop-target-above {
+  box-shadow: 0 -2px 0 0 var(--ink) inset;
+}
+.campaign-row--queue.is-drop-target-below {
+  box-shadow: 0 2px 0 0 var(--ink) inset;
+}
+.qhandle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray);
+  font-size: 18px;
+  line-height: 1;
+  user-select: none;
+  cursor: grab;
+}
+.campaign-row--queue:hover .qhandle { color: var(--ink); }
+.queue-hint {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--hairline-soft, rgba(0,0,0,0.03));
+}
+.queue-tab-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--hairline);
+  justify-content: flex-end;
+}
+.queue-run-next {
+  background: var(--ink);
+  color: var(--gold);
+  border: 1px solid var(--ink);
+  border-radius: 9999px;
+  padding: 8px 18px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.queue-run-next:hover { opacity: 0.9; }
+.queue-run-next:disabled { opacity: 0.35; cursor: not-allowed; }
 .campaign-row.past-section .campaign-row--with-edit,
 .campaign-row--with-edit.campaign-row-clickable {
   grid-template-columns: auto 2fr 1.4fr 1.4fr auto auto auto;
@@ -3933,6 +4065,30 @@ body.route-dashboard .sidebar-nav { display: none; }
 .campaign-row-edit.campaign-row-resume:hover {
   background: var(--gold);
   color: var(--bg);
+}
+
+/* v2.60.x: STOPPED chip becomes the resume action (variant F).
+   The status pill keeps its label but adds "▸ RESUME" and turns gold
+   to signal it's interactive. Click = one-shot resume, no modal.
+   Applied only when endReason === 'stopped' && !fullStop && settings
+   are present (see _buildPastRowHtml). Replaces the separate Resume
+   pill so the row stays at 7 grid columns and the layout doesn't
+   wrap. */
+.campaign-row-status.is-stopped-action {
+  color: var(--gold);
+  border-color: var(--gold);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.campaign-row-status.is-stopped-action::after {
+  content: "  \25B8  RESUME";
+  margin-left: 6px;
+}
+.campaign-row-status.is-stopped-action:hover,
+.campaign-row-status.is-stopped-action:focus-visible {
+  background: var(--gold);
+  color: var(--bg);
+  outline: none;
 }
 
 /* Runbar Resume button — uses .btn-start's existing dark-pill base, but
@@ -4517,6 +4673,20 @@ body.route-dashboard .sidebar-nav { display: none; }
 .dash-panel .campaign-row .campaign-row-status.is-stopped {
   color: var(--red);
   border-color: var(--red);
+}
+/* v2.60.x: when the stopped chip is the resume action (variant F), gold
+   wins over the default red — same specificity bucket as the rule above
+   so source-order cascade applies. Hover fills the chip gold. */
+.dash-panel .campaign-row .campaign-row-status.is-stopped.is-stopped-action {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+.dash-panel .campaign-row .campaign-row-status.is-stopped.is-stopped-action:hover,
+.dash-panel .campaign-row .campaign-row-status.is-stopped.is-stopped-action:focus-visible {
+  background: var(--gold);
+  color: var(--bg);
+  border-color: var(--gold);
+  outline: none;
 }
 .dash-panel .campaign-row .campaign-row-edit {
   color: #333;

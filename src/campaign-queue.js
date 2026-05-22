@@ -91,3 +91,22 @@ export async function clearQueue() {
   cache = [];
   await persist();
 }
+
+// Atomic full-order reorder. Accepts an array of queue ids in the desired
+// new order. Validates that the ids match the current queue exactly (same
+// set, same length) so a concurrent pop/cancel can't silently corrupt the
+// order. Returns true on success, or an object with reason='mismatch' so
+// the caller can refresh and retry. Used by drag-to-reorder in the dashboard.
+export async function reorderQueue(ids) {
+  await load();
+  if (!Array.isArray(ids)) return { ok: false, reason: 'invalid_input' };
+  if (ids.length !== cache.length) return { ok: false, reason: 'mismatch' };
+  const have = new Set(cache.map((e) => e.id));
+  for (const id of ids) {
+    if (!have.has(id)) return { ok: false, reason: 'mismatch' };
+  }
+  const byId = new Map(cache.map((e) => [e.id, e]));
+  cache = ids.map((id) => byId.get(id));
+  await persist();
+  return { ok: true };
+}
