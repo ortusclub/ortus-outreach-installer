@@ -2102,6 +2102,370 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// sendIntroViaCleanCompose — v2.58.x (STANDALONE INTRODUCTION CAMPAIGN ONLY)
+// ═════════════════════════════════════════════════════════════════════════════
+// Why this exists alongside sendIntroMessage:
+//
+// sendIntroMessage navigates to /messaging/compose/?recipient=<leadSlug> —
+// it URL-routes the lead as the first pill. When the operator has prior 1:1
+// message history with that lead, LinkedIn's compose URL parameter collapses
+// the page into the existing 1:1 thread instead of opening fresh compose.
+// The "Group name (optional)" field never renders, and sending in that state
+// delivers the body as a 1:1 DM to the lead, silently discarding the 2nd pill.
+// Operator-confirmed root cause 2026-05-19.
+//
+// sendIntroViaCleanCompose mirrors the operator's MANUAL workflow:
+//   1. Open plain /messaging/compose/ (no ?recipient= param)
+//   2. Typeahead-add the LEAD by name (firstName + lastName from sheet)
+//   3. Typeahead-add the PRIMARY by name
+//   4. LinkedIn now treats this as a fresh group thread (Group name field
+//      renders, send creates a NEW thread, no existing-1:1 interference).
+//   5. Title → body → send.
+//
+// SCOPE: standalone Introduction Campaign (introduce_back mode) only.
+// CC+IC's auto-intro path keeps using sendIntroMessage above — unchanged.
+// Operator constraint 2026-05-19: do NOT touch CC+IC.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function sendIntroViaCleanCompose(page, body, leadFullName, primaryName, groupTitle = '') {
+  if (!body) throw new Error('IC_INTRO_FAILED: body required');
+  if (!leadFullName) throw new Error('IC_INTRO_FAILED: leadFullName required (combine First Name + Last Name from sheet)');
+  if (!primaryName) throw new Error('IC_INTRO_FAILED: primaryName required (templates.introName)');
+
+  const composeUrl = 'https://www.linkedin.com/messaging/compose/';
+  console.log(`[actions:ic-clean] Opening plain compose (no recipient param) → ${composeUrl}`);
+  try {
+    await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (e) {
+    console.warn(`[actions:ic-clean] Compose navigation warning: ${e.message}`);
+  }
+  await new Promise(r => setTimeout(r, 1500));
+
+  // Wait for compose to be fully booted + the recipient input + body textbox.
+  try {
+    await page.waitForFunction(() => {
+      if (!document.body || !document.body.classList.contains('boot-complete')) return false;
+      const hasRecipient = !!document.querySelector(
+        'input[aria-label*="recipient" i], input[placeholder*="name" i], ' +
+        'input[class*="msg-connections-typeahead__search-field"]'
+      );
+      const hasBody = !!document.querySelector(
+        'div[role="textbox"][aria-label*="Write a message" i], .msg-form__contenteditable'
+      );
+      return hasRecipient && hasBody;
+    }, { timeout: 30000, polling: 'mutation' });
+  } catch {
+    throw new Error('IC_INTRO_FAILED: compose UI did not load (recipient input or body missing)');
+  }
+
+  // Add a recipient via the LinkedIn typeahead. Mirrors the proven pattern
+  // from sendIntroMessage's typeahead path but tagged with a different
+  // data-attribute so the two functions can't interfere if both run in the
+  // same session.
+  async function addRecipientViaTypeahead(name) {
+    const TAG = 'data-ortus-ic-recipient';
+
+    // Locate + tag a visible recipient input.
+    const tagged = await page.evaluate((tagAttr) => {
+      const visible = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        const s = window.getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      const candidates = Array.from(document.querySelectorAll(
+        'input, [contenteditable="true"][role="textbox"]'
+      )).filter(visible);
+      for (const el of candidates) {
+        const text = [
+          el.getAttribute('aria-label'),
+          el.getAttribute('placeholder'),
+          el.getAttribute('class'),
+          el.getAttribute('id'),
+        ].join(' ').toLowerCase();
+        // Avoid the message body (Write a message...) and group name input.
+        if (text.includes('write a message') || text.includes('group name') || text.includes('subject')) continue;
+        if (text.includes('recipient') || text.includes('type a name')
+            || text.includes('msg-connections-typeahead__search-field')
+            || text.includes('enter message recipients')) {
+          el.setAttribute(tagAttr, '1');
+          return { ok: true, tag: el.tagName };
+        }
+      }
+      return { ok: false };
+    }, TAG);
+    if (!tagged.ok) throw new Error(`IC_INTRO_FAILED: recipient input not found before adding "${name}"`);
+
+    const sel = `[${TAG}="1"]`;
+
+    // Click to focus, then paste the name (single atomic input — avoids
+    // per-char debounce drops on slow renderers).
+    try { await page.click(sel); } catch { /* best-effort */ }
+    await page.evaluate((s, text) => {
+      const el = document.querySelector(s);
+      if (!el) return;
+      const proto = Object.getPrototypeOf(el);
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+                  || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (setter) setter.call(el, text);
+      else el.value = text;
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true, cancelable: true,
+        inputType: 'insertFromPaste', data: text,
+      }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, sel, name);
+    console.log(`[actions:ic-clean] Pasted recipient: "${name}"`);
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Poll for the typeahead dropdown to open, then click the best match.
+    //
+    // Selection rules (operator-confirmed 2026-05-19):
+    //   1. The candidate's NAME must match firstName + lastName
+    //   2. The candidate must be a 1st-degree connection (innerText contains "1st")
+    //   3. Usually the first dropdown result satisfies both — but we don't
+    //      assume that, we verify.
+    //
+    // Why innerText (not textContent): plain compose typeahead rows include
+    // hidden accessibility nodes like "status is offline" / "in a meeting".
+    // textContent picks those up and produces false matches; innerText only
+    // returns visibly-rendered text. The existing sendIntroMessage in this
+    // file uses the same pattern — kept identical for parity.
+    const clickResult = await page.evaluate(async (wantName) => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const isVisible = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        const s = window.getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+      };
+      const activate = (el) => {
+        el.scrollIntoView?.({ block: 'center' });
+        el.focus?.();
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+        el.click();
+      };
+      const normalizeName = (v) => (v || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/^remove\s+/, '')
+        .replace(/[^a-z0-9\s'-]/g, ' ').replace(/\s+/g, ' ').trim();
+      const norm = normalizeName(wantName);
+      const tokens = norm.split(/\s+/).filter(Boolean);
+
+      // Helper: does this candidate look like a 1st-degree connection?
+      // LinkedIn surfaces "• 1st" or "1st degree connection" in the row's
+      // visible label. Robust check across UI variants.
+      const isFirstDegree = (text) => /\b1st\b|1st\s*degree|·\s*1st/i.test(text);
+
+      // 3-tier matcher (mirrors sendIntroMessage's matchOne in this file).
+      //   1. exact / startsWith on normalized name
+      //   2. token-prefix (each name token must prefix some word in candidate)
+      //   3. single-candidate fallback (only one suggestion: trust it)
+      const matchOne = (cands) => {
+        // PREFERRED pass: name match AND 1st-degree.
+        for (let i = 0; i < cands.length; i++) {
+          const visibleText = cands[i].innerText || '';
+          const t = normalizeName(visibleText);
+          if ((t === norm || t.startsWith(`${norm} `)) && isFirstDegree(visibleText)) {
+            return { idx: i, reason: 'exact+1st' };
+          }
+        }
+        for (let i = 0; i < cands.length; i++) {
+          const visibleText = cands[i].innerText || '';
+          const t = normalizeName(visibleText);
+          const words = t.split(/\s+/);
+          if (tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok))) && isFirstDegree(visibleText)) {
+            return { idx: i, reason: 'token-prefix+1st' };
+          }
+        }
+        // FALLBACK pass: name match without the 1st-degree requirement.
+        // (Only fires if no 1st-degree row matched the name — protects against
+        // LinkedIn rendering the degree badge in a way our regex misses.)
+        for (let i = 0; i < cands.length; i++) {
+          const t = normalizeName(cands[i].innerText || '');
+          if (t === norm || t.startsWith(`${norm} `)) return { idx: i, reason: 'exact-no-degree' };
+        }
+        for (let i = 0; i < cands.length; i++) {
+          const t = normalizeName(cands[i].innerText || '');
+          const words = t.split(/\s+/);
+          if (tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok)))) {
+            return { idx: i, reason: 'token-prefix-no-degree' };
+          }
+        }
+        if (cands.length === 1) return { idx: 0, reason: 'single-candidate' };
+        return { idx: -1, reason: 'no-match' };
+      };
+
+      let lastCandidateCount = 0;
+      let lastCandidatePreview = '';
+
+      // Poll up to 50 * 200ms = 10s. Mirrors sendIntroMessage timing.
+      for (let i = 0; i < 50; i++) {
+        await sleep(200);
+        const roots = Array.from(document.querySelectorAll(
+          '.msg-connections-typeahead__search-results, [role="listbox"], .reusable-search__entity-result-list'
+        ));
+        const searchRoots = roots.length ? roots : [document];
+        for (const root of searchRoots) {
+          const candidates = Array.from(root.querySelectorAll(
+            'li, [role="option"], button, .msg-connections-typeahead__search-result, .reusable-search__result-container'
+          )).filter(isVisible);
+          if (candidates.length > lastCandidateCount) {
+            lastCandidateCount = candidates.length;
+            lastCandidatePreview = candidates.slice(0, 3)
+              .map(c => (c.innerText || '').trim().split('\n')[0])
+              .join(' | ');
+          }
+          const result = matchOne(candidates);
+          if (result.idx >= 0) {
+            activate(candidates[result.idx]);
+            return {
+              ok: true,
+              matched: (candidates[result.idx].innerText || '').trim().split('\n')[0].slice(0, 120),
+              reason: result.reason,
+              candidateCount: candidates.length,
+            };
+          }
+        }
+      }
+      return { ok: false, candidateCount: lastCandidateCount, preview: lastCandidatePreview };
+    }, name);
+
+    if (!clickResult.ok) {
+      const detail = clickResult.candidateCount === 0
+        ? 'typeahead dropdown never opened — confirm 1st-degree connection'
+        : `dropdown had ${clickResult.candidateCount} suggestion(s) but none matched (saw: ${clickResult.preview})`;
+      throw new Error(`IC_INTRO_RECIPIENT_NOT_FOUND: "${name}" — ${detail}`);
+    }
+    console.log(`[actions:ic-clean] Clicked typeahead match for "${name}" (${clickResult.reason}): ${clickResult.matched}`);
+
+    // Cleanup the tag so the next iteration's locator hits a fresh input.
+    await page.evaluate((tagAttr) => {
+      document.querySelector(`[${tagAttr}="1"]`)?.removeAttribute(tagAttr);
+    }, TAG);
+
+    // Settle: pill needs to render and recipient input refocuses for next entry.
+    await new Promise(r => setTimeout(r, 1200));
+  }
+
+  // Step 1 — add the lead.
+  await addRecipientViaTypeahead(leadFullName);
+
+  // Step 2 — add the primary.
+  await addRecipientViaTypeahead(primaryName);
+
+  // Settle for LinkedIn to render the "Group name (optional)" field. With
+  // both pills added via typeahead (no URL routing), LinkedIn renders this
+  // field on the 2nd pill commit. The wait is operator-confirmed safety
+  // margin for slow renderers.
+  await new Promise(r => setTimeout(r, 1500));
+
+  // Step 3 — fill the Group name (conversation title) if provided.
+  if (groupTitle) {
+    const titleResult = await page.evaluate((title) => {
+      const visible = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) return false;
+        const s = window.getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      const candidates = Array.from(document.querySelectorAll('input, textarea')).filter(visible);
+      const target = candidates.find((c) => {
+        const text = [
+          c.getAttribute('aria-label'),
+          c.getAttribute('placeholder'),
+          c.getAttribute('name'),
+          c.getAttribute('id'),
+          c.getAttribute('title'),
+        ].join(' ').toLowerCase();
+        return text.includes('group name') || text.includes('subject') || text.includes('thread');
+      });
+      if (!target) return { ok: false, reason: 'title-input-not-found' };
+      target.focus();
+      const proto = target.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(target, title); else target.value = title;
+      target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: title }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+      return { ok: true };
+    }, groupTitle);
+    if (titleResult.ok) console.log(`[actions:ic-clean] Group title set: ${groupTitle}`);
+    else console.warn(`[actions:ic-clean] Group title field not found (${titleResult.reason}) — proceeding without title`);
+  }
+
+  // Step 4 — type body into the composer.
+  await randomDelay(150, 300);
+  const typed = await typeIntoField(page, body);
+  if (!typed) throw new Error('IC_INTRO_FAILED: could not type body into composer');
+  await new Promise(r => setTimeout(r, 700));
+
+  // Step 5 — click Send (button → plain Enter fallback). Same pattern
+  // as sendMessage / sendIntroMessage.
+  const sentByButton = await page.evaluate(() => {
+    const isVisible = (el) => {
+      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.pointerEvents !== 'none';
+    };
+    const activate = (el) => {
+      el.scrollIntoView?.({ block: 'center' });
+      el.focus?.();
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, view: window }));
+      el.click();
+      return true;
+    };
+    const icon = document.querySelector('[data-test-icon*="send"]');
+    const iconBtn = icon?.closest?.('button');
+    if (iconBtn && isVisible(iconBtn)) return activate(iconBtn);
+    for (const b of document.querySelectorAll('button[aria-label="Send" i], button[aria-label="Send message" i], button[aria-label="Send a message" i]')) {
+      if (isVisible(b)) return activate(b);
+    }
+    for (const b of document.querySelectorAll('button, [role="button"]')) {
+      const t = (b.textContent || '').trim();
+      if ((t === 'Send' || t === 'Send message') && isVisible(b)) return activate(b);
+    }
+    const legacy = document.querySelector('button.msg-form__send-button, .msg-form__send-button, button[type="submit"][class*="msg-form"]');
+    if (legacy && isVisible(legacy)) return activate(legacy);
+    return false;
+  });
+
+  if (!sentByButton) {
+    console.log('[actions:ic-clean] No Send button — using plain Enter');
+    await page.evaluate(() => {
+      const composer = document.querySelector(
+        'div[role="textbox"][aria-label*="Write a message" i], ' +
+        '.msg-form__contenteditable, ' +
+        '.msg-form div[contenteditable="true"], ' +
+        '[role="textbox"][contenteditable="true"]'
+      );
+      if (!composer) return;
+      composer.focus();
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(composer);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch { /* */ }
+    });
+    await page.keyboard.press('Enter');
+  } else {
+    console.log('[actions:ic-clean] Clicked Send button');
+  }
+
+  await new Promise(r => setTimeout(r, 1500));
+  console.log('[actions:ic-clean] ✓ Intro sent via clean compose typeahead path');
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // resolveSalesNavUrlFromInProfile
 // ═════════════════════════════════════════════════════════════════════════════
 // Pure helper: clicks the More dropdown on a /in/ profile and extracts the

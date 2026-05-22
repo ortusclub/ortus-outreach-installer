@@ -1366,3 +1366,135 @@ export async function getSenderUrn(page) {
     return '';
   }
 }
+
+// v2.58.x — Per-page-session cache for name→publicId lookups so an IC
+// campaign that intros 50 leads to the same primary person only hits the
+// typeahead endpoint once. Keyed by lowercased trimmed name.
+const _namePublicIdCache = new WeakMap();
+
+/**
+ * v2.58.x — Resolve a connection by NAME to their LinkedIn publicIdentifier
+ * (slug). Uses LinkedIn's compose-recipient typeahead endpoint — the same
+ * one the web client hits when an operator types into the "To" field. Scoped
+ * to MEMBER (people), which is what shows up in the compose typeahead.
+ *
+ * Used by the standalone Introduction Campaign (introduce_back mode): the
+ * wizard collects only the primary person's NAME (no URL field), so we
+ * resolve their publicId here so intro-voyager.js can fire the Voyager
+ * POST with a proper URN.
+ *
+ * Returns '' on any failure — callers should treat as "could not resolve"
+ * and stamp a friendly error on the row.
+ *
+ * @param {puppeteer.Page} page  - active LinkedIn page (sender's session)
+ * @param {string} name          - operator-typed primary name, e.g. "Sam Adcock"
+ * @returns {Promise<string>}    - publicIdentifier (slug) or ''
+ */
+export async function resolvePublicIdByName(page, name) {
+  const key = (name || '').trim().toLowerCase();
+  if (!key) return '';
+
+  // Per-page-session cache hit?
+  let cache = _namePublicIdCache.get(page);
+  if (cache && cache.has(key)) return cache.get(key);
+
+  try {
+    const result = await page.evaluate(async (query) => {
+      const log = [];
+      try {
+        const csrf = document.cookie.split(';').map((c) => c.trim())
+          .find((c) => c.startsWith('JSESSIONID='));
+        if (!csrf) return { slug: '', log: ['no-csrf'] };
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+
+        const headers = {
+          'accept': 'application/vnd.linkedin.normalized+json+2.1',
+          'csrf-token': token,
+          'x-restli-protocol-version': '2.0.0',
+        };
+
+        const encoded = encodeURIComponent(query);
+        // Endpoints ordered by community evidence (tomquirk/linkedin-api,
+        // nsandman/linkedin-api, beeper/linkedin-messaging-api):
+        //   1. blended search — the people-search endpoint, well-documented,
+        //      filters by 1st-degree network (network->F).
+        //   2. modern Dash typeahead — what LinkedIn's compose UI uses
+        //      (different shape per account type, hence multiple keys to try).
+        //   3. legacy typeahead — works on older account types.
+        const endpoints = [
+          `https://www.linkedin.com/voyager/api/search/blended?keywords=${encoded}&filters=List((key:network,value:List(F)))&q=all&queryContext=List(spellCorrectionEnabled->true)&count=10`,
+          `https://www.linkedin.com/voyager/api/search/blended?keywords=${encoded}&filters=List(network-%3EF)&q=all&count=10`,
+          `https://www.linkedin.com/voyager/api/voyagerMessagingDashMessengerHostRecipients?q=findHostRecipients&keyword=${encoded}&count=10`,
+          `https://www.linkedin.com/voyager/api/voyagerMessagingDashMessengerHostRecipients?q=findHostRecipients&keywords=${encoded}&count=10`,
+          `https://www.linkedin.com/voyager/api/typeaheadHitsV2?keywords=${encoded}&q=type&types=List(CONNECTIONS)&count=10`,
+          `https://www.linkedin.com/voyager/api/typeaheadHits?keywords=${encoded}&q=type&types=List(CONNECTIONS)&count=10`,
+        ];
+
+        // Pick a publicIdentifier from a single entity, tolerating the
+        // different shapes the endpoints above return.
+        function pid(ent) {
+          return ent?.publicIdentifier
+              || ent?.targetUrnResolutionResult?.publicIdentifier
+              || ent?.hitInfo?.['com.linkedin.voyager.search.SearchProfile']?.miniProfile?.publicIdentifier
+              || ent?.hitInfo?.['com.linkedin.voyager.search.SearchProfile']?.publicIdentifier
+              || ent?.miniProfile?.publicIdentifier
+              || '';
+        }
+        function fullName(ent) {
+          const first = (ent?.firstName || ent?.miniProfile?.firstName || ent?.hitInfo?.['com.linkedin.voyager.search.SearchProfile']?.miniProfile?.firstName || '').toString();
+          const last  = (ent?.lastName  || ent?.miniProfile?.lastName  || ent?.hitInfo?.['com.linkedin.voyager.search.SearchProfile']?.miniProfile?.lastName  || '').toString();
+          return `${first} ${last}`.trim().toLowerCase();
+        }
+
+        const wantLower = query.toLowerCase();
+        for (const url of endpoints) {
+          let resp;
+          try {
+            resp = await fetch(url, { headers, credentials: 'include' });
+          } catch (e) {
+            log.push(`${url.slice(0, 70)}… → fetch-threw:${String(e.message || e).slice(0, 80)}`);
+            continue;
+          }
+          if (!resp.ok) {
+            log.push(`${url.slice(0, 70)}… → HTTP ${resp.status}`);
+            continue;
+          }
+          let data;
+          try {
+            data = await resp.json();
+          } catch (e) {
+            log.push(`${url.slice(0, 70)}… → non-JSON (${String(e.message).slice(0, 50)})`);
+            continue;
+          }
+          const candidates = [];
+          if (Array.isArray(data?.elements)) candidates.push(...data.elements);
+          if (Array.isArray(data?.included)) candidates.push(...data.included);
+          log.push(`${url.slice(0, 70)}… → 200 OK, ${candidates.length} candidates`);
+
+          // Exact name match preferred; fall back to substring; fall back to
+          // first publicIdentifier seen (results are already ranked by relevance).
+          for (const ent of candidates) { const p = pid(ent); if (p && fullName(ent) === wantLower) return { slug: p, log }; }
+          for (const ent of candidates) { const p = pid(ent); const fn = fullName(ent); if (p && fn && (fn.includes(wantLower) || wantLower.includes(fn))) return { slug: p, log }; }
+          for (const ent of candidates) { const p = pid(ent); if (p) return { slug: p, log }; }
+        }
+        return { slug: '', log };
+      } catch (err) {
+        log.push(`outer-threw: ${String(err.message || err).slice(0, 100)}`);
+        return { slug: '', log };
+      }
+    }, name);
+
+    // Always log the probe trail so we can see why a lookup failed.
+    console.log(`[helpers:name-resolve] "${name}" — slug=${result.slug || '(none)'}, probe:`);
+    for (const line of (result.log || [])) console.log(`  · ${line}`);
+
+    if (result.slug) {
+      if (!cache) { cache = new Map(); _namePublicIdCache.set(page, cache); }
+      cache.set(key, result.slug);
+    }
+    return result.slug || '';
+  } catch (err) {
+    console.warn(`[helpers:name-resolve] outer error: ${err.message}`);
+    return '';
+  }
+}

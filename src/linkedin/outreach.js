@@ -9,7 +9,7 @@
  */
 
 import { randomDelay, getConnectionStatus, getVoyagerDegree, getDegreeBadge, personalizeTemplate } from './helpers.js';
-import { sendConnectionRequest, sendMessage, sendIntroMessage, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
+import { sendConnectionRequest, sendMessage, sendIntroMessage, sendIntroViaCleanCompose, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
 import { dataPath } from '../paths.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 
@@ -100,6 +100,85 @@ async function waitForDomSettle(page, { settleMs = 1500, maxWait = 15000 } = {})
 
 export async function performOutreach(page, targetUrl, templates, state = {}, modeHint = null) {
   try {
+    // v2.58.x — Standalone Introduction Campaign fast-path.
+    //
+    // IC leads are guaranteed 1st-degree (operator confirms via the
+    // "All leads already connected" checkbox in the wizard), and
+    // sendIntroViaCleanCompose adds the lead + primary by typeahead from
+    // /messaging/compose/ — it never needs the lead's /in/<slug> page
+    // open. Skipping the profile navigation + DOM settle + Voyager degree
+    // check + getConnectionStatus saves ~10-30s per row.
+    //
+    // SCOPED TO STANDALONE IC ONLY: gate is `modeHint === 'force_message'
+    // && templates.introMode === true`. CC+IC's auto-intro path goes
+    // through auto-intro.js, NOT performOutreach, so this branch never
+    // affects it. Operator constraint 2026-05-19: do NOT change CC+IC.
+    if (modeHint === 'force_message' && templates && templates.introMode === true) {
+      if (state.messageSent) return { action: 'already_processed' };
+      if (!templates.followUpMessage) return { action: 'skipped', error: 'No message template' };
+      if (!templates.introName) return { action: 'skipped', error: 'No intro person configured (introMode on but introName empty)' };
+      try {
+        const data = templates.data || {};
+
+        // Build introData (mirrors the case 'message' IC branch below so
+        // {intro name} / {intro first name} / {intro last name} tokens
+        // resolve identically).
+        const introTokens = templates.introName.trim().split(/\s+/);
+        const introFirst = introTokens[0] || '';
+        const introLast  = introTokens.slice(1).join(' ');
+        const introData = {
+          ...data,
+          // {intro ...} tokens — kept for back-compat with older presets.
+          'intro name': templates.introName,
+          'introName': templates.introName,
+          'intro_name': templates.introName,
+          'intro first name': introFirst,
+          'introFirstName': introFirst,
+          'intro_first_name': introFirst,
+          'intro last name': introLast,
+          'introLastName': introLast,
+          'intro_last_name': introLast,
+          // v2.58.x — {primary ...} aliases so IC presets can use the same
+          // chip vocabulary as CC+IC. In IC the operator only enters a name
+          // (no URL), so {primary url} resolves to an empty string — the
+          // chip is hidden in templates that don't reference it.
+          'primary name': templates.introName,
+          'primary full name': templates.introName,
+          'primaryFullName': templates.introName,
+          'primaryName': templates.introName,
+          'primary_name': templates.introName,
+          'primary first name': introFirst,
+          'primaryFirstName': introFirst,
+          'primary_first_name': introFirst,
+          'primary last name': introLast,
+          'primaryLastName': introLast,
+          'primary_last_name': introLast,
+          'primary url': '',
+          'primaryUrl': '',
+          'primary_url': '',
+        };
+        const body  = personalizeTemplate(templates.followUpMessage, introData);
+        const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
+
+        // Build lead full name from the sheet row (tolerant of casing /
+        // underscore / space variants of the column header).
+        const _leadFirst = data['First Name'] || data['First name'] || data['first name']
+          || data['FIRST NAME'] || data['firstName'] || data['FirstName'] || data['first_name'] || '';
+        const _leadLast  = data['Last Name']  || data['Last name']  || data['last name']
+          || data['LAST NAME']  || data['lastName']  || data['LastName']  || data['last_name']  || '';
+        const _leadFullName = `${_leadFirst} ${_leadLast}`.trim();
+        if (!_leadFullName) {
+          return { action: 'skipped', error: 'IC requires First Name + Last Name on the row to typeahead the lead' };
+        }
+
+        console.log(`[outreach] IC fast-path → clean compose (lead="${_leadFullName}", primary="${templates.introName}") — skipping profile visit + degree check`);
+        await sendIntroViaCleanCompose(page, body, _leadFullName, templates.introName, title);
+        return { action: 'message_sent' };
+      } catch (err) {
+        return { action: 'skipped', error: `Message failed: ${err.message}` };
+      }
+    }
+
     let url = targetUrl.trim();
     if (!url.startsWith('http')) url = 'https://' + url;
     // 2.8.37: force HTTPS. Sheets often have legacy http:// LinkedIn URLs;
@@ -500,14 +579,36 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
             };
             const body  = personalizeTemplate(templates.followUpMessage, introData);
             const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
-            // v2.14.x: CC+IC and IB call sendIntroMessage with the SAME
-            // arguments — typeahead-for-primary path. The previous
-            // URL-routing experiment (passing templates.introUrl as 5th
-            // arg) failed because LinkedIn's compose URL parser is
-            // last-wins for repeated ?recipient= params, so the lead's
-            // pill was silently dropped. The secondRecipientUrl param on
-            // sendIntroMessage now has no caller (dead code, harmless).
-            await sendIntroMessage(page, body, templates.introName, title);
+
+            // v2.58.x — Standalone Introduction Campaign uses the
+            // "clean compose" DOM path (sendIntroViaCleanCompose) which
+            // mirrors the operator's MANUAL workflow:
+            //   1. Navigate to /messaging/compose/ (NO ?recipient= param)
+            //   2. Typeahead-add the lead by name
+            //   3. Typeahead-add the primary by name
+            //   4. Group name renders → set title → type body → send
+            //
+            // Why the ?recipient= URL parameter is avoided: when the
+            // sender has prior 1:1 history with the lead, LinkedIn's
+            // compose URL routing collapses into the existing 1:1 thread,
+            // the Group name field never renders, and any subsequent
+            // send delivers the body as a 1:1 DM (silently discarding
+            // the 2nd pill). The operator's manual flow (typeahead BOTH
+            // recipients, no URL routing) is what works — we mirror it.
+            //
+            // SCOPED TO STANDALONE IC ONLY. CC+IC's auto-intro path
+            // (auto-intro.js → sendIntroMessage) is intentionally
+            // unchanged. Operator constraint 2026-05-19.
+            const _leadFirst = data['First Name'] || data['First name'] || data['first name']
+              || data['FIRST NAME'] || data['firstName'] || data['FirstName'] || data['first_name'] || '';
+            const _leadLast = data['Last Name']  || data['Last name']  || data['last name']
+              || data['LAST NAME']  || data['lastName']  || data['LastName']  || data['last_name']  || '';
+            const _leadFullName = `${_leadFirst} ${_leadLast}`.trim();
+            if (!_leadFullName) {
+              return { action: 'skipped', error: 'IC requires First Name + Last Name on the row to typeahead the lead' };
+            }
+            console.log(`[outreach] Standalone IC → clean compose path (lead="${_leadFullName}", primary="${templates.introName}")`);
+            await sendIntroViaCleanCompose(page, body, _leadFullName, templates.introName, title);
           } else {
             await sendMessage(page, personalizeTemplate(templates.followUpMessage, data));
           }
