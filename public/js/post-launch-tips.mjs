@@ -35,6 +35,11 @@ const TIP_DATA = {
         short: 'Watch sheet header typos.',
         full: '<b>Sheet column headers matter.</b> A trailing space like <code>"first name "</code> breaks substitution silently.',
       },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
+      },
     ],
   },
 
@@ -72,6 +77,11 @@ const TIP_DATA = {
         short: 'Bulk Check Connections fires anytime.',
         full: '<b>Click "Bulk Check Connections" anytime</b> in the cockpit to fire an off-schedule sweep + IC DMs.',
       },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
+      },
     ],
   },
 
@@ -98,6 +108,11 @@ const TIP_DATA = {
         icon: '📞',
         short: 'Same as the cockpit\'s Bulk Check pill.',
         full: '<b>Same thing as the "Bulk Check Connections" pill</b> in the cockpit of a live CC+IC run. Just runnable from the wizard too.',
+      },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
       },
     ],
   },
@@ -130,6 +145,11 @@ const TIP_DATA = {
         icon: '⛔',
         short: 'Press "Stop Campaign" to halt.',
         full: '<b>One way to stop.</b> Press "Stop Campaign".',
+      },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
       },
     ],
   },
@@ -168,6 +188,11 @@ const TIP_DATA = {
         short: 'Press "Stop Campaign" to halt.',
         full: '<b>One way to stop.</b> Press "Stop Campaign".',
       },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
+      },
     ],
   },
 
@@ -199,6 +224,11 @@ const TIP_DATA = {
         icon: '⛔',
         short: 'Press "Stop Campaign" to halt.',
         full: '<b>One way to stop.</b> Press "Stop Campaign".',
+      },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
       },
     ],
   },
@@ -232,6 +262,11 @@ const TIP_DATA = {
         short: 'Press "Stop Campaign" to halt.',
         full: '<b>One way to stop.</b> Press "Stop Campaign".',
       },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
+      },
     ],
   },
 
@@ -258,6 +293,11 @@ const TIP_DATA = {
         icon: '⛔',
         short: 'Press "Stop Campaign" to halt.',
         full: '<b>One way to stop.</b> Press "Stop Campaign". Partial results stay in the Replies tab.',
+      },
+      {
+        icon: '📸',
+        short: 'Sheet snapshot taken at Start.',
+        full: '<b>Sheet is fetched ONCE at Start.</b> New leads added while running, paused, or monitoring are NOT picked up — Stop+Start (or press Restore) to refresh. Already-processed leads auto-skip on the next run, and per-account daily counts carry over.',
       },
     ],
   },

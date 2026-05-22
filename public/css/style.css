@@ -462,13 +462,17 @@ body.theme-light .preset-pop-item:hover { background: rgba(0,0,0,0.04); }
 .preset-pop-item .preset-pop-tag {
   color: var(--gray); font-size: 0.55rem; white-space: nowrap;
 }
+/* v2.57.7: delete X is always faintly visible (runbar-clarity sketch
+   §2 variant A). Was opacity:0 by default → hover row to reveal, which
+   made the affordance feel non-existent. Now default 0.45, full opacity
+   on its own hover. */
 .preset-pop-item .preset-pop-delete {
-  opacity: 0; border: none; background: transparent; color: var(--red);
+  opacity: 0.45; border: none; background: transparent; color: var(--red);
   font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em;
   cursor: pointer; padding: 2px 6px;
   transition: opacity 0.15s;
 }
-.preset-pop-item:hover .preset-pop-delete { opacity: 0.7; }
+.preset-pop-item:hover .preset-pop-delete { opacity: 0.75; }
 .preset-pop-item .preset-pop-delete:hover { opacity: 1; }
 .preset-pop-dot {
   width: 6px; height: 6px; border-radius: 9999px;
@@ -1058,6 +1062,9 @@ select {
   background: transparent;
   color: var(--ink);
   cursor: pointer;
+  /* v2.57.7: labels never wrap. Without this, the runbar's tight strip
+     pushed "Start Campaign" and "Force restart" onto two lines. */
+  white-space: nowrap;
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
               transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1119,15 +1126,81 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 .btn-pause:hover { opacity: 0.85; }
 .btn-pause:disabled { background: transparent; color: var(--ink); opacity: 0.45; }
 
-/* Run bar actions row — Start/Pause/Stop cluster on the left, Saved configs
-   pushed to the far right via margin-left:auto on the preset pill. */
+/* Run bar actions row — v2.57.7: now organised into labeled groups
+   (Run / View / Recovery / Configs) with thin vertical separators
+   between groups. The last group has margin-left:auto so it floats
+   to the far right. See public/sketches/runbar-clarity-v1.html. */
 .run-bar-actions {
   display: flex;
   gap: 10px;
   align-items: center;
   flex: 1;
 }
-.run-bar-actions .preset-pill { margin-left: auto; }
+.run-bar-actions .preset-pill { margin-left: 0; }
+
+/* v2.57.7: two-line status slot — campaign name on top, status text
+   below. Name line collapses to 0 height when empty (idle state) so the
+   row reads as a single line of "Idle". */
+.run-status-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.run-status-name {
+  font-family: var(--display);
+  font-size: 1rem;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-status-name:empty { display: none; }
+.run-status-text {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+
+/* Grouped button clusters with thin separators between groups.
+   v2.57.7 spacing tweak — pulls status leftward and the action cluster
+   rightward; Recovery group gets extra left padding so it doesn't
+   crowd the View button. */
+.runbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  position: relative;
+}
+.runbar-group + .runbar-group::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 18px;
+  background: var(--hairline);
+}
+.runbar-group--first { padding-left: 36px; }
+.runbar-group--recovery { padding-left: 26px; }
+.runbar-group--last {
+  padding-right: 0;
+  margin-left: auto;
+}
+.runbar-group-label {
+  font-family: var(--mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gray);
+  margin-right: 2px;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    Stats (live status)
@@ -1810,7 +1883,9 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
   background: var(--bg);
   border-top: 1px solid var(--hairline);
-  padding: 14px 56px;
+  /* v2.57.7: reduced left padding pulls the status (IDLE + dot) closer
+     to the sidebar; right padding unchanged. */
+  padding: 14px 56px 14px 32px;
   display: flex; justify-content: space-between; align-items: center;
   z-index: 10; height: var(--runbar-h);
 }
