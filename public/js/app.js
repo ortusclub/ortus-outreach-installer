@@ -5439,6 +5439,25 @@ function _detectLocalTz() {
   catch { return ''; }
 }
 
+// Featured zones surfaced at the top of the dropdown so the three operator
+// locations are one click away. Label is the city name the operator thinks
+// in; value is the canonical IANA zone (Kosovo has no Europe/Pristina —
+// Europe/Belgrade is the IANA-blessed zone for the region).
+const _FEATURED_TZS = [
+  { label: 'Rome',     value: 'Europe/Rome' },
+  { label: 'Pristina', value: 'Europe/Belgrade' },
+  { label: 'Manila',   value: 'Asia/Manila' },
+];
+
+// Sidebar label resolver: friendly city name for featured zones, raw IANA
+// for everything else. Keeps the "Pristina" label consistent across modal
+// and sidebar even though the persisted value is Europe/Belgrade.
+function _tzDisplayLabel(tz) {
+  if (!tz) return '—';
+  const hit = _FEATURED_TZS.find(t => t.value === tz);
+  return hit ? hit.label : tz;
+}
+
 function _populateTzSelect(selectedTz) {
   const sel = document.getElementById('op-tz-select');
   if (!sel) return;
@@ -5449,19 +5468,32 @@ function _populateTzSelect(selectedTz) {
     zones = Intl.supportedValuesOf('timeZone') || [];
   } catch { zones = []; }
   if (!zones.length) zones = [selectedTz || 'UTC'];
-  // Ensure the detected/selected value is in the list (defensive — if the
-  // runtime has a weird tz, we still want to render it as the current option).
-  if (selectedTz && !zones.includes(selectedTz)) zones.unshift(selectedTz);
-  sel.innerHTML = zones.map(tz => `<option value="${tz}"${tz === selectedTz ? ' selected' : ''}>${tz}</option>`).join('');
+  // Defensive: include the saved value even if the runtime doesn't list it.
+  if (selectedTz && !zones.includes(selectedTz)) zones.push(selectedTz);
+
+  const featuredValues = new Set(_FEATURED_TZS.map(t => t.value));
+  const others = zones.filter(z => !featuredValues.has(z)).sort();
+
+  const featuredHtml = _FEATURED_TZS.map(t =>
+    `<option value="${t.value}"${t.value === selectedTz ? ' selected' : ''}>${t.label}</option>`
+  ).join('');
+  const otherHtml = others.map(tz =>
+    `<option value="${tz}"${tz === selectedTz ? ' selected' : ''}>${tz}</option>`
+  ).join('');
+
+  sel.innerHTML =
+    `<optgroup label="Operator locations">${featuredHtml}</optgroup>` +
+    `<optgroup label="Other">${otherHtml}</optgroup>`;
 }
 
 function openOpTzModal() {
   const modal = document.getElementById('op-tz-modal');
   if (!modal) return;
-  // Read the current stored tz off the sidebar (already populated by loadOperatorPrefs).
-  // If empty, fall back to the OS-detected zone.
-  const cur = document.getElementById('op-tz-current')?.textContent?.trim();
-  const preselected = (cur && cur !== '—') ? cur : _detectLocalTz();
+  // Read the stored IANA value off the sidebar's data attribute (set by
+  // loadOperatorPrefs / saveOpTzFromModal). textContent holds the friendly
+  // label which isn't an IANA name for the featured zones.
+  const stored = document.getElementById('op-tz-current')?.dataset?.tz || '';
+  const preselected = stored || _detectLocalTz();
   _populateTzSelect(preselected);
   modal.classList.remove('hidden');
 }
@@ -5482,7 +5514,10 @@ async function saveOpTzFromModal() {
       const data = await res.json();
       const stored = data?.prefs?.tz || tz;
       const cur = document.getElementById('op-tz-current');
-      if (cur) cur.textContent = stored;
+      if (cur) {
+        cur.textContent = _tzDisplayLabel(stored);
+        cur.dataset.tz = stored;
+      }
     }
   } catch (err) {
     console.warn('[op-tz] save failed:', err?.message || err);
@@ -5497,7 +5532,10 @@ async function loadOperatorPrefs() {
     const data = await res.json();
     const tz = data?.prefs?.tz || '';
     const cur = document.getElementById('op-tz-current');
-    if (cur) cur.textContent = tz || '—';
+    if (cur) {
+      cur.textContent = _tzDisplayLabel(tz);
+      cur.dataset.tz = tz;
+    }
     // First-launch behavior: blank stored tz → show modal pre-filled with
     // the detected OS zone. Skip-link in the modal just dismisses; nothing
     // gets persisted, so the modal re-fires on next launch (user's choice).
