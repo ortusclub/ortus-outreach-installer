@@ -33,6 +33,7 @@ import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
 import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
+import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs } from './src/operator-prefs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { checkDiskFree } from './src/disk-check.js';
@@ -2535,6 +2536,35 @@ app.post('/api/notification-prefs', async (req, res) => {
   try {
     const patch = req.body || {};
     const next = await setNotificationPrefs(req.user, patch);
+    res.json({ ok: true, prefs: next });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.58.x — per-operator preferences (timezone today). Stored locally,
+// keyed by the signed-in email. Campaign launcher's tz becomes the
+// stamping authority for sheet timestamps (Apps Script honours it when
+// present, falls back to project timezone otherwise).
+app.get('/api/operator-prefs', async (req, res) => {
+  try {
+    const prefs = await getOperatorPrefs(req.user);
+    res.json({ ok: true, prefs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/operator-prefs', async (req, res) => {
+  try {
+    const patch = req.body || {};
+    // tz is the only field for now; pass-through validation lives here so
+    // garbage strings can't reach the bot. Empty string is allowed and means
+    // "no preference" (skip the modal next time, fall back to GAS default).
+    if (patch.tz !== undefined && typeof patch.tz !== 'string') {
+      return res.status(400).json({ error: 'tz must be a string' });
+    }
+    const next = await setOperatorPrefs(req.user, patch);
     res.json({ ok: true, prefs: next });
   } catch (err) {
     res.status(500).json({ error: err.message });

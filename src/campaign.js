@@ -25,7 +25,8 @@ import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
-import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet } from './sheets-writer.js';
+import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz } from './sheets-writer.js';
+import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
 import { opsLogEvent, campaignLogAppendRun } from './log-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
@@ -237,7 +238,17 @@ async function checkHostHealth() {
 // the Apps Script bridge schema dropped "Account Used" and the bot's
 // writeback no longer fills it. This helper centralises the read so the
 // next column-name change is a one-line edit instead of a grep + 3 sites.
-function getSenderName(row) {
+//
+// v2.58.x: The Introduction Campaign mode (introduce_back) lets operators
+// point the bot at a non-canonical sender column — e.g. a sheet whose
+// header is "LinkedIn 1st Connections" instead of "Sender". When a
+// senderColumn is provided, read from it first; fall back to the canonical
+// Sender/sender keys so existing campaigns keep working unchanged.
+function getSenderName(row, senderColumn) {
+  if (senderColumn && row && row[senderColumn] != null) {
+    const v = row[senderColumn].toString().trim();
+    if (v) return v;
+  }
   return (row?.Sender || row?.sender || '').toString().trim();
 }
 
@@ -1066,8 +1077,16 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false }) {
   if (campaign.running) throw new Error('Campaign already running');
+
+  // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
+  // mode so accidental flagging from other code paths cannot change
+  // unrelated campaign behavior.
+  if (mode !== 'introduce_back') {
+    senderColumn = '';
+    allLeadsConnected = false;
+  }
 
   // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
   // throw, so even a campaign that fails preflight is recoverable.
@@ -1075,10 +1094,20 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
+    senderColumn, allLeadsConnected,
   };
 
   campaign.running = true;
   campaign.createdBy = createdBy || null;
+  // v2.58.x — pick up the launcher's stored timezone so sheet timestamps
+  // land in their local clock. Empty string resets any prior campaign's
+  // value (one-campaign-at-a-time invariant means no race). Best-effort:
+  // any read failure falls back to no tz, which preserves pre-feature
+  // behavior (GAS uses Session.getScriptTimeZone()).
+  try {
+    const prefs = createdBy ? await getOperatorPrefs(createdBy) : null;
+    setOperatorTz(prefs?.tz || '');
+  } catch { setOperatorTz(''); }
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._skipCleanup = false;
@@ -1129,6 +1158,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.senderFirstNames = senderFirstNames || {};
   campaign.sheetUrl = sheetUrl || '';
   campaign.linkedinColumn = linkedinColumn || '';
+  // v2.58.x — IC-only sheet-mapping options exposed on campaign state so
+  // restore/monitoring paths can read them back from a running campaign.
+  campaign.senderColumn = senderColumn || '';
+  campaign.allLeadsConnected = !!allLeadsConnected;
   // v2.14.x: operator-chosen cadence for the monitoring auto-trigger.
   // Read by transitionToMonitoring (initial nextCheckAt) and by
   // tickMonitoringNow (reschedule after each fire). Persisted via
@@ -1300,9 +1333,32 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // the legacy CC/OP/Message/InMail logic below — unchanged.
     const hasStageSchema = rows.length > 0 && ('Stage' in rows[0] || 'stage' in rows[0]);
 
+    // v2.58.x — Introduction Campaign + "all leads already connected"
+    // bypass. When the operator has confirmed the sheet contains only
+    // 1st-degree connections, skip the Stage gate entirely so a plain
+    // sheet (no Stage column) works. Re-runs are still blocked because
+    // a successful send stamps 'Introduction Status = IC Sent' which we
+    // honor as the terminal-marker here. Failed rows (Introduction
+    // Status starts with "Failed —") remain retryable.
+    const icAllConnectedBypass = (mode === 'introduce_back' && allLeadsConnected);
+    if (icAllConnectedBypass) {
+      log(`Introduction Campaign · "all leads already connected" — Stage filter bypassed.`);
+    }
+
     const targets = rows.filter(row => {
       const url = extractLinkedInUrl(row, linkedinColumn);
       if (!url) return false;
+
+      if (icAllConnectedBypass) {
+        const introStatus = (
+          row['Introduction Status'] || row['introduction status'] ||
+          row['Introduction status'] || row['introStatus'] || ''
+        ).toString().trim();
+        // Already sent → terminal. Anything else (blank or "Failed —" reason)
+        // is eligible for this run.
+        if (introStatus === 'IC Sent') return false;
+        return true;
+      }
 
       // ── 2.9.0 Stage-based filtering ─────────────────────────────
       if (hasStageSchema) {
@@ -1364,7 +1420,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       if (mode === 'check_status') {
         // 2.8.29: Account Used (column D) being filled = an invite was sent.
         // CC text is no longer the source of truth.
-        const acct = getSenderName(row);
+        const acct = getSenderName(row, senderColumn);
         return acct.length > 0;
       }
 
@@ -1479,7 +1535,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       const sendersInSheet = new Map(); // name -> count (uses display name)
       const unmatchedSenders = new Map(); // name -> count
       for (const row of targets) {
-        const acct = getSenderName(row);
+        const acct = getSenderName(row, senderColumn);
         if (!acct) {
           unmatchedSenders.set('(blank)', (unmatchedSenders.get('(blank)') || 0) + 1);
           continue;
@@ -1532,7 +1588,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       _checkStatusTargetsByProfile = {};
       for (const pid of derivedProfileIds) _checkStatusTargetsByProfile[pid] = [];
       for (const row of targets) {
-        const acct = getSenderName(row);
+        const acct = getSenderName(row, senderColumn);
         const pid = nameToId[acct];
         if (pid && _checkStatusTargetsByProfile[pid]) {
           _checkStatusTargetsByProfile[pid].push(row);
@@ -2055,7 +2111,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         if (mode === 'check_status') {
           // 2.8.29: criterion is Sender filled, not CC=Sent.
-          const acct = getSenderName(row);
+          const acct = getSenderName(row, senderColumn);
           if (!acct) { delete state.processed[url]; continue; }
           // 2.8.28-P2: routing guard removed. The per-profile target slices
           // built at auto-derivation time already guarantee each profile sees
@@ -2064,7 +2120,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // "local-browser", pName is "Local Browser") and broke an entire
           // legitimate code path. Slice-based filtering is sufficient.
         } else if (mode === 'message_only' || mode === 'introduce_back') {
-          if (_hasStageHere) {
+          // v2.58.x — Introduction Campaign with allLeadsConnected: the
+          // operator has confirmed every row is already 1st-degree, so we
+          // bypass Stage / Connected Status / CC gates here. The pre-filter
+          // already enforces the Introduction Status = "IC Sent" terminal
+          // guard, and concurrent-write races don't apply because no other
+          // path writes IC Sent during a run.
+          if (mode === 'introduce_back' && allLeadsConnected) {
+            // Nothing to re-validate at dispatch time; continue to send.
+          } else if (_hasStageHere) {
             // New schema: Stage drives messageability. Pre-filter passed
             // 'Connected · DM Now'; if it changed under us, skip.
             if (_stage !== 'Connected · DM Now') { delete state.processed[url]; continue; }

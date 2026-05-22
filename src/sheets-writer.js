@@ -15,6 +15,15 @@ import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 // Function form preserved so the existing call sites don't have to change.
 const getWebAppUrl = () => SHEETS_WEBAPP_URL;
 
+// v2.58.x: per-operator timezone. Set once at campaign start by campaign.js
+// (reads the launcher's stored preference). Empty string means "no preference"
+// and Apps Script falls back to Session.getScriptTimeZone() as before.
+let _operatorTz = '';
+
+export function setOperatorTz(tz) {
+  _operatorTz = typeof tz === 'string' ? tz : '';
+}
+
 /**
  * POST to the Apps Script web app.
  */
@@ -30,7 +39,11 @@ async function postToWebApp(payload) {
     // redirect, hitting doGet() instead of doPost(). Handle manually.
     // P-05 fix (2.8.18): 15s timeout on both legs of the redirect chain.
     // Without it, an Apps Script hang stalls the campaign loop indefinitely.
-    const body = JSON.stringify(payload);
+    // v2.58.x: attach tz so GAS can stamp dateLastAction in the launcher's
+    // local time. GAS uses `data.tz || Session.getScriptTimeZone()` so older
+    // GAS deployments (pre-paste) silently ignore this field.
+    const enriched = _operatorTz ? { ...payload, tz: _operatorTz } : payload;
+    const body = JSON.stringify(enriched);
     const signal = AbortSignal.timeout(15000);
     const initial = await fetch(url, {
       method: 'POST',
