@@ -8106,6 +8106,12 @@ async function resumeWithSameSettings() {
           body: JSON.stringify({ indexes: [oldIdx] }),
         });
         if (typeof refreshPastCampaigns === 'function') await refreshPastCampaigns();
+        // v2.58.x — ALL tab is a derived view that clones rows from the
+        // source tabs (active/past/queued/...). Refresh the active tab
+        // FIRST so the freshly-resumed campaign exists as a clone source
+        // before renderDashboardAll() runs. Without this the ALL tab
+        // briefly shows "No campaigns yet" until the 2s poll tick lands.
+        if (typeof refreshActiveCampaign === 'function') await refreshActiveCampaign();
         if (typeof renderDashboardAll === 'function') renderDashboardAll();
         if (typeof dashRefreshAll === 'function') dashRefreshAll();
       } catch (delErr) {
