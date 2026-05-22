@@ -158,6 +158,21 @@ export function shouldFireIdleBulkCheck(ctx) {
 async function appendHistory(entry) {
   let history = [];
   try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf8')); } catch { /* first run */ }
+  // v2.58.x — same-name dedup. When a campaign ends, any earlier history
+  // entry with the same `name` is removed so the dashboard shows one row
+  // per campaign (latest run wins). Matches the operator's "I keep
+  // seeing the same campaign twice" complaint. Case- and whitespace-
+  // insensitive match; entries with blank names are never deduped (those
+  // are typically one-off ad-hoc runs that shouldn't collapse together).
+  const name = (entry?.name || '').toString().trim().toLowerCase();
+  if (name) {
+    const before = history.length;
+    history = history.filter(h => ((h?.name || '').toString().trim().toLowerCase()) !== name);
+    const removed = before - history.length;
+    if (removed > 0) {
+      console.log(`[history] same-name dedup: removed ${removed} older entr${removed === 1 ? 'y' : 'ies'} for "${entry.name}"`);
+    }
+  }
   history.push(entry);
   await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2));
 }
