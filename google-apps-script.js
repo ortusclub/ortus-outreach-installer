@@ -1136,12 +1136,14 @@ function normalizeUrl(url) {
 function writeFields(sheet, headers, row, data) {
   var updated = [];
 
-  // Split dateLastAction into separate 'Date' and 'Time' columns. Uses the
-  // script's timezone (Apps Script's clock) rather than the bot's local
-  // time so behaviour is consistent regardless of operator laptop locale.
+  // Split dateLastAction into separate 'Date' and 'Time' columns. Prefers
+  // the per-operator tz the bot sends (v2.58.x — launcher's stored
+  // timezone), so timestamps stamp in the launcher's local time. Falls
+  // back to the script's project timezone when no tz is sent, matching
+  // the legacy behaviour for old bot versions.
   if (data.dateLastAction !== undefined && data.dateLastAction !== null && data.dateLastAction !== '') {
     var nowDt = new Date();
-    var tz = Session.getScriptTimeZone();
+    var tz = (data && data.tz) || Session.getScriptTimeZone();
     var dateStr = Utilities.formatDate(nowDt, tz, 'yyyy-MM-dd');
     var timeStr = Utilities.formatDate(nowDt, tz, 'HH:mm:ss');
     [['Date of Last Action', dateStr], ['Time of Last Action', timeStr]].forEach(function(pair) {
