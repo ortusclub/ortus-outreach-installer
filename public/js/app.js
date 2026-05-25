@@ -3558,6 +3558,14 @@ function updateCockpit(s) {
   // campaign name (the dashboard active row was rendering correctly
   // because it reads from the fetch response directly).
   __cockpit.name = s.name || '';
+  // v2.59 — mirror totalProcessed too. The wizard Stop→Start resume
+  // path (stopCampaign at L3219, wizardStoppedFromContext.totalProcessed)
+  // snapshots this off __cockpit, then ships it server-side as
+  // resumeContext so campaign.js can seed the counter. Before this
+  // mirror the snapshot was always 0 — counter-continuation silently
+  // broke from the wizard path (the past-row RESUME chip path worked
+  // because it reads from history, not __cockpit).
+  __cockpit.totalProcessed = Number(s.totalProcessed) || 0;
   __cockpit.state = nextState;
 
   if (justEnded) {
