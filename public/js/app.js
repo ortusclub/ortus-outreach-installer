@@ -27,14 +27,24 @@ let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
 
-// True when the wizard route is showing a brand-new (unstarted) campaign
-// composed via startNewCampaign — used to blank the right-pane status + log
-// so a globally-running campaign's activity doesn't bleed into a fresh tab.
-// editDraft clears the flag so editing an existing draft behaves normally.
+// True when the wizard route is showing a campaign that is NOT the currently
+// running one — used to blank the live status / log / right-pane / runbar
+// identity / button state so the running campaign's data doesn't bleed in.
+// Triggers when:
+//   1. currentDraftIsNew flag set (fresh draft via startNewCampaign), OR
+//   2. currentDraftId set (editing a saved draft or stopped campaign — both
+//      are by definition NOT the running campaign).
+// The running campaign's own Edit button (from the Active tab) clears
+// currentDraftId before navigating so this returns false there and the
+// live data shows through. Phase 6.1 of the parallel-campaigns refactor
+// replaces this heuristic with proper id comparison once the registry
+// tracks per-campaign run state.
 function isOnNewCampaignView() {
   try {
     if (typeof location === 'undefined' || location.hash !== '#/new') return false;
-    return localStorage.getItem('currentDraftIsNew') === '1';
+    if (localStorage.getItem('currentDraftIsNew') === '1') return true;
+    if (localStorage.getItem('currentDraftId')) return true;
+    return false;
   } catch { return false; }
 }
 let localBrowserFirstName = (typeof localStorage !== 'undefined' && localStorage.getItem('localBrowserFirstName')) || '';
@@ -6978,6 +6988,17 @@ async function deleteDraft(id) {
 }
 window.deleteDraft = deleteDraft;
 
+// Open the wizard for the currently-running campaign — drops any draft id
+// in localStorage so isOnNewCampaignView returns false and the live status
+// / log / runbar / buttons all reflect the running campaign instead of
+// the previously-edited draft. Used by the Active tab's Edit button.
+function viewRunningCampaign() {
+  try { localStorage.removeItem('currentDraftId'); } catch {}
+  try { localStorage.removeItem('currentDraftIsNew'); } catch {}
+  goCreateCampaign();
+}
+window.viewRunningCampaign = viewRunningCampaign;
+
 async function editDraft(id) {
   if (!id) return;
   try { localStorage.setItem('currentDraftId', id); } catch {}
@@ -7529,7 +7550,7 @@ async function refreshActiveCampaign() {
         <span class="campaign-row-type">${escHtml(dashboardModeLabel(status.mode))}</span>
         <span class="campaign-row-progress">${escHtml(progress)}</span>
         <span class="campaign-row-status ${statusClass}">${statusLabel}</span>
-        <button type="button" class="campaign-row-edit" onclick="goCreateCampaign()" title="Open the campaign page">Edit</button>
+        <button type="button" class="campaign-row-edit" onclick="viewRunningCampaign()" title="Open the live cockpit for this campaign">Edit</button>
       </div>
     `;
   } catch {
