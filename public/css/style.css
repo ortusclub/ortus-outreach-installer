@@ -31,7 +31,10 @@
   /* Layout */
   --sidebar-w: 260px;
   --rightpane-w: 360px;
-  --runbar-h: 60px;
+  /* v2.59: sticky bottom runbar was removed (parallel-campaigns Phase 6.3).
+     The action cluster now lives inside the Live Status section. Keep the
+     variable at 0 so the main/right-pane bottom padding collapses. */
+  --runbar-h: 0px;
 }
 
 body.theme-light {
@@ -1877,17 +1880,25 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .yesno-btn:hover:not(.active) { color: var(--ink); }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Sticky run bar
+   Live Status action footer (formerly the sticky bottom runbar)
+
+   v2.59 (parallel-campaigns Phase 6.3): the runbar was unsticky'd and
+   embedded inside #nav-status as a section footer. Child IDs/classes
+   inside (run-status, run-bar-actions, runbar-group*) are unchanged so
+   initRunBarMirror() and enable/disable wiring keep working. The legacy
+   .run-bar selector is preserved as a no-op safety net; new container
+   uses .live-status-actions.
    ───────────────────────────────────────────────────────────────────────── */
-.run-bar {
-  position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
-  background: var(--bg);
+.live-status-actions {
+  margin-top: 24px;
+  padding-top: 16px;
   border-top: 1px solid var(--hairline);
-  /* v2.57.7: reduced left padding pulls the status (IDLE + dot) closer
-     to the sidebar; right padding unchanged. */
-  padding: 14px 56px 14px 32px;
   display: flex; justify-content: space-between; align-items: center;
-  z-index: 10; height: var(--runbar-h);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.run-bar {
+  /* Legacy class — no-op since the element is no longer fixed-position. */
 }
 .run-status {
   display: flex; gap: 24px; align-items: center;
