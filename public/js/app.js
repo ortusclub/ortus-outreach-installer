@@ -6864,20 +6864,44 @@ async function refreshDashboardDrafts() {
   const list = document.getElementById('drafts-campaign-list');
   if (!list) return;
   try {
-    const data = await fetch('/api/drafts').then((r) => r.json());
-    const drafts = Array.isArray(data?.drafts) ? data.drafts : [];
-    if (drafts.length === 0) {
-      // Fallback: legacy single-draft from /api/draft-name. Kept until the
-      // parallel-campaigns Phase 3.3 draft endpoints unify storage. Renders
-      // as a synthetic row with a stable id ('draft') so the existing Active-
-      // tab clear button (clearDraftName) keeps working.
+    // v2.59: Drafts & Stops merge. Fetch BOTH drafts (multi-store + legacy
+    // single-draft fallback) AND stopped history entries; render drafts on
+    // top, stopped rows below.
+    const [draftsData, historyData] = await Promise.all([
+      fetch('/api/drafts').then((r) => r.json()).catch(() => null),
+      fetch('/api/history').then((r) => r.json()).catch(() => null),
+    ]);
+    const drafts = Array.isArray(draftsData?.drafts) ? draftsData.drafts : [];
+
+    // Render multi-store drafts
+    let draftRowsHtml = '';
+    if (drafts.length > 0) {
+      drafts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      draftRowsHtml = drafts.map((d) => {
+        const name = d.name || '(unnamed draft)';
+        const created = dashboardFormatDate(d.createdAt) || '—';
+        return `
+          <div class="campaign-row campaign-row--with-edit" data-campaign-id="${escHtml(d.id || '')}" data-state="draft">
+            <span class="campaign-row-name">${escHtml(name)}</span>
+            <span class="campaign-row-type">Draft</span>
+            <span class="campaign-row-progress">Created ${escHtml(created)}</span>
+            <span class="campaign-row-status">Draft</span>
+            <span class="campaign-row-actions">
+              <button type="button" class="campaign-row-edit" onclick="editDraft('${escHtml(d.id)}')" title="Open in wizard">Edit</button>
+              <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="deleteDraft('${escHtml(d.id)}')" title="Delete this draft" aria-label="Delete draft">×</button>
+            </span>
+          </div>
+        `;
+      }).join('');
+    } else {
+      // Legacy single-draft fallback (until Phase 3.3 unifies storage).
       let legacyName = '';
       try {
         const r = await fetch('/api/draft-name');
         if (r.ok) legacyName = (await r.json())?.name || '';
       } catch {}
       if (legacyName) {
-        list.innerHTML = `
+        draftRowsHtml = `
           <div class="campaign-row campaign-row--with-edit" data-campaign-id="draft" data-state="draft">
             <span class="campaign-row-name">${escHtml(legacyName)}</span>
             <span class="campaign-row-type">Draft</span>
@@ -6889,28 +6913,31 @@ async function refreshDashboardDrafts() {
             </span>
           </div>
         `;
-      } else {
-        list.innerHTML = '<p class="empty-state">No drafts yet.</p>';
       }
-      return;
     }
-    drafts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    list.innerHTML = drafts.map((d) => {
-      const name = d.name || '(unnamed draft)';
-      const created = dashboardFormatDate(d.createdAt) || '—';
-      return `
-        <div class="campaign-row campaign-row--with-edit" data-campaign-id="${escHtml(d.id || '')}" data-state="draft">
-          <span class="campaign-row-name">${escHtml(name)}</span>
-          <span class="campaign-row-type">Draft</span>
-          <span class="campaign-row-progress">Created ${escHtml(created)}</span>
-          <span class="campaign-row-status">Draft</span>
-          <span class="campaign-row-actions">
-            <button type="button" class="campaign-row-edit" onclick="editDraft('${escHtml(d.id)}')" title="Open in wizard">Edit</button>
-            <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="deleteDraft('${escHtml(d.id)}')" title="Delete this draft" aria-label="Delete draft">×</button>
-          </span>
-        </div>
-      `;
-    }).join('');
+
+    // Stopped rows from /api/history — same row layout as past, including
+    // the click-to-resume STOPPED chip. Reuses buildPastRowHtml so visuals
+    // + delete + resume wiring stay in sync with the Past tab.
+    let stoppedRowsHtml = '';
+    if (Array.isArray(historyData) && historyData.length > 0) {
+      const indexed = historyData.map((c, idx) => ({ idx, c }));
+      const stopped = indexed
+        .filter(({ c }) => (c.endReason || 'completed') === 'stopped' && c.state !== 'monitoring')
+        .sort((a, b) => {
+          const ta = new Date(a.c.startedAt || a.c.date).getTime();
+          const tb = new Date(b.c.startedAt || b.c.date).getTime();
+          return tb - ta;
+        });
+      stoppedRowsHtml = stopped.map(buildPastRowHtml).join('');
+    }
+
+    const combined = draftRowsHtml + stoppedRowsHtml;
+    if (!combined) {
+      list.innerHTML = '<p class="empty-state">No drafts or stopped campaigns.</p>';
+    } else {
+      list.innerHTML = combined;
+    }
   } catch {
     list.innerHTML = '<p class="empty-state">Failed to load drafts.</p>';
   }
@@ -7796,6 +7823,44 @@ function formatDurationSeconds(s) {
   return `${h}h ${String(mm).padStart(2, '0')}m`;
 }
 
+// Module-scope row builder for history entries (past, monitoring, and the
+// stopped subset now living in the Drafts & Stops tab). Was previously
+// inline inside refreshPastCampaigns — extracted so refreshDashboardDrafts
+// can render stopped rows in the same layout without duplicating markup.
+function buildPastRowHtml({ idx, c }) {
+  const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
+  const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
+  const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
+  const reason = c.endReason || 'completed';
+  const reasonLabel = reason === 'stopped' ? 'Stopped'
+                    : reason === 'errored' ? 'Errored'
+                    : 'Completed';
+  const reasonClass = reason === 'stopped' ? 'is-stopped'
+                    : reason === 'errored' ? 'is-errored'
+                    : 'is-done';
+  const checked = pastSelectedIdxs.has(idx) ? 'checked' : '';
+  // STOPPED chip = one-shot resume affordance (variant F). Click resumes
+  // from the saved settings snapshot; Edit pill covers the "edit first"
+  // path. Gating: any stopped entry with a saved snapshot.
+  const canResume = reason === 'stopped' && !!c.settings;
+  const statusClasses = canResume ? `${reasonClass} is-stopped-action` : reasonClass;
+  const statusAttrs = canResume
+    ? `role="button" tabindex="0" title="Resume this campaign — pick up where it stopped" onclick="event.stopPropagation(); resumeFromPastRow(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();resumeFromPastRow(${idx});}"`
+    : '';
+  const rowState = c.state === 'monitoring' ? 'monitoring' : (c.state || 'past');
+  return `
+    <div class="campaign-row campaign-row-clickable campaign-row--with-edit" data-campaign-id="${escHtml(c.id || c.runId || 'past-' + idx)}" data-state="${escHtml(rowState)}" data-history-idx="${idx}" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
+      <input type="checkbox" class="past-row-checkbox" data-past-idx="${idx}" ${checked} onclick="event.stopPropagation()" onchange="onPastRowCheckboxChange(event, ${idx})" aria-label="Select campaign" />
+      <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
+      <span class="campaign-row-type">${escHtml(subtitle)}</span>
+      <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
+      <span class="campaign-row-status ${statusClasses}" ${statusAttrs}>${reasonLabel}</span>
+      <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the campaign page">Edit</button>
+      <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
+    </div>
+  `;
+}
+
 async function refreshPastCampaigns() {
   const list = document.getElementById('past-campaign-list');
   const toggleRow = document.getElementById('past-toggle-row');
@@ -7867,54 +7932,11 @@ async function refreshPastCampaigns() {
     // saw 3 past entries no matter how many existed. The Monitoring/All
     // tabs need the full list; the dashboard search input handles "I have
     // hundreds of past campaigns" use cases instead of collapsing.
-    const visible2 = _renderablePast;
+    // v2.59 (Drafts & Stops merge): stopped campaigns moved to the Drafts &
+    // Stops tab. Past tab now shows only completed + errored.
+    const visible2 = _renderablePast.filter(({ c }) => (c.endReason || 'completed') !== 'stopped');
 
-    const _buildPastRowHtml = ({ idx, c }) => {
-      const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
-      const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
-      const processed = c.totalProcessed != null ? c.totalProcessed : (c.successCount || 0);
-      const reason = c.endReason || 'completed';
-      const reasonLabel = reason === 'stopped' ? 'Stopped'
-                        : reason === 'errored' ? 'Errored'
-                        : 'Completed';
-      const reasonClass = reason === 'stopped' ? 'is-stopped'
-                        : reason === 'errored' ? 'is-errored'
-                        : 'is-done';
-      const checked = pastSelectedIdxs.has(idx) ? 'checked' : '';
-      // v2.60.x: STOPPED chip becomes the resume action (variant F). The
-      // status pill itself is the affordance — no separate Resume pill —
-      // so the grid keeps 7 columns and rows can't wrap. Click = one-shot
-      // resume with the saved settings snapshot (no modal). The previous
-      // resume-choice modal is bypassed; the Edit pill below already
-      // covers the "edit settings first" path.
-      //
-      // Gating: any stopped entry with a saved settings snapshot. The
-      // v2.14.x fullStop gate is dropped per operator request — every
-      // stopped row gets resume, including campaigns where the operator
-      // picked "Stop everything" in the CC+IC stop-choice modal. Resume
-      // starts a fresh run with the saved settings; monitoring/auto-
-      // intros that were cancelled by "Stop everything" stay cancelled
-      // (the new run re-arms them from scratch).
-      const canResume = reason === 'stopped' && !!c.settings;
-      const statusClasses = canResume ? `${reasonClass} is-stopped-action` : reasonClass;
-      const statusAttrs = canResume
-        ? `role="button" tabindex="0" title="Resume this campaign — pick up where it stopped" onclick="event.stopPropagation(); resumeFromPastRow(${idx})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();resumeFromPastRow(${idx});}"`
-        : '';
-      const rowState = c.state === 'monitoring' ? 'monitoring' : (c.state || 'past');
-      return `
-        <div class="campaign-row campaign-row-clickable campaign-row--with-edit" data-campaign-id="${escHtml(c.id || c.runId || 'past-' + idx)}" data-state="${escHtml(rowState)}" data-history-idx="${idx}" data-past-idx="${idx}" onclick="openPastCampaignModal(${idx})">
-          <input type="checkbox" class="past-row-checkbox" data-past-idx="${idx}" ${checked} onclick="event.stopPropagation()" onchange="onPastRowCheckboxChange(event, ${idx})" aria-label="Select campaign" />
-          <div class="campaign-row-name">${dashboardNameButton(c.name, 'past', String(idx))}</div>
-          <span class="campaign-row-type">${escHtml(subtitle)}</span>
-          <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
-          <span class="campaign-row-status ${statusClasses}" ${statusAttrs}>${reasonLabel}</span>
-          <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the campaign page">Edit</button>
-          <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
-        </div>
-      `;
-    };
-
-    list.innerHTML = visible2.map(_buildPastRowHtml).join('');
+    list.innerHTML = visible2.map(buildPastRowHtml).join('');
 
     // Render monitoring entries into their own list (if the element exists).
     // v2.52.0: include the LIVE in-memory campaign when it's in monitoring
@@ -7945,7 +7967,7 @@ async function refreshPastCampaigns() {
           </div>
         `;
       }
-      const pastMonitoringHtml = _renderableMonitoring.map(_buildPastRowHtml).join('');
+      const pastMonitoringHtml = _renderableMonitoring.map(buildPastRowHtml).join('');
       monList.innerHTML = liveRowHtml + pastMonitoringHtml;
     }
 
