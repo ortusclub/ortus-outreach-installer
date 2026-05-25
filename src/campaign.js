@@ -476,10 +476,12 @@ export const campaign = {
   name: '',
 };
 
-// Derived fields for registry indexing. status maps the existing flags onto
-// the four-state vocabulary the registry uses; participatingProfileIds
-// aliases profileIds so account-lock (Phase 5) reads a consistent shape
-// across legacy + future per-id entries.
+// Derived `status` getter for registry indexing — maps existing flags
+// onto the four-state vocabulary the registry uses. participatingProfileIds
+// is NOT defined here because the campaign loop already maintains it as a
+// real writable field (campaign.js:1183, 2952): the subset of profiles that
+// actually contributed in this run, not the same as the selected
+// profileIds. Registry.activeProfileIds() reads it directly.
 Object.defineProperty(campaign, 'status', {
   enumerable: true,
   configurable: true,
@@ -488,13 +490,6 @@ Object.defineProperty(campaign, 'status', {
     if (this.running) return 'running';
     if (this.state === 'monitoring') return 'monitoring';
     return 'idle';
-  },
-});
-Object.defineProperty(campaign, 'participatingProfileIds', {
-  enumerable: true,
-  configurable: true,
-  get() {
-    return Array.isArray(this.profileIds) ? this.profileIds : [];
   },
 });
 
