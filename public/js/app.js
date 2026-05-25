@@ -8930,7 +8930,12 @@ async function syncCampaignNameInput() {
     if (sRes.ok) {
       const status = await sRes.json();
       isRunning = !!(status.running || status.paused);
-      if (!value && !isRunning && status.name) value = status.name;
+      // v2.59: drop the !isRunning gate. The Active tab's Edit button calls
+      // viewRunningCampaign() which clears currentDraftId — so falling
+      // through to status.name here is exactly how we surface the running
+      // campaign's name in the wizard. New-campaign view is already
+      // short-circuited by the currentDraftIsNew early-return above.
+      if (!value && status.name) value = status.name;
     }
   } catch {}
   if (!value) {
