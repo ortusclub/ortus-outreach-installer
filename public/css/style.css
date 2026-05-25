@@ -3466,7 +3466,7 @@ body.route-dashboard .sidebar-nav { display: none; }
   padding: 14px 28px;
 }
 
-.wizard-back-row { padding: 16px 0 8px; }
+.wizard-back-row { padding: 16px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
 .wizard-queue-banner {
   margin: 4px 0 16px;
@@ -4034,7 +4034,9 @@ body.route-dashboard .sidebar-nav { display: none; }
   padding-top: 24px;
   border-top: 1px solid var(--hairline);
   display: flex;
-  justify-content: center;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .wizard-bottom-back {
   font-size: 0.7rem;
