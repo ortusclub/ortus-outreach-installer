@@ -4292,8 +4292,12 @@ async function pollStatus() {
     renderHeaderResources(s.resources || null);
     renderThrottleBanner(s.throttle || null);
 
-    // Update account queue if we have profile names
-    if (s.profileNames && s.profileNames.length > 0) {
+    // Update account queue if we have profile names. Suppress on the
+    // new-campaign view so the running campaign's queue doesn't flash in
+    // between renderCockpit's blanking ticks. renderCockpit already hides
+    // #account-queue; this stops the repaint from undoing that.
+    const _isNewView = typeof isOnNewCampaignView === 'function' && isOnNewCampaignView();
+    if (!_isNewView && s.profileNames && s.profileNames.length > 0) {
       renderAccountQueue(s.profileNames, s.currentProfile, s, s.profileIds);
     }
 
