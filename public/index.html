@@ -806,7 +806,12 @@
     <div class="section template-controls collapsible collapsed" id="nav-templates">
       <h2 class="section-toggle" onclick="toggleSection('nav-templates')"><span class="caret">▾</span> <span data-edit="h2-templates">5. Message Templates</span> <span class="section-summary" id="summary-templates"></span></h2>
       <div class="collapsible-body">
-      <div class="templates-header">
+      <!-- v2.59: templates header + bar hidden per operator request — the
+           reusable-template save/load system isn't needed for the current
+           CC+IB / IC flow. Markup kept (not removed) so JS that references
+           these IDs (#btn-preview-messages, #tpl-select, etc.) doesn't
+           throw. To bring it back, drop the style="display:none" wrapper. -->
+      <div class="templates-header" style="display:none">
         <div class="templates-question" id="templates-question" style="display:none">
           <span class="q-text" id="templates-q-text">Do you want to add a note while connecting?</span>
           <div class="yesno-toggle">
@@ -862,7 +867,7 @@
 
     <!-- ── Intro DM Body (connect_and_introduce) ── -->
     <div class="section tpl-section" id="tpl-intro-section" style="display:none">
-      <h2 data-edit="h2-intro-dm">Intro DM Body <small>(sent after the connection is accepted)</small></h2>
+      <h2 data-edit="h2-intro-dm">Group Conversation Body</h2>
       <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="primary-intro-body"></div>
     </div>
