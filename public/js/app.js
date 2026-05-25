@@ -6951,6 +6951,16 @@ async function refreshDashboardDrafts() {
           return tb - ta;
         });
       stoppedRowsHtml = stopped.map(buildPastRowHtml).join('');
+      // Extend pastCampaignsCache so resumeWithSameSettings (which reads from
+      // this cache) can find stopped entries by idx. Before this merge,
+      // refreshPastCampaigns was the only writer of the cache and excluded
+      // stopped rows — so clicking the STOPPED chip in Drafts & Stops did
+      // nothing useful (entry not found → silent early-return).
+      if (!Array.isArray(pastCampaignsCache)) pastCampaignsCache = [];
+      const _cachedIdxs = new Set(pastCampaignsCache.map((e) => e.idx));
+      for (const s of stopped) {
+        if (!_cachedIdxs.has(s.idx)) pastCampaignsCache.push(s);
+      }
     }
 
     const combined = draftRowsHtml + stoppedRowsHtml;
