@@ -1158,6 +1158,11 @@ app.get('/api/draft-name', async (_req, res) => {
 app.post('/api/draft-name', async (req, res) => {
   try {
     const name = (typeof req.body?.name === 'string' ? req.body.name : '').trim();
+    // v2.59 name uniqueness: collision with running campaign is blocked
+    // here too so the legacy single-draft path can't sneak around the
+    // /api/drafts guard.
+    const collision = _draftNameCollision(name);
+    if (collision) return res.status(collision.status).json(collision.body);
     await writeDraftName(name);
     res.json({ ok: true, name });
   } catch (err) {
@@ -1396,9 +1401,30 @@ app.get('/api/drafts/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// v2.59: name uniqueness check shared by POST + PATCH. Blocks saving a
+// draft whose name collides with the currently-running campaign.
+// Returns null when the name is OK, or an error payload when blocked.
+function _draftNameCollision(name) {
+  const norm = String(name || '').trim().toLowerCase();
+  if (!norm) return null;
+  const runningName = String(campaign.name || '').trim().toLowerCase();
+  if (runningName && runningName === norm) {
+    return {
+      status: 409,
+      body: {
+        error: 'name_collides_with_running',
+        message: `A campaign called "${campaign.name}" is currently running. Choose a different name, or stop the running campaign first.`,
+      },
+    };
+  }
+  return null;
+}
+
 app.post('/api/drafts', async (req, res) => {
   try {
     const { name, config } = req.body || {};
+    const collision = _draftNameCollision(name);
+    if (collision) return res.status(collision.status).json(collision.body);
     const entry = await addDraft({ name, config });
     res.json({ ok: true, draft: entry });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1406,6 +1432,8 @@ app.post('/api/drafts', async (req, res) => {
 
 app.patch('/api/drafts/:id', async (req, res) => {
   try {
+    const collision = _draftNameCollision(req.body?.name);
+    if (collision) return res.status(collision.status).json(collision.body);
     const updated = await updateDraft(req.params.id, req.body || {});
     if (!updated) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, draft: updated });
