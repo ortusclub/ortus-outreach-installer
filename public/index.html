@@ -1086,6 +1086,65 @@
         </div>
       </aside>
       </div><!-- /.live-status-grid -->
+
+      <!-- v2.59 (parallel-campaigns Phase 6.3 pulled forward): the sticky
+           bottom runbar was deleted; its action cluster now lives at the
+           bottom of the Live Status section, scoped to the viewed campaign.
+           Child IDs are preserved verbatim so initRunBarMirror() and the
+           existing enable/disable wiring continue to drive the buttons. -->
+      <div class="live-status-actions" id="run-bar">
+        <div class="run-status" id="run-bar-status">
+          <span class="state-dot"></span>
+          <span class="run-status-stack">
+            <span class="run-status-name" id="run-bar-name"></span>
+            <span class="run-status-text" id="run-bar-text">Idle</span>
+          </span>
+        </div>
+        <div class="run-bar-actions">
+          <div class="runbar-group runbar-group--first">
+            <span class="runbar-group-label">Run</span>
+            <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start</button>
+            <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
+            <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers.">Stop</button>
+          </div>
+
+          <div class="runbar-group">
+            <span class="runbar-group-label">View</span>
+            <button type="button" class="btn btn-sm" onclick="scrollToSection('nav-status')">Status</button>
+          </div>
+
+          <div class="runbar-group runbar-group--recovery">
+            <span class="runbar-group-label">Recovery</span>
+            <button type="button" id="btn-restore-rb" class="btn btn-sm btn-restore" onclick="confirmRestoreCampaign()" title="Force-restart the campaign engine. Use when Stop / Pause aren't responding."><span class="ico-restore" aria-hidden="true">↻</span> Force restart</button>
+          </div>
+
+          <div class="runbar-group runbar-group--last">
+            <div class="preset-pill" id="preset-pill">
+              <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, campaign limit per account).">
+                <span>Saved configs</span>
+                <span class="preset-pill-count" id="preset-pill-count">0</span>
+                <span class="preset-pill-caret">▾</span>
+              </button>
+              <div class="preset-popover" id="preset-popover" hidden>
+                <div class="preset-pop-label" id="preset-pop-pinned-label">Pinned</div>
+                <div class="preset-pop-item preset-pop-last" id="preset-pop-last" onclick="loadLastUsedPreset(); closePresetPopover()">
+                  <span><span class="preset-pop-dot"></span>Last Used</span>
+                  <span class="preset-pop-tag" id="preset-pop-last-tag">—</span>
+                </div>
+                <div class="preset-pop-divider"></div>
+                <div class="preset-pop-label">Saved</div>
+                <div id="preset-pop-list">
+                  <div class="preset-pop-empty">No saved configs yet</div>
+                </div>
+                <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
+                  <span>+ Save current as…</span>
+                  <span class="preset-pop-caret">→</span>
+                </div>
+              </div>
+            </div>
+          </div><!-- /.runbar-group--last -->
+        </div>
+      </div>
       </div>
     </div>
 
@@ -1199,72 +1258,6 @@
         </div>
       </div>
     </aside>
-
-    <!-- Sticky run bar -->
-    <div class="run-bar" id="run-bar">
-      <!-- v2.57.7: runbar restructured (variant C from
-           public/sketches/runbar-clarity-v1.html).
-           - Two-line status slot shows the live campaign NAME on top and
-             the status text below (was: just "Idle" text).
-           - Buttons grouped into labeled clusters: Run / View / Recovery /
-             Configs, with thin separators between groups, so intent is
-             obvious at a glance.
-           - "Restore" relabelled "Force restart" — clearer it's the panic
-             button, not a Resume synonym.
-           - All button IDs preserved (#btn-start-rb, #btn-pause-rb,
-             #btn-stop-rb, #btn-restore-rb) so existing JS keeps working. -->
-      <div class="run-status" id="run-bar-status">
-        <span class="state-dot"></span>
-        <span class="run-status-stack">
-          <span class="run-status-name" id="run-bar-name"></span>
-          <span class="run-status-text" id="run-bar-text">Idle</span>
-        </span>
-      </div>
-      <div class="run-bar-actions">
-        <div class="runbar-group runbar-group--first">
-          <span class="runbar-group-label">Run</span>
-          <button type="button" id="btn-start-rb" class="btn btn-sm btn-start" onclick="startCampaign()">Start</button>
-          <button type="button" id="btn-pause-rb" class="btn btn-sm btn-pause" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open. One-click Resume.">Pause</button>
-          <button type="button" id="btn-stop-rb" class="btn btn-sm btn-stop" onclick="confirmStopCampaign()" disabled title="Aborts the campaign and closes browsers.">Stop</button>
-        </div>
-
-        <div class="runbar-group">
-          <span class="runbar-group-label">View</span>
-          <button type="button" class="btn btn-sm" onclick="scrollToSection('nav-status')">Status</button>
-        </div>
-
-        <div class="runbar-group runbar-group--recovery">
-          <span class="runbar-group-label">Recovery</span>
-          <button type="button" id="btn-restore-rb" class="btn btn-sm btn-restore" onclick="confirmRestoreCampaign()" title="Force-restart the campaign engine. Use when Stop / Pause aren't responding."><span class="ico-restore" aria-hidden="true">↻</span> Force restart</button>
-        </div>
-
-        <div class="runbar-group runbar-group--last">
-          <div class="preset-pill" id="preset-pill">
-          <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, campaign limit per account).">
-            <span>Saved configs</span>
-            <span class="preset-pill-count" id="preset-pill-count">0</span>
-            <span class="preset-pill-caret">▾</span>
-          </button>
-          <div class="preset-popover" id="preset-popover" hidden>
-            <div class="preset-pop-label" id="preset-pop-pinned-label">Pinned</div>
-            <div class="preset-pop-item preset-pop-last" id="preset-pop-last" onclick="loadLastUsedPreset(); closePresetPopover()">
-              <span><span class="preset-pop-dot"></span>Last Used</span>
-              <span class="preset-pop-tag" id="preset-pop-last-tag">—</span>
-            </div>
-            <div class="preset-pop-divider"></div>
-            <div class="preset-pop-label">Saved</div>
-            <div id="preset-pop-list">
-              <div class="preset-pop-empty">No saved configs yet</div>
-            </div>
-            <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
-              <span>+ Save current as…</span>
-              <span class="preset-pop-caret">→</span>
-            </div>
-          </div>
-        </div>
-        </div><!-- /.runbar-group--last -->
-      </div>
-    </div>
 
   </div> <!-- /.app -->
 
