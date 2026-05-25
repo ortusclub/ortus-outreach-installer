@@ -40,6 +40,7 @@ import { writeMonitoringState, readMonitoringState, clearMonitoringState, extrac
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
 import { dataPath } from './paths.js';
+import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import {
   sample as rmSample,
@@ -422,7 +423,18 @@ _refreshDiskStatus();
 setInterval(_refreshDiskStatus, 30000).unref?.();
 
 // ── Campaign state (exposed to dashboard) ──
+// Phase 1.2 of the parallel-campaigns refactor: the singleton `campaign`
+// object is now registered as a single entry in a CampaignRegistry. The
+// object itself is unchanged — all existing reads/writes (campaign.running,
+// campaign.processedToday++, etc.) work exactly as before. Two derived
+// getters (status, participatingProfileIds) project onto the shape the
+// registry indexes on. Phase 1.3 onwards starts threading id through
+// callers; for now there is always exactly one entry with this id.
+export const SINGLETON_CAMPAIGN_ID = 'legacy-singleton';
+export const registry = new CampaignRegistry();
+
 export const campaign = {
+  id: SINGLETON_CAMPAIGN_ID,
   running: false,
   _abort: false,
   // v2.52.0: monotonic generation counter for orphan-loop detection.
@@ -463,6 +475,30 @@ export const campaign = {
   introducedInRun: new Set(),
   name: '',
 };
+
+// Derived fields for registry indexing. status maps the existing flags onto
+// the four-state vocabulary the registry uses; participatingProfileIds
+// aliases profileIds so account-lock (Phase 5) reads a consistent shape
+// across legacy + future per-id entries.
+Object.defineProperty(campaign, 'status', {
+  enumerable: true,
+  configurable: true,
+  get() {
+    if (this._paused || this._pauseRequested) return 'paused';
+    if (this.running) return 'running';
+    if (this.state === 'monitoring') return 'monitoring';
+    return 'idle';
+  },
+});
+Object.defineProperty(campaign, 'participatingProfileIds', {
+  enumerable: true,
+  configurable: true,
+  get() {
+    return Array.isArray(this.profileIds) ? this.profileIds : [];
+  },
+});
+
+registry.register(campaign);
 
 // Record why a profile finished its turn in this run. Idempotent: if the
 // profile already has an entry, the first reason wins (so "weekly limit hit"
