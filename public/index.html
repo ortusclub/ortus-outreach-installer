@@ -521,6 +521,18 @@
               </div>
             </div>
           </div>
+
+          <!-- v2.59: Intro person input moved here from the deleted section
+               2C so the operator configures everything for an Introduction
+               Campaign inside section 2. Visibility piggybacks on #ic-extras
+               which onModeChange already gates to mode==='introduce_back'. -->
+          <div id="intro-mode-block" style="margin-top:18px; padding-top:16px; border-top:1px solid var(--hairline);">
+            <div id="intro-mode-fields">
+              <label for="intro-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro person — full LinkedIn name</label>
+              <input type="text" id="intro-name" placeholder="e.g. Antonio Varlese" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
+              <div style="font-size:11px; color:var(--gray); margin-top:4px">Typed into LinkedIn's recipient typeahead. Must be a 1st-degree connection of every sender that runs this campaign.</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -597,49 +609,14 @@
          group thread with the configured intro person. The
          segment toggle that used to live inside Message Only is
          gone — selecting this mode IS the introMode toggle. -->
-    <div class="section" id="nav-introduce-back" style="display:none">
-      <h2 class="section-toggle"><span data-edit="h2-introduce-back">2c. Introduction Campaign — Coverage</span></h2>
-      <div style="padding: 0 0 8px;">
-        <div id="ib-loading" style="color:var(--gray); font-size:12px; padding:14px 0;">Loading coverage from sheet…</div>
-        <div id="ib-content" style="display:none">
-          <div class="label-tag" style="font-family:var(--display);letter-spacing:0.08em;font-size:11px;color:var(--gray);text-transform:uppercase;margin-bottom:12px">Connections ready to be introduced · auto-derived from Connected · DM Now leads</div>
-          <div id="ib-coverage" style="border:1px solid var(--hairline)"></div>
-          <div id="ib-unmatched" style="margin-top:12px; font-size:12px; color:var(--gray);"></div>
-          <div id="ib-summary" style="display:flex; gap:24px; padding:16px 0; margin-top:16px; border-top:1px solid var(--hairline-soft); border-bottom:1px solid var(--hairline-soft)"></div>
-          <div style="margin-top:16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--hairline); color:var(--gray); font-size:12px;">
-            <strong style="color:var(--gray)">Profile picker / Throughput / Campaign limit</strong> — not used. Auto-routed per row (only the account that connected the lead can DM); drains every Connected · DM Now lead back-to-back. <strong style="color:var(--gray)">Templates</strong> below are required.
-          </div>
-        </div>
-        <div id="ib-empty" style="display:none; color:var(--gray); font-size:13px; padding:20px 0;">
-          No leads ready to introduce yet (no rows with <code>Connected · DM Now</code> in Stage). Run <strong>Check Status</strong> first to confirm acceptances.
-        </div>
-        <div id="ib-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
-      </div>
-
-      <!-- v2.57.7 — IC pre-flight bulk-check toggle reinstated (variant B
-           from public/sketches/ic-preflight-toggle-v1.html). Mirrors the
-           DM toggle at section 2b — same green-tinted block, default ON,
-           same Voyager bulk-check path (src/campaign.js:1709-1745). The
-           crossref footnote points operators to the "all leads already
-           connected" checkbox in section 2 so they know what each control
-           is for: that one filters the SHEET; this one verifies LIVE
-           LinkedIn connection state. Both can be on at once. -->
-      <!-- v2.59: removed per operator request —
-           (1) the green "Run Check Status first" toggle (id=preflight-check-toggle-ib);
-           (2) the gold "Adds a third person to a group thread…" explainer.
-           Code that reads #preflight-check-toggle-ib uses optional chaining so
-           absence resolves to undefined → falsy → preflight does not run. -->
-
-      <div id="intro-mode-block" style="margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline);">
-        <div id="intro-mode-fields" style="max-width:520px;">
-          <div>
-            <label for="intro-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro person — full LinkedIn name</label>
-            <input type="text" id="intro-name" placeholder="e.g. Antonio Varlese" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
-            <div style="font-size:11px; color:var(--gray); margin-top:4px">Typed into LinkedIn's recipient typeahead. Must be a 1st-degree connection of every sender that runs this campaign.</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- v2.59: section 2C (Introduction Campaign — Coverage) deleted per
+         operator request. Coverage panel + Loading message + Run Check
+         Status toggle + IC explainer note are gone; the only piece that
+         was actually used (intro-name input) moved into #ic-extras above,
+         inside section 2. The single JS reference to #nav-introduce-back
+         (campaign.js sets its display in onModeChange) uses an if-guard
+         so it gracefully no-ops with the markup removed. -->
+    <div style="display:none" id="nav-introduce-back" data-removed="true"></div>
 
     <!-- ── Check DMs coverage (2.9.7) — visible only when mode = check_dms. ──
          Auto-derives the profile list from the sheet's Account Used column,
