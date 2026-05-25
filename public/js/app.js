@@ -2984,12 +2984,15 @@ async function submitStartCampaign(body, opts = {}) {
 
     // Whether the campaign starts now or gets queued, the draft has been
     // consumed. Drop it from the Drafts list and clear the active id.
+    // Also clear the new-campaign flag — once Start is pressed, the live
+    // status / log gates should stop blanking and show the running data.
     try {
       const draftId = localStorage.getItem('currentDraftId') || '';
       if (draftId) {
         await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
         localStorage.removeItem('currentDraftId');
       }
+      localStorage.removeItem('currentDraftIsNew');
     } catch {}
 
     // Server queued the campaign — either explicit queue-only, or because
