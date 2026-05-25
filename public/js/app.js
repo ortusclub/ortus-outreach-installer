@@ -1210,15 +1210,15 @@ function deselectAll() {
 //     (no template = no reason to show the template bar or preview button)
 // Called from both onModeChange (mode change) and syncAddNoteUI (Yes/No toggle)
 // so both paths agree.
-function applyTemplateUIVisibility(mode, addNoteOn) {
+function applyTemplateUIVisibility(_mode, _addNoteOn) {
+  // v2.59: template management UI permanently hidden per operator request.
+  // The Select / Save / Create New / Delete bar + Preview Messages button
+  // aren't needed for the current CC+IB / IC flow. To restore, replace
+  // 'none' with the prior mode-aware logic.
   const tplBar = document.getElementById('template-bar');
   const previewBtn = document.getElementById('btn-preview-messages');
-  const hide =
-    mode === 'check_status' ||
-    (mode === 'connect_only' && !addNoteOn);
-  const display = hide ? 'none' : '';
-  if (tplBar) tplBar.style.display = display;
-  if (previewBtn) previewBtn.style.display = display;
+  if (tplBar) tplBar.style.display = 'none';
+  if (previewBtn) previewBtn.style.display = 'none';
 }
 
 function syncAddNoteUI(on) {
