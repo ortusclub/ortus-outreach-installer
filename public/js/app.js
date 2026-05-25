@@ -9305,7 +9305,7 @@ function dashBulkDelete() {
   // routed to the past bucket regardless of its display state (e.g. a
   // history entry currently in monitoring sub-state — still deletable
   // via history-delete-batch).
-  const buckets = { past: [], draft: [], queued: [], schedule: [], skipped: [] };
+  const buckets = { past: [], draft: [], queued: [], schedule: [], monitoring: [], skipped: [] };
   ids.forEach((id) => {
     const row = document.querySelector(`.campaign-row[data-campaign-id="${CSS.escape(id)}"]`);
     if (!row) return;
@@ -9320,16 +9320,21 @@ function dashBulkDelete() {
       buckets.queued.push({ id, row });
     } else if (state === 'schedules' || state === 'schedule') {
       buckets.schedule.push({ id, row });
+    } else if (state === 'monitoring') {
+      // Live monitoring row (id='live-monitoring'). Deletable via the
+      // monitoring/stop endpoint, but warrants a stronger warning since
+      // it cancels the active acceptance-tracking sweep.
+      buckets.monitoring.push({ id, row });
     } else {
-      // active, live-monitoring (not tied to a history entry), unknown — skip
+      // active (running), unknown — still skipped
       buckets.skipped.push({ id, state, row });
     }
   });
 
-  const deletableCount = buckets.past.length + buckets.draft.length + buckets.queued.length + buckets.schedule.length;
+  const deletableCount = buckets.past.length + buckets.draft.length + buckets.queued.length + buckets.schedule.length + buckets.monitoring.length;
   if (deletableCount === 0) {
     const msg = buckets.skipped.length > 0
-      ? `Cannot delete ${buckets.skipped.length} selected row${buckets.skipped.length === 1 ? '' : 's'} — running or live-monitoring campaigns can't be removed.`
+      ? `Cannot delete ${buckets.skipped.length} selected row${buckets.skipped.length === 1 ? '' : 's'} — running campaigns can't be removed.`
       : 'Nothing to delete.';
     if (typeof window.showToast === 'function') window.showToast(msg);
     else alert(msg);
@@ -9338,26 +9343,31 @@ function dashBulkDelete() {
 
   // Build per-bucket count line for the modal header
   const parts = [];
-  if (buckets.past.length)     parts.push(`${buckets.past.length} past`);
-  if (buckets.draft.length)    parts.push(`${buckets.draft.length} draft${buckets.draft.length === 1 ? '' : 's'}`);
-  if (buckets.queued.length)   parts.push(`${buckets.queued.length} queued`);
-  if (buckets.schedule.length) parts.push(`${buckets.schedule.length} schedule${buckets.schedule.length === 1 ? '' : 's'}`);
+  if (buckets.past.length)       parts.push(`${buckets.past.length} past`);
+  if (buckets.draft.length)      parts.push(`${buckets.draft.length} draft${buckets.draft.length === 1 ? '' : 's'}`);
+  if (buckets.queued.length)     parts.push(`${buckets.queued.length} queued`);
+  if (buckets.schedule.length)   parts.push(`${buckets.schedule.length} schedule${buckets.schedule.length === 1 ? '' : 's'}`);
+  if (buckets.monitoring.length) parts.push(`${buckets.monitoring.length} monitoring`);
   const breakdown = parts.join(' · ');
 
   // Names for the preview list (escape-safe via textContent below)
-  const allRows = [...buckets.past, ...buckets.draft, ...buckets.queued, ...buckets.schedule];
+  const allRows = [...buckets.past, ...buckets.draft, ...buckets.queued, ...buckets.schedule, ...buckets.monitoring];
   const names = allRows.map(({ row, id }) => {
     const nameEl = row.querySelector('.campaign-row-name, .campaign-row-name-text');
     const raw = nameEl ? (nameEl.textContent || '').trim() : '';
     return raw || '(unnamed)';
   });
 
+  const monitoringWarning = buckets.monitoring.length > 0
+    ? `<p style="color:#c44; font-weight:600; margin-top:8px;">⚠ Includes ${buckets.monitoring.length} live monitoring campaign${buckets.monitoring.length === 1 ? '' : 's'}. Deleting cancels the active acceptance-tracking sweep — pending acceptances won't be picked up after this.</p>`
+    : '';
   const bg = document.createElement('div');
   bg.className = 'dash-dialog-bg';
   bg.innerHTML = `
     <div class="dash-dialog" role="dialog" aria-modal="true" aria-labelledby="dash-dialog-h">
       <h2 id="dash-dialog-h">Delete ${deletableCount} campaign${deletableCount === 1 ? '' : 's'}?</h2>
       <p>${breakdown}. ${buckets.past.length > 0 ? '<b>Google Sheet rows are not affected.</b>' : ''}</p>
+      ${monitoringWarning}
       <div class="dash-dialog-preview"></div>
       <div class="dash-dialog-actions">
         <button type="button" class="btn btn-secondary" id="dash-dialog-cancel">CANCEL</button>
@@ -9411,7 +9421,7 @@ function dashBulkDelete() {
 async function dashPerformBulkDelete(buckets) {
   // Optimistic removal — hits every visible instance of each id (source
   // row + ALL-tab clone). Server delete kicks off right after.
-  const allRows = [...buckets.past, ...buckets.draft, ...buckets.queued, ...buckets.schedule];
+  const allRows = [...buckets.past, ...buckets.draft, ...buckets.queued, ...buckets.schedule, ...(buckets.monitoring || [])];
   for (const r of allRows) {
     document.querySelectorAll(`.campaign-row[data-campaign-id="${CSS.escape(r.id)}"]`)
       .forEach((el) => el.remove());
@@ -9449,10 +9459,22 @@ async function dashPerformBulkDelete(buckets) {
   if (buckets.queued.length > 0)   tasks.push(perId(buckets.queued,   (id) => `/api/queue/${encodeURIComponent(id)}`));
   if (buckets.schedule.length > 0) tasks.push(perId(buckets.schedule, (id) => `/api/schedules/${encodeURIComponent(id)}`));
 
+  // Monitoring — single global endpoint (today there's only one active
+  // monitoring sweep at a time; will be replaced by per-id stop in Phase 5
+  // of the parallel-campaigns refactor). Fires once even if multiple
+  // monitoring rows were somehow selected.
+  if ((buckets.monitoring || []).length > 0) {
+    tasks.push(
+      fetch('/api/monitoring/stop', { method: 'POST' })
+        .then((resp) => { if (resp.ok) succeeded += buckets.monitoring.length; else failed += buckets.monitoring.length; })
+        .catch(() => { failed += buckets.monitoring.length; })
+    );
+  }
+
   await Promise.all(tasks);
 
   // Drop the just-deleted ids from the selection set
-  for (const bucket of [buckets.past, buckets.draft, buckets.queued, buckets.schedule]) {
+  for (const bucket of [buckets.past, buckets.draft, buckets.queued, buckets.schedule, buckets.monitoring || []]) {
     for (const r of bucket) _dashSelection.delete(r.id);
   }
 
