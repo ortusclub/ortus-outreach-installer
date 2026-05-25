@@ -88,14 +88,19 @@ test('message_sent with introMode + message_only: writes Intro Status', () => {
   assert.equal(r.stage, 'IC Sent');
 });
 
-test('message_sent with introMode + introduce_back: writes Intro Status', () => {
+test('message_sent + introduce_back: writes ONLY Introduction Status (no stage/status)', () => {
+  // v2.59: Introduction Campaign tabs are separate from connection tabs
+  // and may not have Stage / Status columns. The send action writes only
+  // to Introduction Status. introMode flag is irrelevant for IC mode —
+  // mode === 'introduce_back' is the trigger.
   const r = buildSheetDataForAction({
     action: 'message_sent',
     mode: 'introduce_back',
     introMode: true
   });
   assert.equal(r.introStatus, 'IC Sent');
-  assert.equal(r.stage, 'IC Sent');
+  assert.equal(r.stage, undefined);
+  assert.equal(r.status, undefined);
 });
 
 // ── op_message_sent ──

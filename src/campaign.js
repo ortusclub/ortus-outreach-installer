@@ -1009,7 +1009,13 @@ export function buildSheetDataForAction({
       return out;
 
     case 'message_sent':
-      if (introMode && (mode === 'message_only' || mode === 'introduce_back')) {
+      if (mode === 'introduce_back') {
+        // v2.59: Introduction Campaign tabs are separate from connection
+        // tabs and may not have Stage / Status columns at all. Write ONLY
+        // to Introduction Status so IC tabs don't depend on Stage. Filter
+        // also reads from Introduction Status (campaign.js:~1442).
+        out.introStatus = 'IC Sent';
+      } else if (introMode && mode === 'message_only') {
         out.status      = 'IC Sent';
         out.introStatus = 'IC Sent';
         out.stage       = 'IC Sent';
@@ -1079,7 +1085,7 @@ export function buildSheetDataForAction({
         out.status = out.stage;
         out.dmStatus = out.stage;
       }
-      else if (mode === 'introduce_back')   { out.stage = 'IC Sent'; out.status = 'IC Sent'; out.introStatus = 'IC Sent'; }
+      else if (mode === 'introduce_back')   { out.introStatus = 'IC Sent'; /* v2.59: IC writes only Introduction Status — see message_sent above */ }
       else if (mode === 'inmail_only')      { out.stage = 'InM Sent'; out.status = 'InM Sent'; out.inmStatus = 'InM Sent'; }
       else if (mode === 'open_profile_only') { out.stage = 'OP Sent'; out.status = 'OP Sent'; out.opStatus = 'OP Sent'; }
       return out;
@@ -1439,14 +1445,22 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (mode === 'check_status') {
           return stage === 'Connect Pending';
         }
-        if (mode === 'message_only' || mode === 'introduce_back') {
-          // v2.59 INCIDENT: tried to switch IC (introduce_back) to a blank-
-          // Stage rule but the in-loop re-validation at line ~2188 still
-          // requires Stage === 'Connected · DM Now', so every row passed
-          // pre-filter then got rejected at dispatch → operator's IC run
-          // processed zero leads. Reverted to isDmIbEligible until both
-          // filters can be migrated together (and the sender-column
-          // routing reviewed) in a follow-up.
+        if (mode === 'introduce_back') {
+          // v2.59: IC tabs are separate from connection tabs and don't
+          // necessarily have a Stage column. Filter reads only from the
+          // 'Introduction Status' column — blank = process, anything else
+          // (IC Sent, Failed — …, operator note, anything) = skip.
+          // Mirrored in the in-loop re-validation below (~line 2188).
+          const introStatus = (
+            row['Introduction Status'] || row['introduction status'] ||
+            row['Introduction status'] || row['introStatus'] || ''
+          ).toString().trim();
+          return introStatus === '';
+        }
+        if (mode === 'message_only') {
+          // message_only is 'coming soon' in v2.59 but logic kept intact.
+          // v2.14.x rationale: accept any row that represents a known
+          // connection regardless of which path stamped it.
           return isDmIbEligible(row);
         }
         // Cold-lead modes — operator-confirmed: process only blank-Stage
@@ -2175,16 +2189,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // check tripped on local-browser variants (e.g., row says
           // "local-browser", pName is "Local Browser") and broke an entire
           // legitimate code path. Slice-based filtering is sufficient.
-        } else if (mode === 'message_only' || mode === 'introduce_back') {
-          // v2.58.x — Introduction Campaign with allLeadsConnected: the
-          // operator has confirmed every row is already 1st-degree, so we
-          // bypass Stage / Connected Status / CC gates here. The pre-filter
-          // already enforces the Introduction Status = "IC Sent" terminal
-          // guard, and concurrent-write races don't apply because no other
-          // path writes IC Sent during a run.
-          if (mode === 'introduce_back' && allLeadsConnected) {
-            // Nothing to re-validate at dispatch time; continue to send.
-          } else if (_hasStageHere) {
+        } else if (mode === 'introduce_back') {
+          // v2.59: IC re-validation mirrors the pre-filter (~line 1442).
+          // Read only from Introduction Status — IC tabs may not have a
+          // Stage column at all. If anything is now in Introduction Status
+          // (e.g. a concurrent operator marked the row done while we were
+          // queued), skip.
+          const _introStatusNow = (
+            row['Introduction Status'] || row['introduction status'] ||
+            row['Introduction status'] || row['introStatus'] || ''
+          ).toString().trim();
+          if (_introStatusNow !== '') { delete state.processed[url]; continue; }
+        } else if (mode === 'message_only') {
+          if (_hasStageHere) {
             // New schema: Stage drives messageability. Pre-filter passed
             // 'Connected · DM Now'; if it changed under us, skip.
             if (_stage !== 'Connected · DM Now') { delete state.processed[url]; continue; }
