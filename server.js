@@ -609,7 +609,11 @@ function buildCampaignConfig(body) {
           acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes,
           // v2.58.x — Introduction Campaign (introduce_back) sheet-mapping overrides.
           // Read for every campaign but only honored downstream when mode === 'introduce_back'.
-          senderColumn, allLeadsConnected } = body || {};
+          senderColumn, allLeadsConnected,
+          // v2.59 (resume support): { totalProcessed } from the past history
+          // entry being resumed. Seeded into campaign counters so the cockpit
+          // continues counting from the saved total instead of zero.
+          resumeContext } = body || {};
   let concurrencyClean = 1;
   if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
     const n = Math.min(5, Number(concurrency));
@@ -637,6 +641,11 @@ function buildCampaignConfig(body) {
     // Honoured only when mode is message_only or introduce_back. campaign.js
     // gates further so other modes silently ignore the flag.
     preflightCheckStatus: !!preflightCheckStatus,
+    // v2.59 resume — passed through to startCampaign which seeds counters.
+    // Shape: { totalProcessed: number }. Other fields ignored for now.
+    resumeContext: (resumeContext && typeof resumeContext === 'object') ? {
+      totalProcessed: Number(resumeContext.totalProcessed) || 0,
+    } : null,
   };
 }
 

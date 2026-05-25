@@ -1123,7 +1123,7 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false }) {
+export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
@@ -1180,8 +1180,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign._paused = false;
   campaign._pauseRequested = false;
   campaign.currentProfile = null;
+  // v2.59 (resume support): when resumeContext is supplied (client clicked
+  // Resume on a stopped campaign), seed the run-level counters from the
+  // previous run's totals so the cockpit + history continue from where
+  // they left off instead of resetting to 0. processedToday stays 0 — it's
+  // a today-only counter, and resuming on a NEW day shouldn't pretend the
+  // pre-resume day's sends happened today. The per-account dailyCounts
+  // and per-URL `processed` map in state.json already preserve the
+  // 'don't re-send' guarantee independently of these counters.
+  const _resumeTotal = resumeContext && Number.isFinite(Number(resumeContext.totalProcessed)) ? Number(resumeContext.totalProcessed) : 0;
   campaign.processedToday = 0;
-  campaign.totalProcessed = 0;
+  campaign.totalProcessed = _resumeTotal;
   campaign.totalTargets = 0;
   campaign.mode = mode;
   // ISO timestamp marking when this campaign run began. Used by the

@@ -2860,6 +2860,21 @@ async function startCampaign(opts = {}) {
     if (!ok) return; // modal shown by _runIcPreflight; operator must fix
   }
 
+  // v2.59 resume: if the operator stopped a campaign from this wizard and
+  // is now pressing Start without leaving the page, treat it as a resume
+  // of that campaign — name match required so editing the name then
+  // starting becomes a fresh run (operator's explicit intent). The flag
+  // is cleared after the start either way.
+  try {
+    const raw = localStorage.getItem('wizardStoppedFromContext');
+    if (raw) {
+      const ctx = JSON.parse(raw);
+      if (ctx && ctx.name && ctx.name === (body.name || '').trim()) {
+        body.resumeContext = { totalProcessed: Number(ctx.totalProcessed) || 0 };
+      }
+    }
+  } catch {}
+
   await submitStartCampaign(body, opts);
 }
 
@@ -3003,6 +3018,7 @@ async function submitStartCampaign(body, opts = {}) {
         localStorage.removeItem('currentDraftId');
       }
       localStorage.removeItem('currentDraftIsNew');
+      localStorage.removeItem('wizardStoppedFromContext');
     } catch {}
     wizardDirty = false;
     _runningEditWarningShown = false;
@@ -3166,6 +3182,20 @@ function onTourBack() { tourBack(); }
 function onTourSkip() { tourSkip(); }
 
 async function stopCampaign() {
+  // v2.59 resume: snapshot the running campaign's identity + totals BEFORE
+  // sending the stop so the wizard's next Start can route as a resume
+  // instead of spawning a fresh run. Stored by name (since stable ids
+  // don't exist yet); wizard Start matches by name comparison.
+  try {
+    if (typeof __cockpit !== 'undefined' && __cockpit && (__cockpit.running || __cockpit.paused)) {
+      const ctx = {
+        name: (__cockpit.name || '').trim(),
+        totalProcessed: Number(__cockpit.totalProcessed) || 0,
+        savedAt: Date.now(),
+      };
+      if (ctx.name) localStorage.setItem('wizardStoppedFromContext', JSON.stringify(ctx));
+    }
+  } catch {}
   // 2.9.7: Check DMs is a separate flow with its own stop endpoint. Stop
   // both — only the running one will react, and double-stop is harmless.
   try { await fetch('/api/campaign/stop', { method: 'POST' }); } catch { /* */ }
@@ -7015,6 +7045,7 @@ async function editDraft(id) {
   if (!id) return;
   try { localStorage.setItem('currentDraftId', id); } catch {}
   try { localStorage.removeItem('currentDraftIsNew'); } catch {}
+  try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   wizardDirty = false;
   _runningEditWarningShown = false;
   // Pre-fill the wizard's name input from the draft so the user sees it
@@ -8215,6 +8246,13 @@ async function resumeWithSameSettings() {
     // history entries don't have the field — undefined here lets the server
     // apply its 60-min default just like before.
     checkIntervalMinutes: s.checkIntervalMinutes,
+    // v2.59 resume — seed cockpit + history with the prior run's totals so
+    // counters continue instead of restarting from 0. processedToday is
+    // intentionally NOT seeded (it's a today-only counter; resuming on a
+    // new day shouldn't lie about today's sends).
+    resumeContext: {
+      totalProcessed: Number(c.totalProcessed) || Number(c.successCount) || 0,
+    },
   };
 
   closeResumeChoiceModal();
@@ -8316,6 +8354,7 @@ async function startNewCampaign() {
   } catch { /* fall through; wizard still works without a draft id */ }
   try { localStorage.removeItem('campaignName'); } catch {}
   try { localStorage.setItem('currentDraftIsNew', '1'); } catch {}
+  try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   wizardDirty = false;
   _runningEditWarningShown = false;
   const input = document.getElementById('campaign-name-input');
