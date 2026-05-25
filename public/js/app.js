@@ -8272,6 +8272,16 @@ async function startNewCampaign() {
   }
   if (typeof updateSheetTabHint === 'function') updateSheetTabHint();
   if (typeof _refreshOpenSheetButtons === 'function') _refreshOpenSheetButtons();
+  // Clear the loaded sheet preview pane (row count, sample rows, IC
+  // mapping block) so the previous campaign's table doesn't sit there
+  // looking like it belongs to the new one.
+  const _sheetPreview = document.getElementById('sheet-preview');
+  if (_sheetPreview) { _sheetPreview.innerHTML = ''; _sheetPreview.classList.add('hidden'); }
+  const _icExtras = document.getElementById('ic-extras');
+  const _icExtrasEmpty = document.getElementById('ic-extras-empty');
+  const _icExtrasFilled = document.getElementById('ic-extras-filled');
+  if (_icExtrasFilled) _icExtrasFilled.style.display = 'none';
+  if (_icExtrasEmpty) _icExtrasEmpty.style.display = '';
   selectedProfileIds = [];
   selectedProfileNames = {};
   if (typeof renderProfiles === 'function' && Array.isArray(allProfilesData)) renderProfiles(allProfilesData);
