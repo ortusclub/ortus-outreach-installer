@@ -4255,7 +4255,16 @@ async function pollStatus() {
         else { runEl.textContent = 'Running'; runEl.className = 'value running'; }
       }
       if (warningEl) warningEl.style.display = '';
-      setCampaignButtons(true, !!s.paused, !!s.pauseRequested);
+      // On the new-campaign view, force the button state to idle — the
+      // running campaign is somebody else's, not this draft. Start should
+      // be live so the operator can launch (or queue) this draft;
+      // Pause/Stop/Force-restart should be disabled because they'd act on
+      // the other campaign, not this one. The actual one-at-a-time backend
+      // constraint is enforced server-side (queue-or-409); UI just reflects
+      // the per-tab story.
+      const _isNewView = typeof isOnNewCampaignView === 'function' && isOnNewCampaignView();
+      if (_isNewView) setCampaignButtons(false);
+      else setCampaignButtons(true, !!s.paused, !!s.pauseRequested);
     } else {
       if (runEl) { runEl.textContent = 'Idle'; runEl.className = 'value stopped'; }
       if (warningEl) warningEl.style.display = 'none';
