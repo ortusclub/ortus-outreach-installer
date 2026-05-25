@@ -1439,25 +1439,27 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (mode === 'check_status') {
           return stage === 'Connect Pending';
         }
-        if (mode === 'message_only' || mode === 'introduce_back') {
-          // v2.14.x — accept any row that represents a known connection,
-          // regardless of which path stamped it. See isDmIbEligible() comment
-          // for the full rationale (campaign.js:~349). Replaces the previous
-          // single-Stage check that missed bulk-check-confirmed acceptances.
+        if (mode === 'message_only') {
+          // message_only is a 'coming soon' mode in v2.59 but logic kept
+          // intact in case it's re-enabled. v2.14.x rationale: accept any
+          // row that represents a known connection regardless of which
+          // path stamped it (isDmIbEligible — campaign.js:~349).
           return isDmIbEligible(row);
         }
-        if (mode === 'connect_only' || mode === 'connect_and_introduce') {
-          // Cold targets: Stage empty (never touched) or 'Send Connect'.
-          // Skipped (any reason) is terminal — exclude.
-          // Per-tab source of truth: if Stage is blank, try to process even if
-          // state.processed remembers the URL from another sheet/run.
-          if (isSkipped) return false;
-          return stage === '' || stage === 'Send Connect';
+        // v2.59: operator-confirmed rule — for the three active modes
+        // (Connect Only, Connect + Introduce Back, Introduction Campaign)
+        // a row is processable only when Stage is blank. Any non-blank
+        // value (Connect Pending, Connected, Connected · DM Now, DM Sent,
+        // IC Sent, Skipped, operator notes, anything) is terminal.
+        // Operator confirmed they upload fresh sheets where blank Stage =
+        // 'ready to process'; any prior state in Stage means 'leave alone'.
+        if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'introduce_back') {
+          return stage === '';
         }
         if (mode === 'inmail_only' || mode === 'open_profile_only') {
-          // InMail and OP are Connect alternatives — same source.
-          if (isSkipped) return false;
-          return stage === '' || stage === 'Send Connect';
+          // InMail and OP are 'coming soon' in v2.59 but kept aligned with
+          // the active-mode rule above for consistency if re-enabled.
+          return stage === '';
         }
         // Other modes: terminal stages skip, everything else passes through.
         if (TERMINAL.has(stage) || isSkipped) return false;

@@ -498,7 +498,14 @@
                 <div id="ic-auto-detected-badge" class="ic-auto-detected hidden">Auto-detected from header name</div>
               </div>
             </div>
-            <div class="ic-row">
+            <!-- v2.59: 'All leads already connected' Stage-filter bypass
+                 removed per operator request. The campaign loop now treats
+                 blank-Stage as 'process this row' for every active mode
+                 (Connect Only, Connect + Introduce Back, Introduction
+                 Campaign), making this toggle redundant. Backend
+                 allLeadsConnected variable kept; it just never gets set
+                 from the UI now. -->
+            <div class="ic-row" style="display:none">
               <div class="ic-label-block">
                 <div class="ic-label">Stage<br>Filter</div>
                 <div class="ic-sub">Skip the Stage column requirement so a plain sheet works.</div>
