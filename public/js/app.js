@@ -3004,6 +3004,8 @@ async function submitStartCampaign(body, opts = {}) {
       }
       localStorage.removeItem('currentDraftIsNew');
     } catch {}
+    wizardDirty = false;
+    _runningEditWarningShown = false;
 
     // Server queued the campaign — either explicit queue-only, or because
     // another campaign was already running on the regular start path.
@@ -7003,6 +7005,8 @@ async function editDraft(id) {
   if (!id) return;
   try { localStorage.setItem('currentDraftId', id); } catch {}
   try { localStorage.removeItem('currentDraftIsNew'); } catch {}
+  wizardDirty = false;
+  _runningEditWarningShown = false;
   // Pre-fill the wizard's name input from the draft so the user sees it
   // immediately (syncCampaignNameInput will pick up currentDraftId on
   // wizard entry too, but setting it here avoids a flicker).
@@ -8302,6 +8306,8 @@ async function startNewCampaign() {
   } catch { /* fall through; wizard still works without a draft id */ }
   try { localStorage.removeItem('campaignName'); } catch {}
   try { localStorage.setItem('currentDraftIsNew', '1'); } catch {}
+  wizardDirty = false;
+  _runningEditWarningShown = false;
   const input = document.getElementById('campaign-name-input');
   if (input) input.value = '';
   // Clear every wizard input whose value persists in the DOM between route
@@ -8902,15 +8908,106 @@ document.addEventListener('DOMContentLoaded', initCampaignNameInput);
 if (document.readyState !== 'loading') initCampaignNameInput();
 window.syncCampaignNameInput = syncCampaignNameInput;
 
-// Stub: per-campaign persistence is pending the campaign-isolation refactor.
-// For now, flushes the campaign name draft and confirms via toast so the
-// Save Edits buttons (top + bottom of wizard) feel live.
+// True when the wizard is bound to the currently-running campaign — i.e.,
+// the operator entered via the Active tab's Edit button (which clears
+// currentDraftId via viewRunningCampaign). In that mode, Save Edits MUST
+// NOT create a new draft (the running campaign already exists in /api/
+// campaign/status); field changes won't take effect until the campaign
+// is stopped + relaunched.
+function isViewingRunningCampaign() {
+  try {
+    if (typeof location === 'undefined' || location.hash !== '#/new') return false;
+    if (localStorage.getItem('currentDraftId')) return false;
+    if (localStorage.getItem('currentDraftIsNew') === '1') return false;
+    return !!(typeof __cockpit !== 'undefined' && __cockpit && (__cockpit.running || __cockpit.paused));
+  } catch { return false; }
+}
+
+// Module-level dirty flag — flipped true by wizardDirtyOnInput when the
+// operator types into any watched wizard field. Cleared on Save / start
+// / startNewCampaign / editDraft. Used by saveCampaignEdits to pick
+// between the no-op-on-running-with-no-edits path and the stop-first
+// warning path.
+let wizardDirty = false;
+
+// First-edit-while-running modal — shown once per dirty-cycle when the
+// operator types into a wizard field while viewing the running campaign.
+// Tells them the change won't apply unless they stop + relaunch (or stop
+// + save edits). The modal is dismissable; dirty stays true until Save
+// or campaign stop.
+let _runningEditWarningShown = false;
+function showRunningEditWarning() {
+  if (_runningEditWarningShown) return;
+  _runningEditWarningShown = true;
+  const bg = document.createElement('div');
+  bg.className = 'dash-dialog-bg';
+  bg.innerHTML = `
+    <div class="dash-dialog" role="dialog" aria-modal="true">
+      <h2>Campaign is running</h2>
+      <p>Edits to the wizard fields <b>will not apply</b> while the campaign is running. Stop the campaign first, then either relaunch it or press Save Edits to persist the changes as a new starting point.</p>
+      <div class="dash-dialog-actions">
+        <button type="button" class="btn btn-primary" id="rew-ok">Got it</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  const ok = bg.querySelector('#rew-ok');
+  const close = () => bg.remove();
+  ok.onclick = close;
+  bg.onclick = (e) => { if (e.target === bg) close(); };
+  ok.focus();
+}
+
+function wizardDirtyOnInput() {
+  if (wizardDirty) return; // already flagged — no need to re-check
+  wizardDirty = true;
+  if (isViewingRunningCampaign()) showRunningEditWarning();
+}
+
+// Wire input/change listeners on every watched wizard field. Idempotent.
+function initWizardDirtyTracking() {
+  if (document.body.__wizardDirtyWired) return;
+  document.body.__wizardDirtyWired = true;
+  const watchIds = [
+    'campaign-name-input', 'sheet-url', 'daily-limit-input',
+    'tpl-note', 'tpl-followup',
+    'tpl-inmail-subject', 'tpl-inmail-body',
+    'tpl-op-subject', 'tpl-op-body',
+    'primary-intro-body', 'intro-title',
+    'primary-person-url', 'primary-person-name',
+  ];
+  for (const id of watchIds) {
+    const el = document.getElementById(id);
+    if (el && !el.__dirtyWired) {
+      el.addEventListener('input', wizardDirtyOnInput);
+      el.addEventListener('change', wizardDirtyOnInput);
+      el.__dirtyWired = true;
+    }
+  }
+}
+document.addEventListener('DOMContentLoaded', initWizardDirtyTracking);
+if (document.readyState !== 'loading') initWizardDirtyTracking();
+
 async function saveCampaignEdits() {
   const buttons = document.querySelectorAll('.wizard-save-edits');
   const originals = [];
   buttons.forEach((b, i) => { originals[i] = b.textContent; b.disabled = true; b.textContent = 'Saving…'; });
   try {
+    // Special path: viewing the running campaign. Don't ever create a new
+    // draft (the running campaign IS the source of truth). If dirty, warn
+    // the operator to stop first; if clean, pretend to save so the button
+    // still feels responsive.
+    if (isViewingRunningCampaign()) {
+      if (wizardDirty) {
+        showCampaignToast('Stop the campaign first — edits won’t apply while it’s running.');
+      } else {
+        showCampaignToast('Edits saved');
+      }
+      return;
+    }
     await saveDraftName();
+    wizardDirty = false;
+    _runningEditWarningShown = false;
     showCampaignToast('Edits saved');
   } catch (err) {
     showCampaignToast(`Save failed: ${err.message || err}`);
