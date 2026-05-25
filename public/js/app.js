@@ -8248,6 +8248,26 @@ async function startNewCampaign() {
   try { localStorage.setItem('currentDraftIsNew', '1'); } catch {}
   const input = document.getElementById('campaign-name-input');
   if (input) input.value = '';
+  // Clear every wizard input whose value persists in the DOM between route
+  // changes. Without this, the previously-edited campaign's sheet URL,
+  // templates, primary-person fields, etc. bleed into the fresh wizard.
+  // daily-limit-input is intentionally NOT cleared (it has a sensible
+  // default of 50 set in the HTML); mode selection is JS state handled
+  // separately by the profile/mode reset below.
+  const _clearIds = [
+    'sheet-url',
+    'tpl-note', 'tpl-followup',
+    'tpl-inmail-subject', 'tpl-inmail-body',
+    'tpl-op-subject', 'tpl-op-body',
+    'primary-intro-body', 'intro-title',
+    'primary-person-url', 'primary-person-name',
+  ];
+  for (const id of _clearIds) {
+    const el = document.getElementById(id);
+    if (el && 'value' in el) el.value = '';
+  }
+  if (typeof updateSheetTabHint === 'function') updateSheetTabHint();
+  if (typeof _refreshOpenSheetButtons === 'function') _refreshOpenSheetButtons();
   selectedProfileIds = [];
   selectedProfileNames = {};
   if (typeof renderProfiles === 'function' && Array.isArray(allProfilesData)) renderProfiles(allProfilesData);
