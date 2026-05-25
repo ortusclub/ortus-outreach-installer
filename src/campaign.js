@@ -1448,10 +1448,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         if (mode === 'introduce_back') {
           // v2.59: IC tabs are separate from connection tabs and don't
           // necessarily have a Stage column. Filter reads only from the
-          // 'Introduction Status' column — blank = process, anything else
-          // (IC Sent, Failed — …, operator note, anything) = skip.
-          // Mirrored in the in-loop re-validation below (~line 2188).
+          // Intro Status column — blank = process, anything else (IC Sent,
+          // Failed — …, operator note, anything) = skip.
+          // Header name per google-apps-script.js:319 is 'Intro Status';
+          // long-form aliases kept for back-compat. Mirrored in the
+          // in-loop re-validation below (~line 2188).
           const introStatus = (
+            row['Intro Status'] || row['intro status'] || row['Intro status'] ||
             row['Introduction Status'] || row['introduction status'] ||
             row['Introduction status'] || row['introStatus'] || ''
           ).toString().trim();
@@ -2191,11 +2194,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           // legitimate code path. Slice-based filtering is sufficient.
         } else if (mode === 'introduce_back') {
           // v2.59: IC re-validation mirrors the pre-filter (~line 1442).
-          // Read only from Introduction Status — IC tabs may not have a
-          // Stage column at all. If anything is now in Introduction Status
-          // (e.g. a concurrent operator marked the row done while we were
-          // queued), skip.
+          // Read only from Intro Status — IC tabs may not have a Stage
+          // column at all. If anything is now in Intro Status (e.g. a
+          // concurrent operator marked the row done, or a sibling worker
+          // in the same run just stamped it), skip.
           const _introStatusNow = (
+            row['Intro Status'] || row['intro status'] || row['Intro status'] ||
             row['Introduction Status'] || row['introduction status'] ||
             row['Introduction status'] || row['introStatus'] || ''
           ).toString().trim();
