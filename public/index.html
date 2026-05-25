@@ -617,22 +617,14 @@
            connected" checkbox in section 2 so they know what each control
            is for: that one filters the SHEET; this one verifies LIVE
            LinkedIn connection state. Both can be on at once. -->
-      <div style="margin-top:20px; padding:14px 18px; background:#f0f7f4; border-left:3px solid #34a853;">
-        <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
-          <input type="checkbox" id="preflight-check-toggle-ib" checked style="margin-top:3px; width:16px; height:16px; flex-shrink:0; accent-color:#34a853;" />
-          <div>
-            <div style="font-weight:600; color:var(--ink); margin-bottom:4px; font-size:0.95rem;">Run Check Status first</div>
-            <div style="color:var(--gray); font-size:12px; line-height:1.55;">Sweeps each account's recent connections at campaign start. Newly-accepted leads become eligible for intro DMs in this same run. Adds ~5–15s per account to startup.</div>
-            <div style="margin-top:10px; padding:8px 10px; background:rgba(0,0,0,0.04); border-left:2px solid var(--hairline); color:var(--gray); font-size:11.5px; line-height:1.5;">Separate from the <b style="color:var(--ink)">"All leads in this sheet are already connected"</b> checkbox in section 2 (Sheet). That checkbox controls the <code style="font-family:ui-monospace,Menlo,monospace; font-size:0.92em; background:rgba(0,0,0,0.05); padding:1px 5px;">Stage = "Connected · DM Now"</code> filter; this toggle controls whether each account does a Voyager bulk-check at startup. Both can be on at once.</div>
-          </div>
-        </label>
-      </div>
+      <!-- v2.59: removed per operator request —
+           (1) the green "Run Check Status first" toggle (id=preflight-check-toggle-ib);
+           (2) the gold "Adds a third person to a group thread…" explainer.
+           Code that reads #preflight-check-toggle-ib uses optional chaining so
+           absence resolves to undefined → falsy → preflight does not run. -->
 
       <div id="intro-mode-block" style="margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline);">
         <div id="intro-mode-fields" style="max-width:520px;">
-          <div style="padding:10px 14px; border-left:2px solid var(--gold, #F7BE68); font-size:12px; color:var(--gray); margin-bottom:14px;">
-            Adds a third person to a group thread before sending — mirrors the LinkedIn DM Assistant's Option+I flow. Sheet stamp becomes <code style="color:var(--gold,#F7BE68)">sent IC</code> in the DM column. Status still becomes <code style="color:var(--gold,#F7BE68)">DM Sent</code>.
-          </div>
           <div>
             <label for="intro-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro person — full LinkedIn name</label>
             <input type="text" id="intro-name" placeholder="e.g. Antonio Varlese" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
