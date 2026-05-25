@@ -8748,6 +8748,16 @@ window.goDashboard = goDashboard;
 async function syncCampaignNameInput() {
   const input = document.getElementById('campaign-name-input');
   if (!input) return;
+  // When the operator just clicked "+ New Campaign", every fallback below
+  // is wrong — the previous campaign's name (running, last-status, or
+  // localStorage) MUST NOT bleed into the fresh wizard. Just leave blank
+  // and let the operator type. Cleared on first editDraft via the same flag.
+  let isNewCampaign = false;
+  try { isNewCampaign = localStorage.getItem('currentDraftIsNew') === '1'; } catch {}
+  if (isNewCampaign) {
+    input.value = '';
+    return;
+  }
   let value = '';
   let isRunning = false;
   let draftId = '';
