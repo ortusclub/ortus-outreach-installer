@@ -9558,7 +9558,7 @@ async function dashPerformBulkDelete(buckets) {
     ));
   };
 
-  if (buckets.draft.length > 0)    tasks.push(perId(buckets.draft,    (id) => `/api/drafts/${encodeURIComponent(id)}`));
+  if (buckets.draft.length > 0)    tasks.push(perId(buckets.draft,    (id) => id === 'draft' ? '/api/draft-name' : `/api/drafts/${encodeURIComponent(id)}`));
   if (buckets.queued.length > 0)   tasks.push(perId(buckets.queued,   (id) => `/api/queue/${encodeURIComponent(id)}`));
   if (buckets.schedule.length > 0) tasks.push(perId(buckets.schedule, (id) => `/api/schedules/${encodeURIComponent(id)}`));
 
