@@ -2303,6 +2303,43 @@ async function previewSheet() {
     });
     html += `</select></div>`;
 
+    // v2.59: surface a second dropdown asking which column holds the
+    // LinkedIn 1st-connection owner (account email / display name) for
+    // this row. Auto-detected by header match against the same priority
+    // list the IC extras use, then by value-shape match ('@'-bearing
+    // cells, e.g. alecx@ortus.solutions). Wired to #linkedin-1st-conn-col-select
+    // — backend consumption added downstream; for now it's selectable
+    // and persists to the wizard config like any other input.
+    let autoFirstConnCol = null;
+    const FIRST_CONN_HEADER_PRIORITY = [
+      'linkedin 1st connections', 'linkedin 1st connection',
+      '1st connections', '1st connection',
+      'sender', 'account used', 'account', 'owner',
+    ];
+    for (const wanted of FIRST_CONN_HEADER_PRIORITY) {
+      const found = data.columns.find((c) => (c || '').toString().trim().toLowerCase() === wanted);
+      if (found && found !== autoDetectCol) { autoFirstConnCol = found; break; }
+    }
+    if (!autoFirstConnCol && data.preview && data.preview.length > 0) {
+      for (const col of data.columns) {
+        if (col === autoDetectCol) continue;
+        for (const row of data.preview) {
+          const val = (row[col] || '').toString();
+          if (val.includes('@')) { autoFirstConnCol = col; break; }
+        }
+        if (autoFirstConnCol) break;
+      }
+    }
+    html += `<div style="margin-top:10px">
+      <label for="linkedin-1st-conn-col-select" style="font-size:0.8rem">Which column contains the LinkedIn 1st connections?</label>
+      <select id="linkedin-1st-conn-col-select" style="margin-top:4px">
+        <option value="">— None —</option>`;
+    data.columns.forEach((col) => {
+      const selected = (autoFirstConnCol && col === autoFirstConnCol) ? 'selected' : '';
+      html += `<option value="${escHtml(col)}" ${selected}>${escHtml(col)}</option>`;
+    });
+    html += `</select></div>`;
+
     // v2.58.x — IC-only extras: sender-column picker + "all leads already
     // connected" checkbox. Rendered inline next to the URL picker so it
     // sits in the same visual block. Visibility is toggled by
