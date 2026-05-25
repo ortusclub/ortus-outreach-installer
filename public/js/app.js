@@ -26,6 +26,17 @@ import {
 let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
+
+// True when the wizard route is showing a brand-new (unstarted) campaign
+// composed via startNewCampaign — used to blank the right-pane status + log
+// so a globally-running campaign's activity doesn't bleed into a fresh tab.
+// editDraft clears the flag so editing an existing draft behaves normally.
+function isOnNewCampaignView() {
+  try {
+    if (typeof location === 'undefined' || location.hash !== '#/new') return false;
+    return localStorage.getItem('currentDraftIsNew') === '1';
+  } catch { return false; }
+}
 let localBrowserFirstName = (typeof localStorage !== 'undefined' && localStorage.getItem('localBrowserFirstName')) || '';
 
 function resolveSenderFirstName(profileId, profileName) {
@@ -3538,6 +3549,41 @@ function renderCockpit() {
   const modeEl = document.getElementById('cockpit-mode-meta');
   if (!ring || !ringFg || !num || !unit || !tag || !dot || !action) return;
 
+  // Blank the entire Live Status cockpit when the operator is composing a
+  // new, unstarted campaign — that tab represents zero activity regardless
+  // of what's running globally. Full per-campaign scoping comes with the
+  // isolation refactor.
+  if (typeof isOnNewCampaignView === 'function' && isOnNewCampaignView()) {
+    ring.classList.remove('indeterminate', 'paused', 'monitoring');
+    ringFg.style.strokeDashoffset = COCKPIT_RING_CIRCUMFERENCE;
+    num.textContent = '—';
+    unit.textContent = 'idle';
+    if (footer) footer.textContent = '';
+    tag.textContent = 'IDLE';
+    dot.classList.remove('live', 'paused-dot', 'monitoring');
+    action.textContent = 'No activity for this campaign';
+    if (lead) lead.textContent = '—';
+    if (account) account.textContent = '—';
+    if (modeEl) modeEl.textContent = '—';
+    const _leadLabel = document.querySelector('.cockpit-meta-label[data-cockpit-row="lead"]') || lead?.previousElementSibling;
+    if (_leadLabel) _leadLabel.textContent = 'Lead';
+    const _accountLabel = document.querySelector('.cockpit-meta-label[data-cockpit-row="account"]') || account?.previousElementSibling;
+    if (_accountLabel) _accountLabel.textContent = 'Account';
+    const stToday = document.getElementById('st-today');
+    const stTotal = document.getElementById('st-total');
+    const stErrors = document.getElementById('st-errors');
+    const stBar = document.getElementById('st-bar');
+    if (stToday) stToday.textContent = '0';
+    if (stTotal) stTotal.textContent = '0';
+    if (stErrors) stErrors.textContent = '0';
+    if (stBar) stBar.style.width = '0%';
+    const acctQueue = document.getElementById('account-queue');
+    if (acctQueue) { acctQueue.classList.add('hidden'); acctQueue.innerHTML = ''; }
+    const bcl = document.querySelector('.bulk-check-live');
+    if (bcl) bcl.hidden = true;
+    return;
+  }
+
   // v2.13.14 — Monitoring overlay. running=false but state='monitoring'
   // means the campaign has finished sending and is now watching for
   // acceptances. Surface the timing info so the operator doesn't have
@@ -4248,7 +4294,12 @@ async function pollStatus() {
       renderAccountQueue(s.profileNames, s.currentProfile, s, s.profileIds);
     }
 
-    if (s.logs?.length > 0) {
+    // Blank the main log on new-campaign view so a globally-running
+    // campaign's lines don't bleed into a freshly-opened wizard tab.
+    if (typeof isOnNewCampaignView === 'function' && isOnNewCampaignView()) {
+      const panel = document.getElementById('log-panel');
+      if (panel) panel.innerHTML = '<div class="entry info">No activity for this campaign.</div>';
+    } else if (s.logs?.length > 0) {
       const panel = document.getElementById('log-panel');
       // Honor a user-chosen "clear log" cutoff so reloads/polls don't resurrect old entries.
       let cutoff = 0;
@@ -5010,8 +5061,11 @@ function initRunBarMirror() {
   if (!bar || !txt) return;
   let wasRunning = false;
   const sync = () => {
-    const running = !!__cockpit.running;
-    const monitoring = !running && __cockpit.state === 'monitoring';
+    // Force idle state for the bottom runbar when composing a new campaign
+    // — the global running campaign's identity/stats shouldn't leak in.
+    const newView = (typeof isOnNewCampaignView === 'function') && isOnNewCampaignView();
+    const running = !newView && !!__cockpit.running;
+    const monitoring = !newView && !running && __cockpit.state === 'monitoring';
     bar.classList.toggle('running', running);
     bar.classList.toggle('monitoring', monitoring);
     const mode = formatMode(__cockpit.mode);
@@ -5058,13 +5112,20 @@ function initRunBarMirror() {
     const rpDot = document.getElementById('rp-dot');
     const rpStatusText = document.getElementById('rp-status-text');
     const rpStatusSub = document.getElementById('rp-status-sub');
+    // When the operator is composing a brand-new campaign, the right-pane
+    // should look idle regardless of what other campaigns are doing — that
+    // tab represents an unstarted campaign. Full per-campaign live scoping
+    // comes with the isolation refactor.
+    const onNewCampaignView = (typeof isOnNewCampaignView === 'function') && isOnNewCampaignView();
     if (rpDot) {
-      rpDot.classList.toggle('running', running);
-      rpDot.classList.toggle('monitoring', monitoring);
+      rpDot.classList.toggle('running', !onNewCampaignView && running);
+      rpDot.classList.toggle('monitoring', !onNewCampaignView && monitoring);
     }
-    if (rpStatusText) rpStatusText.textContent = running ? 'Running' : (monitoring ? 'Monitoring' : 'Idle');
+    if (rpStatusText) rpStatusText.textContent = onNewCampaignView ? 'Idle' : (running ? 'Running' : (monitoring ? 'Monitoring' : 'Idle'));
     if (rpStatusSub) {
-      if (running) {
+      if (onNewCampaignView) {
+        rpStatusSub.textContent = 'No activity for this campaign';
+      } else if (running) {
         rpStatusSub.textContent = `${mode} · ${profile} · ${today}/${total}`;
       } else if (monitoring) {
         if (__cockpit.monitoringCheckInProgress) {
@@ -5147,6 +5208,10 @@ function syncActivityFeed() {
   const feed = document.getElementById('rp-feed-list');
   const src = document.getElementById('log-panel');
   if (!feed || !src) return;
+  if (typeof isOnNewCampaignView === 'function' && isOnNewCampaignView()) {
+    feed.innerHTML = '<div class="rp-feed-item"><span class="rp-feed-time">—</span><span class="rp-feed-text">No activity for this campaign</span></div>';
+    return;
+  }
   const entries = Array.from(src.querySelectorAll('.entry')).slice(-10).reverse();
   if (entries.length === 0 || (entries.length === 1 && /waiting to start/i.test(entries[0].textContent))) {
     feed.innerHTML = '<div class="rp-feed-item"><span class="rp-feed-time">—</span><span class="rp-feed-text">Waiting for campaign…</span></div>';
@@ -6849,6 +6914,7 @@ window.deleteDraft = deleteDraft;
 async function editDraft(id) {
   if (!id) return;
   try { localStorage.setItem('currentDraftId', id); } catch {}
+  try { localStorage.removeItem('currentDraftIsNew'); } catch {}
   // Pre-fill the wizard's name input from the draft so the user sees it
   // immediately (syncCampaignNameInput will pick up currentDraftId on
   // wizard entry too, but setting it here avoids a flicker).
@@ -8172,8 +8238,14 @@ async function startNewCampaign() {
     }
   } catch { /* fall through; wizard still works without a draft id */ }
   try { localStorage.removeItem('campaignName'); } catch {}
+  try { localStorage.setItem('currentDraftIsNew', '1'); } catch {}
   const input = document.getElementById('campaign-name-input');
   if (input) input.value = '';
+  selectedProfileIds = [];
+  selectedProfileNames = {};
+  if (typeof renderProfiles === 'function' && Array.isArray(allProfilesData)) renderProfiles(allProfilesData);
+  if (typeof renderSelectedPanel === 'function') renderSelectedPanel();
+  if (typeof updateChipCounts === 'function') updateChipCounts();
   goCreateCampaign();
 }
 window.startNewCampaign = startNewCampaign;
@@ -8726,6 +8798,24 @@ async function initCampaignNameInput() {
 document.addEventListener('DOMContentLoaded', initCampaignNameInput);
 if (document.readyState !== 'loading') initCampaignNameInput();
 window.syncCampaignNameInput = syncCampaignNameInput;
+
+// Stub: per-campaign persistence is pending the campaign-isolation refactor.
+// For now, flushes the campaign name draft and confirms via toast so the
+// Save Edits buttons (top + bottom of wizard) feel live.
+async function saveCampaignEdits() {
+  const buttons = document.querySelectorAll('.wizard-save-edits');
+  const originals = [];
+  buttons.forEach((b, i) => { originals[i] = b.textContent; b.disabled = true; b.textContent = 'Saving…'; });
+  try {
+    await saveDraftName();
+    showCampaignToast('Edits saved');
+  } catch (err) {
+    showCampaignToast(`Save failed: ${err.message || err}`);
+  } finally {
+    buttons.forEach((b, i) => { b.disabled = false; b.textContent = originals[i] || 'Save Edits'; });
+  }
+}
+window.saveCampaignEdits = saveCampaignEdits;
 
 async function saveDraftName() {
   const input = document.getElementById('campaign-name-input');

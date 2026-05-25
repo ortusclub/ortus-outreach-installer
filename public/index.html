@@ -264,6 +264,7 @@
     <div id="wizard-view" class="route-view">
       <div class="wizard-back-row">
         <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+        <button type="button" id="btn-save-edits-top" class="btn btn-secondary wizard-save-edits" onclick="saveCampaignEdits()">Save Edits</button>
       </div>
       <!-- Visible only when a campaign is already running. Tells the operator
            the new build will be queued (not edit the running one). -->
@@ -1130,6 +1131,7 @@
 
     <div class="wizard-bottom-actions">
       <button type="button" class="back-link wizard-bottom-back" onclick="goDashboard()">← Return to dashboard</button>
+      <button type="button" id="btn-save-edits-bottom" class="btn btn-secondary wizard-save-edits" onclick="saveCampaignEdits()">Save Edits</button>
     </div>
 
     </div> <!-- /#wizard-view -->
