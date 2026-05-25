@@ -2013,6 +2013,10 @@ function restoreLastMode() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign Mode picker — card grid
 // ─────────────────────────────────────────────────────────────────────────────
+// v2.59: top three (Connect Only, Introduction Campaign, Connect +
+// Introduce Back) are the active modes. Everything else is parked as
+// Coming Soon per operator request. Card markup + the existing comingSoon
+// flag + setModeByIndex's toast handle the grey-out + click-to-toast flow.
 const MODE_LIST = [
   {
     value: 'connect_only',
@@ -2024,18 +2028,14 @@ const MODE_LIST = [
     ],
   },
   {
-    value: 'check_status',
-    name: 'Check Status',
+    value: 'introduce_back',
+    name: 'Introduction Campaign',
     bullets: [
-      'Verify which pending requests were accepted',
-      'Updates the lead sheet automatically',
-      'Read-only — no messages sent',
+      '3-way group DM',
+      'Adds your intro person automatically',
+      'Runs on a sheet of already-connected leads',
     ],
   },
-  // Connect + Introduce Back: full cold-lead-to-intro flow. Sends a connect
-  // request, waits for acceptance (verified by bulk-check), then auto-DMs
-  // the lead introducing them to a configured "primary person". Distinct
-  // from `introduce_back` which assumes the lead is already 1st-degree.
   {
     value: 'connect_and_introduce',
     name: 'Connect + Introduce Back',
@@ -2046,8 +2046,19 @@ const MODE_LIST = [
     ],
   },
   {
+    value: 'check_status',
+    name: 'Check Status',
+    comingSoon: true,
+    bullets: [
+      'Verify which pending requests were accepted',
+      'Updates the lead sheet automatically',
+      'Read-only — no messages sent',
+    ],
+  },
+  {
     value: 'message_only',
     name: 'Message Only',
+    comingSoon: true,
     bullets: [
       'Follow-up messages to 1st-degree connections',
       'Skips pending or not-yet-connected leads',
@@ -2057,6 +2068,7 @@ const MODE_LIST = [
   {
     value: 'inmail_only',
     name: 'InMail Only',
+    comingSoon: true,
     bullets: [
       'Premium InMail to non-connected targets',
       'Consumes InMail credits per send',
@@ -2066,43 +2078,27 @@ const MODE_LIST = [
   {
     value: 'open_profile_only',
     name: 'Open Profile Message',
+    comingSoon: true,
     bullets: [
       'Free direct message to Open Profile members',
       'No connection required, no credits used',
       'Optional fallback to a connect request',
     ],
   },
-  // 2.9.5: Check DMs as a first-class campaign mode. Routes to /api/check-dms/start
-  // when started, not /api/campaign/start. Read-only.
   {
     value: 'check_dms',
     name: 'Check DMs',
+    comingSoon: true,
     bullets: [
       'Scan LinkedIn inboxes for new replies',
       'Append new messages to the Replies tab',
       'Bump lead Stage to "Replied" on inbound',
     ],
   },
-  // v2.11.17: Introduce Back is now a first-class mode (was a coming-soon
-  // stub + a sub-toggle inside Message Only). Same lead source as
-  // Message Only (Stage === 'Connected · DM Now') but always sends as a
-  // 3-way intro group thread with the configured intro person.
-  {
-    value: 'introduce_back',
-    name: 'Introduction Campaign',
-    bullets: [
-      '3-way group DM',
-      'Adds your intro person automatically',
-      'Runs on a sheet of already-connected leads',
-    ],
-  },
-  // v3.0: Post Amplification — paste a LinkedIn post URL, picked GoLogin
-  // accounts open it sequentially and react / comment per the operator's
-  // per-account config. 80% Like / 20% rotation across the 5 other reactions.
-  // 60-300s gap between accounts. Dedup state file prevents double-engaging.
   {
     value: 'post_amplification',
     name: 'Post Amplification',
+    comingSoon: true,
     bullets: [
       'Paste a LinkedIn post URL',
       'Per-account: Like + optional Comment',
