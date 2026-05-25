@@ -119,7 +119,8 @@ function gatherCampaignFormState() {
   const _icResolvedBody = _primaryIntro || _tplFollow; // mirror startCampaign:2668
 
   const templates = {
-    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    // v2.59: drop addNoteOn gate — textarea value IS the note.
+    connectionNote: document.getElementById('tpl-note').value,
     // Intro flows suppress Follow-up Message because the body is shown
     // separately as Intro DM Body. Other modes pass tpl-followup through.
     followUp1: _isIntroFlow ? '' : _tplFollow,
@@ -1210,6 +1211,21 @@ function deselectAll() {
 //     (no template = no reason to show the template bar or preview button)
 // Called from both onModeChange (mode change) and syncAddNoteUI (Yes/No toggle)
 // so both paths agree.
+// v2.59: live char counter under the Connection Note textarea so the
+// operator can see how close they are to LinkedIn's 300-char cap. Goes
+// red at 280+ as a soft warning. Idempotent — safe to call on init.
+function updateTplNoteCount() {
+  const ta = document.getElementById('tpl-note');
+  const out = document.getElementById('tpl-note-count');
+  if (!ta || !out) return;
+  const n = (ta.value || '').length;
+  out.textContent = `${n} / 300`;
+  out.style.color = n >= 280 ? '#dc2626' : 'var(--gray)';
+}
+window.updateTplNoteCount = updateTplNoteCount;
+document.addEventListener('DOMContentLoaded', updateTplNoteCount);
+if (document.readyState !== 'loading') updateTplNoteCount();
+
 function applyTemplateUIVisibility(_mode, _addNoteOn) {
   // v2.59: template management UI permanently hidden per operator request.
   // The Select / Save / Create New / Delete bar + Preview Messages button
@@ -1505,9 +1521,11 @@ function onModeChange() {
     }
   }
 
-  if (mode === 'connect_only') {
-    if (addNoteOn) connect.style.display = '';
-    else connect.style.display = 'none';
+  if (mode === 'connect_only' || mode === 'connect_and_introduce') {
+    // v2.59: Yes/No toggle (templates-question) is hidden, so the
+    // Connection Note section is always visible for connect modes.
+    // Operator leaves the textarea empty if they don't want a note.
+    connect.style.display = '';
   } else if (mode === 'message_only') {
     // Message Only: standalone follow-up DM, uses the Follow-up Message template.
     message.style.display = '';
@@ -2784,7 +2802,8 @@ async function startCampaign(opts = {}) {
     ? (document.getElementById('primary-intro-body')?.value || document.getElementById('tpl-followup').value || '')
     : document.getElementById('tpl-followup').value;
   const templates = {
-    connectionNote: ((mode === 'connect_only' || mode === 'connect_and_introduce') && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    // v2.59: drop addNoteOn gate — textarea value IS the note.
+    connectionNote: document.getElementById('tpl-note').value,
     followUp1: _icBody,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -4801,7 +4820,8 @@ async function saveQuickSchedule() {
 
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
-    connectionNote: (mode === 'connect_only' && !addNoteOn) ? '' : document.getElementById('tpl-note').value,
+    // v2.59: drop addNoteOn gate — textarea value IS the note.
+    connectionNote: document.getElementById('tpl-note').value,
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,

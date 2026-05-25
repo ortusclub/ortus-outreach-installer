@@ -806,10 +806,11 @@
         <button class="btn btn-secondary btn-save-tpl" onclick="saveCurrentTemplate()">Create new</button>
       </div>
 
-    <!-- ── Connection Note (connect_only) ── -->
+    <!-- ── Connection Note (connect_only, connect_and_introduce) ── -->
     <div class="section tpl-section" id="tpl-connect-section">
       <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
-      <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
+      <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount()"></textarea>
+      <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
       <div class="placeholder-tags" data-target="tpl-note"></div>
     </div>
 
