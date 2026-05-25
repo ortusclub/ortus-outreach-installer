@@ -6867,7 +6867,31 @@ async function refreshDashboardDrafts() {
     const data = await fetch('/api/drafts').then((r) => r.json());
     const drafts = Array.isArray(data?.drafts) ? data.drafts : [];
     if (drafts.length === 0) {
-      list.innerHTML = '<p class="empty-state">No drafts yet.</p>';
+      // Fallback: legacy single-draft from /api/draft-name. Kept until the
+      // parallel-campaigns Phase 3.3 draft endpoints unify storage. Renders
+      // as a synthetic row with a stable id ('draft') so the existing Active-
+      // tab clear button (clearDraftName) keeps working.
+      let legacyName = '';
+      try {
+        const r = await fetch('/api/draft-name');
+        if (r.ok) legacyName = (await r.json())?.name || '';
+      } catch {}
+      if (legacyName) {
+        list.innerHTML = `
+          <div class="campaign-row campaign-row--with-edit" data-campaign-id="draft" data-state="draft">
+            <span class="campaign-row-name">${escHtml(legacyName)}</span>
+            <span class="campaign-row-type">Draft</span>
+            <span class="campaign-row-progress">Not started</span>
+            <span class="campaign-row-status">Draft</span>
+            <span class="campaign-row-actions">
+              <button type="button" class="campaign-row-edit" onclick="goCreateCampaign()" title="Open in wizard">Edit</button>
+              <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="clearDraftName()" title="Discard draft" aria-label="Discard draft">×</button>
+            </span>
+          </div>
+        `;
+      } else {
+        list.innerHTML = '<p class="empty-state">No drafts yet.</p>';
+      }
       return;
     }
     drafts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -7439,29 +7463,9 @@ async function refreshActiveCampaign() {
     // re-enables. startPolling is idempotent — no-op if already ticking.
     if (isActive && typeof startPolling === 'function') startPolling();
     if (!isActive) {
-      // Surface a saved draft name so the operator can see what they staged in
-      // the wizard before clicking Start. Cleared via the row's × button.
-      let draftName = '';
-      try {
-        const r = await fetch('/api/draft-name');
-        if (r.ok) draftName = (await r.json())?.name || '';
-      } catch {}
-      if (draftName) {
-        list.innerHTML = `
-          <div class="campaign-row campaign-row--with-edit" data-campaign-id="draft" data-state="draft">
-            <div class="campaign-row-name">${dashboardNameButton(draftName, 'draft', 'draft')}</div>
-            <span class="campaign-row-type">Draft</span>
-            <span class="campaign-row-progress">Not started</span>
-            <span class="campaign-row-status is-paused">Draft</span>
-            <div class="campaign-row-actions">
-              <button type="button" class="campaign-row-edit" onclick="goCreateCampaign()" title="Open the campaign page">Edit</button>
-              <button type="button" class="campaign-row-edit campaign-row-edit--icon" onclick="clearDraftName()" title="Discard draft" aria-label="Discard draft">×</button>
-            </div>
-          </div>
-        `;
-      } else {
-        list.innerHTML = '<p class="empty-state">No active campaigns.</p>';
-      }
+      // Drafts belong in the Drafts tab, not Active. (refreshDashboardDrafts
+      // surfaces the legacy /api/draft-name fallback so nothing is lost.)
+      list.innerHTML = '<p class="empty-state">No active campaigns.</p>';
       return;
     }
     const total = Number(status.totalTargets) || 0;
