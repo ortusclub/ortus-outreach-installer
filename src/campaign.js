@@ -1411,7 +1411,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       if (!url) return false;
 
       if (icAllConnectedBypass) {
+        // v2.59 split IC into its own "Intro Status" column (short-form,
+        // operator-friendly). CC+IC's auto-intro still writes the legacy
+        // "Introduction Status" (long-form) via auto-intro.js. The bypass
+        // must check BOTH headers so an IC re-run on a previously-sent
+        // sheet (regardless of which column header it has) treats
+        // "IC Sent" as terminal. Without both aliases, an operator with
+        // a "Intro Status" sheet would re-send already-sent rows at the
+        // filter stage (the in-loop re-validation at L2206 caught it
+        // eventually but only after wasted profile navigation).
         const introStatus = (
+          row['Intro Status'] || row['intro status'] || row['Intro status'] ||
           row['Introduction Status'] || row['introduction status'] ||
           row['Introduction status'] || row['introStatus'] || ''
         ).toString().trim();
