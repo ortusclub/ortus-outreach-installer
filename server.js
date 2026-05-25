@@ -714,6 +714,46 @@ app.post('/api/campaign/start', async (req, res) => {
     // about a now-stale draft with the same name.
     try { await writeDraftName(''); } catch { /* non-fatal */ }
 
+    // v2.59: enforce name uniqueness at start time. If a past history
+    // entry with this name exists, remove it now so the dashboard
+    // collapses to a single row (the active one) immediately — instead
+    // of waiting until this new run finishes for appendHistory's
+    // same-name dedup to fire. Empty names are exempt (placeholder runs
+    // shouldn't collapse together). Best-effort: file errors here
+    // don't block the start.
+    try {
+      const incomingName = String(config.name || '').trim().toLowerCase();
+      if (incomingName) {
+        let history = [];
+        try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf8')); } catch { history = []; }
+        if (Array.isArray(history)) {
+          const before = history.length;
+          history = history.filter((h) => ((h?.name || '').toString().trim().toLowerCase()) !== incomingName);
+          if (history.length < before) {
+            await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2));
+            console.log(`[history] start-time dedup: removed ${before - history.length} prior entr${before - history.length === 1 ? 'y' : 'ies'} named "${config.name}"`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[history] start-time dedup failed (non-fatal):', err.message);
+    }
+
+    // Also drop any draft with the same name — the operator is launching
+    // this one, the draft slot is now obsolete.
+    try {
+      const incomingName = String(config.name || '').trim().toLowerCase();
+      if (incomingName) {
+        const allDrafts = await getDrafts();
+        for (const d of allDrafts) {
+          const dn = String(d?.name || '').trim().toLowerCase();
+          if (dn === incomingName) await removeDraft(d.id);
+        }
+      }
+    } catch (err) {
+      console.warn('[drafts] start-time dedup failed (non-fatal):', err.message);
+    }
+
     // If a campaign is already running, queue this one instead of erroring.
     // The queue chain in launchCampaign's finally{} will pick it up when
     // the current campaign finishes.
