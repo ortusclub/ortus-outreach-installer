@@ -58,11 +58,32 @@ export async function getDraft(id) {
   return cache.find((d) => d.id === id) || null;
 }
 
+// v2.59: name uniqueness enforcement. Drops every other draft with the
+// same (trimmed, case-insensitive) non-empty name except for `exceptId`.
+// Empty names are never deduped (those are placeholder drafts the
+// operator hasn't named yet — collapsing them all into one would be a
+// surprise). Returns the number of entries removed for logging.
+function _dedupByName(name, exceptId) {
+  const norm = String(name || '').trim().toLowerCase();
+  if (!norm) return 0;
+  const before = cache.length;
+  cache = cache.filter((d) => {
+    if (d.id === exceptId) return true;
+    return String(d.name || '').trim().toLowerCase() !== norm;
+  });
+  return before - cache.length;
+}
+
 export async function addDraft({ name = '', config = null } = {}) {
   await load();
+  const trimmed = String(name || '').trim();
+  // Silently merge over any existing draft with the same name (operator
+  // request — no two campaigns can have the same name). For named saves
+  // only; empty-name drafts coexist.
+  if (trimmed) _dedupByName(trimmed, null);
   const entry = {
     id: 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-    name: String(name || '').trim(),
+    name: trimmed,
     createdAt: Date.now(),
     config: config || null,
   };
@@ -75,7 +96,12 @@ export async function updateDraft(id, patch) {
   await load();
   const idx = cache.findIndex((d) => d.id === id);
   if (idx === -1) return null;
-  if (patch && typeof patch.name === 'string') cache[idx].name = patch.name.trim();
+  if (patch && typeof patch.name === 'string') {
+    const trimmed = patch.name.trim();
+    cache[idx].name = trimmed;
+    // Dedup any other draft that now collides with this one's new name.
+    if (trimmed) _dedupByName(trimmed, id);
+  }
   if (patch && patch.config !== undefined) cache[idx].config = patch.config;
   cache[idx].updatedAt = Date.now();
   await persist();

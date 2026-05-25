@@ -9108,8 +9108,15 @@ async function saveDraftName() {
         if (r.status === 404) {
           // Draft was deleted out from under us — recreate.
           draftId = '';
+        } else if (r.status === 409) {
+          // v2.59: name collision with the running campaign.
+          const data = await r.json().catch(() => ({}));
+          throw new Error(data.message || 'A campaign with that name is already running.');
         }
-      } catch { /* fall through to legacy save */ }
+      } catch (err) {
+        if (err && /running/i.test(err.message || '')) throw err; // bubble 409
+        // else fall through to legacy save
+      }
     }
     if (!draftId) {
       try {
@@ -9118,19 +9125,29 @@ async function saveDraftName() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name }),
         });
+        if (r.status === 409) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error(data.message || 'A campaign with that name is already running.');
+        }
         if (r.ok) {
           const data = await r.json();
           try { localStorage.setItem('currentDraftId', data?.draft?.id || ''); } catch {}
         }
-      } catch {}
+      } catch (err) {
+        if (err && /running/i.test(err.message || '')) throw err;
+      }
     }
     // Keep legacy single-draft endpoint in sync so syncCampaignNameInput's
     // back-compat fallback still picks up the right name.
-    await fetch('/api/draft-name', {
+    const legacyRes = await fetch('/api/draft-name', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
+    if (legacyRes.status === 409) {
+      const data = await legacyRes.json().catch(() => ({}));
+      throw new Error(data.message || 'A campaign with that name is already running.');
+    }
     if (!isRunning) {
       await fetch('/api/campaign/name', {
         method: 'POST',
