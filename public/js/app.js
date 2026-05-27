@@ -22,7 +22,13 @@ import {
   maybeAutoStartTour,
   isTourCompleted,
 } from '/js/tour.mjs';
+import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 
+// Floating live console — state used by renderLiveConsole(). The previous
+// running flag is needed to detect the running → idle transition that
+// resets the expanded-state localStorage flag (see Task 7).
+let _lcPrevRunning = false;
+let _lcWriteCache = {};
 let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
@@ -4475,6 +4481,10 @@ async function pollStatus() {
         renderBulkCheckLive(bcLive);
       }
     } catch { /* */ }
+
+    // Floating live console — runs on every poll tick. Idempotent; only
+    // writes DOM when values change (see _lcWriteCache).
+    try { renderLiveConsole(s); } catch (err) { console.warn('[live-console] render failed:', err.message); }
   } catch { /* */ }
 }
 
@@ -10905,5 +10915,106 @@ if (!window.__v3TipWired) {
     if (t && (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('[data-tip]'))) _v3HideTip();
   });
   document.addEventListener('scroll', _v3HideTip, true);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Floating live console — DOM glue. Pure helpers live in /js/live-console.mjs.
+// Hooked into pollStatus() so it shares the existing 2s poll cadence.
+// ─────────────────────────────────────────────────────────────────────────
+function renderLiveConsole(s) {
+  const root = document.getElementById('live-console');
+  if (!root) return;
+
+  const running = !!(s && s.running);
+  const visible = shouldShowConsole({ running, hash: location.hash || '' });
+
+  if (!visible) {
+    root.hidden = true;
+    _lcPrevRunning = running;
+    return;
+  }
+  root.hidden = false;
+
+  const pill = computePillState(s);
+
+  // Helper: only write text if it changed, to avoid layout thrash.
+  const setText = (sel, value) => {
+    const el = root.querySelector(sel);
+    if (!el) return;
+    const cached = _lcWriteCache[sel];
+    if (cached === value) return;
+    el.textContent = value;
+    _lcWriteCache[sel] = value;
+  };
+  const setAttr = (sel, attr, value) => {
+    const el = root.querySelector(sel);
+    if (!el) return;
+    const key = `${sel}@${attr}`;
+    if (_lcWriteCache[key] === value) return;
+    if (value == null) el.removeAttribute(attr);
+    else el.setAttribute(attr, value);
+    _lcWriteCache[key] = value;
+  };
+  const setHidden = (sel, hide) => {
+    const el = root.querySelector(sel);
+    if (!el) return;
+    const key = `${sel}@hidden`;
+    const v = hide ? '1' : '0';
+    if (_lcWriteCache[key] === v) return;
+    if (hide) el.setAttribute('hidden', '');
+    else el.removeAttribute('hidden');
+    _lcWriteCache[key] = v;
+  };
+
+  // Pill content
+  setAttr('[data-lc="dot"]', 'data-color', pill.dot);
+  setAttr('[data-lc="dot"]', 'data-pulse', pill.pulse ? '1' : '0');
+  setText('[data-lc="label"]', pill.label);
+  setText('[data-lc="count"]', `${pill.processed} / ${pill.total}`);
+
+  if (pill.errSegment) {
+    setText('[data-lc="err"]', pill.errSegment);
+    setHidden('[data-lc="err"]', false);
+  } else {
+    setHidden('[data-lc="err"]', true);
+  }
+  if (pill.parkedSegment) {
+    setText('[data-lc="parked"]', pill.parkedSegment);
+    setHidden('[data-lc="parked"]', false);
+  } else {
+    setHidden('[data-lc="parked"]', true);
+  }
+
+  // Card content
+  setAttr('[data-lc="dot-card"]', 'data-color', pill.dot);
+  setAttr('[data-lc="dot-card"]', 'data-pulse', pill.pulse ? '1' : '0');
+  setText('[data-lc="title"]', pill.name.toUpperCase());
+  setText('[data-lc="mode"]', pill.mode);
+  setText('[data-lc="account"]', pill.account);
+  setText('[data-lc="lead"]', pill.lead);
+  setText('[data-lc="action"]', pill.action);
+  const sentStr = `${pill.processed} / ${pill.total}` +
+    (pill.errSegment ? ` ${pill.errSegment}` : '');
+  setText('[data-lc="sent"]', sentStr);
+  setText('[data-lc="state"]', `state · ${pill.state}`);
+
+  // Log tail (3 lines)
+  const logEl = root.querySelector('[data-lc="log"]');
+  if (logEl) {
+    const lines = pill.logs;
+    const sig = lines.join('|');
+    if (_lcWriteCache['__log_sig'] !== sig) {
+      logEl.innerHTML = '';
+      lines.forEach((line, i) => {
+        const span = document.createElement('span');
+        span.className = 'live-console__log-line' + (i === lines.length - 1 ? ' is-latest' : '');
+        span.textContent = line;
+        logEl.appendChild(span);
+      });
+      _lcWriteCache['__log_sig'] = sig;
+    }
+  }
+
+  _lcPrevRunning = running;
 }
 
