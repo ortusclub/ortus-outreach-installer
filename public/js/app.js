@@ -7006,6 +7006,9 @@ async function refreshDashboard() {
   if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
   if (typeof window.renderCalendarGrid === 'function') window.renderCalendarGrid();
   if (typeof window.renderPastSection === 'function') window.renderPastSection();
+  // 2026-05-27 (drafts-isolation): paint the resume-draft pill on every
+  // dashboard refresh. The renderer self-cleans stale ids server-side.
+  if (typeof window.renderResumeDraftPill === 'function') window.renderResumeDraftPill();
 }
 
 // Dashboard's Drafts section. Multi-draft store backs this — operator can
@@ -10477,6 +10480,47 @@ window.renderPastSection = async function() {
   const safe = (typeof escHtml === 'function') ? escHtml : (s) => String(s || '');
   const rows = _v3PastEntries.map((p, displayIdx) => v3RenderPastRow(p, displayIdx, safe)).join('');
   listEl.innerHTML = '<div class="pa-list">' + rows + '</div>';
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// Resume-draft pill (variant A, 2026-05-27 drafts-isolation). Lives in the
+// dashboard header. Visible only when getActiveDraftId() points at a draft
+// that still exists server-side. Click → navigates to #/new and hydrates
+// the wizard via editDraft().
+// ─────────────────────────────────────────────────────────────────────────
+window.renderResumeDraftPill = async function() {
+  const pill = document.getElementById('resume-draft-pill');
+  const nameEl = document.getElementById('resume-draft-name');
+  if (!pill || !nameEl) return;
+  const id = getActiveDraftId();
+  if (!id) { pill.style.display = 'none'; return; }
+  try {
+    const r = await fetch('/api/drafts/' + encodeURIComponent(id));
+    if (!r.ok) {
+      // 404 → draft was deleted from another path; drop the stale id so
+      // the pill stays hidden until the operator starts a new draft.
+      if (r.status === 404) clearActiveDraft();
+      pill.style.display = 'none';
+      return;
+    }
+    const draft = await r.json();
+    const nm = (draft && draft.name ? String(draft.name) : '').trim() || 'Untitled draft';
+    nameEl.textContent = nm.slice(0, 32);
+    pill.style.display = 'inline-flex';
+  } catch (err) {
+    console.warn('[drafts] resume-pill fetch:', err);
+    pill.style.display = 'none';
+  }
+};
+
+window.dashResumeDraft = function() {
+  const id = getActiveDraftId();
+  if (!id) return;
+  // editDraft already navigates via goCreateCampaign() and hydrates the
+  // form. Call it directly so the hash change + draft load happen in
+  // sequence (router would also fire updateEditingBanner via applyRoute).
+  if (typeof editDraft === 'function') editDraft(id);
+  else window.location.hash = '#/new';
 };
 
 function v3RenderPastRow(p, displayIdx, safe) {

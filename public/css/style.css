@@ -4659,3 +4659,42 @@ body.theme-light .wiz-editing-launch {
   border-color: var(--ink);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Resume-draft pill in dashboard header (variant A). Hidden by default;
+ * window.renderResumeDraftPill flips display when an active draft exists.
+ * ────────────────────────────────────────────────────────────────────────*/
+.resume-draft-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  margin-right: 12px;
+}
+.resume-draft-pill:hover {
+  border-color: var(--ink);
+  background: rgba(255, 255, 255, 0.05);
+}
+body.theme-light .resume-draft-pill:hover { background: rgba(0, 0, 0, 0.04); }
+.resume-draft-icon { width: 12px; height: 12px; color: var(--gold); }
+.resume-draft-lbl {
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+.resume-draft-name {
+  color: var(--ink);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
