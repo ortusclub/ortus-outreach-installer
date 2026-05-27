@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
 </head>
-<body>
+<body data-dashboard="v3">
   <div class="app">
 
     <!-- ── Sidebar ── -->
@@ -173,92 +173,207 @@
         <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ Start new campaign</button>
       </div>
 
-      <!-- ── Tab bar — 7 categories ── -->
-      <div class="dash-tabs" id="dash-tabs" role="tablist">
-        <button type="button" class="dash-tab" data-tab="active" role="tab" aria-selected="false">Active <span class="dash-tab-ct" data-ct="active">0</span></button>
-        <button type="button" class="dash-tab" data-tab="monitoring" role="tab" aria-selected="false">Monitoring <span class="dash-tab-ct" data-ct="monitoring">0</span><span class="dash-tab-new" data-new="monitoring" hidden>0 new</span></button>
-        <button type="button" class="dash-tab" data-tab="queued" role="tab" aria-selected="false">Queued <span class="dash-tab-ct" data-ct="queued">0</span></button>
-        <button type="button" class="dash-tab" data-tab="schedules" role="tab" aria-selected="false">Schedules <span class="dash-tab-ct" data-ct="schedules">0</span></button>
-        <button type="button" class="dash-tab" data-tab="drafts" role="tab" aria-selected="false">Drafts &amp; Stops <span class="dash-tab-ct" data-ct="drafts">0</span></button>
-        <button type="button" class="dash-tab" data-tab="past" role="tab" aria-selected="false">Past <span class="dash-tab-ct" data-ct="past">0</span></button>
-        <button type="button" class="dash-tab" data-tab="all" role="tab" aria-selected="false">All <span class="dash-tab-ct" data-ct="all">0</span></button>
-      </div>
-
-      <!-- ── Toolbar — select all + search ── -->
-      <div class="dash-toolbar">
-        <span class="dash-selall" id="dash-selall" role="button" tabindex="0">
-          <span class="dash-check" id="dash-selall-check" aria-hidden="true"></span>
-          <span class="dash-selall-label">SELECT ALL</span>
-        </span>
-        <input class="dash-search" id="dash-search" type="text" placeholder="Search this list…" autocomplete="off" />
-      </div>
-
-      <!-- ── Bulk action strip — appears when selection >= 1 ── -->
-      <div class="dash-bulkstrip" id="dash-bulkstrip" hidden aria-live="polite">
-        <div class="dash-bulkstrip-l">
-          <span class="dash-bulk-n" id="dash-bulk-n">0</span>SELECTED
-          <span class="dash-bulk-qual" id="dash-bulk-qual"></span>
+      <!-- ── ACTIVE (Variant J) ──────────────────────────────────── -->
+      <section class="vj-card" id="active-card" aria-labelledby="sect-active">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span id="activeEyebrow">No campaign running</span></span>
+          <span class="vj-when" id="activeWhen"></span>
         </div>
-        <div class="dash-bulkstrip-r">
-          <button type="button" class="btn btn-secondary" onclick="dashClearSelection()">CLEAR</button>
-          <button type="button" class="btn btn-secondary" id="dash-bulk-pause" onclick="dashBulkPauseWatch()" hidden>PAUSE WATCH</button>
-          <button type="button" class="btn btn-stop" onclick="dashBulkDelete()">DELETE</button>
-        </div>
-      </div>
-
-      <!-- ── Panels — only one visible at a time. Existing list containers
-           are PRESERVED inside their respective panel so existing render
-           functions (refreshActiveCampaign, refreshDashboardQueue, etc.)
-           continue to write into the same DOM ids they always have. ── -->
-      <div class="dash-panels">
-        <div class="dash-panel" data-panel="active" id="dash-panel-active" role="tabpanel" hidden>
-          <div class="campaign-list" id="active-campaign-list">
-            <p class="empty-state">No active campaigns.</p>
+        <div class="vj-glyph-circle" id="activeGlyph" aria-hidden="true"></div>
+        <h2 class="vj-name" id="sect-active"><span id="activeName">No campaign running</span></h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="0" aria-label="Active campaign progress"><i id="activeBar" style="width:0%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span id="activePct">0</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b id="activeSent">0</b> of <span id="activeTotal">0</span> sent</span>
+              <span>Next batch in <b id="batchEta">—</b></span>
+            </div>
+          </div>
+          <div class="vj-stats" aria-live="polite">
+            <span><b id="activeAccounts">0</b> accounts</span>
+            <span><b id="activeAccepted">0</b> accepted</span>
+            <span><b id="activeReplies">0</b> replies</span>
+            <span>· <b id="sendingLbl">Idle</b> · <a onclick="window.dashOpenBatchSettings()" style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer">batch settings</a></span>
           </div>
         </div>
-
-        <div class="dash-panel" data-panel="monitoring" id="dash-panel-monitoring" role="tabpanel" hidden>
-          <div class="campaign-list" id="monitoring-campaign-list">
-            <p class="empty-state">No campaigns are being monitored.</p>
+        <div class="vj-controls">
+          <button class="btn-pill" onclick="window.dashOpenActive()">Open</button>
+          <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleActiveDetails(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dock" id="dock-active" data-open="false" role="toolbar" aria-label="Active campaign actions">
+            <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="window.dashPauseActive()">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <span class="dock-sep" aria-hidden="true"></span>
+            <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-active', event)">
+              <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+            </button>
+            <div class="dock-actions">
+              <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="window.dashStopActive()">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="window.dashRestartActive()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyActiveToQueue()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
           </div>
         </div>
-
-        <div class="dash-panel" data-panel="queued" id="dash-panel-queued" role="tabpanel" hidden>
-          <div class="campaign-list" id="queued-campaign-list">
-            <p class="empty-state">No queued campaigns.</p>
+        <!-- Details panel (live log + bulk check) — only visible when .is-detailed -->
+        <div class="vj-details">
+          <div>
+            <div class="vj-details-head">Live log · last 6 events</div>
+            <div class="vj-log" id="active-log"><!-- Phase 4 fills --></div>
+          </div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Bulk check connection</div>
+            <div class="vj-bulk-status">Last sweep · <b id="activeBulkLast">—</b> · <span id="activeBulkNew">0</span> newly accepted</div>
+            <button class="vj-bulk-btn" onclick="window.dashBulkCheck()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+              Run check now
+            </button>
+            <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
           </div>
         </div>
+      </section>
 
-        <div class="dash-panel" data-panel="schedules" id="dash-panel-schedules" role="tabpanel" hidden>
-          <div class="campaign-list" id="schedules-campaign-list">
-            <p class="empty-state">No schedules yet.</p>
+      <!-- ── MONITORING (Status Card · variant J) ─────────────────── -->
+      <section class="vj-card is-monitor is-mini" aria-labelledby="sect-monitoring" id="monitoring-section">
+        <!-- Mini-J markup (visible when .is-mini) -->
+        <div class="vj-mini-left">
+          <span class="vj-tag"><span class="dot"></span>Monitoring</span>
+          <div class="vj-mini-glyph" id="monitorMiniGlyph"></div>
+        </div>
+        <div class="vj-mini-mid">
+          <div class="vj-mini-row1">
+            <span class="name" id="monitorMiniName">No monitoring campaign</span>
+            <span class="num"><span id="monitorMiniPct">0</span><span class="pct">%</span></span>
+          </div>
+          <div class="vj-mini-row2">
+            <div class="vj-mini-bar"><i id="monitorMiniBar" style="width:0%"></i></div>
+            <span>Day <b id="monitorMiniDay">0</b> of <span id="monitorMiniDayTotal">7</span></span>
+            <span><b id="monitorMiniSent">0</b> sent</span>
+            <span><b id="monitorMiniAccepted">0</b> accepted</span>
+            <span>· next sweep <b id="sweepEtaMini">—</b></span>
           </div>
         </div>
-
-        <div class="dash-panel" data-panel="drafts" id="dash-panel-drafts" role="tabpanel" hidden>
-          <div class="campaign-list" id="drafts-campaign-list">
-            <p class="empty-state">No drafts yet.</p>
-          </div>
+        <div class="vj-mini-controls">
+          <button class="vj-toggle-btn is-resize" data-tip="Expand to full view" aria-label="Expand to full view" onclick="window.toggleMonitorMini()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
         </div>
 
-        <div class="dash-panel" data-panel="past" id="dash-panel-past" role="tabpanel" hidden>
-          <div class="campaign-list" id="past-campaign-list">
-            <p class="empty-state">No past campaigns yet.</p>
+        <!-- Full-J markup (visible when NOT .is-mini) -->
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span id="monitorEyebrow">Monitoring · 7-Day Acceptance Watch</span></span>
+          <span class="vj-when" id="monitorWhen"></span>
+        </div>
+        <div class="vj-glyph-circle" id="monitorGlyph" aria-hidden="true"></div>
+        <h2 class="vj-name" id="sect-monitoring"><span id="monitorName">No monitoring campaign</span></h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="7" aria-label="Acceptance window progress"><i id="monitorBar" style="width:0%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span id="monitorPct">0</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span>Day <b id="monitorDay">0</b> of <span id="monitorDayTotal">7</span></span>
+              <span>Next sweep in <b id="sweepEta">—</b></span>
+            </div>
+          </div>
+          <div class="vj-stats">
+            <span><b id="monitorAccounts">0</b> accounts</span>
+            <span><b id="monitorSent">0</b> sent</span>
+            <span><b id="monitorAccepted">0</b> accepted</span>
+            <span><b id="monitorReplies">0</b> replies</span>
+            <span>· <b id="watchingLbl">Idle</b> · sweeps every 30 min</span>
           </div>
         </div>
-
-        <div class="dash-panel" data-panel="all" id="dash-panel-all" role="tabpanel" hidden>
-          <div class="campaign-list" id="all-campaign-list">
-            <p class="empty-state">No campaigns yet.</p>
+        <div class="vj-controls">
+          <button class="btn-pill" onclick="window.dashOpenActive()">Open</button>
+          <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleMonitorDetails(this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="vj-toggle-btn" data-tip="Collapse to mini view" aria-label="Collapse to mini view" onclick="window.toggleMonitorMini()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          </button>
+          <div class="dock" id="dock-monitor" data-open="false" role="toolbar" aria-label="Monitoring campaign actions">
+            <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-monitor', event)">
+              <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+            </button>
+            <div class="dock-actions">
+              <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="window.dashStopMonitoring()">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Force sweep now" aria-label="Force sweep now" onclick="window.dashForceSweep()">
+                <svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyMonitorToQueue()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+        <!-- Details panel (live log + bulk check) — only visible when .is-detailed -->
+        <div class="vj-details">
+          <div>
+            <div class="vj-details-head">Live log · last sweep events</div>
+            <div class="vj-log" id="monitor-log"><!-- Phase 4 fills --></div>
+          </div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Bulk check connection</div>
+            <div class="vj-bulk-status">Last sweep · <b id="monitorBulkLast">—</b> · <span id="monitorBulkNew">0</span> newly accepted</div>
+            <button class="vj-bulk-btn" onclick="window.dashForceSweep()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+              Force sweep now
+            </button>
+            <div class="vj-bulk-hint">Skips the next scheduled sweep and checks all pending connects immediately.</div>
+          </div>
+        </div>
+      </section>
 
-      <div class="dashboard-actions">
-        <button type="button" class="btn btn-primary create-campaign-btn" onclick="startNewCampaign()">
-          + Create Campaign
-        </button>
-      </div>
+      <!-- ── UP NEXT ─────────────────────────────────────────────── -->
+      <section class="section-band is-queue" aria-labelledby="sect-queue">
+        <div class="section-rail">
+          <h2 id="sect-queue">Up Next <small><span id="queueCount">0</span> waiting</small></h2>
+          <div class="section-rail-line"></div>
+          <button class="section-rail-action" onclick="window.startNewCampaign()">+ Add to queue</button>
+        </div>
+        <div role="grid" aria-labelledby="sect-queue" id="queueList"><!-- Phase 4 fills --></div>
+      </section>
+
+      <!-- ── THIS WEEK ───────────────────────────────────────────── -->
+      <section class="section-band is-week" aria-labelledby="sect-week">
+        <div class="section-rail">
+          <h2 id="sect-week">This Week <small id="calRange"></small></h2>
+          <div class="section-rail-line"></div>
+          <div class="section-rail-cal">
+            <button onclick="window.dashCalPrev()" aria-label="Previous week">←</button>
+            <button class="today" onclick="window.dashCalToday()">Today</button>
+            <button onclick="window.dashCalNext()" aria-label="Next week">→</button>
+          </div>
+          <button class="section-rail-action" onclick="window.startNewCampaign()">+ Schedule</button>
+        </div>
+        <div class="cal-grid" id="calGrid"><!-- Phase 4 fills --></div>
+      </section>
+
+      <!-- ── PAST ────────────────────────────────────────────────── -->
+      <section class="section-band is-past" aria-labelledby="sect-past">
+        <div class="section-rail">
+          <h2 id="sect-past">Past <small><span id="pastCount">0</span> campaigns</small></h2>
+          <div class="section-rail-line"></div>
+          <button class="section-rail-action" id="past-toggle-btn" onclick="window.togglePastExpanded()">Show all</button>
+        </div>
+        <!-- Collapsed summary (default) -->
+        <div class="past-collapsed" id="pastCollapsed">
+          <div class="pc-count" id="pcCount">0<span class="pc-lbl">past</span></div>
+          <div class="pc-summary" id="pcSummary">No past campaigns yet</div>
+        </div>
+        <!-- Expanded full list (hidden by default) -->
+        <div role="grid" aria-labelledby="sect-past" id="pastList" style="display:none;"><!-- Phase 4 fills --></div>
+      </section>
     </div>
 
     <!-- ── Wizard view (route #/new) ── -->
