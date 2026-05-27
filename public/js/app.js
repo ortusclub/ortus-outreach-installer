@@ -9238,7 +9238,7 @@ window.updateSavePip = updateSavePip;
 // canonical launch surface for drafts; the section-VI Add to Queue
 // button is hidden under the same refactor.
 // ─────────────────────────────────────────────────────────────────────────
-window.updateEditingBanner = async function() {
+window.updateEditingBanner = function() {
   const banner = document.getElementById('wiz-editing-banner');
   if (!banner) return;
   const id = getActiveDraftId();
@@ -9250,30 +9250,108 @@ window.updateEditingBanner = async function() {
   const nameEl = document.getElementById('wiz-editing-name');
   if (nameEl) nameEl.textContent = (nameInput?.value || '').trim() || 'Untitled draft';
   updateSavePip();
-  // Adapt the launch button label based on whether a campaign is currently
-  // running: idle → "Start now" (immediate launch), running → "Add to queue".
-  // The backend endpoint (/api/campaign/queue-only) handles both correctly.
-  const launchBtn = banner.querySelector('.wiz-editing-launch');
-  if (launchBtn) {
-    try {
-      const r = await fetch('/api/campaign/status');
-      const s = r.ok ? await r.json() : {};
-      launchBtn.textContent = s.running ? '+ Add to queue' : '+ Start now';
-    } catch {
-      launchBtn.textContent = '+ Add to queue';
+  // Launch action is now a menu (4 options) — no need to adapt a single
+  // button label. See window.toggleLaunchMenu + handlers below.
+};
+
+/* ── Launch menu — open/close + click-outside dismiss ─────────────────── */
+window.toggleLaunchMenu = function(e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const trigger = document.getElementById('wiz-launch-trigger');
+  const menu = document.getElementById('wiz-launch-menu');
+  if (!trigger || !menu) return;
+  const opening = !menu.classList.contains('show');
+  menu.classList.toggle('show', opening);
+  trigger.classList.toggle('is-open', opening);
+  trigger.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  menu.setAttribute('aria-hidden', opening ? 'false' : 'true');
+};
+function _closeLaunchMenu() {
+  const trigger = document.getElementById('wiz-launch-trigger');
+  const menu = document.getElementById('wiz-launch-menu');
+  if (menu) { menu.classList.remove('show'); menu.setAttribute('aria-hidden', 'true'); }
+  if (trigger) { trigger.classList.remove('is-open'); trigger.setAttribute('aria-expanded', 'false'); }
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.wiz-launch-wrap')) _closeLaunchMenu();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') _closeLaunchMenu();
+});
+
+/* ── Launch menu options ──────────────────────────────────────────────── */
+
+// Start a campaign — flush autosave, then POST queue-only (auto-drains when
+// idle, queues behind a running campaign).
+window.launchStartNow = async function() {
+  _closeLaunchMenu();
+  try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before start:', err); }
+  if (typeof addToQueueCampaign === 'function') await addToQueueCampaign();
+  if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+};
+
+// Queue it — semantically distinct from Start: operator explicitly wants
+// to wait. Same backend call (queue-only handles both). Distinct toast.
+window.launchQueueIt = async function() {
+  _closeLaunchMenu();
+  try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before queue:', err); }
+  if (typeof addToQueueCampaign === 'function') await addToQueueCampaign();
+  if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+};
+
+// Schedule it — prompt for an ISO timestamp, then POST /api/schedules with
+// a one-shot cron expression matching that exact moment. Backend already
+// supports this via existing schedules infra.
+window.launchScheduleIt = async function() {
+  _closeLaunchMenu();
+  let when;
+  if (typeof promptModal === 'function') {
+    when = await promptModal({ label: 'Schedule for ISO timestamp (e.g. 2026-05-28T10:00:00Z):' });
+  } else {
+    when = window.prompt('Schedule for ISO timestamp (e.g. 2026-05-28T10:00:00Z):');
+  }
+  if (!when) return;
+  const dt = new Date(when);
+  if (Number.isNaN(dt.getTime())) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Invalid timestamp');
+    return;
+  }
+  try { await flushAutosaveImmediate(); } catch {}
+  // Build a one-shot cron for this exact date+time: M H D Mon * (DOW omitted via *)
+  const cron = `${dt.getMinutes()} ${dt.getHours()} ${dt.getDate()} ${dt.getMonth() + 1} *`;
+  const nameInput = document.getElementById('campaign-name-input');
+  const scheduleName = (nameInput?.value || '').trim() || 'Scheduled draft';
+  try {
+    const r = await fetch('/api/schedules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: scheduleName,
+        cron,
+        enabled: true,
+        // Other fields the schedules endpoint expects — operator can refine via the
+        // existing schedules UI if needed. The draft's config will be the source.
+      }),
+    });
+    if (r.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast(`Scheduled for ${dt.toLocaleString()}`);
+    } else {
+      const body = await r.json().catch(() => ({}));
+      if (typeof showCampaignToast === 'function') showCampaignToast('Schedule failed: ' + (body.error || r.statusText));
     }
+  } catch (err) {
+    console.error('[drafts] schedule:', err);
   }
 };
 
-window.launchFromBanner = async function() {
-  // 1. Flush any pending autosave so the queued config matches what's on
-  // screen (the launch flow reads wizard values directly via startCampaign).
-  try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before launch:', err); }
-  // 2. Delegate to the existing queue-only launch path. submitStartCampaign
-  // already deletes the draft and clears the active id on success.
-  if (typeof addToQueueCampaign === 'function') await addToQueueCampaign();
-  // Repaint the banner — likely hidden now that the draft was consumed.
-  if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+// Save as draft — autosave already persisted everything; this just closes
+// the wizard and returns to the dashboard. The draft stays in the drafts
+// list and the resume pill will surface it from the dashboard header.
+window.launchSaveAsDraft = function() {
+  _closeLaunchMenu();
+  // No backend call — autosave has the data. Just navigate back.
+  window.location.hash = '#/';
+  if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
 };
 
 // Keep the banner's name display in sync with live edits of the campaign
