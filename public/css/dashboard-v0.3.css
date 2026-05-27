@@ -61,6 +61,23 @@
      redefined them; overriding them in the integrated app broke the 3-column
      grid (sidebar / main / right-pane) and the existing sidebar widgets. */
 
+  /* .btn-pill — v0.3 dashboard component (Active/Monitoring "Open" button +
+     row-action pills). Not defined in style.css, so the base rule belongs
+     here. Scoped to body[data-dashboard='v3'] only. */
+  body[data-dashboard='v3'] .btn-pill {
+    background: transparent;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    padding: 7px 16px;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  body[data-dashboard='v3'] .btn-pill:hover { border-color: var(--ink); background: var(--bg); }
+
   /* ── Section bands — v0.3 unified: all sections sit on page bg with the
      same vertical rhythm. Cards inside carry the only visual weight. ─── */
   body[data-dashboard='v3'] .section-band {
