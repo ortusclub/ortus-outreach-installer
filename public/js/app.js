@@ -10330,6 +10330,294 @@ window.dashCopyMonitorToQueue = async function() {
   } catch (err) { console.error('[v3] dashCopyMonitorToQueue:', err); }
 };
 
+/* ── Up Next deck ───────────────────────────────────────────────────────── */
+
+const V3_SVG_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>';
+const V3_SVG_CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+const V3_SVG_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+const V3_SVG_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const V3_SVG_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+const V3_SVG_CHEV = '<svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+const V3_SVG_CLOCK_INLINE = '<svg class="clock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
+const V3_SVG_RESTART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>';
+const V3_SVG_DOC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>';
+const V3_SVG_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+const V3_SVG_ARCHIVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>';
+
+function v3Ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function v3FormatScheduledAt(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = Date.now();
+  const ms = d.getTime() - now;
+  if (ms < 60 * 1000) return 'starting…';
+  if (ms < 24 * 3600 * 1000) {
+    const hours = Math.round(ms / 3600 / 1000);
+    return hours <= 0 ? 'soon' : `in ${hours}h`;
+  }
+  const days = Math.round(ms / 86400 / 1000);
+  if (days === 1) return `tomorrow ${v3FmtClock(d)}`;
+  return `in ${days}d`;
+}
+
+function v3BuildQueueDock(q, isScheduled) {
+  const dockId = 'dock-queue-' + (q.id || Math.random().toString(36).slice(2));
+  const safeId = (typeof escHtml === 'function' ? escHtml(q.id || '') : (q.id || ''));
+  const safeName = (typeof escHtml === 'function' ? escHtml(q.name || '') : (q.name || ''));
+  const primaryTip = isScheduled ? 'Reschedule' : 'Start now';
+  const primarySvg = isScheduled ? V3_SVG_CAL : V3_SVG_PLAY;
+  const primaryFn = isScheduled ? 'dashRescheduleQueueItem' : 'dashStartQueueItem';
+  const otherTip = isScheduled ? 'Start now' : 'Reschedule';
+  const otherSvg = isScheduled ? V3_SVG_PLAY : V3_SVG_CAL;
+  const otherFn = isScheduled ? 'dashStartQueueItem' : 'dashRescheduleQueueItem';
+  return `
+    <div class="dock" id="${dockId}" data-open="false" role="toolbar" aria-label="${safeName} actions">
+      <button class="dock-btn" data-tip="${primaryTip}" aria-label="${primaryTip}" onclick="window.${primaryFn}('${safeId}')">${primarySvg}</button>
+      <span class="dock-sep" aria-hidden="true"></span>
+      <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('${dockId}', event)">${V3_SVG_CHEV}</button>
+      <div class="dock-actions">
+        <button class="dock-btn" data-tip="${otherTip}" aria-label="${otherTip}" onclick="window.${otherFn}('${safeId}')">${otherSvg}</button>
+        <button class="dock-btn" data-tip="Edit" aria-label="Edit" onclick="window.dashEditQueueItem('${safeId}')">${V3_SVG_PENCIL}</button>
+        <button class="dock-btn" data-tip="Duplicate" aria-label="Duplicate" onclick="window.dashDuplicateQueueItem('${safeId}')">${V3_SVG_COPY}</button>
+        <button class="dock-btn danger" data-tip="Remove" aria-label="Remove" onclick="window.dashRemoveQueueItem('${safeId}')">${V3_SVG_TRASH}</button>
+      </div>
+    </div>
+  `;
+}
+
+window.renderUpNextDeck = async function() {
+  const list = document.getElementById('queueList');
+  if (!list) return;
+  let queue = [];
+  try {
+    const r = await fetch('/api/queue');
+    const data = await r.json();
+    queue = Array.isArray(data?.queue) ? data.queue : [];
+  } catch (err) {
+    console.error('[v3] renderUpNextDeck fetch:', err);
+  }
+  v3SetText('queueCount', String(queue.length));
+
+  if (queue.length === 0) {
+    list.innerHTML = '<div class="vc-empty" style="padding:24px;color:var(--gray);font-size:13px">No queued campaigns.</div>';
+    return;
+  }
+
+  const safe = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
+
+  const parts = ['<div class="vc-stack">'];
+  queue.forEach((q, idx) => {
+    const id = safe(q.id || '');
+    const name = safe(q.name || '(unnamed)');
+    const badge = v3ModeBadge(q.mode);
+    const modeLabel = safe((typeof dashboardModeLabel === 'function' ? dashboardModeLabel(q.mode) : q.mode) || '');
+    const accountCount = (q.profileIds || []).length;
+    const isScheduled = !!q.scheduledAt;
+    const whenText = isScheduled ? v3FormatScheduledAt(q.scheduledAt) : '';
+    const eyebrowText = isScheduled
+      ? `Scheduled · ${whenText}`
+      : (idx === 0 ? 'Queued · Next up' : `Queued · ${v3Ordinal(idx + 1)}`);
+    const dockHtml = v3BuildQueueDock(q, isScheduled);
+
+    if (idx === 0) {
+      // Showcase card — top of deck
+      const queuedAt = q.queuedAt ? safe((typeof _humanAgo === 'function' ? _humanAgo(new Date(q.queuedAt).getTime()) : q.queuedAt)) : '';
+      const sheetLabel = q.sheetUrl ? safe((q.sheetUrl.match(/#gid=\d+/) ? (q.sheetUrl.split('/').slice(-1)[0] || q.sheetUrl) : q.sheetUrl).slice(0, 60)) : '—';
+      parts.push(`
+        <div class="vc-card-top${isScheduled ? ' is-scheduled' : ''}" data-queue-id="${id}" draggable="true">
+          <div class="vc-handle" aria-label="Drag to reorder" title="Drag to reorder"></div>
+          <div class="vc-top-glyph">${safe(badge)}</div>
+          <div class="vc-top-body">
+            <div class="vc-top-eyebrow${isScheduled ? ' is-scheduled' : ''}">
+              <span class="dot"></span>${safe(eyebrowText)}
+            </div>
+            <div class="vc-top-name">${name}</div>
+            <div class="vc-top-preview-dense">
+              <div class="row"><span class="k">Mode</span><span class="v"><b>${safe(badge)}</b> · ${modeLabel}</span></div>
+              <div class="row"><span class="k">Sheet</span><span class="v">${sheetLabel}</span></div>
+              <div class="row"><span class="k">Accounts</span><span class="v"><b>${accountCount}</b></span></div>
+              ${queuedAt ? `<div class="row"><span class="k">Queued</span><span class="v">${queuedAt}</span></div>` : ''}
+            </div>
+          </div>
+          ${dockHtml}
+        </div>
+      `);
+    } else {
+      const depth = idx === 1 ? 'depth-2' : 'depth-3';
+      const whenHtml = isScheduled
+        ? `${V3_SVG_CLOCK_INLINE}<b>${safe(whenText)}</b>`
+        : `Queued · ${v3Ordinal(idx + 1)}`;
+      parts.push(`
+        <div class="vc-mini ${depth}${isScheduled ? ' is-scheduled' : ''}" data-queue-id="${id}" draggable="true">
+          <div class="vc-handle" aria-label="Drag to reorder" title="Drag to reorder"></div>
+          <div class="vc-mini-glyph">${safe(badge)}</div>
+          <div class="vc-mini-name">${name}</div>
+          <div class="vc-mini-when">${whenHtml}</div>
+          ${dockHtml}
+        </div>
+      `);
+    }
+  });
+  parts.push('</div>');
+  list.innerHTML = parts.join('');
+
+  v3EnableQueueDnD();
+};
+
+function v3EnableQueueDnD() {
+  const rows = document.querySelectorAll('#queueList [data-queue-id]');
+  let dragId = null;
+  rows.forEach(row => {
+    row.addEventListener('dragstart', (e) => {
+      dragId = row.getAttribute('data-queue-id');
+      row.classList.add('is-dragging');
+      try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragId || ''); } catch {}
+    });
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'move'; } catch {}
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('is-dragging');
+    });
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const dropId = row.getAttribute('data-queue-id');
+      if (!dragId || dropId === dragId) { dragId = null; return; }
+      // Compute the new ordering: pull dragId out, insert before dropId.
+      const allRows = Array.from(document.querySelectorAll('#queueList [data-queue-id]'));
+      const ids = allRows.map(r => r.getAttribute('data-queue-id')).filter(Boolean);
+      const fromIdx = ids.indexOf(dragId);
+      if (fromIdx === -1) { dragId = null; return; }
+      ids.splice(fromIdx, 1);
+      const toIdx = ids.indexOf(dropId);
+      if (toIdx === -1) ids.push(dragId);
+      else ids.splice(toIdx, 0, dragId);
+      dragId = null;
+      try {
+        const r = await fetch('/api/queue/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          if (typeof showCampaignToast === 'function') showCampaignToast('Reorder failed: ' + (body.error || r.statusText));
+        }
+      } catch (err) {
+        console.error('[v3] queue reorder:', err);
+      }
+      if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+    });
+  });
+}
+
+window.dashStartQueueItem = async function(id) {
+  try {
+    const r = await fetch('/api/queue');
+    const data = await r.json();
+    const queue = Array.isArray(data?.queue) ? data.queue : [];
+    const ids = queue.map(q => q.id);
+    const fromIdx = ids.indexOf(id);
+    if (fromIdx === -1) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Queue item not found');
+      return;
+    }
+    if (fromIdx > 0) {
+      ids.splice(fromIdx, 1);
+      ids.unshift(id);
+      await fetch('/api/queue/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+    }
+    const launchR = await fetch('/api/queue/run-next', { method: 'POST' });
+    const body = await launchR.json().catch(() => ({}));
+    if (launchR.ok && body.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Started ' + (queue[fromIdx]?.name || ''));
+    } else {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Cannot start: ' + (body.message || body.reason || body.error || 'busy'));
+    }
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashStartQueueItem:', err); }
+};
+
+window.dashRescheduleQueueItem = async function(id) {
+  let when;
+  if (typeof promptModal === 'function') {
+    when = await promptModal({ label: 'Reschedule to ISO timestamp (e.g. 2026-05-28T10:00:00Z):' });
+  } else {
+    when = window.prompt('Reschedule to ISO timestamp (e.g. 2026-05-28T10:00:00Z):');
+  }
+  if (!when) return;
+  try {
+    const r = await fetch('/api/queue/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scheduledAt: when }),
+    });
+    if (r.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Rescheduled');
+    } else {
+      const body = await r.json().catch(() => ({}));
+      if (typeof showCampaignToast === 'function') showCampaignToast('Reschedule failed: ' + (body.error || r.statusText));
+    }
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashRescheduleQueueItem:', err); }
+};
+
+window.dashEditQueueItem = async function(id) {
+  try {
+    const r = await fetch('/api/queue/' + encodeURIComponent(id));
+    const entry = await r.json();
+    if (!entry || !entry.config) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Queue entry not found');
+      return;
+    }
+    // Open the wizard. The existing applyPresetConfig path is the cleanest
+    // hydrate hook — used by editPastCampaign as well.
+    if (typeof applyPresetConfig === 'function') {
+      applyPresetConfig({ name: entry.name, ...entry.config });
+    }
+    if (typeof goCreateCampaign === 'function') goCreateCampaign();
+    else window.location.hash = '#/new';
+  } catch (err) { console.error('[v3] dashEditQueueItem:', err); }
+};
+
+window.dashDuplicateQueueItem = async function(id) {
+  try {
+    const r = await fetch('/api/queue/' + encodeURIComponent(id));
+    const entry = await r.json();
+    if (!entry || !entry.config) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Queue entry not found');
+      return;
+    }
+    await fetch('/api/campaign/queue-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...entry.config, name: (entry.name || 'Campaign') + ' (copy)' }),
+    });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Duplicated');
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashDuplicateQueueItem:', err); }
+};
+
+window.dashRemoveQueueItem = async function(id) {
+  if (!confirm('Remove from queue?')) return;
+  try {
+    await fetch('/api/queue/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Removed');
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashRemoveQueueItem:', err); }
+};
+
 // toggleDock — shared dock open/close + click-outside dismissal. Used by Active,
 // Monitoring, Up Next item docks, and Past row docks.
 if (typeof window.toggleDock !== 'function') {
