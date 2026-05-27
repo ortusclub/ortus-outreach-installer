@@ -27,24 +27,58 @@ let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
 
+// ─────────────────────────────────────────────────────────────────────────
+// Draft state: activeDraftId is the single source of truth for which draft
+// the wizard is currently editing. Set by startNewCampaign(), editDraft(),
+// or by clicking the resume pill. Cleared by launching the draft (via
+// /api/campaign/queue-only) or by explicit cancel.
+//
+// 2026-05-27 (drafts-isolation): replaces the brittle `currentDraftIsNew`
+// localStorage flag that conflated "is this a new draft?" with "should
+// save create a row?". The legacy `currentDraftId` key is still written
+// alongside for back-compat with code paths that read it directly (sync
+// helpers, edit/delete confirmations, etc.) — both are kept in lock-step
+// by the helpers below.
+// ─────────────────────────────────────────────────────────────────────────
+const ACTIVE_DRAFT_KEY = 'ortus.activeDraftId';
+
+function getActiveDraftId() {
+  try {
+    // Prefer the new key; fall back to the legacy `currentDraftId` so any
+    // residual state from a pre-refactor session still resolves.
+    return localStorage.getItem(ACTIVE_DRAFT_KEY)
+      || localStorage.getItem('currentDraftId')
+      || null;
+  } catch { return null; }
+}
+
+function setActiveDraftId(id) {
+  try {
+    if (id) {
+      localStorage.setItem(ACTIVE_DRAFT_KEY, id);
+      localStorage.setItem('currentDraftId', id); // back-compat mirror
+    } else {
+      localStorage.removeItem(ACTIVE_DRAFT_KEY);
+      localStorage.removeItem('currentDraftId');
+    }
+  } catch {}
+}
+
+function clearActiveDraft() { setActiveDraftId(null); }
+
 // True when the wizard route is showing a campaign that is NOT the currently
 // running one — used to blank the live status / log / right-pane / runbar
 // identity / button state so the running campaign's data doesn't bleed in.
-// Triggers when:
-//   1. currentDraftIsNew flag set (fresh draft via startNewCampaign), OR
-//   2. currentDraftId set (editing a saved draft or stopped campaign — both
-//      are by definition NOT the running campaign).
-// The running campaign's own Edit button (from the Active tab) clears
-// currentDraftId before navigating so this returns false there and the
+// True whenever there's an active draft in the wizard (new or loaded). The
+// running campaign's own Edit button (from the Active tab) clears the
+// active-draft id before navigating so this returns false there and the
 // live data shows through. Phase 6.1 of the parallel-campaigns refactor
 // replaces this heuristic with proper id comparison once the registry
 // tracks per-campaign run state.
 function isOnNewCampaignView() {
   try {
     if (typeof location === 'undefined' || location.hash !== '#/new') return false;
-    if (localStorage.getItem('currentDraftIsNew') === '1') return true;
-    if (localStorage.getItem('currentDraftId')) return true;
-    return false;
+    return !!getActiveDraftId();
   } catch { return false; }
 }
 let localBrowserFirstName = (typeof localStorage !== 'undefined' && localStorage.getItem('localBrowserFirstName')) || '';
@@ -3038,12 +3072,11 @@ async function submitStartCampaign(body, opts = {}) {
     // Also clear the new-campaign flag — once Start is pressed, the live
     // status / log gates should stop blanking and show the running data.
     try {
-      const draftId = localStorage.getItem('currentDraftId') || '';
+      const draftId = getActiveDraftId();
       if (draftId) {
         await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
-        localStorage.removeItem('currentDraftId');
       }
-      localStorage.removeItem('currentDraftIsNew');
+      clearActiveDraft();
       localStorage.removeItem('wizardStoppedFromContext');
     } catch {}
     wizardDirty = false;
@@ -7083,9 +7116,7 @@ async function deleteDraft(id) {
   }
   // If the wizard is currently editing this draft, drop the reference.
   try {
-    if (localStorage.getItem('currentDraftId') === id) {
-      localStorage.removeItem('currentDraftId');
-    }
+    if (getActiveDraftId() === id) clearActiveDraft();
   } catch {}
   refreshDashboardDrafts();
   if (typeof renderDashboardAll === 'function') renderDashboardAll();
@@ -7097,16 +7128,14 @@ window.deleteDraft = deleteDraft;
 // / log / runbar / buttons all reflect the running campaign instead of
 // the previously-edited draft. Used by the Active tab's Edit button.
 function viewRunningCampaign() {
-  try { localStorage.removeItem('currentDraftId'); } catch {}
-  try { localStorage.removeItem('currentDraftIsNew'); } catch {}
+  clearActiveDraft();
   goCreateCampaign();
 }
 window.viewRunningCampaign = viewRunningCampaign;
 
 async function editDraft(id) {
   if (!id) return;
-  try { localStorage.setItem('currentDraftId', id); } catch {}
-  try { localStorage.removeItem('currentDraftIsNew'); } catch {}
+  setActiveDraftId(id);
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   wizardDirty = false;
   _runningEditWarningShown = false;
@@ -7375,9 +7404,7 @@ async function editQueuedCampaign(id) {
       draftId = data?.draft?.id || '';
     }
   } catch {}
-  if (draftId) {
-    try { localStorage.setItem('currentDraftId', draftId); } catch {}
-  }
+  if (draftId) setActiveDraftId(draftId);
 
   const nameInput = document.getElementById('campaign-name-input');
   if (nameInput) nameInput.value = entry.name || '';
@@ -8411,11 +8438,10 @@ async function startNewCampaign() {
     });
     if (r.ok) {
       const data = await r.json();
-      try { localStorage.setItem('currentDraftId', data?.draft?.id || ''); } catch {}
+      setActiveDraftId(data?.draft?.id || '');
     }
   } catch { /* fall through; wizard still works without a draft id */ }
   try { localStorage.removeItem('campaignName'); } catch {}
-  try { localStorage.setItem('currentDraftIsNew', '1'); } catch {}
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   wizardDirty = false;
   _runningEditWarningShown = false;
@@ -8958,45 +8984,36 @@ window.goDashboard = goDashboard;
 async function syncCampaignNameInput() {
   const input = document.getElementById('campaign-name-input');
   if (!input) return;
-  // When the operator just clicked "+ New Campaign", every fallback below
-  // is wrong — the previous campaign's name (running, last-status, or
-  // localStorage) MUST NOT bleed into the fresh wizard. Just leave blank
-  // and let the operator type. Cleared on first editDraft via the same flag.
-  let isNewCampaign = false;
-  try { isNewCampaign = localStorage.getItem('currentDraftIsNew') === '1'; } catch {}
-  if (isNewCampaign) {
-    input.value = '';
+  // 2026-05-27 (drafts-isolation): when an active draft id is set (whether
+  // freshly created by startNewCampaign or loaded by editDraft), the draft
+  // row IS the source of truth — fetch its name and use it verbatim (empty
+  // string for a fresh draft). Skip the running-status / legacy / cached
+  // fallbacks so the previous campaign's name doesn't bleed in.
+  const activeId = getActiveDraftId();
+  if (activeId) {
+    let nm = '';
+    try {
+      const r = await fetch('/api/drafts/' + encodeURIComponent(activeId));
+      if (r.ok) nm = (await r.json())?.name || '';
+      else if (r.status === 404) {
+        // Draft was deleted from the dashboard while wizard was open.
+        clearActiveDraft();
+      }
+    } catch {}
+    input.value = nm;
     return;
   }
   let value = '';
   let isRunning = false;
-  let draftId = '';
-  try { draftId = localStorage.getItem('currentDraftId') || ''; } catch {}
-  // Active draft (multi-draft store) wins — that's the entry the wizard
-  // is currently editing. Fall back to the running campaign name (only
-  // when no campaign is running, so we don't make the wizard look like an
-  // edit form for the active run), then to legacy single-draft, then to
-  // localStorage.
-  if (draftId) {
-    try {
-      const r = await fetch('/api/drafts/' + encodeURIComponent(draftId));
-      if (r.ok) value = (await r.json())?.name || '';
-      else if (r.status === 404) {
-        // Draft was deleted from the dashboard while wizard was open.
-        try { localStorage.removeItem('currentDraftId'); } catch {}
-      }
-    } catch {}
-  }
   try {
     const sRes = await fetch('/api/campaign/status');
     if (sRes.ok) {
       const status = await sRes.json();
       isRunning = !!(status.running || status.paused);
       // v2.59: drop the !isRunning gate. The Active tab's Edit button calls
-      // viewRunningCampaign() which clears currentDraftId — so falling
+      // viewRunningCampaign() which clears the active draft id — so falling
       // through to status.name here is exactly how we surface the running
-      // campaign's name in the wizard. New-campaign view is already
-      // short-circuited by the currentDraftIsNew early-return above.
+      // campaign's name in the wizard.
       if (!value && status.name) value = status.name;
     }
   } catch {}
@@ -9033,8 +9050,7 @@ window.syncCampaignNameInput = syncCampaignNameInput;
 function isViewingRunningCampaign() {
   try {
     if (typeof location === 'undefined' || location.hash !== '#/new') return false;
-    if (localStorage.getItem('currentDraftId')) return false;
-    if (localStorage.getItem('currentDraftIsNew') === '1') return false;
+    if (getActiveDraftId()) return false;
     return !!(typeof __cockpit !== 'undefined' && __cockpit && (__cockpit.running || __cockpit.paused));
   } catch { return false; }
 }
@@ -9155,11 +9171,10 @@ async function saveDraftName() {
       }
     } catch {}
 
-    // Persist to the new multi-draft store under the wizard's current
+    // Persist to the new multi-draft store under the wizard's active
     // draft id (set by startNewCampaign or editDraft). If somehow there
     // isn't one (legacy state), spin one up so this Save sticks.
-    let draftId = '';
-    try { draftId = localStorage.getItem('currentDraftId') || ''; } catch {}
+    let draftId = getActiveDraftId() || '';
     if (draftId) {
       try {
         const r = await fetch('/api/drafts/' + encodeURIComponent(draftId), {
@@ -9193,7 +9208,7 @@ async function saveDraftName() {
         }
         if (r.ok) {
           const data = await r.json();
-          try { localStorage.setItem('currentDraftId', data?.draft?.id || ''); } catch {}
+          setActiveDraftId(data?.draft?.id || '');
         }
       } catch (err) {
         if (err && /running/i.test(err.message || '')) throw err;
