@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
-import { relaunchHistoryEntry } from './src/history-helpers.js';
+import { relaunchHistoryEntry, archiveHistoryEntry, listHistory } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
@@ -2396,10 +2396,14 @@ app.delete('/api/schedules/:id', async (req, res) => {
 // ---------------------------------------------------------------------------
 const HISTORY_PATH = dataPath('history.json');
 
-app.get('/api/history', async (_req, res) => {
+// v2.60.0 — Added optional ?includeArchived=false to hide soft-archived
+// entries. Default behaviour (no query param) is unchanged: returns ALL
+// entries, including archived, so existing callers keep working.
+app.get('/api/history', async (req, res) => {
   try {
-    const raw = await readFile(HISTORY_PATH, 'utf-8');
-    res.json(JSON.parse(raw));
+    const includeArchived = req.query.includeArchived !== 'false';
+    const list = await listHistory({ includeArchived });
+    res.json(list);
   } catch {
     res.json([]);
   }
@@ -2507,6 +2511,24 @@ app.post('/api/history/:idx/relaunch', async (req, res) => {
       message: `Queued "${result.entry.name}"`,
       entry: result.entry,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.60.0 — Soft-archive a past campaign so it disappears from the
+// dashboard's "Past" section without losing the underlying history record.
+// Pair with GET /api/history?includeArchived=false to hide it from the UI.
+app.patch('/api/history/:idx/archive', async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const result = await archiveHistoryEntry(idx);
+    if (!result.ok) {
+      if (result.code === 'invalid_idx') return res.status(400).json({ error: 'Invalid idx' });
+      if (result.code === 'out_of_range') return res.status(404).json({ error: 'No such history entry' });
+      return res.status(500).json({ error: 'unknown_error' });
+    }
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
