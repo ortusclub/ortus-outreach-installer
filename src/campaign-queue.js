@@ -63,6 +63,34 @@ export async function removeFromQueue(id) {
   return true;
 }
 
+// Patch a queued entry by id. Only a small allow-list of keys can be
+// changed so an HTTP client can't mutate sensitive fields (owner, id,
+// queuedAt). `config` is shallow-merged into the existing config so the
+// dashboard's "edit queued campaign" flow can change one field without
+// having to round-trip the whole object.
+const ALLOWED_PATCH_KEYS = new Set(['name', 'scheduledAt', 'config']);
+
+export async function updateQueueEntry(id, patch) {
+  if (!patch || typeof patch !== 'object') {
+    throw new Error('updateQueueEntry: patch must be an object');
+  }
+  for (const k of Object.keys(patch)) {
+    if (!ALLOWED_PATCH_KEYS.has(k)) {
+      throw new Error(`updateQueueEntry: unknown key "${k}"`);
+    }
+  }
+  await load();
+  const idx = cache.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  if (patch.name !== undefined) cache[idx].name = patch.name;
+  if (patch.scheduledAt !== undefined) cache[idx].scheduledAt = patch.scheduledAt;
+  if (patch.config !== undefined) {
+    cache[idx].config = { ...cache[idx].config, ...patch.config };
+  }
+  await persist();
+  return cache[idx];
+}
+
 export async function popNext() {
   await load();
   if (cache.length === 0) return null;

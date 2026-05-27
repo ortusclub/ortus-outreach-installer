@@ -19,7 +19,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
-import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, popNext as popNextQueued } from './src/campaign-queue.js';
+import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
@@ -889,6 +889,21 @@ app.delete('/api/queue/:id', async (req, res) => {
     res.json({ ok });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.60.0 — Edit a queued campaign entry. Body: subset of
+// { name, scheduledAt, config } — any unknown keys are rejected by the
+// helper. Used by the dashboard v0.3 "Edit" / "Reschedule" affordances
+// on queue rows. Validation lives in updateQueueEntry; this handler
+// just translates throws/null into HTTP status codes.
+app.patch('/api/queue/:id', async (req, res) => {
+  try {
+    const updated = await updateQueueEntry(req.params.id, req.body || {});
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, entry: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
