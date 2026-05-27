@@ -2106,7 +2106,6 @@ const MODE_LIST = [
   {
     value: 'check_status',
     name: 'Check Status',
-    comingSoon: true,
     bullets: [
       'Verify which pending requests were accepted',
       'Updates the lead sheet automatically',
@@ -2116,7 +2115,6 @@ const MODE_LIST = [
   {
     value: 'message_only',
     name: 'Message Only',
-    comingSoon: true,
     bullets: [
       'Follow-up messages to 1st-degree connections',
       'Skips pending or not-yet-connected leads',
@@ -2126,27 +2124,24 @@ const MODE_LIST = [
   {
     value: 'inmail_only',
     name: 'InMail Only',
-    comingSoon: true,
     bullets: [
       'Premium InMail to non-connected targets',
       'Consumes InMail credits per send',
-      'Use during passover windows',
+      'Experimental — limited automated test coverage',
     ],
   },
   {
     value: 'open_profile_only',
     name: 'Open Profile Message',
-    comingSoon: true,
     bullets: [
       'Free direct message to Open Profile members',
       'No connection required, no credits used',
-      'Optional fallback to a connect request',
+      'Experimental — needs Sales Nav · limited test coverage',
     ],
   },
   {
     value: 'check_dms',
     name: 'Check DMs',
-    comingSoon: true,
     bullets: [
       'Scan LinkedIn inboxes for new replies',
       'Append new messages to the Replies tab',
