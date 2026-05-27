@@ -9238,7 +9238,7 @@ window.updateSavePip = updateSavePip;
 // canonical launch surface for drafts; the section-VI Add to Queue
 // button is hidden under the same refactor.
 // ─────────────────────────────────────────────────────────────────────────
-window.updateEditingBanner = function() {
+window.updateEditingBanner = async function() {
   const banner = document.getElementById('wiz-editing-banner');
   if (!banner) return;
   const id = getActiveDraftId();
@@ -9250,6 +9250,19 @@ window.updateEditingBanner = function() {
   const nameEl = document.getElementById('wiz-editing-name');
   if (nameEl) nameEl.textContent = (nameInput?.value || '').trim() || 'Untitled draft';
   updateSavePip();
+  // Adapt the launch button label based on whether a campaign is currently
+  // running: idle → "Start now" (immediate launch), running → "Add to queue".
+  // The backend endpoint (/api/campaign/queue-only) handles both correctly.
+  const launchBtn = banner.querySelector('.wiz-editing-launch');
+  if (launchBtn) {
+    try {
+      const r = await fetch('/api/campaign/status');
+      const s = r.ok ? await r.json() : {};
+      launchBtn.textContent = s.running ? '+ Add to queue' : '+ Start now';
+    } catch {
+      launchBtn.textContent = '+ Add to queue';
+    }
+  }
 };
 
 window.launchFromBanner = async function() {
