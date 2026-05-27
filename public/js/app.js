@@ -10626,6 +10626,34 @@ window.dashResumeDraft = function() {
   else window.location.hash = '#/new';
 };
 
+// Delete the active draft from the dashboard resume-pill. Same call as the
+// drafts-list delete, just rooted at the pill so the operator doesn't need
+// to navigate anywhere to throw away an unfinished draft.
+window.dashDeleteDraftFromPill = async function() {
+  const id = getActiveDraftId();
+  if (!id) return;
+  // Pull the name for the confirm prompt — falls back to the pill text if
+  // the network call fails.
+  let name = '';
+  try {
+    const r = await fetch('/api/drafts/' + encodeURIComponent(id));
+    if (r.ok) {
+      const d = await r.json();
+      name = d?.name || '';
+    }
+  } catch {}
+  if (!name) name = document.getElementById('resume-draft-name')?.textContent?.trim() || 'this draft';
+  if (!confirm(`Delete draft "${name}"? This can't be undone.`)) return;
+  try {
+    await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
+  } catch (err) {
+    console.warn('[drafts] delete from pill:', err);
+  }
+  clearActiveDraft();
+  if (typeof window.renderResumeDraftPill === 'function') window.renderResumeDraftPill();
+  if (typeof showCampaignToast === 'function') showCampaignToast('Draft deleted');
+};
+
 function v3RenderPastRow(p, displayIdx, safe) {
   const oIdx = p._originalIdx;
   const ago = (typeof _humanAgo === 'function' && p.date) ? _humanAgo(new Date(p.date).getTime()) : '';

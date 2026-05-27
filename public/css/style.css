@@ -4755,28 +4755,39 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
  * Resume-draft pill in dashboard header (variant A). Hidden by default;
  * window.renderResumeDraftPill flips display when an active draft exists.
  * ────────────────────────────────────────────────────────────────────────*/
+/* Outer wrapper — split-button pattern. Resume on the left, delete on the
+   right, hairline separator between. Whole pill keeps the hairline border. */
 .resume-draft-pill {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: transparent;
+  margin-right: 12px;
+  transition: border-color 0.12s;
+  overflow: hidden;
+}
+.resume-draft-pill:hover { border-color: var(--ink); }
+
+/* Main resume button (clickable area showing the draft name) */
+.resume-draft-main {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  padding: 8px 16px;
+  padding: 8px 14px 8px 16px;
   background: transparent;
+  border: none;
   color: var(--ink);
   font-family: var(--mono);
   font-size: 0.62rem;
   letter-spacing: 0.04em;
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-  margin-right: 12px;
+  transition: background 0.12s;
 }
-.resume-draft-pill:hover {
-  border-color: var(--ink);
-  background: rgba(255, 255, 255, 0.05);
-}
-body.theme-light .resume-draft-pill:hover { background: rgba(0, 0, 0, 0.04); }
-.resume-draft-icon { width: 12px; height: 12px; color: var(--gold); }
+.resume-draft-main:hover { background: rgba(255, 255, 255, 0.05); }
+body.theme-light .resume-draft-main:hover { background: rgba(0, 0, 0, 0.04); }
+
+.resume-draft-icon { width: 12px; height: 12px; color: var(--gold); flex: 0 0 auto; }
 .resume-draft-lbl {
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -4789,4 +4800,26 @@ body.theme-light .resume-draft-pill:hover { background: rgba(0, 0, 0, 0.04); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Separator + delete button */
+.resume-draft-sep {
+  width: 1px;
+  background: var(--hairline);
+  margin: 6px 0;
+  flex: 0 0 auto;
+}
+.resume-draft-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  color: var(--gray);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.resume-draft-del svg { width: 13px; height: 13px; pointer-events: none; }
+.resume-draft-del:hover { color: var(--red); background: rgba(248, 81, 73, 0.10); }
+body.theme-light .resume-draft-del:hover { background: rgba(248, 81, 73, 0.08); }
 
