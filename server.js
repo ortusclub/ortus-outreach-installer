@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
-import { relaunchHistoryEntry, archiveHistoryEntry, listHistory } from './src/history-helpers.js';
+import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
@@ -2529,6 +2529,25 @@ app.patch('/api/history/:idx/archive', async (req, res) => {
       return res.status(500).json({ error: 'unknown_error' });
     }
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.60.0 — Per-campaign filtered slice of data/campaign.log. The dashboard
+// v0.3 Past dock "Open log" action calls this to show what a finished run
+// actually did without dumping the entire shared log. Capped at last 500
+// matching lines for UI responsiveness; { lines, name, total } in body.
+app.get('/api/history/:idx/log', async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const result = await readCampaignLog(idx);
+    if (!result.ok) {
+      if (result.code === 'invalid_idx') return res.status(400).json({ error: 'Invalid idx' });
+      if (result.code === 'out_of_range') return res.status(404).json({ error: 'No such history entry' });
+      return res.status(500).json({ error: 'unknown_error' });
+    }
+    res.json({ lines: result.lines, name: result.name, total: result.total });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
