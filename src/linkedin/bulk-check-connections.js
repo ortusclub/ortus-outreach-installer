@@ -77,6 +77,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   let dbgRowsScanned = 0, dbgWithUrl = 0, dbgWithCRS = 0;
   let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
   let dbgAlreadyIntroduced = 0;
+  let dbgAlreadyUnverified = 0;
   const sampleSheetSlugs = [];
   const sampleSheetMemberIds = [];
   const sampleCRSValues = new Set();
@@ -97,6 +98,14 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       || row['CC'] || row['cc'] || ''
     ).toString().trim();
     if (cs === 'Connection Declined') { dbgAlreadyDeclined++; continue; }
+    // v2.61.0: sticky downgrade — auto-intro.js writes this exact prefix when
+    // reverify confirms a Connected stamp was a false positive. Leaving the
+    // row alone means subsequent bulk-check passes can't restamp Connected
+    // even if Voyager still returns the URN. Operator clears the cell to retry.
+    if (cs.startsWith('Unverified — manual review')) {
+      dbgAlreadyUnverified++;
+      continue;
+    }
 
     const slug = publicIdFromUrl(url);
     const rowUrn = (row['LinkedIn URN'] || row['linkedin urn'] || '').toString();
@@ -241,6 +250,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       alreadyConnected: dbgAlreadyConnected,
       alreadyDeclined: dbgAlreadyDeclined,
       alreadyIntroduced: dbgAlreadyIntroduced,
+      alreadyUnverified: dbgAlreadyUnverified,
       pidMatched: dbgPidMatched,
       slugs: connectedSlugs.size,
       memberIds: connectedMemberIds.size,
@@ -354,7 +364,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     }
   );
 
-  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
+  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyUnverified=${diag.alreadyUnverified}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);

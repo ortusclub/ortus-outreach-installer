@@ -207,3 +207,25 @@ test('row marked "Already connected" + introduction already made: skipped (no re
   assert.equal(connectedUrls.length, 0, 'intro-already-made rows not re-pushed');
   assert.equal(updates.length, 0, 'no re-stamp');
 });
+
+test('sticky downgrade: row with CC starting with "Unverified — manual review" is skipped before isMatch', () => {
+  const downgradedRow = baseRow({
+    'First Name': 'Jane',
+    'Last Name': 'Doe',
+    'LinkedIn URL': 'https://linkedin.com/in/jane-doe',
+    'Connection Request Status': 'Connection Request Sent',
+    'Connection Accepted Status': 'Unverified — manual review (May 27th, 2026)',
+  });
+  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+    [downgradedRow], baseConns, linkedinColumn, stillPendingLabel, {}
+  );
+  assert.ok(
+    !connectedUrls.includes('https://linkedin.com/in/jane-doe'),
+    'downgraded row must NOT be queued for auto-intro'
+  );
+  assert.ok(
+    !updates.some((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe'),
+    'downgraded row must NOT receive any stamp write this pass'
+  );
+  assert.equal(diag.alreadyUnverified, 1, 'diag counter should record the skip');
+});
