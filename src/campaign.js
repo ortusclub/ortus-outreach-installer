@@ -483,7 +483,7 @@ export const campaign = {
 // actually contributed in this run, not the same as the selected
 // profileIds. Registry.activeProfileIds() reads it directly.
 Object.defineProperty(campaign, 'status', {
-  enumerable: true,
+  enumerable: false,
   configurable: true,
   get() {
     if (this._paused || this._pauseRequested) return 'paused';
