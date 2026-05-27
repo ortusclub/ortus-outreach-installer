@@ -75,3 +75,20 @@ test('computePillState: precedence — paused beats throttle', () => {
   const r = computePillState({ ...baseStatus, paused: true, throttle: { active: true, reason: 'x' } });
   assert.equal(r.dot, 'gray');
 });
+
+// ── shouldShowConsole ────────────────────────────────────────────────────
+test('shouldShowConsole: hidden when no campaign running', () => {
+  assert.equal(shouldShowConsole({ running: false, hash: '#/new' }), false);
+});
+
+test('shouldShowConsole: hidden on dashboard hash (#/) even when running', () => {
+  assert.equal(shouldShowConsole({ running: true, hash: '#/' }), false);
+});
+
+test('shouldShowConsole: hidden on empty hash (treated as dashboard)', () => {
+  assert.equal(shouldShowConsole({ running: true, hash: '' }), false);
+});
+
+test('shouldShowConsole: visible when running and off dashboard', () => {
+  assert.equal(shouldShowConsole({ running: true, hash: '#/new' }), true);
+});

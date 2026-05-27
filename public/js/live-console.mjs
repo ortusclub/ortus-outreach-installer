@@ -75,6 +75,8 @@ function _emptyState() {
   };
 }
 
-export function shouldShowConsole(_args) {
-  throw new Error('not implemented');
+export function shouldShowConsole({ running, hash }) {
+  if (!running) return false;
+  const onDashboard = hash === '#/' || hash === '' || hash == null;
+  return !onDashboard;
 }
