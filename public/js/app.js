@@ -11015,6 +11015,78 @@ function renderLiveConsole(s) {
     }
   }
 
+  // Detect running → idle transition: clear localStorage so the next campaign
+  // starts collapsed regardless of how the last one was left.
+  if (_lcPrevRunning && !running) {
+    _lcClearExpanded();
+    _lcApplyState(false);
+  }
+
   _lcPrevRunning = running;
+}
+
+// ── Live console: persistence + interaction ──────────────────────────────
+const LC_LS_KEY = 'liveConsole.expanded';
+
+function _lcReadExpanded() {
+  try { return localStorage.getItem(LC_LS_KEY) === '1'; }
+  catch { return false; }
+}
+function _lcWriteExpanded(expanded) {
+  try { localStorage.setItem(LC_LS_KEY, expanded ? '1' : '0'); } catch { /* */ }
+}
+function _lcClearExpanded() {
+  try { localStorage.removeItem(LC_LS_KEY); } catch { /* */ }
+}
+
+function _lcApplyState(expanded) {
+  const root = document.getElementById('live-console');
+  if (!root) return;
+  root.classList.toggle('is-expanded', expanded);
+  root.classList.toggle('is-collapsed', !expanded);
+}
+
+function _lcExpand()   { _lcApplyState(true);  _lcWriteExpanded(true);  }
+function _lcCollapse() { _lcApplyState(false); _lcWriteExpanded(false); }
+
+function _lcInit() {
+  const root = document.getElementById('live-console');
+  if (!root) return;
+
+  // Restore expand state from localStorage on init.
+  _lcApplyState(_lcReadExpanded());
+
+  // Click pill → expand. Click collapse button → collapse.
+  // Click dashboard link → goDashboard() (defined elsewhere in app.js).
+  const pillBtn = root.querySelector('[data-lc="pill"]');
+  if (pillBtn) pillBtn.addEventListener('click', _lcExpand);
+
+  const collapseBtn = root.querySelector('[data-lc="collapse"]');
+  if (collapseBtn) collapseBtn.addEventListener('click', _lcCollapse);
+
+  const dashLink = root.querySelector('[data-lc="dash"]');
+  if (dashLink) dashLink.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    if (typeof goDashboard === 'function') goDashboard();
+    else window.location.hash = '#/';
+  });
+
+  // Re-evaluate visibility when the route changes.
+  window.addEventListener('hashchange', () => {
+    const root2 = document.getElementById('live-console');
+    if (!root2) return;
+    if (!shouldShowConsole({ running: _lcPrevRunning, hash: location.hash || '' })) {
+      root2.hidden = true;
+    } else {
+      root2.hidden = false;
+    }
+  });
+}
+
+// Initialize once DOM is ready.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _lcInit);
+} else {
+  _lcInit();
 }
 
