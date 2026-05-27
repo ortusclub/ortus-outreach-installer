@@ -177,7 +177,7 @@
              renderResumeDraftBadge() in app.js. -->
         <div class="dashboard-new-wrap">
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
-          <button type="button" class="resume-draft-badge" id="resume-draft-badge" style="display:none;" onclick="event.stopPropagation(); window.dashResumeDraft();" title="Resume draft">
+          <button type="button" class="resume-draft-badge" id="resume-draft-badge" style="display:none;" onclick="event.stopPropagation(); window.dashResumeDraft();" data-tip="Resume draft" aria-label="Resume draft">
             <span id="resume-draft-badge-count">1</span>
             <span class="resume-draft-name" id="resume-draft-name" hidden></span>
           </button>

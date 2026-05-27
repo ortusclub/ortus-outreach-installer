@@ -10637,7 +10637,7 @@ window.renderResumeDraftPill = async function() {
     const draft = await r.json();
     const nm = (draft && draft.name ? String(draft.name) : '').trim() || 'Untitled draft';
     if (nameEl) nameEl.textContent = nm.slice(0, 32);
-    badge.title = `Resume draft — ${nm}`;
+    badge.setAttribute('data-tip', `Resume draft — ${nm}`);
     badge.style.display = 'inline-flex';
   } catch (err) {
     console.warn('[drafts] resume-badge fetch:', err);
