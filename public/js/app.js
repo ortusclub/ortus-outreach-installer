@@ -10827,6 +10827,224 @@ window.dashCalChipClick = function(chip, event) {
   }
 };
 
+/* ── Past section ───────────────────────────────────────────────────────── */
+
+let _v3PastEntries = []; // cached for handlers (display order: newest-first)
+
+window.renderPastSection = async function() {
+  const collapsedEl = document.getElementById('pastCollapsed');
+  const listEl = document.getElementById('pastList');
+  const countEl = document.getElementById('pastCount');
+  if (!collapsedEl || !listEl) return;
+
+  let all = [];
+  try {
+    const r = await fetch('/api/history?includeArchived=false');
+    if (r.ok) all = await r.json();
+  } catch (err) {
+    console.error('[v3] renderPastSection fetch:', err);
+  }
+  if (!Array.isArray(all)) all = [];
+
+  // Display newest-first. Track each entry's ORIGINAL on-disk idx — matches
+  // existing refreshPastCampaigns convention (data.map((c, idx) => ...)) so
+  // /api/history/:idx/{archive,relaunch,log} hit the right record.
+  _v3PastEntries = all.map((entry, onDiskIdx) => ({ ...entry, _originalIdx: onDiskIdx }))
+                      .slice().reverse();
+
+  if (countEl) countEl.textContent = String(_v3PastEntries.length);
+
+  // Collapsed summary (default state)
+  const pcCount = document.getElementById('pcCount');
+  const pcSummary = document.getElementById('pcSummary');
+  if (_v3PastEntries.length === 0) {
+    if (pcCount) pcCount.innerHTML = '0<span class="pc-lbl">past</span>';
+    if (pcSummary) pcSummary.innerHTML = 'no finished campaigns yet';
+  } else {
+    const latest = _v3PastEntries[0];
+    const ago = (typeof _humanAgo === 'function' && latest.date) ? _humanAgo(new Date(latest.date).getTime()) : '';
+    const isStopped = (latest.endReason === 'stopped' || latest.fullStop);
+    let rate;
+    if (isStopped) {
+      rate = '<b>stopped early</b>';
+    } else if (latest.totalProcessed && latest.totalProcessed > 0) {
+      const r = ((latest.successCount || 0) / latest.totalProcessed) * 100;
+      rate = '<b>' + r.toFixed(1) + '%</b> reply rate';
+    } else {
+      rate = '<b>—</b>';
+    }
+    const safe = (typeof escHtml === 'function') ? escHtml : (s) => String(s || '');
+    if (pcCount) pcCount.innerHTML = _v3PastEntries.length + '<span class="pc-lbl">past</span>';
+    if (pcSummary) pcSummary.innerHTML = 'last finished <b>' + safe(latest.name || '') + '</b> · ' + safe(ago) + ' · ' + rate;
+  }
+
+  // Expanded list (rendered always; visibility toggled by togglePastExpanded)
+  const safe = (typeof escHtml === 'function') ? escHtml : (s) => String(s || '');
+  const rows = _v3PastEntries.map((p, displayIdx) => v3RenderPastRow(p, displayIdx, safe)).join('');
+  listEl.innerHTML = '<div class="pa-list">' + rows + '</div>';
+};
+
+function v3RenderPastRow(p, displayIdx, safe) {
+  const oIdx = p._originalIdx;
+  const ago = (typeof _humanAgo === 'function' && p.date) ? _humanAgo(new Date(p.date).getTime()) : '';
+  const isStopped = (p.endReason === 'stopped' || p.fullStop);
+  const sent = p.totalProcessed || 0;
+  const replies = p.successCount || 0;
+  let rateHtml;
+  if (isStopped) {
+    rateHtml = '<div class="pa-stopped">Stopped early</div>';
+  } else if (sent > 0) {
+    const r = (replies / sent) * 100;
+    rateHtml = `<div class="pa-rate">${r.toFixed(1)}<span class="pct">%</span></div>`;
+  } else {
+    rateHtml = `<div class="pa-rate">—</div>`;
+  }
+  const dockId = 'dock-past-' + oIdx;
+  return `
+    <div class="pa-row">
+      <div class="glyph">${safe(v3ModeBadge(p.mode))}</div>
+      <div class="pa-name">${safe(p.name || '(unnamed)')}</div>
+      <div class="pa-when">${safe(ago)}</div>
+      <div class="pa-stats"><b>${sent}</b> sent · <b>${replies}</b> replies</div>
+      ${rateHtml}
+      <div class="dock" id="${dockId}" data-open="false" role="toolbar" aria-label="${safe(p.name || '')} actions">
+        <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx})">${V3_SVG_RESTART}</button>
+        <span class="dock-sep" aria-hidden="true"></span>
+        <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('${dockId}', event)">${V3_SVG_CHEV}</button>
+        <div class="dock-actions">
+          <button class="dock-btn" data-tip="Open log" aria-label="Open log" onclick="window.dashOpenPastLog(${oIdx})">${V3_SVG_DOC}</button>
+          <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyPastToQueue(${oIdx})">${V3_SVG_COPY}</button>
+          <button class="dock-btn" data-tip="Export CSV" aria-label="Export CSV" onclick="window.dashExportPast(${oIdx})">${V3_SVG_DOWNLOAD}</button>
+          <button class="dock-btn danger" data-tip="Archive" aria-label="Archive" onclick="window.dashArchivePast(${oIdx})">${V3_SVG_ARCHIVE}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+window.togglePastExpanded = function() {
+  const collapsedEl = document.getElementById('pastCollapsed');
+  const listEl = document.getElementById('pastList');
+  const btn = document.getElementById('past-toggle-btn');
+  if (!collapsedEl || !listEl) return;
+  const isExpanded = listEl.style.display !== 'none' && listEl.style.display !== '';
+  if (!isExpanded) {
+    collapsedEl.style.display = 'none';
+    listEl.style.display = 'block';
+    if (btn) btn.textContent = 'Collapse';
+  } else {
+    collapsedEl.style.display = 'grid';
+    listEl.style.display = 'none';
+    if (btn) btn.textContent = 'Show all';
+  }
+};
+
+window.dashRerunPast = async function(originalIdx) {
+  try {
+    const r = await fetch('/api/history/' + originalIdx + '/relaunch', { method: 'POST' });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok && body.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast(body.message || 'Queued rerun');
+      if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+    } else {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Rerun failed: ' + (body.error || r.statusText));
+    }
+  } catch (err) { console.error('[v3] dashRerunPast:', err); }
+};
+
+window.dashOpenPastLog = async function(originalIdx) {
+  try {
+    const r = await fetch('/api/history/' + originalIdx + '/log');
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Log fetch failed: ' + (body.error || r.statusText));
+      return;
+    }
+    v3ShowLogModal(body.name || ('Campaign ' + originalIdx), body.lines || []);
+  } catch (err) { console.error('[v3] dashOpenPastLog:', err); }
+};
+
+function v3ShowLogModal(name, lines) {
+  let modal = document.getElementById('v3-log-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'v3-log-modal';
+    modal.className = 'modal-shade';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9000;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+      <div class="modal-card" style="background:var(--bg);border:1px solid var(--hairline);color:var(--ink);width:min(720px, 92vw);max-height:80vh;display:flex;flex-direction:column;font-family:var(--mono);">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--hairline);display:flex;justify-content:space-between;align-items:center;">
+          <div id="v3-log-title" style="font-family:var(--display);font-size:1.2rem;letter-spacing:0.02em;"></div>
+          <button type="button" onclick="document.getElementById('v3-log-modal').style.display='none'" style="background:transparent;border:1px solid var(--hairline);color:var(--ink);padding:6px 12px;font-family:var(--mono);font-size:0.6rem;letter-spacing:0.22em;text-transform:uppercase;cursor:pointer;border-radius:9999px;">Close</button>
+        </div>
+        <pre id="v3-log-body" style="flex:1;overflow:auto;padding:14px 18px;font-family:'JetBrains Mono', 'SF Mono', Menlo, monospace;font-size:0.72rem;line-height:1.5;color:var(--gray);white-space:pre-wrap;word-break:break-word;margin:0;background:var(--bg-soft);"></pre>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+  }
+  const title = document.getElementById('v3-log-title');
+  const body = document.getElementById('v3-log-body');
+  const safe = (typeof escHtml === 'function') ? escHtml : (s) => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  if (title) title.textContent = name;
+  if (body) {
+    if (Array.isArray(lines) && lines.length > 0) {
+      body.innerHTML = lines.map(l => safe(l)).join('\n');
+    } else {
+      body.textContent = 'No log lines found for this campaign.';
+    }
+  }
+  modal.style.display = 'flex';
+}
+
+window.dashCopyPastToQueue = async function(originalIdx) {
+  try {
+    const r = await fetch('/api/history');
+    const all = await r.json();
+    if (!Array.isArray(all) || !all[originalIdx]) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('History entry not found');
+      return;
+    }
+    const entry = all[originalIdx];
+    if (!entry.settings) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('No settings to copy');
+      return;
+    }
+    await fetch('/api/campaign/queue-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...entry.settings,
+        name: (entry.name || 'Campaign') + ' (copy)',
+        mode: entry.mode,
+      }),
+    });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Copied to queue');
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashCopyPastToQueue:', err); }
+};
+
+window.dashExportPast = function(originalIdx) {
+  // /api/export/csv exports state.json processed leads (existing endpoint, not per-entry).
+  try {
+    window.open('/api/export/csv', '_blank');
+  } catch (err) { console.error('[v3] dashExportPast:', err); }
+};
+
+window.dashArchivePast = async function(originalIdx) {
+  if (!confirm('Archive this campaign? It will be hidden from the list.')) return;
+  try {
+    const r = await fetch('/api/history/' + originalIdx + '/archive', { method: 'PATCH' });
+    if (r.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Archived');
+      if (typeof window.renderPastSection === 'function') window.renderPastSection();
+    } else {
+      const body = await r.json().catch(() => ({}));
+      if (typeof showCampaignToast === 'function') showCampaignToast('Archive failed: ' + (body.error || r.statusText));
+    }
+  } catch (err) { console.error('[v3] dashArchivePast:', err); }
+};
+
 // toggleDock — shared dock open/close + click-outside dismissal. Used by Active,
 // Monitoring, Up Next item docks, and Past row docks.
 if (typeof window.toggleDock !== 'function') {
