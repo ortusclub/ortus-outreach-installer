@@ -19,7 +19,7 @@
  */
 
 import { sendIntroMessage } from './actions.js';
-import { personalizeTemplate } from './helpers.js';
+import { personalizeTemplate, getConnectionStatus } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
@@ -53,6 +53,52 @@ export function _decideReverifyAction(connectionStatus, currentCc) {
     return { action: 'noop', reason: 'follow-only-restricted' };
   }
   return { action: 'noop', reason: 'ambiguous' };
+}
+
+// v2.61.0: navigate to the lead profile and call getConnectionStatus to
+// confirm whether the row's `Connection Accepted Status = Connected` stamp
+// is genuine. Used when sendIntroMessage throws compose-textbox-did-not-appear
+// on a row stamped Connected — that combination is impossible for a real
+// 1st-degree connection (LinkedIn loads compose for them).
+//
+// On clear-negative ('connect' or 'pending'), writes back
+// `Connection Accepted Status = 'Unverified — manual review (<date>)'` so
+// the next bulk-check pass leaves the row alone (bulk-check has a sticky
+// short-circuit for that exact prefix).
+async function _reverifyAndDowngrade({
+  page, url, profileName, sheetUrl, linkedinColumn, currentCc, log,
+}) {
+  if (currentCc !== 'Connected') return { reverified: false };
+
+  let connectionStatus;
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    connectionStatus = await getConnectionStatus(page);
+  } catch (err) {
+    log(`  ⚠ [${profileName}] ${url}: reverify navigation failed (${err.message}) — keeping stamp`);
+    return { reverified: false, status: 'error' };
+  }
+
+  const decision = _decideReverifyAction(connectionStatus, currentCc);
+  if (decision.action !== 'downgrade') {
+    log(`  ↻ [${profileName}] ${url}: reverify='${connectionStatus}' — keeping stamp (${decision.reason})`);
+    return { reverified: true, status: connectionStatus, downgraded: false };
+  }
+
+  const stamp = `Unverified — manual review (${_formatLocalDate(new Date())})`;
+  try {
+    await updateSheetRow(sheetUrl, url, {
+      cc: stamp,
+      checkStatus: stamp,
+      auditAction: `Reverify after compose-textbox failure: not connected (getConnectionStatus='${connectionStatus}')`,
+    }, linkedinColumn);
+    log(`  ⤓ [${profileName}] ${url}: downgraded — getConnectionStatus='${connectionStatus}'`);
+    return { reverified: true, status: connectionStatus, downgraded: true };
+  } catch (err) {
+    log(`  ⚠ [${profileName}] ${url}: downgrade write failed (${err.message})`);
+    return { reverified: true, status: connectionStatus, downgraded: false };
+  }
 }
 
 // v2.57.x — Translate raw sendIntroMessage error strings into operator-friendly
@@ -363,6 +409,21 @@ export async function runAutoIntros({
           continue;
         }
         break;
+      }
+    }
+
+    // v2.61.0: if intro failed with compose-textbox-did-not-appear AND the row's
+    // Connection Accepted Status reads "Connected", that combination is impossible
+    // for a real 1st-degree connection (LinkedIn loads compose for them). Reverify
+    // via profile visit and downgrade the row if not actually connected.
+    if (!ok && !alreadyMade && errMsg.includes('MESSAGE_SEND_FAILED: compose textbox did not appear')) {
+      const currentCc = (row['Connection Accepted Status'] || row['connection accepted status'] || '').toString().trim();
+      if (currentCc === 'Connected') {
+        await _reverifyAndDowngrade({
+          page, url, profileName,
+          sheetUrl, linkedinColumn,
+          currentCc, log,
+        });
       }
     }
 
