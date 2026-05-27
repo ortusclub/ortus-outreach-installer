@@ -4693,21 +4693,19 @@ body.theme-light .wiz-editing-banner { background: rgba(0, 0, 0, 0.025); }
    doesn't cover form content at the end of the form. */
 .wiz-launch-rail {
   position: fixed;
-  bottom: 0;
-  left: var(--sidebar-w);
-  right: 0;
+  bottom: 18px;
+  right: 24px;
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 14px 56px;
-  background: linear-gradient(to top, var(--bg) 70%, transparent);
   z-index: 30;
   pointer-events: none;
+  background: transparent;
 }
 .wiz-launch-rail .wiz-launch-wrap { pointer-events: auto; }
-body[data-show-right-pane="true"] .wiz-launch-rail { right: var(--rightpane-w); }
+body[data-show-right-pane="true"] .wiz-launch-rail { right: calc(var(--rightpane-w) + 24px); }
 @media (max-width: 820px) {
-  .wiz-launch-rail { left: 0; padding: 12px 24px; }
+  .wiz-launch-rail { right: 16px; bottom: 16px; }
 }
 /* When the rail is visible, give the wizard extra bottom padding so the
    final form content can scroll above the rail. JS toggles .has-launch-rail
