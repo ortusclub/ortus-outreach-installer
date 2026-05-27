@@ -4302,6 +4302,12 @@ async function pollStatus() {
     // (renderCockpit + tick handle the smooth countdown without re-polling).
     updateCockpit(s);
 
+    // v0.3 dashboard renderers — paint the Active + Monitoring cards from the
+    // same status snapshot. Guard with typeof check so the call is a no-op
+    // until the renderers are defined (and survives partial reloads).
+    if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
+    if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
+
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {
       fetchHistory();
@@ -6853,6 +6859,11 @@ function startDashboardPolling() {
   _dashboardPollTimer = setInterval(() => {
     if (document.body.classList.contains('route-dashboard')) {
       refreshActiveCampaign();
+      // v0.3 dashboard — queue + past refresh on the same 5s cadence. Active +
+      // Monitoring cards are driven by the 2s pollStatus loop instead.
+      if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+      if (typeof window.renderPastSection === 'function') window.renderPastSection();
+      if (typeof window.renderCalendarGrid === 'function') window.renderCalendarGrid();
     } else {
       stopDashboardPolling();
     }
@@ -6942,6 +6953,19 @@ function goDashboard()      { window.location.hash = '#/'; }
 
 async function refreshDashboard() {
   await Promise.all([refreshActiveCampaign(), refreshDashboardQueue(), refreshDashboardSchedules(), refreshDashboardDrafts(), refreshPastCampaigns()]);
+  // v0.3 dashboard renderers. Active + Monitoring will repaint on the next 2s
+  // pollStatus tick, but kick a status fetch now so the cards aren't blank
+  // for ~2s after route entry. Queue/Calendar/Past are wired via their own
+  // renderers in later tasks; calls below are typeof-guarded for incremental
+  // delivery.
+  try {
+    const s = await fetch('/api/campaign/status').then(r => r.json());
+    if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
+    if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
+  } catch { /* best-effort */ }
+  if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  if (typeof window.renderCalendarGrid === 'function') window.renderCalendarGrid();
+  if (typeof window.renderPastSection === 'function') window.renderPastSection();
 }
 
 // Dashboard's Drafts section. Multi-draft store backs this — operator can
@@ -9884,4 +9908,311 @@ function dashKeyHandler(e) {
   }
 }
 document.addEventListener('keydown', dashKeyHandler);
+
+/* ============================================================
+ * Dashboard v0.3 renderers + handlers
+ * Targets DOM placeholders set up by the Phase 3 markup swap.
+ * Driven by pollStatus() (active/monitoring, 2s) and the dashboard
+ * poll timer (queue/calendar/past, 5s).
+ * ============================================================ */
+
+const V3_MODE_BADGE = {
+  connect_only: 'CC',
+  connect_and_introduce: 'C+I',
+  introduce_back: 'IB',
+  message_only: 'DM',
+  inmail_only: 'IM',
+  check_status: 'CS',
+  open_profile_only: 'OP',
+  check_dms: 'CD',
+  post_amplification: 'PA',
+};
+
+function v3ModeBadge(mode) {
+  if (!mode) return '—';
+  return V3_MODE_BADGE[mode] || String(mode).slice(0, 4).toUpperCase();
+}
+
+function v3SetText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function v3FmtMs(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+}
+
+function v3FmtClock(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—';
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+window.renderActiveCard = function(status) {
+  const card = document.getElementById('active-card');
+  if (!card) return;
+  if (!status || !status.running) {
+    card.classList.add('is-empty');
+    v3SetText('activeName', 'No campaign running');
+    v3SetText('activeEyebrow', 'No campaign running');
+    v3SetText('activePct', '0');
+    v3SetText('activeSent', '0');
+    v3SetText('activeTotal', '0');
+    v3SetText('activeAccounts', '0');
+    v3SetText('activeAccepted', '—');
+    v3SetText('activeReplies', '—');
+    v3SetText('sendingLbl', 'Idle');
+    v3SetText('batchEta', '—');
+    const glyph = document.getElementById('activeGlyph');
+    if (glyph) glyph.textContent = '';
+    const bar = card.querySelector('.vj-hbar > i');
+    if (bar) bar.style.width = '0%';
+    const logEl = document.getElementById('active-log');
+    if (logEl) logEl.innerHTML = '';
+    return;
+  }
+  card.classList.remove('is-empty');
+  const total = Number(status.totalTargets) || 0;
+  const done = Number(status.totalProcessed) || 0;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  v3SetText('activeName', status.name || '(unnamed)');
+  v3SetText('activeEyebrow', status._paused || status.paused ? 'Paused' : 'Running');
+  v3SetText('activePct', String(pct));
+  v3SetText('activeSent', String(done));
+  v3SetText('activeTotal', String(total));
+  v3SetText('activeAccounts', String((status.profileIds || []).length));
+  v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
+  v3SetText('activeReplies', String(status.repliesCount ?? '—'));
+  const isPaused = !!(status._paused || status.paused);
+  v3SetText('sendingLbl', isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : 'Sending'));
+  const glyph = document.getElementById('activeGlyph');
+  if (glyph) glyph.textContent = v3ModeBadge(status.mode);
+  const bar = card.querySelector('.vj-hbar > i');
+  if (bar) bar.style.width = pct + '%';
+  // Pause button icon swap based on paused state
+  const pauseBtn = document.getElementById('dock-active-pause');
+  if (pauseBtn) {
+    pauseBtn.innerHTML = isPaused
+      ? '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+    pauseBtn.setAttribute('data-tip', isPaused ? 'Resume' : 'Pause');
+    pauseBtn.setAttribute('aria-label', isPaused ? 'Resume' : 'Pause');
+  }
+  // Live log lines (last 6 from status.logs[])
+  const logEl = document.getElementById('active-log');
+  if (logEl && Array.isArray(status.logs)) {
+    const last6 = status.logs.slice(-6);
+    logEl.innerHTML = last6.map(line => v3RenderLogLine(line)).join('');
+  }
+  // Batch ETA — best-effort from nextCheckAt or currentAction.endsAt
+  const etaEl = document.getElementById('batchEta');
+  if (etaEl) {
+    let etaText = '—';
+    if (status.nextCheckAt) {
+      const ms = new Date(status.nextCheckAt).getTime() - Date.now();
+      etaText = v3FmtMs(ms);
+    } else if (status.currentAction?.endsAt) {
+      const ms = new Date(status.currentAction.endsAt).getTime() - Date.now();
+      etaText = v3FmtMs(ms);
+    }
+    etaEl.textContent = etaText;
+  }
+};
+
+function v3RenderLogLine(rawLine) {
+  const safe = (typeof escHtml === 'function') ? escHtml : (s) =>
+    String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  if (!rawLine) return '';
+  // campaign.logs format: "[ISO timestamp] message" OR "HH:MM:SS [event] msg"
+  // Best-effort parse to extract a short time + event class.
+  let timeStr = '';
+  let evtStr = 'log';
+  let restStr = String(rawLine);
+  const isoMatch = restStr.match(/^\[([^\]]+)\]\s*(.*)$/);
+  if (isoMatch) {
+    const t = new Date(isoMatch[1]);
+    if (!Number.isNaN(t.getTime())) {
+      timeStr = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0');
+    }
+    restStr = isoMatch[2];
+  }
+  let cls = '';
+  if (/✓|connection_sent|message_sent|status_accepted|accepted/i.test(restStr)) { cls = 'is-ok'; evtStr = 'ok'; }
+  else if (/✗|error|fail|FAILED|429/i.test(restStr)) { cls = 'is-err'; evtStr = 'err'; }
+  else if (/⚠|warn|retry|backoff|park|SKIPPED/i.test(restStr)) { cls = 'is-warn'; evtStr = 'warn'; }
+  else if (/===|▶|■|start|finished/i.test(restStr)) { evtStr = 'info'; }
+  return `<div class="vj-log-line ${cls}"><span class="time">${safe(timeStr)}</span><span class="evt">${safe(evtStr)}</span><span class="what">${safe(restStr)}</span></div>`;
+}
+
+window.toggleActiveDetails = function(btn) {
+  const card = document.getElementById('active-card');
+  if (!card) return;
+  const opening = !card.classList.contains('is-detailed');
+  card.classList.toggle('is-detailed');
+  const svg = btn && btn.querySelector('svg');
+  if (svg) svg.style.transform = opening ? 'rotate(180deg)' : 'rotate(0deg)';
+  if (btn) btn.setAttribute('data-tip', opening ? 'Hide details' : 'Show details');
+};
+
+window.dashPauseActive = async function() {
+  try {
+    const sr = await fetch('/api/campaign/status');
+    const s = await sr.json();
+    const isPaused = !!(s._paused || s.paused);
+    const endpoint = isPaused ? '/api/campaign/resume' : '/api/campaign/pause';
+    const r = await fetch(endpoint, { method: 'POST' });
+    if (r.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast(isPaused ? 'Resumed' : 'Pausing…');
+      if (typeof pollStatus === 'function') pollStatus();
+    } else {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Pause/resume failed');
+    }
+  } catch (err) { console.error('[v3] dashPauseActive:', err); }
+};
+
+window.dashStopActive = async function() {
+  if (!confirm('Stop the active campaign? It will move to Past.')) return;
+  try {
+    const r = await fetch('/api/campaign/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (r.ok && typeof showCampaignToast === 'function') showCampaignToast('Campaign stopped');
+    if (typeof pollStatus === 'function') pollStatus();
+  } catch (err) { console.error('[v3] dashStopActive:', err); }
+};
+
+window.dashRestartActive = async function() {
+  if (!confirm('Restart this campaign from the beginning? Progress will reset.')) return;
+  try {
+    const sr = await fetch('/api/campaign/status');
+    const s = await sr.json();
+    // Capture config before stop wipes the in-memory campaign state.
+    const config = {
+      name: s.name,
+      mode: s.mode,
+      profileIds: s.profileIds,
+      sheetUrl: s.sheetUrl,
+      templates: s.templates,
+      dailyLimit: s.dailyLimit,
+      linkedinColumn: s.linkedinColumn,
+    };
+    await fetch('/api/campaign/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full: true }),
+    });
+    await fetch('/api/campaign/queue-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Restart queued');
+    if (typeof pollStatus === 'function') pollStatus();
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashRestartActive:', err); }
+};
+
+window.dashCopyActiveToQueue = async function() {
+  try {
+    const sr = await fetch('/api/campaign/status');
+    const s = await sr.json();
+    if (!s.running) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Nothing to copy');
+      return;
+    }
+    await fetch('/api/campaign/queue-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: (s.name || 'Campaign') + ' (copy)',
+        mode: s.mode,
+        profileIds: s.profileIds,
+        sheetUrl: s.sheetUrl,
+        templates: s.templates,
+        dailyLimit: s.dailyLimit,
+        linkedinColumn: s.linkedinColumn,
+      }),
+    });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Copied "' + (s.name || '') + '" to queue');
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashCopyActiveToQueue:', err); }
+};
+
+window.dashBulkCheck = async function() {
+  try {
+    const sr = await fetch('/api/campaign/status');
+    const s = await sr.json();
+    if (!s.sheetUrl) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('No sheet URL');
+      return;
+    }
+    const r = await fetch('/api/bulk-check-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sheetUrl: s.sheetUrl,
+        profileIds: s.profileIds,
+        linkedinColumn: s.linkedinColumn,
+      }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (body.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Bulk check running…');
+    } else {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Bulk check failed: ' + (body.error || 'unknown'));
+    }
+  } catch (err) { console.error('[v3] dashBulkCheck:', err); }
+};
+
+window.dashOpenActive = function() {
+  window.location.hash = '#/new';
+  setTimeout(() => {
+    const target = document.getElementById('nav-status');
+    if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth' });
+  }, 200);
+};
+
+window.dashOpenBatchSettings = function() {
+  window.location.hash = '#/new';
+  setTimeout(() => {
+    const target = document.getElementById('nav-pace');
+    if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth' });
+  }, 200);
+};
+
+// toggleDock — shared dock open/close + click-outside dismissal. Used by Active,
+// Monitoring, Up Next item docks, and Past row docks.
+if (typeof window.toggleDock !== 'function') {
+  window.toggleDock = function(idOrEl, e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const dock = typeof idOrEl === 'string' ? document.getElementById(idOrEl) : (idOrEl && idOrEl.closest && idOrEl.closest('.dock'));
+    if (!dock) return;
+    const opening = dock.getAttribute('data-open') !== 'true';
+    document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+      if (d !== dock) {
+        d.setAttribute('data-open', 'false');
+        const trig = d.querySelector('.dock-trigger');
+        if (trig) trig.setAttribute('aria-expanded', 'false');
+      }
+    });
+    dock.setAttribute('data-open', opening ? 'true' : 'false');
+    const trig = dock.querySelector('.dock-trigger');
+    if (trig) trig.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  };
+  // Click-outside dismissal
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('.dock[data-open="true"]').forEach(dock => {
+      if (!dock.contains(e.target)) {
+        dock.setAttribute('data-open', 'false');
+        const trig = dock.querySelector('.dock-trigger');
+        if (trig) trig.setAttribute('aria-expanded', 'false');
+      }
+    });
+  });
+}
 
