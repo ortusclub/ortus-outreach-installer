@@ -1,6 +1,9 @@
   /* ── Tokens ────────────────────────────────────────────────── */
   /* Scoped to body[data-dashboard='v3'] so values don't bleed into the
-     existing dashboard's :root before Phase 3 toggles the attribute. */
+     existing dashboard's :root. v0.3 was designed light-default with a
+     .theme-dark override; setTheme() in app.js now toggles BOTH .theme-light
+     AND .theme-dark so this convention works alongside the existing app's
+     .theme-light-only toggle. */
   body[data-dashboard='v3'] {
     --bg: #fafafa;
     --bg-soft: #faf9f7;

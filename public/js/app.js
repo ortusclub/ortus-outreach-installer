@@ -5076,6 +5076,9 @@ function restoreCollapsedSections() {
 function setTheme(mode) {
   const isLight = mode === 'light';
   document.body.classList.toggle('theme-light', isLight);
+  // Dashboard v0.3 CSS uses .theme-dark as its override convention; keep it
+  // in sync so v0.3 follows the same theme button as the rest of the app.
+  document.body.classList.toggle('theme-dark', !isLight);
   try { localStorage.setItem('ortus-theme', mode); } catch (_) {}
   const d = document.getElementById('theme-btn-dark');
   const l = document.getElementById('theme-btn-light');
