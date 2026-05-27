@@ -229,3 +229,39 @@ test('sticky downgrade: row with CC starting with "Unverified — manual review"
   );
   assert.equal(diag.alreadyUnverified, 1, 'diag counter should record the skip');
 });
+
+test('cap: URL with composeAttempts >= 3 is excluded from connectedUrls', () => {
+  const matchingRow = baseRow();
+  const composeAttempts = new Map([['https://linkedin.com/in/jane-doe', 3]]);
+  const { connectedUrls, diag } = computeBulkCheckUpdates(
+    [matchingRow], baseConns, linkedinColumn, stillPendingLabel, { composeAttempts }
+  );
+  assert.ok(
+    !connectedUrls.includes('https://linkedin.com/in/jane-doe'),
+    'URL with 3+ compose-textbox failures must not re-enter the intro queue'
+  );
+  assert.equal(diag.composeCapped, 1, 'diag counter should record the cap skip');
+});
+
+test('cap: URL with composeAttempts < 3 still flows through to connectedUrls', () => {
+  const matchingRow = baseRow();
+  const composeAttempts = new Map([['https://linkedin.com/in/jane-doe', 2]]);
+  const { connectedUrls } = computeBulkCheckUpdates(
+    [matchingRow], baseConns, linkedinColumn, stillPendingLabel, { composeAttempts }
+  );
+  assert.ok(
+    connectedUrls.includes('https://linkedin.com/in/jane-doe'),
+    'URL below the cap must still be queued for auto-intro retry'
+  );
+});
+
+test('cap: no composeAttempts opt (undefined) defaults to allow', () => {
+  const matchingRow = baseRow();
+  const { connectedUrls } = computeBulkCheckUpdates(
+    [matchingRow], baseConns, linkedinColumn, stillPendingLabel, {}
+  );
+  assert.ok(
+    connectedUrls.includes('https://linkedin.com/in/jane-doe'),
+    'omitted composeAttempts must not block any URL (back-compat)'
+  );
+});

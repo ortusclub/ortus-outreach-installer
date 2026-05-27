@@ -52,7 +52,7 @@ function memberIdFromAny(value) {
  * @returns {{ updates: object[], connectedUrls: string[], diag: object }}
  */
 export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendingLabel, opts = {}) {
-  const { suppressAcceptedStamp = false, profileName = '', introducedInRun = null } = opts;
+  const { suppressAcceptedStamp = false, profileName = '', introducedInRun = null, composeAttempts = null } = opts;
 
   // Build matching sets (same logic as the inline version)
   const connectedSlugs = new Set();
@@ -78,6 +78,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
   let dbgAlreadyIntroduced = 0;
   let dbgAlreadyUnverified = 0;
+  let dbgComposeCapped = 0;
   const sampleSheetSlugs = [];
   const sampleSheetMemberIds = [];
   const sampleCRSValues = new Set();
@@ -166,6 +167,15 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         continue;
       }
 
+      // v2.61.0: per-URL compose-textbox failure cap. If reverify-and-downgrade
+      // didn't resolve the row (e.g. getConnectionStatus returned 'unknown'),
+      // this caps repeat attempts so a single false-positive doesn't produce a
+      // 30+ retry storm over a single process lifetime.
+      if (composeAttempts && (composeAttempts.get(url) || 0) >= 3) {
+        dbgComposeCapped++;
+        continue;
+      }
+
       // Not yet introduced — queue for the auto-intro pass. Even if the
       // CC column is already 'Connected' (from a prior bulk-check), the
       // intro still needs to fire — this is the path that lets
@@ -251,6 +261,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       alreadyDeclined: dbgAlreadyDeclined,
       alreadyIntroduced: dbgAlreadyIntroduced,
       alreadyUnverified: dbgAlreadyUnverified,
+      composeCapped: dbgComposeCapped,
       pidMatched: dbgPidMatched,
       slugs: connectedSlugs.size,
       memberIds: connectedMemberIds.size,
@@ -361,10 +372,11 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
       // v2.14.x: read campaign-level in-memory blacklist by default so
       // every call site benefits without needing to pass the Set explicitly.
       introducedInRun: opts.introducedInRun || campaign.introducedInRun,
+      composeAttempts: opts.composeAttempts || campaign.composeAttempts,
     }
   );
 
-  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyUnverified=${diag.alreadyUnverified}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
+  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyUnverified=${diag.alreadyUnverified}, composeCapped=${diag.composeCapped}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);

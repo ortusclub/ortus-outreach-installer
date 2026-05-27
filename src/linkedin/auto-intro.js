@@ -414,9 +414,13 @@ export async function runAutoIntros({
 
     // v2.61.0: if intro failed with compose-textbox-did-not-appear AND the row's
     // Connection Accepted Status reads "Connected", that combination is impossible
-    // for a real 1st-degree connection (LinkedIn loads compose for them). Reverify
-    // via profile visit and downgrade the row if not actually connected.
+    // for a real 1st-degree connection. Reverify via profile visit and downgrade
+    // the row if not actually connected. Also increment the per-URL cap counter
+    // so bulk-check can stop re-queueing this URL after 3 attempts.
     if (!ok && !alreadyMade && errMsg.includes('MESSAGE_SEND_FAILED: compose textbox did not appear')) {
+      const prev = campaign.composeAttempts?.get?.(url) || 0;
+      campaign.composeAttempts?.set?.(url, prev + 1);
+
       const currentCc = (row['Connection Accepted Status'] || row['connection accepted status'] || '').toString().trim();
       if (currentCc === 'Connected') {
         await _reverifyAndDowngrade({
