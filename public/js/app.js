@@ -9239,19 +9239,24 @@ window.updateSavePip = updateSavePip;
 // button is hidden under the same refactor.
 // ─────────────────────────────────────────────────────────────────────────
 window.updateEditingBanner = function() {
-  const banner = document.getElementById('wiz-editing-banner');
-  if (!banner) return;
+  // The old #wiz-editing-banner was replaced by an inline indicator next
+  // to the back link and a sticky launch rail at the bottom. Both
+  // visibilities are mirrored on the active-draft state.
+  const inline = document.getElementById('wiz-editing-inline');
+  const rail = document.getElementById('wiz-launch-rail');
   const id = getActiveDraftId();
-  if (!id) { banner.style.display = 'none'; return; }
-  banner.style.display = 'flex';
-  // The campaign-name-input is the canonical name source — sync the
-  // banner's display name from it whenever this runs.
+  if (!id) {
+    if (inline) inline.style.display = 'none';
+    if (rail) rail.style.display = 'none';
+    return;
+  }
+  if (inline) inline.style.display = 'inline-flex';
+  if (rail) rail.style.display = 'flex';
+  // Sync the display name from the canonical campaign-name-input.
   const nameInput = document.getElementById('campaign-name-input');
   const nameEl = document.getElementById('wiz-editing-name');
   if (nameEl) nameEl.textContent = (nameInput?.value || '').trim() || 'Untitled draft';
   updateSavePip();
-  // Launch action is now a menu (4 options) — no need to adapt a single
-  // button label. See window.toggleLaunchMenu + handlers below.
 };
 
 /* ── Launch menu — open/close + click-outside dismiss ─────────────────── */

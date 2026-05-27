@@ -4660,28 +4660,77 @@ body.theme-light .wiz-editing-banner { background: rgba(0, 0, 0, 0.025); }
 }
 .wiz-editing-launch:hover { opacity: 0.85; }
 
+/* ── Inline editing indicator — sits next to the BACK link as a small
+   breadcrumb. Replaces the old #wiz-editing-banner (moved + slimmed down). */
+.wiz-editing-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--gray);
+  margin-left: 14px;
+}
+.wiz-editing-inline-sep { color: var(--gray-faint); }
+.wiz-editing-inline-lbl {
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gray);
+  font-size: 0.56rem;
+}
+.wiz-editing-inline-name {
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+.wiz-editing-inline-pip-sep { color: var(--gray-faint); }
+
+/* ── Sticky launch rail at bottom of wizard ─────────────────────────────
+   Follows the operator as they scroll. Inside #wizard-view; sticky to the
+   bottom of the viewport while #wizard-view is in view. Menu opens upward. */
+.wiz-launch-rail {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 14px 0;
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+  z-index: 30;
+  pointer-events: none;
+}
+.wiz-launch-rail .wiz-launch-wrap { pointer-events: auto; }
+
 /* ── Launch menu — trigger button + dropdown panel ──────────────────────
    Trigger is an outline button (NOT the gold Bugatti CTA — that's reserved
-   for the actual Start action inside the menu). Menu drops down below the
-   trigger, right-aligned. Click-outside closes it (wired in app.js). */
-.wiz-launch-wrap { position: relative; }
+   for the actual Start action inside the menu). Click-outside closes the
+   menu (wired in app.js). When inside the bottom rail the menu opens
+   upward via the .opens-up modifier. */
+.wiz-launch-wrap { position: relative; display: inline-block; }
 .wiz-launch-trigger {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  background: transparent;
+  background: var(--bg);
   color: var(--ink);
   border: 1px solid var(--hairline);
   border-radius: 9999px;
-  padding: 9px 18px;
+  padding: 11px 22px;
   font-family: var(--body);
-  font-size: 0.86rem;
+  font-size: 0.88rem;
   font-weight: 500;
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
-.wiz-launch-trigger:hover { border-color: var(--ink); background: rgba(255,255,255,0.04); }
-body.theme-light .wiz-launch-trigger:hover { background: rgba(0,0,0,0.03); }
+.wiz-launch-trigger:hover {
+  border-color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.45);
+}
+body.theme-light .wiz-launch-trigger { background: var(--bg); }
+body.theme-light .wiz-launch-trigger:hover { background: rgba(0, 0, 0, 0.03); }
 .wiz-launch-trigger-chev { width: 14px; height: 14px; transition: transform 0.22s ease; color: var(--gray); }
 .wiz-launch-trigger.is-open .wiz-launch-trigger-chev { transform: rotate(180deg); color: var(--ink); }
 .wiz-launch-trigger.is-open { border-color: var(--ink); }
@@ -4707,6 +4756,13 @@ body.theme-light .wiz-launch-trigger:hover { background: rgba(0,0,0,0.03); }
   pointer-events: auto;
   transform: translateY(0);
 }
+/* Menu opens UPWARD when in the bottom rail */
+.wiz-launch-menu.opens-up {
+  top: auto;
+  bottom: calc(100% + 8px);
+  transform: translateY(4px);
+}
+.wiz-launch-menu.opens-up.show { transform: translateY(0); }
 .wiz-launch-menu-header {
   font-family: var(--mono);
   font-size: 0.54rem;

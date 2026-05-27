@@ -393,68 +393,23 @@
 
     <!-- ── Wizard view (route #/new) ── -->
     <div id="wizard-view" class="route-view">
-      <div class="wizard-back-row">
-        <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
-        <button type="button" id="btn-save-edits-top" class="btn btn-secondary wizard-save-edits" onclick="saveCampaignEdits()">Save Edits</button>
-      </div>
-      <!-- 2026-05-27 (drafts-isolation): editing-banner pinned to top of wizard.
-           Visible only when an active draft id is set. Shows the draft name +
-           autosave pip + the launch CTA so the operator always knows what
-           they're editing and can ship it in one click. -->
-      <div id="wiz-editing-banner" class="wiz-editing-banner" style="display:none;">
-        <div class="wiz-editing-banner-left">
-          <span class="wiz-editing-banner-lbl">Editing</span>
-          <span class="wiz-editing-banner-name" id="wiz-editing-name">Untitled draft</span>
-        </div>
-        <div class="wiz-editing-banner-right">
-          <span class="wiz-save-pip" id="wiz-save-pip">— not saved yet</span>
-          <div class="wiz-launch-wrap">
-            <button type="button" class="wiz-launch-trigger" id="wiz-launch-trigger" onclick="window.toggleLaunchMenu(event)" aria-haspopup="menu" aria-expanded="false">
-              + Launch options
-              <svg class="wiz-launch-trigger-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <div class="wiz-launch-menu" id="wiz-launch-menu" role="menu" aria-hidden="true">
-              <div class="wiz-launch-menu-header">Choose how to launch</div>
-              <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchStartNow()">
-                <span class="wiz-launch-menu-ic gold">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>
-                </span>
-                <span class="wiz-launch-menu-text">
-                  <span class="wiz-launch-menu-lbl">Start a campaign</span>
-                  <span class="wiz-launch-menu-hint">Launch immediately (or auto-drain queue)</span>
-                </span>
-              </button>
-              <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchQueueIt()">
-                <span class="wiz-launch-menu-ic">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="3"/><rect x="3" y="11" width="18" height="3"/><rect x="3" y="16" width="18" height="3"/></svg>
-                </span>
-                <span class="wiz-launch-menu-text">
-                  <span class="wiz-launch-menu-lbl">Queue it</span>
-                  <span class="wiz-launch-menu-hint">Add to the back of the queue</span>
-                </span>
-              </button>
-              <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchScheduleIt()">
-                <span class="wiz-launch-menu-ic">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                </span>
-                <span class="wiz-launch-menu-text">
-                  <span class="wiz-launch-menu-lbl">Schedule it</span>
-                  <span class="wiz-launch-menu-hint">Pick a date and time to fire</span>
-                </span>
-              </button>
-              <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchSaveAsDraft()">
-                <span class="wiz-launch-menu-ic">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                </span>
-                <span class="wiz-launch-menu-text">
-                  <span class="wiz-launch-menu-lbl">Save as draft</span>
-                  <span class="wiz-launch-menu-hint">Keep editing later — close wizard</span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+<!--
+   2026-05-27 — wizard top cleanup: 'Save Edits' button removed (autosave
+   handles it). 'Save Edits' was duplicated top+bottom; both gone.
+   Editing context moved inline to the back-row as a small breadcrumb-style
+   indicator. Launch options moved to a sticky bottom rail (see end of
+   #wizard-view) so it follows the operator as they scroll the form.
+-->
+<div class="wizard-back-row">
+  <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+  <div class="wiz-editing-inline" id="wiz-editing-inline" style="display:none;">
+    <span class="wiz-editing-inline-sep" aria-hidden="true">|</span>
+    <span class="wiz-editing-inline-lbl">Editing</span>
+    <span class="wiz-editing-inline-name" id="wiz-editing-name">Untitled draft</span>
+    <span class="wiz-editing-inline-pip-sep" aria-hidden="true">·</span>
+    <span class="wiz-save-pip" id="wiz-save-pip">not saved yet</span>
+  </div>
+</div>
       <!-- Visible only when a campaign is already running. Tells the operator
            the new build will be queued (not edit the running one). -->
       <div id="wizard-queue-banner" class="wizard-queue-banner" style="display:none">
@@ -469,7 +424,6 @@
         <h2 data-edit="h2-campaign-name">Campaign Name</h2>
         <div class="campaign-name-row">
           <input type="text" id="campaign-name-input" placeholder="e.g. TAG_CITY_I" autocomplete="off" />
-          <button type="button" id="btn-save-name" class="btn btn-secondary" onclick="saveDraftName()">Save Name</button>
         </div>
       </div>
 
@@ -1366,7 +1320,57 @@
 
     <div class="wizard-bottom-actions">
       <button type="button" class="back-link wizard-bottom-back" onclick="goDashboard()">← Return to dashboard</button>
-      <button type="button" id="btn-save-edits-bottom" class="btn btn-secondary wizard-save-edits" onclick="saveCampaignEdits()">Save Edits</button>
+    </div>
+
+    <!-- Sticky launch rail — follows the operator as they scroll. Menu opens
+         UPWARD (above the trigger). Only relevant when an active draft is
+         set; visibility mirrored on #wiz-launch-rail by updateEditingBanner. -->
+    <div class="wiz-launch-rail" id="wiz-launch-rail" style="display:none;">
+      <div class="wiz-launch-wrap">
+        <button type="button" class="wiz-launch-trigger" id="wiz-launch-trigger" onclick="window.toggleLaunchMenu(event)" aria-haspopup="menu" aria-expanded="false">
+          + Launch options
+          <svg class="wiz-launch-trigger-chev wiz-launch-trigger-chev-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <div class="wiz-launch-menu opens-up" id="wiz-launch-menu" role="menu" aria-hidden="true">
+          <div class="wiz-launch-menu-header">Choose how to launch</div>
+          <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchStartNow()">
+            <span class="wiz-launch-menu-ic gold">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>
+            </span>
+            <span class="wiz-launch-menu-text">
+              <span class="wiz-launch-menu-lbl">Start a campaign</span>
+              <span class="wiz-launch-menu-hint">Launch immediately (or auto-drain queue)</span>
+            </span>
+          </button>
+          <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchQueueIt()">
+            <span class="wiz-launch-menu-ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="3"/><rect x="3" y="11" width="18" height="3"/><rect x="3" y="16" width="18" height="3"/></svg>
+            </span>
+            <span class="wiz-launch-menu-text">
+              <span class="wiz-launch-menu-lbl">Queue it</span>
+              <span class="wiz-launch-menu-hint">Add to the back of the queue</span>
+            </span>
+          </button>
+          <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchScheduleIt()">
+            <span class="wiz-launch-menu-ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </span>
+            <span class="wiz-launch-menu-text">
+              <span class="wiz-launch-menu-lbl">Schedule it</span>
+              <span class="wiz-launch-menu-hint">Pick a date and time to fire</span>
+            </span>
+          </button>
+          <button type="button" role="menuitem" class="wiz-launch-menu-item" onclick="window.launchSaveAsDraft()">
+            <span class="wiz-launch-menu-ic">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            </span>
+            <span class="wiz-launch-menu-text">
+              <span class="wiz-launch-menu-lbl">Save as draft</span>
+              <span class="wiz-launch-menu-hint">Keep editing later — close wizard</span>
+            </span>
+          </button>
+        </div>
+      </div>
     </div>
 
     </div> <!-- /#wizard-view -->
