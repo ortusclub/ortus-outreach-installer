@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Drafts · Launch menu (4 options) · v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-soft: rgba(255,255,255,0.03);
+    --ink: #fafafa;
+    --gray: #999;
+    --gray-faint: #5a5a58;
+    --hairline: rgba(255,255,255,0.15);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --green: #3fb950;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 36px 56px; line-height: 1.5; }
+  h1 { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.01em; font-weight: 400; margin-bottom: 8px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 40px; max-width: 760px; }
+  .variant { margin-bottom: 64px; }
+  .v-label { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .v-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 4px; }
+  .v-blurb { color: var(--gray); font-size: 0.8rem; margin-bottom: 18px; max-width: 720px; }
+  .stage { border: 1px solid var(--hairline); background: var(--bg); position: relative; min-height: 140px; }
+
+  /* Faux editing banner — matches the live one */
+  .banner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px;
+    background: rgba(255,255,255,0.025);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .banner .left { display: flex; align-items: baseline; gap: 14px; }
+  .banner .lbl { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--gray); }
+  .banner .name { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; color: var(--ink); }
+  .banner .right { display: flex; align-items: center; gap: 18px; position: relative; }
+  .banner .save { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); display: inline-flex; align-items: center; gap: 6px; }
+  .banner .save::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: var(--green); }
+
+  /* Shared button look */
+  .btn-ink {
+    background: var(--ink); color: var(--gold);
+    border: 1px solid var(--ink);
+    font-family: var(--mono); font-size: 0.64rem;
+    font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .btn-ink:hover { opacity: 0.88; }
+
+  /* ─── A — Split-button (primary + chevron, dashboard dock pattern) ─── */
+  .v-A .split {
+    display: inline-flex; align-items: stretch;
+    border: 1px solid var(--ink); border-radius: 9999px;
+    background: var(--ink); overflow: hidden;
+  }
+  .v-A .split-primary {
+    background: var(--ink); color: var(--gold); border: none;
+    padding: 9px 22px;
+    font-family: var(--mono); font-size: 0.64rem;
+    font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .v-A .split-sep { width: 1px; background: rgba(247, 190, 104, 0.3); }
+  .v-A .split-chev {
+    background: var(--ink); color: var(--gold); border: none;
+    padding: 0 14px; cursor: pointer;
+    display: inline-flex; align-items: center;
+  }
+  .v-A .split-chev svg { width: 14px; height: 14px; transition: transform 0.22s; }
+  .v-A .split.is-open .split-chev svg { transform: rotate(180deg); }
+
+  .v-A .menu {
+    position: absolute; top: calc(100% + 8px); right: 0;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    min-width: 220px;
+    padding: 6px;
+    box-shadow: 0 8px 24px -8px rgba(0,0,0,0.5);
+    z-index: 20;
+    opacity: 0; pointer-events: none; transform: translateY(-4px);
+    transition: opacity 0.16s, transform 0.16s;
+  }
+  .v-A .menu.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .v-A .menu button {
+    width: 100%; display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    background: transparent; border: none; color: var(--ink);
+    font-family: var(--mono); font-size: 0.72rem;
+    text-align: left; cursor: pointer; border-radius: 4px;
+  }
+  .v-A .menu button:hover { background: rgba(255,255,255,0.06); }
+  .v-A .menu .ic { width: 14px; height: 14px; color: var(--gray); flex: 0 0 auto; }
+  .v-A .menu button:hover .ic { color: var(--ink); }
+  .v-A .menu .lbl { flex: 1; }
+  .v-A .menu .hint { font-family: var(--mono); font-size: 0.56rem; color: var(--gray-faint); letter-spacing: 0.04em; }
+
+  /* ─── B — Single button → dropdown (no visible primary) ─── */
+  .v-B .trigger {
+    background: var(--ink); color: var(--gold);
+    border: 1px solid var(--ink); border-radius: 9999px;
+    padding: 9px 18px 9px 22px;
+    font-family: var(--mono); font-size: 0.64rem;
+    font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 10px;
+  }
+  .v-B .trigger svg { width: 12px; height: 12px; transition: transform 0.2s; }
+  .v-B .trigger.is-open svg { transform: rotate(180deg); }
+
+  .v-B .menu {
+    position: absolute; top: calc(100% + 8px); right: 0;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    min-width: 280px;
+    padding: 8px;
+    box-shadow: 0 8px 24px -8px rgba(0,0,0,0.5);
+    z-index: 20;
+    opacity: 0; pointer-events: none; transform: translateY(-4px);
+    transition: opacity 0.16s, transform 0.16s;
+  }
+  .v-B .menu.show { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .v-B .menu-header {
+    font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--gray); padding: 8px 14px 6px;
+  }
+  .v-B .menu button {
+    width: 100%; display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px;
+    background: transparent; border: none; color: var(--ink);
+    font-family: var(--mono); font-size: 0.78rem;
+    text-align: left; cursor: pointer; border-radius: 4px;
+  }
+  .v-B .menu button:hover { background: rgba(255,255,255,0.06); }
+  .v-B .menu .ic-wrap {
+    width: 30px; height: 30px; border-radius: 9999px;
+    border: 1px solid var(--hairline); display: flex; align-items: center; justify-content: center;
+    flex: 0 0 auto;
+  }
+  .v-B .menu .ic-wrap.gold { border-color: var(--gold); color: var(--gold); }
+  .v-B .menu .ic-wrap svg { width: 14px; height: 14px; }
+  .v-B .menu .lbl { font-weight: 500; }
+  .v-B .menu .hint { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); display: block; margin-top: 2px; font-weight: 400; }
+  .v-B .menu .text { display: flex; flex-direction: column; }
+
+  /* ─── C — Inline action row (no menu, all visible) ─── */
+  .v-C .row {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .v-C .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: transparent; color: var(--ink);
+    border: 1px solid var(--hairline); border-radius: 9999px;
+    padding: 8px 14px;
+    font-family: var(--mono); font-size: 0.6rem;
+    font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase;
+    cursor: pointer; white-space: nowrap;
+  }
+  .v-C .pill svg { width: 12px; height: 12px; }
+  .v-C .pill:hover { border-color: var(--ink); background: rgba(255,255,255,0.04); }
+  .v-C .pill.primary {
+    background: var(--ink); color: var(--gold); border-color: var(--ink); font-weight: 600;
+  }
+  .v-C .pill.primary:hover { opacity: 0.88; background: var(--ink); }
+
+  /* footer */
+  .note { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); border: 1px solid var(--hairline-soft); padding: 16px 20px; margin-top: 18px; }
+  .note b { color: var(--ink); font-weight: 500; }
+  .note ul { margin: 8px 0 0 20px; }
+  .note li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Drafts · Launch menu (4 options)</h1>
+<div class="lead">Three interaction shapes for replacing the single "+ Start now" button with a menu of 4 launch actions: <b>Start a campaign</b>, <b>Queue it</b>, <b>Schedule it</b>, <b>Save as draft</b>. Click each variant's launch button below to see the open state.</div>
+
+<!-- ─── A ─── -->
+<div class="variant v-A">
+  <div class="v-label">Variant A</div>
+  <div class="v-title">Split-button — primary action + chevron (matches dashboard dock pattern)</div>
+  <div class="v-blurb">The most-likely-action stays as the visible primary (context-aware: "Start a campaign" when nothing's running, "Add to queue" when something is). The chevron reveals the other 3. Familiar — same shape as the dock buttons on Active/Monitoring/Up Next cards in v0.3.</div>
+  <div class="stage">
+    <div class="banner">
+      <div class="left">
+        <span class="lbl">Editing</span>
+        <span class="name">EU Founder Push Q3</span>
+      </div>
+      <div class="right">
+        <span class="save">saved 2s ago</span>
+        <div class="split" id="splitA">
+          <button class="split-primary" onclick="alert('Start a campaign — fires queue-only endpoint (auto-drains immediately if idle)')">+ Start a campaign</button>
+          <span class="split-sep"></span>
+          <button class="split-chev" onclick="toggleMenu('A')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <div class="menu" id="menuA">
+          <button onclick="alert('Add to queue')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="3"/><rect x="3" y="11" width="18" height="3"/><rect x="3" y="16" width="18" height="3"/></svg><span class="lbl">Add to queue</span><span class="hint">⇧Q</span></button>
+          <button onclick="alert('Schedule for later')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span class="lbl">Schedule it</span><span class="hint">⇧S</span></button>
+          <button onclick="alert('Save as draft (close wizard)')"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span class="lbl">Save as draft</span><span class="hint">esc</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── B ─── -->
+<div class="variant v-B">
+  <div class="v-label">Variant B</div>
+  <div class="v-title">Dropdown — single trigger + descriptive options</div>
+  <div class="v-blurb">No primary action. One trigger button "+ Launch options ▾" opens a dropdown with all 4 options shown equally, each with an icon + label + short hint sentence. Clearer for someone who's NOT sure which action they want — every option explains itself.</div>
+  <div class="stage">
+    <div class="banner">
+      <div class="left">
+        <span class="lbl">Editing</span>
+        <span class="name">EU Founder Push Q3</span>
+      </div>
+      <div class="right">
+        <span class="save">saved 2s ago</span>
+        <button class="trigger" id="triggerB" onclick="toggleMenu('B')">
+          + Launch options
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="menu" id="menuB">
+          <div class="menu-header">Choose how to launch</div>
+          <button onclick="alert('Start a campaign')">
+            <span class="ic-wrap gold">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"/></svg>
+            </span>
+            <span class="text">
+              <span class="lbl">Start a campaign</span>
+              <span class="hint">Launch immediately (or auto-drain queue)</span>
+            </span>
+          </button>
+          <button onclick="alert('Queue it')">
+            <span class="ic-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="3"/><rect x="3" y="11" width="18" height="3"/><rect x="3" y="16" width="18" height="3"/></svg>
+            </span>
+            <span class="text">
+              <span class="lbl">Queue it</span>
+              <span class="hint">Add to the back of the queue</span>
+            </span>
+          </button>
+          <button onclick="alert('Schedule it')">
+            <span class="ic-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </span>
+            <span class="text">
+              <span class="lbl">Schedule it</span>
+              <span class="hint">Pick a date and time to fire</span>
+            </span>
+          </button>
+          <button onclick="alert('Save as draft')">
+            <span class="ic-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            </span>
+            <span class="text">
+              <span class="lbl">Save as draft</span>
+              <span class="hint">Keep editing later — close wizard</span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── C ─── -->
+<div class="variant v-C">
+  <div class="v-label">Variant C</div>
+  <div class="v-title">Inline action row — all 4 visible, no menu</div>
+  <div class="v-blurb">Every action visible at once as a row of small pills. Primary "Start" is filled (ink+gold), the others are hairline outlined. Zero clicks to discover what's available, but takes more horizontal space — would need a wider banner or wrapping on narrower screens.</div>
+  <div class="stage">
+    <div class="banner">
+      <div class="left">
+        <span class="lbl">Editing</span>
+        <span class="name">EU Founder Push Q3</span>
+      </div>
+      <div class="right">
+        <span class="save">saved 2s ago</span>
+        <div class="row">
+          <button class="pill primary" onclick="alert('Start')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"/></svg>
+            Start
+          </button>
+          <button class="pill" onclick="alert('Queue')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="3"/><rect x="3" y="11" width="18" height="3"/><rect x="3" y="16" width="18" height="3"/></svg>
+            Queue
+          </button>
+          <button class="pill" onclick="alert('Schedule')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Schedule
+          </button>
+          <button class="pill" onclick="alert('Save')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Draft
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>What each option does (same across all variants):</b>
+  <ul>
+    <li><b>Start a campaign</b> → POST <code>/api/campaign/queue-only</code>. Idle → launches immediately. Running → 409 with explanation (one-at-a-time constraint).</li>
+    <li><b>Queue it</b> → same endpoint, but the operator KNOWS they want to wait. Adds to back of queue regardless of current state.</li>
+    <li><b>Schedule it</b> → opens a date/time picker, then POST <code>/api/schedules</code> with a cron expression for that specific moment.</li>
+    <li><b>Save as draft</b> → no-op besides closing the wizard. Autosave already persisted everything. Returns to dashboard.</li>
+  </ul>
+</div>
+
+<script>
+  function toggleMenu(v) {
+    const menu = document.getElementById('menu' + v);
+    const open = !menu.classList.contains('show');
+    // Close any open menu first
+    document.querySelectorAll('.menu.show').forEach(m => m.classList.remove('show'));
+    document.querySelectorAll('.split.is-open').forEach(s => s.classList.remove('is-open'));
+    document.querySelectorAll('.trigger.is-open').forEach(t => t.classList.remove('is-open'));
+    if (open) {
+      menu.classList.add('show');
+      const split = document.getElementById('split' + v); if (split) split.classList.add('is-open');
+      const trigger = document.getElementById('trigger' + v); if (trigger) trigger.classList.add('is-open');
+    }
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.split') && !e.target.closest('.trigger') && !e.target.closest('.menu')) {
+      document.querySelectorAll('.menu.show').forEach(m => m.classList.remove('show'));
+      document.querySelectorAll('.split.is-open').forEach(s => s.classList.remove('is-open'));
+      document.querySelectorAll('.trigger.is-open').forEach(t => t.classList.remove('is-open'));
+    }
+  });
+</script>
+
+</body>
+</html>
