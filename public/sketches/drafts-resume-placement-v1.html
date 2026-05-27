@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Drafts · Resume placement · v1 (3 variants)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafaf9;
+    --ink: #1a1a1a;
+    --gray: #7a7670;
+    --gray-faint: #b8b3aa;
+    --hairline: rgba(0,0,0,0.14);
+    --hairline-soft: rgba(0,0,0,0.06);
+    --gold: #C5A255;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 36px 56px; line-height: 1.5; }
+  h1 { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.01em; font-weight: 400; margin-bottom: 8px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 40px; max-width: 720px; }
+  .variant { margin-bottom: 56px; }
+  .v-label { font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .v-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 4px; }
+  .v-blurb { color: var(--gray); font-size: 0.8rem; margin-bottom: 18px; max-width: 720px; }
+  .stage { border: 1px solid var(--hairline); padding: 0; background: var(--bg); min-height: 220px; }
+
+  /* Shared dashboard chrome */
+  .dash { padding: 24px 36px; }
+  .dash-title {
+    font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.01em;
+    font-weight: 400; color: var(--ink); text-transform: uppercase; line-height: 1;
+  }
+  .start-btn {
+    background: var(--ink); color: var(--gold); border: 1px solid var(--ink);
+    border-radius: 9999px; padding: 10px 22px;
+    font-family: var(--mono); font-size: 0.62rem; font-weight: 600;
+    letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+  .stub-card {
+    margin-top: 18px; padding: 20px 22px; border: 1px solid var(--hairline);
+    border-radius: 4px; color: var(--gray); font-size: 0.85rem;
+  }
+  .stub-card .eyebrow { font-size: 0.56rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray-faint); margin-bottom: 6px; }
+
+  /* ── Variant A — Tiny inline link below heading ───────────────────── */
+  .va-subline {
+    margin-top: 8px;
+    font-size: 0.74rem; color: var(--gray);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .va-subline a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .va-subline a:hover { text-decoration-color: var(--ink); }
+  .va-subline .sep { color: var(--gray-faint); }
+  .va-subline .danger { color: #9a4040; }
+
+  /* ── Variant B — Separate DRAFTS row above CAMPAIGNS ──────────────── */
+  .vb-drafts {
+    padding: 18px 22px; margin-bottom: 18px;
+    border: 1px solid var(--hairline); border-radius: 4px;
+    background: rgba(0,0,0,0.015);
+  }
+  .vb-eyebrow { font-size: 0.56rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .vb-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .vb-name { font-weight: 500; font-size: 0.95rem; }
+  .vb-meta { color: var(--gray); font-size: 0.78rem; margin-top: 2px; }
+  .vb-actions { display: flex; gap: 8px; }
+  .vb-btn {
+    background: transparent; color: var(--ink); border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 7px 14px; font-family: var(--mono);
+    font-size: 0.72rem; cursor: pointer;
+  }
+  .vb-btn:hover { border-color: var(--ink); }
+  .vb-btn.icon { padding: 7px 9px; }
+
+  /* ── Variant C — Drafts as first item inside campaigns list ───────── */
+  .vc-card {
+    margin-top: 18px; padding: 20px 22px; border: 1px solid var(--hairline);
+    border-radius: 4px; background: var(--bg);
+  }
+  .vc-card.draft { border-left: 3px solid var(--gold); }
+  .vc-eyebrow { font-size: 0.56rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .vc-dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--gold); }
+  .vc-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .vc-name { font-weight: 500; font-size: 1.05rem; }
+  .vc-meta { color: var(--gray); font-size: 0.78rem; margin-top: 4px; }
+  .vc-actions { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<h1>Drafts — Resume placement</h1>
+<div class="lead">
+  Three placements for the in-progress draft on the dashboard. Today's pill (✏ RESUME · Untitled draft · 🗑)
+  sits between the CAMPAIGNS heading and the START button — the user says that row feels cluttered and unbalanced.
+  Real fields only: draft name from <code>campaign-name-input</code> (falls back to "Untitled draft"), <code>lastEditedAt</code> from <code>src/drafts.js</code>.
+</div>
+
+<!-- ── Variant A ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant A</div>
+  <div class="v-title">Tiny inline link under the heading</div>
+  <div class="v-blurb">Secondary text below the CAMPAIGNS title. No pill, no icons — just words. The START button stays the only prominent CTA on the row.</div>
+  <div class="stage">
+    <div class="dash">
+      <div class="row">
+        <div>
+          <div class="dash-title">Campaigns</div>
+          <div class="va-subline">
+            1 draft in progress — <a>resume “Untitled draft”</a> <span class="sep">·</span> <a class="danger">delete</a>
+          </div>
+        </div>
+        <button class="start-btn">+ Start new campaign</button>
+      </div>
+      <div class="stub-card">
+        <div class="eyebrow">Active</div>
+        No campaign running
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Variant B ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant B</div>
+  <div class="v-title">Separate “Drafts” section above Campaigns</div>
+  <div class="v-blurb">Drafts get their own block at the top of the dashboard. Distinct from running campaigns — and ready to scale if you ever keep multiple drafts (today there's only one slot, but the layout supports a list).</div>
+  <div class="stage">
+    <div class="dash">
+      <div class="row">
+        <div class="dash-title">Campaigns</div>
+        <button class="start-btn">+ Start new campaign</button>
+      </div>
+      <div class="vb-drafts" style="margin-top: 18px;">
+        <div class="vb-eyebrow">Drafts in progress</div>
+        <div class="vb-row">
+          <div>
+            <div class="vb-name">Untitled draft</div>
+            <div class="vb-meta">Last edited just now</div>
+          </div>
+          <div class="vb-actions">
+            <button class="vb-btn">Resume</button>
+            <button class="vb-btn icon" title="Delete">🗑</button>
+          </div>
+        </div>
+      </div>
+      <div class="stub-card" style="margin-top: 0;">
+        <div class="eyebrow">Active</div>
+        No campaign running
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Variant C ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant C</div>
+  <div class="v-title">Draft as the first card in the campaigns list</div>
+  <div class="v-blurb">Treats the draft like any other lifecycle state — sits at the top of the campaigns flow (above Active / Up Next / Past) with a small gold rule on the left to mark it as a draft. Same card shape as the rest of the dashboard.</div>
+  <div class="stage">
+    <div class="dash">
+      <div class="row">
+        <div class="dash-title">Campaigns</div>
+        <button class="start-btn">+ Start new campaign</button>
+      </div>
+      <div class="vc-card draft">
+        <div class="vc-eyebrow"><span class="vc-dot"></span> Draft · in progress</div>
+        <div class="vc-row">
+          <div>
+            <div class="vc-name">Untitled draft</div>
+            <div class="vc-meta">Last edited just now</div>
+          </div>
+          <div class="vc-actions">
+            <button class="vb-btn">Resume editing</button>
+            <button class="vb-btn icon" title="Delete">🗑</button>
+          </div>
+        </div>
+      </div>
+      <div class="stub-card">
+        <div class="eyebrow">Active</div>
+        No campaign running
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
