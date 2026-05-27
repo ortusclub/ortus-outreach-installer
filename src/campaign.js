@@ -473,6 +473,12 @@ export const campaign = {
   // to connectedUrls; auto-intro .add()s URLs after successful (or already-
   // exists) intros. Reset on each new campaign start.
   introducedInRun: new Set(),
+  // v2.61.0: count of MESSAGE_SEND_FAILED: compose-textbox failures per URL
+  // within this process. Bulk-check uses it to stop re-queueing leads that
+  // fail repeatedly even when reverify-and-downgrade (auto-intro.js) was
+  // inconclusive (e.g. getConnectionStatus returned 'unknown'). Resets on
+  // each new campaign run.
+  composeAttempts: new Map(),
   name: '',
 };
 
@@ -1183,6 +1189,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.nextCheckAt = null;
   campaign.participatingProfileIds = [];
   campaign.introducedInRun = new Set();
+  campaign.composeAttempts = new Map();
   campaign._paused = false;
   campaign._pauseRequested = false;
   campaign.currentProfile = null;
