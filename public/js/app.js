@@ -7134,7 +7134,12 @@ window.deleteDraft = deleteDraft;
 // in localStorage so isOnNewCampaignView returns false and the live status
 // / log / runbar / buttons all reflect the running campaign instead of
 // the previously-edited draft. Used by the Active tab's Edit button.
-function viewRunningCampaign() {
+async function viewRunningCampaign() {
+  // 2026-05-27 (drafts-isolation, Task 6): flush before dropping the active
+  // draft id so a half-saved draft doesn't lose its tail of typed input.
+  if (typeof flushAutosaveImmediate === 'function') {
+    try { await flushAutosaveImmediate(); } catch {}
+  }
   clearActiveDraft();
   goCreateCampaign();
 }
@@ -7142,6 +7147,13 @@ window.viewRunningCampaign = viewRunningCampaign;
 
 async function editDraft(id) {
   if (!id) return;
+  // 2026-05-27 (drafts-isolation, Task 6): flush any pending autosave for
+  // the CURRENT active draft BEFORE switching the id. Otherwise the next
+  // _flushAutosave fires under the new id and lands A's typed-but-unsaved
+  // changes on B. Safe to call even when no draft is active.
+  if (typeof flushAutosaveImmediate === 'function') {
+    try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before switch:', err); }
+  }
   setActiveDraftId(id);
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
   wizardDirty = false;
