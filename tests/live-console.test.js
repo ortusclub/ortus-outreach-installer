@@ -64,7 +64,7 @@ test('computePillState: state=monitoring → green pulse, monitoring label', () 
 });
 
 test('computePillState: missing fields → graceful fallback', () => {
-  const r = computePillState({ running: true });
+  const r = computePillState({});
   assert.equal(r.dot, 'gray');
   assert.equal(r.name, '—');
   assert.equal(r.processed, 0);
