@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Floating console · live campaign status (3 variants)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #131313;
+    --ink: #fafafa;
+    --gray: #8a8a8a;
+    --gray-faint: #555;
+    --hairline: rgba(255,255,255,0.14);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --gold: #F7BE68;
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    --body: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--body); background: var(--bg); color: var(--ink); padding: 36px 56px 240px; line-height: 1.5; }
+  h1 { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 8px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 32px; max-width: 720px; }
+  .note { color: var(--gray-faint); font-size: 0.72rem; margin-bottom: 48px; max-width: 720px; font-style: italic; }
+
+  .variant { margin-bottom: 80px; }
+  .v-label { font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .v-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 4px; }
+  .v-blurb { color: var(--gray); font-size: 0.82rem; margin-bottom: 18px; max-width: 760px; }
+
+  /* Simulated app surface — so the floating console has a "page" behind it */
+  .stage {
+    position: relative;
+    border: 1px solid var(--hairline);
+    background: #0d0d0d;
+    height: 360px;
+    overflow: hidden;
+    padding: 22px 28px;
+  }
+  .stage-title { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; color: var(--ink); margin-bottom: 6px; }
+  .stage-sub { font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); margin-bottom: 18px; }
+  .stage-body { color: var(--gray); font-size: 0.85rem; max-width: 520px; }
+
+  /* ── Shared bits ──────────────────────────────────────────────────── */
+  .pulse {
+    display: inline-block; width: 8px; height: 8px; border-radius: 9999px;
+    background: var(--green);
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.7);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55); }
+    70%  { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+  }
+  .mono { font-family: var(--mono); font-size: 0.78rem; }
+  .tab-num { font-variant-numeric: tabular-nums; }
+
+  /* ─────────────────────────────────────────────────────────────────── */
+  /* Variant A — Corner pill                                             */
+  /* ─────────────────────────────────────────────────────────────────── */
+  .va-pill {
+    position: absolute; bottom: 18px; left: 18px;
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 9px 14px 9px 12px;
+    background: rgba(19,19,19,0.92);
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .va-pill:hover { border-color: var(--gold); }
+  .va-pill .sep { width: 1px; height: 14px; background: var(--hairline); }
+  .va-pill .label { font-size: 0.7rem; color: var(--gray); letter-spacing: 0.04em; }
+  .va-pill .num { font-family: var(--mono); font-size: 0.74rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .va-pill .chev { color: var(--gray-faint); font-size: 0.7rem; margin-left: 2px; }
+
+  /* ─────────────────────────────────────────────────────────────────── */
+  /* Variant B — Bottom dock bar                                         */
+  /* ─────────────────────────────────────────────────────────────────── */
+  .vb-bar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(180deg, rgba(15,15,15,0.96), rgba(10,10,10,0.98));
+    border-top: 1px solid var(--hairline);
+    backdrop-filter: blur(8px);
+    padding: 10px 18px 0;
+  }
+  .vb-row {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto;
+    align-items: center;
+    gap: 18px;
+  }
+  .vb-status { display: inline-flex; align-items: center; gap: 8px; }
+  .vb-status .name { font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.02em; }
+  .vb-status .mode { font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-left: 6px; }
+  .vb-mid { color: var(--gray); font-family: var(--mono); font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vb-mid .ink { color: var(--ink); }
+  .vb-stat { font-family: var(--mono); font-size: 0.78rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .vb-stat .lbl { font-family: var(--body); font-size: 0.58rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; display: block; }
+  .vb-toggle {
+    background: transparent; color: var(--gray); border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 5px 12px;
+    font-family: var(--body); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .vb-toggle:hover { color: var(--ink); border-color: var(--ink); }
+  .vb-progress {
+    height: 2px; background: var(--hairline-soft); margin-top: 10px; position: relative;
+  }
+  .vb-progress .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gold); width: 38%; }
+  .vb-warn { color: var(--amber); font-size: 0.7rem; }
+
+  /* ─────────────────────────────────────────────────────────────────── */
+  /* Variant C — Draggable HUD card                                      */
+  /* ─────────────────────────────────────────────────────────────────── */
+  .vc-card {
+    position: absolute; top: 16px; right: 16px;
+    width: 320px;
+    background: rgba(19,19,19,0.96);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+  }
+  .vc-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--hairline-soft);
+    cursor: move;
+  }
+  .vc-head .left { display: inline-flex; align-items: center; gap: 8px; }
+  .vc-head .title { font-family: var(--display); font-size: 0.95rem; letter-spacing: 0.02em; }
+  .vc-head .controls { display: inline-flex; gap: 4px; }
+  .vc-head .ctl {
+    width: 18px; height: 18px; border-radius: 9999px;
+    border: 1px solid var(--hairline); background: transparent;
+    color: var(--gray); font-size: 0.7rem; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .vc-head .ctl:hover { color: var(--ink); border-color: var(--ink); }
+  .vc-body { padding: 12px; }
+  .vc-row {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 5px 0;
+    font-size: 0.78rem;
+  }
+  .vc-row .k { font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); align-self: center; }
+  .vc-row .v { font-family: var(--mono); font-size: 0.76rem; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vc-divider { height: 1px; background: var(--hairline-soft); margin: 8px 0; }
+  .vc-log {
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray);
+    background: rgba(0,0,0,0.4); border: 1px solid var(--hairline-soft);
+    border-radius: 3px; padding: 8px 10px;
+    max-height: 64px; overflow: hidden;
+    line-height: 1.55;
+  }
+  .vc-log .ln { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vc-log .ln.ink { color: var(--ink); }
+  .vc-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px;
+    border-top: 1px solid var(--hairline-soft);
+    font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint);
+  }
+  .vc-foot a { color: var(--gold); text-decoration: none; }
+  .vc-foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1>Floating console — live campaign status</h1>
+<div class="lead">
+  Three quick variants for a floating console that surfaces "something is happening"
+  whenever a campaign is running. All shown over a stub of the dashboard page so you
+  can judge how invasive each is. Hides itself when nothing is running.
+</div>
+<div class="note">
+  Data shown is from the real <code>/api/campaign/status</code> payload:
+  <code>state</code>, <code>name</code>, <code>mode</code>, <code>currentProfile</code>,
+  <code>currentAction.label</code>, <code>processedToday</code>, <code>totalTargets</code>,
+  <code>throttle</code>, <code>errors</code>, <code>parked</code>, last lines of <code>logs</code>.
+  No invented stats.
+</div>
+
+<!-- ─── Variant A ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant A</div>
+  <div class="v-title">Corner pill — single-line, always visible (bottom-left)</div>
+  <div class="v-blurb">
+    A small pill anchored to the <strong>bottom-left</strong> of the viewport (<code>position: fixed</code>),
+    always visible across every section of the app — same persistent anchoring pattern as the
+    launch-options trigger. One line: a green pulse, the campaign name, the mode tag, and
+    processed/total. Click expands to the full console. Footprint is tiny — operator can leave
+    it on while navigating Logs, Settings, Accounts. Disappears entirely when
+    <code>state === 'idle'</code>.
+  </div>
+  <div class="stage">
+    <div class="stage-title">CAMPAIGNS</div>
+    <div class="stage-sub">Dashboard · 1 running</div>
+    <div class="stage-body">
+      The page behind the console keeps working as normal. Notice how the pill stays
+      out of the main content area — operator can scroll, click, type without bumping
+      into it. (This is what the operator would see while on, say, the Logs view
+      while their CC+IC campaign runs.)
+    </div>
+    <div class="va-pill" title="Click to expand the live console">
+      <span class="pulse"></span>
+      <span class="label">Sam · CC+IC</span>
+      <span class="sep"></span>
+      <span class="num tab-num">47 / 280</span>
+      <span class="chev">›</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Variant B ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant B</div>
+  <div class="v-title">Bottom dock bar — full width, video-player style</div>
+  <div class="v-blurb">
+    A persistent strip docked to the bottom of the window. Status on the left, the current
+    action mid-line (truncated), counters and the expand toggle on the right. A 2px gold
+    bar underneath shows progress through <code>processedToday / totalTargets</code>.
+    Shows soft warnings (throttle, parked profiles) inline when they fire. Higher visibility
+    than the pill, but eats ~56px of vertical space.
+  </div>
+  <div class="stage">
+    <div class="stage-title">CAMPAIGNS</div>
+    <div class="stage-sub">Dashboard · 1 running</div>
+    <div class="stage-body">
+      Whichever screen the operator is on, this strip sits at the bottom. It rides above
+      the existing run-bar — or replaces it entirely, depending on how we want to
+      consolidate.
+    </div>
+    <div class="vb-bar">
+      <div class="vb-row">
+        <div class="vb-status">
+          <span class="pulse"></span>
+          <span class="name">Sam · Connect + Introduce</span>
+          <span class="mode">CC+IC</span>
+        </div>
+        <div class="vb-warn">⚠ throttle: cpu-high (0.6×)</div>
+        <div class="vb-mid">
+          <span>→</span> <span class="ink">Marlon</span> · sending intro DM to <span class="ink">Priya Sharma</span>
+        </div>
+        <div class="vb-stat">
+          <span class="lbl">Processed</span>
+          47 / 280
+        </div>
+        <button class="vb-toggle">Expand ▴</button>
+      </div>
+      <div class="vb-progress"><div class="fill"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Variant C ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant C</div>
+  <div class="v-title">Draggable HUD card — corner panel with live feed</div>
+  <div class="v-blurb">
+    A small draggable card that sticks to a corner of the window. Header is grabbable for
+    repositioning; minimize collapses it to the pill from Variant A. Body shows current
+    profile, current lead, processed/total, and the last 2–3 log lines from
+    <code>campaign.logs</code>. Most info per pixel of the three. Operator can park it
+    in a corner that doesn't fight their work.
+  </div>
+  <div class="stage">
+    <div class="stage-title">CAMPAIGNS</div>
+    <div class="stage-sub">Dashboard · 1 running</div>
+    <div class="stage-body">
+      Best when the operator wants to glance up and see exactly which lead is being
+      worked on right now without leaving the screen they're on. The log lines turn
+      this into a mini "tail -f" of the campaign.
+    </div>
+    <div class="vc-card">
+      <div class="vc-head">
+        <div class="left">
+          <span class="pulse"></span>
+          <span class="title">SAM · CC+IC</span>
+        </div>
+        <div class="controls">
+          <button class="ctl" title="Minimize to pill">–</button>
+          <button class="ctl" title="Open full dashboard">↗</button>
+        </div>
+      </div>
+      <div class="vc-body">
+        <div class="vc-row"><span class="k">Account</span><span class="v">Marlon</span></div>
+        <div class="vc-row"><span class="k">Lead</span><span class="v">Priya Sharma</span></div>
+        <div class="vc-row"><span class="k">Action</span><span class="v">Sending intro DM</span></div>
+        <div class="vc-row"><span class="k">Processed</span><span class="v">47 / 280</span></div>
+        <div class="vc-row"><span class="k">Parked</span><span class="v">1 · 0 errors</span></div>
+        <div class="vc-divider"></div>
+        <div class="vc-log">
+          <span class="ln">[14:02:11] Marlon · opened conversation</span>
+          <span class="ln ink">[14:02:14] Marlon · sent intro DM (3-way · Tom)</span>
+          <span class="ln">[14:02:14] cooldown 90s · next: Anika V.</span>
+        </div>
+      </div>
+      <div class="vc-foot">
+        <span>state: sending</span>
+        <a href="#">Open dashboard ›</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

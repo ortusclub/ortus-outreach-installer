@@ -41,6 +41,18 @@
     <div class="card-desc">Restructured layout: sticky sidebar nav with Roman-numeralled sections, main-area panels, hero stats, live feed, sticky "run bar" footer. Still dark + gold. Best for day-to-day operators who jump between sections and need overview at a glance.</div>
   </a>
 
+  <a class="card" href="floating-console-click-target-v1.html">
+    <div class="card-label">Sketch · 2026-05-27</div>
+    <div class="card-title">Floating console — click-target (3 variants)</div>
+    <div class="card-desc">Picked the bottom-left pill (Variant A from floating-console-v1). This sketch shows what should open when you click it. (1) Scroll-to existing #nav-status section — reuses the real cockpit-panel, ~30 LOC. (2) Modal overlay with same cockpit content — stays in place, ~150 LOC. (3) Expand-in-place HUD card — pill morphs into 360px panel anchored same corner, includes last 3 log lines (mini tail -f), ~250 LOC. Real cockpit fields only.</div>
+  </a>
+
+  <a class="card" href="floating-console-v1.html">
+    <div class="card-label">Sketch · 2026-05-27</div>
+    <div class="card-title">Floating console — live campaign status (3 variants)</div>
+    <div class="card-desc">A floating console that surfaces "something is happening" while a campaign runs. (A) Corner pill — bottom-right single-line, name + mode + processed/total, click to expand. (B) Bottom dock bar — full-width strip, status left, current lead mid-line, counters right, 2px gold progress bar; throttle/parked warnings inline. (C) Draggable HUD card — corner panel with account, lead, action, processed, parked + last 3 log lines (mini tail -f). All three hide when state=idle. Real fields only from /api/campaign/status.</div>
+  </a>
+
   <a class="card" href="drafts-launch-menu-v1.html">
     <div class="card-label">Sketch · 2026-05-27</div>
     <div class="card-title">Drafts — Launch menu (3 variants)</div>

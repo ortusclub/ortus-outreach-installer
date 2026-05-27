@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Floating console · what opens on click (3 variants)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #131313;
+    --ink: #fafafa;
+    --gray: #8a8a8a;
+    --gray-faint: #555;
+    --hairline: rgba(255,255,255,0.14);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --gold: #F7BE68;
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    --body: 'Hanken Grotesk', -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--body); background: var(--bg); color: var(--ink); padding: 36px 56px 80px; line-height: 1.5; }
+  h1 { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 8px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 32px; max-width: 720px; }
+  .note { color: var(--gray-faint); font-size: 0.72rem; margin-bottom: 48px; max-width: 720px; font-style: italic; }
+
+  .variant { margin-bottom: 64px; }
+  .v-label { font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .v-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 4px; }
+  .v-blurb { color: var(--gray); font-size: 0.82rem; margin-bottom: 18px; max-width: 760px; }
+  .cost { color: var(--gold); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 12px; }
+
+  /* ── Simulated app surface ─────────────────────────────────────────── */
+  .stage {
+    position: relative;
+    border: 1px solid var(--hairline);
+    background: #0d0d0d;
+    height: 520px;
+    overflow: hidden;
+  }
+  .stage-scroll {
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    padding: 22px 28px;
+  }
+  .stage-title { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; color: var(--ink); margin-bottom: 6px; }
+  .stage-sub { font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); margin-bottom: 18px; }
+  .stage-body { color: var(--gray); font-size: 0.85rem; max-width: 520px; }
+  .stub-block {
+    margin: 18px 0; padding: 24px; border: 1px solid var(--hairline-soft);
+    color: var(--gray-faint); font-size: 0.78rem; min-height: 120px;
+  }
+  .stub-block .stub-h { color: var(--gray); font-family: var(--display); font-size: 1rem; letter-spacing: 0.04em; margin-bottom: 8px; text-transform: uppercase; }
+
+  /* ── Shared pill (Variant A from prior sketch) ─────────────────────── */
+  .pulse {
+    display: inline-block; width: 8px; height: 8px; border-radius: 9999px;
+    background: var(--green);
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.7);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55); }
+    70%  { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+  }
+  .pill {
+    position: absolute; bottom: 18px; left: 18px;
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 9px 14px 9px 12px;
+    background: rgba(19,19,19,0.92);
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    cursor: pointer;
+    z-index: 60;
+  }
+  .pill:hover { border-color: var(--gold); }
+  .pill .sep { width: 1px; height: 14px; background: var(--hairline); }
+  .pill .label { font-size: 0.7rem; color: var(--gray); letter-spacing: 0.04em; }
+  .pill .num { font-family: var(--mono); font-size: 0.74rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .pill .chev { color: var(--gray-faint); font-size: 0.7rem; margin-left: 2px; }
+
+  /* ── Real cockpit-panel replica (mirrors public/index.html) ────────── */
+  .cockpit {
+    border: 1px solid var(--hairline);
+    padding: 22px 24px;
+    background: rgba(15,15,15,0.6);
+  }
+  .cockpit-top { display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: center; }
+  .ring {
+    position: relative; width: 110px; height: 110px;
+  }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 4; }
+  .ring .bg { stroke: var(--hairline); }
+  .ring .fg { stroke: var(--gold); stroke-dasharray: 282.7; stroke-dashoffset: 175; transition: stroke-dashoffset 0.4s; }
+  .ring-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .ring-num { font-family: var(--display); font-size: 1.8rem; line-height: 1; }
+  .ring-unit { font-size: 0.55rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-top: 2px; }
+  .ring-footer { font-size: 0.6rem; color: var(--gray-faint); margin-top: 2px; }
+
+  .cockpit-info { min-width: 0; }
+  .cockpit-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase;
+    color: var(--green); margin-bottom: 6px;
+  }
+  .cockpit-tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--green); }
+  .cockpit-action { font-size: 0.95rem; color: var(--ink); margin-bottom: 12px; }
+  .cockpit-meta {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 14px;
+    font-size: 0.78rem;
+  }
+  .cockpit-meta .lbl { font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); align-self: center; }
+  .cockpit-meta .val { font-family: var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .cockpit-stats {
+    border-top: 1px solid var(--hairline-soft);
+    margin-top: 16px; padding-top: 12px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  .cockpit-stat-lbl { font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); margin-bottom: 4px; }
+  .cockpit-stat-val { font-family: var(--mono); font-size: 1.1rem; }
+  .cockpit-stat-of { color: var(--gray); font-size: 0.9rem; }
+  .cockpit-bar { grid-column: 1 / -1; height: 2px; background: var(--hairline-soft); position: relative; margin-top: 4px; }
+  .cockpit-bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gold); width: 38%; }
+
+  /* ─────────────────────────────────────────────────────────────────── */
+  /* Variant 1 — Scroll-to (cockpit already in page, scrolls into view)  */
+  /* ─────────────────────────────────────────────────────────────────── */
+  .v1-scroll-hint {
+    position: absolute; bottom: 60px; left: 28px;
+    color: var(--gold); font-size: 0.68rem; letter-spacing: 0.22em; text-transform: uppercase;
+    pointer-events: none;
+    animation: bob 1.8s ease-in-out infinite;
+  }
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); opacity: 0.8; }
+    50%      { transform: translateY(-6px); opacity: 1; }
+  }
+  .v1-scroll-hint::before { content: '↓'; display: inline-block; margin-right: 6px; }
+
+  /* ─────────────────────────────────────────────────────────────────── */
+  /* Variant 2 — Modal overlay                                           */
+  /* ─────────────────────────────────────────────────────────────────── */
+  .v2-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.62);
+    backdrop-filter: blur(3px);
+    z-index: 40;
+  }
+  .v2-modal {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 560px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+    z-index: 50;
+  }
+  .v2-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .v2-modal-head .ttl { font-family: var(--display); font-size: 1.1rem; letter-spacing: 0.04em; }
+  .v2-modal-head .close {
+    width: 22px; height: 22px; border-radius: 9999px;
+    border: 1px solid var(--hairline); background: transparent;
+    color: var(--gray); font-size: 0.9rem; line-height: 1;
+    cursor: pointer;
+  }
+  .v2-modal-head .close:hover { color: var(--ink); border-color: var(--ink); }
+  .v2-modal-body { padding: 18px; }
+
+  /* ─────────────────────────────────────────────────────────────────── */
+  /* Variant 3 — Expand in place                                         */
+  /* ─────────────────────────────────────────────────────────────────── */
+  .v3-card {
+    position: absolute; bottom: 18px; left: 18px;
+    width: 360px;
+    background: rgba(19,19,19,0.96);
+    border: 1px solid var(--gold);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+    backdrop-filter: blur(8px);
+    z-index: 60;
+  }
+  .v3-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .v3-head .left { display: inline-flex; align-items: center; gap: 8px; }
+  .v3-head .title { font-family: var(--display); font-size: 1rem; letter-spacing: 0.04em; }
+  .v3-head .mode-tag { font-size: 0.55rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-left: 4px; }
+  .v3-head .ctl {
+    width: 20px; height: 20px; border-radius: 9999px;
+    border: 1px solid var(--hairline); background: transparent;
+    color: var(--gray); font-size: 0.8rem; line-height: 1;
+    cursor: pointer;
+  }
+  .v3-head .ctl:hover { color: var(--ink); border-color: var(--ink); }
+  .v3-body { padding: 12px; }
+  .v3-row {
+    display: grid; grid-template-columns: auto 1fr; gap: 10px;
+    padding: 4px 0;
+    font-size: 0.78rem;
+  }
+  .v3-row .k { font-size: 0.55rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); align-self: center; }
+  .v3-row .v { font-family: var(--mono); font-size: 0.76rem; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+  .v3-divider { height: 1px; background: var(--hairline-soft); margin: 8px 0; }
+  .v3-log {
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray);
+    background: rgba(0,0,0,0.4); border: 1px solid var(--hairline-soft);
+    border-radius: 3px; padding: 8px 10px;
+    line-height: 1.55;
+  }
+  .v3-log .ln { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .v3-log .ln.ink { color: var(--ink); }
+  .v3-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px;
+    border-top: 1px solid var(--hairline-soft);
+    font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint);
+  }
+  .v3-foot a { color: var(--gold); text-decoration: none; }
+  .v3-foot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1>Floating console — what opens on click</h1>
+<div class="lead">
+  Three variants of click behavior for the bottom-left pill. The pill itself is the same in
+  all three; only the click target changes. Cockpit content shown is the real
+  <code>#cockpit-panel</code> from <code>public/index.html</code> (progress ring, status tag,
+  action line, Lead / Account / Mode meta, Sent today / Errors stats).
+</div>
+
+<!-- ─── Variant 1 ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant 1 · Recommended</div>
+  <div class="v-title">Scroll-to existing Live Status section</div>
+  <div class="v-blurb">
+    Click → smooth-scroll to <code>#nav-status</code>. The cockpit panel that already exists
+    in the dashboard slides into view. Operator's existing mental model is preserved — same
+    widget they've used since v2.8.x. No new surface, no overlay, no duplication of state.
+  </div>
+  <div class="cost">Cost · ~30 LOC · one new helper, calls existing scrollToSection()</div>
+  <div class="stage">
+    <div class="stage-scroll">
+      <div class="stage-title">CAMPAIGNS</div>
+      <div class="stage-sub">Dashboard · Section IV. Campaign Settings</div>
+      <div class="stage-body">
+        Imagine the operator scrolled down to Campaign Settings to tweak a template.
+        They notice the pulse on the pill bottom-left, click it, and the page scrolls
+        down to the Live Status section below.
+      </div>
+
+      <div class="stub-block">
+        <div class="stub-h">Section IV — Campaign Settings</div>
+        Template fields, message variables, intro DM body editor…
+      </div>
+      <div class="stub-block">
+        <div class="stub-h">Section V — Launch</div>
+        Launch hero number, mode toggle, schedule panel…
+      </div>
+
+      <div style="margin: 18px 0 8px;">
+        <div class="stage-sub" style="color: var(--gold);">▾ Live Status (scroll target)</div>
+      </div>
+      <div class="cockpit">
+        <div class="cockpit-top">
+          <div class="ring">
+            <svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="45"></circle><circle class="fg" cx="50" cy="50" r="45"></circle></svg>
+            <div class="ring-center">
+              <div class="ring-num">47</div>
+              <div class="ring-unit">of 280</div>
+              <div class="ring-footer">17%</div>
+            </div>
+          </div>
+          <div class="cockpit-info">
+            <div class="cockpit-tag"><span class="dot"></span>SENDING · CC+IC</div>
+            <div class="cockpit-action">Sending intro DM to <strong>Priya Sharma</strong></div>
+            <div class="cockpit-meta">
+              <div class="lbl">Lead</div>    <div class="val">Priya Sharma</div>
+              <div class="lbl">Account</div> <div class="val">Marlon</div>
+              <div class="lbl">Mode</div>    <div class="val">CC+IC</div>
+            </div>
+          </div>
+        </div>
+        <div class="cockpit-stats">
+          <div>
+            <div class="cockpit-stat-lbl">Sent today</div>
+            <div class="cockpit-stat-val">47<span class="cockpit-stat-of"> of </span>280</div>
+          </div>
+          <div>
+            <div class="cockpit-stat-lbl">Errors</div>
+            <div class="cockpit-stat-val">0</div>
+          </div>
+          <div class="cockpit-bar"><div class="fill"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="v1-scroll-hint">SCROLLS DOWN</div>
+    <div class="pill" title="Click to scroll to Live Status">
+      <span class="pulse"></span>
+      <span class="label">Sam · CC+IC</span>
+      <span class="sep"></span>
+      <span class="num">47 / 280</span>
+      <span class="chev">›</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Variant 2 ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant 2</div>
+  <div class="v-title">Modal overlay with cockpit content</div>
+  <div class="v-blurb">
+    Click → backdrop dims the page, modal slides in centered. Same cockpit content,
+    rendered on top. Operator doesn't lose their scroll position. Click backdrop or ✕ to
+    close. Slightly heavier — needs the cockpit markup duplicated (or extracted into a
+    template) and modal open/close wiring.
+  </div>
+  <div class="cost">Cost · ~150 LOC · new modal markup + escape/backdrop handlers</div>
+  <div class="stage">
+    <div class="stage-scroll">
+      <div class="stage-title">CAMPAIGNS</div>
+      <div class="stage-sub">Dashboard · Section IV. Campaign Settings</div>
+      <div class="stage-body">
+        Operator stays exactly where they were. Modal floats above the dimmed page.
+      </div>
+      <div class="stub-block"><div class="stub-h">Section IV — Campaign Settings</div>Template fields…</div>
+      <div class="stub-block"><div class="stub-h">Section V — Launch</div>Launch panel…</div>
+    </div>
+    <div class="v2-backdrop"></div>
+    <div class="v2-modal">
+      <div class="v2-modal-head">
+        <span class="ttl">LIVE STATUS</span>
+        <button class="close">×</button>
+      </div>
+      <div class="v2-modal-body">
+        <div class="cockpit">
+          <div class="cockpit-top">
+            <div class="ring">
+              <svg viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="45"></circle><circle class="fg" cx="50" cy="50" r="45"></circle></svg>
+              <div class="ring-center">
+                <div class="ring-num">47</div>
+                <div class="ring-unit">of 280</div>
+                <div class="ring-footer">17%</div>
+              </div>
+            </div>
+            <div class="cockpit-info">
+              <div class="cockpit-tag"><span class="dot"></span>SENDING · CC+IC</div>
+              <div class="cockpit-action">Sending intro DM to <strong>Priya Sharma</strong></div>
+              <div class="cockpit-meta">
+                <div class="lbl">Lead</div>    <div class="val">Priya Sharma</div>
+                <div class="lbl">Account</div> <div class="val">Marlon</div>
+                <div class="lbl">Mode</div>    <div class="val">CC+IC</div>
+              </div>
+            </div>
+          </div>
+          <div class="cockpit-stats">
+            <div>
+              <div class="cockpit-stat-lbl">Sent today</div>
+              <div class="cockpit-stat-val">47<span class="cockpit-stat-of"> of </span>280</div>
+            </div>
+            <div>
+              <div class="cockpit-stat-lbl">Errors</div>
+              <div class="cockpit-stat-val">0</div>
+            </div>
+            <div class="cockpit-bar"><div class="fill"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pill" title="Click — opens modal">
+      <span class="pulse"></span>
+      <span class="label">Sam · CC+IC</span>
+      <span class="sep"></span>
+      <span class="num">47 / 280</span>
+      <span class="chev">›</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Variant 3 ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant 3</div>
+  <div class="v-title">Expand pill in place → HUD card</div>
+  <div class="v-blurb">
+    Click → pill morphs into a 360px card anchored to the same bottom-left corner. Includes
+    the cockpit's key fields plus the last 3 log lines (mini <code>tail -f</code>). No
+    overlay, no navigation. Click "↗" footer to jump to the full Live Status section anyway.
+    Slightly duplicates cockpit-panel state but lets the operator glance without disrupting
+    anything they're doing.
+  </div>
+  <div class="cost">Cost · ~250 LOC · new card + own state mgmt + log tailer</div>
+  <div class="stage">
+    <div class="stage-scroll">
+      <div class="stage-title">CAMPAIGNS</div>
+      <div class="stage-sub">Dashboard · Section IV. Campaign Settings</div>
+      <div class="stage-body">
+        Operator stays exactly where they were. The pill itself becomes the panel.
+      </div>
+      <div class="stub-block"><div class="stub-h">Section IV — Campaign Settings</div>Template fields…</div>
+      <div class="stub-block"><div class="stub-h">Section V — Launch</div>Launch panel…</div>
+    </div>
+    <div class="v3-card">
+      <div class="v3-head">
+        <div class="left">
+          <span class="pulse"></span>
+          <span class="title">SAM</span><span class="mode-tag">CC+IC</span>
+        </div>
+        <button class="ctl" title="Collapse to pill">–</button>
+      </div>
+      <div class="v3-body">
+        <div class="v3-row"><span class="k">Account</span><span class="v">Marlon</span></div>
+        <div class="v3-row"><span class="k">Lead</span><span class="v">Priya Sharma</span></div>
+        <div class="v3-row"><span class="k">Action</span><span class="v">Sending intro DM</span></div>
+        <div class="v3-row"><span class="k">Sent</span><span class="v">47 / 280 · 0 err</span></div>
+        <div class="v3-divider"></div>
+        <div class="v3-log">
+          <span class="ln">[14:02:11] Marlon · opened conversation</span>
+          <span class="ln ink">[14:02:14] Marlon · sent intro DM</span>
+          <span class="ln">[14:02:14] cooldown 90s · next: Anika V.</span>
+        </div>
+      </div>
+      <div class="v3-foot">
+        <span>state · sending</span>
+        <a href="#">Open Live Status ›</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
