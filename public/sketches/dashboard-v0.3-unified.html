@@ -1,0 +1,1699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ortus · Dashboard v0.3 · Unified vocabulary</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ── Tokens ────────────────────────────────────────────────── */
+  :root {
+    --bg: #fafafa;
+    --bg-soft: #faf9f7;
+    --ink: #0a0a0a;
+    --gray: #6b6b6b;
+    --gray-faint: #b8b8b6;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --green: #3fb950;
+    --red: #f85149;
+    --gold: #F7BE68;
+    --blue: #4a7bb8;   /* monitoring sweep bar */
+
+    /* Section bands — only LIVE sections (Active, Monitoring). Neutral grays,
+       not beige; just enough fill to read as a surface. */
+    --band-active:     #efefee;
+    --band-monitoring: #ebebea;
+    --band-divider:    rgba(0, 0, 0, 0.12);
+    --cal-line:        rgba(0, 0, 0, 0.40);
+
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --body: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --sidebar-w: 280px;
+  }
+  body.theme-dark {
+    --bg: #0a0a0a;
+    --bg-soft: rgba(255, 255, 255, 0.03);
+    --ink: #fafafa;
+    --gray: #999;
+    --gray-faint: #5a5a58;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+
+    --blue: #6ea3d4;
+    --band-active:     rgba(255, 255, 255, 0.05);
+    --band-monitoring: rgba(255, 255, 255, 0.04);
+    --band-divider:    rgba(255, 255, 255, 0.14);
+    --cal-line:        rgba(255, 255, 255, 0.35);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: var(--body); background: var(--bg); color: var(--ink); font-weight: 400; -webkit-font-smoothing: antialiased; line-height: 1.45; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .skip { position: absolute; left: -9999px; top: 0; background: var(--ink); color: var(--bg); padding: 10px 14px; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase; z-index: 100; }
+  .skip:focus-visible { left: 8px; top: 8px; }
+
+  /* ── App shell ────────────────────────────────────────────── */
+  .app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+
+  /* ── Sidebar ──────────────────────────────────────────────── */
+  .sidebar { border-right: 1px solid var(--hairline); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; background: var(--bg); }
+  .sidebar-brand { padding: 36px 32px 28px; }
+  .sidebar-wordmark { font-family: var(--display); font-weight: 400; font-size: 2.6rem; line-height: 1; letter-spacing: 0.01em; text-transform: uppercase; color: var(--ink); }
+  .sidebar-sub { font-family: var(--mono); color: var(--gray); font-size: 0.6rem; letter-spacing: 0.26em; text-transform: uppercase; margin-top: 16px; }
+  .side-group { padding: 0 32px 24px; }
+  .side-group-label { font-family: var(--mono); color: var(--gray); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; margin-bottom: 10px; }
+  .pill-toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; padding: 3px; }
+  .pill-toggle button { background: transparent; border: 1px solid transparent; border-radius: 9999px; padding: 7px 18px; color: var(--gray); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; }
+  .pill-toggle button.active { color: var(--ink); border-color: var(--ink); }
+  .notif-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+  .notif-row-k { color: var(--ink); font-size: 0.82rem; }
+  .notif-row-v { color: var(--gray); letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.58rem; font-family: var(--mono); }
+  .notif-row-v.ok { color: var(--green); }
+  .switch { position: relative; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: var(--gray); border-radius: 9999px; transition: 0.15s; cursor: pointer; }
+  .switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 9999px; background: var(--bg); transition: 0.15s; }
+  .switch input:checked + span { background: var(--green); }
+  .switch input:checked + span::after { left: 18px; }
+  .btn-pill { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 7px 16px; color: var(--ink); font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; }
+  .btn-pill:hover { border-color: var(--ink); background: var(--bg); }
+  .side-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .sidebar-footer { margin-top: auto; padding: 24px 32px 32px; border-top: 1px solid var(--hairline); }
+  .user-chip strong { color: var(--ink); font-weight: 400; display: block; font-size: 0.78rem; }
+  .user-chip span { color: var(--gray); font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; }
+  .sidebar-footer .btn-pill { margin-top: 14px; padding-left: 24px; padding-right: 24px; }
+
+  /* ── Main ─────────────────────────────────────────────────── */
+  .main { padding: 36px 56px 0; min-width: 0; display: flex; flex-direction: column; }
+  .container { max-width: 1320px; width: 100%; margin: 0 auto; flex: 1; display: flex; flex-direction: column; }
+
+  /* Greeting + header stats */
+  .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; padding-bottom: 40px; border-bottom: 1px solid var(--hairline); }
+  .greeting-wordmark { font-family: var(--display); font-weight: 400; font-size: 2.2rem; line-height: 1; letter-spacing: 0.01em; color: var(--ink); text-transform: uppercase; margin-bottom: 14px; }
+  .greeting-subtitle { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .greeting-subtitle small { margin-left: 12px; color: var(--gray); }
+  .header-stats { display: flex; align-items: stretch; flex-shrink: 0; }
+  .header-stat { display: flex; flex-direction: column; gap: 6px; padding: 4px 18px; border-left: 1px solid var(--hairline); white-space: nowrap; }
+  .header-stat:first-child { border-left: none; padding-left: 0; }
+  .header-stat .k { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .header-stat .v { font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); letter-spacing: 0.01em; }
+  .header-stat .v.err { color: var(--red); }
+  .header-stat .v.err[data-zero] { color: var(--ink); }
+  .header-stat .v.small { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; padding-top: 4px; }
+  .passover-pill { display: inline-block; padding: 2px 8px; border: 1px solid var(--hairline); border-radius: 9999px; font-size: 0.56rem; letter-spacing: 0.18em; margin-right: 4px; }
+  .passover-pill.active { color: var(--green); border-color: var(--green); }
+
+  /* Dashboard title */
+  .dashboard-header { display: flex; align-items: center; justify-content: space-between; padding: 40px 0 28px; gap: 16px; }
+  .dashboard-title { font-family: var(--display); font-weight: 400; font-size: 2.6rem; line-height: 1; letter-spacing: 0.01em; color: var(--ink); text-transform: uppercase; }
+  .dashboard-header-right { display: flex; align-items: center; gap: 18px; }
+  .slots-pill { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); display: flex; align-items: center; gap: 8px; cursor: help; }
+  .slots-dot { width: 7px; height: 7px; border-radius: 9999px; border: 1px solid var(--hairline); display: inline-block; }
+  .slots-dot.on { background: var(--ink); border-color: var(--ink); }
+  .slots-dot.future { background: transparent; border-style: dashed; }
+  .btn-start { background: var(--ink); color: var(--gold); border: 1px solid var(--ink); border-radius: 9999px; padding: 11px 24px; font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; }
+  .btn-start:hover { opacity: 0.85; }
+
+  /* ── Section bands — v0.3 unified: all sections sit on page bg with the
+     same vertical rhythm. Cards inside carry the only visual weight. ─── */
+  .section-band {
+    padding: 28px 0 4px;
+    margin: 0;
+    background: transparent;
+  }
+  .section-band.is-week       { padding-top: 32px; padding-bottom: 4px; }
+  .section-band.is-queue      { padding-top: 32px; padding-bottom: 4px; }
+  .section-band.is-past       { padding-top: 32px; padding-bottom: 12px; }
+
+  /* Section rail — v0.3: one eyebrow style for every section. The cards
+     beneath are the visual interest, not the section headers. */
+  .section-rail { display: flex; align-items: baseline; gap: 18px; margin-bottom: 14px; }
+  .section-rail h2 { font-family: var(--mono); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+  .section-rail h2 small { color: var(--gray); font-weight: 400; margin-left: 14px; font-size: 0.92em; letter-spacing: 0.22em; }
+  .section-rail-line { flex: 1; height: 1px; background: var(--hairline); align-self: center; }
+  .section-rail-action { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; padding: 6px 0; }
+  .section-rail-action:hover { color: var(--ink); }
+  .section-rail-cal { display: flex; align-items: center; gap: 4px; }
+  .section-rail-cal button { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; width: 26px; height: 22px; color: var(--ink); font-size: 0.74rem; padding: 0; }
+  .section-rail-cal button.today { width: auto; padding: 0 12px; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  /* ── Campaign rows ────────────────────────────────────────── */
+  .campaign-row {
+    display: grid;
+    grid-template-columns: 38px 2fr 1.4fr 1.6fr auto auto;
+    gap: 20px; align-items: center;
+    padding: 12px 6px;
+    border-bottom: 1px solid var(--band-divider);
+    text-align: left;
+    transition: background 0.15s ease;
+  }
+  .section-band > div[role="grid"] > .campaign-row:last-child { border-bottom: none; }
+  .campaign-row:hover { background-color: rgba(0,0,0,0.025); }
+  body.theme-dark .campaign-row:hover { background-color: rgba(255,255,255,0.04); }
+  .glyph { width: 34px; height: 34px; border: 1px solid var(--hairline); border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.62rem; font-weight: 500; letter-spacing: 0.04em; background: var(--bg); color: var(--ink); }
+  .row-name { font-family: var(--display); font-size: 1.1rem; letter-spacing: 0.02em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-when, .row-progress { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-progress b { color: var(--ink); font-weight: 500; }
+  .row-actions { display: flex; gap: 6px; justify-self: end; align-items: center; }
+  .row-actions .btn-pill { padding: 6px 14px; font-size: 0.58rem; }
+  .row-kebab { background: transparent; border: none; color: var(--gray); padding: 6px 10px; font-size: 1.05rem; border-radius: 9999px; }
+  .row-kebab:hover { color: var(--ink); }
+  .row-arrow { width: 26px; height: 26px; padding: 0; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--ink); font-size: 0.78rem; line-height: 1; }
+  .row-arrow:hover { border-color: var(--ink); background: rgba(0,0,0,0.04); }
+  body.theme-dark .row-arrow:hover { background: rgba(255,255,255,0.06); }
+  .row-arrow:disabled { opacity: 0.3; cursor: default; }
+  .row-arrow:disabled:hover { background: transparent; border-color: var(--hairline); }
+
+  /* Active and Monitoring share an emphasized row treatment */
+  .campaign-row.is-live .row-name { font-size: 1.25rem; }
+
+  /* Live trail — used by both Active and Monitoring */
+  .live-trail { padding: 0 6px; margin-top: 10px; }
+  .live-trail .bar { height: 2px; background: var(--hairline); position: relative; margin-bottom: 12px; }
+  .live-trail .bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--green); transition: width 0.4s ease; }
+  .live-trail .bar.is-blue > i { background: var(--blue); }
+  .live-trail .sub {
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--mono); font-size: 0.66rem; color: var(--gray);
+    letter-spacing: 0.06em;
+  }
+  .live-trail .sub b { color: var(--ink); font-weight: 500; }
+  .live-trail .sub .eta { margin-left: auto; }
+  .live-trail .sub a { color: var(--gray); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .live-trail .sub a:hover { color: var(--ink); }
+
+  /* Dock — floating pill, collapsed by default. The trigger sits on the right;
+     pressing it unfolds the action icons to its left with a spring expansion. */
+  .dock {
+    display: inline-flex; align-items: center;
+    padding: 4px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    background: var(--bg);
+  }
+  .dock-actions {
+    display: inline-flex; align-items: center; gap: 2px;
+    max-width: 0;
+    margin-right: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-width 0.26s cubic-bezier(0.34, 1.4, 0.64, 1),
+                margin-right 0.26s cubic-bezier(0.34, 1.4, 0.64, 1),
+                opacity 0.18s ease;
+  }
+  .dock[data-open="true"] .dock-actions {
+    max-width: 220px;
+    margin-right: 4px;
+    opacity: 1;
+  }
+  .dock[data-open="true"] .dock-trigger {
+    background: var(--ink); color: var(--bg);
+  }
+  .dock[data-open="true"] .dock-trigger:hover {
+    background: var(--ink);
+  }
+  .dock-btn {
+    position: relative;
+    width: 30px; height: 30px;
+    border: none; background: transparent;
+    color: var(--ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.12s;
+  }
+  .dock-btn:hover { background: rgba(0, 0, 0, 0.06); transform: scale(1.18); }
+  body.theme-dark .dock-btn:hover { background: rgba(255, 255, 255, 0.08); }
+  .dock-btn:active { transform: scale(1.05); }
+  .dock-btn svg { width: 15px; height: 15px; pointer-events: none; }
+  /* Trigger and force-sweep use circle-enclosed glyphs — give them a touch more
+     room so the outline reads cleanly at this size. */
+  .dock-trigger svg, .dock-btn .icon-circled { width: 18px; height: 18px; }
+  .dock-btn.danger { color: var(--red); }
+  .dock-btn.danger:hover { background: rgba(248, 81, 73, 0.12); }
+  /* Tooltip is rendered as a single fixed-position element (see JS below)
+     so it isn't clipped by the dock-actions overflow:hidden envelope. */
+  .global-tip {
+    position: fixed;
+    background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.2em; text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    transform: translate(-50%, -100%) translateY(-8px);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1000;
+    transition: opacity 0.12s;
+  }
+  .global-tip.show { opacity: 1; }
+
+  /* Chevron icon — rotates 180° when the dock opens. */
+  .dock-trigger-icon { transition: transform 0.22s ease; }
+  .dock[data-open="true"] .dock-trigger-icon { transform: rotate(180deg); }
+  /* Thin hairline divider between the always-visible primary action and
+     the chevron trigger — split-button signature. */
+  .dock-sep {
+    display: inline-block;
+    width: 1px; height: 18px;
+    background: var(--hairline);
+    margin: 0 3px;
+    flex: 0 0 auto;
+  }
+
+  /* Inline state-tag, used sparingly */
+  .row-tag { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 3px 9px; border: 1px solid var(--hairline); border-radius: 9999px; white-space: nowrap; }
+  .row-tag.is-monitoring { color: var(--ink); border-color: var(--ink); }
+  .row-tag.is-stopped { color: var(--red); border-color: var(--red); }
+
+  /* ── Calendar ─────────────────────────────────────────────── */
+  /* Calendar — kanban-style cards. Each day is its own card with soft border,
+     subtle fill, gap-separated. Chips inside are smaller nested cards. */
+  .cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  /* Resolution 3 — calendar shares design vocabulary with Up Next:
+     transparent background, hairline outline, no shadow, 4px radius.
+     Today signaled via a small green dot beside the date. */
+  .cal-cell {
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    background: transparent;
+    min-height: 132px; padding: 12px 12px 14px;
+    display: flex; flex-direction: column;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .cal-cell:hover {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: var(--ink);
+  }
+  body.theme-dark .cal-cell:hover { background: rgba(255, 255, 255, 0.03); }
+  .cal-cell.today {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: var(--hairline);
+    cursor: default;
+  }
+  body.theme-dark .cal-cell.today { background: rgba(255, 255, 255, 0.03); }
+  .cal-cell.today:hover { background: rgba(0, 0, 0, 0.02); border-color: var(--hairline); }
+  body.theme-dark .cal-cell.today:hover { background: rgba(255, 255, 255, 0.03); }
+  .cal-cell.today .cal-date::after {
+    content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 9999px;
+    background: var(--green); margin-left: 6px; vertical-align: 2px;
+  }
+  .cal-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .cal-dow { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .cal-date { font-family: var(--display); font-size: 1.2rem; line-height: 1; }
+  .cal-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px;
+    margin-bottom: 4px;
+    font-size: 0.7rem; line-height: 1.2;
+    border: 1px solid var(--hairline-soft);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--gray);
+  }
+  .cal-chip:last-of-type { margin-bottom: 0; }
+  /* Running chip → ink outline + green dot, monochrome rest. No saturated wash. */
+  .cal-chip.running { border-color: var(--ink); color: var(--ink); }
+  .cal-chip.running::before { content: ''; width: 5px; height: 5px; border-radius: 9999px; background: var(--green); display: inline-block; flex: 0 0 auto; }
+  .cal-chip.faded { color: var(--gray); }
+  .cal-chip .badge { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.10em; font-weight: 600; padding: 1px 6px; border: 1px solid var(--hairline); border-radius: 9999px; color: var(--gray); }
+  .cal-chip.running .badge { color: var(--ink); border-color: var(--ink); }
+  .cal-chip .time { color: var(--gray-faint); font-family: var(--mono); font-size: 0.56rem; font-variant-numeric: tabular-nums; }
+  .cal-chip .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cal-hint { margin-top: auto; font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); opacity: 0; transition: opacity 0.12s; }
+  .cal-cell:hover .cal-hint { opacity: 1; }
+
+  /* Footer */
+  .footer { margin-top: 32px; padding: 22px 0 32px; text-align: center; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+
+  /* ── Status Card (variant J) — v0.3 unified ──────────────────
+     Shared card primitive: hairline border, 4px radius, transparent bg, no
+     dot pattern, no shadow. The Active card (NOT .is-monitor) is the only
+     one that gets a tinted background + green accent rail — the single
+     hero of the page. Monitoring uses the same primitive but quiet, so it
+     reads as a sibling to Up Next / Past / Calendar instead of a second
+     hero. */
+  .vj-card {
+    position: relative;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 22px 26px;
+    margin: 0 0 12px;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto auto auto auto;
+    gap: 14px 24px;
+    grid-template-areas:
+      "eyebrow eyebrow"
+      "name    name"
+      "bar     bar"
+      "hero    hero"
+      "stats   controls";
+  }
+  /* Active card — the only hero. Filled background + green accent rail.
+     Monitoring intentionally skips both. */
+  .vj-card:not(.is-monitor) {
+    background: var(--band-active);
+  }
+  body.theme-dark .vj-card:not(.is-monitor) {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .vj-card:not(.is-monitor)::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--green);
+  }
+
+  .vj-eyebrow { grid-area: eyebrow; display: flex; align-items: center; gap: 14px; color: var(--gray); padding-right: 64px; }
+  .vj-eyebrow .vj-tag { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; color: var(--gray); }
+  .vj-eyebrow .vj-tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--green); display: inline-block; }
+  .vj-card.is-monitor .vj-eyebrow .vj-tag .dot { background: var(--blue); }
+  .vj-when { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; color: var(--gray); }
+
+  /* C+I badge pinned to the top-right corner of the card */
+  .vj-glyph-circle {
+    position: absolute; top: 18px; right: 22px;
+    width: 50px; height: 50px; border-radius: 9999px;
+    border: 1px solid var(--ink); color: var(--ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em;
+  }
+
+  .vj-name {
+    grid-area: name;
+    font-family: var(--display); font-weight: 400;
+    font-size: 2.13rem; letter-spacing: 0.02em; line-height: 1; margin: 0;
+    color: var(--ink); padding-right: 64px;
+  }
+
+  .vj-hbar { grid-area: bar; position: relative; height: 3px; background: var(--hairline); border-radius: 9999px; overflow: hidden; }
+  .vj-hbar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--green); transition: width 0.4s ease; }
+  .vj-card.is-monitor .vj-hbar > i { background: var(--blue); }
+
+  /* hero uses display:contents so .vj-hero-row + .vj-stats become direct grid
+     children — letting stats sit on the same grid row as the controls cluster. */
+  .vj-hero { display: contents; }
+  .vj-hero-row { grid-area: hero; display: flex; align-items: baseline; gap: 18px; }
+  .vj-hero-row .num { font-family: var(--display); font-size: 3.13rem; line-height: 0.9; letter-spacing: 0.01em; color: var(--ink); }
+  .vj-hero-row .num .sub { font-size: 1.43rem; color: var(--gray); margin-left: 4px; }
+  .vj-meta { display: flex; flex-direction: column; gap: 2px; font-family: var(--mono); font-size: 0.87rem; color: var(--gray); }
+  .vj-meta b { color: var(--ink); font-weight: 500; }
+
+  .vj-stats {
+    grid-area: stats; align-self: center;
+    display: flex; gap: 14px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 0.81rem; letter-spacing: 0.04em; color: var(--gray);
+    min-width: 0;
+  }
+  .vj-stats b { color: var(--ink); font-weight: 500; }
+
+  .vj-controls {
+    grid-area: controls;
+    align-self: center; justify-self: end;
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .vj-controls .btn-pill { padding: 6px 14px; font-size: 0.71rem; }
+
+  /* ── Up Next (variant C · drag deck) ────────────────────────
+     Distinct from the J cards above — no dot pattern, no shadow, no
+     accent rail. Top item gets a slightly larger card with a config
+     preview (mode + contacts + accounts + est). Items below shrink and
+     indent to read as "behind" the next-up. */
+  .vc-stack { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
+
+  .vc-card-top {
+    position: relative;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 16px 22px;
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto;
+    gap: 18px;
+    align-items: center;
+    min-height: 88px;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .vc-card-top:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); }
+  body.theme-dark .vc-card-top:hover { background: rgba(255,255,255,0.03); }
+
+  .vc-handle {
+    display: flex; flex-direction: column; gap: 3px; align-items: center;
+    color: var(--gray-faint); cursor: grab; padding: 4px 6px;
+    flex-shrink: 0;
+  }
+  .vc-handle:active { cursor: grabbing; }
+  .vc-handle::before, .vc-handle::after {
+    content: ""; width: 14px; height: 1.5px; background: currentColor; border-radius: 9999px;
+  }
+  .vc-handle::after { box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor; }
+  .vc-handle:hover { color: var(--ink); }
+
+  .vc-top-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .vc-top-eyebrow { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+  /* Resolution 5 — dots reserved for live (Active / Monitoring) only;
+     Up Next and Past show their state via text alone. */
+  .vc-top-eyebrow .dot { display: none; }
+  .vc-top-name { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; color: var(--ink); }
+  .vc-top-preview { display: flex; gap: 16px; font-family: var(--mono); font-size: 0.66rem; color: var(--gray); margin-top: 2px; letter-spacing: 0.04em; flex-wrap: wrap; }
+  .vc-top-preview b { color: var(--ink); font-weight: 500; }
+  /* Resolution 2 — denser two-column preview for the showcase card */
+  .vc-top-preview-dense { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 24px; font-family: var(--mono); font-size: 0.66rem; color: var(--gray); margin-top: 4px; letter-spacing: 0.04em; }
+  .vc-top-preview-dense b { color: var(--ink); font-weight: 500; }
+  .vc-top-preview-dense .row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .vc-top-preview-dense .k { color: var(--gray-faint); text-transform: uppercase; letter-spacing: 0.16em; font-size: 0.52rem; min-width: 72px; }
+  .vc-top-preview-dense .v { color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vc-top-preview-dense .v b { color: var(--ink); font-weight: 500; }
+
+  .vc-top-glyph { width: 36px; height: 36px; border-radius: 9999px; border: 1px solid var(--ink); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.58rem; font-weight: 600; letter-spacing: 0.06em; color: var(--ink); background: var(--bg); flex-shrink: 0; }
+
+  .vc-top-action {
+    font: inherit; background: var(--ink); color: var(--bg);
+    border: 1px solid var(--ink); border-radius: 9999px;
+    padding: 9px 22px; font-family: var(--mono); font-size: 0.6rem;
+    letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer;
+    white-space: nowrap;
+  }
+  .vc-top-action:hover { opacity: 0.85; }
+  .vc-top-action.is-secondary { background: transparent; color: var(--ink); border-color: var(--hairline); }
+  .vc-top-action.is-secondary:hover { border-color: var(--ink); background: transparent; opacity: 1; }
+
+  .vc-mini {
+    position: relative;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 9px 14px;
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto;
+    gap: 14px;
+    align-items: center;
+    margin: 0 12px;
+    transition: border-color 0.12s, background 0.12s, opacity 0.12s;
+  }
+  .vc-mini:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); opacity: 1; }
+  body.theme-dark .vc-mini:hover { background: rgba(255,255,255,0.03); }
+  /* Scheduled items skip the deck fade — they're time-anchored, not "behind" the queue */
+  .vc-mini.is-scheduled, .vc-mini.is-scheduled.depth-3 { opacity: 1; }
+  .vc-mini.depth-2 { margin: 0 22px; opacity: 0.92; }
+  .vc-mini.depth-3 { margin: 0 32px; opacity: 0.78; }
+  .vc-mini-name { font-family: var(--display); font-size: 1rem; letter-spacing: 0.02em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vc-mini-when { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em; color: var(--gray); display: inline-flex; align-items: center; gap: 6px; }
+  .vc-mini-when b { color: var(--ink); font-weight: 500; }
+  .vc-mini-when .clock-icon { width: 12px; height: 12px; color: var(--gray); flex-shrink: 0; }
+  .vc-mini-glyph { width: 26px; height: 26px; border-radius: 9999px; border: 1px solid var(--hairline); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.52rem; font-weight: 600; letter-spacing: 0.06em; color: var(--ink); flex-shrink: 0; }
+  .vc-mini-action {
+    font: inherit; background: transparent; border: 1px solid var(--hairline);
+    color: var(--ink); border-radius: 9999px;
+    padding: 4px 11px; font-family: var(--mono); font-size: 0.52rem;
+    letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer;
+    white-space: nowrap;
+  }
+  .vc-mini-action:hover { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+
+  /* Queue dock — lighter weight than the live J card dock so Up Next stays
+     visually under the action cards. Smaller buttons + softer border. */
+  .vc-card-top .dock {
+    padding: 3px;
+    border-color: var(--hairline-soft);
+    background: transparent;
+  }
+  .vc-card-top .dock-btn { width: 28px; height: 28px; }
+  .vc-card-top .dock-btn svg { width: 13px; height: 13px; }
+  .vc-card-top .dock-trigger svg { width: 15px; height: 15px; }
+  .vc-card-top .dock-sep { height: 13px; }
+
+  .vc-mini .dock {
+    padding: 2px;
+    border-color: var(--hairline-soft);
+    background: transparent;
+  }
+  .vc-mini .dock-btn { width: 24px; height: 24px; }
+  .vc-mini .dock-btn svg { width: 12px; height: 12px; }
+  .vc-mini .dock-trigger svg { width: 13px; height: 13px; }
+  .vc-mini .dock-sep { height: 11px; margin: 0 2px; }
+  .vc-mini .dock[data-open="true"] .dock-actions { max-width: 160px; }
+
+  /* ── Past · variant A (hairline list) ────────────────────────
+     Lightest of the three sections. No per-item border — just hairlines
+     between rows. Names default to gray, brighten on hover. Reply rate is
+     the right-aligned Bebas anchor; "Stopped early" replaces it with a red
+     outlined pill when the campaign didn't finish cleanly. */
+  .pa-list { padding: 0 4px; }
+  .pa-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto auto;
+    gap: 18px;
+    align-items: center;
+    padding: 12px 6px;
+    border-bottom: 1px solid var(--hairline-soft);
+    transition: background 0.12s;
+  }
+  .pa-row:last-child { border-bottom: none; }
+  .pa-row:hover { background: rgba(0,0,0,0.02); }
+  body.theme-dark .pa-row:hover { background: rgba(255,255,255,0.03); }
+  .pa-name { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.02em; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pa-row:hover .pa-name { color: var(--ink); }
+  .pa-when { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--gray-faint); white-space: nowrap; }
+  .pa-stats { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); letter-spacing: 0.04em; white-space: nowrap; }
+  .pa-stats b { color: var(--ink); font-weight: 500; }
+  .pa-rate {
+    display: flex; align-items: baseline; gap: 4px;
+    font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.01em; color: var(--ink);
+    min-width: 64px; justify-content: flex-end;
+  }
+  .pa-rate .pct { font-size: 0.7rem; color: var(--gray); font-family: var(--mono); letter-spacing: 0.1em; }
+  .pa-stopped {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--red); border: 1px solid var(--red); border-radius: 9999px;
+    padding: 3px 9px; min-width: 64px; justify-content: center;
+  }
+  /* Past dock — same compact treatment as the queue dock */
+  .pa-row .dock {
+    padding: 3px;
+    border-color: var(--hairline-soft);
+    background: transparent;
+  }
+  .pa-row .dock-btn { width: 28px; height: 28px; }
+  .pa-row .dock-btn svg { width: 13px; height: 13px; }
+  .pa-row .dock-trigger svg { width: 15px; height: 15px; }
+  .pa-row .dock-sep { height: 13px; }
+
+  /* Resolution 4 — Past collapsed summary row.
+     Default state shows count + most-recent finished, click "Show all"
+     to reveal the full hairline list. */
+  .past-collapsed {
+    display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center;
+    padding: 14px 18px;
+    border: 1px solid var(--hairline); border-radius: 4px;
+    transition: border-color 0.12s, background 0.12s;
+    cursor: pointer;
+  }
+  .past-collapsed:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); }
+  body.theme-dark .past-collapsed:hover { background: rgba(255,255,255,0.03); }
+  .pc-count { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; line-height: 1; color: var(--ink); }
+  .pc-count .pc-lbl { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; color: var(--gray); text-transform: uppercase; margin-left: 6px; font-weight: 500; }
+  .pc-summary { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); }
+  .pc-summary b { color: var(--ink); font-weight: 500; }
+
+  /* Resolution 1 — Monitoring mini-J. Same vocabulary as the full J card
+     (dot pattern, accent rail, dock) but compressed to two lines. The
+     "expand" button restores the full J card layout. */
+  .vj-card.is-mini {
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "ml mid mc"
+      "ml mid mc";
+    gap: 6px 18px;
+    padding: 14px 22px;
+    min-height: 0;
+  }
+  .vj-card.is-mini .vj-glyph-circle,
+  .vj-card.is-mini .vj-name,
+  .vj-card.is-mini .vj-hbar,
+  .vj-card.is-mini .vj-hero,
+  .vj-card.is-mini .vj-stats,
+  .vj-card.is-mini .vj-controls,
+  .vj-card.is-mini .vj-eyebrow { display: none; }
+
+  .vj-card.is-mini .vj-mini-left { grid-area: ml; align-self: center; display: flex; align-items: center; gap: 16px; }
+  .vj-card.is-mini .vj-mini-glyph { width: 36px; height: 36px; border-radius: 9999px; border: 1px solid var(--ink); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.06em; }
+
+  .vj-card.is-mini .vj-mini-mid { grid-area: mid; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .vj-card.is-mini .vj-mini-row1 { display: flex; align-items: baseline; gap: 14px; }
+  .vj-card.is-mini .vj-mini-row1 .name { font-family: var(--display); font-size: 1.35rem; line-height: 1; color: var(--ink); }
+  .vj-card.is-mini .vj-mini-row1 .num { font-family: var(--display); font-size: 1.35rem; color: var(--ink); margin-left: auto; padding-right: 6px; }
+  .vj-card.is-mini .vj-mini-row1 .num .pct { font-size: 0.75rem; color: var(--gray); }
+  .vj-card.is-mini .vj-mini-row2 { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 0.7rem; color: var(--gray); flex-wrap: wrap; }
+  .vj-card.is-mini .vj-mini-row2 b { color: var(--ink); font-weight: 500; }
+  .vj-card.is-mini .vj-mini-bar { flex: 0 0 160px; height: 2px; background: var(--hairline); border-radius: 9999px; position: relative; overflow: hidden; }
+  .vj-card.is-mini .vj-mini-bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue); border-radius: 9999px; }
+
+  .vj-card.is-mini .vj-mini-controls { grid-area: mc; align-self: center; display: flex; align-items: center; gap: 10px; }
+
+  /* In the full state, the mini-only elements are hidden */
+  .vj-card .vj-mini-left,
+  .vj-card .vj-mini-mid,
+  .vj-card .vj-mini-controls { display: none; }
+  .vj-card.is-mini .vj-mini-left,
+  .vj-card.is-mini .vj-mini-mid,
+  .vj-card.is-mini .vj-mini-controls { display: flex; }
+
+  /* Expand / collapse chevron button (used by both mini and full) */
+  .vj-toggle-btn {
+    font: inherit; background: transparent; border: 1px solid var(--hairline);
+    color: var(--ink); width: 30px; height: 30px; border-radius: 9999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: border-color 0.12s, background 0.12s;
+  }
+  .vj-toggle-btn:hover { border-color: var(--ink); background: rgba(0,0,0,0.04); }
+  body.theme-dark .vj-toggle-btn:hover { background: rgba(255,255,255,0.06); }
+  .vj-toggle-btn svg { width: 14px; height: 14px; transition: transform 0.22s ease; }
+  .vj-card.is-mini .vj-toggle-btn svg { transform: rotate(0deg); }
+  .vj-card:not(.is-mini) .vj-toggle-btn.is-resize svg { transform: rotate(180deg); }
+
+  /* NEW — Active + Monitoring details panel (live log + bulk check).
+     Only shown when the full J card is in expanded-details mode. */
+  .vj-details {
+    grid-column: 1 / -1;
+    margin-top: 12px; padding-top: 16px;
+    border-top: 1px solid var(--hairline);
+    display: none;
+    gap: 18px;
+  }
+  .vj-card.is-detailed .vj-details { display: grid; grid-template-columns: 1fr 260px; }
+  /* When in mini state, also hide details */
+  .vj-card.is-mini .vj-details { display: none; }
+  .vj-details-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+  .vj-log {
+    background: var(--bg-soft); border: 1px solid var(--hairline-soft); border-radius: 4px;
+    padding: 10px 12px;
+    max-height: 200px; overflow-y: auto;
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 0.72rem; line-height: 1.5;
+  }
+  body.theme-dark .vj-log { background: rgba(255,255,255,0.03); }
+  .vj-log-line { display: grid; grid-template-columns: 60px 100px 1fr; gap: 12px; padding: 2px 0; color: var(--gray); }
+  .vj-log-line .time { color: var(--gray-faint); }
+  .vj-log-line .evt { color: var(--ink); text-transform: uppercase; font-size: 0.62rem; letter-spacing: 0.06em; }
+  .vj-log-line.is-ok .evt { color: var(--green); }
+  .vj-log-line.is-warn .evt { color: var(--gold); }
+  .vj-log-line.is-err .evt { color: var(--red); }
+  .vj-log-line .what { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .vj-bulk {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .vj-bulk-status { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); }
+  .vj-bulk-status b { color: var(--ink); font-weight: 500; }
+  .vj-bulk-btn {
+    font: inherit; background: var(--ink); color: var(--bg); border: 1px solid var(--ink);
+    border-radius: 9999px; padding: 10px 16px;
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer; transition: opacity 0.12s;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .vj-bulk-btn:hover { opacity: 0.85; }
+  .vj-bulk-btn svg { width: 14px; height: 14px; }
+  .vj-bulk-hint { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.04em; color: var(--gray-faint); }
+
+  /* ── Wizard ───────────────────────────────────────────────── */
+  .modal-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.32); display: none; z-index: 50; }
+  body.theme-dark .modal-shade { background: rgba(0,0,0,0.55); }
+  .modal-shade.open { display: flex; justify-content: flex-end; }
+  .modal { background: var(--bg); color: var(--ink); width: min(960px, 96vw); height: 100vh; overflow-y: auto; border-left: 1px solid var(--hairline); display: grid; grid-template-columns: 220px 1fr; }
+  .wiz-side { border-right: 1px solid var(--hairline); padding: 32px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+  .wiz-side h4 { padding: 0 24px 14px; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+  .wiz-nav { background: transparent; border: none; width: 100%; text-align: left; padding: 9px 24px; color: var(--gray); font-family: var(--body); font-size: 0.84rem; border-left: 2px solid transparent; }
+  .wiz-nav:hover { color: var(--ink); }
+  .wiz-nav.active { color: var(--ink); border-left-color: var(--ink); }
+  .wiz-nav .num { color: var(--gray); margin-right: 10px; font-family: var(--mono); font-size: 0.7rem; }
+  .wiz-nav.active .num { color: var(--ink); }
+  .wiz-close { margin: auto 24px 24px; }
+  .wiz-body { padding: 36px 44px 80px; min-width: 0; }
+  .wiz-banner { border: 1px solid var(--hairline); background: var(--bg-soft); padding: 11px 16px; margin-bottom: 24px; color: var(--gray); font-size: 0.78rem; display: flex; gap: 12px; align-items: center; }
+  .wiz-banner .dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--green); flex: 0 0 auto; }
+  .wiz-banner b { color: var(--ink); font-weight: 500; }
+  .wiz-name { display: flex; align-items: baseline; gap: 14px; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 1px solid var(--hairline); }
+  .wiz-name .lbl { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray); }
+  .wiz-name input { flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--hairline); padding: 6px 4px; font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; outline: none; color: var(--ink); }
+  .wiz-section { margin-bottom: 36px; scroll-margin-top: 24px; }
+  .wiz-section h2 { font-family: var(--display); font-weight: 400; font-size: 1.3rem; letter-spacing: 0.02em; margin-bottom: 12px; }
+  .wiz-section h2 .num { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.26em; color: var(--gray); margin-right: 12px; }
+  .mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .mode-tile { border: 1px solid var(--hairline); background: var(--bg-soft); padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+  .mode-tile:hover { border-color: var(--ink); }
+  .mode-tile.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .mode-tile .badge { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.12em; font-weight: 600; border: 1px solid currentColor; padding: 2px 7px; width: max-content; opacity: 0.75; }
+  .mode-tile.active .badge { opacity: 1; }
+  .mode-tile .label { font-size: 0.9rem; font-weight: 500; }
+  .mode-tile .desc { font-size: 0.72rem; color: var(--gray); }
+  .mode-tile.active .desc { color: rgba(250,250,250,0.7); }
+  .field { margin-bottom: 14px; }
+  .field-lbl { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .field-input, .tmpl-area { width: 100%; padding: 10px 12px; background: var(--bg-soft); color: var(--ink); border: 1px solid var(--hairline); font-family: inherit; font-size: 0.84rem; outline: none; }
+  .tmpl-area { min-height: 90px; resize: vertical; line-height: 1.5; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .acct-row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid var(--hairline); background: var(--bg-soft); margin-bottom: 5px; cursor: pointer; }
+  .acct-row.selected { border-color: var(--ink); }
+  .acct-row input { accent-color: var(--gold); width: 14px; height: 14px; }
+  .acct-row .meta { color: var(--gray); font-size: 0.7rem; margin-left: auto; font-family: var(--mono); letter-spacing: 0.08em; }
+  .launch-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--hairline); padding-top: 20px; margin-top: 10px; }
+  .launch-summary { color: var(--gray); font-size: 0.78rem; }
+  .launch-summary b { color: var(--ink); font-weight: 500; }
+  .launch-toggle { display: flex; }
+  .launch-toggle button { background: transparent; color: var(--gray); border: 1px solid var(--hairline); padding: 9px 16px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; }
+  .launch-toggle button.active { color: var(--ink); border-color: var(--ink); }
+  .launch-toggle button:first-child { border-right: none; }
+  .launch-start { background: var(--ink); color: var(--gold); border: 1px solid var(--ink); border-radius: 9999px; padding: 11px 22px; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; }
+  .launch-start:hover { opacity: 0.85; }
+
+  /* Popover + toast */
+  .popover { position: fixed; background: var(--bg); border: 1px solid var(--hairline); padding: 12px 14px; min-width: 220px; z-index: 80; }
+  .popover h5 { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 10px; font-weight: 500; }
+  .popover ul { list-style: none; }
+  .popover ul li { padding: 6px 0; font-size: 0.84rem; cursor: pointer; }
+  .popover ul li:hover { color: var(--gray); }
+  .popover .danger { color: var(--red); }
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 22px; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; z-index: 90; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<a class="skip" href="#sect-active">Skip to running campaign</a>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────── -->
+  <aside class="sidebar" aria-label="Settings">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus<br/>Outreach</div>
+      <div class="sidebar-sub">LinkedIn · v2.59.0</div>
+    </div>
+    <div class="side-group">
+      <div class="side-group-label">Theme</div>
+      <div class="pill-toggle">
+        <button id="theme-dark" onclick="setTheme('dark')">Dark</button>
+        <button id="theme-light" class="active" onclick="setTheme('light')">Light</button>
+      </div>
+    </div>
+    <div class="side-group">
+      <div class="side-group-label">Timezone</div>
+      <div class="notif-row"><span class="notif-row-k">Sheet timestamps</span><span class="notif-row-v">Rome</span></div>
+      <div class="side-actions"><button class="btn-pill" onclick="toast('Open timezone picker (mock)')">Change</button></div>
+    </div>
+    <div class="side-group">
+      <div class="side-group-label">Notifications</div>
+      <div class="notif-row"><span class="notif-row-k">Browser push</span><span class="notif-row-v ok">Granted</span></div>
+      <div class="notif-row"><span class="notif-row-k">Email · SMTP</span><span class="notif-row-v ok">Wired</span></div>
+      <div class="notif-row"><span class="notif-row-k">Last test</span><span class="notif-row-v">Never</span></div>
+      <div class="notif-row">
+        <span class="notif-row-k">Connection-check reminders</span>
+        <label class="switch"><input type="checkbox" checked /><span></span></label>
+      </div>
+      <div class="side-actions"><button class="btn-pill" onclick="toast('Test notification fired (mock)')">Send test</button></div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="user-chip"><strong>antonio@ortusclub.com</strong><span>26 May 2026</span></div>
+      <button class="btn-pill" onclick="toast('Sign out (mock)')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="container">
+
+      <!-- Greeting + header stats -->
+      <div class="page-header">
+        <div>
+          <div class="greeting-wordmark">Good afternoon,<br/>Antonio</div>
+          <div class="greeting-subtitle">Tuesday · 26 May 2026 · 12:32 Rome <small>v2.59.0</small></div>
+        </div>
+        <div class="header-stats">
+          <div class="header-stat"><span class="k">Today (sent)</span><span class="v">0</span></div>
+          <div class="header-stat"><span class="k">7-day total</span><span class="v">0</span></div>
+          <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err" data-zero>0</span></div>
+          <div class="header-stat"><span class="k">Passover</span><span class="v small"><span class="passover-pill active">OP·IM·SN</span><span class="passover-pill">CC</span></span></div>
+          <div class="header-stat"><span class="k">RAM</span><span class="v">74%</span></div>
+          <div class="header-stat"><span class="k">CPU</span><span class="v">23%</span></div>
+          <div class="header-stat"><span class="k">Browsers</span><span class="v">0·0.0gb</span></div>
+        </div>
+      </div>
+
+      <!-- Campaigns title -->
+      <div class="dashboard-header">
+        <h1 class="dashboard-title">Campaigns</h1>
+        <div class="dashboard-header-right">
+          <span class="slots-pill" title="One campaign at a time today. Multi-slot lands with the cloud move.">
+            <span class="slots-dot on"></span>
+            <span class="slots-dot future"></span>
+            <span class="slots-dot future"></span>
+            <span>1 / 1 slot · cloud‑adds 2</span>
+          </span>
+          <button class="btn-start" onclick="openWizard()">+ Start new campaign</button>
+        </div>
+      </div>
+
+      <!-- ── NOW ACTIVE (Status Card · variant J) ─────────────────── -->
+      <section class="vj-card" id="active-card" aria-labelledby="sect-active">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span>Now Active · 1 Campaign</span>
+          <span class="vj-when">started 2h ago</span>
+        </div>
+        <div class="vj-glyph-circle" aria-hidden="true">C+I</div>
+        <h2 class="vj-name" id="sect-active">EU Founder Push Q2</h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="58" aria-valuemax="120" aria-label="EU Founder Push Q2 progress"><i style="width:49%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num">49<span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b>58</b> of 120 sent</span>
+              <span>Next batch in <b id="batchEta">06m 30s</b></span>
+            </div>
+          </div>
+          <div class="vj-stats" aria-live="polite">
+            <span><b>3</b> accounts</span>
+            <span><b>13</b> accepted</span>
+            <span><b>3</b> replies</span>
+            <span>· <b id="sendingLbl">Sending</b> · <a onclick="toast('Open batch settings (mock)')" style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer">batch every 30 min</a></span>
+          </div>
+        </div>
+        <div class="vj-controls">
+          <button class="btn-pill" onclick="toast('Open EU Founder Push Q2 (mock)')">Open</button>
+          <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="toggleDetails('active-card', this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="dock" id="dock-active" data-open="false" role="toolbar" aria-label="EU Founder Push Q2 actions">
+            <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="togglePauseActive()">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <span class="dock-sep" aria-hidden="true"></span>
+            <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-active', event)">
+              <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+            </button>
+            <div class="dock-actions">
+              <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="stopActiveCampaign()">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="restartActive()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="copyLive('EU Founder Push Q2', 'C+I')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <!-- Details panel (live log + bulk check) — only visible when .is-detailed -->
+        <div class="vj-details">
+          <div>
+            <div class="vj-details-head">Live log · last 6 events</div>
+            <div class="vj-log" id="active-log">
+              <div class="vj-log-line is-ok"><span class="time">12:32</span><span class="evt">accepted</span><span class="what">Sarah Lee · Partner, Gamma VC</span></div>
+              <div class="vj-log-line"><span class="time">12:30</span><span class="evt">connect sent</span><span class="what">Tom Brown · CTO, Delta</span></div>
+              <div class="vj-log-line"><span class="time">12:28</span><span class="evt">intro sent</span><span class="what">via Marcus Chen → Jane Smith · CEO, Beta</span></div>
+              <div class="vj-log-line is-ok"><span class="time">12:25</span><span class="evt">accepted</span><span class="what">John Doe · Founder, Acme</span></div>
+              <div class="vj-log-line"><span class="time">12:22</span><span class="evt">batch start</span><span class="what">5 connects from alex.k</span></div>
+              <div class="vj-log-line is-warn"><span class="time">12:18</span><span class="evt">retry</span><span class="what">rate limit on sara.r — backoff 30m</span></div>
+            </div>
+          </div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Bulk check connection</div>
+            <div class="vj-bulk-status">Last sweep · <b>11m ago</b> · 11 newly accepted</div>
+            <button class="vj-bulk-btn" onclick="toast('Bulk check running… (mock)')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+              Run check now
+            </button>
+            <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── MONITORING (Status Card · variant J) ─────────────────── -->
+      <section class="vj-card is-monitor is-mini" aria-labelledby="sect-monitoring" id="monitoring-section">
+        <!-- Mini-J markup (visible when .is-mini) -->
+        <div class="vj-mini-left">
+          <span class="vj-tag"><span class="dot"></span>Monitoring</span>
+          <div class="vj-mini-glyph">C+I</div>
+        </div>
+        <div class="vj-mini-mid">
+          <div class="vj-mini-row1">
+            <span class="name">EU Founder Push Q1</span>
+            <span class="num">43<span class="pct">%</span></span>
+          </div>
+          <div class="vj-mini-row2">
+            <div class="vj-mini-bar"><i style="width:43%"></i></div>
+            <span>Day <b>3</b> of 7</span>
+            <span><b>108</b> sent</span>
+            <span><b>11</b> accepted</span>
+            <span>· next sweep <b id="sweepEtaMini">20m 49s</b></span>
+          </div>
+        </div>
+        <div class="vj-mini-controls">
+          <button class="vj-toggle-btn is-resize" data-tip="Expand to full view" aria-label="Expand to full view" onclick="toggleMonitorMini()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+
+        <!-- Full-J markup (visible when NOT .is-mini) -->
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span>Monitoring · 7-Day Acceptance Watch</span>
+          <span class="vj-when">finished 3d ago</span>
+        </div>
+        <div class="vj-glyph-circle" aria-hidden="true">C+I</div>
+        <h2 class="vj-name" id="sect-monitoring">EU Founder Push Q1</h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="3" aria-valuemax="7" aria-label="Acceptance window progress"><i style="width:43%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num">43<span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span>Day <b>3</b> of 7</span>
+              <span>Next sweep in <b id="sweepEta">20m 49s</b></span>
+            </div>
+          </div>
+          <div class="vj-stats">
+            <span><b>3</b> accounts</span>
+            <span><b>108</b> sent</span>
+            <span><b>11</b> accepted</span>
+            <span><b>11</b> replies</span>
+            <span>· <b id="watchingLbl">Watching</b> · <a onclick="toast('Open sweep settings (mock)')" style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer">sweeps every 30 min</a></span>
+          </div>
+        </div>
+        <div class="vj-controls">
+          <button class="btn-pill" onclick="toast('Open EU Founder Push Q1 (mock)')">Open</button>
+          <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="toggleDetails('monitoring-section', this)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="vj-toggle-btn" data-tip="Collapse to mini view" aria-label="Collapse to mini view" onclick="toggleMonitorMini()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          </button>
+          <div class="dock" id="dock-monitor" data-open="false" role="toolbar" aria-label="EU Founder Push Q1 actions">
+            <button class="dock-btn" id="dock-monitor-pause" data-tip="Pause watch" aria-label="Pause watch" onclick="togglePauseMonitoring()">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <span class="dock-sep" aria-hidden="true"></span>
+            <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-monitor', event)">
+              <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+            </button>
+            <div class="dock-actions">
+              <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="stopMonitoring()">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Force sweep now" aria-label="Force sweep now" onclick="forceSweep()">
+                <svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+              </button>
+              <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="copyLive('EU Founder Push Q1', 'C+I')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <!-- Details panel (live log + bulk check) — only visible when .is-detailed -->
+        <div class="vj-details">
+          <div>
+            <div class="vj-details-head">Live log · last sweep events</div>
+            <div class="vj-log" id="monitor-log">
+              <div class="vj-log-line is-ok"><span class="time">11:54</span><span class="evt">accepted</span><span class="what">Priya Reddy · MD, Eta Capital</span></div>
+              <div class="vj-log-line"><span class="time">11:54</span><span class="evt">intro sent</span><span class="what">via Sam Adcock → Priya Reddy</span></div>
+              <div class="vj-log-line is-ok"><span class="time">11:30</span><span class="evt">accepted</span><span class="what">Daniel Ortiz · CFO, Zeta Holdings</span></div>
+              <div class="vj-log-line"><span class="time">11:30</span><span class="evt">intro sent</span><span class="what">via Sam Adcock → Daniel Ortiz</span></div>
+              <div class="vj-log-line"><span class="time">11:30</span><span class="evt">sweep start</span><span class="what">checking 97 pending connects</span></div>
+              <div class="vj-log-line"><span class="time">11:00</span><span class="evt">sweep done</span><span class="what">0 newly accepted (run #5 / 14)</span></div>
+            </div>
+          </div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Bulk check connection</div>
+            <div class="vj-bulk-status">Last sweep · <b>32m ago</b> · 2 newly accepted</div>
+            <button class="vj-bulk-btn" onclick="toast('Force sweep firing… (mock)')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+              Force sweep now
+            </button>
+            <div class="vj-bulk-hint">Skips the next scheduled sweep and checks all pending connects immediately.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── UP NEXT ─────────────────────────────────────────────── -->
+      <section class="section-band is-queue" aria-labelledby="sect-queue">
+        <div class="section-rail">
+          <h2 id="sect-queue">Up Next <small><span id="queueCount">4</span> waiting</small></h2>
+          <div class="section-rail-line"></div>
+          <button class="section-rail-action" onclick="openWizard()">+ Add to queue</button>
+        </div>
+        <div role="grid" aria-labelledby="sect-queue" id="queueList"></div>
+      </section>
+
+      <!-- ── THIS WEEK ───────────────────────────────────────────── -->
+      <section class="section-band is-week" aria-labelledby="sect-week">
+        <div class="section-rail">
+          <h2 id="sect-week">This Week <small>25 — 31 May</small></h2>
+          <div class="section-rail-line"></div>
+          <div class="section-rail-cal">
+            <button onclick="toast('Previous week (mock)')" aria-label="Previous week">←</button>
+            <button class="today" onclick="toast('Snap to today (mock)')">Today</button>
+            <button onclick="toast('Next week (mock)')" aria-label="Next week">→</button>
+          </div>
+          <button class="section-rail-action" onclick="toast('Schedule (mock)')">+ Schedule</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </section>
+
+      <!-- ── PAST ────────────────────────────────────────────────── -->
+      <section class="section-band is-past" aria-labelledby="sect-past">
+        <div class="section-rail">
+          <h2 id="sect-past">Past <small><span id="pastCount">3</span> campaigns</small></h2>
+          <div class="section-rail-line"></div>
+          <button class="section-rail-action" id="past-toggle-btn" onclick="togglePastExpanded()">Show all</button>
+        </div>
+        <!-- Collapsed summary (default) -->
+        <div class="past-collapsed" id="pastCollapsed">
+          <div class="pc-count" id="pcCount">3<span class="pc-lbl">past</span></div>
+          <div class="pc-summary" id="pcSummary">last finished <b>YC W26 Connects</b> · 6h ago · <b>6.0%</b> reply rate</div>
+        </div>
+        <!-- Expanded full list (hidden by default) -->
+        <div role="grid" aria-labelledby="sect-past" id="pastList" style="display:none;"></div>
+      </section>
+
+      <div class="footer">Ortus Club © 2026</div>
+
+    </div>
+  </main>
+</div>
+
+<!-- ── Wizard ────────────────────────────────────────────────────── -->
+<div class="modal-shade" id="wizShade" onclick="if(event.target.id==='wizShade') closeWizard()">
+  <div class="modal" role="dialog" aria-label="New campaign">
+    <aside class="wiz-side">
+      <h4>New Campaign</h4>
+      <button class="wiz-nav active" data-wsec="mode"><span class="num">I.</span>Campaign Type</button>
+      <button class="wiz-nav" data-wsec="sheet"><span class="num">II.</span>Data</button>
+      <button class="wiz-nav" data-wsec="accounts"><span class="num">III.</span>LinkedIn Accounts</button>
+      <button class="wiz-nav" data-wsec="throughput"><span class="num">IV.</span>Settings</button>
+      <button class="wiz-nav" data-wsec="templates"><span class="num">V.</span>Templates</button>
+      <button class="wiz-nav" data-wsec="launch"><span class="num">VI.</span>Launch</button>
+      <button class="btn-pill wiz-close" onclick="closeWizard()">← Back</button>
+    </aside>
+    <div class="wiz-body">
+      <div class="wiz-banner"><span class="dot"></span><span><b>EU Founder Push Q2</b> is currently running. Slot 01 is busy — this campaign will be <b>queued behind it</b>.</span></div>
+      <div class="wiz-name"><div class="lbl">Campaign Name</div><input id="wizName" value="New Connect + Intro Campaign" /></div>
+      <div class="wiz-section" id="ws-mode"><h2><span class="num">I ·</span>Campaign Type</h2><div class="mode-grid" id="modeGrid"></div></div>
+      <div class="wiz-section" id="ws-sheet"><h2><span class="num">II ·</span>Google Sheet Tab URL</h2><div class="field"><div class="field-lbl">Sheet tab URL</div><input class="field-input" value="https://docs.google.com/spreadsheets/d/1xYZ…/edit#gid=482003" /></div></div>
+      <div class="wiz-section" id="ws-accounts"><h2><span class="num">III ·</span>Select GoLogin Accounts</h2><div id="acctList"></div></div>
+      <div class="wiz-section" id="ws-throughput"><h2><span class="num">IV ·</span>Campaign Settings</h2><div class="field-row"><div class="field"><div class="field-lbl">Daily limit per account</div><input class="field-input" type="number" value="20" /></div><div class="field"><div class="field-lbl">Batch interval</div><input class="field-input" value="30 min" /></div></div></div>
+      <div class="wiz-section" id="ws-templates"><h2><span class="num">V ·</span>Message Templates</h2><div class="field"><div class="field-lbl">Connection Note · max 300 chars</div><textarea class="tmpl-area">Hi {first name} — saw your work on {company} and wanted to connect.</textarea></div><div class="field"><div class="field-lbl">Intro Message (3-way DM, C+I and IB)</div><textarea class="tmpl-area">Hi {first name} and {primary name} — both of you are doing work the other should see.</textarea></div></div>
+      <div class="wiz-section" id="ws-launch"><h2><span class="num">VI ·</span>Launch</h2><div class="launch-row"><div class="launch-summary"><b>120</b> contacts · <b>2</b> accounts · <b>20/day</b> · ETA <b>3 days</b></div><div class="launch-toggle"><button class="active" onclick="this.classList.add('active');this.nextElementSibling.classList.remove('active')">Now</button><button onclick="this.classList.add('active');this.previousElementSibling.classList.remove('active')">Schedule</button></div><button class="launch-start" onclick="startFromWizard()">+ Add to queue</button></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="popover" id="popover" style="display:none"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const MODES = [
+    { code:'connect_only',          badge:'CC',  label:'Connect Only',          desc:'Send connect requests with optional note.' },
+    { code:'connect_and_introduce', badge:'C+I', label:'Connect + Introduce',   desc:'Connect, wait for accept, fire 3-way intro DM.' },
+    { code:'introduce_back',        badge:'IB',  label:'Introduce Back',        desc:'Already connected — intro DM only.' },
+    { code:'message_only',          badge:'DM',  label:'Direct Message',        desc:'Send to 1st-degree connections.' },
+    { code:'inmail_only',           badge:'IM',  label:'InMail',                desc:'Out-of-network targets.' },
+    { code:'check_status',          badge:'CS',  label:'Check Status',          desc:'Bulk-check acceptances. No sends.' },
+    { code:'open_profile_only',     badge:'OP',  label:'Open Profile',          desc:'Open-Profile leads — no connect needed.' },
+  ];
+  const ACCOUNTS = [
+    { id:1, name:'Alex K.',    email:'alex.k@ortusclub.com',    used:'12/20 today', selected:true  },
+    { id:2, name:'Sara R.',    email:'sara.r@ortusclub.com',    used:'6/20 today',  selected:true  },
+    { id:3, name:'Mark T.',    email:'mark.t@ortusclub.com',    used:'0/20 today',  selected:false },
+    { id:4, name:'Antonio V.', email:'antonio.v@ortusclub.com', used:'4/20 today',  selected:false },
+  ];
+
+  /* Queue items carry preview fields the wizard collects (sheet, contacts target,
+     accounts, daily cadence, est duration, queued-at timestamp) so the showcase
+     card can show the full launch summary without a click. */
+  const queue = [
+    { id:1, mode:'IB',  modeLabel:'introduce back',       name:'Boston Law Followups',     when:'',                primary:'Start now',  contacts:64,  accounts:2, est:'2 days', sheet:'2026 EU Push · Tab 4', dailyLimit:20, batchInterval:'30m', queuedAt:'12:04 today' },
+    { id:2, mode:'DM',  modeLabel:'direct message',       name:'PE Associate Intros',      when:'in 3h',            primary:'Start now',  contacts:48,  accounts:2, est:'1 day',  sheet:'PE Reach · Tab 1',     dailyLimit:25, batchInterval:'30m', queuedAt:'11:48 today' },
+    { id:3, mode:'IM',  modeLabel:'inmail',               name:'Wealth Managers London',   when:'tomorrow 14:04',  primary:'Reschedule', scheduled:true, contacts:80,  accounts:3, est:'3 days', sheet:'UK Wealth · Tab 2',    dailyLimit:15, batchInterval:'45m', queuedAt:'09:12 today' },
+    { id:4, mode:'C+I', modeLabel:'connect + introduce',  name:'New Connect + Intro',      when:'',                primary:'Start now',  contacts:120, accounts:2, est:'4 days', sheet:'Drafts · Tab 7',       dailyLimit:20, batchInterval:'30m', queuedAt:'10:30 today' },
+  ];
+
+  /* Past — finished campaigns. Explicit fields (vs the old stats-string format)
+     so the variant A renderer can show the reply rate as a typed value. */
+  const past = [
+    { mode:'CC',  name:'YC W26 Connects',      finished:'6h ago',  sent:200, replies:12, rate:6.0 },
+    { mode:'CS',  name:'Hedge Fund Check',     finished:'22h ago', sent:34,  replies:0,  tag:'stopped' },
+    { mode:'IB',  name:'NYC Partners Intro',   finished:'5d ago',  sent:24,  replies:6,  rate:25.0 },
+  ];
+
+  const week = [
+    { dow:'MON', date:25, today:false, items:[{ mode:'CS', name:'Hedge Fund Check', faded:true }] },
+    { dow:'TUE', date:26, today:true,  items:[
+        { mode:'C+I', name:'EU Founder Push Q2', running:true },
+        { mode:'IB',  name:'Boston Law Followups', faded:true },
+        { mode:'DM',  name:'PE Associate Intros', time:'15:04', faded:true },
+        { mode:'C+I', name:'New Connect + Intro', faded:true },
+    ] },
+    { dow:'WED', date:27, today:false, items:[{ mode:'IM', name:'Wealth Managers London', time:'14:04' }] },
+    { dow:'THU', date:28, today:false, items:[] },
+    { dow:'FRI', date:29, today:false, items:[] },
+    { dow:'SAT', date:30, today:false, items:[] },
+    { dow:'SUN', date:31, today:false, items:[] },
+  ];
+
+  /* Helpers */
+  function el(tag, attrs={}, kids=[]) {
+    const n = document.createElement(tag);
+    for (const [k,v] of Object.entries(attrs)) {
+      if (k === 'class') n.className = v;
+      else if (k === 'html') n.innerHTML = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) n.setAttribute(k, v);
+    }
+    for (const k of (Array.isArray(kids) ? kids : [kids])) {
+      if (k == null) continue;
+      n.append(k.nodeType ? k : document.createTextNode(k));
+    }
+    return n;
+  }
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._h);
+    toast._h = setTimeout(() => t.classList.remove('show'), 1500);
+  }
+
+  function renderCalendar() {
+    const grid = document.getElementById('calGrid'); grid.innerHTML = '';
+    for (const day of week) {
+      const cell = el('div', { class: 'cal-cell' + (day.today ? ' today' : ''), onclick: () => { if (!day.today) toast(`Schedule on ${day.dow} ${day.date} (mock)`); } });
+      cell.append(el('div', { class:'cal-head' }, [el('div', { class:'cal-dow' }, day.dow), el('div', { class:'cal-date' }, String(day.date))]));
+      for (const it of day.items) {
+        const chip = el('div', { class: 'cal-chip' + (it.running ? ' running' : '') + (it.faded ? ' faded' : ''), onclick: (e) => { e.stopPropagation(); toast(it.running ? 'Open active campaign' : 'Open ' + it.name); }});
+        chip.append(el('span', { class:'badge' }, it.mode));
+        if (it.time) chip.append(el('span', { class:'time' }, it.time));
+        chip.append(el('span', { class:'name' }, it.name));
+        cell.append(chip);
+      }
+      if (!day.today) cell.append(el('div', { class:'cal-hint' }, '+ Schedule'));
+      grid.append(cell);
+    }
+  }
+
+  function renderQueue() {
+    const list = document.getElementById('queueList'); list.innerHTML = '';
+    const stack = el('div', { class: 'vc-stack' });
+
+    queue.forEach((q, idx) => {
+      const isScheduled = !!q.scheduled || (q.when && q.when.length > 0);
+      const eyebrowText = isScheduled ? 'Scheduled · ' + q.when : (idx === 0 ? 'Queued · Next up' : 'Queued · ' + ordinal(idx + 1));
+
+      if (idx === 0) {
+        /* Top-of-deck showcase card */
+        const card = el('div', { class: 'vc-card-top' + (isScheduled ? ' is-scheduled' : '') });
+        card.append(el('div', { class:'vc-handle', 'aria-label':'Drag to reorder', title:'Drag to reorder' }));
+        card.append(el('div', { class:'vc-top-glyph' }, q.mode));
+        const body = el('div', { class:'vc-top-body' });
+        const eyebrow = el('div', { class:'vc-top-eyebrow' + (isScheduled ? ' is-scheduled' : '') });
+        eyebrow.append(el('span', { class:'dot' }));
+        eyebrow.append(document.createTextNode(eyebrowText));
+        body.append(eyebrow);
+        body.append(el('div', { class:'vc-top-name' }, q.name));
+        const preview = el('div', { class:'vc-top-preview-dense' });
+        preview.append(el('div', { class:'row', html: '<span class="k">Mode</span><span class="v"><b>' + q.mode + '</b> · ' + q.modeLabel + '</span>' }));
+        preview.append(el('div', { class:'row', html: '<span class="k">Sheet</span><span class="v">' + q.sheet + '</span>' }));
+        preview.append(el('div', { class:'row', html: '<span class="k">Targets</span><span class="v"><b>' + q.contacts + '</b> contacts · <b>' + q.accounts + '</b> accounts</span>' }));
+        preview.append(el('div', { class:'row', html: '<span class="k">Cadence</span><span class="v"><b>' + q.dailyLimit + '</b>/day · batch <b>' + q.batchInterval + '</b></span>' }));
+        preview.append(el('div', { class:'row', html: '<span class="k">Est</span><span class="v"><b>' + q.est + '</b></span>' }));
+        preview.append(el('div', { class:'row', html: '<span class="k">Queued at</span><span class="v">' + q.queuedAt + '</span>' }));
+        body.append(preview);
+        card.append(body);
+        card.append(buildQueueDock(q, isScheduled));
+        stack.append(card);
+      } else {
+        /* Lower stack items — depth-2 for next, depth-3 for further-down */
+        const depth = idx === 1 ? 'depth-2' : 'depth-3';
+        const mini = el('div', { class: 'vc-mini ' + depth + (isScheduled ? ' is-scheduled' : '') });
+        mini.append(el('div', { class:'vc-handle', 'aria-label':'Drag to reorder', title:'Drag to reorder' }));
+        mini.append(el('div', { class:'vc-mini-glyph' }, q.mode));
+        mini.append(el('div', { class:'vc-mini-name' }, q.name));
+        const when = el('div', { class:'vc-mini-when' });
+        if (isScheduled) when.innerHTML = SVG_CLOCK_INLINE + '<b>' + q.when + '</b>';
+        else when.textContent = 'Queued · ' + ordinal(idx + 1);
+        mini.append(when);
+        mini.append(buildQueueDock(q, isScheduled));
+        stack.append(mini);
+      }
+    });
+
+    list.append(stack);
+    document.getElementById('queueCount').textContent = queue.length;
+  }
+  /* Tiny ordinal helper for queue position labels (2nd, 3rd, 4th…) */
+  function ordinal(n) {
+    const s = ['th','st','nd','rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+  function moveQueue(id, dir) {
+    const i = queue.findIndex(q => q.id === id); const j = i + dir;
+    if (j < 0 || j >= queue.length) return;
+    [queue[i], queue[j]] = [queue[j], queue[i]];
+    renderQueue();
+  }
+
+  function renderPast() {
+    const list = document.getElementById('pastList'); list.innerHTML = '';
+    const wrap = el('div', { class: 'pa-list' });
+
+    past.forEach((p) => {
+      const row = el('div', { class: 'pa-row' });
+      row.append(el('div', { class: 'glyph' }, p.mode));
+      row.append(el('div', { class: 'pa-name' }, p.name));
+      row.append(el('div', { class: 'pa-when' }, p.finished));
+      row.append(el('div', { class: 'pa-stats', html: '<b>' + p.sent + '</b> sent · <b>' + p.replies + '</b> replies' }));
+
+      if (p.tag === 'stopped') {
+        row.append(el('div', { class: 'pa-stopped' }, 'Stopped early'));
+      } else {
+        row.append(el('div', { class: 'pa-rate', html: p.rate.toFixed(1) + '<span class="pct">%</span>' }));
+      }
+
+      row.append(buildPastDock(p));
+      wrap.append(row);
+    });
+
+    list.append(wrap);
+    document.getElementById('pastCount').textContent = past.length;
+    refreshPastSummary();
+  }
+
+  /* SVG strings for pause / play used to swap the dock button icon. */
+  const SVG_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+  const SVG_PLAY  = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>';
+  /* Queue-action icons. Same monoline weight as the active card icons. */
+  const SVG_CAL    = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+  const SVG_PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+  const SVG_COPY2  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+  const SVG_TRASH  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+  const SVG_CHEV   = '<svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+  const SVG_CLOCK_INLINE = '<svg class="clock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
+  /* Past-section dock icons */
+  const SVG_RESTART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>';
+  const SVG_DOC      = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>';
+  const SVG_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  const SVG_ARCHIVE  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>';
+
+  /* Past dock action helpers — rerun is the visible primary, the rest hide
+     behind the chevron (Open log, Copy to queue, Export, Archive). */
+  function rerunPast(p) { toast('Rerun ' + p.name + ' (mock)'); }
+  function openPastLog(p) { toast('Open log: ' + p.name + ' (mock)'); }
+  function copyPastToQueue(p) {
+    queue.push({ id: Date.now(), mode: p.mode, modeLabel: '—', name: p.name + ' (copy)', when: '', primary: 'Start now', contacts: p.sent || 0, accounts: 0, est: '—' });
+    renderQueue();
+    toast('Copied "' + p.name + '" to queue');
+  }
+  function exportPast(p) { toast('Exported ' + p.name + ' (mock)'); }
+  function archivePast(p) {
+    const i = past.indexOf(p);
+    if (i >= 0) { past.splice(i, 1); renderPast(); toast('Archived'); }
+  }
+
+  function buildPastDock(p) {
+    const dockId = 'dock-past-' + (p.name || 'x').toLowerCase().replace(/\W+/g, '-');
+    const dock = el('div', { class: 'dock', id: dockId, 'data-open': 'false', role: 'toolbar', 'aria-label': p.name + ' actions' });
+
+    const primary = el('button', { class: 'dock-btn', 'data-tip': 'Rerun', 'aria-label': 'Rerun', onclick: () => rerunPast(p) });
+    primary.innerHTML = SVG_RESTART;
+    dock.append(primary);
+
+    dock.append(el('span', { class: 'dock-sep', 'aria-hidden': 'true' }));
+
+    const trigger = el('button', { class: 'dock-btn dock-trigger', 'data-tip': 'More actions', 'aria-label': 'Toggle more actions', 'aria-expanded': 'false', onclick: (e) => toggleDock(dockId, e) });
+    trigger.innerHTML = SVG_CHEV;
+    dock.append(trigger);
+
+    const actions = el('div', { class: 'dock-actions' });
+
+    const openBtn = el('button', { class: 'dock-btn', 'data-tip': 'Open log', 'aria-label': 'Open log', onclick: () => openPastLog(p) });
+    openBtn.innerHTML = SVG_DOC;
+    actions.append(openBtn);
+
+    const copyBtn = el('button', { class: 'dock-btn', 'data-tip': 'Copy to queue', 'aria-label': 'Copy to queue', onclick: () => copyPastToQueue(p) });
+    copyBtn.innerHTML = SVG_COPY2;
+    actions.append(copyBtn);
+
+    const exportBtn = el('button', { class: 'dock-btn', 'data-tip': 'Export CSV', 'aria-label': 'Export CSV', onclick: () => exportPast(p) });
+    exportBtn.innerHTML = SVG_DOWNLOAD;
+    actions.append(exportBtn);
+
+    const archiveBtn = el('button', { class: 'dock-btn danger', 'data-tip': 'Archive', 'aria-label': 'Archive', onclick: () => archivePast(p) });
+    archiveBtn.innerHTML = SVG_ARCHIVE;
+    actions.append(archiveBtn);
+
+    dock.append(actions);
+    return dock;
+  }
+
+  /* Queue dock action helpers — pulled out of the kebab popover so the dock
+     can call them directly. */
+  function startQueueItem(q) {
+    if (!confirm('Start "' + q.name + '" now? Slot 01 is busy — this will queue immediately ahead.')) return;
+    toast('Started ' + q.name + ' (mock)');
+  }
+  function rescheduleQueueItem(q) { toast('Reschedule ' + q.name + ' (mock)'); }
+  function editQueueItem(q) { toast('Edit ' + q.name + ' (mock)'); }
+  function duplicateQueueItem(q) {
+    queue.push({ ...q, id: Date.now(), name: q.name + ' (copy)', when: '', scheduled: false, primary: 'Start now' });
+    renderQueue();
+    toast('Duplicated "' + q.name + '"');
+  }
+  function removeQueueItem(q) {
+    const i = queue.indexOf(q);
+    if (i >= 0) { queue.splice(i, 1); renderQueue(); toast('Removed'); }
+  }
+
+  /* Builds the dock pill for a queued/scheduled item. Visible button is the
+     primary action (play for queued, calendar for scheduled); chevron reveals
+     the rest (the other primary, Edit, Duplicate, Remove). */
+  function buildQueueDock(q, isScheduled) {
+    const dockId = 'dock-queue-' + q.id;
+    const dock = el('div', { class: 'dock', id: dockId, 'data-open': 'false', role: 'toolbar', 'aria-label': q.name + ' actions' });
+
+    const primary = el('button', {
+      class: 'dock-btn',
+      'data-tip': isScheduled ? 'Reschedule' : 'Start now',
+      'aria-label': isScheduled ? 'Reschedule' : 'Start now',
+      onclick: () => isScheduled ? rescheduleQueueItem(q) : startQueueItem(q),
+    });
+    primary.innerHTML = isScheduled ? SVG_CAL : SVG_PLAY;
+    dock.append(primary);
+
+    dock.append(el('span', { class: 'dock-sep', 'aria-hidden': 'true' }));
+
+    const trigger = el('button', {
+      class: 'dock-btn dock-trigger',
+      'data-tip': 'More actions',
+      'aria-label': 'Toggle more actions',
+      'aria-expanded': 'false',
+      onclick: (e) => toggleDock(dockId, e),
+    });
+    trigger.innerHTML = SVG_CHEV;
+    dock.append(trigger);
+
+    const actions = el('div', { class: 'dock-actions' });
+    /* Opposite of the visible primary — so scheduled items can also Start now,
+       and queued items can also Reschedule. */
+    const otherPrimary = el('button', {
+      class: 'dock-btn',
+      'data-tip': isScheduled ? 'Start now' : 'Reschedule',
+      'aria-label': isScheduled ? 'Start now' : 'Reschedule',
+      onclick: () => isScheduled ? startQueueItem(q) : rescheduleQueueItem(q),
+    });
+    otherPrimary.innerHTML = isScheduled ? SVG_PLAY : SVG_CAL;
+    actions.append(otherPrimary);
+
+    const edit = el('button', { class: 'dock-btn', 'data-tip': 'Edit', 'aria-label': 'Edit', onclick: () => editQueueItem(q) });
+    edit.innerHTML = SVG_PENCIL;
+    actions.append(edit);
+
+    const dup = el('button', { class: 'dock-btn', 'data-tip': 'Duplicate', 'aria-label': 'Duplicate', onclick: () => duplicateQueueItem(q) });
+    dup.innerHTML = SVG_COPY2;
+    actions.append(dup);
+
+    const rem = el('button', { class: 'dock-btn danger', 'data-tip': 'Remove', 'aria-label': 'Remove', onclick: () => removeQueueItem(q) });
+    rem.innerHTML = SVG_TRASH;
+    actions.append(rem);
+
+    dock.append(actions);
+    return dock;
+  }
+
+  let _activePaused = false;
+  let _monitorPaused = false;
+
+  function togglePauseActive() {
+    _activePaused = !_activePaused;
+    const btn = document.getElementById('dock-active-pause');
+    btn.innerHTML = _activePaused ? SVG_PLAY : SVG_PAUSE;
+    btn.setAttribute('data-tip', _activePaused ? 'Resume' : 'Pause');
+    btn.setAttribute('aria-label', _activePaused ? 'Resume' : 'Pause');
+    document.getElementById('sendingLbl').textContent = _activePaused ? 'Paused' : 'Sending';
+    toast(_activePaused ? 'Campaign paused' : 'Campaign resumed');
+  }
+  function stopActiveCampaign() {
+    if (!confirm('Stop EU Founder Push Q2? It will move to Past.')) return;
+    toast('Campaign stopped — moved to Past (mock)');
+  }
+  function togglePauseMonitoring() {
+    _monitorPaused = !_monitorPaused;
+    const btn = document.getElementById('dock-monitor-pause');
+    btn.innerHTML = _monitorPaused ? SVG_PLAY : SVG_PAUSE;
+    btn.setAttribute('data-tip', _monitorPaused ? 'Resume watch' : 'Pause watch');
+    btn.setAttribute('aria-label', _monitorPaused ? 'Resume watch' : 'Pause watch');
+    document.getElementById('watchingLbl').textContent = _monitorPaused ? 'Paused' : 'Watching';
+    toast(_monitorPaused ? 'Monitoring paused' : 'Monitoring resumed');
+  }
+  function stopMonitoring() {
+    if (!confirm('Stop monitoring? Remaining unaccepted leads will be stamped Closed - Not Connected and the campaign moves to Past.')) return;
+    const mSect = document.getElementById('monitoring-section'); if (mSect) mSect.style.display = 'none';
+    toast('Monitoring stopped — moved to Past');
+  }
+  function copyLive(name, mode) {
+    queue.push({ id: Date.now(), mode, name: name + ' (copy)', when: '', primary: 'Start now' });
+    renderQueue();
+    toast(`Copied "${name}" to queue`);
+  }
+  function restartActive() {
+    if (!confirm('Restart EU Founder Push Q2 from the beginning? Progress (58/120) will be reset.')) return;
+    toast('Campaign restarted (mock)');
+  }
+  function forceSweep() {
+    toast('Sweep firing now (mock)');
+  }
+
+  /* Global tooltip — fixed positioning so it escapes the dock-actions
+     overflow:hidden clipping. Any [data-tip] element triggers it. */
+  const _tipEl = document.createElement('div');
+  _tipEl.className = 'global-tip';
+  document.body.appendChild(_tipEl);
+  function _showTip(target) {
+    const t = target.getAttribute('data-tip');
+    if (!t) return;
+    const r = target.getBoundingClientRect();
+    _tipEl.textContent = t;
+    _tipEl.style.left = (r.left + r.width / 2) + 'px';
+    _tipEl.style.top  = r.top + 'px';
+    _tipEl.classList.add('show');
+  }
+  function _hideTip() { _tipEl.classList.remove('show'); }
+  document.addEventListener('mouseover', (e) => {
+    const t = e.target.closest('[data-tip]');
+    if (t) _showTip(t); else _hideTip();
+  });
+  document.addEventListener('mouseout', (e) => {
+    const t = e.target.closest('[data-tip]');
+    if (t && (!e.relatedTarget || !e.relatedTarget.closest?.('[data-tip]'))) _hideTip();
+  });
+  document.addEventListener('scroll', _hideTip, true);
+
+  /* Dock open/close + click-outside */
+  function toggleDock(id, e) {
+    if (e) e.stopPropagation();
+    const dock = document.getElementById(id);
+    if (!dock) return;
+    const opening = dock.getAttribute('data-open') !== 'true';
+    /* Close any other open dock first */
+    document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+      if (d.id !== id) {
+        d.setAttribute('data-open', 'false');
+        d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+      }
+    });
+    dock.setAttribute('data-open', opening ? 'true' : 'false');
+    dock.querySelector('.dock-trigger')?.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  }
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('.dock[data-open="true"]').forEach(dock => {
+      if (!dock.contains(e.target)) {
+        dock.setAttribute('data-open', 'false');
+        dock.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+      }
+    });
+  });
+  function handlePrimary(q) {
+    if (q.primary === 'Start now') {
+      if (!confirm(`Start "${q.name}" now? Slot 01 is busy — this will queue immediately ahead.`)) return;
+      toast('Started ' + q.name + ' (mock)');
+    } else { toast(q.primary + ' ' + q.name + ' (mock)'); }
+  }
+  function kebab(e, section, item) {
+    e.stopPropagation();
+    let items;
+    if (section === 'active') {
+      /* Pause / Stop / Copy live in the dock — kebab carries everything else. */
+      items = [
+        { lbl:'Open log',     fn:()=>toast('Open log (mock)') },
+        { lbl:'Edit settings', fn:()=>toast('Edit settings (mock)') },
+        { lbl:'Reset progress', danger:true, fn:()=>toast('Reset progress (mock)') },
+      ];
+    } else if (section === 'monitoring') {
+      items = [
+        { lbl:'Force sweep now', fn:()=>toast('Forced sweep (mock)') },
+        { lbl:'Open report',     fn:()=>toast('Report (mock)') },
+        { lbl:'Open log',        fn:()=>toast('Open log (mock)') },
+      ];
+    } else if (section === 'queue') {
+      items = [
+        { lbl:'Reschedule', fn:()=>toast('Reschedule (mock)') },
+        { lbl:'Edit',       fn:()=>toast('Edit (mock)') },
+        { lbl:'Duplicate',  fn:()=>toast('Duplicate (mock)') },
+        { lbl:'Remove',     danger:true, fn:()=>{ const i = queue.indexOf(item); queue.splice(i,1); renderQueue(); toast('Removed'); } },
+      ];
+    } else {
+      items = [
+        { lbl:'Rerun', fn:()=>toast('Rerun (mock)') },
+        { lbl:'Copy to queue', fn:()=>{ queue.push({ id:Date.now(), mode:item.mode, name:item.name + ' (copy)', when:'', primary:'Start now' }); renderQueue(); toast('Copied to queue'); } },
+        { lbl:'Export CSV', fn:()=>toast('Exported (mock)') },
+        { lbl:'Archive', danger:true, fn:()=>{ const i = past.indexOf(item); past.splice(i,1); renderPast(); toast('Archived'); } },
+      ];
+    }
+    showPopover(e.currentTarget, items);
+  }
+  function clearPast() {
+    if (!confirm('Clear past campaign rows? (Sheet history is unaffected.)')) return;
+    past.length = 0; renderPast(); toast('Past cleared');
+  }
+
+  /* Resolution 1 — Monitoring mini ↔ full toggle */
+  function toggleMonitorMini() {
+    const card = document.getElementById('monitoring-section');
+    if (!card) return;
+    const goingMini = !card.classList.contains('is-mini');
+    card.classList.toggle('is-mini');
+    /* If going back to mini, also collapse the details panel */
+    if (goingMini) card.classList.remove('is-detailed');
+    toast(goingMini ? 'Monitoring · collapsed' : 'Monitoring · expanded');
+  }
+
+  /* NEW — Active + Monitoring details panel toggle (live log + bulk check) */
+  function toggleDetails(cardId, btn) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const opening = !card.classList.contains('is-detailed');
+    card.classList.toggle('is-detailed');
+    /* Rotate the chevron and update tooltip */
+    btn.querySelector('svg').style.transform = opening ? 'rotate(180deg)' : 'rotate(0deg)';
+    btn.setAttribute('data-tip', opening ? 'Hide details' : 'Show details');
+  }
+
+  /* Resolution 4 — Past collapsible toggle */
+  let _pastExpanded = false;
+  function togglePastExpanded() {
+    _pastExpanded = !_pastExpanded;
+    document.getElementById('pastCollapsed').style.display = _pastExpanded ? 'none' : 'grid';
+    document.getElementById('pastList').style.display     = _pastExpanded ? 'block' : 'none';
+    document.getElementById('past-toggle-btn').textContent = _pastExpanded ? 'Collapse' : 'Show all';
+  }
+  /* Refresh the summary line when past data changes */
+  function refreshPastSummary() {
+    const c = document.getElementById('pcCount');
+    const s = document.getElementById('pcSummary');
+    if (!c || !s) return;
+    c.innerHTML = past.length + '<span class="pc-lbl">past</span>';
+    if (past.length === 0) {
+      s.innerHTML = 'no finished campaigns yet';
+    } else {
+      const p = past[0];
+      const rate = p.tag === 'stopped' ? '<b>stopped early</b>' : '<b>' + p.rate.toFixed(1) + '%</b> reply rate';
+      s.innerHTML = 'last finished <b>' + p.name + '</b> · ' + p.finished + ' · ' + rate;
+    }
+  }
+  function showPopover(anchor, items) {
+    const pop = document.getElementById('popover');
+    pop.innerHTML = ''; pop.append(el('h5', {}, 'Options'));
+    const ul = el('ul');
+    for (const it of items) ul.append(el('li', { class: it.danger ? 'danger' : '', onclick: () => { hidePopover(); it.fn(); } }, it.lbl));
+    pop.append(ul);
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.left = Math.max(20, r.right - 220) + 'px';
+    pop.style.display = 'block';
+    setTimeout(() => document.addEventListener('click', hidePopover, { once:true }), 0);
+  }
+  function hidePopover() { document.getElementById('popover').style.display = 'none'; }
+
+  /* Batch ETA tick (active) */
+  let etaSec = 6*60 + 30;
+  setInterval(() => {
+    etaSec = etaSec <= 0 ? (30*60) : etaSec - 1;
+    const m = Math.floor(etaSec / 60), s = etaSec % 60;
+    const n = document.getElementById('batchEta');
+    if (n) n.textContent = `${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+  }, 1000);
+
+  /* Sweep ETA tick (monitoring) */
+  let sweepSec = 20*60 + 49;
+  setInterval(() => {
+    sweepSec = sweepSec <= 0 ? (30*60) : sweepSec - 1;
+    const m = Math.floor(sweepSec / 60), s = sweepSec % 60;
+    const n = document.getElementById('sweepEta');
+    if (n) n.textContent = `${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+  }, 1000);
+
+  /* Theme */
+  function setTheme(t) {
+    document.body.classList.toggle('theme-dark', t === 'dark');
+    document.getElementById('theme-dark').classList.toggle('active', t === 'dark');
+    document.getElementById('theme-light').classList.toggle('active', t === 'light');
+  }
+
+  /* Wizard */
+  function openWizard() {
+    document.getElementById('wizShade').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    renderModes(); renderAccounts();
+  }
+  function closeWizard() {
+    document.getElementById('wizShade').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function renderModes() {
+    const grid = document.getElementById('modeGrid'); grid.innerHTML = '';
+    let selected = 'connect_and_introduce';
+    for (const m of MODES) {
+      const tile = el('div', { class: 'mode-tile' + (m.code === selected ? ' active' : ''), onclick: () => {
+        for (const t of grid.children) t.classList.remove('active');
+        tile.classList.add('active'); selected = m.code;
+      }});
+      tile.append(el('span', { class:'badge' }, m.badge));
+      tile.append(el('div', { class:'label' }, m.label));
+      tile.append(el('div', { class:'desc' }, m.desc));
+      grid.append(tile);
+    }
+  }
+  function renderAccounts() {
+    const list = document.getElementById('acctList'); list.innerHTML = '';
+    for (const a of ACCOUNTS) {
+      const row = el('div', { class: 'acct-row' + (a.selected ? ' selected' : ''), onclick: () => { a.selected = !a.selected; row.classList.toggle('selected', a.selected); cb.checked = a.selected; }});
+      const cb = el('input', { type:'checkbox' }); cb.checked = a.selected;
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', () => { a.selected = cb.checked; row.classList.toggle('selected', a.selected); });
+      row.append(cb);
+      row.append(el('div', { style:'font-size:0.84rem;font-weight:500' }, a.name));
+      row.append(el('div', { class:'meta' }, a.email + ' · ' + a.used));
+      list.append(row);
+    }
+  }
+  function startFromWizard() {
+    const name = (document.getElementById('wizName').value || 'New Campaign').trim();
+    queue.push({ id:Date.now(), mode:'C+I', name, when:'', primary:'Start now' });
+    renderQueue(); closeWizard(); toast(`"${name}" added to queue`);
+  }
+  document.querySelectorAll('.wiz-nav').forEach(it => {
+    it.addEventListener('click', () => {
+      document.getElementById('ws-' + it.dataset.wsec)?.scrollIntoView({ behavior:'smooth', block:'start' });
+      document.querySelectorAll('.wiz-nav').forEach(x => x.classList.remove('active'));
+      it.classList.add('active');
+    });
+  });
+
+  renderCalendar();
+  renderQueue();
+  renderPast();
+</script>
+</body>
+</html>

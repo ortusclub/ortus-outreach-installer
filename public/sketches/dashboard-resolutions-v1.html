@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard · Resolutions v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --bg-soft: #faf9f7;
+  --surface: #ffffff;
+  --ink: #0a0a0a;
+  --gray: #6b6b6b;
+  --gray-faint: #b8b8b6;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --green: #3fb950;
+  --blue: #4a7bb8;
+  --gold: #F7BE68;
+  --red: #c44;
+  --display: 'Bebas Neue', sans-serif;
+  --mono: 'Hanken Grotesk', system-ui, sans-serif;
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --bg-soft: rgba(255,255,255,0.03);
+  --surface: #14140f;
+  --ink: #fafafa;
+  --gray: #999;
+  --gray-faint: #5a5a58;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --green: #3fb950;
+  --blue: #6ea3d4;
+  --red: #f85149;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--mono); background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.5; padding: 48px 32px 96px; }
+.wrap { max-width: 1100px; margin: 0 auto; }
+
+header.page { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--hairline); }
+header.page h1 { font-family: var(--display); font-weight: 400; font-size: 32px; letter-spacing: 0.04em; margin: 0; }
+header.page .meta { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.theme-toggle { font: inherit; background: transparent; border: 1px solid var(--hairline); color: var(--ink); padding: 6px 12px; cursor: pointer; border-radius: 9999px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.theme-toggle:hover { border-color: var(--ink); }
+
+.issue { margin-bottom: 72px; }
+.issue-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.issue-head .num { font-family: var(--display); font-size: 28px; letter-spacing: 0.04em; color: var(--gray-faint); }
+.issue-head h2 { font-family: var(--display); font-weight: 400; font-size: 24px; letter-spacing: 0.04em; margin: 0; }
+.issue-head small { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.issue-note { color: var(--gray); font-size: 13px; max-width: 760px; margin: 0 0 20px; }
+.issue-note b { color: var(--ink); font-weight: 500; }
+
+.compare-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); margin: 16px 0 8px; }
+
+/* ─── shared component styles ─── */
+.glyph { width: 34px; height: 34px; border-radius: 9999px; border: 1px solid var(--hairline); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.06em; background: var(--bg); flex-shrink: 0; }
+.glyph.sm { width: 26px; height: 26px; font-size: 0.55rem; }
+.btn-pill { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 7px 16px; color: var(--ink); font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer; }
+.btn-pill:hover { border-color: var(--ink); }
+.tag { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; color: var(--gray); }
+.tag .dot { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }
+.tag.is-active .dot { background: var(--green); }
+.tag.is-monitor .dot { background: var(--blue); }
+
+/* Mini dock visual (static) */
+.dock-mini {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px 4px; border-radius: 9999px;
+  border: 1px solid var(--hairline-soft);
+}
+.dock-mini .b { width: 24px; height: 24px; border-radius: 9999px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); }
+.dock-mini .b svg { width: 12px; height: 12px; }
+.dock-mini .sep { width: 1px; height: 11px; background: var(--hairline); margin: 0 2px; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   ISSUE 1 · Monitoring mini-J
+   ═════════════════════════════════════════════════════════════════════════ */
+/* Current J card */
+.j-card-full {
+  position: relative;
+  background: var(--surface);
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0);
+  background-size: 6px 6px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 10px;
+  padding: 22px 26px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px -8px rgba(0,0,0,0.10);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px 24px;
+  grid-template-areas:
+    "eyebrow eyebrow"
+    "name    name"
+    "bar     bar"
+    "hero    hero"
+    "stats   controls";
+}
+.j-card-full::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue); }
+.j-card-full .glyph-circ { position: absolute; top: 18px; right: 22px; width: 50px; height: 50px; border-radius: 9999px; border: 1px solid var(--ink); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; }
+.j-card-full .eyebrow { grid-area: eyebrow; padding-right: 70px; display: flex; gap: 12px; align-items: center; }
+.j-card-full .name { grid-area: name; font-family: var(--display); font-size: 2.13rem; line-height: 1; padding-right: 70px; }
+.j-card-full .bar { grid-area: bar; height: 3px; background: var(--hairline); border-radius: 9999px; overflow: hidden; position: relative; }
+.j-card-full .bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue); width: 43%; }
+.j-card-full .hero-row { grid-area: hero; display: flex; align-items: baseline; gap: 18px; }
+.j-card-full .num { font-family: var(--display); font-size: 3.13rem; line-height: 0.9; }
+.j-card-full .num .sub { font-size: 1.43rem; color: var(--gray); }
+.j-card-full .meta { display: flex; flex-direction: column; gap: 2px; font-size: 0.87rem; color: var(--gray); }
+.j-card-full .meta b { color: var(--ink); font-weight: 500; }
+.j-card-full .stats { grid-area: stats; align-self: center; display: flex; gap: 14px; font-size: 0.81rem; color: var(--gray); flex-wrap: wrap; }
+.j-card-full .stats b { color: var(--ink); font-weight: 500; }
+.j-card-full .controls { grid-area: controls; align-self: center; justify-self: end; display: flex; align-items: center; gap: 10px; }
+
+/* Proposed Mini-J */
+.j-mini {
+  position: relative;
+  background: var(--surface);
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0);
+  background-size: 6px 6px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 8px;
+  padding: 14px 20px 14px 20px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px -8px rgba(0,0,0,0.10);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 4px 18px;
+  align-items: center;
+}
+.j-mini::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--blue); }
+.j-mini .left { grid-row: 1 / 3; align-self: center; display: flex; align-items: center; gap: 16px; }
+.j-mini .left .glyph-circ { width: 36px; height: 36px; border-radius: 9999px; border: 1px solid var(--ink); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.06em; }
+.j-mini .middle { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.j-mini .middle-row1 { display: flex; align-items: baseline; gap: 14px; }
+.j-mini .middle-row1 .name { font-family: var(--display); font-size: 1.35rem; line-height: 1; }
+.j-mini .middle-row1 .num { font-family: var(--display); font-size: 1.35rem; color: var(--ink); margin-left: auto; }
+.j-mini .middle-row1 .num .pct { font-size: 0.75rem; color: var(--gray); }
+.j-mini .middle-row2 { display: flex; align-items: center; gap: 12px; font-size: 0.7rem; color: var(--gray); }
+.j-mini .middle-row2 b { color: var(--ink); font-weight: 500; }
+.j-mini .bar-inline { flex: 1; max-width: 200px; height: 2px; background: var(--hairline); border-radius: 9999px; position: relative; overflow: hidden; }
+.j-mini .bar-inline > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--blue); width: 43%; }
+.j-mini .controls { grid-row: 1 / 3; align-self: center; display: flex; align-items: center; gap: 10px; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   ISSUE 2 · Up Next showcase tightened
+   ═════════════════════════════════════════════════════════════════════════ */
+.un-card {
+  position: relative; background: transparent; border: 1px solid var(--hairline);
+  border-radius: 5px; padding: 16px 20px;
+  display: grid; gap: 18px; align-items: center;
+  min-height: 88px;
+}
+.un-card.is-loose {
+  grid-template-columns: auto auto 1fr auto;
+}
+.un-card.is-dense {
+  grid-template-columns: auto auto 1fr auto;
+}
+.un-card .handle { display: flex; flex-direction: column; gap: 3px; align-items: center; color: var(--gray-faint); cursor: grab; padding: 4px 6px; }
+.un-card .handle::before, .un-card .handle::after { content: ""; width: 14px; height: 1.5px; background: currentColor; border-radius: 9999px; }
+.un-card .handle::after { box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor; }
+.un-card .glyph-circ { width: 36px; height: 36px; border-radius: 9999px; border: 1px solid var(--ink); display: inline-flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.58rem; font-weight: 600; letter-spacing: 0.06em; }
+.un-card .body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.un-card .eyebrow-mini { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); display: inline-flex; gap: 8px; align-items: center; }
+.un-card .eyebrow-mini .dot { width: 5px; height: 5px; border-radius: 9999px; background: var(--ink); opacity: 0.5; }
+.un-card .name { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; }
+.un-card .preview { display: flex; gap: 16px; font-size: 0.66rem; color: var(--gray); margin-top: 2px; flex-wrap: wrap; }
+.un-card .preview b { color: var(--ink); font-weight: 500; }
+.un-card .preview-dense { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; font-size: 0.66rem; color: var(--gray); margin-top: 2px; }
+.un-card .preview-dense b { color: var(--ink); font-weight: 500; }
+.un-card .preview-dense .row { display: flex; gap: 8px; }
+.un-card .preview-dense .row .k { color: var(--gray-faint); text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.54rem; min-width: 80px; padding-top: 1px; }
+.un-card .ready-line { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray-faint); margin-top: 6px; }
+.un-card .ready-line b { color: var(--gray); font-weight: 500; }
+.un-card .right { display: flex; align-items: center; gap: 10px; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   ISSUE 3 · Calendar shared design language
+   ═════════════════════════════════════════════════════════════════════════ */
+/* Current kanban-style cell */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+.cal-cell-old {
+  border: 1px solid var(--hairline); border-radius: 6px; background: var(--bg-soft);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  min-height: 116px; padding: 10px 10px 12px;
+  display: flex; flex-direction: column;
+}
+.cal-cell-old.today { background: var(--surface); border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink), 0 1px 2px rgba(0,0,0,0.05); }
+.cal-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.cal-dow { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+.cal-date { font-family: var(--display); font-size: 1.1rem; line-height: 1; }
+.cal-chip { display: flex; align-items: baseline; gap: 5px; padding: 5px 7px; margin-bottom: 4px; font-size: 0.66rem; line-height: 1.3; border: 1px solid var(--hairline); border-radius: 4px; background: var(--bg); }
+.cal-chip.running { border-color: var(--green); background: rgba(63, 185, 80, 0.05); }
+.cal-chip.running::before { content: ''; width: 5px; height: 5px; border-radius: 9999px; background: var(--green); display: inline-block; flex: 0 0 auto; }
+.cal-chip.faded { opacity: 0.55; }
+.cal-chip .badge { font-family: var(--mono); font-size: 0.46rem; letter-spacing: 0.10em; font-weight: 600; padding: 1px 4px; border: 1px solid var(--hairline); border-radius: 3px; }
+.cal-chip .time { color: var(--gray); font-family: var(--mono); font-size: 0.54rem; }
+.cal-chip .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Proposed: flat hairline cells matching Up Next deck style */
+.cal-cell-new {
+  border: 1px solid var(--hairline); border-radius: 4px; background: transparent;
+  min-height: 116px; padding: 10px 10px 12px;
+  display: flex; flex-direction: column;
+  transition: border-color 0.12s;
+}
+.cal-cell-new:hover { border-color: var(--ink); }
+.cal-cell-new.today {
+  border-color: var(--hairline);
+  background: rgba(0, 0, 0, 0.02);
+}
+.cal-cell-new.today .cal-date::after {
+  content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 9999px;
+  background: var(--green); margin-left: 6px; vertical-align: 2px;
+}
+.cal-chip-new {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; margin-bottom: 4px;
+  font-size: 0.66rem; line-height: 1.2;
+  border: 1px solid var(--hairline-soft); border-radius: 4px;
+  background: transparent;
+}
+.cal-chip-new.running { border-color: var(--ink); }
+.cal-chip-new.running::before { content: ''; width: 5px; height: 5px; border-radius: 9999px; background: var(--green); display: inline-block; flex: 0 0 auto; }
+.cal-chip-new.faded { color: var(--gray); }
+.cal-chip-new .badge-new {
+  font-family: var(--mono); font-size: 0.46rem; letter-spacing: 0.10em; font-weight: 600;
+  border: 1px solid var(--hairline); border-radius: 9999px;
+  padding: 1px 6px; color: var(--gray);
+}
+.cal-chip-new.running .badge-new { border-color: var(--ink); color: var(--ink); }
+.cal-chip-new .time { color: var(--gray-faint); font-family: var(--mono); font-size: 0.52rem; }
+.cal-chip-new .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.cal-chip-new.faded .name { color: var(--gray); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   ISSUE 4 · Past collapsible
+   ═════════════════════════════════════════════════════════════════════════ */
+.past-collapsed {
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 18px; align-items: center;
+  padding: 14px 12px;
+  border: 1px solid var(--hairline-soft); border-radius: 4px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.past-collapsed:hover { border-color: var(--hairline); background: rgba(0,0,0,0.02); }
+.past-collapsed .count { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; line-height: 1; color: var(--ink); }
+.past-collapsed .count .lbl { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; color: var(--gray); text-transform: uppercase; margin-left: 6px; font-weight: 500; }
+.past-collapsed .summary { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); }
+.past-collapsed .summary b { color: var(--ink); font-weight: 500; }
+.past-collapsed .expand-btn {
+  font: inherit; background: transparent; border: 1px solid var(--hairline);
+  color: var(--gray); border-radius: 9999px;
+  padding: 7px 14px; font-family: var(--mono); font-size: 0.56rem;
+  letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer;
+}
+.past-collapsed .expand-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+.past-expanded { display: none; }
+.past-expanded.is-shown { display: block; margin-top: 6px; }
+.past-expanded .pa-list { padding: 0 4px; }
+.past-expanded .pa-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto auto;
+  gap: 18px; align-items: center;
+  padding: 12px 6px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.past-expanded .pa-row:last-child { border-bottom: none; }
+.past-expanded .pa-name { font-family: var(--display); font-size: 1.2rem; color: var(--gray); }
+.past-expanded .pa-when { font-family: var(--mono); font-size: 0.62rem; color: var(--gray-faint); }
+.past-expanded .pa-stats { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); }
+.past-expanded .pa-stats b { color: var(--ink); }
+.past-expanded .pa-rate { font-family: var(--display); font-size: 1.4rem; color: var(--ink); }
+.past-expanded .pa-rate .pct { font-size: 0.7rem; color: var(--gray); font-family: var(--mono); }
+.past-expanded .pa-stopped {
+  font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--red); border: 1px solid var(--red); border-radius: 9999px;
+  padding: 3px 9px;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   ISSUE 5 · Eyebrow dot consistency
+   ═════════════════════════════════════════════════════════════════════════ */
+.eb-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 8px; }
+.eb-block { padding: 16px; border: 1px solid var(--hairline-soft); border-radius: 6px; }
+.eb-block-head { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em; color: var(--gray); text-transform: uppercase; margin-bottom: 12px; }
+.eb-row { padding: 6px 0; display: flex; align-items: center; gap: 12px; }
+.eb-row .label { color: var(--gray); font-size: 12px; min-width: 110px; }
+.eb-row .preview { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+.eb-row .preview .dot { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }
+
+footer.legend { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 12px; }
+footer.legend strong { color: var(--ink); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>Dashboard · Resolutions v1</h1>
+    <div class="meta">5 follow-ups · sketches before integration</div>
+  </div>
+  <button class="theme-toggle" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</header>
+
+<!-- ─────────────── ISSUE 1 · Monitoring mini-J ─────────────── -->
+<section class="issue" id="issue-1">
+  <div class="issue-head"><span class="num">1.</span><h2>Monitoring · mini-J</h2><small>~50% the visual weight of Active</small></div>
+  <p class="issue-note">Active and Monitoring share the same J-card weight today, but they're not the same kind of state. Active is sending right now; Monitoring is a passive 7-day watch that ticks. The proposed mini-J keeps the design language (dot pattern, blue accent rail, dock pill) but shrinks the hero metric and folds everything into <b>two lines</b> instead of five grid rows. Same readability for the key fields, half the vertical footprint.</p>
+
+  <div class="compare-label">Current — full J card</div>
+  <div class="j-card-full">
+    <div class="glyph-circ">C+I</div>
+    <div class="eyebrow"><span class="tag is-monitor"><span class="dot"></span>Monitoring · 7-Day Acceptance Watch</span><span style="font-size:11px;color:var(--gray)">finished 3d ago</span></div>
+    <div class="name">EU FOUNDER PUSH Q1</div>
+    <div class="bar"><i></i></div>
+    <div class="hero-row">
+      <div class="num">43<span class="sub">%</span></div>
+      <div class="meta"><span>Day <b>3</b> of 7</span><span>Next sweep in <b>20m 49s</b></span></div>
+    </div>
+    <div class="stats"><span><b>3</b> accounts</span><span><b>108</b> sent</span><span><b>11</b> accepted</span><span><b>11</b> replies</span></div>
+    <div class="controls">
+      <button class="btn-pill">Open</button>
+      <div class="dock-mini"><div class="b"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></div><span class="sep"></span><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg></div></div>
+    </div>
+  </div>
+
+  <div class="compare-label">Proposed — mini-J · two-line, same vocabulary</div>
+  <div class="j-mini">
+    <div class="left">
+      <span class="tag is-monitor"><span class="dot"></span>Monitoring</span>
+      <div class="glyph-circ">C+I</div>
+    </div>
+    <div class="middle">
+      <div class="middle-row1">
+        <span class="name">EU Founder Push Q1</span>
+        <span class="num">43<span class="pct">%</span></span>
+      </div>
+      <div class="middle-row2">
+        <div class="bar-inline"><i></i></div>
+        <span>Day <b>3</b> of 7</span>
+        <span><b>108</b> sent</span>
+        <span><b>11</b> accepted</span>
+        <span>· next sweep <b>20m 49s</b></span>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn-pill">Open</button>
+      <div class="dock-mini"><div class="b"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></div><span class="sep"></span><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── ISSUE 2 · Up Next showcase tightened ─────────────── -->
+<section class="issue" id="issue-2">
+  <div class="issue-head"><span class="num">2.</span><h2>Up Next showcase · denser preview</h2><small>fill the horizontal whitespace</small></div>
+  <p class="issue-note">Current showcase shows mode label + contacts + accounts + est duration in one line, then ~40% of the row is empty space before the dock. Two ways to address: <b>(a) make the preview denser</b> by surfacing more honest fields the wizard already collects — sheet name, batch interval, daily limit, queued-at timestamp; <b>(b) narrow the card</b> so the right cluster sits closer. I prefer (a) — more value per pixel, less dead space.</p>
+
+  <div class="compare-label">Current — loose, single-line preview</div>
+  <div class="un-card is-loose">
+    <div class="handle"></div>
+    <div class="glyph-circ">IB</div>
+    <div class="body">
+      <div class="eyebrow-mini"><span class="dot"></span>Queued · Next up</span></div>
+      <div class="name">Boston Law Followups</div>
+      <div class="preview">
+        <span><b>IB</b> · introduce back</span>
+        <span><b>64</b> contacts</span>
+        <span><b>2</b> accounts</span>
+        <span>est <b>2 days</b></span>
+      </div>
+    </div>
+    <div class="right">
+      <div class="dock-mini"><div class="b"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20"/></svg></div><span class="sep"></span><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg></div></div>
+    </div>
+  </div>
+
+  <div class="compare-label">Proposed — two-column preview · same fields, more pulled in</div>
+  <div class="un-card is-dense">
+    <div class="handle"></div>
+    <div class="glyph-circ">IB</div>
+    <div class="body">
+      <div class="eyebrow-mini"><span class="dot"></span>Queued · Next up</span></div>
+      <div class="name">Boston Law Followups</div>
+      <div class="preview-dense">
+        <div class="row"><span class="k">Mode</span><span><b>IB</b> · introduce back</span></div>
+        <div class="row"><span class="k">Sheet</span><span>2026 EU Push · Tab 4</span></div>
+        <div class="row"><span class="k">Targets</span><span><b>64</b> contacts · <b>2</b> accounts</span></div>
+        <div class="row"><span class="k">Cadence</span><span><b>20</b>/day · batch 30m</span></div>
+        <div class="row"><span class="k">Est</span><span><b>2 days</b></span></div>
+        <div class="row"><span class="k">Queued at</span><span>12:04 today</span></div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="dock-mini"><div class="b"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20"/></svg></div><span class="sep"></span><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── ISSUE 3 · Calendar shared design language ─────────────── -->
+<section class="issue" id="issue-3">
+  <div class="issue-head"><span class="num">3.</span><h2>This Week · shared design language</h2><small>flatter cells · same vocabulary as the deck</small></div>
+  <p class="issue-note">Today the calendar uses 6px rounded kanban tiles with soft fills and shadows — its own visual idiom. Proposed: keep the 7-column grid but flatten the cell treatment to match the Up Next deck — <b>transparent background, hairline outline, smaller radius (4px), no shadow</b>. Today gets a subtle differentiator (small green dot next to the date) instead of a heavy ink border. Chips inside the cells lose the saturated green wash and use the same monochrome treatment as everywhere else.</p>
+
+  <div class="compare-label">Current — kanban tiles · soft fills · shadows</div>
+  <div class="cal-grid">
+    <div class="cal-cell-old"><div class="cal-head"><div class="cal-dow">Mon</div><div class="cal-date">25</div></div><div class="cal-chip faded"><span class="badge">CS</span><span class="name">Hedge Fund Check</span></div></div>
+    <div class="cal-cell-old today"><div class="cal-head"><div class="cal-dow">Tue</div><div class="cal-date">26</div></div>
+      <div class="cal-chip running"><span class="badge">C+I</span><span class="name">EU Founder Push Q2</span></div>
+      <div class="cal-chip faded"><span class="badge">IB</span><span class="name">Boston Law Followups</span></div>
+      <div class="cal-chip faded"><span class="badge">DM</span><span class="time">15:04</span><span class="name">PE Associate Intros</span></div>
+    </div>
+    <div class="cal-cell-old"><div class="cal-head"><div class="cal-dow">Wed</div><div class="cal-date">27</div></div><div class="cal-chip"><span class="badge">IM</span><span class="time">14:04</span><span class="name">Wealth Managers London</span></div></div>
+    <div class="cal-cell-old"><div class="cal-head"><div class="cal-dow">Thu</div><div class="cal-date">28</div></div></div>
+    <div class="cal-cell-old"><div class="cal-head"><div class="cal-dow">Fri</div><div class="cal-date">29</div></div></div>
+    <div class="cal-cell-old"><div class="cal-head"><div class="cal-dow">Sat</div><div class="cal-date">30</div></div></div>
+    <div class="cal-cell-old"><div class="cal-head"><div class="cal-dow">Sun</div><div class="cal-date">31</div></div></div>
+  </div>
+
+  <div class="compare-label">Proposed — hairline cells · today via small green dot · chips share vocabulary</div>
+  <div class="cal-grid">
+    <div class="cal-cell-new"><div class="cal-head"><div class="cal-dow">Mon</div><div class="cal-date">25</div></div><div class="cal-chip-new faded"><span class="badge-new">CS</span><span class="name">Hedge Fund Check</span></div></div>
+    <div class="cal-cell-new today"><div class="cal-head"><div class="cal-dow">Tue</div><div class="cal-date">26</div></div>
+      <div class="cal-chip-new running"><span class="badge-new">C+I</span><span class="name">EU Founder Push Q2</span></div>
+      <div class="cal-chip-new faded"><span class="badge-new">IB</span><span class="name">Boston Law Followups</span></div>
+      <div class="cal-chip-new faded"><span class="badge-new">DM</span><span class="time">15:04</span><span class="name">PE Associate Intros</span></div>
+    </div>
+    <div class="cal-cell-new"><div class="cal-head"><div class="cal-dow">Wed</div><div class="cal-date">27</div></div><div class="cal-chip-new"><span class="badge-new">IM</span><span class="time">14:04</span><span class="name">Wealth Managers London</span></div></div>
+    <div class="cal-cell-new"><div class="cal-head"><div class="cal-dow">Thu</div><div class="cal-date">28</div></div></div>
+    <div class="cal-cell-new"><div class="cal-head"><div class="cal-dow">Fri</div><div class="cal-date">29</div></div></div>
+    <div class="cal-cell-new"><div class="cal-head"><div class="cal-dow">Sat</div><div class="cal-date">30</div></div></div>
+    <div class="cal-cell-new"><div class="cal-head"><div class="cal-dow">Sun</div><div class="cal-date">31</div></div></div>
+  </div>
+</section>
+
+<!-- ─────────────── ISSUE 4 · Past collapsible ─────────────── -->
+<section class="issue" id="issue-4">
+  <div class="issue-head"><span class="num">4.</span><h2>Past · collapsed by default</h2><small>cuts ~3 rows from default page length</small></div>
+  <p class="issue-note">Past is reference material — operators dip into it occasionally, but it doesn't earn three persistent rows on every page load. Proposed: collapse to a single summary row showing the count + most-recent finished campaign + reply rate, with an expand button. Click to reveal the full hairline list (the variant A view you picked). Try it below.</p>
+
+  <div class="compare-label">Proposed — collapsed by default · click to expand</div>
+  <div class="past-collapsed" id="past-toggle" onclick="document.getElementById('past-exp').classList.toggle('is-shown'); const b = document.getElementById('past-btn'); b.textContent = b.textContent === 'Show all' ? 'Collapse' : 'Show all';">
+    <div class="count">3<span class="lbl">past</span></div>
+    <div class="summary">last finished <b>YC W26 Connects</b> · 6h ago · <b>6.0%</b> reply rate</div>
+    <button class="expand-btn" id="past-btn" onclick="event.stopPropagation(); document.getElementById('past-exp').classList.toggle('is-shown'); this.textContent = this.textContent === 'Show all' ? 'Collapse' : 'Show all';">Show all</button>
+  </div>
+  <div class="past-expanded" id="past-exp">
+    <div class="pa-list">
+      <div class="pa-row">
+        <div class="glyph">CC</div>
+        <div class="pa-name">YC W26 Connects</div>
+        <div class="pa-when">6h ago</div>
+        <div class="pa-stats"><b>200</b> sent · <b>12</b> replies</div>
+        <div class="pa-rate">6.0<span class="pct">%</span></div>
+        <div class="dock-mini"><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></div><span class="sep"></span><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg></div></div>
+      </div>
+      <div class="pa-row">
+        <div class="glyph">CS</div>
+        <div class="pa-name">Hedge Fund Check</div>
+        <div class="pa-when">22h ago</div>
+        <div class="pa-stats"><b>34</b> sent · <b>0</b> replies</div>
+        <div class="pa-stopped">Stopped early</div>
+        <div class="dock-mini"><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></div><span class="sep"></span><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg></div></div>
+      </div>
+      <div class="pa-row">
+        <div class="glyph">IB</div>
+        <div class="pa-name">NYC Partners Intro</div>
+        <div class="pa-when">5d ago</div>
+        <div class="pa-stats"><b>24</b> sent · <b>6</b> replies</div>
+        <div class="pa-rate">25.0<span class="pct">%</span></div>
+        <div class="dock-mini"><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></div><span class="sep"></span><div class="b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 6 15 12 9 18"/></svg></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── ISSUE 5 · Eyebrow dot consistency ─────────────── -->
+<section class="issue" id="issue-5">
+  <div class="issue-head"><span class="num">5.</span><h2>Eyebrow dots · only on live sections</h2><small>reduce 3 colors to 2 states</small></div>
+  <p class="issue-note">Currently each section has its own dot semantics: green (Active), blue (Monitoring), gray (Up Next), none (Past). Three signals for what should be a binary "is this happening right now or not". Proposed rule: <b>colored dot = actively running</b> (green sending, blue monitoring). <b>No dot = idle</b> (queued or past). One simple mental model.</p>
+
+  <div class="eb-comparison">
+    <div class="eb-block">
+      <div class="eb-block-head">Current</div>
+      <div class="eb-row"><span class="label">Now Active</span><span class="preview"><span class="dot" style="background:var(--green)"></span>Now Active · 1 Campaign</span></div>
+      <div class="eb-row"><span class="label">Monitoring</span><span class="preview"><span class="dot" style="background:var(--blue)"></span>Monitoring · 7-Day Watch</span></div>
+      <div class="eb-row"><span class="label">Up Next showcase</span><span class="preview"><span class="dot" style="background:var(--ink);opacity:0.5"></span>Queued · Next Up</span></div>
+      <div class="eb-row"><span class="label">Up Next mini</span><span class="preview" style="opacity:0.6">no eyebrow (text on right)</span></div>
+      <div class="eb-row"><span class="label">Past</span><span class="preview" style="opacity:0.6">no eyebrow</span></div>
+    </div>
+    <div class="eb-block">
+      <div class="eb-block-head">Proposed</div>
+      <div class="eb-row"><span class="label">Now Active</span><span class="preview"><span class="dot" style="background:var(--green)"></span>Now Active · 1 Campaign</span></div>
+      <div class="eb-row"><span class="label">Monitoring</span><span class="preview"><span class="dot" style="background:var(--blue)"></span>Monitoring · 7-Day Watch</span></div>
+      <div class="eb-row"><span class="label">Up Next showcase</span><span class="preview">Queued · Next Up</span></div>
+      <div class="eb-row"><span class="label">Up Next mini</span><span class="preview" style="opacity:0.6">no eyebrow (text on right)</span></div>
+      <div class="eb-row"><span class="label">Past</span><span class="preview" style="opacity:0.6">no eyebrow</span></div>
+    </div>
+  </div>
+
+  <p class="issue-note" style="margin-top:16px;font-size:12px;">Only change: drop the gray dot from the Up Next showcase eyebrow. Everything else stays. Net effect — a dot in your peripheral vision <em>always</em> means "running right now", which is a stronger signal than the current "dot = some kind of section header".</p>
+</section>
+
+<footer class="legend">
+  <strong>Order of impact (highest first):</strong>
+  <ul style="margin-top:8px;padding-left:18px;">
+    <li><strong>1 — Monitoring mini-J</strong>: biggest vertical-space win, immediately reduces the page's top-heavy feel</li>
+    <li><strong>4 — Past collapsible</strong>: smallest CSS change, biggest perceived "shorter page" win</li>
+    <li><strong>3 — Calendar shared language</strong>: most visual-coherence improvement across the page</li>
+    <li><strong>2 — Up Next denser preview</strong>: more value per pixel, but needs more wizard plumbing for the new fields</li>
+    <li><strong>5 — Eyebrow dot</strong>: polish, two-character CSS change</li>
+  </ul>
+  <p style="margin-top:12px;">Each is independent — pick any subset. Recommend tackling 1 + 4 + 5 first (all small wins), then 3, then 2 (which depends on having the queued-at timestamp + sheet name fields available, which the wizard collects but the queue array currently doesn't store).</p>
+</footer>
+
+</div>
+</body>
+</html>
