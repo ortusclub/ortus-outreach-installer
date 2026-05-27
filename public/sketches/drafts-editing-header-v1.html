@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Drafts · Editing-header chip · v1 (3 variants)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-soft: rgba(255,255,255,0.03);
+    --ink: #fafafa;
+    --gray: #999;
+    --gray-faint: #5a5a58;
+    --hairline: rgba(255,255,255,0.15);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --green: #3fb950;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 36px 56px; line-height: 1.5; }
+  h1 { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.01em; font-weight: 400; margin-bottom: 8px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 40px; }
+  .variant { margin-bottom: 56px; }
+  .v-label { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .v-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 4px; }
+  .v-blurb { color: var(--gray); font-size: 0.8rem; margin-bottom: 18px; max-width: 720px; }
+  .stage { border: 1px solid var(--hairline); padding: 0; background: var(--bg); position: relative; min-height: 280px; }
+  .stage-faux-wizard {
+    display: grid; grid-template-columns: 200px 1fr; min-height: 280px;
+  }
+  .stage-side { border-right: 1px solid var(--hairline); padding: 24px 18px; background: rgba(255,255,255,0.02); }
+  .stage-side-h { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--gray); margin-bottom: 14px; }
+  .stage-nav-item { display: block; padding: 6px 0; color: var(--gray); font-size: 0.78rem; cursor: pointer; }
+  .stage-nav-item.active { color: var(--ink); border-left: 2px solid var(--ink); padding-left: 8px; margin-left: -10px; }
+  .stage-nav-item .num { color: var(--gray-faint); margin-right: 8px; font-family: var(--mono); }
+  .stage-body { padding: 0; min-width: 0; }
+
+  /* Faux wizard content (a couple of form fields to show what's around the chip) */
+  .field-block { padding: 20px 28px; }
+  .field-block label { display: block; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .field-block input { width: 100%; background: var(--bg-soft); border: 1px solid var(--hairline); color: var(--ink); padding: 10px 12px; font: inherit; font-size: 0.86rem; }
+  .field-divider { border-top: 1px solid var(--hairline-soft); }
+
+  /* ─── A — Subtle inline pill at top-left of wizard body ─── */
+  .v-A .editing-pill {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin: 18px 28px 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--gray);
+    letter-spacing: 0.02em;
+  }
+  .v-A .editing-pill .lbl { letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .v-A .editing-pill .name { color: var(--ink); font-weight: 500; }
+  .v-A .editing-pill .sep { width: 1px; height: 11px; background: var(--hairline); }
+  .v-A .editing-pill .save { display: inline-flex; align-items: center; gap: 5px; color: var(--green); font-size: 0.6rem; letter-spacing: 0.06em; }
+  .v-A .editing-pill .save .dot { width: 5px; height: 5px; border-radius: 9999px; background: var(--green); }
+
+  /* ─── B — Full-width banner with launch CTA ─── */
+  .v-B .editing-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--hairline);
+    background: rgba(255,255,255,0.025);
+  }
+  .v-B .editing-banner .left { display: flex; align-items: baseline; gap: 14px; }
+  .v-B .editing-banner .lbl { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.24em; text-transform: uppercase; color: var(--gray); }
+  .v-B .editing-banner .name { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; color: var(--ink); }
+  .v-B .editing-banner .right { display: flex; align-items: center; gap: 18px; }
+  .v-B .editing-banner .save { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); display: inline-flex; align-items: center; gap: 6px; }
+  .v-B .editing-banner .save .dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--green); }
+  .v-B .editing-banner .launch {
+    background: var(--ink); color: var(--gold);
+    border: 1px solid var(--ink); border-radius: 9999px;
+    padding: 9px 22px; font-family: var(--mono); font-size: 0.64rem;
+    font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  /* ─── C — Sticky breadcrumb with inline save status ─── */
+  .v-C .editing-crumb {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 28px;
+    border-bottom: 1px solid var(--hairline);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--gray);
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg);
+  }
+  .v-C .editing-crumb .crumb-root { color: var(--gray); text-transform: uppercase; letter-spacing: 0.22em; font-size: 0.56rem; }
+  .v-C .editing-crumb .crumb-sep { color: var(--gray-faint); }
+  .v-C .editing-crumb .crumb-leaf { color: var(--ink); font-weight: 500; }
+  .v-C .editing-crumb .crumb-pen {
+    display: inline-flex; opacity: 0.6;
+  }
+  .v-C .editing-crumb .crumb-pen svg { width: 11px; height: 11px; }
+  .v-C .editing-crumb .save-state {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.58rem; color: var(--gray); letter-spacing: 0.04em;
+  }
+  .v-C .editing-crumb .save-state .dot { width: 5px; height: 5px; border-radius: 9999px; background: var(--green); }
+
+  /* footer */
+  .note { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); border: 1px solid var(--hairline-soft); padding: 16px 20px; margin-top: 18px; }
+  .note b { color: var(--ink); font-weight: 500; }
+  .note ul { margin: 8px 0 0 20px; }
+  .note li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Drafts · Editing-header chip</h1>
+<div class="lead">Where does "Editing: &lt;draft name&gt; · saved 2s ago" live? Three placements with different weights. Same fake draft ("EU Founder Push Q3") and same save state for fair comparison.</div>
+
+<!-- ─── A ─── -->
+<div class="variant v-A">
+  <div class="v-label">Variant A</div>
+  <div class="v-title">Inline pill (lightest)</div>
+  <div class="v-blurb">Small monochrome pill above the form fields. Reads as a soft tag — barely registers when you're not looking for it, but always present. Save state hidden in green dot + "saved 2s ago" microcopy.</div>
+  <div class="stage">
+    <div class="stage-faux-wizard">
+      <div class="stage-side">
+        <div class="stage-side-h">New Campaign</div>
+        <div class="stage-nav-item active"><span class="num">I.</span>Campaign Type</div>
+        <div class="stage-nav-item"><span class="num">II.</span>Data</div>
+        <div class="stage-nav-item"><span class="num">III.</span>Accounts</div>
+        <div class="stage-nav-item"><span class="num">IV.</span>Settings</div>
+        <div class="stage-nav-item"><span class="num">V.</span>Templates</div>
+        <div class="stage-nav-item"><span class="num">VI.</span>Launch</div>
+      </div>
+      <div class="stage-body">
+        <div class="editing-pill">
+          <span class="lbl">Editing</span>
+          <span class="name">EU Founder Push Q3</span>
+          <span class="sep"></span>
+          <span class="save"><span class="dot"></span>saved 2s ago</span>
+        </div>
+        <div class="field-divider"></div>
+        <div class="field-block">
+          <label>Campaign Name</label>
+          <input value="EU Founder Push Q3" />
+        </div>
+        <div class="field-divider"></div>
+        <div class="field-block">
+          <label>Sheet Tab URL</label>
+          <input value="https://docs.google.com/spreadsheets/d/1xYZ…" />
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── B ─── -->
+<div class="variant v-B">
+  <div class="v-label">Variant B</div>
+  <div class="v-title">Banner with launch CTA (heaviest)</div>
+  <div class="v-blurb">Full-width banner across the wizard body. Name in display type. Save state on the right. The "+ Add to queue" CTA lives here too — it's anchored to the draft, not at the bottom of section VI. Hardest to miss, but takes vertical space on every section.</div>
+  <div class="stage">
+    <div class="stage-faux-wizard">
+      <div class="stage-side">
+        <div class="stage-side-h">New Campaign</div>
+        <div class="stage-nav-item active"><span class="num">I.</span>Campaign Type</div>
+        <div class="stage-nav-item"><span class="num">II.</span>Data</div>
+        <div class="stage-nav-item"><span class="num">III.</span>Accounts</div>
+        <div class="stage-nav-item"><span class="num">IV.</span>Settings</div>
+        <div class="stage-nav-item"><span class="num">V.</span>Templates</div>
+        <div class="stage-nav-item"><span class="num">VI.</span>Launch</div>
+      </div>
+      <div class="stage-body">
+        <div class="editing-banner">
+          <div class="left">
+            <span class="lbl">Editing</span>
+            <span class="name">EU Founder Push Q3</span>
+          </div>
+          <div class="right">
+            <span class="save"><span class="dot"></span>saved 2s ago</span>
+            <button class="launch">+ Add to queue</button>
+          </div>
+        </div>
+        <div class="field-block">
+          <label>Campaign Name</label>
+          <input value="EU Founder Push Q3" />
+        </div>
+        <div class="field-divider"></div>
+        <div class="field-block">
+          <label>Sheet Tab URL</label>
+          <input value="https://docs.google.com/spreadsheets/d/1xYZ…" />
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── C ─── -->
+<div class="variant v-C">
+  <div class="v-label">Variant C</div>
+  <div class="v-title">Sticky breadcrumb (compact + always-visible)</div>
+  <div class="v-blurb">Thin sticky strip pinned to the top of the wizard. Reads as a path: "Drafts → EU Founder Push Q3". Save status on the right. Stays visible while scrolling through long wizard sections — useful since the wizard has 12+ sections in the real app. Modest visual weight, never lost.</div>
+  <div class="stage">
+    <div class="stage-faux-wizard">
+      <div class="stage-side">
+        <div class="stage-side-h">New Campaign</div>
+        <div class="stage-nav-item active"><span class="num">I.</span>Campaign Type</div>
+        <div class="stage-nav-item"><span class="num">II.</span>Data</div>
+        <div class="stage-nav-item"><span class="num">III.</span>Accounts</div>
+        <div class="stage-nav-item"><span class="num">IV.</span>Settings</div>
+        <div class="stage-nav-item"><span class="num">V.</span>Templates</div>
+        <div class="stage-nav-item"><span class="num">VI.</span>Launch</div>
+      </div>
+      <div class="stage-body">
+        <div class="editing-crumb">
+          <span class="crumb-root">Drafts</span>
+          <span class="crumb-sep">›</span>
+          <span class="crumb-leaf">EU Founder Push Q3</span>
+          <span class="crumb-pen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </span>
+          <span class="save-state"><span class="dot"></span>SAVED 2S AGO</span>
+        </div>
+        <div class="field-block">
+          <label>Campaign Name</label>
+          <input value="EU Founder Push Q3" />
+        </div>
+        <div class="field-divider"></div>
+        <div class="field-block">
+          <label>Sheet Tab URL</label>
+          <input value="https://docs.google.com/spreadsheets/d/1xYZ…" />
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>What's the same across all three:</b>
+  <ul>
+    <li>Header updates LIVE when you edit the Campaign Name field.</li>
+    <li>"saved Xs ago" is driven by the autosave PATCH timer (debounce ~400ms).</li>
+    <li>Untitled drafts: name reads "Untitled draft 3 · autosaved".</li>
+    <li>Bugatti compliance: hairlines, monochrome, gold only on the Add-to-queue CTA in variant B.</li>
+  </ul>
+</div>
+
+</body>
+</html>

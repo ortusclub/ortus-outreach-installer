@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Drafts · Resume-chip · v1 (3 variants)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-soft: rgba(255,255,255,0.03);
+    --ink: #fafafa;
+    --gray: #999;
+    --gray-faint: #5a5a58;
+    --hairline: rgba(255,255,255,0.15);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --green: #3fb950;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 36px 56px; line-height: 1.5; }
+  h1 { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.01em; font-weight: 400; margin-bottom: 8px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 40px; }
+  .variant { margin-bottom: 56px; }
+  .v-label { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .v-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 4px; }
+  .v-blurb { color: var(--gray); font-size: 0.8rem; margin-bottom: 18px; max-width: 720px; }
+  .stage { border: 1px solid var(--hairline); padding: 0; background: var(--bg); position: relative; min-height: 260px; }
+
+  /* Faux dashboard header layout */
+  .dash-frame {
+    padding: 28px 36px;
+  }
+  .dash-title-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    padding-bottom: 24px; border-bottom: 1px solid var(--hairline);
+  }
+  .dash-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.01em; font-weight: 400; color: var(--ink); text-transform: uppercase; }
+  .dash-right { display: flex; align-items: center; gap: 14px; }
+  .slots-pill { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); display: flex; align-items: center; gap: 8px; }
+  .slots-dot { width: 7px; height: 7px; border-radius: 9999px; border: 1px solid var(--hairline); }
+  .slots-dot.on { background: var(--ink); border-color: var(--ink); }
+  .slots-dot.future { border-style: dashed; }
+  .start-btn {
+    background: var(--ink); color: var(--gold); border: 1px solid var(--ink);
+    border-radius: 9999px; padding: 10px 22px;
+    font-family: var(--mono); font-size: 0.62rem; font-weight: 600;
+    letter-spacing: 0.22em; text-transform: uppercase;
+  }
+
+  /* Below the title row — faux Active card placeholder */
+  .dash-active-card {
+    margin-top: 24px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 22px 26px;
+    background: rgba(255,255,255,0.04);
+    position: relative;
+  }
+  .dash-active-card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--green);
+  }
+  .dash-active-card .eyebrow { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em; color: var(--gray); margin-bottom: 8px; display: inline-flex; align-items: center; gap: 10px; }
+  .dash-active-card .eyebrow .dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--green); }
+  .dash-active-card .name { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; color: var(--ink); }
+
+  /* ─── A — Inline pill in dashboard header (next to + Start new campaign) ─── */
+  .v-A .resume-pill {
+    display: inline-flex; align-items: center; gap: 10px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    padding: 8px 16px;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .v-A .resume-pill:hover { border-color: var(--ink); background: rgba(255,255,255,0.05); }
+  .v-A .resume-pill .icon svg { width: 12px; height: 12px; color: var(--gold); }
+  .v-A .resume-pill .lbl { letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .v-A .resume-pill .name-clip { color: var(--ink); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ─── B — Full-width banner row above the dashboard content ─── */
+  .v-B .resume-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    background: rgba(247, 190, 104, 0.04);
+    margin-top: 24px;
+  }
+  .v-B .resume-banner .left { display: flex; align-items: center; gap: 12px; }
+  .v-B .resume-banner .icon-wrap {
+    width: 28px; height: 28px; border-radius: 9999px;
+    border: 1px solid var(--gold);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--gold);
+  }
+  .v-B .resume-banner .icon-wrap svg { width: 14px; height: 14px; }
+  .v-B .resume-banner .copy { font-family: var(--mono); font-size: 0.78rem; }
+  .v-B .resume-banner .copy .lbl { color: var(--gray); }
+  .v-B .resume-banner .copy .name { color: var(--ink); font-weight: 500; margin: 0 4px; }
+  .v-B .resume-banner .copy .meta { color: var(--gray-faint); font-size: 0.7rem; margin-left: 6px; }
+  .v-B .resume-banner .actions { display: flex; gap: 8px; }
+  .v-B .resume-banner .btn-resume {
+    background: var(--ink); color: var(--gold); border: 1px solid var(--ink);
+    border-radius: 9999px; padding: 8px 18px;
+    font-family: var(--mono); font-size: 0.58rem; font-weight: 600;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .v-B .resume-banner .btn-dismiss {
+    background: transparent; color: var(--gray); border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 8px 14px;
+    font-family: var(--mono); font-size: 0.58rem;
+    letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  /* ─── C — Floating chip in top-right corner ─── */
+  .v-C .resume-float {
+    position: absolute; top: 24px; right: 24px;
+    display: inline-flex; flex-direction: column; gap: 4px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 10px 14px;
+    background: var(--bg);
+    box-shadow: 0 6px 16px -10px rgba(0,0,0,0.6);
+    cursor: pointer;
+    transition: border-color 0.12s;
+    max-width: 240px;
+  }
+  .v-C .resume-float:hover { border-color: var(--ink); }
+  .v-C .resume-float .row1 {
+    font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--gold);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .v-C .resume-float .row1 svg { width: 10px; height: 10px; }
+  .v-C .resume-float .name {
+    font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .v-C .resume-float .meta { font-family: var(--mono); font-size: 0.58rem; color: var(--gray-faint); letter-spacing: 0.06em; margin-top: 2px; }
+  .v-C .stage { position: relative; }
+
+  /* footer */
+  .note { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); border: 1px solid var(--hairline-soft); padding: 16px 20px; margin-top: 18px; }
+  .note b { color: var(--ink); font-weight: 500; }
+  .note ul { margin: 8px 0 0 20px; }
+  .note li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Drafts · Resume-chip on dashboard</h1>
+<div class="lead">When you have an unfinished draft and you're on the dashboard, where does the "come back to your work" affordance live? Three placements, same draft name + same "3 fields filled, saved 12m ago" state for fair comparison.</div>
+
+<!-- ─── A ─── -->
+<div class="variant v-A">
+  <div class="v-label">Variant A</div>
+  <div class="v-title">Pill next to "+ Start new campaign" (quietest)</div>
+  <div class="v-blurb">Small monochrome pill sitting next to the existing slots-pill and Start CTA in the dashboard header. Visible but doesn't shout. Click to resume editing.</div>
+  <div class="stage">
+    <div class="dash-frame">
+      <div class="dash-title-row">
+        <div class="dash-title">Campaigns</div>
+        <div class="dash-right">
+          <span class="resume-pill" title="Resume editing EU Founder Push Q3">
+            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></span>
+            <span class="lbl">Resume</span>
+            <span class="name-clip">EU Founder Push Q3</span>
+          </span>
+          <span class="slots-pill">
+            <span class="slots-dot on"></span>
+            <span class="slots-dot future"></span>
+            <span class="slots-dot future"></span>
+            1 / 1 slot
+          </span>
+          <button class="start-btn">+ Start new campaign</button>
+        </div>
+      </div>
+      <div class="dash-active-card">
+        <div class="eyebrow"><span class="dot"></span>Now Active · started 2h ago</div>
+        <div class="name">EU Founder Push Q2</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── B ─── -->
+<div class="variant v-B">
+  <div class="v-label">Variant B</div>
+  <div class="v-title">Banner row above the dashboard content (loudest)</div>
+  <div class="v-blurb">Full-width row between the title and the first card. Soft gold-tinted background so it doesn't disappear. Has a primary action (Resume) and a dismiss action (Dismiss this session). Reads as a "you have unfinished work" reminder.</div>
+  <div class="stage">
+    <div class="dash-frame">
+      <div class="dash-title-row">
+        <div class="dash-title">Campaigns</div>
+        <div class="dash-right">
+          <span class="slots-pill">
+            <span class="slots-dot on"></span>
+            <span class="slots-dot future"></span>
+            <span class="slots-dot future"></span>
+            1 / 1 slot
+          </span>
+          <button class="start-btn">+ Start new campaign</button>
+        </div>
+      </div>
+      <div class="resume-banner">
+        <div class="left">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </div>
+          <div class="copy">
+            <span class="lbl">You have an unfinished draft —</span>
+            <span class="name">EU Founder Push Q3</span>
+            <span class="meta">last edit 12m ago · 3 of 6 sections filled</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-dismiss">Dismiss</button>
+          <button class="btn-resume">Resume editing</button>
+        </div>
+      </div>
+      <div class="dash-active-card">
+        <div class="eyebrow"><span class="dot"></span>Now Active · started 2h ago</div>
+        <div class="name">EU Founder Push Q2</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── C ─── -->
+<div class="variant v-C">
+  <div class="v-label">Variant C</div>
+  <div class="v-title">Floating chip in top-right (lightweight, persistent)</div>
+  <div class="v-blurb">Small floating card anchored to the top-right of the main area. Two lines: gold-tinted "DRAFT IN PROGRESS" eyebrow + the draft name + meta. Doesn't push other content down. Click to resume.</div>
+  <div class="stage">
+    <div class="dash-frame">
+      <div class="dash-title-row">
+        <div class="dash-title">Campaigns</div>
+        <div class="dash-right">
+          <span class="slots-pill">
+            <span class="slots-dot on"></span>
+            <span class="slots-dot future"></span>
+            <span class="slots-dot future"></span>
+            1 / 1 slot
+          </span>
+          <button class="start-btn">+ Start new campaign</button>
+        </div>
+      </div>
+      <div class="dash-active-card">
+        <div class="eyebrow"><span class="dot"></span>Now Active · started 2h ago</div>
+        <div class="name">EU Founder Push Q2</div>
+      </div>
+    </div>
+    <div class="resume-float" title="Resume editing EU Founder Push Q3">
+      <div class="row1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Draft in progress
+      </div>
+      <div class="name">EU Founder Push Q3</div>
+      <div class="meta">last edit 12m ago</div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>Same across all three:</b>
+  <ul>
+    <li>Chip appears ONLY when an active draft exists in localStorage.</li>
+    <li>Click → navigates to <code>#/new</code>, wizard loads that specific draft.</li>
+    <li>If the operator launches the draft (Add to queue) the chip disappears (draft deleted on launch).</li>
+    <li>If there are MULTIPLE unfinished drafts, the chip shows the most-recently-edited one. Hover/click opens a small list.</li>
+  </ul>
+</div>
+
+</body>
+</html>
