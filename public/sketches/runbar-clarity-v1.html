@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Runbar clarity — identity · button grouping · saved-config delete</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --bg-soft: #faf9f7;
+  --ink: #0a0a0a;
+  --gray: #999999;
+  --gray-soft: #777777;
+  --hairline: rgba(0, 0, 0, 0.15);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --gold: #F7BE68;
+  --green: #34a853;
+  --red: #dc2626;
+  --pink: #fbdada;
+  --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+  --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --bg-soft: rgba(255, 255, 255, 0.03);
+  --ink: #fafafa;
+  --gray: #999999;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --pink: #5a2828;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 48px 56px 200px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; flex-wrap: wrap; }
+.page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 6px; }
+.theme-pill { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 6px 14px; border: 1px solid var(--hairline); border-radius: 9999px; background: transparent; color: var(--ink); cursor: pointer; }
+.theme-pill:hover { border-color: var(--ink); }
+
+.section { margin-bottom: 64px; }
+.section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+.section-num { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+.section-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.section-desc { font-size: 0.82rem; color: var(--gray); line-height: 1.55; max-width: 900px; margin-bottom: 20px; }
+.section-desc b { color: var(--ink); font-weight: 500; }
+.section-desc code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; background: var(--hairline-soft); padding: 1px 5px; border-radius: 2px; }
+
+.variant { margin-bottom: 40px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.variant-tag { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+.variant-title { font-family: var(--display); font-size: 1.25rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.variant-note { font-size: 0.78rem; color: var(--gray-soft); line-height: 1.55; max-width: 900px; margin-bottom: 16px; }
+.variant-note b { color: var(--ink); font-weight: 500; }
+.state-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); margin: 14px 0 8px; }
+
+/* —— Run-bar verbatim base —— */
+.run-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--bg);
+  gap: 14px;
+  flex-wrap: nowrap;
+}
+.run-status { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.state-dot {
+  width: 8px; height: 8px; border-radius: 9999px;
+  background: var(--gray);
+  flex-shrink: 0;
+}
+.state-dot.running { background: var(--green); box-shadow: 0 0 0 3px rgba(52,168,83,0.15); }
+.state-dot.paused { background: var(--gold); }
+.state-dot.stopped { background: var(--red); }
+.run-status-text { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+.run-status-name { font-family: var(--display); font-size: 1rem; color: var(--ink); letter-spacing: 0.02em; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.run-bar-actions { display: inline-flex; align-items: center; gap: 10px; flex-wrap: nowrap; }
+
+/* —— Buttons (verbatim styling tokens) —— */
+.btn {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 9px 18px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: opacity 0.15s, border-color 0.15s, background-color 0.15s, color 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { border-color: var(--ink); }
+.btn-sm { font-size: 0.6rem; padding: 7px 14px; }
+.btn-xs { font-size: 0.55rem; padding: 5px 11px; }
+.btn-start { background: var(--ink); color: var(--gold); border-color: var(--ink); }
+.btn-start:hover { opacity: 0.7; }
+.btn-stop { background: var(--red); color: #fff; border-color: var(--red); font-weight: 500; }
+.btn-stop:hover { opacity: 0.85; }
+.btn-stop:disabled { background: transparent; color: var(--red); opacity: 0.45; cursor: not-allowed; border-color: var(--red); }
+.btn-pause:disabled { color: var(--ink); opacity: 0.35; cursor: not-allowed; }
+.btn-restore { color: var(--gray); }
+.btn-restore:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled { cursor: not-allowed; }
+.run-bar-divider { width: 1px; height: 22px; background: var(--hairline); display: inline-block; }
+
+/* —— Saved-configs pill —— */
+.preset-pill { position: relative; display: inline-flex; }
+.preset-pill-btn {
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.preset-pill-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 6px;
+  border-radius: 9999px; border: 1px solid var(--hairline);
+  color: var(--gray); font-size: 0.55rem;
+}
+.preset-pill-caret { color: var(--gray); font-size: 0.7rem; }
+
+/* —— Popover —— */
+.preset-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 320px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  padding: 6px 0;
+  z-index: 80;
+  font-size: 0.78rem;
+}
+.preset-pop-label { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); padding: 10px 14px 4px; }
+.preset-pop-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  gap: 12px;
+}
+.preset-pop-item:hover { background: var(--hairline-soft); }
+.preset-pop-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-pop-tag {
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gray); padding: 2px 7px; border: 1px solid var(--hairline); border-radius: 9999px;
+}
+.preset-pop-delete {
+  background: transparent; border: 0; color: var(--gray); cursor: pointer;
+  font-size: 0.85rem; padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.preset-pop-item:hover .preset-pop-delete { opacity: 0.7; }
+.preset-pop-item .preset-pop-delete:hover { opacity: 1; color: var(--red); }
+.preset-pop-divider { height: 1px; background: var(--hairline); margin: 6px 0; }
+.preset-pop-action { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; color: var(--gold); font-weight: 500; }
+.preset-pop-action:hover { background: var(--hairline-soft); }
+.preset-pop-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--gold); display: inline-block; margin-right: 8px; }
+.preset-pop-right { display: inline-flex; align-items: center; gap: 10px; }
+
+/* —— Variants for popover —— */
+.preset-popover--alwaysX .preset-pop-delete { opacity: 0.45; }
+.preset-popover--alwaysX .preset-pop-item:hover .preset-pop-delete { opacity: 1; }
+.preset-popover--editmode .preset-pop-item .preset-pop-delete { opacity: 0.55; }
+.preset-popover--editmode .editmode-toggle {
+  font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--gray); padding: 0 4px; cursor: pointer; background: transparent; border: 0;
+}
+.preset-popover--editmode .preset-pop-divider + .preset-pop-label { display: flex; align-items: center; justify-content: space-between; padding-right: 6px; }
+.editmode-tip {
+  font-size: 0.7rem; color: var(--gray); padding: 6px 14px 8px;
+  font-style: italic;
+}
+
+/* —— Variant C — two-tier runbar —— */
+.run-bar--twotier {
+  flex-wrap: wrap;
+  align-items: stretch;
+  padding: 12px 24px 14px;
+  gap: 8px;
+}
+.run-bar--twotier .runbar-row {
+  width: 100%;
+  display: flex; align-items: center; gap: 12px;
+}
+.run-bar--twotier .runbar-row--identity {
+  border-bottom: 1px dashed var(--hairline-soft);
+  padding-bottom: 10px;
+}
+.runbar-progress {
+  font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray-soft);
+  margin-left: auto;
+}
+.runbar-rate {
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; color: var(--gray);
+}
+
+/* —— Variant D — section dividers in runbar —— */
+.runbar-group {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 0 12px;
+  position: relative;
+}
+.runbar-group + .runbar-group::before {
+  content: "";
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 1px; height: 18px; background: var(--hairline);
+}
+.runbar-group--first { padding-left: 0; }
+.runbar-group--last { padding-right: 0; margin-left: auto; }
+.runbar-group-label {
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+  margin-right: 2px;
+}
+
+footer.callout { margin-top: 56px; padding: 22px 24px; border: 1px solid var(--hairline); background: var(--bg-soft); }
+footer.callout h3 { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 10px; }
+footer.callout p { color: var(--gray); font-size: 0.82rem; line-height: 1.6; max-width: 900px; }
+footer.callout p + p { margin-top: 8px; }
+footer.callout code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; color: var(--ink); background: var(--hairline-soft); padding: 1px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div>
+    <div class="page-title">Runbar clarity — v1</div>
+    <div class="page-sub">Identity · button grouping · saved-config delete</div>
+  </div>
+  <button class="theme-pill" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</div>
+
+<!-- ═══════════════ Section 1 — Runbar ═══════════════ -->
+<div class="section">
+  <div class="section-head">
+    <span class="section-num">1 · Runbar</span>
+    <span class="section-title">State identity + button intent</span>
+  </div>
+  <div class="section-desc">
+    Today: a state dot + the word "Idle", four action buttons, a vertical divider, "Restore", and a saved-configs pill on the right. <b>Issues you flagged:</b> (1) you can't tell which campaign is running from this bar; (2) Pause / Stop / Restore look disabled but it's unclear when they activate or what each does; (3) "Restore" is a panic recovery button but operators may confuse it with Resume.
+  </div>
+
+  <!-- Current — idle -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">0 · Current</span><span class="variant-title">Today — idle</span></div>
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot"></span>
+        <span class="run-status-text">Idle</span>
+      </div>
+      <div class="run-bar-actions">
+        <button class="btn btn-sm">View Status</button>
+        <button class="btn btn-sm btn-start">Start Campaign</button>
+        <button class="btn btn-sm btn-pause" disabled>Pause</button>
+        <button class="btn btn-sm btn-stop" disabled>Stop Campaign</button>
+        <span class="run-bar-divider"></span>
+        <button class="btn btn-sm btn-restore" disabled>↻ Restore</button>
+        <div class="preset-pill">
+          <button class="btn btn-xs preset-pill-btn">
+            <span>Saved configs</span>
+            <span class="preset-pill-count">6</span>
+            <span class="preset-pill-caret">▾</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant A — same layout, identity shown when running -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">A · Recommended</span><span class="variant-title">Inline campaign name + clearer recovery label</span></div>
+    <div class="variant-note">Minimal-touch fix: when a campaign is running, the left-side status surfaces <b>name · mode · progress</b>. Buttons stay where they are. Recovery button renamed <code>↻ Force restart</code> — clearer than <code>Restore</code>, less likely to be confused with Resume.</div>
+
+    <div class="state-label">A.1 — idle (no campaign running)</div>
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot"></span>
+        <span class="run-status-text">Idle · no campaign</span>
+      </div>
+      <div class="run-bar-actions">
+        <button class="btn btn-sm">View Status</button>
+        <button class="btn btn-sm btn-start">Start Campaign</button>
+        <button class="btn btn-sm btn-pause" disabled>Pause</button>
+        <button class="btn btn-sm btn-stop" disabled>Stop Campaign</button>
+        <span class="run-bar-divider"></span>
+        <button class="btn btn-sm btn-restore" disabled>↻ Force restart</button>
+        <div class="preset-pill">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">A.2 — running (campaign name in the status slot)</div>
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot running"></span>
+        <span style="display:inline-flex; flex-direction:column; gap:1px; min-width:0;">
+          <span class="run-status-name">CC + IC - TEST QUEUE</span>
+          <span class="run-status-text">Running · CC+IB · 12 / 50</span>
+        </span>
+      </div>
+      <div class="run-bar-actions">
+        <button class="btn btn-sm">View Status</button>
+        <button class="btn btn-sm btn-start" disabled>Start Campaign</button>
+        <button class="btn btn-sm btn-pause">Pause</button>
+        <button class="btn btn-sm btn-stop">Stop Campaign</button>
+        <span class="run-bar-divider"></span>
+        <button class="btn btn-sm btn-restore">↻ Force restart</button>
+        <div class="preset-pill">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant B — two-tier layout -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">B</span><span class="variant-title">Two-tier — identity row + button row</span></div>
+    <div class="variant-note">Identity gets its own line on top (name + mode + progress + sent rate). Buttons sit on a second line. <b>Pro:</b> you always see what's running at a glance, even at narrow widths. <b>Con:</b> taller footprint (~52px vs ~46px). Worth it if the bar is mainly informational.</div>
+
+    <div class="state-label">B.1 — idle</div>
+    <div class="run-bar run-bar--twotier">
+      <div class="runbar-row runbar-row--identity">
+        <span class="state-dot"></span>
+        <span class="run-status-text">Idle · no campaign currently running</span>
+      </div>
+      <div class="runbar-row">
+        <button class="btn btn-sm">View Status</button>
+        <button class="btn btn-sm btn-start">Start Campaign</button>
+        <button class="btn btn-sm btn-pause" disabled>Pause</button>
+        <button class="btn btn-sm btn-stop" disabled>Stop Campaign</button>
+        <span class="run-bar-divider"></span>
+        <button class="btn btn-sm btn-restore" disabled>↻ Force restart</button>
+        <div class="preset-pill" style="margin-left:auto;">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">B.2 — running</div>
+    <div class="run-bar run-bar--twotier">
+      <div class="runbar-row runbar-row--identity">
+        <span class="state-dot running"></span>
+        <span class="run-status-name">CC + IC - TEST QUEUE</span>
+        <span class="run-status-text">Running · CC+IB</span>
+        <span class="runbar-progress">12 / 50 sent</span>
+        <span class="runbar-rate">· 3.2 / min</span>
+      </div>
+      <div class="runbar-row">
+        <button class="btn btn-sm">View Status</button>
+        <button class="btn btn-sm btn-start" disabled>Start Campaign</button>
+        <button class="btn btn-sm btn-pause">Pause</button>
+        <button class="btn btn-sm btn-stop">Stop Campaign</button>
+        <span class="run-bar-divider"></span>
+        <button class="btn btn-sm btn-restore">↻ Force restart</button>
+        <div class="preset-pill" style="margin-left:auto;">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant C — grouped sections -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">C</span><span class="variant-title">Grouped sections — Run · Recovery · Configs</span></div>
+    <div class="variant-note">Buttons grouped into labeled clusters with thin separators. <b>Pro:</b> clear "this group is what you press to control the run; that group is the panic button; the rightmost is unrelated". <b>Con:</b> more visual weight; group labels add a tiny extra line of text.</div>
+
+    <div class="state-label">C.1 — running</div>
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot running"></span>
+        <span style="display:inline-flex; flex-direction:column; gap:1px; min-width:0;">
+          <span class="run-status-name">CC + IC - TEST QUEUE</span>
+          <span class="run-status-text">Running · CC+IB · 12 / 50</span>
+        </span>
+      </div>
+      <div class="run-bar-actions">
+        <div class="runbar-group runbar-group--first">
+          <span class="runbar-group-label">Run</span>
+          <button class="btn btn-sm btn-start" disabled>Start</button>
+          <button class="btn btn-sm btn-pause">Pause</button>
+          <button class="btn btn-sm btn-stop">Stop</button>
+        </div>
+        <div class="runbar-group">
+          <span class="runbar-group-label">View</span>
+          <button class="btn btn-sm">Status</button>
+        </div>
+        <div class="runbar-group">
+          <span class="runbar-group-label">Recovery</span>
+          <button class="btn btn-sm btn-restore">↻ Force restart</button>
+        </div>
+        <div class="runbar-group runbar-group--last">
+          <div class="preset-pill">
+            <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Section 2 — Saved configs delete ═══════════════ -->
+<div class="section">
+  <div class="section-head">
+    <span class="section-num">2 · Saved configs</span>
+    <span class="section-title">Make the delete affordance discoverable</span>
+  </div>
+  <div class="section-desc">
+    The delete button <i>already exists</i> — <code>.preset-pop-delete</code> in <code>public/js/app.js:5691-5696</code>, rendered as an <code>✕</code>. Today it starts at <code>opacity: 0</code> and only fades to <code>0.7</code> on row-hover (<code>style.css:471</code>), so you don't see it until you mouse over the row. That's why it feels like it doesn't exist.
+  </div>
+
+  <!-- Current popover -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">0 · Current</span><span class="variant-title">X invisible until hover</span></div>
+    <div style="position:relative; height: 290px; padding-top: 200px;">
+      <div class="run-status" style="margin-bottom:8px; position:absolute; top:0; right:0;">
+        <span class="run-status-text" style="font-style:italic;">↓ hover any row to see the X</span>
+      </div>
+      <div style="position:relative; display:inline-block;">
+        <div class="preset-pill">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+        <div class="preset-popover" style="bottom:auto; top:38px;">
+          <div class="preset-pop-label">Pinned</div>
+          <div class="preset-pop-item"><span class="preset-pop-name"><span class="preset-pop-dot"></span>Last Used</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span></span></div>
+          <div class="preset-pop-divider"></div>
+          <div class="preset-pop-label">Saved</div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Cold sweep · Sam</span><span class="preset-pop-right"><span class="preset-pop-tag">Connect</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Q4 founders intro</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">DM-only nudge wave 3</span><span class="preset-pop-right"><span class="preset-pop-tag">DM</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-action">+ Save current as… <span style="color:var(--gray);">→</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant A — always-visible X -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">A · Recommended</span><span class="variant-title">X always visible (faint)</span></div>
+    <div class="variant-note">Tiny fix: bump <code>.preset-pop-delete</code> to <code>opacity: 0.45</code> by default and <code>opacity: 1</code> on its own hover. Two-line CSS change. <b>Pro:</b> the affordance is discoverable without a hover dance. <b>Con:</b> very slight extra visual noise per row.</div>
+    <div style="position:relative; height: 290px; padding-top: 30px;">
+      <div style="position:relative; display:inline-block;">
+        <div class="preset-pill">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+        <div class="preset-popover preset-popover--alwaysX" style="bottom:auto; top:38px;">
+          <div class="preset-pop-label">Pinned</div>
+          <div class="preset-pop-item"><span class="preset-pop-name"><span class="preset-pop-dot"></span>Last Used</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span></span></div>
+          <div class="preset-pop-divider"></div>
+          <div class="preset-pop-label">Saved</div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Cold sweep · Sam</span><span class="preset-pop-right"><span class="preset-pop-tag">Connect</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Q4 founders intro</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">DM-only nudge wave 3</span><span class="preset-pop-right"><span class="preset-pop-tag">DM</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-action">+ Save current as… <span style="color:var(--gray);">→</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant B — edit-mode toggle -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">B</span><span class="variant-title">Edit-mode toggle — X appears only when EDIT is on</span></div>
+    <div class="variant-note">A small <code>Edit</code> link in the "Saved" header reveals all the X buttons. Clicking <code>Done</code> hides them. <b>Pro:</b> calmer default state; protects against accidental clicks. <b>Con:</b> two clicks to delete (Edit → ✕). Pattern borrowed from iOS list editing.</div>
+    <div style="position:relative; height: 320px; padding-top: 30px;">
+      <div style="position:relative; display:inline-block;">
+        <div class="preset-pill">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+        <div class="preset-popover preset-popover--editmode" style="bottom:auto; top:38px;">
+          <div class="preset-pop-label">Pinned</div>
+          <div class="preset-pop-item"><span class="preset-pop-name"><span class="preset-pop-dot"></span>Last Used</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span></span></div>
+          <div class="preset-pop-divider"></div>
+          <div class="preset-pop-label"><span>Saved</span><button class="editmode-toggle">Done</button></div>
+          <div class="editmode-tip">Click ✕ to delete a saved config.</div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Cold sweep · Sam</span><span class="preset-pop-right"><span class="preset-pop-tag">Connect</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Q4 founders intro</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">DM-only nudge wave 3</span><span class="preset-pop-right"><span class="preset-pop-tag">DM</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-action">+ Save current as… <span style="color:var(--gray);">→</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Variant C — long-press / hover-anywhere -->
+  <div class="variant">
+    <div class="variant-head"><span class="variant-tag">C</span><span class="variant-title">Same as A but with right-click context menu</span></div>
+    <div class="variant-note">Always-visible X (like A) <i>plus</i> right-click on any row reveals <code>Rename</code> · <code>Duplicate</code> · <code>Delete</code>. Adds power-user actions without cluttering the popover.</div>
+    <div style="position:relative; height: 310px; padding-top: 30px;">
+      <div style="position:relative; display:inline-block;">
+        <div class="preset-pill">
+          <button class="btn btn-xs preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span class="preset-pill-caret">▾</span></button>
+        </div>
+        <div class="preset-popover preset-popover--alwaysX" style="bottom:auto; top:38px;">
+          <div class="preset-pop-label">Pinned</div>
+          <div class="preset-pop-item"><span class="preset-pop-name"><span class="preset-pop-dot"></span>Last Used</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span></span></div>
+          <div class="preset-pop-divider"></div>
+          <div class="preset-pop-label">Saved <span style="color:var(--gray); font-weight:400; text-transform:none; letter-spacing:0; font-size:0.7em; margin-left:8px;">(right-click any row for more)</span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Cold sweep · Sam</span><span class="preset-pop-right"><span class="preset-pop-tag">Connect</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">Q4 founders intro</span><span class="preset-pop-right"><span class="preset-pop-tag">CC+IB</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-item"><span class="preset-pop-name">DM-only nudge wave 3</span><span class="preset-pop-right"><span class="preset-pop-tag">DM</span><button class="preset-pop-delete">✕</button></span></div>
+          <div class="preset-pop-action">+ Save current as… <span style="color:var(--gray);">→</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer class="callout">
+  <h3>Pick one per section</h3>
+  <p><b>Section 1</b> picks: A (smallest change, identity inline), B (most informative, takes 6px more vertical), or C (group labels make intent explicit). <b>Section 2</b> picks: A (smallest change, two-line CSS), B (cleaner default, two clicks to delete), or C (A + right-click power menu).</p>
+  <p>Whichever you choose: the recovery button label "Restore" is renamed to "Force restart" across all variants — that addresses the "what does this even do" confusion you flagged. Tooltip text from <code>public/index.html:1207</code> stays.</p>
+</footer>
+
+</body>
+</html>

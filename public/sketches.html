@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deck Panel Sketches — Ortus Outreach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/auth.css">
+  <style>
+    body { padding: 48px 56px; overflow: auto; background: var(--bg); }
+    .sketches-intro {
+      border-bottom: 1px solid var(--hairline);
+      padding-bottom: 28px;
+      margin-bottom: 40px;
+    }
+    .sketches-intro h1 {
+      font-family: var(--display);
+      font-size: 3.4rem;
+      line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .sketches-intro p {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gray);
+    }
+    .sketch-block {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 40px;
+      padding: 40px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .sketch-block:last-child { border-bottom: none; }
+    .sketch-meta .sk-num {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--gray);
+      margin-bottom: 12px;
+    }
+    .sketch-meta .sk-name {
+      font-family: var(--display);
+      font-size: 2rem;
+      line-height: 1;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .sketch-meta .sk-desc {
+      font-family: var(--body);
+      font-size: 0.9rem;
+      color: var(--gray);
+      line-height: 1.6;
+    }
+    .sketch-frame {
+      border: 1px solid var(--hairline);
+      height: 560px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── Sketch 01: Rotating Deck (mode picker style) ── */
+    .sk-rotating {
+      padding: 40px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100%;
+    }
+    .sk-rotating-top {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.24em; text-transform: uppercase; color: var(--gray);
+    }
+    .sk-rotating-stage {
+      display: grid;
+      grid-template-columns: 1fr 1.8fr 1fr;
+      align-items: center;
+      gap: 24px;
+      border-top: 1px solid var(--hairline);
+      border-bottom: 1px solid var(--hairline);
+      padding: 32px 0;
+    }
+    .sk-rotating-side {
+      font-family: var(--display);
+      font-size: 1.3rem; line-height: 1;
+      color: var(--gray);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .sk-rotating-side-label {
+      font-family: var(--mono); font-size: 0.55rem;
+      letter-spacing: 0.22em; color: var(--gray);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .sk-rotating-next { text-align: right; }
+    .sk-rotating-center { text-align: center; }
+    .sk-rotating-counter {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.28em;
+      color: var(--gray);
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .sk-rotating-title {
+      font-family: var(--display);
+      font-size: clamp(3.6rem, 7vw, 6rem);
+      line-height: 0.92;
+      text-transform: uppercase;
+      letter-spacing: 0.01em;
+    }
+    .sk-rotating-caption {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.18em;
+      color: var(--gray);
+      text-transform: uppercase;
+      margin-top: 16px;
+    }
+    .sk-rotating-bot {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.58rem;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+    }
+
+    /* ── Sketch 02: Vertical Ledger ── */
+    .sk-ledger { padding: 40px; display: flex; flex-direction: column; height: 100%; }
+    .sk-ledger-top {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.24em; text-transform: uppercase; color: var(--gray);
+      margin-bottom: 28px;
+    }
+    .sk-ledger-head {
+      font-family: var(--display);
+      font-size: 2.8rem; line-height: 1;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .sk-ledger-sub {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray);
+      margin-bottom: 24px;
+    }
+    .sk-ledger-rows { flex: 1; border-top: 1px solid var(--hairline); }
+    .sk-ledger-row {
+      display: grid; grid-template-columns: 64px 1fr auto;
+      align-items: baseline;
+      gap: 20px; padding: 18px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .sk-ledger-row .num {
+      font-family: var(--display); font-size: 1.3rem;
+      color: var(--gray);
+    }
+    .sk-ledger-row .name {
+      font-family: var(--display); font-size: 1.6rem;
+      line-height: 1; text-transform: uppercase;
+      letter-spacing: 0.01em;
+    }
+    .sk-ledger-row .desc {
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); text-align: right;
+    }
+    .sk-ledger-bot {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.58rem;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+      margin-top: 24px;
+    }
+
+    /* ── Sketch 03: Quadrant Grid ── */
+    .sk-quad { padding: 40px; display: flex; flex-direction: column; height: 100%; }
+    .sk-quad-top {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.24em; text-transform: uppercase; color: var(--gray);
+      margin-bottom: 24px;
+    }
+    .sk-quad-head {
+      font-family: var(--display);
+      font-size: 2.2rem; line-height: 1;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+    .sk-quad-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      border-top: 1px solid var(--hairline);
+      border-left: 1px solid var(--hairline);
+    }
+    .sk-quad-cell {
+      border-right: 1px solid var(--hairline);
+      border-bottom: 1px solid var(--hairline);
+      padding: 22px;
+      display: flex; flex-direction: column;
+      justify-content: space-between;
+    }
+    .sk-quad-cell .num {
+      font-family: var(--display); font-size: 1.1rem;
+      color: var(--gold); letter-spacing: 0;
+    }
+    .sk-quad-cell .name {
+      font-family: var(--display); font-size: 1.7rem;
+      line-height: 1; text-transform: uppercase;
+      letter-spacing: 0.01em;
+    }
+    .sk-quad-cell .desc {
+      font-family: var(--mono); font-size: 0.56rem;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--gray); line-height: 1.7;
+      margin-top: 10px;
+    }
+    .sk-quad-bot {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.58rem;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+      margin-top: 24px;
+    }
+
+    /* ── Sketch 04: Silent Marquee ── */
+    .sk-marquee { padding: 40px; display: flex; flex-direction: column; height: 100%; }
+    .sk-marquee-top {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.24em; text-transform: uppercase; color: var(--gray);
+      margin-bottom: 20px;
+    }
+    .sk-marquee-head {
+      font-family: var(--display);
+      font-size: 2rem; line-height: 1;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    .sk-marquee-band {
+      flex: 1;
+      position: relative;
+      border-top: 1px solid var(--hairline);
+      border-bottom: 1px solid var(--hairline);
+      overflow: hidden;
+    }
+    .sk-marquee-track {
+      position: absolute; top: 0; left: 0; right: 0;
+      animation: sk-marquee-scroll 14s linear infinite;
+    }
+    @keyframes sk-marquee-scroll {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-50%); }
+    }
+    .sk-marquee-line {
+      font-family: var(--display);
+      font-size: clamp(3rem, 6vw, 5rem);
+      line-height: 1.1;
+      text-transform: uppercase;
+      letter-spacing: 0.01em;
+      padding: 6px 40px;
+      display: flex; align-items: baseline; gap: 16px;
+    }
+    .sk-marquee-line .mute { color: var(--gray); }
+    .sk-marquee-line .dash {
+      flex: 1; border-bottom: 1px solid var(--hairline);
+      margin-bottom: 0.4em;
+    }
+    .sk-marquee-line .mini {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+      color: var(--gray);
+      align-self: center;
+    }
+    .sk-marquee-bot {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 0.58rem;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="sketches-intro">
+    <h1>Deck Panel Sketches</h1>
+    <p>Four alternatives for the left side of the login/signup page. Pick one.</p>
+  </header>
+
+  <!-- ── Sketch 01 ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · 01</div>
+      <div class="sk-name">Rotating Deck</div>
+      <div class="sk-desc">Mirrors the dashboard's campaign mode picker. Prev / Center / Next with a massive Bebas title. Clickable arrows cycle through the five campaign types. Kinetic.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk-rotating">
+        <div class="sk-rotating-top">
+          <span>Ortus // 2026</span>
+          <span>v2.6.0</span>
+        </div>
+        <div class="sk-rotating-stage">
+          <div class="sk-rotating-side">
+            <div class="sk-rotating-side-label">← Prev</div>
+            InMails
+          </div>
+          <div class="sk-rotating-center">
+            <div class="sk-rotating-counter">Campaign · 03 / 05</div>
+            <div class="sk-rotating-title">Direct<br>Messages</div>
+            <div class="sk-rotating-caption">Warm follow-ups to 1st-degree connections</div>
+          </div>
+          <div class="sk-rotating-side sk-rotating-next">
+            <div class="sk-rotating-side-label">Next →</div>
+            Open Profiles
+          </div>
+        </div>
+        <div class="sk-rotating-bot">
+          <span><span class="auth-deck-dot"></span>An Ortus Innovation</span>
+          <span>2026</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Sketch 02 ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · 02</div>
+      <div class="sk-name">Vertical Ledger</div>
+      <div class="sk-desc">Hairline-separated rows, one per campaign. Big number, display-font name, mono caption on the right. No interaction — calm, editorial, reads like a product menu.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk-ledger">
+        <div class="sk-ledger-top">
+          <span>Ortus // 2026</span>
+          <span>v2.6.0</span>
+        </div>
+        <div class="sk-ledger-head">Ortus Outreach</div>
+        <div class="sk-ledger-sub">LinkedIn · Command Deck</div>
+        <div class="sk-ledger-rows">
+          <div class="sk-ledger-row"><span class="num">01</span><span class="name">Connections</span><span class="desc">Invites + notes</span></div>
+          <div class="sk-ledger-row"><span class="num">02</span><span class="name">InMails</span><span class="desc">2nd · 3rd degree</span></div>
+          <div class="sk-ledger-row"><span class="num">03</span><span class="name">Direct Messages</span><span class="desc">1st-degree</span></div>
+          <div class="sk-ledger-row"><span class="num">04</span><span class="name">Open Profiles</span><span class="desc">No credit</span></div>
+          <div class="sk-ledger-row"><span class="num">05</span><span class="name">Status Check</span><span class="desc">Audit prior</span></div>
+        </div>
+        <div class="sk-ledger-bot">
+          <span><span class="auth-deck-dot"></span>An Ortus Innovation</span>
+          <span>2026</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Sketch 03 ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · 03</div>
+      <div class="sk-name">Quadrant Grid</div>
+      <div class="sk-desc">2 × 2 grid of hairline cells, each a campaign tile with gold index, Bebas name, mono caption. Architectural. (Fifth campaign sits underneath as a smaller row.)</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk-quad">
+        <div class="sk-quad-top">
+          <span>Ortus // 2026</span>
+          <span>v2.6.0</span>
+        </div>
+        <div class="sk-quad-head">Ortus Outreach</div>
+        <div class="sk-quad-grid">
+          <div class="sk-quad-cell">
+            <div class="num">01</div>
+            <div>
+              <div class="name">Connections</div>
+              <div class="desc">Invites at scale with optional note</div>
+            </div>
+          </div>
+          <div class="sk-quad-cell">
+            <div class="num">02</div>
+            <div>
+              <div class="name">InMails</div>
+              <div class="desc">Premium messages · 2nd & 3rd degree</div>
+            </div>
+          </div>
+          <div class="sk-quad-cell">
+            <div class="num">03</div>
+            <div>
+              <div class="name">Direct Messages</div>
+              <div class="desc">Warm follow-ups · 1st degree</div>
+            </div>
+          </div>
+          <div class="sk-quad-cell">
+            <div class="num">04</div>
+            <div>
+              <div class="name">Open Profiles</div>
+              <div class="desc">Free messages · no credit spent</div>
+            </div>
+          </div>
+        </div>
+        <div class="sk-quad-bot">
+          <span><span class="auth-deck-dot"></span>An Ortus Innovation</span>
+          <span>2026</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Sketch 04 ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · 04</div>
+      <div class="sk-name">Silent Marquee</div>
+      <div class="sk-desc">Slow vertical scroll of the campaign names in huge Bebas, looped. Each line pairs the name with a mono caption on the right. Feels like editorial end-credits.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk-marquee">
+        <div class="sk-marquee-top">
+          <span>Ortus // 2026</span>
+          <span>v2.6.0</span>
+        </div>
+        <div class="sk-marquee-head">Ortus Outreach</div>
+        <div class="sk-marquee-band">
+          <div class="sk-marquee-track">
+            <div class="sk-marquee-line"><span>Connections</span><span class="dash"></span><span class="mini">01 · Invites</span></div>
+            <div class="sk-marquee-line"><span class="mute">InMails</span><span class="dash"></span><span class="mini">02 · Premium</span></div>
+            <div class="sk-marquee-line"><span>Direct Messages</span><span class="dash"></span><span class="mini">03 · 1st deg</span></div>
+            <div class="sk-marquee-line"><span class="mute">Open Profiles</span><span class="dash"></span><span class="mini">04 · Free</span></div>
+            <div class="sk-marquee-line"><span>Status Check</span><span class="dash"></span><span class="mini">05 · Audit</span></div>
+            <!-- Duplicate for seamless loop -->
+            <div class="sk-marquee-line"><span>Connections</span><span class="dash"></span><span class="mini">01 · Invites</span></div>
+            <div class="sk-marquee-line"><span class="mute">InMails</span><span class="dash"></span><span class="mini">02 · Premium</span></div>
+            <div class="sk-marquee-line"><span>Direct Messages</span><span class="dash"></span><span class="mini">03 · 1st deg</span></div>
+            <div class="sk-marquee-line"><span class="mute">Open Profiles</span><span class="dash"></span><span class="mini">04 · Free</span></div>
+            <div class="sk-marquee-line"><span>Status Check</span><span class="dash"></span><span class="mini">05 · Audit</span></div>
+          </div>
+        </div>
+        <div class="sk-marquee-bot">
+          <span><span class="auth-deck-dot"></span>An Ortus Innovation</span>
+          <span>2026</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>

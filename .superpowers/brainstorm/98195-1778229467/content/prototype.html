@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ortus Outreach — navigable prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999;
+    --gray-2: #666;
+    --hairline: rgba(255,255,255,.15);
+    --hairline-soft: rgba(255,255,255,.06);
+    --gold: #F7BE68;
+    --green: #3fb950;
+    --red: #f85149;
+    --display: 'Bebas Neue', sans-serif;
+    --body: 'Hanken Grotesk', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); min-height: 100vh; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* Top switcher */
+  .switcher { position: sticky; top: 0; z-index: 50; background: rgba(10,10,10,.95); backdrop-filter: blur(10px); border-bottom: 1px solid var(--hairline-soft); padding: 14px 24px; display: flex; align-items: center; gap: 18px; }
+  .sw-brand { font-family: var(--display); font-size: 18px; letter-spacing: 0.02em; }
+  .sw-brand em { color: var(--gold); font-style: normal; }
+  .sw-tabs { display: flex; gap: 6px; margin-left: 24px; }
+  .sw-tab { background: transparent; border: 1px solid var(--hairline); padding: 8px 16px; border-radius: 6px; font-size: 13px; color: var(--gray); transition: all .15s; display: flex; align-items: center; gap: 8px; }
+  .sw-tab:hover { color: var(--ink); border-color: var(--hairline); }
+  .sw-tab.active { color: var(--gold); border-color: var(--gold); background: rgba(247,190,104,.08); }
+  .sw-tab .num { font-family: var(--display); }
+  .sw-hint { margin-left: auto; font-size: 11px; color: var(--gray); font-family: var(--mono); }
+
+  /* App canvas */
+  .canvas { padding: 22px 24px 60px; }
+  .stage { display: none; }
+  .stage.active { display: block; }
+
+  /* ── Reusable app frame ── */
+  .app { width: 100%; max-width: 1320px; margin: 0 auto; height: calc(100vh - 130px); min-height: 640px; background: var(--bg); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; display: flex; position: relative; }
+  .app-bar { position: absolute; top: 0; left: 0; right: 0; height: 26px; background: #000; display: flex; align-items: center; gap: 6px; padding: 0 12px; z-index: 5; border-bottom: 1px solid var(--hairline-soft); }
+  .app-bar .d { width: 10px; height: 10px; border-radius: 50%; }
+  .app-bar .d.r { background: #ff5f57; } .app-bar .d.y { background: #febc2e; } .app-bar .d.g { background: #28c840; }
+  .app-bar .t { margin-left: auto; margin-right: auto; transform: translateX(-26px); font-size: 11px; color: var(--gray); font-family: var(--mono); }
+
+  .sb { width: 200px; padding: 38px 14px 14px; border-right: 1px solid var(--hairline-soft); display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; }
+  .sb-brand { font-family: var(--display); font-size: 22px; letter-spacing: 0.02em; line-height: 1; }
+  .sb-brand em { color: var(--gold); font-style: normal; }
+  .sb-sub { font-size: 9px; color: var(--gray); letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
+  .sb-section { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--gray); margin: 4px 0 2px; }
+  .sb-item { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 7px 10px; border-radius: 5px; color: rgba(250,250,250,.72); background: transparent; border: none; width: 100%; text-align: left; transition: all .15s; }
+  .sb-item:hover { background: rgba(255,255,255,.04); color: var(--ink); }
+  .sb-item.on { background: rgba(247,190,104,.1); color: var(--gold); }
+  .sb-item .n { font-family: var(--display); font-size: 12px; opacity: .55; min-width: 14px; }
+  .sb-item .badge { margin-left: auto; font-size: 10px; color: var(--gold); font-family: var(--mono); background: rgba(247,190,104,.15); padding: 1px 6px; border-radius: 8px; }
+  .sb-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--hairline-soft); font-size: 11px; color: var(--gray); }
+  .sb-bottom .who { color: var(--ink); font-weight: 500; font-size: 12px; }
+
+  .main { flex: 1; padding: 38px 28px 22px; overflow: auto; position: relative; }
+  .main::-webkit-scrollbar { width: 6px; }
+  .main::-webkit-scrollbar-thumb { background: var(--hairline-soft); border-radius: 3px; }
+
+  .greet { font-family: var(--display); font-size: 32px; letter-spacing: 0.02em; line-height: 1; margin-bottom: 4px; }
+  .greet em { color: var(--gold); font-style: normal; }
+  .greet-sub { font-size: 12px; color: var(--gray); margin-bottom: 22px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--hairline); border-radius: 999px; font-size: 12px; color: rgba(250,250,250,.78); background: transparent; transition: all .15s; }
+  .pill:hover { border-color: var(--gold); color: var(--ink); }
+
+  /* ── Subview routing per stage ── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ─────────────────────────────────────────────────── */
+  /* DIRECTION 1: DAILY BRIEF */
+  /* ─────────────────────────────────────────────────── */
+
+  .brief-pill { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); border: 1px solid rgba(247,190,104,.4); padding: 4px 10px; border-radius: 999px; }
+  .brief-cards { margin: 8px 0 22px; }
+  .brief-card { display: grid; grid-template-columns: 46px 1fr auto; gap: 16px; align-items: center; padding: 16px 18px; border: 1px solid var(--hairline-soft); border-radius: 10px; margin-bottom: 12px; background: rgba(255,255,255,.015); transition: all .2s; }
+  .brief-card:hover { border-color: var(--hairline); background: rgba(255,255,255,.025); }
+  .brief-card.featured { border-color: rgba(247,190,104,.4); background: rgba(247,190,104,.04); }
+  .brief-card.live { border-color: rgba(63,185,80,.5); background: rgba(63,185,80,.05); }
+  .brief-card.queued { opacity: .55; }
+  .brief-card.expanded { background: rgba(247,190,104,.08); border-color: rgba(247,190,104,.5); }
+  .brief-card .ic { font-family: var(--display); font-size: 30px; color: var(--gold); }
+  .brief-card.live .ic { color: var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+  .brief-card .ttl { font-family: var(--display); font-size: 18px; letter-spacing: 0.02em; line-height: 1.1; }
+  .brief-card .meta { font-size: 12px; color: var(--gray); margin-top: 4px; }
+  .brief-card .why { font-size: 11px; color: rgba(247,190,104,.85); margin-top: 6px; font-family: var(--mono); }
+  .brief-card .progress { height: 4px; background: rgba(255,255,255,.06); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .brief-card .progress .fill { height: 100%; background: var(--green); transition: width 1s linear; }
+  .brief-actions { display: flex; gap: 6px; }
+  .cta-mini { background: var(--gold); color: #0a0a0a; padding: 9px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; border: none; transition: transform .1s; }
+  .cta-mini:hover { transform: translateY(-1px); }
+  .cta-ghost { padding: 9px 14px; border-radius: 6px; font-size: 12px; color: var(--ink); border: 1px solid var(--hairline); background: transparent; }
+  .cta-ghost:hover { border-color: var(--gold); color: var(--gold); }
+  .cta-stop { padding: 9px 14px; border-radius: 6px; font-size: 12px; color: var(--red); border: 1px solid rgba(248,81,73,.4); background: transparent; }
+
+  .brief-bottom { margin-top: 22px; padding: 16px 20px; border: 1px solid var(--hairline-soft); border-radius: 10px; display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,.015); }
+  .brief-bottom .lbl { font-family: var(--display); font-size: 14px; letter-spacing: .08em; color: var(--gold); }
+  .brief-bottom .meta { font-size: 12px; color: var(--gray); }
+  .brief-bottom .cta-mini { margin-left: auto; }
+
+  .brief-expand { grid-column: 1 / -1; padding: 16px 0 0; border-top: 1px dashed rgba(247,190,104,.25); margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .be-cell .k { color: var(--gray); letter-spacing: .1em; text-transform: uppercase; font-size: 9px; margin-bottom: 4px; }
+  .be-cell .v { color: var(--ink); font-size: 12px; line-height: 1.5; }
+  .be-cell input[type=text] { background: transparent; border: 1px solid var(--hairline); border-radius: 4px; padding: 6px 8px; color: var(--ink); font-family: var(--body); font-size: 12px; width: 100%; }
+  .be-cell label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); margin-bottom: 4px; }
+  .be-foot { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hairline-soft); }
+  .be-foot .info { margin-left: auto; font-size: 11px; color: var(--gray); font-family: var(--mono); }
+
+  /* Replies + history views */
+  .panel-h { font-family: var(--display); font-size: 18px; letter-spacing: 0.02em; margin-bottom: 14px; color: var(--gold); }
+  .reply-row { display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: center; padding: 14px 16px; border: 1px solid var(--hairline-soft); border-radius: 8px; margin-bottom: 8px; }
+  .reply-row .av { width: 32px; height: 32px; border-radius: 50%; background: rgba(247,190,104,.15); color: var(--gold); display: grid; place-items: center; font-family: var(--display); font-size: 13px; }
+  .reply-row .who { font-weight: 600; font-size: 13px; }
+  .reply-row .msg { font-size: 12px; color: var(--gray); margin-top: 2px; }
+  .reply-row .acts { display: flex; gap: 6px; }
+  .reply-row .ts { font-size: 10px; color: var(--gray-2); font-family: var(--mono); }
+
+  .hist-row { display: grid; grid-template-columns: 60px 1fr auto auto; gap: 16px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--hairline-soft); font-size: 12px; }
+  .hist-row .day { font-family: var(--display); font-size: 13px; color: var(--gray); }
+  .hist-row .what { color: var(--ink); }
+  .hist-row .stat { color: var(--gold); font-family: var(--mono); }
+
+  /* ─────────────────────────────────────────────────── */
+  /* DIRECTION 2: COMMAND PALETTE + LIVE BOARD */
+  /* ─────────────────────────────────────────────────── */
+
+  .cmdtop { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border: 1px solid var(--hairline); border-radius: 8px; background: rgba(255,255,255,.02); margin-bottom: 22px; font-size: 13px; color: var(--gray); cursor: text; transition: all .15s; }
+  .cmdtop:hover { border-color: var(--gold); background: rgba(247,190,104,.04); }
+  .cmdtop .kbd { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border: 1px solid var(--hairline); border-radius: 4px; background: rgba(255,255,255,.04); color: var(--ink); }
+  .cmdtop .placeholder { color: var(--gray); }
+  .cmdtop .hint { margin-left: auto; font-size: 11px; color: var(--gray); }
+
+  .board { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .board-col-h { font-family: var(--display); font-size: 13px; letter-spacing: .12em; color: var(--gray); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .board-col-h .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gray); }
+  .board-col-h .dot.live { background: var(--green); animation: pulse 1.5s infinite; }
+  .board-col-h .dot.green { background: var(--green); }
+
+  .bcard { padding: 14px 16px; border: 1px solid var(--hairline-soft); border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all .15s; }
+  .bcard:hover { border-color: var(--hairline); background: rgba(255,255,255,.02); }
+  .bcard.live { border-color: rgba(63,185,80,.45); background: rgba(63,185,80,.04); }
+  .bcard.live:hover { border-color: var(--green); }
+  .bcard .ttl { font-family: var(--display); font-size: 14px; letter-spacing: 0.02em; }
+  .bcard .meta { font-size: 11px; color: var(--gray); margin-top: 4px; font-family: var(--mono); }
+  .bcard .progress { height: 3px; background: rgba(255,255,255,.08); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .bcard .progress .fill { height: 100%; background: var(--gold); transition: width 1s linear; }
+
+  /* Palette overlay */
+  .palette-overlay { position: absolute; inset: 26px 0 0 0; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); display: none; align-items: flex-start; justify-content: center; padding-top: 100px; z-index: 10; }
+  .palette-overlay.open { display: flex; }
+  .palette { width: 580px; max-width: 80%; background: #14181d; border: 1px solid rgba(247,190,104,.5); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.6); overflow: hidden; }
+  .palette-input { padding: 14px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--hairline-soft); }
+  .palette-input .lbl { color: var(--gold); font-family: var(--mono); font-size: 12px; }
+  .palette-input input { flex: 1; background: transparent; border: none; outline: none; font-family: var(--mono); font-size: 14px; color: var(--ink); }
+  .palette-input .esc { font-family: var(--mono); font-size: 10px; color: var(--gray); padding: 2px 6px; border: 1px solid var(--hairline); border-radius: 3px; }
+  .palette-results { padding: 6px 0; max-height: 360px; overflow: auto; }
+  .palette-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; font-size: 13px; border: none; background: transparent; width: 100%; text-align: left; transition: all .1s; }
+  .palette-row:hover, .palette-row.active { background: rgba(247,190,104,.1); }
+  .palette-row .ic { font-family: var(--display); width: 20px; color: var(--gold); }
+  .palette-row .lbl { flex: 1; color: var(--ink); }
+  .palette-row .lbl b { color: var(--gold); font-weight: 600; }
+  .palette-row .hint { font-size: 10px; color: var(--gray); font-family: var(--mono); }
+  .palette-row .key { font-family: var(--mono); font-size: 9px; padding: 2px 5px; border: 1px solid var(--hairline); border-radius: 3px; color: var(--gray); }
+  .palette-empty { padding: 20px; text-align: center; color: var(--gray); font-size: 12px; }
+
+  /* Detail pane (slides from right) */
+  .detail-pane { position: absolute; top: 26px; right: 0; bottom: 0; width: 380px; background: #0d1014; border-left: 1px solid var(--hairline); transform: translateX(100%); transition: transform .25s; z-index: 8; padding: 22px; overflow: auto; }
+  .detail-pane.open { transform: translateX(0); }
+  .detail-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--hairline-soft); }
+  .detail-h .ttl { font-family: var(--display); font-size: 18px; letter-spacing: 0.02em; }
+  .detail-h .x { margin-left: auto; background: transparent; border: 1px solid var(--hairline); width: 26px; height: 26px; border-radius: 4px; color: var(--gray); display: grid; place-items: center; font-size: 14px; }
+  .detail-section { margin-bottom: 18px; }
+  .detail-section .k { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .detail-section .v { font-size: 13px; color: var(--ink); }
+  .detail-log { font-family: var(--mono); font-size: 10px; color: var(--gray); line-height: 1.6; padding: 10px 12px; background: rgba(255,255,255,.02); border: 1px solid var(--hairline-soft); border-radius: 5px; max-height: 200px; overflow: auto; }
+  .detail-actions { display: flex; gap: 8px; margin-top: 18px; }
+
+  /* ─────────────────────────────────────────────────── */
+  /* DIRECTION 3: WORKTOP */
+  /* ─────────────────────────────────────────────────── */
+
+  .worktop { display: grid; grid-template-columns: 180px 1fr 180px; gap: 16px; }
+  .pal-col { padding: 12px 10px; border: 1px solid var(--hairline-soft); border-radius: 8px; background: rgba(255,255,255,.015); }
+  .pal-section { font-family: var(--display); font-size: 12px; letter-spacing: .12em; color: var(--gold); margin: 4px 4px 6px; }
+  .pal-chip { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--hairline-soft); border-radius: 5px; margin-bottom: 5px; font-size: 12px; background: rgba(255,255,255,.02); cursor: pointer; transition: all .15s; user-select: none; width: 100%; text-align: left; color: var(--ink); }
+  .pal-chip:hover { border-color: var(--gold); background: rgba(247,190,104,.06); }
+  .pal-chip .ic { color: var(--gold); font-family: var(--display); font-size: 12px; }
+  .pal-chip.disabled { opacity: .35; cursor: not-allowed; }
+
+  .canvas-col { background: rgba(255,255,255,.01); border: 1px dashed var(--hairline-soft); border-radius: 8px; padding: 18px; }
+  .recipe { background: #14181d; border: 1px solid var(--hairline); border-radius: 10px; padding: 18px; }
+  .recipe-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline-soft); }
+  .recipe-head input { background: transparent; border: none; outline: none; font-family: var(--display); font-size: 18px; letter-spacing: 0.02em; color: var(--ink); flex: 1; }
+  .recipe-head input::placeholder { color: var(--gray-2); font-style: italic; }
+  .recipe-head .save { font-size: 11px; color: var(--gray); border: 1px solid var(--hairline); padding: 5px 10px; border-radius: 4px; background: transparent; }
+  .recipe-head .save.active { color: var(--gold); border-color: var(--gold); }
+
+  .ing { display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--hairline-soft); border-radius: 6px; margin-bottom: 7px; font-size: 12px; background: rgba(255,255,255,.02); transition: all .15s; }
+  .ing.empty { border-style: dashed; color: var(--gray); }
+  .ing.filled { border-color: rgba(247,190,104,.3); background: rgba(247,190,104,.04); }
+  .ing.filled:hover { border-color: var(--gold); }
+  .ing .k { font-family: var(--display); font-size: 11px; color: var(--gold); letter-spacing: .12em; }
+  .ing.empty .k { color: var(--gray); }
+  .ing .v { color: var(--ink); }
+  .ing.empty .v { color: var(--gray); font-style: italic; }
+  .ing .x { font-size: 12px; color: var(--gray); cursor: pointer; background: transparent; border: none; padding: 4px; }
+  .ing .x:hover { color: var(--red); }
+
+  .recipe-foot { display: flex; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline-soft); align-items: center; }
+  .recipe-foot .cta-mini { padding: 10px 18px; font-size: 13px; }
+  .recipe-foot .cta-mini.disabled { opacity: .35; cursor: not-allowed; }
+  .recipe-foot .info { margin-left: auto; font-size: 11px; color: var(--gray); font-family: var(--mono); }
+
+  .recipes-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .recipe-card-mini { padding: 14px 16px; border: 1px solid var(--hairline-soft); border-radius: 8px; cursor: pointer; transition: all .15s; }
+  .recipe-card-mini:hover { border-color: var(--gold); background: rgba(247,190,104,.04); }
+  .recipe-card-mini .ttl { font-family: var(--display); font-size: 16px; }
+  .recipe-card-mini .meta { font-size: 11px; color: var(--gray); margin-top: 4px; font-family: var(--mono); }
+  .recipe-card-mini .last { font-size: 10px; color: var(--gray-2); margin-top: 8px; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #14181d; border: 1px solid var(--gold); border-radius: 8px; padding: 12px 18px; font-size: 13px; color: var(--ink); z-index: 100; opacity: 0; pointer-events: none; transition: opacity .2s; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .toast.show { opacity: 1; }
+  .toast strong { color: var(--gold); }
+
+  /* Header stats (small, used in all stages) */
+  .header-stats { display: flex; gap: 28px; padding-bottom: 16px; border-bottom: 1px solid var(--hairline-soft); margin-bottom: 22px; }
+  .hs { display: flex; flex-direction: column; gap: 3px; }
+  .hs .k { font-family: var(--display); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); }
+  .hs .v { font-family: var(--display); font-size: 24px; letter-spacing: 0.02em; line-height: 1; }
+  .hs .v.gold { color: var(--gold); }
+</style>
+</head>
+<body>
+
+<!-- ╔══════════════════════════════════════════════════════════╗ -->
+<!-- ║ TOP SWITCHER                                            ║ -->
+<!-- ╚══════════════════════════════════════════════════════════╝ -->
+<div class="switcher">
+  <div class="sw-brand">Ortus <em>Outreach</em> · prototype</div>
+  <div class="sw-tabs">
+    <button class="sw-tab active" data-stage="brief"><span class="num">1.</span>Daily Brief</button>
+    <button class="sw-tab" data-stage="palette"><span class="num">2.</span>Command + Board</button>
+    <button class="sw-tab" data-stage="worktop"><span class="num">3.</span>Recipe Worktop</button>
+  </div>
+  <div class="sw-hint">click freely · everything's wired up</div>
+</div>
+
+<div class="canvas">
+
+<!-- ════════════════════════════════════════════════ -->
+<!-- STAGE 1: DAILY BRIEF                            -->
+<!-- ════════════════════════════════════════════════ -->
+<div class="stage active" id="stage-brief">
+  <div class="app">
+    <div class="app-bar"><div class="d r"></div><div class="d y"></div><div class="d g"></div><div class="t">The Ortus Outreach</div></div>
+
+    <aside class="sb">
+      <div>
+        <div class="sb-brand">Ortus <em>Outreach</em></div>
+        <div class="sb-sub">v2.13.0</div>
+      </div>
+      <div>
+        <button class="sb-item on" data-view="brief-today"><span class="n">◆</span> Today</button>
+        <button class="sb-item" data-view="brief-replies"><span class="n">↻</span> Replies <span class="badge">12</span></button>
+        <button class="sb-item" data-view="brief-history"><span class="n">⏱</span> History</button>
+        <button class="sb-item" data-view="brief-recipes"><span class="n">⌗</span> Recipes</button>
+        <button class="sb-item" data-view="brief-accounts"><span class="n">▦</span> Accounts</button>
+      </div>
+      <div class="sb-bottom">
+        <div class="who">info@ortus.solutions</div>
+        <div>Wed · 8 May · 9:14 AM</div>
+      </div>
+    </aside>
+
+    <div class="main">
+
+      <!-- ── Today view ── -->
+      <div class="view active" data-view="brief-today">
+        <div class="header-stats">
+          <div class="hs"><span class="k">Today (sent)</span><span class="v gold">142</span></div>
+          <div class="hs"><span class="k">7-day</span><span class="v">863</span></div>
+          <div class="hs"><span class="k">Replies</span><span class="v">12</span></div>
+          <div class="hs"><span class="k">Errors 24h</span><span class="v">0</span></div>
+        </div>
+
+        <div class="greet">Good morning, <em>Antonio</em></div>
+        <div class="greet-sub">Today's brief — based on 6 sheets · last sync 2 minutes ago</div>
+
+        <div class="brief-cards">
+          <div class="brief-card featured" id="bc-1">
+            <div class="ic">⟳</div>
+            <div>
+              <div class="ttl">Check status — 214 pending invites</div>
+              <div class="meta">Spring-UK + Tech-DACH · 4 sheets · ~12 min</div>
+              <div class="why">▸ priority: 38 invites are 4+ days old (decay risk)</div>
+            </div>
+            <div class="brief-actions">
+              <button class="cta-mini" onclick="briefRun(1)">▶ Run</button>
+              <button class="cta-ghost" onclick="briefTweak(1)">Tweak</button>
+            </div>
+          </div>
+
+          <div class="brief-card" id="bc-2">
+            <div class="ic">→</div>
+            <div>
+              <div class="ttl">Connect — 350 fresh leads</div>
+              <div class="meta">Spring-UK-Partners-2026 · 7 of 12 accounts free · ~4h 20m</div>
+            </div>
+            <div class="brief-actions">
+              <button class="cta-mini" onclick="briefRun(2)">▶ Run</button>
+              <button class="cta-ghost" onclick="briefTweak(2)">Tweak</button>
+            </div>
+          </div>
+
+          <div class="brief-card" id="bc-3">
+            <div class="ic">✉</div>
+            <div>
+              <div class="ttl">Message — 42 ready to DM</div>
+              <div class="meta">Auto-routed by sender · ~1h 10m</div>
+            </div>
+            <div class="brief-actions">
+              <button class="cta-mini" onclick="briefRun(3)">▶ Run</button>
+              <button class="cta-ghost" onclick="briefTweak(3)">Tweak</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="brief-bottom">
+          <span class="lbl">RUN ALL 3 IN ORDER</span>
+          <span class="meta">~5h 42m total · finishes 14:56</span>
+          <button class="cta-mini" onclick="briefRunAll()">▶ Queue all</button>
+        </div>
+      </div>
+
+      <!-- ── Replies view ── -->
+      <div class="view" data-view="brief-replies">
+        <div class="greet">Recent <em>replies</em></div>
+        <div class="greet-sub">12 inbound · last 24h</div>
+
+        <div class="reply-row">
+          <div class="av">JM</div>
+          <div>
+            <div class="who">James Mitchell <span style="color:var(--gold); font-weight:400; font-size:11px; margin-left:6px">· positive</span></div>
+            <div class="msg">"Happy to chat — Tuesday afternoon works for me."</div>
+          </div>
+          <div class="acts">
+            <button class="cta-ghost" onclick="toast('Marked as deal · added to CRM')">→ Deal</button>
+            <button class="cta-ghost">Snooze</button>
+          </div>
+        </div>
+        <div class="reply-row">
+          <div class="av">SP</div>
+          <div>
+            <div class="who">Sarah Patel</div>
+            <div class="msg">"Could you tell me more about Ortus Club's founder events?"</div>
+          </div>
+          <div class="acts">
+            <button class="cta-ghost" onclick="toast('Reply draft opened')">↳ Reply</button>
+            <button class="cta-ghost">Snooze</button>
+          </div>
+        </div>
+        <div class="reply-row">
+          <div class="av">DK</div>
+          <div>
+            <div class="who">Dimitri Kovac</div>
+            <div class="msg">"Not the right fit — best of luck with Ortus."</div>
+          </div>
+          <div class="acts">
+            <button class="cta-ghost" onclick="toast('Marked declined · removed from queue')">✕ Decline</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── History view ── -->
+      <div class="view" data-view="brief-history">
+        <div class="greet"><em>History</em></div>
+        <div class="greet-sub">last 30 days</div>
+        <div class="hist-row"><span class="day">Today</span><span class="what">Connect · UK-Founders</span><span class="stat">142 sent</span><span class="ts">9:14</span></div>
+        <div class="hist-row"><span class="day">Today</span><span class="what">Check DMs · all senders</span><span class="stat">12 replies</span><span class="ts">8:42</span></div>
+        <div class="hist-row"><span class="day">Today</span><span class="what">Connect · DACH-Tech</span><span class="stat">98 sent</span><span class="ts">8:01</span></div>
+        <div class="hist-row"><span class="day">Tue</span><span class="what">Check status · Spring-UK</span><span class="stat">214 → 42 accepted</span><span class="ts">10:30</span></div>
+        <div class="hist-row"><span class="day">Mon</span><span class="what">Message · Connected · DM Now (12)</span><span class="stat">12 sent · 0 errors</span><span class="ts">14:20</span></div>
+      </div>
+
+      <!-- ── Recipes view ── -->
+      <div class="view" data-view="brief-recipes">
+        <div class="greet">Saved <em>recipes</em></div>
+        <div class="greet-sub">click to run · or duplicate as a starting point</div>
+        <div class="recipes-list">
+          <div class="recipe-card-mini" onclick="toast('Recipe loaded into Today')">
+            <div class="ttl">Daily UK Connect</div>
+            <div class="meta">connect · 7 senders · 50/acct · pause 15-45s</div>
+            <div class="last">last run · today 9:14 AM</div>
+          </div>
+          <div class="recipe-card-mini" onclick="toast('Recipe loaded into Today')">
+            <div class="ttl">Tuesday status sweep</div>
+            <div class="meta">check_status · all senders · 4 sheets</div>
+            <div class="last">last run · Tue 10:30 AM</div>
+          </div>
+          <div class="recipe-card-mini" onclick="toast('Recipe loaded into Today')">
+            <div class="ttl">DM Now drain</div>
+            <div class="meta">message · auto-routed · template v3</div>
+            <div class="last">last run · Mon 2:20 PM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Accounts view ── -->
+      <div class="view" data-view="brief-accounts">
+        <div class="greet">LinkedIn <em>accounts</em></div>
+        <div class="greet-sub">12 profiles · 7 assigned · 3 in pool · 2 paused</div>
+        <p style="font-size:13px; color:var(--gray); padding:20px 0">Account management lives here — assignees, pauses, browser status. Same controls as today, just a separate page rather than buried in the wizard.</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════ -->
+<!-- STAGE 2: COMMAND PALETTE + LIVE BOARD            -->
+<!-- ════════════════════════════════════════════════ -->
+<div class="stage" id="stage-palette">
+  <div class="app">
+    <div class="app-bar"><div class="d r"></div><div class="d y"></div><div class="d g"></div><div class="t">The Ortus Outreach</div></div>
+
+    <aside class="sb">
+      <div>
+        <div class="sb-brand">Ortus <em>Outreach</em></div>
+        <div class="sb-sub">v2.13.0</div>
+      </div>
+      <div>
+        <button class="sb-item on" data-view="pal-board"><span class="n">◇</span> Board</button>
+        <button class="sb-item" data-view="pal-replies"><span class="n">↻</span> Replies <span class="badge">12</span></button>
+        <button class="sb-item" data-view="pal-accounts"><span class="n">▦</span> Accounts</button>
+        <button class="sb-item" data-view="pal-history"><span class="n">⏱</span> History</button>
+      </div>
+      <div class="sb-bottom">
+        <div class="who">info@ortus.solutions</div>
+        <div>Wed · 8 May</div>
+      </div>
+    </aside>
+
+    <div class="main" id="pal-main">
+      <!-- Board view -->
+      <div class="view active" data-view="pal-board">
+        <div class="cmdtop" onclick="openPalette()">
+          <span class="kbd">⌘K</span>
+          <span class="placeholder">Run a campaign · check a sheet · pause an account…</span>
+          <span class="hint">click or press <span class="kbd">⌘K</span></span>
+        </div>
+
+        <div class="board">
+          <div>
+            <div class="board-col-h"><span class="dot live"></span>RUNNING NOW · <span id="running-count">2</span></div>
+            <div id="running-col">
+              <div class="bcard live" onclick="openDetail('Connect · Tech-DACH', 'live')">
+                <div class="ttl">Connect · Tech-DACH</div>
+                <div class="meta">112 / 200 · 5 senders · 2h left</div>
+                <div class="progress"><div class="fill" style="width:56%"></div></div>
+              </div>
+              <div class="bcard live" onclick="openDetail('Check status · Spring-UK', 'live')">
+                <div class="ttl">Check status · Spring-UK</div>
+                <div class="meta">36 / 38 · finishing</div>
+                <div class="progress"><div class="fill" style="width:95%; background:var(--green)"></div></div>
+              </div>
+            </div>
+
+            <div class="board-col-h" style="margin-top:18px"><span class="dot"></span>QUEUED · 1</div>
+            <div class="bcard" onclick="openDetail('Message · accepted leads', 'queued')">
+              <div class="ttl">Message · accepted leads</div>
+              <div class="meta">42 ready · waits for Spring-UK</div>
+            </div>
+          </div>
+          <div>
+            <div class="board-col-h"><span class="dot green"></span>FINISHED TODAY · 3</div>
+            <div class="bcard" onclick="openDetail('Connect · UK-Founders', 'done')">
+              <div class="ttl">Connect · UK-Founders</div>
+              <div class="meta">142 sent · 0 errors · 9:14 AM</div>
+            </div>
+            <div class="bcard" onclick="openDetail('Check DMs · all senders', 'done')">
+              <div class="ttl">Check DMs · all senders</div>
+              <div class="meta">12 inbound replies · 8:42 AM</div>
+            </div>
+            <div class="bcard" onclick="openDetail('Connect · DACH-Tech', 'done')">
+              <div class="ttl">Connect · DACH-Tech</div>
+              <div class="meta">98 sent · 8:01 AM</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" data-view="pal-replies">
+        <div class="greet">Replies</div>
+        <div class="greet-sub">routed from all senders</div>
+        <p style="color:var(--gray); padding:20px 0">Same replies surface as Brief — unified view with quick actions.</p>
+      </div>
+      <div class="view" data-view="pal-accounts">
+        <div class="greet">Accounts</div>
+        <div class="greet-sub">12 profiles</div>
+      </div>
+      <div class="view" data-view="pal-history">
+        <div class="greet">History</div>
+        <div class="greet-sub">last 30 days</div>
+      </div>
+    </div>
+
+    <!-- Palette overlay -->
+    <div class="palette-overlay" id="palette-overlay" onclick="if(event.target===this) closePalette()">
+      <div class="palette">
+        <div class="palette-input">
+          <span class="lbl">⌘K</span>
+          <input id="palette-input" type="text" placeholder="run, pause, check, schedule…" oninput="filterPalette()" onkeydown="if(event.key==='Escape') closePalette()" />
+          <span class="esc">esc</span>
+        </div>
+        <div class="palette-results" id="palette-results">
+          <button class="palette-row active" data-keys="connect spring uk" onclick="paletteFire('Connect · Spring-UK-Partners-2026')">
+            <span class="ic">→</span>
+            <span class="lbl">Run <b>Connect</b> on Spring-UK-Partners-2026</span>
+            <span class="hint">350 leads · 7 senders · ~4h 20m</span>
+            <span class="key">↵</span>
+          </button>
+          <button class="palette-row" data-keys="connect tech dach" onclick="paletteFire('Connect · Tech-DACH-Q2')">
+            <span class="ic">→</span>
+            <span class="lbl">Run <b>Connect</b> on Tech-DACH-Q2</span>
+            <span class="hint">200 leads · 5 senders · ~2h 40m</span>
+          </button>
+          <button class="palette-row" data-keys="check status spring" onclick="paletteFire('Check status · Spring-UK')">
+            <span class="ic">⟳</span>
+            <span class="lbl">Run <b>Check status</b> on Spring-UK</span>
+            <span class="hint">214 pending · ~12 min</span>
+          </button>
+          <button class="palette-row" data-keys="message dm now" onclick="paletteFire('Message · DM Now')">
+            <span class="ic">✉</span>
+            <span class="lbl">Run <b>Message</b> on DM Now leads</span>
+            <span class="hint">42 ready · auto-routed</span>
+          </button>
+          <button class="palette-row" data-keys="recipe daily uk" onclick="paletteFire('Recipe: Daily UK Connect')">
+            <span class="ic">⌗</span>
+            <span class="lbl">Recipe: <b>Daily UK Connect</b></span>
+            <span class="hint">saved Mon · 50/acct · pause 15-45s</span>
+          </button>
+          <button class="palette-row" data-keys="pause sc account" onclick="paletteFire('Pause · SC for today')">
+            <span class="ic">⏸</span>
+            <span class="lbl">Pause <b>SC</b> account for today</span>
+            <span class="hint">resumes 00:00 GMT</span>
+          </button>
+          <button class="palette-row" data-keys="history" onclick="paletteFire('Open history')">
+            <span class="ic">⏱</span>
+            <span class="lbl">Open history</span>
+            <span class="hint">last 30 days</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail pane -->
+    <div class="detail-pane" id="detail-pane">
+      <div class="detail-h">
+        <div>
+          <div class="ttl" id="detail-title">—</div>
+          <div style="font-size:11px; color:var(--gray); font-family:var(--mono); margin-top:4px" id="detail-subtitle">—</div>
+        </div>
+        <button class="x" onclick="closeDetail()">×</button>
+      </div>
+
+      <div class="detail-section">
+        <div class="k">Sheet</div>
+        <div class="v">Spring-UK-Partners-2026 · 350 rows</div>
+      </div>
+      <div class="detail-section">
+        <div class="k">Senders</div>
+        <div class="v">SC · RM · GM · FH · JT · LL · PV (7)</div>
+      </div>
+      <div class="detail-section">
+        <div class="k">Live log</div>
+        <div class="detail-log" id="detail-log">
+          [9:14:02] launching connect campaign…<br>
+          [9:14:03] gologin profile SC ready<br>
+          [9:14:04] navigated to /search/results/people<br>
+          [9:14:08] sent invite to <span style="color:#3fb950">James Mitchell</span><br>
+          [9:14:14] waited 6.2s · sent invite to <span style="color:#3fb950">Sarah Patel</span><br>
+          [9:14:21] rotated to RM<br>
+          [9:14:23] sent invite to <span style="color:#3fb950">Dimitri Kovac</span><br>
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="cta-stop" onclick="toast('Campaign stopped'); closeDetail()">■ Stop</button>
+        <button class="cta-ghost" onclick="toast('Paused')">⏸ Pause</button>
+        <button class="cta-ghost" onclick="toast('Saved as recipe')">⌗ Save as recipe</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════ -->
+<!-- STAGE 3: RECIPE WORKTOP                          -->
+<!-- ════════════════════════════════════════════════ -->
+<div class="stage" id="stage-worktop">
+  <div class="app">
+    <div class="app-bar"><div class="d r"></div><div class="d y"></div><div class="d g"></div><div class="t">The Ortus Outreach</div></div>
+
+    <aside class="sb">
+      <div>
+        <div class="sb-brand">Ortus <em>Outreach</em></div>
+        <div class="sb-sub">v2.13.0</div>
+      </div>
+      <div>
+        <button class="sb-item on" data-view="wt-new"><span class="n">⌗</span> New recipe</button>
+        <button class="sb-item" data-view="wt-saved"><span class="n">⌗</span> My recipes <span class="badge">3</span></button>
+        <button class="sb-item" data-view="wt-replies"><span class="n">↻</span> Replies <span class="badge">12</span></button>
+        <button class="sb-item" data-view="wt-history"><span class="n">⏱</span> History</button>
+      </div>
+      <div class="sb-bottom">
+        <div class="who">info@ortus.solutions</div>
+        <div>Wed · 8 May</div>
+      </div>
+    </aside>
+
+    <div class="main">
+
+      <div class="view active" data-view="wt-new">
+        <div class="greet">Build a <em>recipe</em></div>
+        <div class="greet-sub">Click a chip on the left to add it · click an ingredient to swap · ⌘S to save</div>
+
+        <div class="worktop" style="margin-top:18px">
+          <div class="pal-col">
+            <div class="pal-section">MODE</div>
+            <button class="pal-chip" onclick="addIng('mode','→ Connect')"><span class="ic">→</span> Connect</button>
+            <button class="pal-chip" onclick="addIng('mode','⟳ Check status')"><span class="ic">⟳</span> Check status</button>
+            <button class="pal-chip" onclick="addIng('mode','✉ Message')"><span class="ic">✉</span> Message</button>
+            <button class="pal-chip" onclick="addIng('mode','⊕ Intro back')"><span class="ic">⊕</span> Intro back</button>
+            <button class="pal-chip" onclick="addIng('mode','✦ InMail')"><span class="ic">✦</span> InMail</button>
+
+            <div class="pal-section" style="margin-top:14px">SHEETS</div>
+            <button class="pal-chip" onclick="addIng('sheet','Spring-UK-Partners-2026 · 350 rows')">Spring-UK</button>
+            <button class="pal-chip" onclick="addIng('sheet','Tech-DACH-Q2 · 200 rows')">Tech-DACH</button>
+            <button class="pal-chip" onclick="addIng('sheet','UK-Founders · 142 rows')">UK-Founders</button>
+
+            <div class="pal-section" style="margin-top:14px">ACCOUNTS</div>
+            <button class="pal-chip" onclick="addIng('accounts','Assigned (7) · SC RM GM FH JT LL PV')">Assigned (7)</button>
+            <button class="pal-chip" onclick="addIng('accounts','Pool (3)')">Pool (3)</button>
+            <button class="pal-chip" onclick="addIng('accounts','All (12)')">All (12)</button>
+          </div>
+
+          <div class="canvas-col">
+            <div class="recipe">
+              <div class="recipe-head">
+                <input id="recipe-name" type="text" placeholder="Untitled recipe" />
+                <button class="save" id="recipe-save" onclick="saveRecipe()">⇧⌘S Save</button>
+              </div>
+
+              <div class="ing empty" id="ing-mode" data-key="mode">
+                <span class="k">MODE</span><span class="v">click a mode on the left…</span><span></span>
+              </div>
+              <div class="ing empty" id="ing-sheet" data-key="sheet">
+                <span class="k">SHEET</span><span class="v">click a sheet on the left…</span><span></span>
+              </div>
+              <div class="ing empty" id="ing-accounts" data-key="accounts">
+                <span class="k">ACCOUNTS</span><span class="v">click an account preset…</span><span></span>
+              </div>
+              <div class="ing filled" id="ing-pace">
+                <span class="k">PACE</span><span class="v">15–45s · cap 50 · parallel × 2</span>
+                <button class="x" onclick="toast('Throughput knobs popover')">⋯</button>
+              </div>
+
+              <div class="recipe-foot">
+                <button class="cta-mini disabled" id="launch-btn" onclick="launchRecipe()">▶ Launch</button>
+                <button class="cta-ghost" onclick="toast('Daily 9am scheduler — pick weekdays')">⌗ Schedule daily</button>
+                <span class="info" id="recipe-forecast">forecast appears once recipe is complete</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pal-col">
+            <div class="pal-section">FINE-TUNE</div>
+            <button class="pal-chip" onclick="toast('Pause range editor opened')"><span class="ic">⏱</span> Pause 15–45s</button>
+            <button class="pal-chip" onclick="toast('Cap editor opened')"><span class="ic">#</span> Cap 50 / acct</button>
+            <button class="pal-chip" onclick="toast('Parallelism toggle')"><span class="ic">‖</span> Parallel × 2</button>
+            <button class="pal-chip" onclick="toast('Template picker — A/B variants')"><span class="ic">⌗</span> Template v3</button>
+
+            <div class="pal-section" style="margin-top:14px">VARIANTS</div>
+            <button class="pal-chip" onclick="toast('A/B variant added')">+ Add A/B</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Saved recipes -->
+      <div class="view" data-view="wt-saved">
+        <div class="greet">My <em>recipes</em></div>
+        <div class="greet-sub">click to run · ⌥-click to duplicate</div>
+        <div class="recipes-list" style="grid-template-columns: 1fr 1fr 1fr">
+          <div class="recipe-card-mini" onclick="loadRecipe('Daily UK Connect')">
+            <div class="ttl">Daily UK Connect</div>
+            <div class="meta">connect · 7 senders · 50/acct</div>
+            <div class="last">last run · today 9:14 AM</div>
+          </div>
+          <div class="recipe-card-mini" onclick="loadRecipe('Tuesday status sweep')">
+            <div class="ttl">Tuesday status sweep</div>
+            <div class="meta">check_status · all · 4 sheets</div>
+            <div class="last">last run · Tue 10:30 AM</div>
+          </div>
+          <div class="recipe-card-mini" onclick="loadRecipe('DM Now drain')">
+            <div class="ttl">DM Now drain</div>
+            <div class="meta">message · auto-routed · v3</div>
+            <div class="last">last run · Mon 2:20 PM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" data-view="wt-replies">
+        <div class="greet">Replies</div>
+        <div class="greet-sub">12 inbound</div>
+      </div>
+      <div class="view" data-view="wt-history">
+        <div class="greet">History</div>
+        <div class="greet-sub">last 30 days</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</div><!-- /canvas -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ═══ Stage switching ═══
+  document.querySelectorAll('.sw-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.sw-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('stage-' + tab.dataset.stage).classList.add('active');
+    });
+  });
+
+  // ═══ Sidebar view routing (per stage) ═══
+  document.querySelectorAll('.sb-item[data-view]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const stage = btn.closest('.stage');
+      stage.querySelectorAll('.sb-item').forEach(b => b.classList.remove('on'));
+      stage.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      btn.classList.add('on');
+      const view = stage.querySelector(`[data-view="${btn.dataset.view}"].view`);
+      if (view) view.classList.add('active');
+    });
+  });
+
+  // ═══ Toast ═══
+  let toastTimer;
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.innerHTML = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  // ═══ DIRECTION 1: BRIEF ═══
+  function briefRun(n) {
+    const card = document.getElementById('bc-' + n);
+    card.classList.remove('featured');
+    card.classList.add('live');
+    card.querySelector('.brief-actions').innerHTML = '<button class="cta-stop" onclick="briefStop(' + n + ')">■ Stop</button>';
+    const meta = card.querySelector('.meta');
+    const orig = meta.textContent;
+    meta.innerHTML = '<span style="color:var(--green)">running</span> · 0 / X · started just now';
+    let p = 0;
+    if (!card.querySelector('.progress')) {
+      const prog = document.createElement('div');
+      prog.className = 'progress';
+      prog.innerHTML = '<div class="fill" style="width:0%"></div>';
+      card.querySelector('.meta').after(prog);
+    }
+    const fill = card.querySelector('.fill');
+    const interval = setInterval(() => {
+      p += 8 + Math.random() * 5;
+      if (p >= 100) { p = 100; clearInterval(interval); meta.innerHTML = '<span style="color:var(--green)">✓ done</span> · ' + orig; }
+      fill.style.width = p + '%';
+    }, 600);
+    card._interval = interval;
+    toast('<strong>Running</strong> ' + card.querySelector('.ttl').textContent);
+  }
+  function briefStop(n) {
+    const card = document.getElementById('bc-' + n);
+    if (card._interval) clearInterval(card._interval);
+    card.classList.remove('live');
+    card.querySelector('.brief-actions').innerHTML = '<button class="cta-mini" onclick="briefRun(' + n + ')">▶ Run</button><button class="cta-ghost" onclick="briefTweak(' + n + ')">Tweak</button>';
+    toast('Stopped');
+  }
+  function briefTweak(n) {
+    const card = document.getElementById('bc-' + n);
+    if (card.querySelector('.brief-expand')) {
+      card.querySelector('.brief-expand').remove();
+      card.classList.remove('expanded');
+      return;
+    }
+    card.classList.add('expanded');
+    const exp = document.createElement('div');
+    exp.className = 'brief-expand';
+    exp.innerHTML = `
+      <div class="be-cell">
+        <div class="k">Sheets</div>
+        <div class="v"><label><input type="checkbox" checked> Spring-UK</label><label><input type="checkbox" checked> Tech-DACH</label><label><input type="checkbox"> UK-Founders</label></div>
+      </div>
+      <div class="be-cell">
+        <div class="k">Accounts (auto-routed)</div>
+        <div class="v">7 senders<br><span style="color:var(--gray); font-size:11px">SC · RM · GM · FH · JT · LL · PV</span></div>
+      </div>
+      <div class="be-cell">
+        <div class="k">Filter</div>
+        <div class="v"><label><input type="checkbox" checked> Only 4+ days old (38)</label><label><input type="checkbox"> Skip already-checked today</label></div>
+      </div>
+      <div class="be-foot">
+        <button class="cta-mini" onclick="document.getElementById('bc-${n}').querySelector('.brief-expand').remove(); document.getElementById('bc-${n}').classList.remove('expanded'); briefRun(${n})">Save & run ▶</button>
+        <button class="cta-ghost" onclick="document.getElementById('bc-${n}').querySelector('.brief-expand').remove(); document.getElementById('bc-${n}').classList.remove('expanded')">Cancel</button>
+        <span class="info">~3 min · 38 rows · finishes 09:17</span>
+      </div>
+    `;
+    card.appendChild(exp);
+  }
+  function briefRunAll() {
+    [1,2,3].forEach((n, i) => {
+      const card = document.getElementById('bc-' + n);
+      if (i === 0) {
+        briefRun(n);
+      } else {
+        card.classList.add('queued');
+        card.querySelector('.brief-actions').innerHTML = '<span style="font-size:11px; color:var(--gray); font-family:var(--mono)">queued</span>';
+      }
+    });
+    toast('<strong>3 jobs queued</strong> · finishes 14:56');
+  }
+
+  // ═══ DIRECTION 2: PALETTE + BOARD ═══
+  function openPalette() {
+    document.getElementById('palette-overlay').classList.add('open');
+    setTimeout(() => document.getElementById('palette-input').focus(), 50);
+  }
+  function closePalette() {
+    document.getElementById('palette-overlay').classList.remove('open');
+    document.getElementById('palette-input').value = '';
+    filterPalette();
+  }
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      const palStage = document.getElementById('stage-palette');
+      if (palStage.classList.contains('active')) {
+        e.preventDefault();
+        openPalette();
+      }
+    }
+    if (e.key === 'Escape') {
+      closePalette();
+      closeDetail();
+    }
+  });
+  function filterPalette() {
+    const q = document.getElementById('palette-input').value.toLowerCase().trim();
+    const rows = document.querySelectorAll('#palette-results .palette-row');
+    let firstVisible = null;
+    rows.forEach(r => {
+      r.classList.remove('active');
+      const matches = !q || r.dataset.keys.includes(q.replace(/\s+/g,' ')) || q.split(' ').every(t => r.dataset.keys.includes(t));
+      r.style.display = matches ? '' : 'none';
+      if (matches && !firstVisible) firstVisible = r;
+    });
+    if (firstVisible) firstVisible.classList.add('active');
+  }
+  function paletteFire(name) {
+    closePalette();
+    toast('<strong>Launched:</strong> ' + name);
+    // Add a new live card to the running column
+    const col = document.getElementById('running-col');
+    const newCard = document.createElement('div');
+    newCard.className = 'bcard live';
+    newCard.innerHTML = '<div class="ttl">' + name + '</div><div class="meta">just started · 0 / X</div><div class="progress"><div class="fill" style="width:2%"></div></div>';
+    newCard.onclick = () => openDetail(name, 'live');
+    col.appendChild(newCard);
+    document.getElementById('running-count').textContent = col.children.length;
+  }
+  function openDetail(title, status) {
+    document.getElementById('detail-title').textContent = title;
+    document.getElementById('detail-subtitle').textContent = status === 'live' ? 'running · 5 senders rotating' : status === 'queued' ? 'queued · waits for upstream' : 'finished · 0 errors';
+    document.getElementById('detail-pane').classList.add('open');
+  }
+  function closeDetail() {
+    document.getElementById('detail-pane').classList.remove('open');
+  }
+
+  // ═══ DIRECTION 3: WORKTOP ═══
+  const ingState = { mode: null, sheet: null, accounts: null };
+  function addIng(key, value) {
+    ingState[key] = value;
+    const el = document.getElementById('ing-' + key);
+    el.classList.remove('empty');
+    el.classList.add('filled');
+    el.innerHTML = `<span class="k">${key.toUpperCase()}</span><span class="v">${value}</span><button class="x" onclick="removeIng('${key}')">×</button>`;
+    updateLaunchState();
+    toast('<strong>Added:</strong> ' + value);
+  }
+  function removeIng(key) {
+    ingState[key] = null;
+    const el = document.getElementById('ing-' + key);
+    el.classList.remove('filled');
+    el.classList.add('empty');
+    const placeholder = key === 'mode' ? 'click a mode on the left…' : key === 'sheet' ? 'click a sheet on the left…' : 'click an account preset…';
+    el.innerHTML = `<span class="k">${key.toUpperCase()}</span><span class="v">${placeholder}</span><span></span>`;
+    updateLaunchState();
+  }
+  function updateLaunchState() {
+    const ready = ingState.mode && ingState.sheet && ingState.accounts;
+    const btn = document.getElementById('launch-btn');
+    const fc = document.getElementById('recipe-forecast');
+    if (ready) {
+      btn.classList.remove('disabled');
+      // Estimate from selections
+      const sheetMatch = ingState.sheet.match(/(\d+) rows/);
+      const rows = sheetMatch ? sheetMatch[1] : '350';
+      fc.textContent = `${rows} actions · ~4h 20m · finishes 18:42`;
+    } else {
+      btn.classList.add('disabled');
+      fc.textContent = 'forecast appears once recipe is complete';
+    }
+  }
+  function saveRecipe() {
+    const name = document.getElementById('recipe-name').value || 'Untitled';
+    if (!ingState.mode || !ingState.sheet || !ingState.accounts) {
+      toast('Add all 3 ingredients first');
+      return;
+    }
+    document.getElementById('recipe-save').classList.add('active');
+    document.getElementById('recipe-save').textContent = '✓ Saved';
+    toast('<strong>Recipe saved:</strong> ' + name);
+  }
+  function launchRecipe() {
+    if (!ingState.mode || !ingState.sheet || !ingState.accounts) {
+      toast('Recipe is incomplete — fill all 3 ingredients');
+      return;
+    }
+    const name = document.getElementById('recipe-name').value || 'Untitled recipe';
+    toast('<strong>Launched:</strong> ' + name + ' — running now');
+  }
+  function loadRecipe(name) {
+    document.querySelector('.sb-item[data-view="wt-new"]').click();
+    document.getElementById('recipe-name').value = name;
+    if (name === 'Daily UK Connect') {
+      addIng('mode','→ Connect');
+      addIng('sheet','UK-Founders · 142 rows');
+      addIng('accounts','Assigned (7) · SC RM GM FH JT LL PV');
+    } else if (name === 'Tuesday status sweep') {
+      addIng('mode','⟳ Check status');
+      addIng('sheet','Spring-UK-Partners-2026 · 350 rows');
+      addIng('accounts','All (12)');
+    } else {
+      addIng('mode','✉ Message');
+      addIng('sheet','Spring-UK-Partners-2026 · 350 rows');
+      addIng('accounts','Assigned (7) · SC RM GM FH JT LL PV');
+    }
+    toast('<strong>Loaded:</strong> ' + name);
+  }
+</script>
+
+</body>
+</html>

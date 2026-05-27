@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ortus · Runbar Location · 3 Variants</title>
+<style>
+  :root {
+    --bg: #0a0a09;
+    --ink: #fafaf9;
+    --muted: #8b867a;
+    --hairline: rgba(250, 250, 249, 0.08);
+    --hairline-strong: rgba(250, 250, 249, 0.16);
+    --gold: #F7BE68;
+    --panel: #14140f;
+    --stop: #e87e5a;
+    --pause: #d4d4d2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.5;
+    padding: 48px 32px 120px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-family: 'Cormorant Garamond', serif; font-size: 2.4rem; font-weight: 500; margin: 0 0 4px; }
+  h1 em { color: var(--gold); font-style: italic; font-weight: 400; }
+  .sub { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.28em; text-transform: uppercase; margin-bottom: 48px; }
+  .meta { color: var(--muted); font-size: 0.85rem; max-width: 700px; margin-bottom: 56px; }
+  h2 { font-family: 'Cormorant Garamond', serif; font-size: 1.5rem; font-weight: 500; margin: 0 0 4px; }
+  h2 .num { color: var(--gold); margin-right: 12px; font-weight: 400; }
+  .blurb { color: var(--muted); font-size: 0.78rem; margin-bottom: 18px; line-height: 1.6; }
+  .tradeoffs { color: var(--muted); font-size: 0.78rem; margin-top: 14px; line-height: 1.7; }
+  .tradeoffs b { color: var(--ink); font-weight: 500; }
+  .pro { color: #9dca7e; }
+  .con { color: #e87e5a; }
+  .variant { margin-bottom: 64px; }
+
+  /* Frame to simulate a dashboard viewport */
+  .frame {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 460px;
+  }
+  .frame-bg {
+    padding: 24px 32px;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+  .frame-bg .crumb { font-size: 0.62rem; letter-spacing: 0.28em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .frame-bg h3 { font-family: 'Cormorant Garamond', serif; font-weight: 500; color: var(--ink); font-size: 1.3rem; margin: 0 0 18px; }
+  .ghost-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 100px 90px 90px;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--hairline);
+    align-items: center;
+    font-size: 0.82rem;
+  }
+  .ghost-row.head { color: var(--muted); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; border-bottom-color: var(--hairline-strong); }
+  .pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    border: 1px solid var(--hairline-strong);
+    font-size: 0.62rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .pill.active { color: #9dca7e; border-color: #9dca7e; }
+  .pill.past   { color: var(--muted); }
+  .ghost-name { color: var(--ink); font-weight: 500; }
+  .ghost-meta { color: var(--muted); }
+
+  /* The 3 runbar shapes */
+  .runbar-shape {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    color: var(--ink);
+    background: var(--panel);
+  }
+  .runbar-identity { display: flex; flex-direction: column; min-width: 220px; }
+  .runbar-name { font-weight: 500; font-size: 0.92rem; }
+  .runbar-text { color: var(--muted); font-size: 0.74rem; margin-top: 2px; }
+  .runbar-group { display: flex; flex-direction: column; gap: 4px; padding-left: 20px; border-left: 1px solid var(--hairline); }
+  .runbar-group:first-of-type { border-left: none; padding-left: 0; }
+  .runbar-group-label { font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  .runbar-buttons { display: flex; gap: 6px; }
+  .rbtn {
+    padding: 6px 14px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 0.74rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .rbtn.start { background: var(--gold); border-color: var(--gold); color: #1a1505; font-weight: 600; }
+  .rbtn.pause { background: #1a1a18; }
+  .rbtn.stop  { background: var(--stop); border-color: var(--stop); color: #1a0a05; }
+  .rbtn.ghost { color: var(--muted); }
+  .runbar-dot { display: inline-block; width: 8px; height: 8px; border-radius: 9999px; margin-right: 10px; }
+  .runbar-dot.running { background: #9dca7e; box-shadow: 0 0 8px #9dca7e80; }
+  .runbar-dot.idle    { background: var(--muted); }
+
+  /* === Variant 1: Fixed-bottom (v2.58 original) === */
+  .v1 .frame-bg { padding-bottom: 90px; }
+  .v1 .runbar-shape {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 14px 32px 14px 32px;
+    border-top: 1px solid var(--hairline-strong);
+    z-index: 10;
+  }
+
+  /* === Variant 2: In-Live-Status section (Sam's current) === */
+  .v2 .live-status-panel {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 24px;
+    margin-top: 24px;
+  }
+  .v2 .live-status-panel .panel-title { font-size: 0.62rem; letter-spacing: 0.28em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .v2 .live-status-panel h4 { font-family: 'Cormorant Garamond', serif; font-size: 1.3rem; font-weight: 500; margin: 0 0 16px; color: var(--ink); }
+  .v2 .runbar-shape {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--hairline);
+    margin-top: 16px;
+    background: transparent;
+  }
+  .v2-warn {
+    position: absolute;
+    right: 24px; bottom: 24px;
+    background: rgba(232, 126, 90, 0.1);
+    border: 1px solid var(--stop);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--stop);
+    font-size: 0.74rem;
+    max-width: 260px;
+  }
+
+  /* === Variant 3: Floating mini-runbar (hybrid) === */
+  .v3 .runbar-shape.mini {
+    position: absolute;
+    right: 24px; bottom: 24px;
+    padding: 12px 18px;
+    border: 1px solid var(--gold);
+    border-radius: 9999px;
+    background: var(--panel);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    gap: 16px;
+    z-index: 10;
+  }
+  .v3 .runbar-shape.mini .runbar-identity { min-width: 0; }
+  .v3 .runbar-shape.mini .runbar-name { font-size: 0.78rem; }
+  .v3 .runbar-shape.mini .runbar-text { font-size: 0.68rem; }
+  .v3 .runbar-shape.mini .rbtn { padding: 4px 10px; font-size: 0.7rem; }
+  .v3-hint {
+    position: absolute;
+    right: 24px; bottom: 80px;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-style: italic;
+  }
+
+  .scroll-indicator {
+    position: absolute;
+    right: 14px; top: 14px;
+    color: var(--muted);
+    font-size: 0.62rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Runbar <em>Location</em> · 3 variants</h1>
+  <div class="sub">Where does the bottom run-control bar live?</div>
+  <div class="meta">
+    Sam's PR moves the runbar from "always pinned to the bottom of the screen" to "inside the Live Status section". Pause / Stop are no longer one-click-away from anywhere — operator has to scroll to Live Status. Three options to consider.
+  </div>
+
+  <!-- VARIANT 1 — Fixed-bottom (v2.58 current ship) -->
+  <div class="variant v1">
+    <h2><span class="num">1</span>Fixed-bottom (current v2.58)</h2>
+    <div class="blurb">Runbar pinned to the bottom of the viewport. Always visible regardless of which tab or section the operator is on. This is what v2.58.0 ships today.</div>
+    <div class="frame">
+      <div class="scroll-indicator">↕ Dashboard view</div>
+      <div class="frame-bg">
+        <div class="crumb">Dashboard · All</div>
+        <h3>Campaigns</h3>
+        <div class="ghost-row head"><div></div><div>Name</div><div>Mode</div><div>Progress</div><div>Status</div></div>
+        <div class="ghost-row"><span class="pill active">Active</span><span class="ghost-name">CC + IC · TEST</span><span class="ghost-meta">CC+IB</span><span class="ghost-meta">0 / 67</span><span class="pill active">Running</span></div>
+        <div class="ghost-row"><span class="pill past">Past</span><span class="ghost-name">May 18 sweep</span><span class="ghost-meta">DM</span><span class="ghost-meta">85 / 90</span><span class="pill past">Completed</span></div>
+        <div class="ghost-row"><span class="pill past">Past</span><span class="ghost-name">EU sweep</span><span class="ghost-meta">CC</span><span class="ghost-meta">42 / 50</span><span class="pill past">Stopped</span></div>
+      </div>
+      <div class="runbar-shape">
+        <div class="runbar-identity">
+          <span class="runbar-name"><span class="runbar-dot running"></span>CC + IC · TEST</span>
+          <span class="runbar-text">Running · CC+IB · 0/67</span>
+        </div>
+        <div class="runbar-group">
+          <div class="runbar-group-label">Run</div>
+          <div class="runbar-buttons">
+            <button class="rbtn start" disabled>Start</button>
+            <button class="rbtn pause">Pause</button>
+            <button class="rbtn stop">Stop</button>
+          </div>
+        </div>
+        <div class="runbar-group">
+          <div class="runbar-group-label">View</div>
+          <div class="runbar-buttons"><button class="rbtn ghost">Status</button></div>
+        </div>
+        <div class="runbar-group">
+          <div class="runbar-group-label">Recovery</div>
+          <div class="runbar-buttons"><button class="rbtn ghost">↻ Force restart</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="tradeoffs">
+      <b class="pro">Pro:</b> Pause / Stop are always one click away. Operator never loses control of a running campaign while scrolling.<br>
+      <b class="pro">Pro:</b> Familiar — testers and Antonio already know this position.<br>
+      <b class="con">Con:</b> Reserves ~60px of vertical space permanently. On small screens (13" MBP), this eats into the dashboard list.<br>
+      <b class="con">Con:</b> Disconnected from where the rest of the live data lives (Live Status section).
+    </div>
+  </div>
+
+  <!-- VARIANT 2 — In-Live-Status (Sam's PR) -->
+  <div class="variant v2">
+    <h2><span class="num">2</span>In Live Status section (Sam's PR)</h2>
+    <div class="blurb">Runbar moved inside the Live Status section. Scrolls with the page. Only visible when the operator is on Live Status. Other tabs (Dashboard / Drafts / Past / etc.) have no runbar.</div>
+    <div class="frame">
+      <div class="scroll-indicator">↕ Dashboard view</div>
+      <div class="frame-bg">
+        <div class="crumb">Dashboard · All</div>
+        <h3>Campaigns</h3>
+        <div class="ghost-row head"><div></div><div>Name</div><div>Mode</div><div>Progress</div><div>Status</div></div>
+        <div class="ghost-row"><span class="pill active">Active</span><span class="ghost-name">CC + IC · TEST</span><span class="ghost-meta">CC+IB</span><span class="ghost-meta">0 / 67</span><span class="pill active">Running</span></div>
+        <div class="ghost-row"><span class="pill past">Past</span><span class="ghost-name">May 18 sweep</span><span class="ghost-meta">DM</span><span class="ghost-meta">85 / 90</span><span class="pill past">Completed</span></div>
+        <div class="ghost-row"><span class="pill past">Past</span><span class="ghost-name">EU sweep</span><span class="ghost-meta">CC</span><span class="ghost-meta">42 / 50</span><span class="pill past">Stopped</span></div>
+      </div>
+      <div class="v2-warn">
+        On Dashboard tab — operator can't see runbar. To Pause / Stop they must click "Live Status" in sidebar first.
+      </div>
+    </div>
+    <div style="margin-top: 16px; color: var(--muted); font-size: 0.74rem;">↓ Same dashboard, but operator has navigated to Live Status:</div>
+    <div class="frame" style="margin-top: 12px; min-height: 360px;">
+      <div class="scroll-indicator">↕ Live Status view</div>
+      <div class="frame-bg">
+        <div class="crumb">Dashboard · Live Status</div>
+        <h3>Live Status</h3>
+        <div style="color: var(--muted); font-size: 0.78rem;">Per-account progress · current action · accept-tracking countdowns · etc.</div>
+        <div class="live-status-panel">
+          <div class="panel-title">Controls</div>
+          <h4>CC + IC · TEST</h4>
+          <div class="runbar-shape">
+            <div class="runbar-identity">
+              <span class="runbar-name"><span class="runbar-dot running"></span>CC + IC · TEST</span>
+              <span class="runbar-text">Running · CC+IB · 0/67</span>
+            </div>
+            <div class="runbar-group">
+              <div class="runbar-group-label">Run</div>
+              <div class="runbar-buttons">
+                <button class="rbtn start" disabled>Start</button>
+                <button class="rbtn pause">Pause</button>
+                <button class="rbtn stop">Stop</button>
+              </div>
+            </div>
+            <div class="runbar-group">
+              <div class="runbar-group-label">View</div>
+              <div class="runbar-buttons"><button class="rbtn ghost">Status</button></div>
+            </div>
+            <div class="runbar-group">
+              <div class="runbar-group-label">Recovery</div>
+              <div class="runbar-buttons"><button class="rbtn ghost">↻ Force restart</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tradeoffs">
+      <b class="pro">Pro:</b> Reclaims ~60px of vertical space on every other tab.<br>
+      <b class="pro">Pro:</b> Controls live next to the data they affect (Live Status panel).<br>
+      <b class="con">Con:</b> Operator on Dashboard / Drafts / Past has no quick way to Pause or Stop. Has to navigate to Live Status first.<br>
+      <b class="con">Con:</b> Hidden state = footgun on a runaway campaign. If something goes wrong while operator is reading Past, they have to click around before they can stop the bot.
+    </div>
+  </div>
+
+  <!-- VARIANT 3 — Hybrid floating mini-runbar -->
+  <div class="variant v3">
+    <h2><span class="num">3</span>Hybrid · floating mini-runbar (only when off Live Status)</h2>
+    <div class="blurb">Full runbar lives inside the Live Status section (same as variant 2). But when the operator navigates anywhere else WHILE a campaign is running, a compact pill appears in the bottom-right corner with just identity + Pause + Stop. Click the pill → jump to Live Status. Idle state = no pill at all.</div>
+    <div class="frame">
+      <div class="scroll-indicator">↕ Dashboard view</div>
+      <div class="frame-bg">
+        <div class="crumb">Dashboard · All</div>
+        <h3>Campaigns</h3>
+        <div class="ghost-row head"><div></div><div>Name</div><div>Mode</div><div>Progress</div><div>Status</div></div>
+        <div class="ghost-row"><span class="pill active">Active</span><span class="ghost-name">CC + IC · TEST</span><span class="ghost-meta">CC+IB</span><span class="ghost-meta">0 / 67</span><span class="pill active">Running</span></div>
+        <div class="ghost-row"><span class="pill past">Past</span><span class="ghost-name">May 18 sweep</span><span class="ghost-meta">DM</span><span class="ghost-meta">85 / 90</span><span class="pill past">Completed</span></div>
+        <div class="ghost-row"><span class="pill past">Past</span><span class="ghost-name">EU sweep</span><span class="ghost-meta">CC</span><span class="ghost-meta">42 / 50</span><span class="pill past">Stopped</span></div>
+      </div>
+      <div class="v3-hint">↓ Pill appears only when off Live Status + campaign running</div>
+      <div class="runbar-shape mini">
+        <div class="runbar-identity">
+          <span class="runbar-name"><span class="runbar-dot running"></span>CC + IC · TEST</span>
+          <span class="runbar-text">0/67 · CC+IB</span>
+        </div>
+        <div class="runbar-buttons">
+          <button class="rbtn pause">Pause</button>
+          <button class="rbtn stop">Stop</button>
+        </div>
+      </div>
+    </div>
+    <div class="tradeoffs">
+      <b class="pro">Pro:</b> Best of both. Full controls live in Live Status (variant 2 pro). Critical Pause / Stop are still one-click reachable everywhere else.<br>
+      <b class="pro">Pro:</b> Idle state has NO bar at all — dashboard reclaims the full 60px even more cleanly than variant 2.<br>
+      <b class="pro">Pro:</b> Pill draws the eye to "something is running" — gentle visual reminder, not nagging.<br>
+      <b class="con">Con:</b> Most complex of the three. Extra state to manage (which tab the operator is on).<br>
+      <b class="con">Con:</b> Mini-pill is a new UI element to design and test. Could feel cluttered if the operator pins it in a corner that overlaps something else.
+    </div>
+  </div>
+</div>
+</body>
+</html>

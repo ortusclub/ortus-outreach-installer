@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Status Card · Shape Variants v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --ink: #0a0a0a;
+  --gray: #6b6b6b;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --gold: #F7BE68;
+  --green: #2e9a4a;
+  --blue:  #2563ab;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px -8px rgba(0,0,0,0.10);
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --surface: #14140f;
+  --ink: #fafafa;
+  --gray: #8b867a;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --green: #3fb950;
+  --blue:  #4d9fff;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.4), 0 6px 16px -10px rgba(0,0,0,0.5);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Hanken Grotesk', system-ui, sans-serif; font-size: 14px; line-height: 1.5; padding: 48px 32px 96px; }
+.wrap { max-width: 960px; margin: 0 auto; }
+
+header.page { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--hairline); }
+header.page h1 { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 32px; letter-spacing: 0.04em; margin: 0; }
+header.page .meta { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.theme-toggle { font: inherit; background: transparent; border: 1px solid var(--hairline); color: var(--ink); padding: 6px 12px; cursor: pointer; border-radius: 9999px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.theme-toggle:hover { border-color: var(--ink); }
+
+.variant { margin-bottom: 64px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.variant-head h2 { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 22px; letter-spacing: 0.05em; margin: 0; }
+.variant-head small { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.variant-note { color: var(--gray); font-size: 12.5px; max-width: 680px; margin: 0 0 20px; }
+
+/* shared bits */
+.glyph { display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 44px; padding: 0 10px; border: 1px solid var(--ink); color: var(--ink); background: transparent; font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.08em; border-radius: 9999px; }
+.btn-pill { font: inherit; padding: 6px 14px; border-radius: 9999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font-size: 12px; letter-spacing: 0.06em; cursor: pointer; }
+.btn-pill:hover { background: var(--ink); color: var(--bg); }
+.row-kebab { font: inherit; background: transparent; border: none; color: var(--gray); cursor: pointer; font-size: 18px; padding: 2px 6px; }
+.row-kebab:hover { color: var(--ink); }
+.bar { position: relative; height: 2px; background: var(--hairline); overflow: hidden; border-radius: 9999px; }
+.bar > i { position: absolute; inset: 0 auto 0 0; background: var(--green); }
+.bar.is-blue > i { background: var(--blue); }
+
+/* dock — same in every variant */
+.dock { display: inline-flex; align-items: center; gap: 2px; }
+.dock-btn { font: inherit; background: transparent; color: var(--ink); border: none; width: 30px; height: 30px; border-radius: 9999px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, transform 0.18s; }
+.dock-btn:hover { background: rgba(0,0,0,0.06); transform: scale(1.16); }
+body.theme-dark .dock-btn:hover { background: rgba(255,255,255,0.08); }
+.dock-btn svg { width: 15px; height: 15px; pointer-events: none; }
+.dock-btn .icon-circled, .dock-trigger svg { width: 17px; height: 17px; }
+.dock-btn.danger { color: #c44; }
+body.theme-dark .dock-btn.danger { color: #f85149; }
+.dock-btn.danger:hover { background: rgba(196,68,68,0.10); }
+.dock-sep { width: 1px; height: 14px; background: var(--hairline); margin: 0 4px; }
+.dock-actions { display: inline-flex; align-items: center; gap: 2px; overflow: hidden; max-width: 0; transition: max-width 0.26s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.dock[data-open="true"] .dock-actions { max-width: 200px; }
+.dock-trigger-icon { transition: transform 0.22s ease; }
+.dock[data-open="true"] .dock-trigger-icon { transform: rotate(180deg); }
+
+.tag { display: inline-flex; align-items: center; gap: 8px; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+.tag .dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--green); display: inline-block; }
+.tag.is-monitor .dot { background: var(--blue); }
+
+.global-tip { position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.12s ease; background: var(--ink); color: var(--bg); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 8px; border-radius: 3px; white-space: nowrap; z-index: 999; transform: translate(-50%, -100%); }
+.global-tip.is-visible { opacity: 1; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT D — Console / Terminal
+   Bracketed, monospace, ASCII progress bar. Leans HARD into the
+   "Bugatti command-deck" brand — feels native, not generic dashboard.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vd-card {
+  background: var(--surface); border: 1px solid var(--ink);
+  padding: 14px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  position: relative;
+}
+.vd-card + .vd-card { margin-top: 12px; }
+.vd-card::before {
+  content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 3px; background: var(--green);
+}
+.vd-card.is-monitor::before { background: var(--blue); }
+.vd-head { display: flex; align-items: center; gap: 12px; color: var(--gray); margin-bottom: 8px; }
+.vd-head .label { color: var(--ink); font-weight: 500; letter-spacing: 0.06em; }
+.vd-head .name { color: var(--ink); font-weight: 500; }
+.vd-row { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
+.vd-row .key { color: var(--gray); width: 88px; text-transform: lowercase; }
+.vd-row .val { color: var(--ink); }
+.vd-row .val b { font-weight: 500; }
+.vd-ascii { letter-spacing: -0.04em; color: var(--ink); }
+.vd-ascii .fill { color: var(--green); }
+.vd-card.is-monitor .vd-ascii .fill { color: var(--blue); }
+.vd-foot { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--hairline); }
+.vd-foot .prompt { color: var(--gray); }
+.vd-foot .right-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT E — Editorial Hero
+   Magazine-spread feel. Bebas Neue mega name as the dominant element.
+   Stats as a column of figures. Hero typography over generic card chrome.
+   ═════════════════════════════════════════════════════════════════════════ */
+.ve-card {
+  background: var(--surface); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink);
+  padding: 28px 8px 22px; position: relative;
+  display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: end;
+}
+.ve-card + .ve-card { margin-top: 32px; }
+.ve-card::before {
+  content: ""; position: absolute; left: 0; top: 0; height: 3px; width: 64px; background: var(--green);
+}
+.ve-card.is-monitor::before { background: var(--blue); }
+.ve-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ve-eyebrow .num { font-family: 'Bebas Neue', sans-serif; font-size: 18px; color: var(--gray); letter-spacing: 0.05em; }
+.ve-name { font-family: 'Bebas Neue', sans-serif; font-size: 48px; font-weight: 400; letter-spacing: 0.02em; line-height: 0.95; margin: 0 0 14px; }
+.ve-meta { display: flex; gap: 32px; align-items: baseline; color: var(--gray); font-size: 12.5px; }
+.ve-meta .figure { display: flex; flex-direction: column; }
+.ve-meta .figure b { font-family: 'Bebas Neue', sans-serif; font-size: 26px; color: var(--ink); letter-spacing: 0.02em; font-weight: 400; line-height: 1; }
+.ve-meta .figure span { font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; margin-top: 4px; }
+.ve-right { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; min-width: 220px; }
+.ve-bar-wrap { width: 220px; }
+.ve-bar-label { display: flex; justify-content: space-between; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-bottom: 4px; }
+.ve-bar-label b { color: var(--ink); font-weight: 500; }
+.ve-controls { display: flex; align-items: center; gap: 12px; }
+.ve-status { color: var(--gray); font-size: 11px; letter-spacing: 0.04em; text-align: right; }
+.ve-status b { color: var(--ink); font-weight: 500; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT F — Boarding Pass
+   Two-section card with a perforated/notched divider between the info side
+   and the controls side. Irregular shape — distinctly NOT a generic card.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vf-card {
+  position: relative; background: var(--surface); border: 1px solid var(--hairline);
+  display: grid; grid-template-columns: 1fr 1px 220px; align-items: stretch;
+  box-shadow: var(--shadow-soft);
+  /* notches cut top + bottom at the column boundary */
+  --notch-x: calc(100% - 220px);
+}
+.vf-card + .vf-card { margin-top: 16px; }
+.vf-card::before, .vf-card::after {
+  content: ""; position: absolute; left: var(--notch-x); width: 14px; height: 14px;
+  background: var(--bg); border: 1px solid var(--hairline); border-radius: 9999px;
+  transform: translateX(-50%);
+}
+.vf-card::before { top: -7px; }
+.vf-card::after  { bottom: -7px; }
+.vf-info { padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; }
+.vf-eyebrow { display: flex; align-items: center; gap: 10px; }
+.vf-name-row { display: flex; align-items: center; gap: 12px; }
+.vf-name { font-size: 17px; font-weight: 500; }
+.vf-meta { display: flex; gap: 18px; color: var(--gray); font-size: 12px; }
+.vf-meta b { color: var(--ink); font-weight: 500; }
+.vf-bar-row { margin-top: 4px; display: flex; align-items: center; gap: 12px; color: var(--gray); font-size: 11px; letter-spacing: 0.04em; }
+.vf-bar-row b { color: var(--ink); font-weight: 500; }
+.vf-bar-row .bar { flex: 1; }
+.vf-divider {
+  background: transparent;
+  background-image: linear-gradient(to bottom, var(--hairline) 50%, transparent 50%);
+  background-size: 2px 8px; background-repeat: repeat-y;
+}
+.vf-controls { padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; align-items: stretch; justify-content: space-between; background: var(--bg); position: relative; }
+.vf-controls::before {
+  content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px; background: var(--green);
+}
+.vf-card.is-monitor .vf-controls::before { background: var(--blue); }
+.vf-status { color: var(--gray); font-size: 11px; letter-spacing: 0.04em; }
+.vf-status b { color: var(--ink); font-weight: 500; display: block; }
+.vf-controls .row { display: flex; align-items: center; gap: 10px; }
+.vf-controls .row .dock { margin-right: auto; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT G — Mission Control Grid
+   Most PhantomBuster-like — break the card into a grid of mini tiles.
+   One tile per concern: identity · sent · accepted · replies · controls.
+   Modular and easy to scan when you have multiple parallel campaigns later.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vg-card {
+  position: relative; padding: 0;
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, 0.6fr) 1.2fr;
+  gap: 6px;
+}
+.vg-card + .vg-card { margin-top: 14px; }
+.vg-tile {
+  background: var(--surface); border: 1px solid var(--hairline-soft); padding: 14px 16px;
+  display: flex; flex-direction: column; justify-content: space-between; min-height: 96px;
+  position: relative;
+}
+.vg-tile.identity { padding-top: 18px; }
+.vg-tile.identity::before {
+  content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; background: var(--green);
+}
+.vg-card.is-monitor .vg-tile.identity::before { background: var(--blue); }
+.vg-tile-label { font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); margin-bottom: 4px; }
+.vg-stat { font-family: 'Bebas Neue', sans-serif; font-size: 32px; line-height: 1; letter-spacing: 0.02em; }
+.vg-stat .pct { color: var(--gray); font-size: 12px; font-family: 'Hanken Grotesk', sans-serif; margin-left: 6px; letter-spacing: 0; }
+.vg-name { font-size: 15px; font-weight: 500; margin-top: 6px; }
+.vg-when { color: var(--gray); font-size: 11px; margin-top: 2px; }
+.vg-tile.controls { display: flex; flex-direction: column; gap: 8px; align-items: stretch; padding: 12px 14px; }
+.vg-tile.controls .row { display: flex; align-items: center; gap: 8px; }
+.vg-tile.controls .row .dock { margin-right: auto; }
+.vg-tile.controls .status { color: var(--gray); font-size: 10.5px; letter-spacing: 0.04em; }
+.vg-tile.controls .status b { color: var(--ink); font-weight: 500; }
+.vg-tile.controls .bar { margin-top: auto; }
+
+footer.legend { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 12px; }
+footer.legend ul { margin: 8px 0 0; padding-left: 18px; }
+footer.legend strong { color: var(--ink); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>Status Card · Shape Variants v2</h1>
+    <div class="meta">4 more directions · further from the rectangular band</div>
+  </div>
+  <button class="theme-toggle" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</header>
+
+<!-- ─────────────── VARIANT D — Console / Terminal ─────────────── -->
+<section class="variant" id="variant-d">
+  <div class="variant-head"><h2>D · Console</h2><small>terminal feel · brand-native · ascii progress</small></div>
+  <p class="variant-note">Leans into the Bugatti command-deck identity instead of fighting it. Mono type, key/value rows, ASCII progress bar. Stays rectangular by design — the visual interest comes from typography and the bracketed structure, not from rounding. Feels native to the app, not stamped on from a component library.</p>
+
+  <div class="vd-card">
+    <div class="vd-head"><span class="label">[NOW ACTIVE]</span><span>›</span><span class="name">EU FOUNDER PUSH Q2</span><span style="margin-left:auto;">2h ago</span></div>
+    <div class="vd-row"><span class="key">mode</span><span class="val">connect + introduce-back</span></div>
+    <div class="vd-row"><span class="key">progress</span><span class="val vd-ascii"><span class="fill">████████████</span>░░░░░░░░░░░░░ <b>49%</b>  <span style="color:var(--gray)">(58/120)</span></span></div>
+    <div class="vd-row"><span class="key">accepted</span><span class="val"><b>13</b> <span style="color:var(--gray)">· 22.4%</span></span></div>
+    <div class="vd-row"><span class="key">replies</span><span class="val"><b>3</b></span></div>
+    <div class="vd-foot">
+      <span class="prompt">$ sending — batch every 30 min · next in 06m 30s</span>
+      <div class="right-actions">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="vd-card is-monitor">
+    <div class="vd-head"><span class="label">[MONITORING]</span><span>›</span><span class="name">EU FOUNDER PUSH Q1</span><span style="margin-left:auto;">day 3 of 7</span></div>
+    <div class="vd-row"><span class="key">mode</span><span class="val">connect + introduce-back</span></div>
+    <div class="vd-row"><span class="key">window</span><span class="val vd-ascii"><span class="fill">████████████</span>░░░░░░░░░░░░░░░ <b>43%</b>  <span style="color:var(--gray)">(day 3/7)</span></span></div>
+    <div class="vd-row"><span class="key">sent</span><span class="val"><b>108</b></span></div>
+    <div class="vd-row"><span class="key">accepted</span><span class="val"><b>11</b> <span style="color:var(--gray)">· 10.2%</span></span></div>
+    <div class="vd-row"><span class="key">replies</span><span class="val"><b>11</b></span></div>
+    <div class="vd-foot">
+      <span class="prompt">$ watching — sweeps every 30 min · next in 20m 49s</span>
+      <div class="right-actions">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── VARIANT E — Editorial Hero ─────────────── -->
+<section class="variant" id="variant-e">
+  <div class="variant-head"><h2>E · Editorial Hero</h2><small>magazine spread · big bebas headline</small></div>
+  <p class="variant-note">The campaign name becomes the hero — 48px Bebas Neue, treated like an article title. Top and bottom hairline rules instead of a card. Stats sit below as a column of figures (Bebas numerals for weight). Most ambitious visual statement; works best if you're okay with each active campaign claiming a lot of vertical space.</p>
+
+  <div class="ve-card">
+    <div>
+      <div class="ve-eyebrow"><span class="num">01</span><span class="tag"><span class="dot"></span>Now Active</span><div class="glyph" style="height:22px;min-width:36px;font-size:12px;">C+I</div><span style="color:var(--gray);font-size:12px;">started 2h ago</span></div>
+      <h3 class="ve-name">EU Founder Push Q2</h3>
+      <div class="ve-meta">
+        <div class="figure"><b>58 / 120</b><span>Sent</span></div>
+        <div class="figure"><b>13</b><span>Accepted</span></div>
+        <div class="figure"><b>3</b><span>Replies</span></div>
+        <div class="figure"><b>49%</b><span>Progress</span></div>
+      </div>
+    </div>
+    <div class="ve-right">
+      <div class="ve-bar-wrap">
+        <div class="ve-bar-label"><span>Sending</span><b>06m 30s</b></div>
+        <div class="bar"><i style="width:49%"></i></div>
+      </div>
+      <div class="ve-controls">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ve-card is-monitor">
+    <div>
+      <div class="ve-eyebrow"><span class="num">02</span><span class="tag is-monitor"><span class="dot"></span>Monitoring</span><div class="glyph" style="height:22px;min-width:36px;font-size:12px;">C+I</div><span style="color:var(--gray);font-size:12px;">finished 3d ago</span></div>
+      <h3 class="ve-name">EU Founder Push Q1</h3>
+      <div class="ve-meta">
+        <div class="figure"><b>108</b><span>Sent</span></div>
+        <div class="figure"><b>11</b><span>Accepted</span></div>
+        <div class="figure"><b>11</b><span>Replies</span></div>
+        <div class="figure"><b>Day 3/7</b><span>Window</span></div>
+      </div>
+    </div>
+    <div class="ve-right">
+      <div class="ve-bar-wrap">
+        <div class="ve-bar-label"><span>Watching</span><b>20m 49s</b></div>
+        <div class="bar is-blue"><i style="width:43%"></i></div>
+      </div>
+      <div class="ve-controls">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── VARIANT F — Boarding Pass ─────────────── -->
+<section class="variant" id="variant-f">
+  <div class="variant-head"><h2>F · Boarding Pass</h2><small>perforated divider · irregular shape</small></div>
+  <p class="variant-note">Two-panel card with a perforated divider between info and controls — like a paper ticket stub. The notches cut into the top and bottom edge make the shape recognisably not-a-rectangle without using big radii. Controls side gets a subtle background tint to read as a separate panel.</p>
+
+  <div class="vf-card">
+    <div class="vf-info">
+      <div class="vf-eyebrow"><span class="tag"><span class="dot"></span>Now Active · 1 Campaign</span></div>
+      <div class="vf-name-row">
+        <div class="glyph">C+I</div>
+        <div class="vf-name">EU Founder Push Q2</div>
+        <span style="color:var(--gray);font-size:12px;margin-left:auto;">started 2h ago</span>
+      </div>
+      <div class="vf-meta"><span><b>58</b> / 120 sent</span><span><b>13</b> accepted</span><span><b>3</b> replies</span></div>
+      <div class="vf-bar-row"><b>49%</b><div class="bar"><i style="width:49%"></i></div></div>
+    </div>
+    <div class="vf-divider" aria-hidden="true"></div>
+    <div class="vf-controls">
+      <div class="vf-status">Sending<b>Next batch in 06m 30s</b></div>
+      <div class="row">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="vf-card is-monitor">
+    <div class="vf-info">
+      <div class="vf-eyebrow"><span class="tag is-monitor"><span class="dot"></span>Monitoring · 7-Day Watch</span></div>
+      <div class="vf-name-row">
+        <div class="glyph">C+I</div>
+        <div class="vf-name">EU Founder Push Q1</div>
+        <span style="color:var(--gray);font-size:12px;margin-left:auto;">day 3 of 7</span>
+      </div>
+      <div class="vf-meta"><span><b>108</b> sent</span><span><b>11</b> accepted</span><span><b>11</b> replies</span></div>
+      <div class="vf-bar-row"><b>43%</b><div class="bar is-blue"><i style="width:43%"></i></div></div>
+    </div>
+    <div class="vf-divider" aria-hidden="true"></div>
+    <div class="vf-controls">
+      <div class="vf-status">Watching<b>Next sweep in 20m 49s</b></div>
+      <div class="row">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── VARIANT G — Mission Control Grid ─────────────── -->
+<section class="variant" id="variant-g">
+  <div class="variant-head"><h2>G · Mission Control</h2><small>modular tile grid · phantombuster-like</small></div>
+  <p class="variant-note">Closest to the PhantomBuster reference Sam shared. Each concern (identity, sent, accepted, replies, controls) gets its own mini-tile in a 5-column grid. Scales gracefully if you ever run more than one campaign in parallel — they'd stack as identical strips. The trade-off: each row takes more horizontal space.</p>
+
+  <div class="vg-card">
+    <div class="vg-tile identity">
+      <div>
+        <div class="vg-tile-label"><span class="tag"><span class="dot"></span>Now Active</span></div>
+        <div class="vg-name">EU Founder Push Q2</div>
+        <div class="vg-when">C+I · started 2h ago</div>
+      </div>
+    </div>
+    <div class="vg-tile">
+      <div class="vg-tile-label">Sent</div>
+      <div class="vg-stat">58<span class="pct">/120</span></div>
+    </div>
+    <div class="vg-tile">
+      <div class="vg-tile-label">Accepted</div>
+      <div class="vg-stat">13<span class="pct">22.4%</span></div>
+    </div>
+    <div class="vg-tile">
+      <div class="vg-tile-label">Replies</div>
+      <div class="vg-stat">3</div>
+    </div>
+    <div class="vg-tile controls">
+      <div class="row">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+      </div>
+      <div class="status"><b>Sending</b> · next batch 06m 30s</div>
+      <div class="bar"><i style="width:49%"></i></div>
+    </div>
+  </div>
+
+  <div class="vg-card is-monitor">
+    <div class="vg-tile identity">
+      <div>
+        <div class="vg-tile-label"><span class="tag is-monitor"><span class="dot"></span>Monitoring</span></div>
+        <div class="vg-name">EU Founder Push Q1</div>
+        <div class="vg-when">C+I · day 3 of 7</div>
+      </div>
+    </div>
+    <div class="vg-tile">
+      <div class="vg-tile-label">Sent</div>
+      <div class="vg-stat">108</div>
+    </div>
+    <div class="vg-tile">
+      <div class="vg-tile-label">Accepted</div>
+      <div class="vg-stat">11<span class="pct">10.2%</span></div>
+    </div>
+    <div class="vg-tile">
+      <div class="vg-tile-label">Replies</div>
+      <div class="vg-stat">11</div>
+    </div>
+    <div class="vg-tile controls">
+      <div class="row">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+      </div>
+      <div class="status"><b>Watching</b> · next sweep 20m 49s</div>
+      <div class="bar is-blue"><i style="width:43%"></i></div>
+    </div>
+  </div>
+</section>
+
+<footer class="legend">
+  <strong>Direction summary across v1 + v2:</strong>
+  <ul>
+    <li><strong>A · Cockpit Tile</strong> — rounded card + accent rail + floating tag (v1)</li>
+    <li><strong>B · Asymmetric Hero</strong> — circular ring as anchor, 3-col grid (v1)</li>
+    <li><strong>C · Media-Player Strip</strong> — fully rounded pill with progress as bottom edge (v1)</li>
+    <li><strong>D · Console</strong> — terminal feel, ascii bar, brand-native (v2)</li>
+    <li><strong>E · Editorial Hero</strong> — 48px Bebas headline, magazine spread (v2)</li>
+    <li><strong>F · Boarding Pass</strong> — perforated divider, irregular notched shape (v2)</li>
+    <li><strong>G · Mission Control</strong> — modular tile grid, phantombuster pattern (v2)</li>
+  </ul>
+</footer>
+
+</div>
+
+<div class="global-tip" id="globalTip" aria-hidden="true"></div>
+
+<script>
+function toggleDock(triggerBtn, event) {
+  event?.stopPropagation?.();
+  const dock = triggerBtn.closest('.dock');
+  const opening = dock.getAttribute('data-open') !== 'true';
+  document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+    if (d !== dock) { d.setAttribute('data-open', 'false'); d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false'); }
+  });
+  dock.setAttribute('data-open', opening ? 'true' : 'false');
+  triggerBtn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dock')) {
+    document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+      d.setAttribute('data-open', 'false');
+      d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+    });
+  }
+});
+const tip = document.getElementById('globalTip');
+document.body.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]'); if (!t) return;
+  tip.textContent = t.getAttribute('data-tip');
+  const r = t.getBoundingClientRect();
+  tip.style.left = (r.left + r.width / 2) + 'px';
+  tip.style.top  = (r.top - 6) + 'px';
+  tip.classList.add('is-visible');
+});
+document.body.addEventListener('mouseout', e => {
+  if (e.target.closest('[data-tip]')) tip.classList.remove('is-visible');
+});
+</script>
+
+</body>
+</html>

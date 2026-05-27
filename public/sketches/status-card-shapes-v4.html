@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Status Card · Shape Variants v4 (J)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --ink: #0a0a0a;
+  --gray: #6b6b6b;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --green: #2e9a4a;
+  --blue:  #2563ab;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px -8px rgba(0,0,0,0.12);
+  --shadow-ink:  0 1px 0 rgba(0,0,0,0.06), 0 14px 30px -18px rgba(0,0,0,0.45);
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --surface: #14140f;
+  --ink: #fafafa;
+  --gray: #8b867a;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --green: #3fb950;
+  --blue:  #4d9fff;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.4), 0 6px 16px -10px rgba(0,0,0,0.5);
+  --shadow-ink:  0 1px 0 rgba(0,0,0,0.5), 0 20px 38px -22px rgba(0,0,0,0.8);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Hanken Grotesk', system-ui, sans-serif; font-size: 14px; line-height: 1.5; padding: 48px 32px 96px; }
+.wrap { max-width: 960px; margin: 0 auto; }
+
+header.page { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--hairline); }
+header.page h1 { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 32px; letter-spacing: 0.04em; margin: 0; }
+header.page .meta { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.theme-toggle { font: inherit; background: transparent; border: 1px solid var(--hairline); color: var(--ink); padding: 6px 12px; cursor: pointer; border-radius: 9999px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.theme-toggle:hover { border-color: var(--ink); }
+
+.variant { margin-bottom: 64px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.variant-head h2 { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 22px; letter-spacing: 0.05em; margin: 0; }
+.variant-head small { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.variant-note { color: var(--gray); font-size: 12.5px; max-width: 720px; margin: 0 0 20px; }
+.variant-note b { color: var(--ink); font-weight: 500; }
+
+/* shared */
+.tag { display: inline-flex; align-items: center; gap: 8px; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; }
+.tag .dot { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }
+.row-kebab { font: inherit; background: transparent; border: none; color: inherit; cursor: pointer; font-size: 18px; padding: 2px 6px; opacity: 0.6; }
+.row-kebab:hover { opacity: 1; }
+
+.global-tip { position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.12s ease; background: var(--ink); color: var(--bg); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 8px; border-radius: 3px; white-space: nowrap; z-index: 999; transform: translate(-50%, -100%); }
+.global-tip.is-visible { opacity: 1; }
+
+/* ─── dock pill (inline rightward expansion, same mechanic as dashboard) ─── */
+.dock-pill {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px 5px; border-radius: 9999px;
+  border: 1px solid currentColor;
+  color: inherit;
+}
+.dock-pill .dock-btn {
+  font: inherit; background: transparent; color: inherit; border: none;
+  width: 26px; height: 26px; border-radius: 9999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s, transform 0.18s;
+}
+.dock-pill .dock-btn svg { width: 13px; height: 13px; pointer-events: none; }
+.dock-pill .dock-btn .icon-circled, .dock-pill .dock-trigger svg { width: 15px; height: 15px; }
+.dock-pill .dock-btn:active { transform: scale(0.96); }
+.dock-pill .dock-sep { width: 1px; height: 12px; background: currentColor; opacity: 0.4; margin: 0 2px; }
+
+.dock-pill .dock-actions {
+  display: inline-flex; align-items: center; gap: 2px;
+  overflow: hidden; max-width: 0;
+  transition: max-width 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.dock-pill[data-open="true"] .dock-actions { max-width: 130px; }
+
+/* chevron points RIGHT closed, rotates 180° LEFT when open */
+.dock-trigger-icon { transition: transform 0.22s ease; }
+.dock-pill[data-open="true"] .dock-trigger-icon { transform: rotate(180deg); }
+
+/* hover backgrounds by surface */
+.on-ink .dock-pill .dock-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.12); }
+.on-ink .dock-pill .dock-btn.danger { color: #ff8a82; }
+.on-ink .dock-pill .dock-btn.danger:hover { background: rgba(255,138,130,0.16); }
+
+.on-paper .dock-pill .dock-btn:hover { background: rgba(0,0,0,0.06); transform: scale(1.12); }
+body.theme-dark .on-paper .dock-pill .dock-btn:hover { background: rgba(255,255,255,0.08); }
+.on-paper .dock-pill .dock-btn.danger { color: #c44; }
+body.theme-dark .on-paper .dock-pill .dock-btn.danger { color: #f85149; }
+.on-paper .dock-pill .dock-btn.danger:hover { background: rgba(196,68,68,0.10); }
+
+/* Open button variants — sit next to the dock pill */
+.vj-open-ink { font: inherit; padding: 7px 18px; border-radius: 9999px; background: rgba(255,255,255,0.16); color: #fafafa; border: none; font-size: 12px; letter-spacing: 0.06em; cursor: pointer; transition: background 0.15s; }
+.vj-open-ink:hover { background: rgba(255,255,255,0.26); }
+.vj-open-paper { font: inherit; padding: 6px 16px; border-radius: 9999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font-size: 12px; letter-spacing: 0.06em; cursor: pointer; }
+.vj-open-paper:hover { background: var(--ink); color: var(--bg); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT J — Horizontal Progress + Clustered Controls
+   - Progress bar runs horizontally under the campaign title
+   - C+I circle badge top-right of the card
+   - Open + dock pill clustered at bottom-right
+   ═════════════════════════════════════════════════════════════════════════ */
+
+.vj-ink, .vj-paper {
+  position: relative;
+  border-radius: 10px;
+  padding: 22px 26px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto auto auto auto;
+  gap: 14px 24px;
+  grid-template-areas:
+    "eyebrow glyph"
+    "name    glyph"
+    "bar     bar"
+    "hero    hero"
+    "stats   controls";
+}
+.vj-ink + .vj-ink, .vj-paper + .vj-paper { margin-top: 16px; }
+
+/* J · INK — dark billboard */
+.vj-ink {
+  color: #fafafa;
+  background: #0a0a0a;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0),
+    linear-gradient(to bottom right, #141414, #0a0a0a);
+  background-size: 6px 6px, 100% 100%;
+  box-shadow: var(--shadow-ink);
+}
+
+/* J · PAPER — native paper surface */
+.vj-paper {
+  background: var(--surface);
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0);
+  background-size: 6px 6px;
+  border: 1px solid var(--hairline-soft);
+  box-shadow: var(--shadow-soft);
+}
+body.theme-dark .vj-paper { background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0); }
+
+/* eyebrow row */
+.vj-eyebrow { grid-area: eyebrow; display: flex; align-items: center; gap: 12px; }
+.vj-ink .vj-eyebrow { color: rgba(255,255,255,0.85); }
+.vj-paper .vj-eyebrow { color: var(--gray); }
+.vj-eyebrow .tag .dot { background: var(--green); }
+.is-monitor .vj-eyebrow .tag .dot { background: var(--blue); }
+.vj-when { font-size: 11px; }
+.vj-ink .vj-when { color: rgba(255,255,255,0.55); }
+.vj-paper .vj-when { color: var(--gray); }
+
+/* C+I badge — sits in top-right corner, spans 2 rows so it floats next to name */
+.vj-glyph-circle {
+  grid-area: glyph;
+  align-self: start;
+  width: 44px; height: 44px; border-radius: 9999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.08em;
+}
+.vj-ink .vj-glyph-circle { border: 1px solid rgba(255,255,255,0.35); color: #fafafa; }
+.vj-paper .vj-glyph-circle { border: 1px solid var(--ink); color: var(--ink); }
+
+/* campaign name */
+.vj-name {
+  grid-area: name;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 36px; font-weight: 400; letter-spacing: 0.02em; line-height: 1;
+  margin: 0;
+}
+.vj-paper .vj-name { color: var(--ink); }
+
+/* horizontal progress bar — full width, sits under the title */
+.vj-hbar { grid-area: bar; position: relative; height: 3px; border-radius: 9999px; overflow: hidden; }
+.vj-ink .vj-hbar { background: rgba(255,255,255,0.15); }
+.vj-paper .vj-hbar { background: var(--hairline); }
+.vj-hbar > i {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--green); border-radius: 9999px; transition: width 0.4s ease;
+}
+.is-monitor .vj-hbar > i { background: var(--blue); }
+
+/* hero metric block — uses display:contents so .vj-hero-row + .vj-stats become
+   direct grid children, letting stats sit on the same row as the controls */
+.vj-hero { display: contents; }
+.vj-hero-row { grid-area: hero; display: flex; align-items: baseline; gap: 18px; }
+.vj-hero .num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 52px; line-height: 0.9; letter-spacing: 0.01em;
+}
+.vj-hero .num .sub { font-size: 22px; opacity: 0.55; margin-left: 4px; }
+.vj-paper .vj-hero .num { color: var(--ink); }
+.vj-meta { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.vj-ink .vj-meta { color: rgba(255,255,255,0.7); }
+.vj-paper .vj-meta { color: var(--gray); }
+.vj-meta b { font-weight: 500; }
+.vj-ink .vj-meta b { color: #fafafa; }
+.vj-paper .vj-meta b { color: var(--ink); }
+.vj-stats { grid-area: stats; align-self: center; display: flex; gap: 14px; font-size: 11.5px; letter-spacing: 0.04em; flex-wrap: wrap; }
+.vj-ink .vj-stats { color: rgba(255,255,255,0.65); }
+.vj-paper .vj-stats { color: var(--gray); }
+.vj-stats b { font-weight: 500; }
+.vj-ink .vj-stats b { color: #fafafa; }
+.vj-paper .vj-stats b { color: var(--ink); }
+
+/* control cluster — Open + dock pill, sits in column 2 of the stats row */
+.vj-controls {
+  grid-area: controls;
+  align-self: center; justify-self: end;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+
+footer.legend { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 12px; }
+footer.legend strong { color: var(--ink); font-weight: 500; }
+footer.legend ul { margin: 8px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>Status Card · Vertical Rail (J)</h1>
+    <div class="meta">horizontal bar · Open clustered next to dock</div>
+  </div>
+  <button class="theme-toggle" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</header>
+
+<section class="variant" id="translation-note">
+  <div class="variant-head"><h2>This revision</h2><small>vs. the previous vertical-rail v4</small></div>
+  <p class="variant-note">Progress bar is back to <b>horizontal, sitting right under the campaign title</b>. The C+I circle badge stays in the top-right corner. Open button and dock pill are now <b>clustered at the bottom-right as a single control row</b> — [Open] [Pause | ›]. Dock expansion is back to the original inline rightward mechanic (chevron-right → chevron-left); the whole control row shifts left as the dock widens, keeping it anchored to the card's right edge. No more floating-tray-with-shadow since the dock has room to grow inline now.</p>
+</section>
+
+<!-- ─────────────── J · INK ─────────────── -->
+<section class="variant" id="variant-j-ink">
+  <div class="variant-head"><h2>J · Ink</h2><small>dark surface · billboard feel</small></div>
+
+  <div class="vj-ink on-ink">
+    <div class="vj-eyebrow">
+      <span class="tag"><span class="dot"></span>Now Active · 1 Campaign</span>
+      <span class="vj-when">started 2h ago</span>
+    </div>
+    <div class="vj-glyph-circle">C+I</div>
+    <h3 class="vj-name">EU FOUNDER PUSH Q2</h3>
+    <div class="vj-hbar"><i style="width:49%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num">49<span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>58</b> of 120 sent</span>
+          <span>Next batch in <b>06m 30s</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>13</b> accepted</span>
+        <span><b>3</b> replies</span>
+        <span>· Sending · batch every 30 min</span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="vj-open-ink">Open</button>
+      <div class="dock-pill" data-open="false" role="toolbar">
+        <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <span class="dock-sep"></span>
+        <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="More" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+  </div>
+
+  <div class="vj-ink on-ink is-monitor">
+    <div class="vj-eyebrow">
+      <span class="tag"><span class="dot"></span>Monitoring · 7-Day Watch</span>
+      <span class="vj-when">finished 3d ago</span>
+    </div>
+    <div class="vj-glyph-circle">C+I</div>
+    <h3 class="vj-name">EU FOUNDER PUSH Q1</h3>
+    <div class="vj-hbar"><i style="width:43%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num">43<span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span>Day <b>3</b> of 7</span>
+          <span>Next sweep in <b>20m 49s</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>108</b> sent</span>
+        <span><b>11</b> accepted</span>
+        <span><b>11</b> replies</span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="vj-open-ink">Open</button>
+      <div class="dock-pill" data-open="false" role="toolbar">
+        <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <span class="dock-sep"></span>
+        <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── J · PAPER ─────────────── -->
+<section class="variant" id="variant-j-paper">
+  <div class="variant-head"><h2>J · Paper</h2><small>light surface · quieter</small></div>
+
+  <div class="vj-paper on-paper">
+    <div class="vj-eyebrow">
+      <span class="tag"><span class="dot"></span>Now Active · 1 Campaign</span>
+      <span class="vj-when">started 2h ago</span>
+    </div>
+    <div class="vj-glyph-circle">C+I</div>
+    <h3 class="vj-name">EU FOUNDER PUSH Q2</h3>
+    <div class="vj-hbar"><i style="width:49%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num">49<span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>58</b> of 120 sent</span>
+          <span>Next batch in <b>06m 30s</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>13</b> accepted</span>
+        <span><b>3</b> replies</span>
+        <span>· Sending · batch every 30 min</span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="vj-open-paper">Open</button>
+      <div class="dock-pill" data-open="false" role="toolbar">
+        <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <span class="dock-sep"></span>
+        <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+  </div>
+
+  <div class="vj-paper on-paper is-monitor">
+    <div class="vj-eyebrow">
+      <span class="tag"><span class="dot"></span>Monitoring · 7-Day Watch</span>
+      <span class="vj-when">finished 3d ago</span>
+    </div>
+    <div class="vj-glyph-circle">C+I</div>
+    <h3 class="vj-name">EU FOUNDER PUSH Q1</h3>
+    <div class="vj-hbar"><i style="width:43%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num">43<span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span>Day <b>3</b> of 7</span>
+          <span>Next sweep in <b>20m 49s</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>108</b> sent</span>
+        <span><b>11</b> accepted</span>
+        <span><b>11</b> replies</span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="vj-open-paper">Open</button>
+      <div class="dock-pill" data-open="false" role="toolbar">
+        <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <span class="dock-sep"></span>
+        <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+  </div>
+</section>
+
+<footer class="legend">
+  <strong>Layout grid:</strong>
+  <ul>
+    <li>Row 1 — eyebrow (green/blue dot + "Now Active") on the left, C+I circle badge on the right</li>
+    <li>Row 2 — campaign name (Bebas 36px), C+I badge spans down from row 1</li>
+    <li>Row 3 — full-width horizontal progress bar (3px, fills left-to-right)</li>
+    <li>Row 4 — 49% hero metric + stats stack</li>
+    <li>Row 5 — Open button + dock pill clustered at the right edge</li>
+  </ul>
+</footer>
+
+</div>
+
+<div class="global-tip" id="globalTip" aria-hidden="true"></div>
+
+<script>
+function toggleDock(triggerBtn, event) {
+  event?.stopPropagation?.();
+  const pill = triggerBtn.closest('.dock-pill');
+  const opening = pill.getAttribute('data-open') !== 'true';
+  document.querySelectorAll('.dock-pill[data-open="true"]').forEach(d => {
+    if (d !== pill) { d.setAttribute('data-open', 'false'); d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false'); }
+  });
+  pill.setAttribute('data-open', opening ? 'true' : 'false');
+  triggerBtn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dock-pill')) {
+    document.querySelectorAll('.dock-pill[data-open="true"]').forEach(d => {
+      d.setAttribute('data-open', 'false');
+      d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+    });
+  }
+});
+const tip = document.getElementById('globalTip');
+document.body.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]'); if (!t) return;
+  tip.textContent = t.getAttribute('data-tip');
+  const r = t.getBoundingClientRect();
+  tip.style.left = (r.left + r.width / 2) + 'px';
+  tip.style.top  = (r.top - 6) + 'px';
+  tip.classList.add('is-visible');
+});
+document.body.addEventListener('mouseout', e => {
+  if (e.target.closest('[data-tip]')) tip.classList.remove('is-visible');
+});
+</script>
+
+</body>
+</html>

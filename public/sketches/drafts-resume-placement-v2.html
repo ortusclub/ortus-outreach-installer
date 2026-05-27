@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Drafts · Resume placement · v2 (smaller, less invasive)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fafaf9;
+    --ink: #1a1a1a;
+    --gray: #7a7670;
+    --gray-faint: #b8b3aa;
+    --hairline: rgba(0,0,0,0.14);
+    --gold: #C5A255;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--mono); background: var(--bg); color: var(--ink); padding: 36px 56px; line-height: 1.5; }
+  h1 { font-family: var(--display); font-size: 2.2rem; letter-spacing: 0.01em; font-weight: 400; margin-bottom: 8px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 40px; max-width: 720px; }
+  .variant { margin-bottom: 56px; }
+  .v-label { font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  .v-title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 400; margin-bottom: 4px; }
+  .v-blurb { color: var(--gray); font-size: 0.8rem; margin-bottom: 18px; max-width: 720px; }
+  .stage { border: 1px solid var(--hairline); padding: 0; background: var(--bg); min-height: 180px; display: grid; grid-template-columns: 200px 1fr; }
+
+  /* Shared sidebar + main */
+  .sidebar { border-right: 1px solid var(--hairline); padding: 24px 16px; }
+  .side-title { font-family: var(--display); font-size: 1rem; letter-spacing: 0.02em; }
+  .side-sub { font-size: 0.58rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; margin-top: 2px; }
+  .side-group { margin-top: 22px; }
+  .side-group-lbl { font-size: 0.54rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; margin-bottom: 6px; }
+  .side-link { display: block; padding: 5px 0; color: var(--ink); font-size: 0.82rem; }
+  .side-link.dim { color: var(--gray); }
+
+  .main { padding: 24px 28px; }
+  .dash-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.01em; font-weight: 400; color: var(--ink); text-transform: uppercase; line-height: 1; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .start-btn {
+    background: var(--ink); color: var(--gold); border: 1px solid var(--ink);
+    border-radius: 9999px; padding: 9px 18px;
+    font-family: var(--mono); font-size: 0.58rem; font-weight: 600;
+    letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer;
+    position: relative;
+  }
+  .stub-card {
+    margin-top: 18px; padding: 16px 18px; border: 1px solid var(--hairline);
+    border-radius: 4px; color: var(--gray); font-size: 0.78rem;
+  }
+  .stub-card .eyebrow { font-size: 0.54rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray-faint); margin-bottom: 6px; }
+
+  /* ── Variant D — Icon-only ghost button next to START ─────────────── */
+  .vd-icon {
+    width: 32px; height: 32px; border-radius: 9999px;
+    border: 1px solid var(--hairline); background: transparent;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--gray);
+  }
+  .vd-icon:hover { border-color: var(--ink); color: var(--ink); }
+  .vd-icon svg { width: 14px; height: 14px; }
+  .vd-icon-grp { display: flex; align-items: center; gap: 10px; }
+
+  /* ── Variant E — Sidebar link (under HELP / DEV TOOLS) ────────────── */
+  .ve-drafts-link {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 0; color: var(--ink); font-size: 0.82rem;
+  }
+  .ve-count { font-size: 0.62rem; color: var(--gray); font-variant-numeric: tabular-nums; }
+
+  /* ── Variant F — Badge attached to START button itself ────────────── */
+  .vf-badge {
+    position: absolute; top: -6px; right: -6px;
+    width: 18px; height: 18px; border-radius: 9999px;
+    background: var(--gold); color: var(--ink);
+    font-size: 0.62rem; font-weight: 600; line-height: 18px;
+    text-align: center; border: 2px solid var(--bg);
+    pointer-events: auto; cursor: pointer;
+  }
+  .vf-badge:hover { background: #d8b873; }
+</style>
+</head>
+<body>
+<h1>Drafts — Smaller &amp; less invasive</h1>
+<div class="lead">
+  Three minimal alternatives. None of them adds a pill, banner, or block to the main area.
+  Real fields only: a count (from existing <code>/api/drafts</code>) and a click → <code>#/new</code>.
+</div>
+
+<!-- ── Variant D ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant D</div>
+  <div class="v-title">Icon-only ghost button next to START</div>
+  <div class="v-blurb">A small 32×32 circular button (just a pencil-on-paper glyph) lives to the left of "+ Start new campaign". No label, no name, no count — hover tooltip says "Resume draft · Untitled draft". Right-click (or long-press) opens a tiny menu with Delete. Disappears entirely when there is no draft.</div>
+  <div class="stage">
+    <div class="sidebar">
+      <div class="side-title">ORTUS OUTREACH</div>
+      <div class="side-sub">v2.59.0</div>
+    </div>
+    <div class="main">
+      <div class="row">
+        <div class="dash-title">Campaigns</div>
+        <div class="vd-icon-grp">
+          <button class="vd-icon" title="Resume draft · Untitled draft">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="start-btn">+ Start new campaign</button>
+        </div>
+      </div>
+      <div class="stub-card"><div class="eyebrow">Active</div>No campaign running</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Variant E ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant E</div>
+  <div class="v-title">Sidebar link, under HELP / DEV TOOLS</div>
+  <div class="v-blurb">Lives entirely in the sidebar. A single "Drafts (1)" link below the existing nav groups, near HELP. Click → resume. The main dashboard area is completely untouched — the operator only sees it if they look at the sidebar.</div>
+  <div class="stage">
+    <div class="sidebar">
+      <div class="side-title">ORTUS OUTREACH</div>
+      <div class="side-sub">v2.59.0</div>
+      <div class="side-group">
+        <div class="side-group-lbl">Review</div>
+        <a class="side-link">Open log</a>
+      </div>
+      <div class="side-group">
+        <div class="side-group-lbl">Help</div>
+        <a class="side-link">Help</a>
+      </div>
+      <div class="side-group">
+        <div class="side-group-lbl">Drafts</div>
+        <a class="ve-drafts-link"><span>Untitled draft</span><span class="ve-count">1</span></a>
+      </div>
+    </div>
+    <div class="main">
+      <div class="row">
+        <div class="dash-title">Campaigns</div>
+        <button class="start-btn">+ Start new campaign</button>
+      </div>
+      <div class="stub-card"><div class="eyebrow">Active</div>No campaign running</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Variant F ─────────────────────────────────────────────────────── -->
+<div class="variant">
+  <div class="v-label">Variant F</div>
+  <div class="v-title">Gold count-badge on the START button</div>
+  <div class="v-blurb">A tiny gold dot with a count sits in the top-right corner of "+ Start new campaign". Click the badge → resume the existing draft; click the main button → fresh start. No second affordance, no extra row. (Delete lives inside the wizard once you're resuming.)</div>
+  <div class="stage">
+    <div class="sidebar">
+      <div class="side-title">ORTUS OUTREACH</div>
+      <div class="side-sub">v2.59.0</div>
+    </div>
+    <div class="main">
+      <div class="row">
+        <div class="dash-title">Campaigns</div>
+        <button class="start-btn">
+          + Start new campaign
+          <span class="vf-badge" title="1 draft in progress — click to resume">1</span>
+        </button>
+      </div>
+      <div class="stub-card"><div class="eyebrow">Active</div>No campaign running</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

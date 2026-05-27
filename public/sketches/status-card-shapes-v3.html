@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Status Card · Shape Variants v3 (Showcase)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --ink: #0a0a0a;
+  --gray: #6b6b6b;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --green: #2e9a4a;
+  --blue:  #2563ab;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px -8px rgba(0,0,0,0.12);
+  --shadow-ink:  0 1px 0 rgba(0,0,0,0.06), 0 14px 30px -18px rgba(0,0,0,0.45);
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --surface: #14140f;
+  --ink: #fafafa;
+  --gray: #8b867a;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --green: #3fb950;
+  --blue:  #4d9fff;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.4), 0 6px 16px -10px rgba(0,0,0,0.5);
+  --shadow-ink:  0 1px 0 rgba(0,0,0,0.5), 0 20px 38px -22px rgba(0,0,0,0.8);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Hanken Grotesk', system-ui, sans-serif; font-size: 14px; line-height: 1.5; padding: 48px 32px 96px; }
+.wrap { max-width: 960px; margin: 0 auto; }
+
+header.page { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--hairline); }
+header.page h1 { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 32px; letter-spacing: 0.04em; margin: 0; }
+header.page .meta { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.theme-toggle { font: inherit; background: transparent; border: 1px solid var(--hairline); color: var(--ink); padding: 6px 12px; cursor: pointer; border-radius: 9999px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.theme-toggle:hover { border-color: var(--ink); }
+
+.variant { margin-bottom: 64px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.variant-head h2 { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 22px; letter-spacing: 0.05em; margin: 0; }
+.variant-head small { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.variant-note { color: var(--gray); font-size: 12.5px; max-width: 720px; margin: 0 0 20px; }
+.variant-note b { color: var(--ink); font-weight: 500; }
+
+/* shared */
+.glyph { display: inline-flex; align-items: center; justify-content: center; height: 26px; min-width: 40px; padding: 0 10px; border: 1px solid currentColor; font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.08em; border-radius: 9999px; }
+.btn-pill { font: inherit; padding: 6px 14px; border-radius: 9999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font-size: 12px; letter-spacing: 0.06em; cursor: pointer; }
+.btn-pill:hover { background: var(--ink); color: var(--bg); }
+.row-kebab { font: inherit; background: transparent; border: none; color: inherit; cursor: pointer; font-size: 18px; padding: 2px 6px; opacity: 0.6; }
+.row-kebab:hover { opacity: 1; }
+.bar { position: relative; height: 2px; background: rgba(255,255,255,0.18); overflow: hidden; border-radius: 9999px; }
+.bar.on-paper { background: var(--hairline); }
+.bar > i { position: absolute; inset: 0 auto 0 0; }
+.tag { display: inline-flex; align-items: center; gap: 8px; font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; }
+.tag .dot { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }
+
+/* dock — same in every variant */
+.dock { display: inline-flex; align-items: center; gap: 2px; }
+.dock-btn { font: inherit; background: transparent; color: inherit; border: none; width: 30px; height: 30px; border-radius: 9999px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, transform 0.18s; }
+.dock-btn svg { width: 15px; height: 15px; pointer-events: none; }
+.dock-btn .icon-circled, .dock-trigger svg { width: 17px; height: 17px; }
+.dock-sep { width: 1px; height: 14px; background: currentColor; opacity: 0.25; margin: 0 4px; }
+.dock-actions { display: inline-flex; align-items: center; gap: 2px; overflow: hidden; max-width: 0; transition: max-width 0.26s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.dock[data-open="true"] .dock-actions { max-width: 200px; }
+.dock-trigger-icon { transition: transform 0.22s ease; }
+.dock[data-open="true"] .dock-trigger-icon { transform: rotate(180deg); }
+.dock-btn:active { transform: scale(1.04); }
+
+/* dock on INK card */
+.on-ink .dock-btn:hover { background: rgba(255,255,255,0.10); transform: scale(1.16); }
+.on-ink .dock-btn.danger { color: #ff8a82; }
+.on-ink .dock-btn.danger:hover { background: rgba(255,138,130,0.14); }
+
+/* dock on PAPER card */
+.on-paper .dock-btn:hover { background: rgba(0,0,0,0.06); transform: scale(1.16); }
+body.theme-dark .on-paper .dock-btn:hover { background: rgba(255,255,255,0.08); }
+.on-paper .dock-btn.danger { color: #c44; }
+body.theme-dark .on-paper .dock-btn.danger { color: #f85149; }
+.on-paper .dock-btn.danger:hover { background: rgba(196,68,68,0.10); }
+
+.global-tip { position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.12s ease; background: var(--ink); color: var(--bg); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; padding: 5px 8px; border-radius: 3px; white-space: nowrap; z-index: 999; transform: translate(-50%, -100%); }
+.global-tip.is-visible { opacity: 1; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT H — Ink Showcase
+   Translates the 21st.dev "HighlightCard" DNA: bookmark tab, hero metric,
+   integrated CTA, subtle texture. Translated into Ortus idiom:
+   monochrome ink surface, accent edge in green/blue (not full gradient),
+   hairline dot pattern (not bright dots on color), Bebas hero metric.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vh-card {
+  position: relative; color: #fafafa;
+  background: #0a0a0a;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.06) 1px, transparent 0),
+    linear-gradient(to bottom right, #141414, #0a0a0a);
+  background-size: 6px 6px, 100% 100%;
+  border-radius: 8px;
+  padding: 22px 24px 18px;
+  box-shadow: var(--shadow-ink);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 32px;
+  align-items: end;
+  min-height: 168px;
+}
+.vh-card + .vh-card { margin-top: 16px; }
+/* left accent rail */
+.vh-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--green);
+}
+.vh-card.is-monitor::before { background: var(--blue); }
+/* bookmark with mode glyph — translated from the source's bookmark shape */
+.vh-bookmark {
+  position: absolute; top: 0; right: 28px; width: 46px; height: 56px;
+  background: #fafafa; color: #0a0a0a;
+  clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 50% 72%, 0% 100%);
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 10px;
+  font-family: 'Bebas Neue', sans-serif; font-size: 12px; letter-spacing: 0.08em;
+}
+.vh-card.is-monitor .vh-bookmark { color: var(--blue); }
+.vh-card .vh-bookmark.is-active-color { color: var(--green); }
+
+.vh-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; opacity: 0.85; }
+.vh-eyebrow .tag .dot { background: var(--green); }
+.vh-card.is-monitor .vh-eyebrow .tag .dot { background: var(--blue); }
+.vh-name { font-size: 18px; font-weight: 500; margin: 0 0 14px; }
+.vh-divider { height: 1px; background: rgba(255,255,255,0.16); margin: 4px 0 14px; }
+.vh-hero { display: flex; align-items: baseline; gap: 12px; }
+.vh-hero .num { font-family: 'Bebas Neue', sans-serif; font-size: 56px; line-height: 0.9; letter-spacing: 0.01em; }
+.vh-hero .num .sub { font-size: 22px; color: rgba(255,255,255,0.55); margin-left: 6px; }
+.vh-hero-label { color: rgba(255,255,255,0.7); font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 6px; }
+.vh-stats { display: flex; gap: 22px; color: rgba(255,255,255,0.7); font-size: 12px; margin-top: 12px; }
+.vh-stats b { color: #fafafa; font-weight: 500; }
+
+.vh-right { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; min-width: 220px; }
+.vh-right .bar-wrap { width: 220px; }
+.vh-right .bar-row { display: flex; justify-content: space-between; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.65); margin-bottom: 4px; }
+.vh-right .bar-row b { color: #fafafa; font-weight: 500; }
+.vh-card .bar > i { background: var(--green); }
+.vh-card.is-monitor .bar > i { background: var(--blue); }
+.vh-right .controls { display: flex; align-items: center; gap: 10px; }
+.vh-right .open-btn { font: inherit; padding: 8px 18px; border-radius: 9999px; background: rgba(255,255,255,0.16); color: #fafafa; border: none; font-size: 12px; letter-spacing: 0.06em; cursor: pointer; backdrop-filter: blur(4px); transition: background 0.15s; }
+.vh-right .open-btn:hover { background: rgba(255,255,255,0.26); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT I — Paper Showcase
+   Same DNA as H but on the dashboard's native paper surface.
+   Lighter footprint; doesn't shout. Same bookmark + hero metric pattern.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vi-card {
+  position: relative;
+  background: var(--surface);
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.05) 1px, transparent 0);
+  background-size: 6px 6px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 8px;
+  padding: 22px 24px 18px;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 32px;
+  align-items: end;
+  min-height: 168px;
+}
+body.theme-dark .vi-card { background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0); }
+.vi-card + .vi-card { margin-top: 16px; }
+.vi-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--green); }
+.vi-card.is-monitor::before { background: var(--blue); }
+
+.vi-bookmark {
+  position: absolute; top: 0; right: 28px; width: 46px; height: 56px;
+  background: var(--ink); color: var(--bg);
+  clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 50% 72%, 0% 100%);
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 10px;
+  font-family: 'Bebas Neue', sans-serif; font-size: 12px; letter-spacing: 0.08em;
+}
+
+.vi-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; color: var(--gray); }
+.vi-eyebrow .tag .dot { background: var(--green); }
+.vi-card.is-monitor .vi-eyebrow .tag .dot { background: var(--blue); }
+.vi-name { font-size: 18px; font-weight: 500; margin: 0 0 14px; color: var(--ink); }
+.vi-divider { height: 1px; background: var(--hairline); margin: 4px 0 14px; }
+.vi-hero { display: flex; align-items: baseline; gap: 12px; color: var(--ink); }
+.vi-hero .num { font-family: 'Bebas Neue', sans-serif; font-size: 56px; line-height: 0.9; letter-spacing: 0.01em; }
+.vi-hero .num .sub { font-size: 22px; color: var(--gray); margin-left: 6px; }
+.vi-hero-label { color: var(--gray); font-size: 10.5px; letter-spacing: 0.2em; text-transform: uppercase; margin-top: 6px; }
+.vi-stats { display: flex; gap: 22px; color: var(--gray); font-size: 12px; margin-top: 12px; }
+.vi-stats b { color: var(--ink); font-weight: 500; }
+
+.vi-right { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; min-width: 220px; }
+.vi-right .bar-wrap { width: 220px; }
+.vi-right .bar-row { display: flex; justify-content: space-between; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-bottom: 4px; }
+.vi-right .bar-row b { color: var(--ink); font-weight: 500; }
+.vi-card .bar > i { background: var(--green); }
+.vi-card.is-monitor .bar > i { background: var(--blue); }
+.vi-right .controls { display: flex; align-items: center; gap: 10px; }
+
+footer.legend { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 12px; }
+footer.legend strong { color: var(--ink); font-weight: 500; }
+footer.legend ul { margin: 8px 0 0; padding-left: 18px; }
+footer.legend kbd { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 1px 6px; border: 1px solid var(--hairline); border-radius: 3px; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>Status Card · Showcase</h1>
+    <div class="meta">21st.dev highlight-card DNA · adapted to Ortus</div>
+  </div>
+  <button class="theme-toggle" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</header>
+
+<section class="variant" id="translation-note">
+  <div class="variant-head"><h2>Translation note</h2><small>what kept · what changed</small></div>
+  <p class="variant-note">The source card has four design elements that translate cleanly to Ortus: <b>(1)</b> the bookmark/ribbon shape pinned to the top edge, <b>(2)</b> a single dominant metric in display type, <b>(3)</b> integrated CTA inside the card surface, <b>(4)</b> a subtle texture across the background. What can't translate without breaking the brand: saturated gradient backgrounds (Ortus is monochrome — gold reserved for Start), 16px radii (Ortus uses 0 or 9999 — both versions below cheat to 8px the same way variants A/B did), and framer-motion entry animations (vanilla CSS hover lift instead).</p>
+</section>
+
+<!-- ─────────────── VARIANT H — Ink Showcase ─────────────── -->
+<section class="variant" id="variant-h">
+  <div class="variant-head"><h2>H · Ink Showcase</h2><small>dark surface · 21st.dev DNA translated</small></div>
+  <p class="variant-note">Dark ink surface with a hairline dot pattern (replaces the source's bright gradient + bright dots). Accent edge in green/blue (replaces the full gradient). Bookmark in white holds the mode glyph — strongest shape element from the source preserved. Hero metric in Bebas Neue at 56px. Integrated translucent Open button inside the surface. <b>This is the boldest variant in the set</b> — a dark card sitting on the light dashboard reads as a "showcase" panel.</p>
+
+  <div class="vh-card">
+    <div class="vh-bookmark is-active-color">C+I</div>
+    <div>
+      <div class="vh-eyebrow"><span class="tag"><span class="dot"></span>Now Active · 1 Campaign</span><span style="opacity:0.55;font-size:11px;">started 2h ago</span></div>
+      <h3 class="vh-name">EU Founder Push Q2</h3>
+      <div class="vh-divider"></div>
+      <div class="vh-hero">
+        <div class="num">49<span class="sub">%</span></div>
+        <div>
+          <div class="vh-hero-label">58 of 120 sent</div>
+          <div style="color:rgba(255,255,255,0.55);font-size:11px;letter-spacing:0.04em;margin-top:2px;">Sending · batch every 30 min</div>
+        </div>
+      </div>
+      <div class="vh-stats"><span><b>13</b> accepted</span><span><b>3</b> replies</span><span>Next batch in <b>06m 30s</b></span></div>
+    </div>
+    <div class="vh-right on-ink">
+      <div class="bar-wrap">
+        <div class="bar-row"><span>Progress</span><b>49%</b></div>
+        <div class="bar"><i style="width:49%"></i></div>
+      </div>
+      <div class="controls">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="open-btn">Open</button>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="vh-card is-monitor">
+    <div class="vh-bookmark">C+I</div>
+    <div>
+      <div class="vh-eyebrow"><span class="tag"><span class="dot"></span>Monitoring · 7-Day Watch</span><span style="opacity:0.55;font-size:11px;">finished 3d ago</span></div>
+      <h3 class="vh-name">EU Founder Push Q1</h3>
+      <div class="vh-divider"></div>
+      <div class="vh-hero">
+        <div class="num">43<span class="sub">%</span></div>
+        <div>
+          <div class="vh-hero-label">Day 3 of 7</div>
+          <div style="color:rgba(255,255,255,0.55);font-size:11px;letter-spacing:0.04em;margin-top:2px;">Watching · sweeps every 30 min</div>
+        </div>
+      </div>
+      <div class="vh-stats"><span><b>108</b> sent</span><span><b>11</b> accepted</span><span><b>11</b> replies</span><span>Next sweep in <b>20m 49s</b></span></div>
+    </div>
+    <div class="vh-right on-ink">
+      <div class="bar-wrap">
+        <div class="bar-row"><span>Window</span><b>3 / 7</b></div>
+        <div class="bar"><i style="width:43%"></i></div>
+      </div>
+      <div class="controls">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="open-btn">Open</button>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── VARIANT I — Paper Showcase ─────────────── -->
+<section class="variant" id="variant-i">
+  <div class="variant-head"><h2>I · Paper Showcase</h2><small>light surface · same DNA, quieter</small></div>
+  <p class="variant-note">Same structural moves as H — bookmark, hero metric, accent rail, dot pattern — but on the dashboard's native paper surface. Reads as part of the page rather than as a billboard. <b>Better if you want consistency across all sections</b>; H is better if Now Active should feel visually distinct from everything below it.</p>
+
+  <div class="vi-card">
+    <div class="vi-bookmark">C+I</div>
+    <div>
+      <div class="vi-eyebrow"><span class="tag"><span class="dot"></span>Now Active · 1 Campaign</span><span style="color:var(--gray);font-size:11px;">started 2h ago</span></div>
+      <h3 class="vi-name">EU Founder Push Q2</h3>
+      <div class="vi-divider"></div>
+      <div class="vi-hero">
+        <div class="num">49<span class="sub">%</span></div>
+        <div>
+          <div class="vi-hero-label">58 of 120 sent</div>
+          <div style="color:var(--gray);font-size:11px;letter-spacing:0.04em;margin-top:2px;">Sending · batch every 30 min</div>
+        </div>
+      </div>
+      <div class="vi-stats"><span><b>13</b> accepted</span><span><b>3</b> replies</span><span>Next batch in <b>06m 30s</b></span></div>
+    </div>
+    <div class="vi-right on-paper">
+      <div class="bar-wrap">
+        <div class="bar-row"><span>Progress</span><b>49%</b></div>
+        <div class="bar on-paper"><i style="width:49%"></i></div>
+      </div>
+      <div class="controls">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="vi-card is-monitor">
+    <div class="vi-bookmark">C+I</div>
+    <div>
+      <div class="vi-eyebrow"><span class="tag"><span class="dot"></span>Monitoring · 7-Day Watch</span><span style="color:var(--gray);font-size:11px;">finished 3d ago</span></div>
+      <h3 class="vi-name">EU Founder Push Q1</h3>
+      <div class="vi-divider"></div>
+      <div class="vi-hero">
+        <div class="num">43<span class="sub">%</span></div>
+        <div>
+          <div class="vi-hero-label">Day 3 of 7</div>
+          <div style="color:var(--gray);font-size:11px;letter-spacing:0.04em;margin-top:2px;">Watching · sweeps every 30 min</div>
+        </div>
+      </div>
+      <div class="vi-stats"><span><b>108</b> sent</span><span><b>11</b> accepted</span><span><b>11</b> replies</span><span>Next sweep in <b>20m 49s</b></span></div>
+    </div>
+    <div class="vi-right on-paper">
+      <div class="bar-wrap">
+        <div class="bar-row"><span>Window</span><b>3 / 7</b></div>
+        <div class="bar on-paper"><i style="width:43%"></i></div>
+      </div>
+      <div class="controls">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="btn-pill">Open</button>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="legend">
+  <strong>What we kept vs. dropped from the 21st.dev source:</strong>
+  <ul>
+    <li><strong>Kept</strong> — bookmark/ribbon clip-path with icon, hero metric typography, integrated CTA inside card surface, subtle background pattern, accent edge as identity</li>
+    <li><strong>Dropped</strong> — bright gradient backgrounds (Ortus is monochrome, gold reserved for Start CTA), framer-motion entry animations, 16px radii (cheated to 8px), white/40 backdrop-blur button (kept on H, swapped to outlined pill on I to match dashboard idiom)</li>
+    <li><strong>Mapped to Ortus state</strong> — "default/blue/violet/orange" color themes → just two: green (Now Active) and blue (Monitoring), matching the bars on the existing dashboard</li>
+  </ul>
+</footer>
+
+</div>
+
+<div class="global-tip" id="globalTip" aria-hidden="true"></div>
+
+<script>
+function toggleDock(triggerBtn, event) {
+  event?.stopPropagation?.();
+  const dock = triggerBtn.closest('.dock');
+  const opening = dock.getAttribute('data-open') !== 'true';
+  document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+    if (d !== dock) { d.setAttribute('data-open', 'false'); d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false'); }
+  });
+  dock.setAttribute('data-open', opening ? 'true' : 'false');
+  triggerBtn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dock')) {
+    document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+      d.setAttribute('data-open', 'false');
+      d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+    });
+  }
+});
+const tip = document.getElementById('globalTip');
+document.body.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]'); if (!t) return;
+  tip.textContent = t.getAttribute('data-tip');
+  const r = t.getBoundingClientRect();
+  tip.style.left = (r.left + r.width / 2) + 'px';
+  tip.style.top  = (r.top - 6) + 'px';
+  tip.classList.add('is-visible');
+});
+document.body.addEventListener('mouseout', e => {
+  if (e.target.closest('[data-tip]')) tip.classList.remove('is-visible');
+});
+</script>
+
+</body>
+</html>

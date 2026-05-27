@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preset Toolbar Sketches — Ortus Outreach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { padding: 48px 56px; overflow: auto; background: var(--bg); }
+    .sketches-intro { border-bottom: 1px solid var(--hairline); padding-bottom: 28px; margin-bottom: 40px; }
+    .sketches-intro h1 {
+      font-family: var(--display); font-size: 3.4rem;
+      line-height: 1; letter-spacing: 0.01em;
+      text-transform: uppercase; margin-bottom: 14px;
+    }
+    .sketches-intro p {
+      font-family: var(--mono); font-size: 0.7rem;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray);
+    }
+    .sketch-block {
+      display: grid; grid-template-columns: 220px 1fr;
+      gap: 40px; padding: 40px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .sketch-block:last-child { border-bottom: none; }
+    .sketch-meta .sk-num {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.24em; text-transform: uppercase;
+      color: var(--gray); margin-bottom: 12px;
+    }
+    .sketch-meta .sk-name {
+      font-family: var(--display); font-size: 2rem;
+      line-height: 1; text-transform: uppercase; margin-bottom: 14px;
+    }
+    .sketch-meta .sk-desc {
+      font-family: var(--body); font-size: 0.9rem;
+      color: var(--gray); line-height: 1.6;
+    }
+    .sketch-frame {
+      border: 1px solid var(--hairline);
+      padding: 24px 32px;
+    }
+    .sketch-body-preview {
+      padding-top: 22px;
+      font-family: var(--display);
+      font-size: 2rem;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.01em;
+      color: var(--ink);
+    }
+
+    /* Shared greeting + stats styles (match dashboard) */
+    .greet-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 32px;
+    }
+    .greet-title {
+      font-family: var(--display);
+      font-size: 2rem; line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+    }
+    .greet-sub {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gray);
+      margin-top: 8px;
+    }
+    .mini-stats { display: flex; align-items: stretch; flex-shrink: 0; }
+    .mini-stat {
+      display: flex; flex-direction: column; gap: 6px;
+      padding: 4px 18px;
+      border-left: 1px solid var(--hairline);
+      white-space: nowrap;
+    }
+    .mini-stat:first-child { border-left: none; padding-left: 0; }
+    .mini-stat .k {
+      font-family: var(--mono); font-size: 0.56rem;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+    }
+    .mini-stat .v {
+      font-family: var(--display); font-size: 1.5rem;
+      line-height: 1; color: var(--ink); letter-spacing: 0.01em;
+    }
+    .mini-stat .v.err { color: var(--red); }
+    .mini-stat .v.green { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; padding-top: 4px; color: var(--green); }
+
+    /* Shared pill / button styles */
+    .pill-btn {
+      border: 1px solid var(--hairline);
+      background: transparent;
+      color: var(--ink);
+      border-radius: 9999px;
+      padding: 6px 14px;
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .pill-btn:hover { border-color: var(--ink); }
+    .pill-btn.strong { border-color: var(--ink); }
+    .pill-select {
+      background: transparent;
+      border: 1px solid var(--hairline);
+      border-radius: 9999px;
+      padding: 6px 14px;
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.14em;
+      color: var(--ink);
+      text-transform: uppercase;
+      cursor: pointer;
+      outline: none;
+    }
+    .preset-key {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gray);
+    }
+
+    /* ─ A: Two-Row Header ─ */
+    .sk-a-top { padding-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+    .sk-a-bot { padding-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 32px; }
+    .sk-a-bot .left, .sk-a-bot .right { display: flex; align-items: center; gap: 10px; }
+
+    /* ─ B: Stacked Right Column ─ */
+    .sk-b-right { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+    .sk-b-actions { display: flex; gap: 8px; }
+
+    /* ─ C: Preset Chip in Date Line ─ */
+    .sk-c-datechip {
+      display: inline-flex; align-items: center; gap: 10px;
+      margin-left: 10px;
+      padding: 4px 12px;
+      border: 1px solid var(--hairline);
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .sk-c-datechip:hover { border-color: var(--ink); }
+    .sk-c-datechip .label {
+      font-family: var(--mono); font-size: 0.56rem;
+      letter-spacing: 0.2em; color: var(--gray);
+    }
+    .sk-c-datechip .value {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.14em; color: var(--ink);
+    }
+    .sk-c-datechip .caret {
+      font-size: 0.7rem; color: var(--gray); margin-left: 2px;
+    }
+    .sk-c-note {
+      font-family: var(--mono); font-size: 0.55rem;
+      letter-spacing: 0.2em; color: var(--gray);
+      text-transform: uppercase; margin-top: 8px;
+    }
+
+    /* ─ D: Tight-Bound Strip ─ */
+    .sk-d-wrap { border-bottom: 1px solid var(--hairline); padding-bottom: 18px; }
+    .sk-d-strip {
+      margin-top: 16px; padding-top: 14px;
+      border-top: 1px solid var(--hairline-soft);
+      display: flex; justify-content: space-between;
+      align-items: center; gap: 32px;
+    }
+    .sk-d-strip .left, .sk-d-strip .right { display: flex; align-items: center; gap: 10px; }
+  </style>
+</head>
+<body>
+
+  <header class="sketches-intro">
+    <h1>Preset Toolbar Sketches</h1>
+    <p>Four ways to integrate the preset controls into the top header. Pick one.</p>
+  </header>
+
+  <!-- ── Sketch A: Two-Row Header ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · A</div>
+      <div class="sk-name">Two-Row Header</div>
+      <div class="sk-desc">The greeting + stats stay on row 1. Row 2 extends the same block: preset select + load/delete aligned under the greeting; Last Used + Save As aligned under the stats. One visual block, one frame, clear vertical rhythm.</div>
+    </div>
+    <div>
+      <div class="sketch-frame">
+        <div class="sk-a-top">
+          <div class="greet-row">
+            <div>
+              <div class="greet-title">Good evening, Antonio</div>
+              <div class="greet-sub">Thursday · 17 Apr 2026 · 22:38 Berlin</div>
+            </div>
+            <div class="mini-stats">
+              <div class="mini-stat"><span class="k">Today</span><span class="v">0</span></div>
+              <div class="mini-stat"><span class="k">7D</span><span class="v">0</span></div>
+              <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+              <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="sk-a-bot">
+          <div class="left">
+            <span class="preset-key">Preset</span>
+            <select class="pill-select" style="min-width: 200px">
+              <option>— Select a saved preset —</option>
+              <option>vonnyii_op</option>
+              <option>vonnyii_cc</option>
+            </select>
+            <button class="pill-btn">Load</button>
+            <button class="pill-btn">Delete</button>
+          </div>
+          <div class="right">
+            <button class="pill-btn">Load Last Used</button>
+            <button class="pill-btn strong">Save As…</button>
+          </div>
+        </div>
+        <div class="sketch-body-preview">1. Choose a Campaign</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Sketch B: Stacked Right Column ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · B</div>
+      <div class="sk-name">Stacked Right Column</div>
+      <div class="sk-desc">Greeting stays put on the left. The right side stacks vertically: stats on top, a compact action row beneath (Preset ▾ · Last · Save). Everything flush-right, tight and operational.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="greet-row">
+        <div>
+          <div class="greet-title">Good evening, Antonio</div>
+          <div class="greet-sub">Thursday · 17 Apr 2026 · 22:38 Berlin</div>
+        </div>
+        <div class="sk-b-right">
+          <div class="mini-stats">
+            <div class="mini-stat"><span class="k">Today</span><span class="v">0</span></div>
+            <div class="mini-stat"><span class="k">7D</span><span class="v">0</span></div>
+            <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+            <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+          </div>
+          <div class="sk-b-actions">
+            <select class="pill-select" style="min-width: 160px">
+              <option>— Preset —</option>
+              <option>vonnyii_op</option>
+              <option>vonnyii_cc</option>
+            </select>
+            <button class="pill-btn">Last Used</button>
+            <button class="pill-btn strong">Save As…</button>
+          </div>
+        </div>
+      </div>
+      <div class="sketch-body-preview">1. Choose a Campaign</div>
+    </div>
+  </section>
+
+  <!-- ── Sketch C: Preset Chip in Date Line ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · C</div>
+      <div class="sk-name">Date-Line Chip</div>
+      <div class="sk-desc">Minimal — a single chip embedded in the date line shows the active preset. Clicking opens a menu with Load / Save / Last Used / Delete. The header stays near-empty; the preset is a subtle property of the session, like the date.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="greet-row">
+        <div>
+          <div class="greet-title">Good evening, Antonio</div>
+          <div class="greet-sub">
+            Thursday · 17 Apr 2026 · 22:38 Berlin
+            <span class="sk-c-datechip">
+              <span class="label">Preset</span>
+              <span class="value">vonnyii_op</span>
+              <span class="caret">▾</span>
+            </span>
+          </div>
+          <div class="sk-c-note">Menu opens on click · Save / Load / Last Used / Delete</div>
+        </div>
+        <div class="mini-stats">
+          <div class="mini-stat"><span class="k">Today</span><span class="v">0</span></div>
+          <div class="mini-stat"><span class="k">7D</span><span class="v">0</span></div>
+          <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+          <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+        </div>
+      </div>
+      <div class="sketch-body-preview">1. Choose a Campaign</div>
+    </div>
+  </section>
+
+  <!-- ── Sketch D: Tight-Bound Strip ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · D</div>
+      <div class="sk-name">Tight-Bound Strip</div>
+      <div class="sk-desc">Same shape as today, but the preset strip tucks inside the header's hairline box instead of floating in a second box below. One softer inner divider connects the two regions — feels like one unit, not two.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk-d-wrap">
+        <div class="greet-row">
+          <div>
+            <div class="greet-title">Good evening, Antonio</div>
+            <div class="greet-sub">Thursday · 17 Apr 2026 · 22:38 Berlin</div>
+          </div>
+          <div class="mini-stats">
+            <div class="mini-stat"><span class="k">Today</span><span class="v">0</span></div>
+            <div class="mini-stat"><span class="k">7D</span><span class="v">0</span></div>
+            <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+            <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+          </div>
+        </div>
+        <div class="sk-d-strip">
+          <div class="left">
+            <span class="preset-key">Preset</span>
+            <select class="pill-select" style="min-width: 200px">
+              <option>— Select a saved preset —</option>
+              <option>vonnyii_op</option>
+              <option>vonnyii_cc</option>
+            </select>
+            <button class="pill-btn">Load</button>
+            <button class="pill-btn">Delete</button>
+          </div>
+          <div class="right">
+            <button class="pill-btn">Load Last Used</button>
+            <button class="pill-btn strong">Save As…</button>
+          </div>
+        </div>
+      </div>
+      <div class="sketch-body-preview">1. Choose a Campaign</div>
+    </div>
+  </section>
+
+</body>
+</html>

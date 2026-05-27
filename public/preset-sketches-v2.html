@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preset Placement Sketches — Ortus Outreach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { padding: 48px 56px; overflow: auto; background: var(--bg); }
+    .sketches-intro { border-bottom: 1px solid var(--hairline); padding-bottom: 28px; margin-bottom: 40px; }
+    .sketches-intro h1 {
+      font-family: var(--display); font-size: 3.4rem;
+      line-height: 1; letter-spacing: 0.01em;
+      text-transform: uppercase; margin-bottom: 14px;
+    }
+    .sketches-intro p {
+      font-family: var(--mono); font-size: 0.7rem;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray);
+    }
+    .sketch-block {
+      display: grid; grid-template-columns: 220px 1fr;
+      gap: 40px; padding: 40px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .sketch-block:last-child { border-bottom: none; }
+    .sketch-meta .sk-num {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.24em; text-transform: uppercase;
+      color: var(--gray); margin-bottom: 12px;
+    }
+    .sketch-meta .sk-name {
+      font-family: var(--display); font-size: 2rem;
+      line-height: 1; text-transform: uppercase; margin-bottom: 14px;
+    }
+    .sketch-meta .sk-desc {
+      font-family: var(--body); font-size: 0.9rem;
+      color: var(--gray); line-height: 1.6;
+    }
+    .sketch-frame {
+      border: 1px solid var(--hairline);
+      overflow: hidden;
+    }
+
+    /* ─ Sketch 1: Sidebar Presets ─ */
+    .sk1-app {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 540px;
+    }
+    .sk1-sidebar {
+      border-right: 1px solid var(--hairline);
+      display: flex; flex-direction: column;
+      padding: 24px 0;
+    }
+    .sk1-brand {
+      padding: 0 24px 20px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .sk1-brand .wordmark {
+      font-family: var(--display);
+      font-size: 1.9rem; line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+    }
+    .sk1-brand .sub {
+      font-family: var(--mono); font-size: 0.58rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--gray); margin-top: 10px;
+    }
+    .sk1-section-label {
+      font-family: var(--mono); font-size: 0.56rem;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--gray);
+      padding: 18px 24px 8px;
+    }
+    .sk1-nav-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 24px;
+      font-family: var(--mono); font-size: 0.66rem;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--ink);
+      border-left: 1px solid transparent;
+      cursor: pointer;
+      opacity: 0.7;
+    }
+    .sk1-nav-item.active { opacity: 1; border-left-color: var(--ink); }
+    .sk1-nav-num {
+      font-family: var(--display); font-size: 0.9rem;
+      color: var(--gray); width: 24px;
+    }
+    .sk1-preset-item {
+      display: flex; justify-content: space-between;
+      padding: 8px 24px;
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--ink);
+      border-left: 1px solid transparent;
+      cursor: pointer;
+      opacity: 0.7;
+    }
+    .sk1-preset-item .tag {
+      color: var(--gray); font-size: 0.55rem;
+    }
+    .sk1-preset-item:hover { opacity: 1; }
+    .sk1-preset-item.active { opacity: 1; border-left-color: var(--gold); color: var(--ink); }
+    .sk1-preset-item.pinned {
+      border-top: 1px solid var(--hairline-soft);
+      border-bottom: 1px solid var(--hairline-soft);
+      font-family: var(--mono);
+    }
+    .sk1-preset-item.pinned .tag { color: var(--green); }
+    .sk1-save {
+      margin: 12px 24px;
+      padding: 10px 14px;
+      border: 1px dashed var(--hairline);
+      background: transparent;
+      color: var(--ink);
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .sk1-save:hover { border-color: var(--ink); border-style: solid; }
+    .sk1-main {
+      padding: 32px 40px;
+    }
+    .sk1-main-title {
+      font-family: var(--display);
+      font-size: 2.2rem; line-height: 1;
+      text-transform: uppercase; letter-spacing: 0.01em;
+      margin-bottom: 10px;
+    }
+    .sk1-main-sub {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--gray);
+      padding-bottom: 20px; border-bottom: 1px solid var(--hairline);
+      margin-bottom: 32px;
+    }
+    .sk1-section-title {
+      font-family: var(--display);
+      font-size: 2rem; line-height: 1;
+      text-transform: uppercase; letter-spacing: 0.01em;
+      margin-top: 28px;
+    }
+    .sk1-loaded-chip {
+      display: inline-flex; align-items: center; gap: 10px;
+      margin-top: 16px;
+      padding: 6px 14px;
+      border: 1px solid var(--gold);
+      border-radius: 9999px;
+      font-family: var(--mono); font-size: 0.58rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--gold);
+    }
+
+    /* ─ Sketch 3: Mode-Picker Peer ─ */
+    .sk3-frame { padding: 32px 40px; }
+    .sk3-label {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--gray);
+      padding-bottom: 18px; border-bottom: 1px solid var(--hairline);
+      margin-bottom: 24px;
+    }
+    .sk3-stage {
+      display: grid;
+      grid-template-columns: 1fr 1.6fr 1fr;
+      gap: 28px;
+      align-items: center;
+      padding: 24px 0;
+      border-top: 1px solid var(--hairline);
+      border-bottom: 1px solid var(--hairline);
+      margin-bottom: 20px;
+    }
+    .sk3-side {
+      display: flex; flex-direction: column; gap: 10px;
+      font-family: var(--display);
+      color: var(--gray);
+    }
+    .sk3-side .hint {
+      font-family: var(--mono); font-size: 0.55rem;
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--gray);
+    }
+    .sk3-side .name {
+      font-size: 1.3rem; line-height: 1;
+      text-transform: uppercase; letter-spacing: 0.02em;
+    }
+    .sk3-next { text-align: right; align-items: flex-end; }
+    .sk3-center { text-align: center; }
+    .sk3-counter {
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.28em; text-transform: uppercase;
+      color: var(--gray);
+      margin-bottom: 14px;
+    }
+    .sk3-kind {
+      font-family: var(--mono); font-size: 0.58rem;
+      letter-spacing: 0.28em; color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .sk3-title {
+      font-family: var(--display);
+      font-size: 3rem; line-height: 0.95;
+      text-transform: uppercase; letter-spacing: 0.01em;
+    }
+    .sk3-desc {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); margin-top: 14px;
+    }
+    .sk3-chips {
+      display: flex; flex-wrap: wrap; justify-content: center;
+      gap: 8px; margin-top: 16px;
+    }
+    .sk3-chip {
+      padding: 8px 14px;
+      border: 1px solid var(--hairline);
+      border-radius: 9999px;
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .sk3-chip.preset {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+    .sk3-chip.active { border-color: var(--ink); }
+    .sk3-separator {
+      display: inline-block;
+      width: 1px; height: 14px;
+      background: var(--hairline);
+      margin: 0 6px;
+      vertical-align: middle;
+    }
+    .sk3-save-inline {
+      padding: 8px 14px;
+      border: 1px dashed var(--hairline);
+      border-radius: 9999px;
+      background: transparent;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .sk3-save-inline:hover { border-style: solid; border-color: var(--ink); }
+
+    /* ─ Sketch 4: Floating Run-Bar Pill ─ */
+    .sk4-stage {
+      position: relative;
+      min-height: 540px;
+      background: var(--bg);
+      padding: 40px;
+      display: flex; flex-direction: column;
+      justify-content: space-between;
+    }
+    .sk4-body-title {
+      font-family: var(--display);
+      font-size: 2.6rem; line-height: 1;
+      text-transform: uppercase; letter-spacing: 0.01em;
+    }
+    .sk4-body-hint {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--gray); margin-top: 16px;
+    }
+    .sk4-runbar {
+      position: relative;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 28px;
+      border-top: 1px solid var(--hairline);
+      background: var(--bg);
+    }
+    .sk4-runbar-left {
+      display: flex; align-items: center; gap: 12px;
+      font-family: var(--mono); font-size: 0.7rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--ink);
+    }
+    .sk4-runbar-left .dot {
+      width: 8px; height: 8px; border-radius: 9999px;
+      background: var(--gray);
+    }
+    .sk4-runbar-right {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .sk4-btn {
+      padding: 10px 20px;
+      border: 1px solid var(--ink);
+      border-radius: 9999px;
+      background: transparent;
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .sk4-btn.primary { color: var(--gold); }
+    .sk4-btn.preset {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .sk4-btn.preset .count {
+      font-family: var(--mono); font-size: 0.55rem;
+      padding: 2px 6px; border: 1px solid var(--hairline);
+      border-radius: 9999px;
+      color: var(--gray);
+    }
+    .sk4-btn.preset .caret { color: var(--gray); font-size: 0.7rem; }
+    /* Popover opens upward from the pill */
+    .sk4-popover {
+      position: absolute;
+      bottom: calc(100% + 10px);
+      right: 0;
+      min-width: 320px;
+      border: 1px solid var(--hairline);
+      background: var(--bg);
+      padding: 8px 0;
+      box-shadow: 0 -8px 24px rgba(0,0,0,0.5);
+      z-index: 10;
+    }
+    .sk4-pop-label {
+      padding: 10px 20px 6px;
+      font-family: var(--mono); font-size: 0.54rem;
+      letter-spacing: 0.24em; text-transform: uppercase;
+      color: var(--gray);
+    }
+    .sk4-pop-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 20px;
+      font-family: var(--mono); font-size: 0.64rem;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .sk4-pop-item:hover { background: rgba(255,255,255,0.04); }
+    .sk4-pop-item .tag { color: var(--gray); font-size: 0.55rem; }
+    .sk4-pop-item.pinned .dot {
+      width: 6px; height: 6px; border-radius: 9999px;
+      background: var(--green); display: inline-block; margin-right: 10px;
+      vertical-align: middle;
+    }
+    .sk4-pop-divider {
+      height: 1px; background: var(--hairline);
+      margin: 6px 0;
+    }
+    .sk4-pop-action {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 20px;
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--ink);
+      cursor: pointer;
+      border-top: 1px dashed var(--hairline-soft);
+    }
+    .sk4-pop-action:hover { color: var(--gold); }
+    .sk4-pop-action .caret { color: var(--gray); }
+  </style>
+</head>
+<body>
+
+  <header class="sketches-intro">
+    <h1>Preset Placement · Round 2</h1>
+    <p>Two structural options — sidebar presets vs. mode-picker peer. Pick one.</p>
+  </header>
+
+  <!-- ── Sketch 1 ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · 1</div>
+      <div class="sk-name">Sidebar Presets</div>
+      <div class="sk-desc">A new "Presets" group in the sidebar. <strong>Last Used</strong> pinned at the top with a green dot, then your saved presets listed as nav items (each showing a small mode tag), and <strong>+ Save Current</strong> as a dashed button at the bottom. The active preset gets a gold left-border. Always visible, always one click away, no top-bar real estate used.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk1-app">
+        <aside class="sk1-sidebar">
+          <div class="sk1-brand">
+            <div class="wordmark">Ortus<br>Outreach</div>
+            <div class="sub">LinkedIn · v2.6.0</div>
+          </div>
+
+          <div class="sk1-section-label">Campaign</div>
+          <div class="sk1-nav-item active"><span class="sk1-nav-num">I.</span>Settings</div>
+          <div class="sk1-nav-item"><span class="sk1-nav-num">II.</span>Sheet</div>
+          <div class="sk1-nav-item"><span class="sk1-nav-num">III.</span>Accounts</div>
+          <div class="sk1-nav-item"><span class="sk1-nav-num">IV.</span>Templates</div>
+          <div class="sk1-nav-item"><span class="sk1-nav-num">V.</span>Launch</div>
+
+          <div class="sk1-section-label">Presets</div>
+          <div class="sk1-preset-item pinned">
+            <span>Last Used</span>
+            <span class="tag">● 22m ago</span>
+          </div>
+          <div class="sk1-preset-item active">
+            <span>vonnyii_op</span>
+            <span class="tag">OP</span>
+          </div>
+          <div class="sk1-preset-item">
+            <span>vonnyii_cc</span>
+            <span class="tag">CC</span>
+          </div>
+          <div class="sk1-preset-item">
+            <span>vonnyii_inmail</span>
+            <span class="tag">InMail</span>
+          </div>
+          <div class="sk1-preset-item">
+            <span>london_dinner_dm</span>
+            <span class="tag">DM</span>
+          </div>
+          <button class="sk1-save">+ Save Current</button>
+
+          <div class="sk1-section-label">Review</div>
+          <div class="sk1-nav-item">History</div>
+          <div class="sk1-nav-item">Schedules</div>
+        </aside>
+        <main class="sk1-main">
+          <div class="sk1-main-title">Good evening, Antonio</div>
+          <div class="sk1-main-sub">Thursday · 17 Apr 2026 · 22:38 Berlin</div>
+
+          <div class="sk1-section-title">1. Choose a Campaign</div>
+          <div class="sk1-loaded-chip">
+            <span>● Loaded preset:</span>
+            <strong>vonnyii_op</strong>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Sketch 3 ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · 3</div>
+      <div class="sk-name">Mode-Picker Peer</div>
+      <div class="sk-desc">Extend the campaign carousel. The five stock modes stay, but your presets get prepended — cycling forward eventually lands on a preset (gold "Preset" eyebrow distinguishes it). Chip row below lists everything: stock modes first, saved presets after a separator. <strong>+ Save Current</strong> chip at the end. Presets become first-class campaigns; no separate UI anywhere.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk3-frame">
+        <div class="sk3-label">1. Choose a Campaign</div>
+        <div class="sk3-stage">
+          <div class="sk3-side">
+            <span class="hint">↑ Previous</span>
+            <span class="name">Status<br>Check</span>
+          </div>
+          <div class="sk3-center">
+            <div class="sk3-counter">06 / 08</div>
+            <div class="sk3-kind">Preset</div>
+            <div class="sk3-title">Vonnyii_op</div>
+            <div class="sk3-desc">Open Profile · 1 account · Van Gent NY sheet</div>
+          </div>
+          <div class="sk3-side sk3-next">
+            <span class="hint">Next ↓</span>
+            <span class="name">Vonnyii_cc</span>
+          </div>
+        </div>
+        <div class="sk3-chips">
+          <div class="sk3-chip">Connections</div>
+          <div class="sk3-chip">InMails</div>
+          <div class="sk3-chip">DMs</div>
+          <div class="sk3-chip">Open Profiles</div>
+          <div class="sk3-chip">Status Check</div>
+          <span class="sk3-separator"></span>
+          <div class="sk3-chip preset active">vonnyii_op</div>
+          <div class="sk3-chip preset">vonnyii_cc</div>
+          <div class="sk3-chip preset">vonnyii_inmail</div>
+          <div class="sk3-chip preset">london_dinner_dm</div>
+          <button class="sk3-save-inline">+ Save current</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Sketch 4 ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · 4</div>
+      <div class="sk-name">Run-Bar Pill</div>
+      <div class="sk-desc">A single <strong>PRESETS (4) ▾</strong> pill joins View Status / Start Campaign in the sticky run-bar. Click → popover opens upward with Last Used pinned at top, all saved presets listed with their mode tags, then <strong>+ Save Current</strong> at the bottom. Zero top-bar real estate, anchored where the action happens — right next to Start Campaign.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk4-stage">
+        <div>
+          <div class="sk4-body-title">1. Choose a Campaign</div>
+          <div class="sk4-body-hint">Hover the PRESETS pill in the run-bar to expand →</div>
+        </div>
+
+        <div class="sk4-runbar">
+          <div class="sk4-runbar-left">
+            <span class="dot"></span>
+            <span>Idle</span>
+          </div>
+          <div class="sk4-runbar-right">
+            <button class="sk4-btn">View Status</button>
+
+            <!-- The preset pill + its popover -->
+            <div class="sk4-btn preset" style="cursor:pointer">
+              <span>Presets</span>
+              <span class="count">4</span>
+              <span class="caret">▾</span>
+
+              <div class="sk4-popover">
+                <div class="sk4-pop-label">Pinned</div>
+                <div class="sk4-pop-item pinned">
+                  <span><span class="dot"></span>Last Used</span>
+                  <span class="tag">22m ago · OP</span>
+                </div>
+                <div class="sk4-pop-divider"></div>
+                <div class="sk4-pop-label">Saved</div>
+                <div class="sk4-pop-item">
+                  <span>vonnyii_op</span>
+                  <span class="tag">OP</span>
+                </div>
+                <div class="sk4-pop-item">
+                  <span>vonnyii_cc</span>
+                  <span class="tag">CC</span>
+                </div>
+                <div class="sk4-pop-item">
+                  <span>vonnyii_inmail</span>
+                  <span class="tag">InMail</span>
+                </div>
+                <div class="sk4-pop-item">
+                  <span>london_dinner_dm</span>
+                  <span class="tag">DM</span>
+                </div>
+                <div class="sk4-pop-action">
+                  <span>+ Save current as…</span>
+                  <span class="caret">→</span>
+                </div>
+              </div>
+            </div>
+
+            <button class="sk4-btn primary">Start Campaign</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>

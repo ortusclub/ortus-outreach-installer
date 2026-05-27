@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ortus · Dashboard v0.1 · Section bands</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ── Tokens ────────────────────────────────────────────────── */
+  :root {
+    --bg: #fafafa;
+    --bg-soft: #faf9f7;
+    --ink: #0a0a0a;
+    --gray: #6b6b6b;
+    --gray-faint: #b8b8b6;
+    --hairline: rgba(0, 0, 0, 0.15);
+    --hairline-soft: rgba(0, 0, 0, 0.06);
+    --green: #3fb950;
+    --red: #f85149;
+    --gold: #F7BE68;
+    --blue: #4a7bb8;   /* monitoring sweep bar */
+
+    /* Section bands — only LIVE sections (Active, Monitoring). Neutral grays,
+       not beige; just enough fill to read as a surface. */
+    --band-active:     #efefee;
+    --band-monitoring: #ebebea;
+    --band-divider:    rgba(0, 0, 0, 0.12);
+    --cal-line:        rgba(0, 0, 0, 0.40);
+
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --body: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --sidebar-w: 280px;
+  }
+  body.theme-dark {
+    --bg: #0a0a0a;
+    --bg-soft: rgba(255, 255, 255, 0.03);
+    --ink: #fafafa;
+    --gray: #999;
+    --gray-faint: #5a5a58;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+
+    --blue: #6ea3d4;
+    --band-active:     rgba(255, 255, 255, 0.05);
+    --band-monitoring: rgba(255, 255, 255, 0.04);
+    --band-divider:    rgba(255, 255, 255, 0.14);
+    --cal-line:        rgba(255, 255, 255, 0.35);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: var(--body); background: var(--bg); color: var(--ink); font-weight: 400; -webkit-font-smoothing: antialiased; line-height: 1.45; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .skip { position: absolute; left: -9999px; top: 0; background: var(--ink); color: var(--bg); padding: 10px 14px; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase; z-index: 100; }
+  .skip:focus-visible { left: 8px; top: 8px; }
+
+  /* ── App shell ────────────────────────────────────────────── */
+  .app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+
+  /* ── Sidebar ──────────────────────────────────────────────── */
+  .sidebar { border-right: 1px solid var(--hairline); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; background: var(--bg); }
+  .sidebar-brand { padding: 36px 32px 28px; }
+  .sidebar-wordmark { font-family: var(--display); font-weight: 400; font-size: 2.6rem; line-height: 1; letter-spacing: 0.01em; text-transform: uppercase; color: var(--ink); }
+  .sidebar-sub { font-family: var(--mono); color: var(--gray); font-size: 0.6rem; letter-spacing: 0.26em; text-transform: uppercase; margin-top: 16px; }
+  .side-group { padding: 0 32px 24px; }
+  .side-group-label { font-family: var(--mono); color: var(--gray); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; margin-bottom: 10px; }
+  .pill-toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; padding: 3px; }
+  .pill-toggle button { background: transparent; border: 1px solid transparent; border-radius: 9999px; padding: 7px 18px; color: var(--gray); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; }
+  .pill-toggle button.active { color: var(--ink); border-color: var(--ink); }
+  .notif-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+  .notif-row-k { color: var(--ink); font-size: 0.82rem; }
+  .notif-row-v { color: var(--gray); letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.58rem; font-family: var(--mono); }
+  .notif-row-v.ok { color: var(--green); }
+  .switch { position: relative; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: var(--gray); border-radius: 9999px; transition: 0.15s; cursor: pointer; }
+  .switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 9999px; background: var(--bg); transition: 0.15s; }
+  .switch input:checked + span { background: var(--green); }
+  .switch input:checked + span::after { left: 18px; }
+  .btn-pill { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 7px 16px; color: var(--ink); font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; }
+  .btn-pill:hover { border-color: var(--ink); background: var(--bg); }
+  .side-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .sidebar-footer { margin-top: auto; padding: 24px 32px 32px; border-top: 1px solid var(--hairline); }
+  .user-chip strong { color: var(--ink); font-weight: 400; display: block; font-size: 0.78rem; }
+  .user-chip span { color: var(--gray); font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; }
+  .sidebar-footer .btn-pill { margin-top: 14px; padding-left: 24px; padding-right: 24px; }
+
+  /* ── Main ─────────────────────────────────────────────────── */
+  .main { padding: 36px 56px 0; min-width: 0; display: flex; flex-direction: column; }
+  .container { max-width: 1320px; width: 100%; margin: 0 auto; flex: 1; display: flex; flex-direction: column; }
+
+  /* Greeting + header stats */
+  .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; padding-bottom: 40px; border-bottom: 1px solid var(--hairline); }
+  .greeting-wordmark { font-family: var(--display); font-weight: 400; font-size: 2.2rem; line-height: 1; letter-spacing: 0.01em; color: var(--ink); text-transform: uppercase; margin-bottom: 14px; }
+  .greeting-subtitle { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .greeting-subtitle small { margin-left: 12px; color: var(--gray); }
+  .header-stats { display: flex; align-items: stretch; flex-shrink: 0; }
+  .header-stat { display: flex; flex-direction: column; gap: 6px; padding: 4px 18px; border-left: 1px solid var(--hairline); white-space: nowrap; }
+  .header-stat:first-child { border-left: none; padding-left: 0; }
+  .header-stat .k { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .header-stat .v { font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); letter-spacing: 0.01em; }
+  .header-stat .v.err { color: var(--red); }
+  .header-stat .v.err[data-zero] { color: var(--ink); }
+  .header-stat .v.small { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; padding-top: 4px; }
+  .passover-pill { display: inline-block; padding: 2px 8px; border: 1px solid var(--hairline); border-radius: 9999px; font-size: 0.56rem; letter-spacing: 0.18em; margin-right: 4px; }
+  .passover-pill.active { color: var(--green); border-color: var(--green); }
+
+  /* Dashboard title */
+  .dashboard-header { display: flex; align-items: center; justify-content: space-between; padding: 40px 0 28px; gap: 16px; }
+  .dashboard-title { font-family: var(--display); font-weight: 400; font-size: 2.6rem; line-height: 1; letter-spacing: 0.01em; color: var(--ink); text-transform: uppercase; }
+  .dashboard-header-right { display: flex; align-items: center; gap: 18px; }
+  .slots-pill { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); display: flex; align-items: center; gap: 8px; cursor: help; }
+  .slots-dot { width: 7px; height: 7px; border-radius: 9999px; border: 1px solid var(--hairline); display: inline-block; }
+  .slots-dot.on { background: var(--ink); border-color: var(--ink); }
+  .slots-dot.future { background: transparent; border-style: dashed; }
+  .btn-start { background: var(--ink); color: var(--gold); border: 1px solid var(--ink); border-radius: 9999px; padding: 11px 24px; font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; }
+  .btn-start:hover { opacity: 0.85; }
+
+  /* ── Section bands — each section is a distinct surface ────── */
+  .section-band {
+    padding: 22px 26px 24px;
+    margin: 0 -26px 4px;
+  }
+  /* Only LIVE sections get a fill + rim. This Week, Up Next, Past sit on page bg. */
+  .section-band.is-active,
+  .section-band.is-monitoring {
+    border: 1px solid var(--band-divider);
+  }
+  .section-band.is-active     { background: var(--band-active); }
+  .section-band.is-monitoring { background: var(--band-monitoring); }
+  /* This Week: no fill — the calendar grid carries the visual weight via its own borders. */
+  .section-band.is-week       { background: transparent; padding-top: 32px; padding-bottom: 12px; }
+  .section-band.is-queue      { background: transparent; padding-top: 32px; padding-bottom: 12px; }
+  .section-band.is-past       { background: transparent; padding-top: 24px; padding-bottom: 12px; }
+  .section-band.is-past .row-name,
+  .section-band.is-past .row-when,
+  .section-band.is-past .row-progress { color: var(--gray); }
+  .section-band.is-past .campaign-row:hover .row-name { color: var(--ink); }
+
+  /* Section rail — now sits inside its band */
+  .section-rail { display: flex; align-items: baseline; gap: 18px; margin-bottom: 14px; }
+  .section-rail h2 { font-family: var(--mono); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+  .section-rail h2 small { color: var(--gray); font-weight: 400; margin-left: 14px; font-size: 0.92em; }
+  /* Up Next + Past — bigger headers. They're the list sections, the header carries the section's weight. */
+  .section-band.is-queue .section-rail h2,
+  .section-band.is-past  .section-rail h2 {
+    font-family: var(--display); font-size: 1.7rem; font-weight: 400;
+    letter-spacing: 0.02em;
+  }
+  .section-band.is-queue .section-rail h2 small,
+  .section-band.is-past  .section-rail h2 small {
+    font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; margin-left: 18px;
+  }
+  .section-rail-line { flex: 1; height: 1px; background: var(--band-divider); align-self: center; }
+  .section-rail-action { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; padding: 6px 0; }
+  .section-rail-action:hover { color: var(--ink); }
+  .section-rail-cal { display: flex; align-items: center; gap: 4px; }
+  .section-rail-cal button { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; width: 26px; height: 22px; color: var(--ink); font-size: 0.74rem; padding: 0; }
+  .section-rail-cal button.today { width: auto; padding: 0 12px; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  /* ── Campaign rows ────────────────────────────────────────── */
+  .campaign-row {
+    display: grid;
+    grid-template-columns: 38px 2fr 1.4fr 1.6fr auto auto;
+    gap: 20px; align-items: center;
+    padding: 12px 6px;
+    border-bottom: 1px solid var(--band-divider);
+    text-align: left;
+    transition: background 0.15s ease;
+  }
+  .section-band > div[role="grid"] > .campaign-row:last-child { border-bottom: none; }
+  .campaign-row:hover { background-color: rgba(0,0,0,0.025); }
+  body.theme-dark .campaign-row:hover { background-color: rgba(255,255,255,0.04); }
+  .glyph { width: 34px; height: 34px; border: 1px solid var(--hairline); border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 0.62rem; font-weight: 500; letter-spacing: 0.04em; background: var(--bg); color: var(--ink); }
+  .row-name { font-family: var(--display); font-size: 1.1rem; letter-spacing: 0.02em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-when, .row-progress { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-progress b { color: var(--ink); font-weight: 500; }
+  .row-actions { display: flex; gap: 6px; justify-self: end; align-items: center; }
+  .row-actions .btn-pill { padding: 6px 14px; font-size: 0.58rem; }
+  .row-kebab { background: transparent; border: none; color: var(--gray); padding: 6px 10px; font-size: 1.05rem; border-radius: 9999px; }
+  .row-kebab:hover { color: var(--ink); }
+  .row-arrow { width: 26px; height: 26px; padding: 0; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--ink); font-size: 0.78rem; line-height: 1; }
+  .row-arrow:hover { border-color: var(--ink); background: rgba(0,0,0,0.04); }
+  body.theme-dark .row-arrow:hover { background: rgba(255,255,255,0.06); }
+  .row-arrow:disabled { opacity: 0.3; cursor: default; }
+  .row-arrow:disabled:hover { background: transparent; border-color: var(--hairline); }
+
+  /* Active and Monitoring share an emphasized row treatment */
+  .campaign-row.is-live .row-name { font-size: 1.25rem; }
+
+  /* Live trail — used by both Active and Monitoring */
+  .live-trail { padding: 0 6px; margin-top: 10px; }
+  .live-trail .bar { height: 2px; background: var(--hairline); position: relative; margin-bottom: 12px; }
+  .live-trail .bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--green); transition: width 0.4s ease; }
+  .live-trail .bar.is-blue > i { background: var(--blue); }
+  .live-trail .sub {
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--mono); font-size: 0.66rem; color: var(--gray);
+    letter-spacing: 0.06em;
+  }
+  .live-trail .sub b { color: var(--ink); font-weight: 500; }
+  .live-trail .sub .eta { margin-left: auto; }
+  .live-trail .sub a { color: var(--gray); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .live-trail .sub a:hover { color: var(--ink); }
+
+  /* Dock — floating pill, collapsed by default. The trigger sits on the right;
+     pressing it unfolds the action icons to its left with a spring expansion. */
+  .dock {
+    display: inline-flex; align-items: center;
+    padding: 4px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    background: var(--bg);
+  }
+  .dock-actions {
+    display: inline-flex; align-items: center; gap: 2px;
+    max-width: 0;
+    margin-right: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-width 0.26s cubic-bezier(0.34, 1.4, 0.64, 1),
+                margin-right 0.26s cubic-bezier(0.34, 1.4, 0.64, 1),
+                opacity 0.18s ease;
+  }
+  .dock[data-open="true"] .dock-actions {
+    max-width: 220px;
+    margin-right: 4px;
+    opacity: 1;
+  }
+  .dock[data-open="true"] .dock-trigger {
+    background: var(--ink); color: var(--bg);
+  }
+  .dock[data-open="true"] .dock-trigger:hover {
+    background: var(--ink);
+  }
+  .dock-btn {
+    position: relative;
+    width: 30px; height: 30px;
+    border: none; background: transparent;
+    color: var(--ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.12s;
+  }
+  .dock-btn:hover { background: rgba(0, 0, 0, 0.06); transform: scale(1.18); }
+  body.theme-dark .dock-btn:hover { background: rgba(255, 255, 255, 0.08); }
+  .dock-btn:active { transform: scale(1.05); }
+  .dock-btn svg { width: 15px; height: 15px; pointer-events: none; }
+  /* Trigger and force-sweep use circle-enclosed glyphs — give them a touch more
+     room so the outline reads cleanly at this size. */
+  .dock-trigger svg, .dock-btn .icon-circled { width: 18px; height: 18px; }
+  .dock-btn.danger { color: var(--red); }
+  .dock-btn.danger:hover { background: rgba(248, 81, 73, 0.12); }
+  /* Tooltip is rendered as a single fixed-position element (see JS below)
+     so it isn't clipped by the dock-actions overflow:hidden envelope. */
+  .global-tip {
+    position: fixed;
+    background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.2em; text-transform: uppercase;
+    padding: 5px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    transform: translate(-50%, -100%) translateY(-8px);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1000;
+    transition: opacity 0.12s;
+  }
+  .global-tip.show { opacity: 1; }
+
+  /* Chevron icon — rotates 180° when the dock opens. */
+  .dock-trigger-icon { transition: transform 0.22s ease; }
+  .dock[data-open="true"] .dock-trigger-icon { transform: rotate(180deg); }
+  /* Thin hairline divider between the always-visible primary action and
+     the chevron trigger — split-button signature. */
+  .dock-sep {
+    display: inline-block;
+    width: 1px; height: 18px;
+    background: var(--hairline);
+    margin: 0 3px;
+    flex: 0 0 auto;
+  }
+
+  /* Inline state-tag, used sparingly */
+  .row-tag { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 3px 9px; border: 1px solid var(--hairline); border-radius: 9999px; white-space: nowrap; }
+  .row-tag.is-monitoring { color: var(--ink); border-color: var(--ink); }
+  .row-tag.is-stopped { color: var(--red); border-color: var(--red); }
+
+  /* ── Calendar ─────────────────────────────────────────────── */
+  /* Calendar — kanban-style cards. Each day is its own card with soft border,
+     subtle fill, gap-separated. Chips inside are smaller nested cards. */
+  .cal-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .cal-cell {
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    background: var(--bg-soft);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    min-height: 132px; padding: 12px 12px 14px;
+    display: flex; flex-direction: column;
+    cursor: pointer;
+    transition: background 0.12s, box-shadow 0.12s, border-color 0.12s;
+  }
+  body.theme-dark .cal-cell { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+  .cal-cell:hover {
+    background: var(--bg);
+    border-color: rgba(0, 0, 0, 0.25);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  }
+  body.theme-dark .cal-cell:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+  .cal-cell.today {
+    background: var(--bg);
+    border-color: var(--ink);
+    box-shadow: 0 0 0 1px var(--ink), 0 1px 2px rgba(0, 0, 0, 0.05);
+    cursor: default;
+  }
+  .cal-cell.today:hover {
+    background: var(--bg);
+    box-shadow: 0 0 0 1px var(--ink), 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  .cal-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .cal-dow { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .cal-date { font-family: var(--display); font-size: 1.2rem; line-height: 1; }
+  .cal-chip {
+    display: flex; align-items: baseline; gap: 6px;
+    padding: 6px 8px;
+    margin-bottom: 5px;
+    font-size: 0.74rem; line-height: 1.3;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    background: var(--bg);
+  }
+  .cal-chip:last-of-type { margin-bottom: 0; }
+  .cal-chip.running { border-color: var(--green); background: rgba(63, 185, 80, 0.05); }
+  .cal-chip.running::before { content: ''; width: 5px; height: 5px; border-radius: 9999px; background: var(--green); display: inline-block; flex: 0 0 auto; }
+  .cal-chip.faded { opacity: 0.55; }
+  .cal-chip .badge { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.10em; font-weight: 600; padding: 1px 5px; border: 1px solid var(--hairline); border-radius: 3px; }
+  .cal-chip .time { color: var(--gray); font-family: var(--mono); font-size: 0.6rem; font-variant-numeric: tabular-nums; }
+  .cal-chip .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cal-hint { margin-top: auto; font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray-faint); opacity: 0; transition: opacity 0.12s; }
+  .cal-cell:hover .cal-hint { opacity: 1; }
+
+  /* Footer */
+  .footer { margin-top: 32px; padding: 22px 0 32px; text-align: center; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+
+  /* ── Wizard ───────────────────────────────────────────────── */
+  .modal-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.32); display: none; z-index: 50; }
+  body.theme-dark .modal-shade { background: rgba(0,0,0,0.55); }
+  .modal-shade.open { display: flex; justify-content: flex-end; }
+  .modal { background: var(--bg); color: var(--ink); width: min(960px, 96vw); height: 100vh; overflow-y: auto; border-left: 1px solid var(--hairline); display: grid; grid-template-columns: 220px 1fr; }
+  .wiz-side { border-right: 1px solid var(--hairline); padding: 32px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+  .wiz-side h4 { padding: 0 24px 14px; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+  .wiz-nav { background: transparent; border: none; width: 100%; text-align: left; padding: 9px 24px; color: var(--gray); font-family: var(--body); font-size: 0.84rem; border-left: 2px solid transparent; }
+  .wiz-nav:hover { color: var(--ink); }
+  .wiz-nav.active { color: var(--ink); border-left-color: var(--ink); }
+  .wiz-nav .num { color: var(--gray); margin-right: 10px; font-family: var(--mono); font-size: 0.7rem; }
+  .wiz-nav.active .num { color: var(--ink); }
+  .wiz-close { margin: auto 24px 24px; }
+  .wiz-body { padding: 36px 44px 80px; min-width: 0; }
+  .wiz-banner { border: 1px solid var(--hairline); background: var(--bg-soft); padding: 11px 16px; margin-bottom: 24px; color: var(--gray); font-size: 0.78rem; display: flex; gap: 12px; align-items: center; }
+  .wiz-banner .dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--green); flex: 0 0 auto; }
+  .wiz-banner b { color: var(--ink); font-weight: 500; }
+  .wiz-name { display: flex; align-items: baseline; gap: 14px; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 1px solid var(--hairline); }
+  .wiz-name .lbl { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gray); }
+  .wiz-name input { flex: 1; background: transparent; border: none; border-bottom: 1px solid var(--hairline); padding: 6px 4px; font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; outline: none; color: var(--ink); }
+  .wiz-section { margin-bottom: 36px; scroll-margin-top: 24px; }
+  .wiz-section h2 { font-family: var(--display); font-weight: 400; font-size: 1.3rem; letter-spacing: 0.02em; margin-bottom: 12px; }
+  .wiz-section h2 .num { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.26em; color: var(--gray); margin-right: 12px; }
+  .mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .mode-tile { border: 1px solid var(--hairline); background: var(--bg-soft); padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+  .mode-tile:hover { border-color: var(--ink); }
+  .mode-tile.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .mode-tile .badge { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.12em; font-weight: 600; border: 1px solid currentColor; padding: 2px 7px; width: max-content; opacity: 0.75; }
+  .mode-tile.active .badge { opacity: 1; }
+  .mode-tile .label { font-size: 0.9rem; font-weight: 500; }
+  .mode-tile .desc { font-size: 0.72rem; color: var(--gray); }
+  .mode-tile.active .desc { color: rgba(250,250,250,0.7); }
+  .field { margin-bottom: 14px; }
+  .field-lbl { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .field-input, .tmpl-area { width: 100%; padding: 10px 12px; background: var(--bg-soft); color: var(--ink); border: 1px solid var(--hairline); font-family: inherit; font-size: 0.84rem; outline: none; }
+  .tmpl-area { min-height: 90px; resize: vertical; line-height: 1.5; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .acct-row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid var(--hairline); background: var(--bg-soft); margin-bottom: 5px; cursor: pointer; }
+  .acct-row.selected { border-color: var(--ink); }
+  .acct-row input { accent-color: var(--gold); width: 14px; height: 14px; }
+  .acct-row .meta { color: var(--gray); font-size: 0.7rem; margin-left: auto; font-family: var(--mono); letter-spacing: 0.08em; }
+  .launch-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--hairline); padding-top: 20px; margin-top: 10px; }
+  .launch-summary { color: var(--gray); font-size: 0.78rem; }
+  .launch-summary b { color: var(--ink); font-weight: 500; }
+  .launch-toggle { display: flex; }
+  .launch-toggle button { background: transparent; color: var(--gray); border: 1px solid var(--hairline); padding: 9px 16px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; }
+  .launch-toggle button.active { color: var(--ink); border-color: var(--ink); }
+  .launch-toggle button:first-child { border-right: none; }
+  .launch-start { background: var(--ink); color: var(--gold); border: 1px solid var(--ink); border-radius: 9999px; padding: 11px 22px; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; }
+  .launch-start:hover { opacity: 0.85; }
+
+  /* Popover + toast */
+  .popover { position: fixed; background: var(--bg); border: 1px solid var(--hairline); padding: 12px 14px; min-width: 220px; z-index: 80; }
+  .popover h5 { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 10px; font-weight: 500; }
+  .popover ul { list-style: none; }
+  .popover ul li { padding: 6px 0; font-size: 0.84rem; cursor: pointer; }
+  .popover ul li:hover { color: var(--gray); }
+  .popover .danger { color: var(--red); }
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 9px 22px; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; z-index: 90; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<a class="skip" href="#sect-active">Skip to running campaign</a>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────── -->
+  <aside class="sidebar" aria-label="Settings">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus<br/>Outreach</div>
+      <div class="sidebar-sub">LinkedIn · v2.59.0</div>
+    </div>
+    <div class="side-group">
+      <div class="side-group-label">Theme</div>
+      <div class="pill-toggle">
+        <button id="theme-dark" onclick="setTheme('dark')">Dark</button>
+        <button id="theme-light" class="active" onclick="setTheme('light')">Light</button>
+      </div>
+    </div>
+    <div class="side-group">
+      <div class="side-group-label">Timezone</div>
+      <div class="notif-row"><span class="notif-row-k">Sheet timestamps</span><span class="notif-row-v">Rome</span></div>
+      <div class="side-actions"><button class="btn-pill" onclick="toast('Open timezone picker (mock)')">Change</button></div>
+    </div>
+    <div class="side-group">
+      <div class="side-group-label">Notifications</div>
+      <div class="notif-row"><span class="notif-row-k">Browser push</span><span class="notif-row-v ok">Granted</span></div>
+      <div class="notif-row"><span class="notif-row-k">Email · SMTP</span><span class="notif-row-v ok">Wired</span></div>
+      <div class="notif-row"><span class="notif-row-k">Last test</span><span class="notif-row-v">Never</span></div>
+      <div class="notif-row">
+        <span class="notif-row-k">Connection-check reminders</span>
+        <label class="switch"><input type="checkbox" checked /><span></span></label>
+      </div>
+      <div class="side-actions"><button class="btn-pill" onclick="toast('Test notification fired (mock)')">Send test</button></div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="user-chip"><strong>antonio@ortusclub.com</strong><span>26 May 2026</span></div>
+      <button class="btn-pill" onclick="toast('Sign out (mock)')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="container">
+
+      <!-- Greeting + header stats -->
+      <div class="page-header">
+        <div>
+          <div class="greeting-wordmark">Good afternoon,<br/>Antonio</div>
+          <div class="greeting-subtitle">Tuesday · 26 May 2026 · 12:32 Rome <small>v2.59.0</small></div>
+        </div>
+        <div class="header-stats">
+          <div class="header-stat"><span class="k">Today (sent)</span><span class="v">0</span></div>
+          <div class="header-stat"><span class="k">7-day total</span><span class="v">0</span></div>
+          <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err" data-zero>0</span></div>
+          <div class="header-stat"><span class="k">Passover</span><span class="v small"><span class="passover-pill active">OP·IM·SN</span><span class="passover-pill">CC</span></span></div>
+          <div class="header-stat"><span class="k">RAM</span><span class="v">74%</span></div>
+          <div class="header-stat"><span class="k">CPU</span><span class="v">23%</span></div>
+          <div class="header-stat"><span class="k">Browsers</span><span class="v">0·0.0gb</span></div>
+        </div>
+      </div>
+
+      <!-- Campaigns title -->
+      <div class="dashboard-header">
+        <h1 class="dashboard-title">Campaigns</h1>
+        <div class="dashboard-header-right">
+          <span class="slots-pill" title="One campaign at a time today. Multi-slot lands with the cloud move.">
+            <span class="slots-dot on"></span>
+            <span class="slots-dot future"></span>
+            <span class="slots-dot future"></span>
+            <span>1 / 1 slot · cloud‑adds 2</span>
+          </span>
+          <button class="btn-start" onclick="openWizard()">+ Start new campaign</button>
+        </div>
+      </div>
+
+      <!-- ── NOW ACTIVE ──────────────────────────────────────────── -->
+      <section class="section-band is-active" aria-labelledby="sect-active">
+        <div class="section-rail">
+          <h2 id="sect-active">Now Active <small>1 campaign</small></h2>
+          <div class="section-rail-line"></div>
+        </div>
+        <div role="grid" aria-labelledby="sect-active">
+          <div role="row" class="campaign-row is-live">
+            <div role="gridcell"><div class="glyph">C+I</div></div>
+            <div role="gridcell" class="row-name">EU Founder Push Q2</div>
+            <div role="gridcell" class="row-when">started 2h ago</div>
+            <div role="gridcell" class="row-progress" aria-live="polite"><b>58</b> / 120 &nbsp;&nbsp; <b>13</b> accepted &nbsp;&nbsp; <b>3</b> replies</div>
+            <div role="gridcell" class="row-actions">
+              <button class="btn-pill" onclick="toast('Open EU Founder Push Q2 (mock)')">Open</button>
+            </div>
+            <div role="gridcell" class="row-actions">
+              <button class="row-kebab" aria-label="More actions for EU Founder Push Q2" aria-haspopup="menu" onclick="kebab(event, 'active')">⋯</button>
+            </div>
+          </div>
+          <div class="live-trail">
+            <div class="bar" role="progressbar" aria-valuenow="58" aria-valuemax="120" aria-label="EU Founder Push Q2 progress"><i style="width:49%"></i></div>
+            <div class="sub">
+              <div class="dock" id="dock-active" data-open="false" role="toolbar" aria-label="EU Founder Push Q2 actions">
+                <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="togglePauseActive()">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                </button>
+                <span class="dock-sep" aria-hidden="true"></span>
+                <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-active', event)">
+                  <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+                </button>
+                <div class="dock-actions">
+                  <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="stopActiveCampaign()">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+                  </button>
+                  <button class="dock-btn" data-tip="Restart" aria-label="Restart" onclick="restartActive()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                  </button>
+                  <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="copyLive('EU Founder Push Q2', 'C+I')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                  </button>
+                </div>
+              </div>
+              <span><b id="sendingLbl">Sending</b> &nbsp; <a onclick="toast('Open batch settings (mock)')">batch every 30 min</a></span>
+              <span class="eta">Next batch in <b id="batchEta">06m 30s</b></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── MONITORING ──────────────────────────────────────────── -->
+      <section class="section-band is-monitoring" aria-labelledby="sect-monitoring" id="monitoring-section">
+        <div class="section-rail">
+          <h2 id="sect-monitoring">Monitoring <small>1 campaign · 7-day acceptance watch</small></h2>
+          <div class="section-rail-line"></div>
+        </div>
+        <div role="grid" aria-labelledby="sect-monitoring">
+          <div role="row" class="campaign-row is-live">
+            <div role="gridcell"><div class="glyph">C+I</div></div>
+            <div role="gridcell" class="row-name">EU Founder Push Q1</div>
+            <div role="gridcell" class="row-when">finished 3d ago · day 3 of 7</div>
+            <div role="gridcell" class="row-progress"><b>108</b> sent &nbsp;&nbsp; <b>11</b> accepted &nbsp;&nbsp; <b>11</b> replies</div>
+            <div role="gridcell" class="row-actions">
+              <button class="btn-pill" onclick="toast('Open EU Founder Push Q1 (mock)')">Open</button>
+            </div>
+            <div role="gridcell" class="row-actions">
+              <button class="row-kebab" aria-label="More actions for EU Founder Push Q1" aria-haspopup="menu" onclick="kebab(event, 'monitoring')">⋯</button>
+            </div>
+          </div>
+          <div class="live-trail">
+            <!-- The bar tracks the 7-day acceptance window (currently day 3 of 7 ≈ 43%) -->
+            <div class="bar is-blue" role="progressbar" aria-valuenow="3" aria-valuemax="7" aria-label="Acceptance window progress"><i style="width:43%"></i></div>
+            <div class="sub">
+              <div class="dock" id="dock-monitor" data-open="false" role="toolbar" aria-label="EU Founder Push Q1 actions">
+                <button class="dock-btn" id="dock-monitor-pause" data-tip="Pause watch" aria-label="Pause watch" onclick="togglePauseMonitoring()">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                </button>
+                <span class="dock-sep" aria-hidden="true"></span>
+                <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-monitor', event)">
+                  <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+                </button>
+                <div class="dock-actions">
+                  <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="stopMonitoring()">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+                  </button>
+                  <button class="dock-btn" data-tip="Force sweep now" aria-label="Force sweep now" onclick="forceSweep()">
+                    <svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+                  </button>
+                  <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="copyLive('EU Founder Push Q1', 'C+I')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+                  </button>
+                </div>
+              </div>
+              <span><b id="watchingLbl">Watching</b> &nbsp; <a onclick="toast('Open sweep settings (mock)')">sweeps every 30 min</a></span>
+              <span class="eta">Next sweep in <b id="sweepEta">20m 49s</b></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── THIS WEEK ───────────────────────────────────────────── -->
+      <section class="section-band is-week" aria-labelledby="sect-week">
+        <div class="section-rail">
+          <h2 id="sect-week">This Week <small>25 — 31 May</small></h2>
+          <div class="section-rail-line"></div>
+          <div class="section-rail-cal">
+            <button onclick="toast('Previous week (mock)')" aria-label="Previous week">←</button>
+            <button class="today" onclick="toast('Snap to today (mock)')">Today</button>
+            <button onclick="toast('Next week (mock)')" aria-label="Next week">→</button>
+          </div>
+          <button class="section-rail-action" onclick="toast('Schedule (mock)')">+ Schedule</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </section>
+
+      <!-- ── UP NEXT ─────────────────────────────────────────────── -->
+      <section class="section-band is-queue" aria-labelledby="sect-queue">
+        <div class="section-rail">
+          <h2 id="sect-queue">Up Next <small><span id="queueCount">4</span> waiting</small></h2>
+          <div class="section-rail-line"></div>
+          <button class="section-rail-action" onclick="openWizard()">+ Add to queue</button>
+        </div>
+        <div role="grid" aria-labelledby="sect-queue" id="queueList"></div>
+      </section>
+
+      <!-- ── PAST ────────────────────────────────────────────────── -->
+      <section class="section-band is-past" aria-labelledby="sect-past">
+        <div class="section-rail">
+          <h2 id="sect-past">Past <small><span id="pastCount">3</span> campaigns</small></h2>
+          <div class="section-rail-line"></div>
+          <button class="section-rail-action" onclick="clearPast()">Clear all</button>
+        </div>
+        <div role="grid" aria-labelledby="sect-past" id="pastList"></div>
+      </section>
+
+      <div class="footer">Ortus Club © 2026</div>
+
+    </div>
+  </main>
+</div>
+
+<!-- ── Wizard ────────────────────────────────────────────────────── -->
+<div class="modal-shade" id="wizShade" onclick="if(event.target.id==='wizShade') closeWizard()">
+  <div class="modal" role="dialog" aria-label="New campaign">
+    <aside class="wiz-side">
+      <h4>New Campaign</h4>
+      <button class="wiz-nav active" data-wsec="mode"><span class="num">I.</span>Campaign Type</button>
+      <button class="wiz-nav" data-wsec="sheet"><span class="num">II.</span>Data</button>
+      <button class="wiz-nav" data-wsec="accounts"><span class="num">III.</span>LinkedIn Accounts</button>
+      <button class="wiz-nav" data-wsec="throughput"><span class="num">IV.</span>Settings</button>
+      <button class="wiz-nav" data-wsec="templates"><span class="num">V.</span>Templates</button>
+      <button class="wiz-nav" data-wsec="launch"><span class="num">VI.</span>Launch</button>
+      <button class="btn-pill wiz-close" onclick="closeWizard()">← Back</button>
+    </aside>
+    <div class="wiz-body">
+      <div class="wiz-banner"><span class="dot"></span><span><b>EU Founder Push Q2</b> is currently running. Slot 01 is busy — this campaign will be <b>queued behind it</b>.</span></div>
+      <div class="wiz-name"><div class="lbl">Campaign Name</div><input id="wizName" value="New Connect + Intro Campaign" /></div>
+      <div class="wiz-section" id="ws-mode"><h2><span class="num">I ·</span>Campaign Type</h2><div class="mode-grid" id="modeGrid"></div></div>
+      <div class="wiz-section" id="ws-sheet"><h2><span class="num">II ·</span>Google Sheet Tab URL</h2><div class="field"><div class="field-lbl">Sheet tab URL</div><input class="field-input" value="https://docs.google.com/spreadsheets/d/1xYZ…/edit#gid=482003" /></div></div>
+      <div class="wiz-section" id="ws-accounts"><h2><span class="num">III ·</span>Select GoLogin Accounts</h2><div id="acctList"></div></div>
+      <div class="wiz-section" id="ws-throughput"><h2><span class="num">IV ·</span>Campaign Settings</h2><div class="field-row"><div class="field"><div class="field-lbl">Daily limit per account</div><input class="field-input" type="number" value="20" /></div><div class="field"><div class="field-lbl">Batch interval</div><input class="field-input" value="30 min" /></div></div></div>
+      <div class="wiz-section" id="ws-templates"><h2><span class="num">V ·</span>Message Templates</h2><div class="field"><div class="field-lbl">Connection Note · max 300 chars</div><textarea class="tmpl-area">Hi {first name} — saw your work on {company} and wanted to connect.</textarea></div><div class="field"><div class="field-lbl">Intro Message (3-way DM, C+I and IB)</div><textarea class="tmpl-area">Hi {first name} and {primary name} — both of you are doing work the other should see.</textarea></div></div>
+      <div class="wiz-section" id="ws-launch"><h2><span class="num">VI ·</span>Launch</h2><div class="launch-row"><div class="launch-summary"><b>120</b> contacts · <b>2</b> accounts · <b>20/day</b> · ETA <b>3 days</b></div><div class="launch-toggle"><button class="active" onclick="this.classList.add('active');this.nextElementSibling.classList.remove('active')">Now</button><button onclick="this.classList.add('active');this.previousElementSibling.classList.remove('active')">Schedule</button></div><button class="launch-start" onclick="startFromWizard()">+ Add to queue</button></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="popover" id="popover" style="display:none"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+  const MODES = [
+    { code:'connect_only',          badge:'CC',  label:'Connect Only',          desc:'Send connect requests with optional note.' },
+    { code:'connect_and_introduce', badge:'C+I', label:'Connect + Introduce',   desc:'Connect, wait for accept, fire 3-way intro DM.' },
+    { code:'introduce_back',        badge:'IB',  label:'Introduce Back',        desc:'Already connected — intro DM only.' },
+    { code:'message_only',          badge:'DM',  label:'Direct Message',        desc:'Send to 1st-degree connections.' },
+    { code:'inmail_only',           badge:'IM',  label:'InMail',                desc:'Out-of-network targets.' },
+    { code:'check_status',          badge:'CS',  label:'Check Status',          desc:'Bulk-check acceptances. No sends.' },
+    { code:'open_profile_only',     badge:'OP',  label:'Open Profile',          desc:'Open-Profile leads — no connect needed.' },
+  ];
+  const ACCOUNTS = [
+    { id:1, name:'Alex K.',    email:'alex.k@ortusclub.com',    used:'12/20 today', selected:true  },
+    { id:2, name:'Sara R.',    email:'sara.r@ortusclub.com',    used:'6/20 today',  selected:true  },
+    { id:3, name:'Mark T.',    email:'mark.t@ortusclub.com',    used:'0/20 today',  selected:false },
+    { id:4, name:'Antonio V.', email:'antonio.v@ortusclub.com', used:'4/20 today',  selected:false },
+  ];
+
+  const queue = [
+    { id:1, mode:'IB',  name:'Boston Law Followups',     when:'',                primary:'Start now' },
+    { id:2, mode:'DM',  name:'PE Associate Intros',      when:'in 3h',            primary:'Start now' },
+    { id:3, mode:'IM',  name:'Wealth Managers London',   when:'tomorrow 14:04',  primary:'Reschedule', scheduled:true },
+    { id:4, mode:'C+I', name:'New Connect + Intro',      when:'',                primary:'Start now' },
+  ];
+
+  /* Past — Monitoring item moved to its own section (Q1 above) */
+  const past = [
+    { mode:'CC',  name:'YC W26 Connects',      finished:'6h ago',  stats:'200 sent · 12 replies · 6.0%',  primary:'Open' },
+    { mode:'CS',  name:'Hedge Fund Check',     finished:'22h ago', stats:'34 sent · 0 replies',            primary:'Open', tag:'stopped' },
+    { mode:'IB',  name:'NYC Partners Intro',   finished:'5d ago',  stats:'24 sent · 6 replies · 25.0%',    primary:'Open' },
+  ];
+
+  const week = [
+    { dow:'MON', date:25, today:false, items:[{ mode:'CS', name:'Hedge Fund Check', faded:true }] },
+    { dow:'TUE', date:26, today:true,  items:[
+        { mode:'C+I', name:'EU Founder Push Q2', running:true },
+        { mode:'IB',  name:'Boston Law Followups', faded:true },
+        { mode:'DM',  name:'PE Associate Intros', time:'15:04', faded:true },
+        { mode:'C+I', name:'New Connect + Intro', faded:true },
+    ] },
+    { dow:'WED', date:27, today:false, items:[{ mode:'IM', name:'Wealth Managers London', time:'14:04' }] },
+    { dow:'THU', date:28, today:false, items:[] },
+    { dow:'FRI', date:29, today:false, items:[] },
+    { dow:'SAT', date:30, today:false, items:[] },
+    { dow:'SUN', date:31, today:false, items:[] },
+  ];
+
+  /* Helpers */
+  function el(tag, attrs={}, kids=[]) {
+    const n = document.createElement(tag);
+    for (const [k,v] of Object.entries(attrs)) {
+      if (k === 'class') n.className = v;
+      else if (k === 'html') n.innerHTML = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) n.setAttribute(k, v);
+    }
+    for (const k of (Array.isArray(kids) ? kids : [kids])) {
+      if (k == null) continue;
+      n.append(k.nodeType ? k : document.createTextNode(k));
+    }
+    return n;
+  }
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._h);
+    toast._h = setTimeout(() => t.classList.remove('show'), 1500);
+  }
+
+  function renderCalendar() {
+    const grid = document.getElementById('calGrid'); grid.innerHTML = '';
+    for (const day of week) {
+      const cell = el('div', { class: 'cal-cell' + (day.today ? ' today' : ''), onclick: () => { if (!day.today) toast(`Schedule on ${day.dow} ${day.date} (mock)`); } });
+      cell.append(el('div', { class:'cal-head' }, [el('div', { class:'cal-dow' }, day.dow), el('div', { class:'cal-date' }, String(day.date))]));
+      for (const it of day.items) {
+        const chip = el('div', { class: 'cal-chip' + (it.running ? ' running' : '') + (it.faded ? ' faded' : ''), onclick: (e) => { e.stopPropagation(); toast(it.running ? 'Open active campaign' : 'Open ' + it.name); }});
+        chip.append(el('span', { class:'badge' }, it.mode));
+        if (it.time) chip.append(el('span', { class:'time' }, it.time));
+        chip.append(el('span', { class:'name' }, it.name));
+        cell.append(chip);
+      }
+      if (!day.today) cell.append(el('div', { class:'cal-hint' }, '+ Schedule'));
+      grid.append(cell);
+    }
+  }
+
+  function renderQueue() {
+    const list = document.getElementById('queueList'); list.innerHTML = '';
+    queue.forEach((q, idx) => {
+      const row = el('div', { role:'row', class:'campaign-row' });
+      row.append(el('div', { role:'gridcell' }, [el('div', { class:'glyph' }, q.mode)]));
+      row.append(el('div', { role:'gridcell', class:'row-name' }, q.name));
+      row.append(el('div', { role:'gridcell', class:'row-when' }, q.when || ''));
+      row.append(el('div', { role:'gridcell', class:'row-progress' }, ''));
+      row.append(el('div', { role:'gridcell', class:'row-actions' }, [el('button', { class:'btn-pill', onclick:()=>handlePrimary(q) }, q.primary)]));
+      row.append(el('div', { role:'gridcell', class:'row-actions' }, [
+        el('button', { class:'row-arrow', 'aria-label':'Move ' + q.name + ' up',   onclick:()=>moveQueue(q.id, -1), disabled: idx === 0 }, '↑'),
+        el('button', { class:'row-arrow', 'aria-label':'Move ' + q.name + ' down', onclick:()=>moveQueue(q.id, +1), disabled: idx === queue.length - 1 }, '↓'),
+        el('button', { class:'row-kebab', 'aria-label':'More actions for ' + q.name, 'aria-haspopup':'menu', onclick:(e)=>kebab(e, 'queue', q) }, '⋯'),
+      ]));
+      list.append(row);
+    });
+    document.getElementById('queueCount').textContent = queue.length;
+  }
+  function moveQueue(id, dir) {
+    const i = queue.findIndex(q => q.id === id); const j = i + dir;
+    if (j < 0 || j >= queue.length) return;
+    [queue[i], queue[j]] = [queue[j], queue[i]];
+    renderQueue();
+  }
+
+  function renderPast() {
+    const list = document.getElementById('pastList'); list.innerHTML = '';
+    past.forEach((p) => {
+      const row = el('div', { role:'row', class:'campaign-row' });
+      row.append(el('div', { role:'gridcell' }, [el('div', { class:'glyph' }, p.mode)]));
+      row.append(el('div', { role:'gridcell', class:'row-name' }, p.name));
+      row.append(el('div', { role:'gridcell', class:'row-when' }, p.finished));
+      const progress = el('div', { role:'gridcell', class:'row-progress' }, p.stats);
+      if (p.tag === 'stopped') progress.append(el('span', { class:'row-tag is-stopped', style:'margin-left:14px' }, 'Stopped early'));
+      row.append(progress);
+      row.append(el('div', { role:'gridcell', class:'row-actions' }, [el('button', { class:'btn-pill', onclick:()=>toast(p.primary + ' ' + p.name + ' (mock)') }, p.primary)]));
+      row.append(el('div', { role:'gridcell', class:'row-actions' }, [el('button', { class:'row-kebab', 'aria-label':'More actions for ' + p.name, 'aria-haspopup':'menu', onclick:(e)=>kebab(e, 'past', p) }, '⋯')]));
+      list.append(row);
+    });
+    document.getElementById('pastCount').textContent = past.length;
+  }
+
+  /* SVG strings for pause / play used to swap the dock button icon. */
+  const SVG_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+  const SVG_PLAY  = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="7,4 20,12 7,20"/></svg>';
+
+  let _activePaused = false;
+  let _monitorPaused = false;
+
+  function togglePauseActive() {
+    _activePaused = !_activePaused;
+    const btn = document.getElementById('dock-active-pause');
+    btn.innerHTML = _activePaused ? SVG_PLAY : SVG_PAUSE;
+    btn.setAttribute('data-tip', _activePaused ? 'Resume' : 'Pause');
+    btn.setAttribute('aria-label', _activePaused ? 'Resume' : 'Pause');
+    document.getElementById('sendingLbl').textContent = _activePaused ? 'Paused' : 'Sending';
+    toast(_activePaused ? 'Campaign paused' : 'Campaign resumed');
+  }
+  function stopActiveCampaign() {
+    if (!confirm('Stop EU Founder Push Q2? It will move to Past.')) return;
+    toast('Campaign stopped — moved to Past (mock)');
+  }
+  function togglePauseMonitoring() {
+    _monitorPaused = !_monitorPaused;
+    const btn = document.getElementById('dock-monitor-pause');
+    btn.innerHTML = _monitorPaused ? SVG_PLAY : SVG_PAUSE;
+    btn.setAttribute('data-tip', _monitorPaused ? 'Resume watch' : 'Pause watch');
+    btn.setAttribute('aria-label', _monitorPaused ? 'Resume watch' : 'Pause watch');
+    document.getElementById('watchingLbl').textContent = _monitorPaused ? 'Paused' : 'Watching';
+    toast(_monitorPaused ? 'Monitoring paused' : 'Monitoring resumed');
+  }
+  function stopMonitoring() {
+    if (!confirm('Stop monitoring? Remaining unaccepted leads will be stamped Closed - Not Connected and the campaign moves to Past.')) return;
+    const mSect = document.getElementById('monitoring-section'); if (mSect) mSect.style.display = 'none';
+    toast('Monitoring stopped — moved to Past');
+  }
+  function copyLive(name, mode) {
+    queue.push({ id: Date.now(), mode, name: name + ' (copy)', when: '', primary: 'Start now' });
+    renderQueue();
+    toast(`Copied "${name}" to queue`);
+  }
+  function restartActive() {
+    if (!confirm('Restart EU Founder Push Q2 from the beginning? Progress (58/120) will be reset.')) return;
+    toast('Campaign restarted (mock)');
+  }
+  function forceSweep() {
+    toast('Sweep firing now (mock)');
+  }
+
+  /* Global tooltip — fixed positioning so it escapes the dock-actions
+     overflow:hidden clipping. Any [data-tip] element triggers it. */
+  const _tipEl = document.createElement('div');
+  _tipEl.className = 'global-tip';
+  document.body.appendChild(_tipEl);
+  function _showTip(target) {
+    const t = target.getAttribute('data-tip');
+    if (!t) return;
+    const r = target.getBoundingClientRect();
+    _tipEl.textContent = t;
+    _tipEl.style.left = (r.left + r.width / 2) + 'px';
+    _tipEl.style.top  = r.top + 'px';
+    _tipEl.classList.add('show');
+  }
+  function _hideTip() { _tipEl.classList.remove('show'); }
+  document.addEventListener('mouseover', (e) => {
+    const t = e.target.closest('[data-tip]');
+    if (t) _showTip(t); else _hideTip();
+  });
+  document.addEventListener('mouseout', (e) => {
+    const t = e.target.closest('[data-tip]');
+    if (t && (!e.relatedTarget || !e.relatedTarget.closest?.('[data-tip]'))) _hideTip();
+  });
+  document.addEventListener('scroll', _hideTip, true);
+
+  /* Dock open/close + click-outside */
+  function toggleDock(id, e) {
+    if (e) e.stopPropagation();
+    const dock = document.getElementById(id);
+    if (!dock) return;
+    const opening = dock.getAttribute('data-open') !== 'true';
+    /* Close any other open dock first */
+    document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+      if (d.id !== id) {
+        d.setAttribute('data-open', 'false');
+        d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+      }
+    });
+    dock.setAttribute('data-open', opening ? 'true' : 'false');
+    dock.querySelector('.dock-trigger')?.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  }
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('.dock[data-open="true"]').forEach(dock => {
+      if (!dock.contains(e.target)) {
+        dock.setAttribute('data-open', 'false');
+        dock.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+      }
+    });
+  });
+  function handlePrimary(q) {
+    if (q.primary === 'Start now') {
+      if (!confirm(`Start "${q.name}" now? Slot 01 is busy — this will queue immediately ahead.`)) return;
+      toast('Started ' + q.name + ' (mock)');
+    } else { toast(q.primary + ' ' + q.name + ' (mock)'); }
+  }
+  function kebab(e, section, item) {
+    e.stopPropagation();
+    let items;
+    if (section === 'active') {
+      /* Pause / Stop / Copy live in the dock — kebab carries everything else. */
+      items = [
+        { lbl:'Open log',     fn:()=>toast('Open log (mock)') },
+        { lbl:'Edit settings', fn:()=>toast('Edit settings (mock)') },
+        { lbl:'Reset progress', danger:true, fn:()=>toast('Reset progress (mock)') },
+      ];
+    } else if (section === 'monitoring') {
+      items = [
+        { lbl:'Force sweep now', fn:()=>toast('Forced sweep (mock)') },
+        { lbl:'Open report',     fn:()=>toast('Report (mock)') },
+        { lbl:'Open log',        fn:()=>toast('Open log (mock)') },
+      ];
+    } else if (section === 'queue') {
+      items = [
+        { lbl:'Reschedule', fn:()=>toast('Reschedule (mock)') },
+        { lbl:'Edit',       fn:()=>toast('Edit (mock)') },
+        { lbl:'Duplicate',  fn:()=>toast('Duplicate (mock)') },
+        { lbl:'Remove',     danger:true, fn:()=>{ const i = queue.indexOf(item); queue.splice(i,1); renderQueue(); toast('Removed'); } },
+      ];
+    } else {
+      items = [
+        { lbl:'Rerun', fn:()=>toast('Rerun (mock)') },
+        { lbl:'Copy to queue', fn:()=>{ queue.push({ id:Date.now(), mode:item.mode, name:item.name + ' (copy)', when:'', primary:'Start now' }); renderQueue(); toast('Copied to queue'); } },
+        { lbl:'Export CSV', fn:()=>toast('Exported (mock)') },
+        { lbl:'Archive', danger:true, fn:()=>{ const i = past.indexOf(item); past.splice(i,1); renderPast(); toast('Archived'); } },
+      ];
+    }
+    showPopover(e.currentTarget, items);
+  }
+  function clearPast() {
+    if (!confirm('Clear past campaign rows? (Sheet history is unaffected.)')) return;
+    past.length = 0; renderPast(); toast('Past cleared');
+  }
+  function showPopover(anchor, items) {
+    const pop = document.getElementById('popover');
+    pop.innerHTML = ''; pop.append(el('h5', {}, 'Options'));
+    const ul = el('ul');
+    for (const it of items) ul.append(el('li', { class: it.danger ? 'danger' : '', onclick: () => { hidePopover(); it.fn(); } }, it.lbl));
+    pop.append(ul);
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.left = Math.max(20, r.right - 220) + 'px';
+    pop.style.display = 'block';
+    setTimeout(() => document.addEventListener('click', hidePopover, { once:true }), 0);
+  }
+  function hidePopover() { document.getElementById('popover').style.display = 'none'; }
+
+  /* Batch ETA tick (active) */
+  let etaSec = 6*60 + 30;
+  setInterval(() => {
+    etaSec = etaSec <= 0 ? (30*60) : etaSec - 1;
+    const m = Math.floor(etaSec / 60), s = etaSec % 60;
+    const n = document.getElementById('batchEta');
+    if (n) n.textContent = `${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+  }, 1000);
+
+  /* Sweep ETA tick (monitoring) */
+  let sweepSec = 20*60 + 49;
+  setInterval(() => {
+    sweepSec = sweepSec <= 0 ? (30*60) : sweepSec - 1;
+    const m = Math.floor(sweepSec / 60), s = sweepSec % 60;
+    const n = document.getElementById('sweepEta');
+    if (n) n.textContent = `${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+  }, 1000);
+
+  /* Theme */
+  function setTheme(t) {
+    document.body.classList.toggle('theme-dark', t === 'dark');
+    document.getElementById('theme-dark').classList.toggle('active', t === 'dark');
+    document.getElementById('theme-light').classList.toggle('active', t === 'light');
+  }
+
+  /* Wizard */
+  function openWizard() {
+    document.getElementById('wizShade').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    renderModes(); renderAccounts();
+  }
+  function closeWizard() {
+    document.getElementById('wizShade').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function renderModes() {
+    const grid = document.getElementById('modeGrid'); grid.innerHTML = '';
+    let selected = 'connect_and_introduce';
+    for (const m of MODES) {
+      const tile = el('div', { class: 'mode-tile' + (m.code === selected ? ' active' : ''), onclick: () => {
+        for (const t of grid.children) t.classList.remove('active');
+        tile.classList.add('active'); selected = m.code;
+      }});
+      tile.append(el('span', { class:'badge' }, m.badge));
+      tile.append(el('div', { class:'label' }, m.label));
+      tile.append(el('div', { class:'desc' }, m.desc));
+      grid.append(tile);
+    }
+  }
+  function renderAccounts() {
+    const list = document.getElementById('acctList'); list.innerHTML = '';
+    for (const a of ACCOUNTS) {
+      const row = el('div', { class: 'acct-row' + (a.selected ? ' selected' : ''), onclick: () => { a.selected = !a.selected; row.classList.toggle('selected', a.selected); cb.checked = a.selected; }});
+      const cb = el('input', { type:'checkbox' }); cb.checked = a.selected;
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', () => { a.selected = cb.checked; row.classList.toggle('selected', a.selected); });
+      row.append(cb);
+      row.append(el('div', { style:'font-size:0.84rem;font-weight:500' }, a.name));
+      row.append(el('div', { class:'meta' }, a.email + ' · ' + a.used));
+      list.append(row);
+    }
+  }
+  function startFromWizard() {
+    const name = (document.getElementById('wizName').value || 'New Campaign').trim();
+    queue.push({ id:Date.now(), mode:'C+I', name, when:'', primary:'Start now' });
+    renderQueue(); closeWizard(); toast(`"${name}" added to queue`);
+  }
+  document.querySelectorAll('.wiz-nav').forEach(it => {
+    it.addEventListener('click', () => {
+      document.getElementById('ws-' + it.dataset.wsec)?.scrollIntoView({ behavior:'smooth', block:'start' });
+      document.querySelectorAll('.wiz-nav').forEach(x => x.classList.remove('active'));
+      it.classList.add('active');
+    });
+  });
+
+  renderCalendar();
+  renderQueue();
+  renderPast();
+</script>
+</body>
+</html>

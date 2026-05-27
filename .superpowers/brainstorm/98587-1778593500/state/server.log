@@ -1,0 +1,5 @@
+{"type":"server-started","port":64512,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:64512","screen_dir":"/Users/antoniovarlese/ortus-gologin-clone/.superpowers/brainstorm/98587-1778593500/content","state_dir":"/Users/antoniovarlese/ortus-gologin-clone/.superpowers/brainstorm/98587-1778593500/state"}
+{"type":"screen-added","file":"/Users/antoniovarlese/ortus-gologin-clone/.superpowers/brainstorm/98587-1778593500/content/welcome.html"}
+{"type":"screen-added","file":"/Users/antoniovarlese/ortus-gologin-clone/.superpowers/brainstorm/98587-1778593500/content/sheet-layout-per-mode.html"}
+{"type":"screen-added","file":"/Users/antoniovarlese/ortus-gologin-clone/.superpowers/brainstorm/98587-1778593500/content/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}

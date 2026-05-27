@@ -1,0 +1,190 @@
+<h2>Ortus Outreach — three redesign directions</h2>
+<p class="subtitle">All three solve "too many steps / too much scrolling," but they bet on different things. Click the one that feels right and I'll deepen it into real screens.</p>
+
+<style>
+  .dir-grid { display: grid; grid-template-columns: 1fr; gap: 28px; }
+  .dir { border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 0; overflow: hidden; cursor: pointer; transition: all .15s; }
+  .dir:hover { border-color: #F7BE68; transform: translateY(-2px); }
+  .dir.selected { border-color: #F7BE68; box-shadow: 0 0 0 2px rgba(247,190,104,.25); }
+  .dir-head { padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,.02); }
+  .dir-letter { width: 32px; height: 32px; border-radius: 50%; background: #F7BE68; color: #0d1117; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .dir-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .dir-tag { margin-left: auto; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; opacity: .6; }
+  .dir-body { display: grid; grid-template-columns: 1.1fr .9fr; gap: 0; }
+  .dir-mock { padding: 22px; background: #0d1117; border-right: 1px solid rgba(255,255,255,.06); }
+  .dir-copy { padding: 22px; }
+  .dir-copy h4 { margin: 0 0 8px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #F7BE68; }
+  .dir-copy p { margin: 0 0 12px; font-size: 14px; line-height: 1.55; opacity: .85; }
+  .dir-copy ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; opacity: .8; }
+
+  /* Mock UI building blocks */
+  .m-frame { border: 1px solid rgba(255,255,255,.1); border-radius: 8px; background: #161b22; overflow: hidden; }
+  .m-bar  { height: 28px; background: #0d1117; border-bottom: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+  .m-dot  { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.18); }
+  .m-row  { display: flex; gap: 10px; }
+  .m-pill { display: inline-block; padding: 4px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; font-size: 11px; opacity: .8; }
+  .m-pill.gold { border-color: #F7BE68; color: #F7BE68; background: rgba(247,190,104,.08); }
+  .m-block { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 6px; padding: 10px 12px; }
+  .m-label { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; opacity: .5; margin-bottom: 4px; }
+  .m-value { font-size: 13px; font-weight: 500; }
+  .m-cta { background: #F7BE68; color: #0d1117; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; display: inline-block; }
+  .m-input { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); border-radius: 4px; padding: 6px 10px; font-size: 11px; opacity: .7; }
+  .m-side { width: 90px; background: #0d1117; border-right: 1px solid rgba(255,255,255,.06); padding: 10px 8px; }
+  .m-side-item { font-size: 10px; opacity: .55; padding: 4px 6px; border-radius: 3px; margin-bottom: 2px; }
+  .m-side-item.on { background: rgba(247,190,104,.12); color: #F7BE68; opacity: 1; }
+  .m-stat { display: flex; flex-direction: column; gap: 2px; }
+  .m-stat .v { font-size: 18px; font-weight: 600; color: #F7BE68; }
+  .m-stat .k { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; opacity: .5; }
+</style>
+
+<div class="dir-grid">
+
+  <!-- ── Direction A: Cockpit ── -->
+  <div class="dir" data-choice="cockpit" onclick="toggleSelect(this)">
+    <div class="dir-head">
+      <div class="dir-letter">A</div>
+      <div class="dir-title">Cockpit</div>
+      <div class="dir-tag">one screen · zero scroll</div>
+    </div>
+    <div class="dir-body">
+      <div class="dir-mock">
+        <div class="m-frame">
+          <div class="m-bar"><span class="m-dot"></span><span class="m-dot"></span><span class="m-dot"></span><span style="font-size:10px;opacity:.4;margin-left:auto">Cockpit</span></div>
+          <div style="display:flex">
+            <div class="m-side">
+              <div class="m-side-item on">◉ Run</div>
+              <div class="m-side-item">History</div>
+              <div class="m-side-item">Replies</div>
+              <div class="m-side-item">Accounts</div>
+            </div>
+            <div style="flex:1; padding:14px;">
+              <div style="display:flex; gap:8px; margin-bottom:14px;">
+                <span class="m-pill gold">Connect</span>
+                <span class="m-pill">Check status</span>
+                <span class="m-pill">Message</span>
+                <span class="m-pill" style="opacity:.4">More ▾</span>
+              </div>
+              <div class="m-input" style="width:88%; margin-bottom:14px">May UK partners — sheet pasted ✓</div>
+              <div class="m-row" style="margin-bottom:14px;">
+                <div class="m-block" style="flex:1"><div class="m-label">Accounts</div><div class="m-value">7 of 12</div></div>
+                <div class="m-block" style="flex:1"><div class="m-label">Per-acct cap</div><div class="m-value">50</div></div>
+                <div class="m-block" style="flex:1"><div class="m-label">Pause</div><div class="m-value">15–45s</div></div>
+              </div>
+              <div class="m-block" style="margin-bottom:14px; background:rgba(247,190,104,.06); border-color:rgba(247,190,104,.25)">
+                <div class="m-label" style="color:#F7BE68">Forecast</div>
+                <div class="m-value">350 invites · ~4h 20m · finishes 18:42</div>
+              </div>
+              <div style="display:flex; gap:8px;"><span class="m-cta">▶ Launch</span><span class="m-pill">Save preset</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dir-copy">
+        <h4>The bet</h4>
+        <p>One screen. Smart defaults from last run. Mode is a chip, not a section. Forecast updates live. Operator confirms and launches in &lt;10 seconds.</p>
+        <h4>You'd love this if…</h4>
+        <ul>
+          <li>You run the same shape of campaign every day and resent re-doing the wizard</li>
+          <li>You can tolerate density in exchange for speed</li>
+          <li>"Power-user dashboard" feels right, not "guided setup"</li>
+        </ul>
+        <h4>Trade-off</h4>
+        <p>First-time user gets less hand-holding. Edge-case modes (intro_back, post_amp) live in "More ▾".</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Direction B: Mode-First ── -->
+  <div class="dir" data-choice="mode-first" onclick="toggleSelect(this)">
+    <div class="dir-head">
+      <div class="dir-letter">B</div>
+      <div class="dir-title">Mode-First Lanes</div>
+      <div class="dir-tag">pick a job · get only what it needs</div>
+    </div>
+    <div class="dir-body">
+      <div class="dir-mock">
+        <div class="m-frame">
+          <div class="m-bar"><span class="m-dot"></span><span class="m-dot"></span><span class="m-dot"></span><span style="font-size:10px;opacity:.4;margin-left:auto">Mode-First</span></div>
+          <div style="padding:16px;">
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.5;margin-bottom:10px">What are you doing today?</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
+              <div class="m-block" style="text-align:center;padding:14px 8px"><div style="font-size:18px">→</div><div class="m-value" style="margin-top:4px">Connect</div><div class="m-label" style="margin-top:4px">350 leads ready</div></div>
+              <div class="m-block" style="text-align:center;padding:14px 8px;border-color:#F7BE68;background:rgba(247,190,104,.08)"><div style="font-size:18px;color:#F7BE68">⟳</div><div class="m-value" style="margin-top:4px;color:#F7BE68">Check status</div><div class="m-label" style="margin-top:4px;color:#F7BE68">214 pending</div></div>
+              <div class="m-block" style="text-align:center;padding:14px 8px"><div style="font-size:18px">✉</div><div class="m-value" style="margin-top:4px">Message</div><div class="m-label" style="margin-top:4px">42 ready to DM</div></div>
+            </div>
+            <div style="border-top:1px dashed rgba(255,255,255,.1); padding-top:12px;">
+              <div class="m-label">Lane: Check status</div>
+              <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+                <div class="m-input" style="flex:1">Sheet auto-loaded · 214 rows</div>
+                <span class="m-cta">Run</span>
+              </div>
+              <div style="font-size:10px;opacity:.45;margin-top:8px">No templates · no rate knobs · no profile picker — auto-routed.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="dir-copy">
+        <h4>The bet</h4>
+        <p>The first decision is "what job am I doing?" — and that decision strips the screen. Connect-only campaigns never see Check Status fields and vice versa.</p>
+        <h4>You'd love this if…</h4>
+        <ul>
+          <li>You operate in distinct sessions ("connect day" vs "follow-up day")</li>
+          <li>You think the 8 modes are the source of cognitive load, not the controls</li>
+          <li>You want to onboard new operators on one mode at a time</li>
+        </ul>
+        <h4>Trade-off</h4>
+        <p>Each lane is fast, but switching lanes mid-thought is a navigation cost. Power users may miss the "everything visible" feel.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Direction C: Conversation ── -->
+  <div class="dir" data-choice="conversation" onclick="toggleSelect(this)">
+    <div class="dir-head">
+      <div class="dir-letter">C</div>
+      <div class="dir-title">Conversational Setup</div>
+      <div class="dir-tag">progressive reveal · feels like a conversation</div>
+    </div>
+    <div class="dir-body">
+      <div class="dir-mock">
+        <div class="m-frame">
+          <div class="m-bar"><span class="m-dot"></span><span class="m-dot"></span><span class="m-dot"></span><span style="font-size:10px;opacity:.4;margin-left:auto">Conversation</span></div>
+          <div style="padding:16px;font-family:'Hanken Grotesk',sans-serif;">
+            <div style="font-size:13px;opacity:.7;margin-bottom:6px">Ortus →</div>
+            <div style="font-size:14px;margin-bottom:14px">What's the campaign called?</div>
+            <div style="font-size:13px;color:#F7BE68;margin-bottom:14px;border-left:2px solid #F7BE68;padding-left:10px">May UK partners</div>
+
+            <div style="font-size:13px;opacity:.7;margin-bottom:6px">Ortus →</div>
+            <div style="font-size:14px;margin-bottom:8px">And the doing-job?</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+              <span class="m-pill gold">Connect</span><span class="m-pill">Check status</span><span class="m-pill">Message</span>
+            </div>
+
+            <div style="font-size:13px;opacity:.7;margin-bottom:6px">Ortus →</div>
+            <div style="font-size:14px;margin-bottom:8px">Which sheet?</div>
+            <div class="m-input" style="margin-bottom:14px;width:90%">docs.google.com/…/Spring-UK</div>
+
+            <div style="font-size:13px;opacity:.7;margin-bottom:6px">Ortus →</div>
+            <div style="font-size:14px;margin-bottom:8px">7 of your 12 accounts are free. Use them all?</div>
+            <div style="display:flex;gap:6px;align-items:center"><span class="m-cta" style="padding:6px 12px;font-size:11px">Yes, launch</span><span class="m-pill" style="font-size:10px">Pick manually</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="dir-copy">
+        <h4>The bet</h4>
+        <p>A vertical conversation. One question at a time, top to bottom, no tabs, no sections, no horizontal layout. Each answer summons the next prompt.</p>
+        <h4>You'd love this if…</h4>
+        <ul>
+          <li>You want the app to feel friendly and modern, not "enterprise admin panel"</li>
+          <li>New operators need to be talked through their first few campaigns</li>
+          <li>You're OK trading some speed for guidance and approachability</li>
+        </ul>
+        <h4>Trade-off</h4>
+        <p>Slower for power users (still N steps, just nicer). Less spatial — you can't glance at "everything at once." Forecast lives at the bottom, not always visible.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:24px">Click the one that feels right — or tell me in chat which elements from each you want fused.</p>

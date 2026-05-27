@@ -9361,6 +9361,28 @@ window.launchSaveAsDraft = function() {
   if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
 };
 
+// Delete the draft currently being edited. Confirms first, DELETEs the
+// draft server-side, clears activeDraftId, and returns to the dashboard.
+window.launchDeleteDraft = async function() {
+  _closeLaunchMenu();
+  const id = getActiveDraftId();
+  if (!id) {
+    window.location.hash = '#/';
+    return;
+  }
+  const nameInput = document.getElementById('campaign-name-input');
+  const name = (nameInput?.value || '').trim() || 'this draft';
+  if (!confirm(`Delete draft "${name}"? This can't be undone.`)) return;
+  try {
+    await fetch('/api/drafts/' + encodeURIComponent(id), { method: 'DELETE' });
+  } catch (err) {
+    console.warn('[drafts] delete from wizard:', err);
+  }
+  clearActiveDraft();
+  window.location.hash = '#/';
+  if (typeof showCampaignToast === 'function') showCampaignToast('Draft deleted');
+};
+
 // Keep the banner's name display in sync with live edits of the campaign
 // name input. Wires once, idempotent across initWizardDirtyTracking
 // invocations.
@@ -10593,35 +10615,36 @@ window.renderPastSection = async function() {
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// Resume-draft pill (variant A, 2026-05-27 drafts-isolation). Lives in the
-// dashboard header. Visible only when getActiveDraftId() points at a draft
-// that still exists server-side. Click → navigates to #/new and hydrates
-// the wizard via editDraft().
+// Resume-draft badge — variant F (2026-05-27 drafts-isolation v2). Small
+// gold count on the New-campaign button. Click badge → resume the draft.
+// Visible only when getActiveDraftId() points at a draft that still
+// exists server-side. Kept the name `renderResumeDraftPill` so existing
+// call sites keep working; aliased as renderResumeDraftBadge too.
 // ─────────────────────────────────────────────────────────────────────────
 window.renderResumeDraftPill = async function() {
-  const pill = document.getElementById('resume-draft-pill');
+  const badge = document.getElementById('resume-draft-badge');
   const nameEl = document.getElementById('resume-draft-name');
-  if (!pill || !nameEl) return;
+  if (!badge) return;
   const id = getActiveDraftId();
-  if (!id) { pill.style.display = 'none'; return; }
+  if (!id) { badge.style.display = 'none'; return; }
   try {
     const r = await fetch('/api/drafts/' + encodeURIComponent(id));
     if (!r.ok) {
-      // 404 → draft was deleted from another path; drop the stale id so
-      // the pill stays hidden until the operator starts a new draft.
       if (r.status === 404) clearActiveDraft();
-      pill.style.display = 'none';
+      badge.style.display = 'none';
       return;
     }
     const draft = await r.json();
     const nm = (draft && draft.name ? String(draft.name) : '').trim() || 'Untitled draft';
-    nameEl.textContent = nm.slice(0, 32);
-    pill.style.display = 'inline-flex';
+    if (nameEl) nameEl.textContent = nm.slice(0, 32);
+    badge.title = `Resume draft — ${nm}`;
+    badge.style.display = 'inline-flex';
   } catch (err) {
-    console.warn('[drafts] resume-pill fetch:', err);
-    pill.style.display = 'none';
+    console.warn('[drafts] resume-badge fetch:', err);
+    badge.style.display = 'none';
   }
 };
+window.renderResumeDraftBadge = window.renderResumeDraftPill;
 
 window.dashResumeDraft = function() {
   const id = getActiveDraftId();

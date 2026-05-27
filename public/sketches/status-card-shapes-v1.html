@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Status Card · Shape Variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ─── tokens (light default, dark via body.theme-dark) ──────────────────── */
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --ink: #0a0a0a;
+  --gray: #6b6b6b;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --gold: #F7BE68;
+  --green: #2e9a4a;
+  --blue:  #2563ab;
+  --band-active: #ebf3ed;
+  --band-monitor: #eaeef5;
+  --shadow-card: 0 1px 0 rgba(0,0,0,0.04), 0 8px 24px -16px rgba(0,0,0,0.18);
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px -8px rgba(0,0,0,0.10);
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --surface: #14140f;
+  --ink: #fafafa;
+  --gray: #8b867a;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --green: #3fb950;
+  --blue:  #4d9fff;
+  --band-active: rgba(63, 185, 80, 0.10);
+  --band-monitor: rgba(77, 159, 255, 0.10);
+  --shadow-card: 0 1px 0 rgba(0,0,0,0.4), 0 12px 32px -18px rgba(0,0,0,0.65);
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.4), 0 6px 16px -10px rgba(0,0,0,0.5);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 48px 32px 96px;
+}
+.wrap { max-width: 920px; margin: 0 auto; }
+
+header.page {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--hairline);
+}
+header.page h1 { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 32px; letter-spacing: 0.04em; margin: 0; }
+header.page .meta { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.theme-toggle { font: inherit; background: transparent; border: 1px solid var(--hairline); color: var(--ink); padding: 6px 12px; cursor: pointer; border-radius: 9999px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.theme-toggle:hover { border-color: var(--ink); }
+
+.variant {
+  margin-bottom: 64px;
+}
+.variant-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 4px;
+}
+.variant-head h2 {
+  font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 22px; letter-spacing: 0.05em; margin: 0;
+}
+.variant-head small { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.variant-note { color: var(--gray); font-size: 12.5px; max-width: 640px; margin: 0 0 20px; }
+
+/* ─── shared bits used inside every variant ──────────────────────────── */
+.glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 28px; min-width: 44px; padding: 0 10px;
+  border: 1px solid var(--ink); color: var(--ink); background: transparent;
+  font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.08em; border-radius: 9999px;
+}
+.btn-pill {
+  font: inherit; padding: 6px 14px; border-radius: 9999px;
+  border: 1px solid var(--ink); background: transparent; color: var(--ink);
+  font-size: 12px; letter-spacing: 0.06em; cursor: pointer;
+}
+.btn-pill:hover { background: var(--ink); color: var(--bg); }
+.row-kebab { font: inherit; background: transparent; border: none; color: var(--gray); cursor: pointer; font-size: 18px; padding: 2px 6px; }
+.row-kebab:hover { color: var(--ink); }
+
+/* progress bar (full width, 2px) */
+.bar { position: relative; height: 2px; background: var(--hairline); overflow: hidden; border-radius: 9999px; }
+.bar > i { position: absolute; inset: 0 auto 0 0; background: var(--green); }
+.bar.is-blue > i { background: var(--blue); }
+
+/* dock — copied 1:1 from the dashboard sketch so the part you like stays identical */
+.dock { display: inline-flex; align-items: center; gap: 2px; }
+.dock-btn {
+  font: inherit; background: transparent; color: var(--ink); border: none;
+  width: 30px; height: 30px; border-radius: 9999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s, transform 0.18s;
+}
+.dock-btn:hover { background: rgba(0,0,0,0.06); transform: scale(1.16); }
+body.theme-dark .dock-btn:hover { background: rgba(255,255,255,0.08); }
+.dock-btn:active { transform: scale(1.04); }
+.dock-btn svg { width: 15px; height: 15px; pointer-events: none; }
+.dock-btn .icon-circled, .dock-trigger svg { width: 17px; height: 17px; }
+.dock-btn.danger { color: #c44; }
+body.theme-dark .dock-btn.danger { color: #f85149; }
+.dock-btn.danger:hover { background: rgba(196,68,68,0.10); }
+.dock-sep { width: 1px; height: 14px; background: var(--hairline); margin: 0 4px; }
+.dock-actions { display: inline-flex; align-items: center; gap: 2px; overflow: hidden; max-width: 0; transition: max-width 0.26s cubic-bezier(0.34, 1.4, 0.64, 1); }
+.dock[data-open="true"] .dock-actions { max-width: 200px; }
+.dock-trigger-icon { transition: transform 0.22s ease; }
+.dock[data-open="true"] .dock-trigger-icon { transform: rotate(180deg); }
+
+/* status caption used in every card ("Sending · batch every 30 min  Next batch in 06m 30s") */
+.status-line { display: flex; align-items: center; gap: 8px; color: var(--gray); font-size: 11.5px; letter-spacing: 0.04em; }
+.status-line b { color: var(--ink); font-weight: 500; }
+.status-line .eta { margin-left: auto; }
+.status-line a { color: var(--gray); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+
+/* tooltip (global, fixed-position to escape any overflow:hidden) */
+.global-tip {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.12s ease;
+  background: var(--ink); color: var(--bg); font-size: 10.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; padding: 5px 8px; border-radius: 3px; white-space: nowrap; z-index: 999;
+  transform: translate(-50%, -100%);
+}
+.global-tip.is-visible { opacity: 1; }
+
+/* small section labels used by every variant */
+.tag {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--gray); font-weight: 500;
+}
+.tag .dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--green); display: inline-block; }
+.tag.is-monitor .dot { background: var(--blue); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT A — Cockpit Tile
+   Rounded card (10px), soft shadow, left accent rail, floating section tag.
+   ═════════════════════════════════════════════════════════════════════════ */
+.va-card {
+  position: relative; background: var(--surface); border-radius: 10px;
+  box-shadow: var(--shadow-card); padding: 18px 22px 16px 28px;
+  border: 1px solid var(--hairline-soft);
+}
+.va-card + .va-card { margin-top: 16px; }
+.va-card::before {
+  content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px;
+  background: var(--green); border-radius: 9999px;
+}
+.va-card.is-monitor::before { background: var(--blue); }
+.va-tag {
+  position: absolute; top: -8px; left: 22px; padding: 2px 10px;
+  background: var(--surface); border: 1px solid var(--hairline);
+  font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--gray); border-radius: 9999px;
+}
+.va-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 16px; align-items: center; }
+.va-name { font-size: 16px; font-weight: 500; }
+.va-meta { display: flex; gap: 18px; color: var(--gray); font-size: 12px; }
+.va-meta b { color: var(--ink); font-weight: 500; }
+.va-bar { margin: 14px 0 10px; }
+.va-foot { display: flex; align-items: center; gap: 14px; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT B — Asymmetric Hero
+   Big circular progress ring as the anchor on the left, hero info middle, controls right.
+   Breaks the horizontal-strip feeling completely.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vb-card {
+  background: var(--surface); border: 1px solid var(--hairline-soft);
+  border-radius: 14px; padding: 22px 24px; box-shadow: var(--shadow-soft);
+  display: grid; grid-template-columns: 96px 1fr auto; gap: 22px; align-items: center;
+}
+.vb-card + .vb-card { margin-top: 16px; }
+.vb-ring { position: relative; width: 96px; height: 96px; }
+.vb-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.vb-ring .track { stroke: var(--hairline); fill: none; stroke-width: 4; }
+.vb-ring .fill  { stroke: var(--green); fill: none; stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset 0.4s ease; }
+.vb-card.is-monitor .vb-ring .fill { stroke: var(--blue); }
+.vb-ring-val {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 0.02em;
+}
+.vb-ring-val small { font-family: 'Hanken Grotesk', sans-serif; font-size: 9.5px; letter-spacing: 0.2em; color: var(--gray); text-transform: uppercase; margin-top: -2px; }
+.vb-mid { min-width: 0; }
+.vb-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.vb-name { font-size: 18px; font-weight: 500; }
+.vb-when { color: var(--gray); font-size: 12px; margin-bottom: 8px; }
+.vb-stats { display: flex; gap: 18px; color: var(--gray); font-size: 12px; }
+.vb-stats b { color: var(--ink); font-weight: 500; font-size: 13px; }
+.vb-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.vb-right .dock-shell { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--hairline); border-radius: 9999px; background: var(--bg); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT C — Media-Player Strip
+   Single dense line, like a "now playing" widget. Big controls, name center,
+   thin progress bar hugs the bottom edge. Most compact of the three.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vc-card {
+  position: relative; background: var(--surface); border: 1px solid var(--hairline-soft);
+  border-radius: 9999px; padding: 12px 18px 12px 12px;
+  box-shadow: var(--shadow-soft);
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 14px; align-items: center;
+  overflow: hidden;
+}
+.vc-card + .vc-card { margin-top: 14px; }
+.vc-card::after {
+  content: ""; position: absolute; left: 24px; right: 24px; bottom: 6px; height: 2px;
+  background: linear-gradient(to right, var(--green) var(--vc-pct, 0%), var(--hairline) var(--vc-pct, 0%));
+  border-radius: 9999px;
+}
+.vc-card.is-monitor::after {
+  background: linear-gradient(to right, var(--blue) var(--vc-pct, 0%), var(--hairline) var(--vc-pct, 0%));
+}
+.vc-lead {
+  width: 44px; height: 44px; border-radius: 9999px; background: var(--bg);
+  border: 1px solid var(--hairline); display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.05em;
+}
+.vc-mid { display: flex; flex-direction: column; min-width: 0; }
+.vc-top { display: flex; align-items: baseline; gap: 10px; }
+.vc-name { font-size: 14.5px; font-weight: 500; }
+.vc-when { color: var(--gray); font-size: 11px; }
+.vc-stats { color: var(--gray); font-size: 11.5px; }
+.vc-stats b { color: var(--ink); font-weight: 500; }
+.vc-card .dock { background: var(--bg); padding: 2px 4px; border-radius: 9999px; border: 1px solid var(--hairline); }
+
+footer.legend {
+  margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline);
+  color: var(--gray); font-size: 12px;
+}
+footer.legend ul { margin: 8px 0 0; padding-left: 18px; }
+footer.legend a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>Status Card · Shape Variants</h1>
+    <div class="meta">3 alternatives · same dock controls preserved</div>
+  </div>
+  <button class="theme-toggle" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</header>
+
+<!-- ─────────────── VARIANT A — Cockpit Tile ─────────────── -->
+<section class="variant" id="variant-a">
+  <div class="variant-head"><h2>A · Cockpit Tile</h2><small>rounded card · accent rail · floating tag</small></div>
+  <p class="variant-note">Soft rounded corners (10px) and a thin colored rail on the left edge break the rectangular feel. The section name sits as a floating tag on the card's top edge — like a folder tab — instead of being a heavy header row.</p>
+
+  <div class="va-card">
+    <span class="va-tag">Now Active · 1 Campaign</span>
+    <div class="va-row">
+      <div class="glyph">C+I</div>
+      <div>
+        <div class="va-name">EU Founder Push Q2</div>
+        <div class="va-meta" style="margin-top:2px;"><span>started 2h ago</span><span><b>58</b> / 120 sent</span><span><b>13</b> accepted</span><span><b>3</b> replies</span></div>
+      </div>
+      <button class="btn-pill">Open</button>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+    <div class="va-bar"><div class="bar" role="progressbar" aria-valuenow="58" aria-valuemax="120"><i style="width:49%"></i></div></div>
+    <div class="va-foot">
+      <div class="dock" data-open="false" role="toolbar">
+        <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <span class="dock-sep"></span>
+        <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="More" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+      <div class="status-line"><b>Sending</b> · <a>batch every 30 min</a><span class="eta">Next batch in <b>06m 30s</b></span></div>
+    </div>
+  </div>
+
+  <div class="va-card is-monitor">
+    <span class="va-tag">Monitoring · 7-Day Watch</span>
+    <div class="va-row">
+      <div class="glyph">C+I</div>
+      <div>
+        <div class="va-name">EU Founder Push Q1</div>
+        <div class="va-meta" style="margin-top:2px;"><span>finished 3d ago · day 3 of 7</span><span><b>108</b> sent</span><span><b>11</b> accepted</span><span><b>11</b> replies</span></div>
+      </div>
+      <button class="btn-pill">Open</button>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+    <div class="va-bar"><div class="bar is-blue" role="progressbar" aria-valuenow="3" aria-valuemax="7"><i style="width:43%"></i></div></div>
+    <div class="va-foot">
+      <div class="dock" data-open="false" role="toolbar">
+        <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+        <span class="dock-sep"></span>
+        <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+        <div class="dock-actions">
+          <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+          <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        </div>
+      </div>
+      <div class="status-line"><b>Watching</b> · <a>sweeps every 30 min</a><span class="eta">Next sweep in <b>20m 49s</b></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── VARIANT B — Asymmetric Hero ─────────────── -->
+<section class="variant" id="variant-b">
+  <div class="variant-head"><h2>B · Asymmetric Hero</h2><small>ring as anchor · 3-column layout</small></div>
+  <p class="variant-note">The progress is a circular ring on the left — it becomes the visual anchor instead of a thin strip lost at the bottom. Three-column grid breaks the horizontal-strip feeling. The dock sits inside its own pill on the right, like a transport control.</p>
+
+  <div class="vb-card">
+    <div class="vb-ring">
+      <svg viewBox="0 0 100 100">
+        <circle class="track" cx="50" cy="50" r="44"/>
+        <circle class="fill"  cx="50" cy="50" r="44" stroke-dasharray="276" stroke-dashoffset="141"/>
+      </svg>
+      <div class="vb-ring-val">49%<small>Sent</small></div>
+    </div>
+    <div class="vb-mid">
+      <div class="vb-head"><span class="tag"><span class="dot"></span>Now Active</span><div class="glyph" style="height:22px;min-width:36px;font-size:12px;">C+I</div></div>
+      <div class="vb-name">EU Founder Push Q2</div>
+      <div class="vb-when">started 2h ago · batch every 30 min · next in 06m 30s</div>
+      <div class="vb-stats" style="margin-top:8px;"><span><b>58</b> / 120</span><span><b>13</b> accepted</span><span><b>3</b> replies</span></div>
+    </div>
+    <div class="vb-right">
+      <button class="btn-pill">Open</button>
+      <div class="dock-shell">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="vb-card is-monitor">
+    <div class="vb-ring">
+      <svg viewBox="0 0 100 100">
+        <circle class="track" cx="50" cy="50" r="44"/>
+        <circle class="fill"  cx="50" cy="50" r="44" stroke-dasharray="276" stroke-dashoffset="157"/>
+      </svg>
+      <div class="vb-ring-val">43%<small>Day 3/7</small></div>
+    </div>
+    <div class="vb-mid">
+      <div class="vb-head"><span class="tag is-monitor"><span class="dot"></span>Monitoring</span><div class="glyph" style="height:22px;min-width:36px;font-size:12px;">C+I</div></div>
+      <div class="vb-name">EU Founder Push Q1</div>
+      <div class="vb-when">finished 3d ago · sweeps every 30 min · next in 20m 49s</div>
+      <div class="vb-stats" style="margin-top:8px;"><span><b>108</b> sent</span><span><b>11</b> accepted</span><span><b>11</b> replies</span></div>
+    </div>
+    <div class="vb-right">
+      <button class="btn-pill">Open</button>
+      <div class="dock-shell">
+        <div class="dock" data-open="false" role="toolbar">
+          <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <span class="dock-sep"></span>
+          <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+        <button class="row-kebab" aria-label="More">⋯</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── VARIANT C — Media-Player Strip ─────────────── -->
+<section class="variant" id="variant-c">
+  <div class="variant-head"><h2>C · Media-Player Strip</h2><small>pill shape · "now playing" pattern</small></div>
+  <p class="variant-note">Borrows from podcast/audio-player widgets — the pattern is the same as ours (title + progress + transport + status). Single horizontal pill (fully rounded), progress hugs the bottom edge as a filled track. Most compact; reads as "live activity" rather than "dashboard panel".</p>
+
+  <div class="vc-card" style="--vc-pct: 49%;">
+    <div class="vc-lead">C+I</div>
+    <div class="vc-mid">
+      <div class="vc-top">
+        <span class="tag" style="font-size:9.5px;"><span class="dot"></span>Now Active</span>
+        <span class="vc-name">EU Founder Push Q2</span>
+        <span class="vc-when">started 2h ago</span>
+      </div>
+      <div class="vc-stats"><b>58</b> / 120 sent &nbsp; · &nbsp; <b>13</b> accepted &nbsp; · &nbsp; <b>3</b> replies &nbsp; · &nbsp; Next batch in <b>06m 30s</b></div>
+    </div>
+    <div class="dock" data-open="false" role="toolbar">
+      <button class="dock-btn" data-tip="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+      <span class="dock-sep"></span>
+      <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+      <div class="dock-actions">
+        <button class="dock-btn danger" data-tip="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+        <button class="dock-btn" data-tip="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+        <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+      </div>
+    </div>
+    <button class="btn-pill">Open</button>
+  </div>
+
+  <div class="vc-card is-monitor" style="--vc-pct: 43%;">
+    <div class="vc-lead">C+I</div>
+    <div class="vc-mid">
+      <div class="vc-top">
+        <span class="tag is-monitor" style="font-size:9.5px;"><span class="dot"></span>Monitoring</span>
+        <span class="vc-name">EU Founder Push Q1</span>
+        <span class="vc-when">day 3 of 7</span>
+      </div>
+      <div class="vc-stats"><b>108</b> sent &nbsp; · &nbsp; <b>11</b> accepted &nbsp; · &nbsp; <b>11</b> replies &nbsp; · &nbsp; Next sweep in <b>20m 49s</b></div>
+    </div>
+    <div class="dock" data-open="false" role="toolbar">
+      <button class="dock-btn" data-tip="Pause watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+      <span class="dock-sep"></span>
+      <button class="dock-btn dock-trigger" data-tip="More actions" onclick="toggleDock(this, event)"><svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></button>
+      <div class="dock-actions">
+        <button class="dock-btn danger" data-tip="Stop watch"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+        <button class="dock-btn" data-tip="Force sweep now"><svg class="icon-circled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg></button>
+        <button class="dock-btn" data-tip="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+      </div>
+    </div>
+    <button class="btn-pill">Open</button>
+  </div>
+</section>
+
+<footer class="legend">
+  <strong style="color:var(--ink);font-weight:500;">What changed from the current dashboard:</strong>
+  <ul>
+    <li>A — full-width band → rounded card with floating tag + left accent rail</li>
+    <li>B — thin progress strip → circular progress ring as visual anchor; 3-column grid</li>
+    <li>C — stacked section + row → single horizontal pill with progress as bottom edge</li>
+    <li>All three keep the dock controls identical (pause + chevron → stop/restart/copy or stop/sweep/copy)</li>
+  </ul>
+</footer>
+
+</div>
+
+<div class="global-tip" id="globalTip" aria-hidden="true"></div>
+
+<script>
+/* Dock toggle — same behavior as the dashboard sketch */
+function toggleDock(triggerBtn, event) {
+  event?.stopPropagation?.();
+  const dock = triggerBtn.closest('.dock');
+  const opening = dock.getAttribute('data-open') !== 'true';
+  document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+    if (d !== dock) { d.setAttribute('data-open', 'false'); d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false'); }
+  });
+  dock.setAttribute('data-open', opening ? 'true' : 'false');
+  triggerBtn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.dock')) {
+    document.querySelectorAll('.dock[data-open="true"]').forEach(d => {
+      d.setAttribute('data-open', 'false');
+      d.querySelector('.dock-trigger')?.setAttribute('aria-expanded', 'false');
+    });
+  }
+});
+
+/* Global tooltip — fixed-position so it escapes the dock-actions overflow envelope */
+const tip = document.getElementById('globalTip');
+document.body.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]'); if (!t) return;
+  tip.textContent = t.getAttribute('data-tip');
+  const r = t.getBoundingClientRect();
+  tip.style.left = (r.left + r.width / 2) + 'px';
+  tip.style.top  = (r.top - 6) + 'px';
+  tip.classList.add('is-visible');
+});
+document.body.addEventListener('mouseout', e => {
+  if (e.target.closest('[data-tip]')) tip.classList.remove('is-visible');
+});
+</script>
+
+</body>
+</html>

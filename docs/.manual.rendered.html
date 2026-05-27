@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ortus Outreach — GDs Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Ortus Outreach — GDs Manual · Print Stylesheet (A4 Landscape)
+   Two-column magazine layout. Matches the app: Bebas Neue display,
+   Hanken Grotesk body, monochrome with gold accent, hairline rules.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --paper: #FAFAFA;
+  --ink: #0A0A0A;
+  --ink-2: #2A2A2A;
+  --gray: #6A6A6A;
+  --gray-2: #999999;
+  --hairline: rgba(10, 10, 10, 0.15);
+  --hairline-soft: rgba(10, 10, 10, 0.08);
+  --gold: #B38829;
+  --red: #C23030;
+
+  --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+  --body: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ── Page geometry — A4 LANDSCAPE ───────────────────────────────────────── */
+@page {
+  size: A4 landscape;
+  margin: 16mm 18mm 16mm 18mm;
+
+  @top-left {
+    content: "ORTUS OUTREACH";
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    color: #6A6A6A;
+  }
+  @top-right {
+    content: "GDS MANUAL";
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    color: #6A6A6A;
+  }
+  @bottom-left {
+    content: "v2.6.0 · 18 April 2026";
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7pt;
+    letter-spacing: 0.08em;
+    color: #999999;
+  }
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7pt;
+    letter-spacing: 0.08em;
+    color: #999999;
+  }
+}
+
+/* Cover page: no headers/footers, full bleed */
+@page cover {
+  margin: 0;
+  @top-left { content: none; }
+  @top-right { content: none; }
+  @bottom-left { content: none; }
+  @bottom-right { content: none; }
+}
+
+/* Reset */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 10.5pt;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Two-column magazine body ───────────────────────────────────────────── */
+main {
+  column-count: 2;
+  column-gap: 12mm;
+  column-fill: auto;
+  column-rule: 1px solid var(--hairline-soft);
+}
+
+/* Elements that break across columns */
+main > h1,
+main > h2,
+main > hr,
+main > table,
+main > pre,
+main > blockquote,
+main > .page-break,
+main > img {
+  column-span: all;
+  -webkit-column-span: all;
+}
+
+/* Figures (image + caption) that should span both columns */
+main > p > img {
+  column-span: all;
+  -webkit-column-span: all;
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--display);
+  font-weight: 400;
+  letter-spacing: 0.015em;
+  line-height: 1;
+  color: var(--ink);
+  break-after: avoid;
+}
+
+/* H1 = chapter title. Forces a new page, spans both columns */
+h1 {
+  font-size: 44pt;
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  margin: 4mm 0 3mm;
+  padding-top: 6mm;
+  border-top: 2px solid var(--ink);
+  break-before: page;
+  page-break-before: always;
+}
+
+/* First h1 in document doesn't force a break */
+body > main > h1:first-of-type { break-before: avoid; page-break-before: avoid; }
+
+h2 {
+  font-size: 18pt;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  margin: 6mm 0 2mm;
+  color: var(--ink);
+}
+h2::before {
+  content: '';
+  display: inline-block;
+  width: 6mm;
+  height: 1px;
+  background: var(--ink);
+  vertical-align: middle;
+  margin-right: 4mm;
+  transform: translateY(-2px);
+}
+
+h3 {
+  font-size: 12pt;
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+  margin: 4mm 0 1.5mm;
+  color: var(--ink);
+}
+
+h4 {
+  font-size: 10pt;
+  font-family: var(--body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  margin: 3mm 0 1mm;
+  color: var(--ink-2);
+}
+
+p {
+  margin: 0 0 2.5mm;
+  orphans: 3;
+  widows: 3;
+  hyphens: auto;
+}
+
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; }
+
+a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 2px; }
+
+code, kbd, samp {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: rgba(10, 10, 10, 0.05);
+  padding: 0.5mm 1.5mm;
+  border-radius: 2px;
+  letter-spacing: -0.01em;
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: 8.5pt;
+  line-height: 1.5;
+  background: #F0F0F0;
+  border-left: 2px solid var(--ink);
+  padding: 3mm 4mm;
+  margin: 3mm 0;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  white-space: pre-wrap;
+  color: var(--ink-2);
+}
+pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Lists */
+ul, ol {
+  margin: 0 0 2.5mm 4mm;
+  padding: 0;
+}
+li {
+  margin-bottom: 1mm;
+  line-height: 1.5;
+}
+li > p { margin-bottom: 1mm; }
+ul { list-style: none; }
+ul > li { position: relative; padding-left: 4mm; }
+ul > li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--gold);
+  font-family: var(--body);
+  font-weight: 600;
+}
+
+/* Blockquotes — used for callouts + warnings */
+blockquote {
+  border-left: 2px solid var(--gold);
+  padding: 2mm 5mm 2mm 5mm;
+  margin: 3mm 0 3mm 2mm;
+  background: rgba(179, 136, 41, 0.05);
+  font-family: var(--body);
+  font-size: 10.5pt;
+  color: var(--ink);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+blockquote p { margin-bottom: 1.5mm; }
+blockquote p:last-child { margin-bottom: 0; }
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 3mm 0 5mm;
+  font-size: 9.5pt;
+  line-height: 1.45;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+thead th {
+  text-align: left;
+  padding: 2.5mm 3mm 2mm;
+  border-bottom: 1.5px solid var(--ink);
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 8.5pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+tbody td {
+  padding: 2.2mm 3mm;
+  border-bottom: 1px solid var(--hairline-soft);
+  vertical-align: top;
+}
+tbody tr:last-child td { border-bottom: 1px solid var(--hairline); }
+
+tbody td:first-child { font-weight: 500; }
+
+/* ── Images ─────────────────────────────────────────────────────────────── */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 3mm auto;
+  border: 1px solid var(--hairline);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Paragraph-wrapped images should behave like figures (span both columns, center) */
+p:has(> img) {
+  column-span: all;
+  -webkit-column-span: all;
+  text-align: center;
+  margin: 3mm 0;
+}
+
+/* Inline right-floated images */
+img.inline-right {
+  float: right;
+  margin: 2mm 0 3mm 5mm;
+  max-width: 55mm;
+}
+
+/* ── Special constructs used in the manual ──────────────────────────────── */
+.page-break { break-after: page; page-break-after: always; }
+.clear { clear: both; }
+
+.cover-meta {
+  margin-top: 6mm;
+  font-family: var(--mono);
+  font-size: 9.5pt;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  line-height: 2;
+  column-span: all;
+  -webkit-column-span: all;
+}
+.cover-meta strong {
+  display: inline-block;
+  min-width: 24mm;
+  font-family: var(--body);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 8pt;
+  letter-spacing: 0.22em;
+  color: var(--gray);
+}
+
+/* ── Cover page (LANDSCAPE 297 × 210) ───────────────────────────────────── */
+.cover {
+  page: cover;
+  position: relative;
+  width: 297mm;
+  height: 210mm;
+  padding: 22mm 26mm;
+  background: var(--ink);
+  color: var(--paper);
+  break-after: page;
+  page-break-after: always;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  grid-template-rows: auto 1fr auto;
+  gap: 12mm 18mm;
+  overflow: hidden;
+  column-count: 1;
+}
+
+.cover-eyebrow {
+  grid-column: 1 / -1;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 9pt;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--paper);
+  opacity: 0.7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cover-eyebrow .mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3mm;
+}
+.cover-eyebrow .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold);
+  display: inline-block;
+}
+
+.cover-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.cover-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.cover-wordmark {
+  font-family: var(--display);
+  font-size: 124pt;
+  line-height: 0.88;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+}
+.cover-wordmark em {
+  font-style: normal;
+  color: var(--gold);
+}
+
+.cover-rule {
+  height: 1px;
+  background: rgba(250, 250, 250, 0.35);
+  margin: 6mm 0 5mm;
+}
+.cover-subtitle {
+  font-family: var(--display);
+  font-size: 32pt;
+  line-height: 1.05;
+  letter-spacing: 0.03em;
+  color: var(--paper);
+  margin-bottom: 5mm;
+}
+.cover-lede {
+  font-family: var(--body);
+  font-size: 11pt;
+  line-height: 1.55;
+  color: var(--paper);
+  opacity: 0.82;
+  margin-bottom: 0;
+}
+
+.cover-meta-wrap {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6mm;
+  border-top: 1px solid rgba(250, 250, 250, 0.25);
+  padding-top: 6mm;
+}
+.cover-meta-cell .k {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 7.5pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--paper);
+  opacity: 0.55;
+  margin-bottom: 2mm;
+}
+.cover-meta-cell .v {
+  font-family: var(--display);
+  font-size: 18pt;
+  letter-spacing: 0.02em;
+  color: var(--paper);
+}
+.cover-meta-cell .v em {
+  font-style: normal;
+  color: var(--gold);
+}
+
+/* Corner ticks on cover */
+.cover::before,
+.cover::after {
+  content: '';
+  position: absolute;
+  width: 10mm; height: 10mm;
+  border-color: var(--gold);
+  border-style: solid;
+  z-index: 1;
+}
+.cover::before {
+  top: 10mm; left: 10mm;
+  border-width: 1px 0 0 1px;
+}
+.cover::after {
+  bottom: 10mm; right: 10mm;
+  border-width: 0 1px 1px 0;
+}
+
+/* ── Running display: horizontal rule ───────────────────────────────────── */
+hr {
+  border: none;
+  border-top: 1px solid var(--ink);
+  margin: 5mm 0;
+}
+
+/* ── First h2 in document shouldn't force break ─────────────────────────── */
+body > main > h2:first-of-type { break-before: avoid; page-break-before: avoid; }
+
+/* ── Tighten paragraph spacing after headings ───────────────────────────── */
+h1 + p, h2 + p, h3 + p { margin-top: 1mm; }
+
+/* ── Colophon / footer block at end of document ─────────────────────────── */
+hr + p, hr + div {
+  font-family: var(--body);
+  font-size: 8pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gray);
+  text-align: center;
+  margin-top: 4mm;
+}
+
+/* Suppress markdown artefacts */
+.page-break + h1 { padding-top: 0; border-top: none; }
+
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────── COVER (LANDSCAPE) ───────────────────────── -->
+<section class="cover">
+  <div class="cover-eyebrow">
+    <span class="mark"><span class="dot"></span>ORTUS CLUB · GDS MANUAL</span>
+    <span>EDITION · 01</span>
+  </div>
+
+  <div class="cover-left">
+    <div class="cover-wordmark">
+      Ortus<br><em>Outreach</em>
+    </div>
+  </div>
+
+  <div class="cover-right">
+    <div class="cover-subtitle">The GDs Manual</div>
+    <div class="cover-rule"></div>
+    <div class="cover-lede">
+      A complete guide to running personalised LinkedIn outreach campaigns with the Ortus automation tool — from first sign-in to your first hundred connections, and every control on the deck in between.
+    </div>
+  </div>
+
+  <div class="cover-meta-wrap">
+    <div class="cover-meta-cell">
+      <div class="k">Version</div>
+      <div class="v"><em>2.6.0</em></div>
+    </div>
+    <div class="cover-meta-cell">
+      <div class="k">Date</div>
+      <div class="v">18 April 2026</div>
+    </div>
+    <div class="cover-meta-cell">
+      <div class="k">Edition</div>
+      <div class="v">01</div>
+    </div>
+    <div class="cover-meta-cell">
+      <div class="k">Audience</div>
+      <div class="v">GDs</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── BODY ───────────────────────── -->
+<main>
+<h1>Ortus Outreach</h1>
+<h2>GDs Manual</h2>
+<p>A complete, end-to-end guide to running LinkedIn outreach campaigns with the Ortus automation tool — from first login to your first hundred connections, and every control on the deck in between.</p>
+<hr>
+<div class="cover-meta"><p><strong>Version</strong> · v2.6.0<br><strong>Edition</strong> · GDs Manual, First Edition<br><strong>Date</strong> · 18 April 2026<br><strong>Audience</strong> · Ortus GDs running campaigns daily</p>
+</div><div class="page-break"></div><h2>What this is</h2>
+<p>Ortus Outreach is an in-house tool for running personalised LinkedIn outreach at scale. It reads a list of leads from a Google Sheet, rotates a pool of LinkedIn accounts (via GoLogin browser profiles), and performs one of five actions against each lead — a connection invite, a direct message, a premium InMail, a free Open Profile message, or a status check of yesterday&#39;s invites. Results are written back to the sheet row-by-row.</p>
+<p>You run one campaign at a time. Each campaign is defined by five choices:</p>
+<ul>
+<li><strong>Mode</strong> — what action to take on each lead</li>
+<li><strong>Rate &amp; limits</strong> — how fast, and how much per account</li>
+<li><strong>Source sheet</strong> — where the leads come from</li>
+<li><strong>Accounts</strong> — which LinkedIn logins do the work</li>
+<li><strong>Templates</strong> — the words that go out</li>
+</ul>
+<p>This manual walks you through all five, plus everything around the edges: live status, history, schedules, presets, passover watching, and what to do when something goes wrong.</p>
+<h2>Who this is for</h2>
+<p>You are an Ortus GD. You know what LinkedIn is, you know what a Sales Navigator seat is, you know what GoLogin is for, and you don&#39;t need a primer on why we don&#39;t just send all the invites at once. This manual assumes you&#39;ve been handed an account and you want to run a campaign well.</p>
+<p>It is <strong>not</strong> a setup guide for a fresh machine. The app is already running; you will be given a link. This is the day-two-onward manual — the thing to keep open while you work.</p>
+<h2>How to read this</h2>
+<p>Read the first three sections in order — <strong>Sign in and your first campaign</strong>, <strong>The console</strong>, and <strong>The five modes</strong>. Everything after that is reference: dip into whichever section matches what you&#39;re trying to do right now. The last page is a printable quick-reference card.</p>
+<h2>Conventions in this manual</h2>
+<ul>
+<li><strong>Bold</strong> marks a UI element or a button you press.</li>
+<li><code>Monospace</code> marks something you type, paste, or find in a field.</li>
+<li>Screenshots show the dark theme (the default). The app also has a light theme — the layout is identical.</li>
+<li>Section numbers (§1, §2…) reference the numbered sections in the app.</li>
+</ul>
+<div class="page-break"></div><h1>1. Sign in and your first campaign</h1>
+<h2>1.1 Signing up</h2>
+<p>Sign-up is gated by the <strong>State of Operations</strong> sheet. Your email must already be on that sheet before you can create an account. If you&#39;re new, ask the admin to add you first.</p>
+<p>Once you&#39;re on the sheet:</p>
+<ol>
+<li>Open the app link you were given and click <strong>Sign up</strong> at the bottom.</li>
+<li>Enter your Ortus email. It must match the one on the State of Operations sheet exactly.</li>
+<li>Pick a password — minimum 8 characters.</li>
+<li>Confirm.</li>
+</ol>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/02-signup.png" alt="Sign up screen"></p>
+<p>If you get &quot;email not found on State of Operations sheet,&quot; the admin hasn&#39;t added you yet. If you get &quot;email already registered,&quot; skip to §1.2 and sign in instead.</p>
+<h2>1.2 Signing in</h2>
+<p>After the first time, this is how you enter the app.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/01-login.png" alt="Sign in screen"></p>
+<p>Enter your email and password. The app keeps you signed in across sessions on the same browser.</p>
+<h2>1.3 Your first campaign — ten minutes, five choices</h2>
+<p>The fastest path from zero to &quot;campaign running&quot; is five decisions, each in its own section down the main column. The numbers in the sidebar match the numbers on screen.</p>
+<ol>
+<li><strong>Mode</strong> (§1) — pick <strong>Connect Only</strong> for your first campaign. It&#39;s the safest.</li>
+<li><strong>Rate &amp; Limits</strong> (§2) — leave the defaults: 6 connections per hour, 40 total per account.</li>
+<li><strong>Google Sheet URL</strong> (§3) — paste a public sheet with at least a <code>LinkedIn URL</code> column. Press <strong>Preview Sheet</strong> to confirm it reads.</li>
+<li><strong>Accounts</strong> (§4) — click the <strong>Assigned to me</strong> preset to auto-pick the profiles that are yours. If you&#39;re just testing, pick one account.</li>
+<li><strong>Templates</strong> (§5) — answer <strong>No</strong> to &quot;Do you want to add a note while connecting?&quot; for your first run — a note-less invite is actually more deliverable.</li>
+<li><strong>Launch</strong> (§6) — confirm the numbers at the top (connections × accounts × ETA), make sure <strong>Now</strong> is selected, click <strong>Start Campaign</strong>.</li>
+</ol>
+<p>That&#39;s it. Scroll to <strong>Live Status</strong> to watch it go.</p>
+<div class="page-break"></div><h1>2. The console</h1>
+<p>The whole app is one page. It has three columns plus a bar along the bottom.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/03-console-overview.png" alt="The console"></p>
+<h2>2.1 Left — the sidebar</h2>
+<p>The sidebar is your table of contents. It doesn&#39;t route you anywhere new; the numbered items scroll you to the matching section in the main column. Use it when the page gets long.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/11-sidebar.png" alt="Sidebar"></p>
+<p>Top to bottom:</p>
+<ul>
+<li><strong>Brand</strong> — version tag sits just under the wordmark. Handy when the admin asks which version you&#39;re on.</li>
+<li><strong>Campaign</strong> — the five numbered sections, in order.</li>
+<li><strong>Review</strong> — History, Schedules, and the Server Log (collapsible live tail of what the backend is doing — useful when something feels stuck).</li>
+<li><strong>Theme</strong> — dark or light. Identical functionality, personal taste.</li>
+<li><strong>Edit labels</strong> — lets you rename any visible label on the page. Changes are local to your browser; useful if you want the app to speak your team&#39;s vocabulary.</li>
+<li><strong>Notifications</strong> — turn on browser push so the app can ping you when a campaign finishes. <strong>Test email</strong> sends a probe to your own inbox.</li>
+<li><strong>Footer</strong> — who you&#39;re signed in as + today&#39;s date, plus <strong>Sign out</strong>.</li>
+</ul>
+<h2>2.2 Centre — the deck</h2>
+<p>The main column is where the work happens. Six numbered sections stack down the page: <strong>1. Campaign Settings</strong>, <strong>2. Rate &amp; Limits</strong>, <strong>3. Google Sheet URL</strong>, <strong>4. Accounts</strong>, <strong>5. Templates</strong>, <strong>6. Launch</strong> — followed by <strong>Live Status</strong>, <strong>Campaign History</strong>, and <strong>Campaign Schedules</strong> for review.</p>
+<p>Most sections are <strong>collapsible</strong>. Click the heading to open or close. The caret (▾) rotates to show state.</p>
+<h2>2.3 Top — header stats</h2>
+<p>Four at-a-glance numbers across the top of the main column:</p>
+<ul>
+<li><strong>Today</strong> — connections sent since midnight (your local time).</li>
+<li><strong>7D</strong> — rolling seven-day total.</li>
+<li><strong>Errors 24h</strong> — anything that went wrong in the last day.</li>
+<li><strong>Passover</strong> — the current state of LinkedIn&#39;s monthly credit reset (see §11).</li>
+</ul>
+<p>These update live while a campaign is running.</p>
+<h2>2.4 Right — the command centre</h2>
+<p>The right-hand column is an always-on dashboard. It is visible on wide laptop screens (≥1500px or so); on narrower windows it collapses away.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/12-right-pane.png" alt="Right pane" class="inline-right" style="width:240px"></p>
+<p>It shows — in order — the current run status, the state of both passovers, how many accounts/targets are selected, the next scheduled run (if any), and a live feed of what&#39;s happening right now. You don&#39;t interact with it much; you glance at it.</p>
+<div class="clear"></div><h2>2.5 Bottom — the run bar</h2>
+<p>A sticky bar that stays at the bottom of the screen no matter how far you scroll.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/13-run-bar.png" alt="Run bar"></p>
+<p>From left to right:</p>
+<ul>
+<li><strong>State dot + text</strong> — Idle, Running, Stopping, Finished.</li>
+<li><strong>View Status</strong> — jumps you to the Live Status section.</li>
+<li><strong>Presets</strong> — opens a popover with your saved configurations and a &quot;Last used&quot; shortcut (see §10).</li>
+<li><strong>Start Campaign</strong> — the one button you actually need when the deck is loaded. It&#39;s the gold pill; you can&#39;t miss it.</li>
+</ul>
+<div class="page-break"></div><h1>3. The five modes</h1>
+<p>The first decision is what the campaign actually <em>does</em>. There are five modes. Pick one — you can&#39;t run two at once.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/04-mode-picker.png" alt="Mode picker"></p>
+<p>The mode selector is a carousel: <strong>Previous</strong> and <strong>Next</strong> cycle through the modes, or click any of the chip buttons below to jump straight to one. The counter (<code>01 / 05</code>) shows where you are in the list.</p>
+<h2>3.1 Connect Only — mode 01</h2>
+<p>The bread and butter. Sends a LinkedIn connection invite to each lead, optionally with a short note.</p>
+<ul>
+<li><strong>When to use it:</strong> top-of-funnel outreach, anyone you&#39;re not already connected to.</li>
+<li><strong>What it needs:</strong> leads with <code>LinkedIn URL</code>; optionally a connection-note template.</li>
+<li><strong>What it writes back to the sheet:</strong> <code>Status = Invite Pending</code> and <code>Date Last Action</code>.</li>
+<li><strong>Watch out for:</strong> LinkedIn&#39;s weekly invite limit (roughly 100/account/week — that&#39;s why we cap at 40/day). Sending without a note is actually slightly more deliverable on most accounts.</li>
+</ul>
+<p>There&#39;s a sub-toggle underneath the mode chips called <strong>Message Open Profiles directly</strong>. If it&#39;s on, and a lead&#39;s <code>Open Profile</code> column in the sheet says &quot;yes&quot;, the app will skip the invite and send a free direct message instead. See §3.5.</p>
+<h2>3.2 Check Status — mode 02</h2>
+<p>Doesn&#39;t send anything. It <strong>audits</strong> leads that are in <code>Invite Pending</code> state — checks if each invite has been accepted, declined, or is still pending, and updates the sheet.</p>
+<ul>
+<li><strong>When to use it:</strong> the day after a connect campaign, or weekly as a housekeeping pass.</li>
+<li><strong>What it needs:</strong> leads with <code>Status = Invite Pending</code> in the sheet.</li>
+<li><strong>What it writes back:</strong> <code>Status = Connected | Declined | Invite Pending</code> (unchanged).</li>
+<li><strong>Why it exists:</strong> LinkedIn doesn&#39;t notify you cleanly when invites are accepted. Without a status check, your sheet drifts out of date.</li>
+</ul>
+<h2>3.3 Message Only — mode 03</h2>
+<p>Sends a direct message to <strong>first-degree</strong> connections (people you&#39;re already connected to).</p>
+<ul>
+<li><strong>When to use it:</strong> follow-up sequences, re-engagement, event invitations to known contacts.</li>
+<li><strong>What it needs:</strong> leads who are already 1st-degree; a follow-up-message template.</li>
+<li><strong>What it writes back:</strong> <code>Message = sent</code>.</li>
+<li><strong>Watch out for:</strong> if a lead is not 1st-degree, the message button won&#39;t appear and the row will be skipped with an error. This is expected and safe.</li>
+</ul>
+<h2>3.4 InMail Only — mode 04</h2>
+<p>Sends a premium LinkedIn InMail — works on anyone, regardless of connection status, but burns a <strong>credit</strong> from the sending account&#39;s Sales Navigator allotment.</p>
+<ul>
+<li><strong>When to use it:</strong> high-value targets you can&#39;t reach any other way.</li>
+<li><strong>What it needs:</strong> accounts with InMail credits; subject + body template.</li>
+<li><strong>What it writes back:</strong> <code>Status = InMail Sent</code>, <code>InMail = sent</code>, and the credit count in the audit notes.</li>
+<li><strong>Watch out for:</strong> credits are <strong>expensive</strong> — track them. See §11 on passover.</li>
+</ul>
+<h2>3.5 Open Profile Message — mode 05</h2>
+<p>LinkedIn lets <strong>Premium</strong> members enable &quot;Open Profile&quot; on their own profile — anyone can message them without a connection, and it&#39;s <strong>free</strong>. If you&#39;ve tagged a lead as Open Profile in your sheet, this mode finds them and messages them directly.</p>
+<ul>
+<li><strong>When to use it:</strong> you have a list pre-qualified as Open Profile.</li>
+<li><strong>What it needs:</strong> leads with <code>Open Profile = yes</code>; subject (optional) + body template.</li>
+<li><strong>What it writes back:</strong> <code>Status = OP Message Sent</code>, <code>OP = sent</code>.</li>
+<li><strong>Watch out for:</strong> if the lead isn&#39;t actually Open Profile when the app arrives, the row gets flagged <code>Not Open Profile</code> and skipped in future runs. False positives don&#39;t cost anything.</li>
+</ul>
+<h2>Pick-one-of-five cheat sheet</h2>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Sends</th>
+<th>Works on</th>
+<th>Cost</th>
+<th>Use when</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Connect Only</td>
+<td>Invite (+ note)</td>
+<td>Anyone 2nd/3rd deg</td>
+<td>Invite quota</td>
+<td>Top of funnel</td>
+</tr>
+<tr>
+<td>Check Status</td>
+<td>Nothing</td>
+<td>Pending invites</td>
+<td>Free</td>
+<td>Day after Connect</td>
+</tr>
+<tr>
+<td>Message Only</td>
+<td>Direct message</td>
+<td>1st-degree only</td>
+<td>Free</td>
+<td>Follow-ups</td>
+</tr>
+<tr>
+<td>InMail Only</td>
+<td>Premium InMail</td>
+<td>Anyone</td>
+<td>1 credit</td>
+<td>High-value only</td>
+</tr>
+<tr>
+<td>Open Profile</td>
+<td>Direct message</td>
+<td>OP-flagged leads</td>
+<td>Free</td>
+<td>Pre-qualified list</td>
+</tr>
+</tbody></table>
+<div class="page-break"></div><h1>4. Rate &amp; Limits</h1>
+<p>The second decision is how fast and how much. These three numbers decide the shape of your day.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/05-rate-limits.png" alt="Rate &amp; limits"></p>
+<h2>4.1 The three controls</h2>
+<ul>
+<li><strong>Connections per account per hour</strong> — throttle. Default <strong>6</strong>. Range 1–30.</li>
+<li><strong>Max connections per account (total)</strong> — ceiling. Default <strong>40</strong>. Range 1–100.</li>
+<li><strong>Gap between messages (seconds)</strong> — only shown for messaging modes. Default <strong>60</strong>. Range 10–600.</li>
+</ul>
+<p>Each control is a <strong>stepper</strong>: tap the value to type a number, or use the + / − buttons. Changes update the summary below in real time.</p>
+<h2>4.2 Why the defaults are low</h2>
+<p>LinkedIn throttles accounts that behave like bots. Two numbers matter:</p>
+<ul>
+<li><strong>The weekly invite cap.</strong> Since 2021, LinkedIn enforces roughly 100 invites per account per week on new accounts. Old, warm accounts get more leeway.</li>
+<li><strong>The behavioural model.</strong> Bursts of identical actions trip the classifier. Spreading actions over time — six an hour, not forty in ten minutes — looks like a human.</li>
+</ul>
+<p>Six per hour × six or seven hours = ~40 per day per account. That&#39;s the sweet spot: enough volume to matter, slow enough to not trip flags. Don&#39;t go above 10/hr unless you have a reason and an account you&#39;re willing to burn.</p>
+<h2>4.3 The campaign summary</h2>
+<p>Below the steppers, the <strong>summary</strong> hero shows you what you&#39;ve just committed to:</p>
+<ul>
+<li><strong>Actions</strong> — the total (selected accounts × per-account ceiling, or the sheet size, whichever is smaller).</li>
+<li><strong>Duration</strong> — how long the campaign will take, given your rate.</li>
+<li><strong>Finishes</strong> — the local time it will wrap up.</li>
+</ul>
+<p>If the Finishes time is after midnight, reconsider your settings — either you&#39;ve selected too few accounts, too large a sheet, or too slow a rate.</p>
+<h2>4.4 The two warnings</h2>
+<p>Under the summary:</p>
+<blockquote>
+<p><strong>Keep your laptop open until the campaign finishes.</strong><br><strong>Do not close the browser windows that open — they run the campaign.</strong></p>
+</blockquote>
+<p>These are not decorative. The campaign runs in headless-ish Chrome windows that GoLogin spawns locally. If you close the lid, they stop. If you close those windows, they stop. Plug in, disable sleep, walk away.</p>
+<div class="page-break"></div><h1>5. The Google Sheet</h1>
+<p>The third decision is where the leads come from. Ortus Outreach reads <strong>public</strong> Google Sheets — no API keys, no OAuth, just paste the URL.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/05-rate-limits.png" alt="Sheet URL"></p>
+<h2>5.1 Sharing the sheet</h2>
+<p>The sheet must be set to <strong>Anyone with the link can view</strong> — at minimum. Writer permissions are not required; the app writes back via a separate service path, but viewer is enough for reads.</p>
+<p>To verify the sheet is readable, click <strong>Preview Sheet</strong>. If the app can reach it, you&#39;ll see a table of the first handful of rows. If not, you&#39;ll get a &quot;Failed to fetch&quot; error — 99% of the time that&#39;s because the sheet is private.</p>
+<h2>5.2 Required columns</h2>
+<p><strong>Only one column is strictly required:</strong> a column containing LinkedIn profile URLs. The app auto-detects the LinkedIn column by scanning for <code>linkedin.com/in/</code> patterns, so you can call the column whatever you like (<code>LinkedIn URL</code>, <code>Profile</code>, <code>URL</code>, etc.).</p>
+<h2>5.3 Recommended columns</h2>
+<p>If present, the app will use these for personalisation and filtering:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Used for</th>
+<th>Aliases accepted</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>First Name</code></td>
+<td><code>{firstName}</code> placeholder</td>
+<td><code>firstName</code>, <code>first_name</code></td>
+</tr>
+<tr>
+<td><code>Last Name</code></td>
+<td><code>{lastName}</code> placeholder</td>
+<td><code>lastName</code>, <code>last_name</code></td>
+</tr>
+<tr>
+<td><code>Company</code></td>
+<td><code>{company}</code> placeholder</td>
+<td><code>company</code></td>
+</tr>
+<tr>
+<td><code>Title</code></td>
+<td><code>{title}</code> placeholder</td>
+<td><code>title</code>, <code>Job Title</code></td>
+</tr>
+<tr>
+<td><code>Open Profile</code></td>
+<td>Routes lead to OP path (value = <code>yes</code>)</td>
+<td><code>openProfile</code>, <code>open_profile</code></td>
+</tr>
+<tr>
+<td><code>Assignee</code></td>
+<td>Lets GDs filter &quot;Assigned to me&quot;</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<p><strong>Any column</strong> in the sheet becomes available as a <code>{placeholder}</code> in your templates, not just the ones above. If your sheet has a column <code>City</code>, you can write <code>{city}</code> in a template and it will be filled in per-row.</p>
+<h2>5.4 Columns the app will create and write</h2>
+<p>The app keeps the sheet up to date. If these columns don&#39;t exist, they&#39;ll be created on first run:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Written by</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Status</code></td>
+<td>All modes</td>
+<td><code>Invite Pending</code>, <code>Connected</code>, <code>Declined</code>, <code>InMail Sent</code>, <code>OP Message Sent</code>, <code>Not Connectable</code>, <code>Not Open Profile</code></td>
+</tr>
+<tr>
+<td><code>OP</code></td>
+<td>Open Profile mode, Connect+OP path</td>
+<td>Hyperlink to message or blank</td>
+</tr>
+<tr>
+<td><code>Message</code></td>
+<td>Message mode</td>
+<td>Hyperlink to message or blank</td>
+</tr>
+<tr>
+<td><code>InMail</code></td>
+<td>InMail mode</td>
+<td>Hyperlink to thread or blank</td>
+</tr>
+<tr>
+<td><code>Account Used</code></td>
+<td>All</td>
+<td>Email of the GoLogin account that did the work</td>
+</tr>
+<tr>
+<td><code>Date Last Action</code></td>
+<td>All</td>
+<td>ISO date</td>
+</tr>
+</tbody></table>
+<p>Don&#39;t manually edit these columns while a campaign is running.</p>
+<div class="page-break"></div><h1>6. Accounts (GoLogin)</h1>
+<p>The fourth decision is which LinkedIn accounts do the sending. Each one is a GoLogin browser profile — an isolated Chrome with its own cookies, fingerprint, and session.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/06-accounts.png" alt="Accounts"></p>
+<h2>6.1 The three presets</h2>
+<p>At the top of the Accounts section are three preset buttons:</p>
+<ul>
+<li><strong>Assigned to me</strong> — profiles where the <code>Assignee</code> field matches the identifier you&#39;ve typed into <strong>My identifier</strong>. Useful on teams where profiles are owned by specific people.</li>
+<li><strong>Unassigned Pool</strong> — profiles with no assignee. Shared accounts anyone can use.</li>
+<li><strong>All</strong> — show every profile. This is the default.</li>
+</ul>
+<p>The count next to each preset tells you how many profiles are in that bucket.</p>
+<h2>6.2 My identifier</h2>
+<p>Just below the presets, there&#39;s a small field: <strong>My identifier for &quot;Assigned&quot;</strong>. Type your Ortus email (or your name — whatever&#39;s in the Assignee column of the GoLogin profiles). The &quot;Assigned to me&quot; preset filters against this string.</p>
+<p>The app remembers this across sessions. Set it once.</p>
+<h2>6.3 Browse Accounts — search, filter, pick</h2>
+<p>Expand <strong>Browse Accounts</strong> to see every profile as a card.</p>
+<ul>
+<li><strong>Search</strong> — live filter by name or email.</li>
+<li><strong>Select All Visible / Deselect All / Refresh</strong> — bulk actions.</li>
+<li><strong>Filter chips</strong> — four live counts:<ul>
+<li><strong>All</strong> — every profile in view</li>
+<li><strong>Available</strong> — profiles with recent successful logins, not currently in use</li>
+<li><strong>In use</strong> — profiles a campaign is currently running through</li>
+<li><strong>Selected only</strong> — just the ones you&#39;ve ticked</li>
+</ul>
+</li>
+</ul>
+<p>Click a card to select/deselect. The selected count updates in the right pane live.</p>
+<h2>6.4 Passover banner</h2>
+<p>Above the profile grid you&#39;ll see a banner like:</p>
+<blockquote>
+<p>OP / INMAIL / SALES NAV — PASSOVER ACTIVE — CLOSES IN 13D<br>CC — PASSOVER ACTIVE — CLOSES IN 2D</p>
+</blockquote>
+<p>This is LinkedIn&#39;s credit-reset cycle. When the banner is green and &quot;Active,&quot; credits are fresh and you can use InMail/Open Profile paths freely. When it&#39;s amber or closed, you&#39;re in the tail of the cycle — think twice before burning the last credits. See §11 for the full explanation.</p>
+<h2>6.5 Execution order</h2>
+<p>Once you&#39;ve selected profiles, an <strong>Execution order</strong> panel appears below the grid. The order from top to bottom is the order the campaign will use them in — first profile does its 40, then the second, and so on.</p>
+<p>Drag to reorder if you have preferences.</p>
+<div class="page-break"></div><h1>7. Templates</h1>
+<p>The fifth decision is what you actually send. Templates live in §5 of the console, and which sub-sections appear depends on the mode you picked.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/07-templates.png" alt="Templates"></p>
+<h2>7.1 The add-a-note question</h2>
+<p>If you&#39;re in <strong>Connect Only</strong> mode, the first thing you see is:</p>
+<blockquote>
+<p><strong>Do you want to add a note while connecting?</strong>   [Yes] [No]</p>
+</blockquote>
+<ul>
+<li><strong>No</strong> (recommended for most campaigns) — sends a noteless invite. Slightly higher acceptance rates in most tests; no template writing required.</li>
+<li><strong>Yes</strong> — reveals the <strong>Connection Note</strong> textarea (300 character max).</li>
+</ul>
+<h2>7.2 The template bar</h2>
+<p>Above every template editor is a bar:</p>
+<ul>
+<li><strong>Select a template</strong> — dropdown of saved templates.</li>
+<li><strong>Load</strong> — load the selected template into the editor.</li>
+<li><strong>Delete</strong> — delete the selected saved template.</li>
+<li><strong>Save As…</strong> — save whatever&#39;s currently in the editor under a new name.</li>
+</ul>
+<p>Templates are stored per-user. They&#39;re not shared across GDs.</p>
+<h2>7.3 Template sections, by mode</h2>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Visible template sub-sections</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Connect Only (with note)</td>
+<td>Connection Note</td>
+</tr>
+<tr>
+<td>Connect Only (no note)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Check Status</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Message Only</td>
+<td>Follow-up Message</td>
+</tr>
+<tr>
+<td>InMail Only</td>
+<td>Subject + Body</td>
+</tr>
+<tr>
+<td>Open Profile</td>
+<td>Subject (optional) + Body</td>
+</tr>
+</tbody></table>
+<h2>7.4 Placeholder tags</h2>
+<p>Below each text area is a row of chips: <code>{firstName}</code>, <code>{lastName}</code>, <code>{company}</code>, <code>{title}</code>, etc. Click a chip to insert that placeholder at your cursor. At send time, the app swaps in the row&#39;s value from the sheet.</p>
+<p>The chips are <strong>dynamic</strong> — if you preview a sheet with a column <code>City</code>, a <code>{city}</code> chip appears automatically.</p>
+<p>If a placeholder has no value for a row (e.g. <code>{company}</code> but the company column is blank for that lead), the app leaves the placeholder text in place rather than sending a broken &quot;Hi , I wanted…&quot;. Fill your sheet before you blame the template.</p>
+<h2>7.5 Writing tips (for Ortus campaigns)</h2>
+<ul>
+<li><strong>Short notes beat long ones.</strong> 150 characters is plenty for a connection note.</li>
+<li><strong>Lead with specificity.</strong> Mention something only they would recognise — a mutual connection, a recent post, the event you&#39;re hosting.</li>
+<li><strong>Use <code>{firstName}</code> lightly.</strong> One per note, up top. More than that reads as mail-merged.</li>
+<li><strong>Write in English unless the lead is clearly non-English.</strong> Locale-specific templates are on the roadmap; for now, keep one template per language and run separate campaigns.</li>
+</ul>
+<div class="page-break"></div><h1>8. Launch — Now vs Schedule</h1>
+<p>The sixth section (§6 Launch) is where you press Go.</p>
+<h2>8.1 Launch hero</h2>
+<p>The hero at the top of the section restates the campaign in one line:</p>
+<blockquote>
+<p><strong>40</strong> connections · <strong>1</strong> accounts · ETA <strong>19:50</strong></p>
+</blockquote>
+<p>If any of those numbers look wrong, go back up the page and fix them before launching. ETA is computed live from your rate × total ceiling.</p>
+<h2>8.2 Now mode</h2>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/08-launch-now.png" alt="Launch Now"></p>
+<ul>
+<li>Toggle is <strong>Now</strong> (default).</li>
+<li>Two buttons appear: <strong>Start Campaign</strong> (enabled) and <strong>Stop Campaign</strong> (disabled until a run is active).</li>
+<li>Press <strong>Start Campaign</strong> → campaign begins; page scrolls to <strong>Live Status</strong>.</li>
+</ul>
+<p>To stop mid-run, press <strong>Stop Campaign</strong>. The app finishes the current lead, then quits cleanly. Expect a few seconds of delay — the browser windows it&#39;s running need to wrap up.</p>
+<h2>8.3 Schedule mode</h2>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/09-launch-schedule.png" alt="Launch Schedule"></p>
+<ul>
+<li>Toggle is <strong>Schedule</strong>.</li>
+<li>Four fields appear: <strong>Name</strong>, <strong>Time</strong>, <strong>Days</strong> (Mon–Sun checkboxes), and <strong>Save Schedule</strong>.</li>
+<li>The schedule captures <strong>everything on the page right now</strong> — mode, rate, accounts, sheet URL, templates. If you change the mode later, existing schedules are unaffected; they remember the state at save time.</li>
+</ul>
+<p>Defaults: 09:00, Monday–Friday.</p>
+<p>Hit <strong>Save Schedule</strong>. The schedule now appears in the <strong>Campaign Schedules</strong> section lower down the page (see §11) and in the <strong>Next schedule</strong> card in the right pane.</p>
+<p>Schedules fire server-side, so your laptop doesn&#39;t need to be open at the scheduled time — <strong>but</strong> the app server does need to be running. Confirm with the admin that server uptime covers your schedule window.</p>
+<div class="page-break"></div><h1>9. Live Status</h1>
+<p>While a campaign is running — and for a few seconds after it finishes — <strong>Live Status</strong> is where you watch it.</p>
+<p><img src="file:///Users/antoniovarlese/ortus-gologin-clone/docs/screenshots/10-live-status.png" alt="Live Status"></p>
+<h2>9.1 The six stat cards</h2>
+<ul>
+<li><strong>Status</strong> — Idle · Running · Stopping · Finished · Error.</li>
+<li><strong>Mode</strong> — which mode is running.</li>
+<li><strong>Account</strong> — the email of the GoLogin profile currently doing the work.</li>
+<li><strong>Progress</strong> — actions sent so far <strong>in this run</strong>.</li>
+<li><strong>Total</strong> — lifetime total for the day (across all runs).</li>
+<li><strong>Errors</strong> — count of leads the app couldn&#39;t process.</li>
+</ul>
+<h2>9.2 The progress bar</h2>
+<p>Below the stat cards, a thin bar fills left-to-right as the campaign progresses. At 100% the campaign is done (or the ceiling was hit).</p>
+<h2>9.3 The log panel</h2>
+<p>Underneath, a scrolling log shows every step the app takes:</p>
+<pre><code>[10:32:14] ✓ marcus.r@ortusclub — connected to Gianna Rossi
+[10:32:47] ✓ marcus.r@ortusclub — invited Paul Markham
+[10:33:21] ⚠  marcus.r@ortusclub — profile unreachable (timeout)
+[10:33:58] ✓ marcus.r@ortusclub — invited Sara Tovar
+</code></pre>
+<ul>
+<li><code>✓</code> green — action succeeded.</li>
+<li><code>⚠ </code> amber — soft error, lead was skipped; campaign continues.</li>
+<li><code>✗</code> red — hard error; campaign may stop depending on the type.</li>
+</ul>
+<p><strong>Copy Log</strong> copies the full log to your clipboard. <strong>Clear Log</strong> wipes the panel (does not affect the server log or history).</p>
+<h2>9.4 What to do while it runs</h2>
+<p>Nothing. Seriously — don&#39;t touch the browser windows GoLogin opens, don&#39;t close the tab, don&#39;t close the laptop lid. Walk away, come back in the ETA window.</p>
+<p>If you need to stop early, press <strong>Stop Campaign</strong> in §6 Launch or at the bottom run bar.</p>
+<div class="page-break"></div><h1>10. Presets</h1>
+<p>A preset is a <strong>saved bundle of the whole page state</strong> — mode, rate, accounts, sheet URL, templates, add-note toggle, everything. Good for campaigns you run repeatedly.</p>
+<h2>10.1 The presets popover</h2>
+<p>In the run bar at the bottom of every page, there&#39;s a <strong>Presets</strong> pill. Click it to open the popover upward.</p>
+<p>The popover has three rows:</p>
+<ul>
+<li><strong>Last Used</strong> (pinned) — the configuration of your most recent campaign. One click to reload it.</li>
+<li><strong>Saved</strong> — presets you&#39;ve explicitly named and saved.</li>
+<li><strong>+ Save current as…</strong> — saves what&#39;s on screen right now under a name you type.</li>
+</ul>
+<h2>10.2 Typical Ortus presets</h2>
+<p>A team will usually save something like:</p>
+<ul>
+<li><strong>Weekly connect — assigned</strong> — Connect Only, 6/hr, 40/day, your accounts, standard note template.</li>
+<li><strong>Monday warm-up</strong> — Check Status across all assigned accounts.</li>
+<li><strong>VIP InMail</strong> — InMail Only, 3/hr, 10/day, one account, specific subject line.</li>
+</ul>
+<p>Saving is cheap; use liberally. Presets don&#39;t auto-run — they load the config and wait for you to press Start.</p>
+<h2>10.3 Deleting a preset</h2>
+<p>Open the popover, hover a preset, use the small × that appears on the right. Deletion is immediate; there&#39;s no undo.</p>
+<div class="page-break"></div><h1>11. Passover — watching the credit clock</h1>
+<p>LinkedIn&#39;s premium features reset on a cycle. We call this the <strong>passover</strong>. Three different clocks:</p>
+<table>
+<thead>
+<tr>
+<th>Passover</th>
+<th>Covers</th>
+<th>Reset cadence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>OP · InMail · Sales Nav</strong></td>
+<td>Open Profile + InMail credits + Sales Nav actions</td>
+<td>Monthly</td>
+</tr>
+<tr>
+<td><strong>CC</strong></td>
+<td>Connection credits on premium tier</td>
+<td>Weekly</td>
+</tr>
+</tbody></table>
+<h2>11.1 Where you see it</h2>
+<ul>
+<li><strong>Top header stat</strong> — <strong>Passover Active</strong> / <strong>Passover Closed</strong> / countdown.</li>
+<li><strong>Right pane</strong> — both clocks with days remaining and reset date.</li>
+<li><strong>Accounts section banner</strong> — visible when you&#39;re about to pick accounts.</li>
+</ul>
+<h2>11.2 How to play it</h2>
+<ul>
+<li><strong>Active, many days left</strong> — act normally.</li>
+<li><strong>Active, less than 3 days left</strong> — conserve credits. Don&#39;t start large InMail campaigns; save them for day one of the new cycle.</li>
+<li><strong>Closed</strong> — the feature is effectively offline until the reset. Connect Only still works; InMail and OP won&#39;t.</li>
+</ul>
+<div class="page-break"></div><h1>12. History</h1>
+<p>Every completed campaign is logged to <strong>Campaign History</strong>, which sits below Live Status.</p>
+<p>Each row shows: start time, mode, account(s) used, sheet, total actions, errors, duration. Click a row to expand the per-lead log.</p>
+<ul>
+<li><strong>Download CSV</strong> — exports the full history table for reporting.</li>
+<li><strong>Clear History</strong> — wipes it. Don&#39;t clear on a whim; there&#39;s no undo.</li>
+</ul>
+<p>History is <strong>local to your user</strong> — what you see is your own runs, not the whole team&#39;s. For team-wide reporting, pull the sheet(s) directly or ask the admin for a roll-up.</p>
+<div class="page-break"></div><h1>13. Schedules</h1>
+<p><strong>Campaign Schedules</strong> (below History) lists everything saved from the Launch → Schedule panel.</p>
+<p>Each row: name, time, days, mode, account count. Columns include:</p>
+<ul>
+<li><strong>Enable / Disable</strong> toggle — pauses the schedule without deleting it.</li>
+<li><strong>Run now</strong> — fires the scheduled campaign immediately without waiting for its next window.</li>
+<li><strong>Delete</strong> — removes it permanently.</li>
+</ul>
+<p>The next upcoming schedule is also shown in the right pane under <strong>Next schedule</strong> so you can see at a glance what&#39;s queued.</p>
+<div class="page-break"></div><h1>14. Troubleshooting</h1>
+<p>A short field guide to the problems you&#39;ll hit.</p>
+<h2>14.1 &quot;Failed to fetch Google Sheet (HTTP 401)&quot;</h2>
+<p>The sheet isn&#39;t public. Fix: open the sheet, <strong>Share → Change → Anyone with the link → Viewer</strong>.</p>
+<h2>14.2 &quot;Auth expired&quot; on a GoLogin profile</h2>
+<p>The account&#39;s LinkedIn session has timed out. Fix: in GoLogin desktop, open that profile, log into LinkedIn manually, close. Come back to Ortus Outreach, hit <strong>Refresh</strong> in the Accounts section, the profile should be back to Available.</p>
+<h2>14.3 Campaign stuck at &quot;Running&quot; with no progress</h2>
+<p>Two common causes:</p>
+<ul>
+<li><strong>The GoLogin window was closed.</strong> The app relies on the windows it opened — if you closed them, actions stop. Press <strong>Stop Campaign</strong>, then start again.</li>
+<li><strong>LinkedIn is presenting a captcha.</strong> Open the GoLogin window; if you see a captcha or &quot;Verify it&#39;s you&quot; screen, solve it manually. Actions resume on the next tick.</li>
+</ul>
+<h2>14.4 &quot;Message button not found&quot; in the log</h2>
+<p>The lead isn&#39;t 1st-degree, so the Message mode has nothing to click. Expected in Message mode when not all leads are connections; the row is skipped and the campaign continues.</p>
+<h2>14.5 &quot;No Open Profile template&quot; in OP mode</h2>
+<p>You&#39;re in Open Profile mode but the Body template is empty. Go back to §5 Templates and fill it in.</p>
+<h2>14.6 Invites aren&#39;t sending — LinkedIn weekly limit</h2>
+<p>You&#39;ve hit the weekly invite cap on that account. Wait until the weekly reset (typically Monday 00:00 UTC), or rotate to another account.</p>
+<h2>14.7 Numbers in the header don&#39;t match what I just sent</h2>
+<p>Header stats poll every few seconds. Wait 10 seconds, they&#39;ll catch up. If they&#39;re still off after 30 seconds, reload the page — your session may have missed a broadcast.</p>
+<h2>14.8 &quot;Stop Campaign&quot; doesn&#39;t respond immediately</h2>
+<p>The app finishes the current in-flight action before stopping. Expect up to ~30 seconds of delay if it&#39;s in the middle of a profile visit. If it&#39;s still running after a minute, reload the page; state will reconcile.</p>
+<h2>14.9 Where to look when nothing else helps</h2>
+<p>Open the sidebar and click <strong>Server Log</strong>. The inline panel tails the backend&#39;s console output — errors, warnings, and every decision the app makes. Copy-paste that to the admin when you file a bug.</p>
+<div class="page-break"></div><h1>15. Glossary</h1>
+<p><strong>Account</strong> — one LinkedIn login, represented in the app as a GoLogin profile.</p>
+<p><strong>Assignee</strong> — optional column in the sheet that marks a profile/lead as belonging to a specific GD.</p>
+<p><strong>CC</strong> — connection credits on LinkedIn premium. Weekly passover.</p>
+<p><strong>GoLogin profile</strong> — an isolated browser instance with its own cookies and fingerprint. One profile = one LinkedIn account.</p>
+<p><strong>Hero summary</strong> — the big numbers at the top of §2 Rate &amp; Limits (Actions / Duration / Finishes).</p>
+<p><strong>InMail</strong> — LinkedIn&#39;s premium direct-message-anyone feature. Costs a credit per send.</p>
+<p><strong>Lead</strong> — one row in the source sheet.</p>
+<p><strong>Mode</strong> — the action the campaign takes. One of five (§3).</p>
+<p><strong>Open Profile (OP)</strong> — a LinkedIn Premium setting some members enable; lets anyone DM them for free.</p>
+<p><strong>Passover</strong> — LinkedIn&#39;s credit-reset cycle. Monthly for OP/InMail/Sales Nav; weekly for CC.</p>
+<p><strong>Preset</strong> — a saved snapshot of page state.</p>
+<p><strong>Rate</strong> — connections per account per hour.</p>
+<p><strong>Run</strong> — a single execution of a campaign.</p>
+<p><strong>Schedule</strong> — a saved campaign configured to run on a recurring day/time.</p>
+<p><strong>Sheet</strong> — the Google Sheet that holds leads.</p>
+<p><strong>State of Operations (SoO)</strong> — the admin sheet that gates who can sign up.</p>
+<p><strong>Template</strong> — a message (note, follow-up, InMail body, OP body) with <code>{placeholder}</code> tokens.</p>
+<div class="page-break"></div><h1>16. Quick reference — the one page</h1>
+<p>Keep this near the laptop.</p>
+<h2>Flow</h2>
+<ol>
+<li>Sign in → pick Mode → set Rate (defaults OK) → paste Sheet URL → Preview → pick Accounts → set Templates → Launch (Now or Schedule).</li>
+</ol>
+<h2>Sane defaults</h2>
+<ul>
+<li><strong>Connect Only</strong>, 6 per hour, 40 per account ceiling.</li>
+<li>Note: <strong>No</strong>, for first campaigns.</li>
+<li>One account at first, then scale up.</li>
+</ul>
+<h2>Red flags mid-run</h2>
+<ul>
+<li><strong>Closed the GoLogin window</strong> → stops.</li>
+<li><strong>Closed the laptop lid</strong> → stops.</li>
+<li><strong>Auth expired on a profile</strong> → re-login manually in GoLogin desktop → Refresh.</li>
+<li><strong>Captcha screen in GoLogin window</strong> → solve it manually → campaign continues.</li>
+</ul>
+<h2>Rate-limit intuition</h2>
+<ul>
+<li>6/hr × 6hr × 1 acct = 36 actions / day (safe).</li>
+<li>10/hr × 4hr × 3 acct = 120 actions / day (fast but edgy).</li>
+<li>Over 15/hr on a cold account = you will be flagged.</li>
+</ul>
+<h2>Passover</h2>
+<ul>
+<li><strong>OP / InMail / Sales Nav</strong> — monthly.</li>
+<li><strong>CC</strong> — weekly (Sunday → Sunday).</li>
+<li>Don&#39;t start big InMail campaigns in the last 72 hours of the monthly cycle.</li>
+</ul>
+<h2>What gets written to the sheet</h2>
+<p><code>Status</code>, <code>OP</code>, <code>Message</code>, <code>InMail</code>, <code>Account Used</code>, <code>Date Last Action</code>.</p>
+<h2>If it breaks</h2>
+<ol>
+<li>Sidebar → <strong>Server Log</strong> — tail the backend.</li>
+<li>Copy the log, note the time, share with admin.</li>
+<li>Most problems are auth-expired profiles — always check that first.</li>
+</ol>
+<hr>
+<div style="text-align: center; margin-top: 40px; font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: #999;"><p>Ortus Club · GDs Manual · v2.6.0</p>
+</div>
+
+</main>
+
+</body>
+</html>

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Up Next · Variants A/B/C</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --bg-soft: #faf9f7;
+  --surface: #ffffff;
+  --ink: #0a0a0a;
+  --gray: #6b6b6b;
+  --gray-faint: #b8b8b6;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --green: #3fb950;
+  --blue:  #4a7bb8;
+  --gold:  #F7BE68;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px -8px rgba(0,0,0,0.10);
+  --display: 'Bebas Neue', sans-serif;
+  --mono: 'Hanken Grotesk', system-ui, sans-serif;
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --bg-soft: rgba(255,255,255,0.03);
+  --surface: #14140f;
+  --ink: #fafafa;
+  --gray: #999;
+  --gray-faint: #5a5a58;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --green: #3fb950;
+  --blue: #6ea3d4;
+  --shadow-soft: 0 1px 0 rgba(0,0,0,0.4), 0 6px 16px -10px rgba(0,0,0,0.5);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hanken Grotesk', system-ui, sans-serif; background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.5; padding: 48px 32px 96px; }
+.wrap { max-width: 1080px; margin: 0 auto; }
+
+header.page { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--hairline); }
+header.page h1 { font-family: var(--display); font-weight: 400; font-size: 32px; letter-spacing: 0.04em; margin: 0; }
+header.page .meta { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.theme-toggle { font: inherit; background: transparent; border: 1px solid var(--hairline); color: var(--ink); padding: 6px 12px; cursor: pointer; border-radius: 9999px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.theme-toggle:hover { border-color: var(--ink); }
+
+.variant { margin-bottom: 72px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.variant-head h2 { font-family: var(--display); font-weight: 400; font-size: 22px; letter-spacing: 0.05em; margin: 0; }
+.variant-head small { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.variant-note { color: var(--gray); font-size: 12.5px; max-width: 720px; margin: 0 0 24px; }
+.variant-note b { color: var(--ink); font-weight: 500; }
+
+/* section header rail (re-used across variants) */
+.section-rail { display: flex; align-items: baseline; gap: 18px; margin-bottom: 14px; padding: 0 4px; }
+.section-rail h3 { font-family: var(--display); font-size: 1.7rem; font-weight: 400; letter-spacing: 0.02em; color: var(--ink); }
+.section-rail h3 small { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-left: 14px; }
+.section-rail-line { flex: 1; height: 1px; background: var(--hairline); align-self: center; }
+.section-rail-action { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; padding: 6px 0; cursor: pointer; }
+.section-rail-action:hover { color: var(--ink); }
+
+/* mode glyph (circle) — same as J card */
+.glyph {
+  width: 36px; height: 36px; border-radius: 9999px;
+  border: 1px solid var(--ink); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.06em;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.glyph.sm { width: 28px; height: 28px; font-size: 0.55rem; }
+
+/* tag / eyebrow — flatter than the live cards; no green (reserved for running) */
+.tag { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; color: var(--gray); }
+.tag .dot { width: 5px; height: 5px; border-radius: 9999px; background: var(--gray-faint); display: inline-block; }
+.tag.is-queued .dot { background: var(--ink); opacity: 0.5; }
+.tag.is-scheduled .dot { background: var(--blue); }
+
+/* buttons (re-used) */
+.btn-pill {
+  font: inherit; background: transparent; color: var(--ink);
+  border: 1px solid var(--ink); border-radius: 9999px;
+  padding: 7px 16px; font-family: var(--mono); font-size: 0.58rem;
+  letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer;
+}
+.btn-pill:hover { background: var(--ink); color: var(--bg); }
+.btn-pill.is-secondary { border-color: var(--hairline); color: var(--gray); }
+.btn-pill.is-secondary:hover { border-color: var(--ink); background: transparent; color: var(--ink); }
+
+.btn-icon {
+  font: inherit; background: transparent; border: 1px solid var(--hairline);
+  color: var(--ink); width: 30px; height: 30px; border-radius: 9999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: border-color 0.12s, background 0.12s, transform 0.15s;
+}
+.btn-icon:hover { border-color: var(--ink); background: rgba(0,0,0,0.04); }
+body.theme-dark .btn-icon:hover { background: rgba(255,255,255,0.06); }
+.btn-icon:disabled { opacity: 0.3; cursor: default; }
+.btn-icon:disabled:hover { background: transparent; border-color: var(--hairline); }
+.btn-icon svg { width: 13px; height: 13px; pointer-events: none; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT A — J-mini rows
+   Each item is a compact card. Single row. Eyebrow tells schedule state.
+   ═════════════════════════════════════════════════════════════════════════ */
+.va-row {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 11px 16px;
+  margin-bottom: 6px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  transition: border-color 0.12s, background 0.12s;
+}
+.va-row:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); }
+body.theme-dark .va-row:hover { background: rgba(255,255,255,0.03); }
+.va-mid { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.va-eyebrow { display: flex; align-items: center; gap: 12px; }
+.va-name { font-family: var(--display); font-size: 1.25rem; line-height: 1; letter-spacing: 0.02em; color: var(--ink); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.va-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.va-reorder { display: flex; gap: 4px; }
+.va-when { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.06em; color: var(--gray); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT B — Time-grouped two-section
+   Split into "Ready now" + "Scheduled" sub-sections with their own headers.
+   Rows are simpler since the section header carries the state.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vb-group { margin-bottom: 22px; }
+.vb-group-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px; padding: 0 4px;
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+  font-weight: 500;
+}
+.vb-group-head .dot { width: 7px; height: 7px; border-radius: 9999px; }
+.vb-group.is-queued .dot { background: var(--ink); opacity: 0.5; }
+.vb-group.is-scheduled .dot { background: var(--blue); }
+.vb-group-head .count { color: var(--gray-faint); }
+.vb-row {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 10px 16px;
+  margin-bottom: 5px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  transition: border-color 0.12s, background 0.12s;
+}
+.vb-row:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); }
+body.theme-dark .vb-row:hover { background: rgba(255,255,255,0.03); }
+.vb-name { font-family: var(--display); font-size: 1.2rem; line-height: 1; letter-spacing: 0.02em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vb-when { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--gray); }
+.vb-when b { color: var(--ink); font-weight: 500; }
+.vb-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   VARIANT C — Drag-deck metaphor
+   Top card is large (full preview). Items below shrink progressively.
+   ═════════════════════════════════════════════════════════════════════════ */
+.vc-stack { display: flex; flex-direction: column; gap: 6px; }
+
+.vc-card-top {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 16px 20px 16px 20px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 18px;
+  align-items: center;
+  min-height: 88px;
+  transition: border-color 0.12s;
+}
+.vc-card-top:hover { border-color: var(--ink); }
+.vc-handle {
+  display: flex; flex-direction: column; gap: 3px; align-items: center;
+  color: var(--gray-faint); cursor: grab; padding: 4px 6px;
+}
+.vc-handle:active { cursor: grabbing; }
+.vc-handle::before, .vc-handle::after {
+  content: ""; width: 14px; height: 1.5px; background: currentColor; border-radius: 9999px;
+}
+.vc-handle::after { box-shadow: 0 5px 0 currentColor, 0 10px 0 currentColor; }
+.vc-handle:hover { color: var(--ink); }
+
+.vc-top-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vc-top-eyebrow { display: flex; align-items: center; gap: 14px; }
+.vc-top-name { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.02em; line-height: 1; color: var(--ink); }
+.vc-top-preview { display: flex; gap: 18px; font-family: var(--mono); font-size: 0.7rem; color: var(--gray); margin-top: 2px; }
+.vc-top-preview b { color: var(--ink); font-weight: 500; }
+.vc-top-right { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.vc-top-glyph-row { display: flex; align-items: center; gap: 12px; }
+
+/* Lower stack items — progressively smaller / fainter */
+.vc-mini {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 9px 14px 9px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  margin: 0 12px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.vc-mini:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); }
+body.theme-dark .vc-mini:hover { background: rgba(255,255,255,0.03); }
+.vc-mini.depth-2 { margin: 0 22px; opacity: 0.92; }
+.vc-mini.depth-3 { margin: 0 32px; opacity: 0.78; }
+.vc-mini-name { font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.02em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vc-mini-when { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em; color: var(--gray); }
+.vc-mini-actions { display: flex; gap: 6px; align-items: center; }
+
+footer.legend { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 12px; }
+footer.legend strong { color: var(--ink); font-weight: 500; }
+footer.legend ul { margin: 8px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>Up Next · Variants</h1>
+    <div class="meta">A / B / C · same 4 queued items</div>
+  </div>
+  <button class="theme-toggle" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</header>
+
+<section class="variant" id="variant-a">
+  <div class="variant-head"><h2>A · J-Mini Rows</h2><small>compact cards · schedule in eyebrow</small></div>
+  <p class="variant-note">Each queued item is its own outlined block — distinct from the live J cards above (no dot pattern, no drop shadow, no accent rail, smaller radii, tighter padding). <b>Eyebrow tag</b> carries the state: QUEUED · NEXT UP for the first, QUEUED · 4th for further-down items, SCHEDULED · IN 3H / TOMORROW 14:04 for scheduled. <b>Controls cluster</b> right-aligned: primary action + reorder arrows. The empty progress column from the original list is gone.</p>
+
+  <div class="section-rail">
+    <h3>Up Next <small>4 waiting</small></h3>
+    <div class="section-rail-line"></div>
+    <button class="section-rail-action">+ Add to queue</button>
+  </div>
+
+  <div class="va-row">
+    <div class="glyph">IB</div>
+    <div class="va-mid">
+      <div class="va-eyebrow"><span class="tag is-queued"><span class="dot"></span>Queued · Next up</span></div>
+      <div class="va-name">Boston Law Followups</div>
+    </div>
+    <div class="va-controls">
+      <button class="btn-pill">Start now</button>
+      <div class="va-reorder">
+        <button class="btn-icon" aria-label="Move up" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
+        <button class="btn-icon" aria-label="Move down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="va-row">
+    <div class="glyph">DM</div>
+    <div class="va-mid">
+      <div class="va-eyebrow"><span class="tag is-scheduled"><span class="dot"></span>Scheduled · in 3h</span></div>
+      <div class="va-name">PE Associate Intros</div>
+    </div>
+    <div class="va-controls">
+      <button class="btn-pill">Start now</button>
+      <div class="va-reorder">
+        <button class="btn-icon" aria-label="Move up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
+        <button class="btn-icon" aria-label="Move down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="va-row">
+    <div class="glyph">IM</div>
+    <div class="va-mid">
+      <div class="va-eyebrow"><span class="tag is-scheduled"><span class="dot"></span>Scheduled · tomorrow 14:04</span></div>
+      <div class="va-name">Wealth Managers London</div>
+    </div>
+    <div class="va-controls">
+      <button class="btn-pill is-secondary">Reschedule</button>
+      <div class="va-reorder">
+        <button class="btn-icon" aria-label="Move up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
+        <button class="btn-icon" aria-label="Move down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="va-row">
+    <div class="glyph">C+I</div>
+    <div class="va-mid">
+      <div class="va-eyebrow"><span class="tag is-queued"><span class="dot"></span>Queued · 4th</span></div>
+      <div class="va-name">New Connect + Intro</div>
+    </div>
+    <div class="va-controls">
+      <button class="btn-pill">Start now</button>
+      <div class="va-reorder">
+        <button class="btn-icon" aria-label="Move up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
+        <button class="btn-icon" aria-label="Move down" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="variant" id="variant-b">
+  <div class="variant-head"><h2>B · Time-Grouped</h2><small>ready now · scheduled (split sections)</small></div>
+  <p class="variant-note">Same outlined rows as A, but the queue is split into two sub-groups: <b>Queued</b> (no schedule — primary action is Start now) and <b>Scheduled</b> (has a target time — sorted earliest first). Matches the operator's actual decision: "what should I start next?" vs "what's already booked for a specific time?". Section headers carry the state so the rows themselves can drop the eyebrow tag.</p>
+
+  <div class="section-rail">
+    <h3>Up Next <small>4 waiting</small></h3>
+    <div class="section-rail-line"></div>
+    <button class="section-rail-action">+ Add to queue</button>
+  </div>
+
+  <div class="vb-group is-queued">
+    <div class="vb-group-head"><span class="dot"></span>Queued <span class="count">· 2</span></div>
+    <div class="vb-row">
+      <div class="glyph">IB</div>
+      <div class="vb-name">Boston Law Followups</div>
+      <div class="vb-when"><b>Next up</b></div>
+      <div class="vb-controls">
+        <button class="btn-pill">Start now</button>
+        <button class="btn-icon" aria-label="Move down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+      </div>
+    </div>
+    <div class="vb-row">
+      <div class="glyph">C+I</div>
+      <div class="vb-name">New Connect + Intro</div>
+      <div class="vb-when">2nd</div>
+      <div class="vb-controls">
+        <button class="btn-pill">Start now</button>
+        <button class="btn-icon" aria-label="Move up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="vb-group is-scheduled">
+    <div class="vb-group-head"><span class="dot"></span>Scheduled <span class="count">· 2</span></div>
+    <div class="vb-row">
+      <div class="glyph">DM</div>
+      <div class="vb-name">PE Associate Intros</div>
+      <div class="vb-when"><b>in 3h</b> · today 15:32</div>
+      <div class="vb-controls">
+        <button class="btn-pill">Start now</button>
+        <button class="btn-icon" aria-label="Reschedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></button>
+      </div>
+    </div>
+    <div class="vb-row">
+      <div class="glyph">IM</div>
+      <div class="vb-name">Wealth Managers London</div>
+      <div class="vb-when"><b>tomorrow 14:04</b></div>
+      <div class="vb-controls">
+        <button class="btn-pill is-secondary">Reschedule</button>
+        <button class="btn-icon" aria-label="Start now"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7 4 20 12 7 20"/></svg></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="variant" id="variant-c">
+  <div class="variant-head"><h2>C · Drag Deck</h2><small>top item gets full preview · items shrink</small></div>
+  <p class="variant-note">The next-to-start item becomes a small showcase card with a config preview — mode, contacts, accounts assigned, est duration. Items below shrink and indent progressively so queue position reads visually. Drag handle on the left of each row (six-dot pattern). Best when the operator wants to inspect the next item closely before starting; weakest when there are many queued (the lower items get hard to scan).</p>
+
+  <div class="section-rail">
+    <h3>Up Next <small>4 waiting</small></h3>
+    <div class="section-rail-line"></div>
+    <button class="section-rail-action">+ Add to queue</button>
+  </div>
+
+  <div class="vc-stack">
+    <div class="vc-card-top">
+      <div class="vc-handle" aria-label="Drag to reorder"></div>
+      <div class="vc-top-body">
+        <div class="vc-top-eyebrow">
+          <span class="tag is-queued"><span class="dot"></span>Queued · Next up</span>
+        </div>
+        <div class="vc-top-name">Boston Law Followups</div>
+        <div class="vc-top-preview">
+          <span><b>IB</b> · introduce back</span>
+          <span><b>64</b> contacts</span>
+          <span><b>2</b> accounts</span>
+          <span>est <b>2 days</b></span>
+        </div>
+      </div>
+      <div class="vc-top-right">
+        <div class="vc-top-glyph-row">
+          <div class="glyph">IB</div>
+        </div>
+        <button class="btn-pill" style="border-color:var(--ink);background:var(--ink);color:var(--bg);padding:9px 22px;">Start now</button>
+      </div>
+    </div>
+
+    <div class="vc-mini depth-2">
+      <div class="vc-handle"></div>
+      <div class="vc-mini-name">PE Associate Intros</div>
+      <div class="vc-mini-when"><b style="color:var(--ink);font-weight:500">in 3h</b> · DM</div>
+      <div class="vc-mini-actions">
+        <button class="btn-pill" style="padding:5px 11px;font-size:0.52rem;">Start now</button>
+      </div>
+    </div>
+
+    <div class="vc-mini depth-3">
+      <div class="vc-handle"></div>
+      <div class="vc-mini-name">Wealth Managers London</div>
+      <div class="vc-mini-when"><b style="color:var(--ink);font-weight:500">tomorrow 14:04</b> · IM</div>
+      <div class="vc-mini-actions">
+        <button class="btn-pill is-secondary" style="padding:5px 11px;font-size:0.52rem;">Reschedule</button>
+      </div>
+    </div>
+
+    <div class="vc-mini depth-3">
+      <div class="vc-handle"></div>
+      <div class="vc-mini-name">New Connect + Intro</div>
+      <div class="vc-mini-when">queued · C+I</div>
+      <div class="vc-mini-actions">
+        <button class="btn-pill" style="padding:5px 11px;font-size:0.52rem;">Start now</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="legend">
+  <strong>Operational context kept in mind across all three:</strong>
+  <ul>
+    <li><strong>One campaign at a time</strong> — starting any of these immediately queues ahead of the running one. A confirm dialog already covers that in the JS layer.</li>
+    <li><strong>Schedule status is the load-bearing field</strong> — every variant surfaces "ready now" vs "scheduled · time" as the primary signal (not the smallest text on the row).</li>
+    <li><strong>Mode glyph stays consistent with the live cards above</strong> — same 36px circle, same Bebas mono label inside.</li>
+    <li><strong>Config preview in C uses honest fields</strong> — contacts target, accounts count, est. duration are all real values the wizard already collects.</li>
+  </ul>
+</footer>
+
+</div>
+</body>
+</html>

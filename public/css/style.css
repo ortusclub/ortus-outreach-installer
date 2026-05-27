@@ -4813,79 +4813,42 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
 .wiz-launch-menu-ic svg { width: 14px; height: 14px; }
 .wiz-launch-menu-item:hover .wiz-launch-menu-ic { color: var(--ink); }
 .wiz-launch-menu-item:hover .wiz-launch-menu-ic.gold { color: var(--gold); }
+.wiz-launch-menu-item--danger { border-top: 1px solid var(--hairline); margin-top: 4px; padding-top: 12px; }
+.wiz-launch-menu-item--danger:hover { background: rgba(248, 81, 73, 0.08); }
+.wiz-launch-menu-item--danger:hover .wiz-launch-menu-ic,
+.wiz-launch-menu-item--danger:hover .wiz-launch-menu-lbl { color: #c64a4a; }
 .wiz-launch-menu-text { display: flex; flex-direction: column; gap: 2px; }
 .wiz-launch-menu-lbl { font-size: 0.86rem; font-weight: 500; color: var(--ink); }
 .wiz-launch-menu-hint { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); }
 
 /* ─────────────────────────────────────────────────────────────────────────
- * Resume-draft pill in dashboard header (variant A). Hidden by default;
- * window.renderResumeDraftPill flips display when an active draft exists.
- * ────────────────────────────────────────────────────────────────────────*/
-/* Outer wrapper — split-button pattern. Resume on the left, delete on the
-   right, hairline separator between. Whole pill keeps the hairline border. */
-.resume-draft-pill {
-  display: inline-flex;
-  align-items: stretch;
-  border: 1px solid var(--hairline);
+ * Resume-draft badge — variant F (small gold count on the New-campaign
+ * button). Wrapper is position:relative so the badge anchors to the
+ * button's top-right corner. Click the badge → resume; click the button
+ * itself → fresh campaign. ───────────────────────────────────────────── */
+.dashboard-new-wrap { position: relative; display: inline-block; }
+.resume-draft-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
   border-radius: 9999px;
-  background: transparent;
-  margin-right: 12px;
-  transition: border-color 0.12s;
-  overflow: hidden;
-}
-.resume-draft-pill:hover { border-color: var(--ink); }
-
-/* Main resume button (clickable area showing the draft name) */
-.resume-draft-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px 8px 16px;
-  background: transparent;
-  border: none;
-  color: var(--ink);
+  background: var(--gold);
+  color: #1a1a1a;
+  border: 2px solid var(--bg);
   font-family: var(--mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.resume-draft-main:hover { background: rgba(255, 255, 255, 0.05); }
-body.theme-light .resume-draft-main:hover { background: rgba(0, 0, 0, 0.04); }
-
-.resume-draft-icon { width: 12px; height: 12px; color: var(--gold); flex: 0 0 auto; }
-.resume-draft-lbl {
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--gray);
-}
-.resume-draft-name {
-  color: var(--ink);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Separator + delete button */
-.resume-draft-sep {
-  width: 1px;
-  background: var(--hairline);
-  margin: 6px 0;
-  flex: 0 0 auto;
-}
-.resume-draft-del {
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 12px;
-  background: transparent;
-  border: none;
-  color: var(--gray);
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  z-index: 1;
+  transition: transform 0.12s, background 0.12s;
 }
-.resume-draft-del svg { width: 13px; height: 13px; pointer-events: none; }
-.resume-draft-del:hover { color: var(--red); background: rgba(248, 81, 73, 0.10); }
-body.theme-light .resume-draft-del:hover { background: rgba(248, 81, 73, 0.08); }
+.resume-draft-badge:hover { transform: scale(1.08); background: #d8b873; }
+.resume-draft-badge:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 

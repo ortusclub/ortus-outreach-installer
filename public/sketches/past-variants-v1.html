@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Past · Variants P-A / P-B / P-C</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --bg-soft: #faf9f7;
+  --surface: #ffffff;
+  --ink: #0a0a0a;
+  --gray: #6b6b6b;
+  --gray-faint: #b8b8b6;
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --blue: #4a7bb8;
+  --red:  #c44;
+  --display: 'Bebas Neue', sans-serif;
+  --mono: 'Hanken Grotesk', system-ui, sans-serif;
+}
+body.theme-dark {
+  --bg: #0a0a0a;
+  --bg-soft: rgba(255,255,255,0.03);
+  --surface: #14140f;
+  --ink: #fafafa;
+  --gray: #999;
+  --gray-faint: #5a5a58;
+  --hairline: rgba(255, 255, 255, 0.15);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+  --blue: #6ea3d4;
+  --red:  #f85149;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hanken Grotesk', system-ui, sans-serif; background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.5; padding: 48px 32px 96px; }
+.wrap { max-width: 1080px; margin: 0 auto; }
+
+header.page { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid var(--hairline); }
+header.page h1 { font-family: var(--display); font-weight: 400; font-size: 32px; letter-spacing: 0.04em; margin: 0; }
+header.page .meta { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.theme-toggle { font: inherit; background: transparent; border: 1px solid var(--hairline); color: var(--ink); padding: 6px 12px; cursor: pointer; border-radius: 9999px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.theme-toggle:hover { border-color: var(--ink); }
+
+.variant { margin-bottom: 72px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.variant-head h2 { font-family: var(--display); font-weight: 400; font-size: 22px; letter-spacing: 0.05em; margin: 0; }
+.variant-head small { color: var(--gray); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; }
+.variant-note { color: var(--gray); font-size: 12.5px; max-width: 720px; margin: 0 0 24px; }
+.variant-note b { color: var(--ink); font-weight: 500; }
+
+.section-rail { display: flex; align-items: baseline; gap: 18px; margin-bottom: 14px; padding: 0 4px; }
+.section-rail h3 { font-family: var(--display); font-size: 1.7rem; font-weight: 400; letter-spacing: 0.02em; color: var(--ink); }
+.section-rail h3 small { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-left: 14px; }
+.section-rail-line { flex: 1; height: 1px; background: var(--hairline); align-self: center; }
+.section-rail-action { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; padding: 6px 0; cursor: pointer; }
+.section-rail-action:hover { color: var(--ink); }
+
+/* mode glyph (circle) */
+.glyph {
+  width: 32px; height: 32px; border-radius: 9999px;
+  border: 1px solid var(--hairline); color: var(--gray);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 0.55rem; font-weight: 600; letter-spacing: 0.06em;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.btn-pill {
+  font: inherit; background: transparent; color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: 9999px;
+  padding: 6px 14px; font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer;
+}
+.btn-pill:hover { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+
+.row-kebab {
+  background: transparent; border: none; color: var(--gray-faint);
+  cursor: pointer; font-size: 18px; padding: 2px 8px; line-height: 1;
+}
+.row-kebab:hover { color: var(--ink); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   P-A · Compact hairline list
+   No per-item box. Just hairline dividers. Names in gray. Reply rate is
+   the right-aligned visual anchor (Bebas number). Stopped-early gets a
+   clear red badge in the rate column.
+   ═════════════════════════════════════════════════════════════════════════ */
+.pa-list { padding: 0 4px; }
+.pa-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto auto;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 8px;
+  border-bottom: 1px solid var(--hairline-soft);
+  transition: background 0.12s;
+}
+.pa-row:last-child { border-bottom: none; }
+.pa-row:hover { background: rgba(0,0,0,0.02); }
+body.theme-dark .pa-row:hover { background: rgba(255,255,255,0.03); }
+.pa-name { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.02em; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pa-row:hover .pa-name { color: var(--ink); }
+.pa-when { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--gray-faint); white-space: nowrap; }
+.pa-stats { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); letter-spacing: 0.04em; white-space: nowrap; }
+.pa-stats b { color: var(--ink); font-weight: 500; }
+.pa-rate {
+  display: flex; align-items: baseline; gap: 4px;
+  font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.01em; color: var(--ink);
+  min-width: 64px; justify-content: flex-end;
+}
+.pa-rate .pct { font-size: 0.7rem; color: var(--gray); font-family: var(--mono); letter-spacing: 0.1em; }
+.pa-stopped {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--red); border: 1px solid var(--red); border-radius: 9999px;
+  padding: 3px 9px; min-width: 64px; justify-content: center;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   P-B · Stacked Archive (mirror of variant C for Up Next)
+   Most recent item at the top, more prominent. Older items shrink and
+   fade as they "recede into the past". Symmetric counterpart to the
+   drag-deck queue — Past as receding archive.
+   ═════════════════════════════════════════════════════════════════════════ */
+.pb-stack { display: flex; flex-direction: column; gap: 6px; }
+.pb-card-top {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  padding: 16px 20px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 18px;
+  align-items: center;
+  transition: border-color 0.12s, background 0.12s;
+}
+.pb-card-top:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); }
+body.theme-dark .pb-card-top:hover { background: rgba(255,255,255,0.03); }
+.pb-top-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pb-top-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray);
+}
+.pb-top-eyebrow .dot { width: 5px; height: 5px; border-radius: 9999px; background: var(--ink); opacity: 0.5; }
+.pb-top-name { font-family: var(--display); font-size: 1.45rem; letter-spacing: 0.02em; line-height: 1; color: var(--ink); }
+.pb-top-stats { display: flex; gap: 16px; font-family: var(--mono); font-size: 0.7rem; color: var(--gray); margin-top: 2px; }
+.pb-top-stats b { color: var(--ink); font-weight: 500; }
+.pb-top-rate {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0;
+}
+.pb-top-rate .num { font-family: var(--display); font-size: 2rem; line-height: 0.9; letter-spacing: 0.01em; color: var(--ink); }
+.pb-top-rate .num .pct { font-size: 1rem; color: var(--gray); margin-left: 2px; }
+.pb-top-rate .lbl { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+
+.pb-mini {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 9px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  gap: 14px;
+  align-items: center;
+  margin: 0 12px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.pb-mini:hover { border-color: var(--ink); background: rgba(0,0,0,0.02); }
+body.theme-dark .pb-mini:hover { background: rgba(255,255,255,0.03); }
+.pb-mini.depth-2 { margin: 0 22px; opacity: 0.85; }
+.pb-mini.depth-3 { margin: 0 32px; opacity: 0.7; }
+.pb-mini-name { font-family: var(--display); font-size: 1rem; letter-spacing: 0.02em; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-mini:hover .pb-mini-name { color: var(--ink); }
+.pb-mini-when { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.06em; color: var(--gray-faint); }
+.pb-mini-rate { font-family: var(--display); font-size: 0.95rem; letter-spacing: 0.01em; color: var(--ink); min-width: 50px; text-align: right; }
+.pb-mini-rate .pct { font-size: 0.55rem; color: var(--gray); font-family: var(--mono); }
+.pb-mini-stopped { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--red); border: 1px solid var(--red); border-radius: 9999px; padding: 2px 7px; min-width: 50px; text-align: center; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   P-C · Outcome-First Scoreboard
+   Reply rate is on the LEFT — the visual anchor. Big Bebas number per row.
+   Then mode glyph + name + when. Right side: Open + kebab.
+   Best when you want to scan "what worked, what didn't" at a glance.
+   ═════════════════════════════════════════════════════════════════════════ */
+.pc-list { padding: 0; }
+.pc-row {
+  display: grid;
+  grid-template-columns: 70px auto 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--hairline-soft);
+  transition: background 0.12s;
+}
+.pc-row:last-child { border-bottom: none; }
+.pc-row:hover { background: rgba(0,0,0,0.02); }
+body.theme-dark .pc-row:hover { background: rgba(255,255,255,0.03); }
+.pc-rate-cell {
+  display: flex; flex-direction: column; align-items: flex-start; line-height: 1;
+}
+.pc-rate-cell .num {
+  font-family: var(--display); font-size: 1.8rem; letter-spacing: 0.01em; color: var(--ink);
+}
+.pc-rate-cell .num .pct { font-size: 0.85rem; color: var(--gray); margin-left: 2px; }
+.pc-rate-cell .lbl { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray-faint); margin-top: 3px; }
+.pc-rate-cell.is-stopped .num { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--red); padding-top: 6px; }
+.pc-rate-cell.is-stopped .lbl { color: var(--red); opacity: 0.7; }
+.pc-name { font-family: var(--display); font-size: 1.15rem; letter-spacing: 0.02em; color: var(--gray); }
+.pc-row:hover .pc-name { color: var(--ink); }
+.pc-meta { font-family: var(--mono); font-size: 0.62rem; color: var(--gray-faint); letter-spacing: 0.06em; }
+.pc-meta b { color: var(--gray); font-weight: 500; }
+
+footer.legend { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--gray); font-size: 12px; }
+footer.legend strong { color: var(--ink); font-weight: 500; }
+footer.legend ul { margin: 8px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>Past · Variants</h1>
+    <div class="meta">P-A / P-B / P-C · same 3 finished campaigns</div>
+  </div>
+  <button class="theme-toggle" onclick="document.body.classList.toggle('theme-dark')">Toggle theme</button>
+</header>
+
+<!-- ─────────────── P-A · Compact hairline list ─────────────── -->
+<section class="variant" id="variant-pa">
+  <div class="variant-head"><h2>P-A · Hairline List</h2><small>lightest weight · reply rate as anchor</small></div>
+  <p class="variant-note">Lightest treatment of all three sections (Active &gt; Up Next &gt; Past in visual weight). <b>No per-item border</b> — just hairline dividers between rows. Names default to gray (signals "done"), brighten to ink on hover. The <b>reply rate</b> sits at the right as a Bebas number — the KPI of a finished campaign. <b>Stopped-early</b> gets a red outlined pill in the rate column instead of a number.</p>
+
+  <div class="section-rail">
+    <h3>Past <small>3 campaigns</small></h3>
+    <div class="section-rail-line"></div>
+    <button class="section-rail-action">Clear all</button>
+  </div>
+
+  <div class="pa-list">
+    <div class="pa-row">
+      <div class="glyph">CC</div>
+      <div class="pa-name">YC W26 Connects</div>
+      <div class="pa-when">6h ago</div>
+      <div class="pa-stats"><b>200</b> sent · <b>12</b> replies</div>
+      <div class="pa-rate">6.0<span class="pct">%</span></div>
+      <button class="btn-pill">Open</button>
+    </div>
+    <div class="pa-row">
+      <div class="glyph">CS</div>
+      <div class="pa-name">Hedge Fund Check</div>
+      <div class="pa-when">22h ago</div>
+      <div class="pa-stats"><b>34</b> sent · <b>0</b> replies</div>
+      <div class="pa-stopped">Stopped early</div>
+      <button class="btn-pill">Open</button>
+    </div>
+    <div class="pa-row">
+      <div class="glyph">IB</div>
+      <div class="pa-name">NYC Partners Intro</div>
+      <div class="pa-when">5d ago</div>
+      <div class="pa-stats"><b>24</b> sent · <b>6</b> replies</div>
+      <div class="pa-rate">25.0<span class="pct">%</span></div>
+      <button class="btn-pill">Open</button>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── P-B · Stacked Archive ─────────────── -->
+<section class="variant" id="variant-pb">
+  <div class="variant-head"><h2>P-B · Stacked Archive</h2><small>mirror of Up Next variant C · recedes into past</small></div>
+  <p class="variant-note">Symmetric counterpart to the drag-deck queue you picked for Up Next. Most recent campaign sits at the top in a slightly more prominent card with the reply rate as a big Bebas number. Items below progressively shrink, indent, and fade — visually receding "into the past". <b>Stopped-early</b> items get the red badge replacing the rate. Reading order matches the timeline: newest at top, oldest at bottom.</p>
+
+  <div class="section-rail">
+    <h3>Past <small>3 campaigns</small></h3>
+    <div class="section-rail-line"></div>
+    <button class="section-rail-action">Clear all</button>
+  </div>
+
+  <div class="pb-stack">
+    <div class="pb-card-top">
+      <div class="glyph">CC</div>
+      <div class="pb-top-body">
+        <div class="pb-top-eyebrow"><span class="dot"></span>Most recent · 6h ago</div>
+        <div class="pb-top-name">YC W26 Connects</div>
+        <div class="pb-top-stats"><span><b>200</b> sent</span><span><b>12</b> replies</span><span>connect-only · 2 accounts</span></div>
+      </div>
+      <div class="pb-top-rate">
+        <div class="num">6.0<span class="pct">%</span></div>
+        <div class="lbl">Reply rate</div>
+      </div>
+      <button class="btn-pill">Open</button>
+    </div>
+
+    <div class="pb-mini depth-2">
+      <div class="glyph">CS</div>
+      <div class="pb-mini-name">Hedge Fund Check</div>
+      <div class="pb-mini-when">22h ago · CS</div>
+      <div class="pb-mini-stopped">Stopped</div>
+      <button class="btn-pill" style="padding:4px 10px;font-size:0.5rem;">Open</button>
+    </div>
+
+    <div class="pb-mini depth-3">
+      <div class="glyph">IB</div>
+      <div class="pb-mini-name">NYC Partners Intro</div>
+      <div class="pb-mini-when">5d ago · IB</div>
+      <div class="pb-mini-rate">25.0<span class="pct">%</span></div>
+      <button class="btn-pill" style="padding:4px 10px;font-size:0.5rem;">Open</button>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── P-C · Outcome-First Scoreboard ─────────────── -->
+<section class="variant" id="variant-pc">
+  <div class="variant-head"><h2>P-C · Outcome-First Scoreboard</h2><small>reply rate on the left · scannable</small></div>
+  <p class="variant-note">Reply rate moves to the <b>left edge</b> of each row — the visual anchor. Lets the operator scan the column of percentages at a glance and immediately see what worked vs what didn't. Mode glyph + name + when sit to the right of the rate. <b>Stopped-early</b> replaces the percentage with a small red "Stopped" tag in the same column position. Densest of the three; best when the queue gets long.</p>
+
+  <div class="section-rail">
+    <h3>Past <small>3 campaigns</small></h3>
+    <div class="section-rail-line"></div>
+    <button class="section-rail-action">Clear all</button>
+  </div>
+
+  <div class="pc-list">
+    <div class="pc-row">
+      <div class="pc-rate-cell">
+        <div class="num">6.0<span class="pct">%</span></div>
+        <div class="lbl">Reply rate</div>
+      </div>
+      <div class="glyph">CC</div>
+      <div>
+        <div class="pc-name">YC W26 Connects</div>
+        <div class="pc-meta"><b>200</b> sent · <b>12</b> replies · 6h ago</div>
+      </div>
+      <button class="btn-pill">Open</button>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+    <div class="pc-row">
+      <div class="pc-rate-cell is-stopped">
+        <div class="num">Stopped</div>
+        <div class="lbl">No replies</div>
+      </div>
+      <div class="glyph">CS</div>
+      <div>
+        <div class="pc-name">Hedge Fund Check</div>
+        <div class="pc-meta"><b>34</b> sent · <b>0</b> replies · 22h ago</div>
+      </div>
+      <button class="btn-pill">Open</button>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+    <div class="pc-row">
+      <div class="pc-rate-cell">
+        <div class="num">25.0<span class="pct">%</span></div>
+        <div class="lbl">Reply rate</div>
+      </div>
+      <div class="glyph">IB</div>
+      <div>
+        <div class="pc-name">NYC Partners Intro</div>
+        <div class="pc-meta"><b>24</b> sent · <b>6</b> replies · 5d ago</div>
+      </div>
+      <button class="btn-pill">Open</button>
+      <button class="row-kebab" aria-label="More">⋯</button>
+    </div>
+  </div>
+</section>
+
+<footer class="legend">
+  <strong>Visual hierarchy plan (Active → Past)</strong>
+  <ul>
+    <li><strong>Now Active / Monitoring</strong> — full J card: rounded, dot pattern, drop shadow, colored accent rail, large Bebas hero metric</li>
+    <li><strong>Up Next</strong> — outlined blocks: no dot pattern, no shadow, no accent rail, smaller radii, monochrome (drag-deck pattern from variant C)</li>
+    <li><strong>Past</strong> — lightest treatment: hairline dividers only (P-A / P-C) or fading stack (P-B), names default to gray, hover to brighten, reply rate is the only Bebas anchor</li>
+  </ul>
+  <p style="margin-top:8px;">All three Past variants share the same red <em>Stopped early</em> treatment so the visual signal stays consistent if you decide to mix patterns. No invented fields — every value comes from the existing campaign data model (mode, name, finished date, sent, replies, reply rate %, stopped boolean).</p>
+</footer>
+
+</div>
+</body>
+</html>

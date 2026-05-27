@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Top Bar Sketches — Ortus Outreach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { padding: 48px 56px; overflow: auto; background: var(--bg); }
+    .sketches-intro { border-bottom: 1px solid var(--hairline); padding-bottom: 28px; margin-bottom: 40px; }
+    .sketches-intro h1 {
+      font-family: var(--display); font-size: 3.4rem;
+      line-height: 1; letter-spacing: 0.01em;
+      text-transform: uppercase; margin-bottom: 14px;
+    }
+    .sketches-intro p {
+      font-family: var(--mono); font-size: 0.7rem;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray);
+    }
+    .sketch-block {
+      display: grid; grid-template-columns: 220px 1fr;
+      gap: 40px; padding: 40px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .sketch-block:last-child { border-bottom: none; }
+    .sketch-meta .sk-num {
+      font-family: var(--mono); font-size: 0.62rem;
+      letter-spacing: 0.24em; text-transform: uppercase;
+      color: var(--gray); margin-bottom: 12px;
+    }
+    .sketch-meta .sk-name {
+      font-family: var(--display); font-size: 2rem;
+      line-height: 1; text-transform: uppercase; margin-bottom: 14px;
+    }
+    .sketch-meta .sk-desc {
+      font-family: var(--body); font-size: 0.9rem;
+      color: var(--gray); line-height: 1.6;
+    }
+    .sketch-frame {
+      border: 1px solid var(--hairline);
+      padding: 28px 32px;
+    }
+
+    /* Shared mini-stats (used by A, B, C) */
+    .mini-stats { display: flex; align-items: stretch; flex-shrink: 0; margin-top: 0; }
+    .mini-stat {
+      display: flex; flex-direction: column; gap: 6px;
+      padding: 4px 18px;
+      border-left: 1px solid var(--hairline);
+      white-space: nowrap;
+    }
+    .mini-stat:first-child { border-left: none; padding-left: 0; }
+    .mini-stat .k {
+      font-family: var(--mono); font-size: 0.56rem;
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--gray);
+    }
+    .mini-stat .v {
+      font-family: var(--display); font-size: 1.5rem;
+      line-height: 1; color: var(--ink); letter-spacing: 0.01em;
+    }
+    .mini-stat .v.small {
+      font-family: var(--mono); font-size: 0.7rem;
+      letter-spacing: 0.18em; text-transform: uppercase; padding-top: 4px;
+    }
+    .mini-stat .v.err { color: var(--red); }
+    .mini-stat .v.green { color: var(--green); font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; padding-top: 4px; }
+
+    .sketch-header-row {
+      display: flex; justify-content: space-between;
+      align-items: center; gap: 32px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .sketch-body-preview {
+      padding-top: 24px;
+      font-family: var(--display);
+      font-size: 2.2rem;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.01em;
+      color: var(--ink);
+    }
+
+    /* ── Sketch A: Context-aware status line ── */
+    .sk-a-left {
+      display: flex; align-items: baseline; gap: 14px;
+      font-family: var(--mono); font-size: 0.72rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--ink); line-height: 1;
+    }
+    .sk-a-left .dot {
+      width: 8px; height: 8px; border-radius: 9999px;
+      background: var(--gray); display: inline-block;
+    }
+    .sk-a-left .dot.running { background: var(--green); animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    .sk-a-left .mute { color: var(--gray); }
+    .sk-a-left .sep { color: var(--gray); opacity: 0.5; }
+    .sk-a-label {
+      font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.24em; color: var(--gray);
+      text-transform: uppercase; margin-bottom: 14px;
+    }
+
+    /* ── Sketch B: Live ticker ── */
+    .sk-b-left {
+      overflow: hidden; flex: 1;
+      height: 32px; position: relative;
+      max-width: 540px;
+    }
+    .sk-b-track {
+      position: absolute; inset: 0;
+      animation: sk-b-scroll 16s linear infinite;
+      white-space: nowrap;
+    }
+    @keyframes sk-b-scroll {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .sk-b-item {
+      display: inline-flex; align-items: center; gap: 12px;
+      font-family: var(--mono); font-size: 0.7rem;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--ink); line-height: 32px;
+      padding-right: 36px;
+    }
+    .sk-b-item .dot {
+      width: 6px; height: 6px; border-radius: 9999px;
+      background: var(--green); display: inline-block;
+    }
+    .sk-b-item .mute { color: var(--gray); }
+
+    /* ── Sketch C: Greeting + date ── */
+    .sk-c-left { display: flex; flex-direction: column; gap: 10px; }
+    .sk-c-greet {
+      font-family: var(--display);
+      font-size: 2rem; line-height: 1;
+      letter-spacing: 0.01em;
+      text-transform: uppercase;
+    }
+    .sk-c-date {
+      font-family: var(--mono);
+      font-size: 0.64rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--gray);
+    }
+
+    /* ── Sketch D: Deleted ── */
+    .sk-d-frame { min-height: 180px; }
+    .sk-d-top { display: flex; justify-content: flex-end; padding-bottom: 18px; border-bottom: 1px solid var(--hairline); }
+    .sk-d-empty-note {
+      position: absolute; top: 8px; left: 16px;
+      font-family: var(--mono); font-size: 0.55rem;
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--gray); opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="sketches-intro">
+    <h1>Top-Bar Sketches</h1>
+    <p>Four options for the strip above "Choose a Campaign". Pick one.</p>
+  </header>
+
+  <!-- ── Sketch A ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · A</div>
+      <div class="sk-name">Status Line</div>
+      <div class="sk-desc">Single mono-caps status line that changes with state. When idle, shows date/time + "standing by". When running, shows the campaign name, progress, and ETA. Strongest utility — tells you at a glance what the system is doing.</div>
+    </div>
+    <div>
+      <div class="sketch-frame" style="margin-bottom: 14px">
+        <div class="sk-a-label">Idle state</div>
+        <div class="sketch-header-row">
+          <div class="sk-a-left">
+            <span class="dot"></span>
+            <span>Standing by</span>
+            <span class="sep">·</span>
+            <span class="mute">Thu 17 Apr 2026</span>
+            <span class="sep">·</span>
+            <span class="mute">22:38 local</span>
+          </div>
+          <div class="mini-stats">
+            <div class="mini-stat"><span class="k">Today</span><span class="v">0</span></div>
+            <div class="mini-stat"><span class="k">7D</span><span class="v">0</span></div>
+            <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+            <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+          </div>
+        </div>
+        <div class="sketch-body-preview">1. Choose a Campaign</div>
+      </div>
+
+      <div class="sketch-frame">
+        <div class="sk-a-label">Running state</div>
+        <div class="sketch-header-row">
+          <div class="sk-a-left">
+            <span class="dot running"></span>
+            <span>Running</span>
+            <span class="sep">·</span>
+            <span class="mute">Connection Campaign</span>
+            <span class="sep">·</span>
+            <span>23 / 40</span>
+            <span class="sep">·</span>
+            <span class="mute">1h 12m left</span>
+          </div>
+          <div class="mini-stats">
+            <div class="mini-stat"><span class="k">Today</span><span class="v">23</span></div>
+            <div class="mini-stat"><span class="k">7D</span><span class="v">84</span></div>
+            <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+            <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+          </div>
+        </div>
+        <div class="sketch-body-preview">1. Choose a Campaign</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Sketch B ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · B</div>
+      <div class="sk-name">Live Ticker</div>
+      <div class="sk-desc">Slow horizontal marquee of recent events pulled from the campaign log. Great when screens are shared — you see the tool breathing. Downside: when truly idle, it either scrolls "standing by" or shows stale history.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sketch-header-row">
+        <div class="sk-b-left">
+          <div class="sk-b-track">
+            <span class="sk-b-item"><span class="dot"></span>Connection sent<span class="mute">· Tom Bowman · 3m ago</span></span>
+            <span class="sk-b-item"><span class="dot"></span>Invite accepted<span class="mute">· Sarah Lin · 9m ago</span></span>
+            <span class="sk-b-item"><span class="dot"></span>InMail sent<span class="mute">· Ana Sánchez · 14m ago</span></span>
+            <span class="sk-b-item"><span class="dot"></span>Connection sent<span class="mute">· Marco Rossi · 18m ago</span></span>
+            <!-- dup for loop -->
+            <span class="sk-b-item"><span class="dot"></span>Connection sent<span class="mute">· Tom Bowman · 3m ago</span></span>
+            <span class="sk-b-item"><span class="dot"></span>Invite accepted<span class="mute">· Sarah Lin · 9m ago</span></span>
+            <span class="sk-b-item"><span class="dot"></span>InMail sent<span class="mute">· Ana Sánchez · 14m ago</span></span>
+            <span class="sk-b-item"><span class="dot"></span>Connection sent<span class="mute">· Marco Rossi · 18m ago</span></span>
+          </div>
+        </div>
+        <div class="mini-stats">
+          <div class="mini-stat"><span class="k">Today</span><span class="v">4</span></div>
+          <div class="mini-stat"><span class="k">7D</span><span class="v">41</span></div>
+          <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+          <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+        </div>
+      </div>
+      <div class="sketch-body-preview">1. Choose a Campaign</div>
+    </div>
+  </section>
+
+  <!-- ── Sketch C ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · C</div>
+      <div class="sk-name">Greeting + Date</div>
+      <div class="sk-desc">Two-line left side: large Bebas greeting pulled from the logged-in user's name, mono-caps date/time beneath. Warmer, more personal. Great for solo operators. Less operationally focused than A.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sketch-header-row">
+        <div class="sk-c-left">
+          <div class="sk-c-greet">Good evening, Antonio</div>
+          <div class="sk-c-date">Thursday · 17 Apr 2026 · 22:38 Berlin</div>
+        </div>
+        <div class="mini-stats">
+          <div class="mini-stat"><span class="k">Today</span><span class="v">0</span></div>
+          <div class="mini-stat"><span class="k">7D</span><span class="v">0</span></div>
+          <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+          <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+        </div>
+      </div>
+      <div class="sketch-body-preview">1. Choose a Campaign</div>
+    </div>
+  </section>
+
+  <!-- ── Sketch D ── -->
+  <section class="sketch-block">
+    <div class="sketch-meta">
+      <div class="sk-num">Sketch · D</div>
+      <div class="sk-name">Delete It</div>
+      <div class="sk-desc">Remove the left side entirely. Stats float at top-right as a compact strip. "Choose a Campaign" becomes the very first thing on the page. Cleanest option — no wasted pixels, full focus on the campaign picker.</div>
+    </div>
+    <div class="sketch-frame">
+      <div class="sk-d-top">
+        <div class="mini-stats">
+          <div class="mini-stat"><span class="k">Today</span><span class="v">0</span></div>
+          <div class="mini-stat"><span class="k">7D</span><span class="v">0</span></div>
+          <div class="mini-stat"><span class="k">Err 24h</span><span class="v err">0</span></div>
+          <div class="mini-stat"><span class="k">Passover</span><span class="v green">Active</span></div>
+        </div>
+      </div>
+      <div class="sketch-body-preview" style="padding-top: 36px">1. Choose a Campaign</div>
+    </div>
+  </section>
+
+</body>
+</html>

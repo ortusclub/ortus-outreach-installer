@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Runbar — running-state cleanup</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa;
+  --bg-soft: #faf9f7;
+  --ink: #0a0a0a;
+  --gray: #999999;
+  --gray-soft: #777777;
+  --hairline: rgba(0, 0, 0, 0.15);
+  --hairline-soft: rgba(0, 0, 0, 0.06);
+  --gold: #F7BE68;
+  --green: #34a853;
+  --red: #dc2626;
+  --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+  --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--mono);
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 48px 56px 140px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page-head { padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 40px; }
+.page-title { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.page-sub { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 6px; max-width: 900px; line-height: 1.55; }
+
+.variant { margin-bottom: 56px; }
+.variant-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.variant-tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+.variant-title { font-family: var(--display); font-size: 1.35rem; letter-spacing: 0.02em; text-transform: uppercase; }
+.variant-note { font-size: 0.8rem; color: var(--gray-soft); line-height: 1.55; max-width: 950px; margin-bottom: 16px; }
+.variant-note b { color: var(--ink); font-weight: 500; }
+.variant-note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; background: var(--hairline-soft); padding: 1px 5px; border-radius: 2px; }
+
+.runbar-frame {
+  border: 1px solid var(--hairline);
+  background: var(--bg);
+  margin-bottom: 14px;
+  position: relative;
+}
+.runbar-frame::before {
+  content: attr(data-label);
+  position: absolute; top: -10px; left: 14px;
+  background: var(--bg);
+  padding: 0 8px;
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+
+/* —— Real run-bar (mimicking the production styles + variant C) —— */
+.run-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 56px 14px 32px;
+  height: 60px;
+}
+.run-status { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.state-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--gray); flex-shrink: 0; }
+.state-dot.running { background: var(--green); box-shadow: 0 0 0 3px rgba(52,168,83,0.15); }
+.run-status-stack { display: inline-flex; flex-direction: column; gap: 1px; min-width: 0; }
+.run-status-name {
+  font-family: var(--display); font-size: 1rem; color: var(--ink); letter-spacing: 0.02em;
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.run-status-text {
+  font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--gray);
+  max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.run-status-text.long {
+  /* simulates current broken behavior — wraps over multiple lines */
+  white-space: normal;
+  max-width: 100%;
+}
+
+.run-bar-actions { display: flex; gap: 10px; align-items: center; flex: 1; }
+.btn {
+  background: transparent; color: var(--ink); border: 1px solid var(--hairline);
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em;
+  text-transform: uppercase; padding: 7px 14px; border-radius: 9999px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn--wrap { white-space: normal; max-width: 90px; line-height: 1.05; }
+.btn--nowrap { white-space: nowrap; }
+.btn-start { background: var(--ink); color: var(--gold); border-color: var(--ink); }
+.btn-stop  { background: var(--red); color: #fff; border-color: var(--red); }
+.btn-stop:disabled { background: transparent; color: var(--red); opacity: 0.45; border-color: var(--red); }
+.btn-pause:disabled, .btn:disabled { color: var(--ink); opacity: 0.35; cursor: not-allowed; }
+.btn-start:disabled { color: var(--gold); opacity: 0.45; }
+
+.runbar-group {
+  display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; position: relative;
+}
+.runbar-group + .runbar-group::before {
+  content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 1px; height: 18px; background: var(--hairline);
+}
+.runbar-group--first { padding-left: 36px; }
+.runbar-group--recovery { padding-left: 26px; }
+.runbar-group--last { padding-right: 0; margin-left: auto; }
+.runbar-group-label {
+  font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--gray); margin-right: 2px;
+}
+
+.preset-pill-btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: transparent; color: var(--ink); border: 1px solid var(--hairline);
+  font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em;
+  text-transform: uppercase; padding: 5px 11px; border-radius: 9999px;
+}
+.preset-pill-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 6px;
+  border-radius: 9999px; border: 1px solid var(--hairline); color: var(--gray); font-size: 0.55rem;
+}
+
+.callout { margin-top: 56px; padding: 22px 24px; border: 1px solid var(--hairline); background: var(--bg-soft); }
+.callout h3 { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 10px; }
+.callout p { color: var(--gray); font-size: 0.82rem; line-height: 1.6; max-width: 950px; }
+.callout p + p { margin-top: 8px; }
+.callout code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; color: var(--ink); background: var(--hairline-soft); padding: 1px 6px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="page-title">Runbar — running-state cleanup</div>
+  <div class="page-sub">Stop the wrap. Show which campaign is actually running. Three root causes: <b>formatMode</b> missing CC+IC and IC entries (so raw enums leak through and uppercase to giant text); JS handler at <b>app.js:1590</b> overwrites the Start button text to "Start Campaign" on every mode change (so the runbar "Start" gets clobbered); no <code>white-space: nowrap</code> on action buttons (so anything that gets too long wraps onto two lines).</div>
+</div>
+
+<!-- ═══════════════ CURRENT (ugly) ═══════════════ -->
+<div class="variant">
+  <div class="variant-head"><span class="variant-tag">0 · Current</span><span class="variant-title">What you see today</span></div>
+  <div class="variant-note">Three things conspire: the mode renders as raw <code>connect_and_introduce</code> (formatMode has no entry for it, so the raw value comes through and CSS uppercases it). The long profile email wraps the status line. Then the button strip gets squeezed and labels wrap onto two lines. The campaign name slot shows "Live campaign" because the running campaign has no name set, but Bebas Neue renders that as "LIVE CAMPAIGN" — which doesn't actually tell you which campaign is running.</div>
+  <div class="runbar-frame" data-label="Today">
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot running"></span>
+        <span class="run-status-stack">
+          <span class="run-status-name">Live campaign</span>
+          <span class="run-status-text long"><strong>Running</strong> · CONNECT_AND_INTRODUCE · leiddy.penamora@ortus.solutions · 12/50</span>
+        </span>
+      </div>
+      <div class="run-bar-actions">
+        <div class="runbar-group runbar-group--first">
+          <span class="runbar-group-label">Run</span>
+          <button class="btn btn-start btn--wrap" disabled>Start Campaign</button>
+          <button class="btn btn--nowrap">Pause</button>
+          <button class="btn btn-stop btn--nowrap">Stop</button>
+        </div>
+        <div class="runbar-group">
+          <span class="runbar-group-label">View</span>
+          <button class="btn btn--nowrap">Status</button>
+        </div>
+        <div class="runbar-group runbar-group--recovery">
+          <span class="runbar-group-label">Recovery</span>
+          <button class="btn btn--wrap">↻ Force restart</button>
+        </div>
+        <div class="runbar-group runbar-group--last">
+          <button class="preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span style="color:var(--gray);">▾</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Variant A — Targeted fix ═══════════════ -->
+<div class="variant">
+  <div class="variant-head"><span class="variant-tag">A · Recommended</span><span class="variant-title">Targeted fix — minimal surface change</span></div>
+  <div class="variant-note">Four small changes: (1) <b>formatMode</b> learns <code>connect_and_introduce</code> → <code>CC+IB</code> and <code>introduce_back</code> → <code>IC</code>. (2) The Start-button text reset at app.js:1590 stops touching <code>btn-start-rb</code> (only resets the main section-5 Start button). (3) <code>white-space: nowrap</code> on all <code>.btn</code> variants so nothing wraps. (4) When the campaign has no name, identity slot shows <code>Untitled · CC+IB</code> instead of <code>Live campaign</code> — at least signals what kind of campaign is live. The profile email is truncated to the local-part before <code>@</code> so the status line fits.</div>
+  <div class="runbar-frame" data-label="With name set">
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot running"></span>
+        <span class="run-status-stack">
+          <span class="run-status-name">CC + IC - TEST QUEUE</span>
+          <span class="run-status-text"><strong>Running</strong> · CC+IB · leiddy · 12/50</span>
+        </span>
+      </div>
+      <div class="run-bar-actions">
+        <div class="runbar-group runbar-group--first">
+          <span class="runbar-group-label">Run</span>
+          <button class="btn btn-start btn--nowrap" disabled>Start</button>
+          <button class="btn btn--nowrap">Pause</button>
+          <button class="btn btn-stop btn--nowrap">Stop</button>
+        </div>
+        <div class="runbar-group">
+          <span class="runbar-group-label">View</span>
+          <button class="btn btn--nowrap">Status</button>
+        </div>
+        <div class="runbar-group runbar-group--recovery">
+          <span class="runbar-group-label">Recovery</span>
+          <button class="btn btn--nowrap">↻ Force restart</button>
+        </div>
+        <div class="runbar-group runbar-group--last">
+          <button class="preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span style="color:var(--gray);">▾</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="runbar-frame" data-label="No name set — fallback shows mode">
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot running"></span>
+        <span class="run-status-stack">
+          <span class="run-status-name">Untitled · CC+IB</span>
+          <span class="run-status-text"><strong>Running</strong> · leiddy · 12/50</span>
+        </span>
+      </div>
+      <div class="run-bar-actions">
+        <div class="runbar-group runbar-group--first">
+          <span class="runbar-group-label">Run</span>
+          <button class="btn btn-start btn--nowrap" disabled>Start</button>
+          <button class="btn btn--nowrap">Pause</button>
+          <button class="btn btn-stop btn--nowrap">Stop</button>
+        </div>
+        <div class="runbar-group">
+          <span class="runbar-group-label">View</span>
+          <button class="btn btn--nowrap">Status</button>
+        </div>
+        <div class="runbar-group runbar-group--recovery">
+          <span class="runbar-group-label">Recovery</span>
+          <button class="btn btn--nowrap">↻ Force restart</button>
+        </div>
+        <div class="runbar-group runbar-group--last">
+          <button class="preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span style="color:var(--gray);">▾</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Variant B — Sheet name as identity ═══════════════ -->
+<div class="variant">
+  <div class="variant-head"><span class="variant-tag">B</span><span class="variant-title">Use sheet-name when no campaign name is set</span></div>
+  <div class="variant-note">Same nowrap + formatMode + Start-text fixes as A. <b>Difference:</b> the no-name fallback extracts the sheet name from the running campaign's sheet URL (Google Sheets API exposes <code>properties.title</code>) and uses that as the identity. Operators recognise their sheets, so this is more identifying than <code>Untitled · CC+IB</code>. <b>Trade-off:</b> requires a sheet-name fetch that we'd cache server-side — small extra moving part.</div>
+  <div class="runbar-frame" data-label="No name → use sheet title">
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot running"></span>
+        <span class="run-status-stack">
+          <span class="run-status-name">May 2026 — Founder outreach</span>
+          <span class="run-status-text"><strong>Running</strong> · CC+IB · leiddy · 12/50</span>
+        </span>
+      </div>
+      <div class="run-bar-actions">
+        <div class="runbar-group runbar-group--first">
+          <span class="runbar-group-label">Run</span>
+          <button class="btn btn-start btn--nowrap" disabled>Start</button>
+          <button class="btn btn--nowrap">Pause</button>
+          <button class="btn btn-stop btn--nowrap">Stop</button>
+        </div>
+        <div class="runbar-group">
+          <span class="runbar-group-label">View</span>
+          <button class="btn btn--nowrap">Status</button>
+        </div>
+        <div class="runbar-group runbar-group--recovery">
+          <span class="runbar-group-label">Recovery</span>
+          <button class="btn btn--nowrap">↻ Force restart</button>
+        </div>
+        <div class="runbar-group runbar-group--last">
+          <button class="preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span style="color:var(--gray);">▾</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Variant C — Always-show-progress, mode-as-chip ═══════════════ -->
+<div class="variant">
+  <div class="variant-head"><span class="variant-tag">C</span><span class="variant-title">Mode pill in identity row · progress bigger</span></div>
+  <div class="variant-note">Identity row gets the mode as a small pill chip <i>next to</i> the name (instead of folded into the status text). Status text drops the mode duplicate and gains a more prominent <b>12/50</b> counter. <b>Pro:</b> the mode is always immediately visible, name is always front and centre. <b>Con:</b> one more chip element to render.</div>
+  <div class="runbar-frame" data-label="With pill chip">
+    <div class="run-bar">
+      <div class="run-status">
+        <span class="state-dot running"></span>
+        <span class="run-status-stack">
+          <span class="run-status-name" style="display:inline-flex; align-items:center; gap:8px;">CC + IC - TEST QUEUE <span style="font-family:var(--mono); font-size:0.5rem; letter-spacing:0.18em; padding:2px 7px; border:1px solid var(--gold); color:var(--gold); border-radius:9999px;">CC+IB</span></span>
+          <span class="run-status-text"><strong>Running</strong> · leiddy · 12/50</span>
+        </span>
+      </div>
+      <div class="run-bar-actions">
+        <div class="runbar-group runbar-group--first">
+          <span class="runbar-group-label">Run</span>
+          <button class="btn btn-start btn--nowrap" disabled>Start</button>
+          <button class="btn btn--nowrap">Pause</button>
+          <button class="btn btn-stop btn--nowrap">Stop</button>
+        </div>
+        <div class="runbar-group">
+          <span class="runbar-group-label">View</span>
+          <button class="btn btn--nowrap">Status</button>
+        </div>
+        <div class="runbar-group runbar-group--recovery">
+          <span class="runbar-group-label">Recovery</span>
+          <button class="btn btn--nowrap">↻ Force restart</button>
+        </div>
+        <div class="runbar-group runbar-group--last">
+          <button class="preset-pill-btn"><span>Saved configs</span><span class="preset-pill-count">6</span><span style="color:var(--gray);">▾</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <h3>Code-level fixes shared across all three variants</h3>
+  <p><b>(1) <code>formatMode</code></b> at app.js:3675 — add <code>connect_and_introduce: 'CC+IB'</code> and <code>introduce_back: 'IC'</code> to the map. Two lines.</p>
+  <p><b>(2) Start-text reset</b> at app.js:1590 — narrow the loop from <code>['btn-start', 'btn-start-rb']</code> to just <code>'btn-start'</code> so the runbar copy ("Start") survives mode changes. The section-5 Start button stays "Start Campaign".</p>
+  <p><b>(3) <code>white-space: nowrap</code></b> on <code>.btn</code> (or at least <code>.btn-sm</code> + <code>.btn-restore</code>) so button labels can't wrap. Add to public/css/style.css next to the existing <code>.btn</code> rules around line 1078.</p>
+  <p><b>(4) No-name fallback</b> in <code>initRunBarMirror</code> (app.js:5006) — <code>cName || 'Live campaign'</code> becomes <code>cName || (formatMode(__cockpit.mode) ? \`Untitled · \${formatMode(__cockpit.mode)}\` : 'Untitled campaign')</code> (variant A), or pulls the sheet title (variant B), or stays the same but the mode chip is rendered separately (variant C).</p>
+  <p><b>(5) Profile truncation</b> in the status text — change the template to truncate at <code>@</code> so we show <code>leiddy.penamora</code> instead of <code>leiddy.penamora@ortus.solutions</code>. Saves ~17 chars per row.</p>
+</div>
+
+</body>
+</html>

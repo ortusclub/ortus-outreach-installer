@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ortus Outreach — three real mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999;
+    --hairline: rgba(255,255,255,.15);
+    --hairline-soft: rgba(255,255,255,.06);
+    --gold: #F7BE68;
+    --green: #3fb950;
+    --red: #f85149;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --body: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #06080a; color: var(--ink); font-family: var(--body); padding: 28px 24px 80px; }
+  .page-head { max-width: 1240px; margin: 0 auto 32px; }
+  .page-head h1 { font-family: var(--display); font-weight: 400; font-size: 38px; letter-spacing: 0.02em; margin: 0 0 6px; }
+  .page-head h1 em { color: var(--gold); font-style: normal; }
+  .page-head p { margin: 0; color: var(--gray); font-size: 14px; }
+
+  .dir { max-width: 1240px; margin: 0 auto 40px; border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; background: #0d1014; cursor: pointer; transition: border-color .15s; }
+  .dir:hover { border-color: var(--gold); }
+  .dir.selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(247,190,104,.2); }
+  .dir-head { display: flex; align-items: center; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--hairline-soft); background: rgba(247,190,104,.03); }
+  .dir-letter { width: 28px; height: 28px; border-radius: 50%; background: var(--gold); color: #0a0a0a; display: grid; place-items: center; font-weight: 700; font-size: 13px; font-family: var(--display); }
+  .dir-title { font-family: var(--display); font-size: 22px; letter-spacing: 0.02em; }
+  .dir-tag { margin-left: auto; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--gray); }
+  .dir-body { display: grid; grid-template-columns: 1fr 320px; }
+  .dir-mock-wrap { padding: 22px; background: #050608; border-right: 1px solid var(--hairline-soft); }
+  .dir-copy { padding: 22px 24px; }
+  .dir-copy h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); font-weight: 600; }
+  .dir-copy p { margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: rgba(250,250,250,.78); }
+  .dir-copy ul { margin: 0 0 16px; padding-left: 16px; font-size: 13px; line-height: 1.65; color: rgba(250,250,250,.72); }
+
+  /* ── REAL APP MOCK FRAME ─────────────────────── */
+  .app { width: 100%; aspect-ratio: 16/10; background: var(--bg); border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; display: flex; font-family: var(--body); position: relative; }
+  .app-bar { position: absolute; top: 0; left: 0; right: 0; height: 22px; background: #000; display: flex; align-items: center; gap: 6px; padding: 0 10px; z-index: 5; border-bottom: 1px solid var(--hairline-soft); }
+  .app-bar .d { width: 9px; height: 9px; border-radius: 50%; }
+  .app-bar .d.r { background: #ff5f57; } .app-bar .d.y { background: #febc2e; } .app-bar .d.g { background: #28c840; }
+  .app-bar .t { margin-left: auto; margin-right: auto; transform: translateX(-22px); font-size: 10px; color: var(--gray); font-family: var(--mono); }
+
+  /* Sidebar */
+  .sb { width: 200px; padding: 28px 14px 14px; border-right: 1px solid var(--hairline-soft); display: flex; flex-direction: column; gap: 18px; }
+  .sb-brand { font-family: var(--display); font-size: 22px; letter-spacing: 0.02em; line-height: 1; }
+  .sb-brand em { color: var(--gold); font-style: normal; font-weight: 400; }
+  .sb-sub { font-size: 9px; color: var(--gray); letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
+  .sb-section { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--gray); margin: 8px 0 4px; }
+  .sb-item { display: flex; align-items: center; gap: 8px; font-size: 11px; padding: 5px 8px; border-radius: 4px; color: rgba(250,250,250,.7); }
+  .sb-item.on { background: rgba(247,190,104,.08); color: var(--gold); }
+  .sb-item .n { font-family: var(--display); font-size: 11px; opacity: .6; min-width: 14px; }
+  .sb-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--hairline-soft); font-size: 10px; color: var(--gray); }
+  .sb-bottom .who { color: var(--ink); font-weight: 500; }
+
+  /* Main */
+  .main { flex: 1; padding: 32px 28px 22px; overflow: hidden; position: relative; }
+
+  /* Header stats row (real Ortus) */
+  .header-stats { display: flex; gap: 22px; padding-bottom: 16px; border-bottom: 1px solid var(--hairline-soft); margin-bottom: 18px; }
+  .hs { display: flex; flex-direction: column; gap: 2px; }
+  .hs .k { font-family: var(--display); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); }
+  .hs .v { font-family: var(--display); font-size: 22px; letter-spacing: 0.02em; line-height: 1; }
+  .hs .v.gold { color: var(--gold); }
+  .hs .v.err { color: var(--red); }
+
+  .greet { font-family: var(--display); font-size: 28px; letter-spacing: 0.02em; line-height: 1; margin-bottom: 4px; }
+  .greet em { color: var(--gold); font-style: normal; }
+  .greet-sub { font-size: 11px; color: var(--gray); margin-bottom: 18px; }
+
+  /* Form/control elements */
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--hairline); border-radius: 999px; font-size: 11px; color: rgba(250,250,250,.78); background: transparent; }
+  .pill.gold { border-color: var(--gold); background: rgba(247,190,104,.1); color: var(--gold); }
+  .pill.ghost { color: var(--gray); border-color: var(--hairline-soft); }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field-k { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); }
+  .field-v { font-size: 13px; color: var(--ink); }
+  .input { background: transparent; border: none; border-bottom: 1px solid var(--hairline); padding: 6px 0; font-size: 13px; color: var(--ink); width: 100%; font-family: var(--body); }
+  .card { border: 1px solid var(--hairline-soft); border-radius: 6px; padding: 12px 14px; }
+  .card.gold { border-color: rgba(247,190,104,.4); background: rgba(247,190,104,.05); }
+  .cta { display: inline-flex; align-items: center; gap: 8px; background: var(--gold); color: #0a0a0a; padding: 10px 18px; border-radius: 6px; font-weight: 600; font-size: 13px; font-family: var(--body); }
+  .cta-ghost { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 6px; font-size: 13px; color: var(--ink); border: 1px solid var(--hairline); }
+
+  /* ───── Direction A: Cockpit ───── */
+  .cockpit { display: grid; grid-template-rows: auto auto auto auto auto; gap: 16px; }
+  .cock-modes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cock-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; }
+  .cock-cell { border: 1px solid var(--hairline-soft); border-radius: 6px; padding: 12px 14px; }
+  .cock-cell .k { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .cock-cell .v { font-size: 14px; }
+  .cock-cell .hint { font-size: 10px; color: var(--gray); margin-top: 4px; }
+  .cock-acct { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+  .cock-acct .a { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--gold); background: rgba(247,190,104,.15); display: grid; place-items: center; font-size: 8px; color: var(--gold); font-weight: 600; }
+  .cock-acct .a.off { border-color: var(--hairline); background: transparent; color: var(--gray); }
+  .cock-knobs { display: flex; gap: 16px; align-items: center; padding: 10px 14px; border: 1px solid var(--hairline-soft); border-radius: 6px; }
+  .cock-knob { display: flex; flex-direction: column; gap: 2px; }
+  .cock-knob .k { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); }
+  .cock-knob .v { font-size: 13px; font-family: var(--mono); color: var(--ink); }
+  .cock-forecast { display: flex; align-items: center; gap: 24px; padding: 14px 18px; border: 1px solid rgba(247,190,104,.4); background: rgba(247,190,104,.06); border-radius: 6px; }
+  .cock-forecast .big { font-family: var(--display); font-size: 30px; color: var(--gold); line-height: 1; letter-spacing: 0.02em; }
+  .cock-forecast .small { font-size: 11px; color: var(--gray); }
+  .cock-launch { display: flex; gap: 10px; align-items: center; }
+
+  /* ───── Direction B: Mode-First ───── */
+  .lanes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 22px; }
+  .lane { border: 1px solid var(--hairline); border-radius: 8px; padding: 18px 16px; min-height: 120px; }
+  .lane.active { border-color: var(--gold); background: rgba(247,190,104,.05); }
+  .lane .ic { font-family: var(--display); font-size: 26px; color: var(--gold); margin-bottom: 8px; }
+  .lane .ttl { font-family: var(--display); font-size: 18px; letter-spacing: 0.02em; }
+  .lane .desc { font-size: 11px; color: var(--gray); margin: 4px 0 10px; }
+  .lane .cnt { font-size: 11px; color: var(--gold); font-weight: 600; font-family: var(--mono); }
+  .lane.muted { opacity: .55; }
+  .lane.muted .ic { color: var(--gray); }
+  .lane.muted .cnt { color: var(--gray); }
+
+  .lane-detail { border-top: 1px dashed var(--hairline); padding-top: 18px; }
+  .lane-detail-h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .lane-detail-h .ttl { font-family: var(--display); font-size: 18px; letter-spacing: 0.02em; }
+  .lane-fields { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: end; }
+  .lane-foot { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  .lane-foot .info { font-size: 10px; color: var(--gray); margin-left: auto; }
+
+  /* ───── Direction C: Conversation ───── */
+  .convo { max-width: 540px; }
+  .turn { margin-bottom: 18px; }
+  .turn .who { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); margin-bottom: 4px; }
+  .turn .ask { font-size: 14px; line-height: 1.5; margin-bottom: 8px; color: rgba(250,250,250,.92); }
+  .turn .ans { display: inline-block; padding: 6px 12px; border-left: 2px solid var(--gold); padding-left: 10px; font-size: 14px; color: var(--gold); font-weight: 500; margin-top: 4px; }
+  .turn .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .turn .input-line { font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--hairline); color: rgba(250,250,250,.85); width: 90%; }
+
+  .convo-launch { display: flex; gap: 10px; margin-top: 6px; }
+  .convo-launch .cta { padding: 8px 14px; font-size: 12px; }
+  .convo-side { font-size: 10px; color: var(--gray); margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--hairline-soft); }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Three redesigns of <em>Ortus Outreach</em></h1>
+  <p>Same goal — collapse the flow. Same brand (Bebas / Hanken / gold #F7BE68 / dark canvas). Real labels, real modes, real campaign data. Click a card to pick a direction.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- DIRECTION A — COCKPIT -->
+<!-- ═══════════════════════════════════════════════ -->
+<div class="dir" data-choice="cockpit" onclick="toggleSelect && toggleSelect(this)">
+  <div class="dir-head">
+    <div class="dir-letter">A</div>
+    <div class="dir-title">Cockpit</div>
+    <div class="dir-tag">one screen · zero scroll</div>
+  </div>
+  <div class="dir-body">
+    <div class="dir-mock-wrap">
+      <div class="app">
+        <div class="app-bar"><div class="d r"></div><div class="d y"></div><div class="d g"></div><div class="t">The Ortus Outreach</div></div>
+
+        <aside class="sb">
+          <div>
+            <div class="sb-brand">Ortus <em>Outreach</em></div>
+            <div class="sb-sub">v2.13.0 · LinkedIn</div>
+          </div>
+          <div>
+            <div class="sb-item on"><span class="n">▶</span> Run a campaign</div>
+            <div class="sb-item"><span class="n">↻</span> Replies</div>
+            <div class="sb-item"><span class="n">▦</span> Accounts</div>
+            <div class="sb-item"><span class="n">⏱</span> History</div>
+            <div class="sb-item"><span class="n">⌗</span> Schedules</div>
+          </div>
+          <div class="sb-bottom">
+            <div class="who">info@ortus.solutions</div>
+            <div>Wed · 8 May</div>
+          </div>
+        </aside>
+
+        <div class="main">
+          <div class="header-stats">
+            <div class="hs"><span class="k">Today</span><span class="v gold">142</span></div>
+            <div class="hs"><span class="k">7-day</span><span class="v">863</span></div>
+            <div class="hs"><span class="k">Errors 24h</span><span class="v">0</span></div>
+            <div class="hs"><span class="k">Browsers</span><span class="v">2 / 7</span></div>
+            <div class="hs"><span class="k">RAM</span><span class="v">3.2GB</span></div>
+          </div>
+
+          <div class="greet">Run a <em>campaign</em></div>
+          <div class="greet-sub">Last preset: <span style="color:#F7BE68">May UK partners — Connect</span> · loaded</div>
+
+          <div class="cockpit">
+            <div class="cock-modes">
+              <span class="pill gold">Connect</span>
+              <span class="pill">Check status</span>
+              <span class="pill">Message</span>
+              <span class="pill ghost">Introduce back</span>
+              <span class="pill ghost">InMail</span>
+              <span class="pill ghost">Open profile</span>
+              <span class="pill ghost">More ▾</span>
+            </div>
+
+            <div class="cock-row">
+              <div class="cock-cell">
+                <div class="k">Sheet</div>
+                <div class="v">Spring-UK-Partners-2026 <span style="color:#3fb950;font-size:11px;margin-left:6px">✓ 350 rows</span></div>
+                <div class="hint">Last synced 12:14 · 4 cols mapped</div>
+              </div>
+              <div class="cock-cell">
+                <div class="k">Accounts (7 of 12 selected)</div>
+                <div class="cock-acct">
+                  <div class="a">SC</div><div class="a">RM</div><div class="a">GM</div><div class="a">FH</div><div class="a">JT</div><div class="a">LL</div><div class="a">PV</div>
+                  <div class="a off">CH</div><div class="a off">DK</div><div class="a off">NL</div><div class="a off">RT</div><div class="a off">YT</div>
+                </div>
+                <div class="hint" style="margin-top:6px">Preset: Assigned to me</div>
+              </div>
+              <div class="cock-cell">
+                <div class="k">Templates</div>
+                <div class="v">Connect · v3 (n=2 variants)</div>
+                <div class="hint">Auto-A/B · last edited Mon</div>
+              </div>
+            </div>
+
+            <div class="cock-knobs">
+              <div class="cock-knob"><span class="k">Pause / lead</span><span class="v">15–45s</span></div>
+              <div class="cock-knob"><span class="k">Cap / account</span><span class="v">50</span></div>
+              <div class="cock-knob"><span class="k">Parallel</span><span class="v">2 at a time</span></div>
+              <div class="cock-knob" style="margin-left:auto"><span class="k">Throughput model</span><span class="v" style="color:#F7BE68">Auto · 6-min floor</span></div>
+            </div>
+
+            <div class="cock-forecast">
+              <div>
+                <div class="big">350</div>
+                <div class="small">invites this run</div>
+              </div>
+              <div style="height:32px; width:1px; background:var(--hairline-soft)"></div>
+              <div>
+                <div class="big" style="font-size:22px; color:var(--ink)">~4h 20m</div>
+                <div class="small">expected duration</div>
+              </div>
+              <div style="height:32px; width:1px; background:var(--hairline-soft)"></div>
+              <div>
+                <div class="big" style="font-size:22px; color:var(--ink)">18:42</div>
+                <div class="small">finish · local time</div>
+              </div>
+              <div style="margin-left:auto; font-size:11px; color: var(--gray); max-width:170px; line-height:1.4">7 accounts × 50 invites · pause 15–45s · 2 parallel</div>
+            </div>
+
+            <div class="cock-launch">
+              <span class="cta">▶ Launch campaign</span>
+              <span class="cta-ghost">Save as preset</span>
+              <span style="margin-left:auto; font-size:11px; color: var(--gray)">Esc to clear · ⌘↩ to launch</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dir-copy">
+      <h4>The bet</h4>
+      <p>One screen replaces the 5-step wizard. Smart defaults from last run pre-fill everything. Mode is a chip, not a section. Forecast updates live as you toggle. Launch in &lt;10 seconds when nothing's changed.</p>
+      <h4>You'd love this if…</h4>
+      <ul>
+        <li>You run the same shape of campaign daily and resent re-doing the wizard</li>
+        <li>You can tolerate a denser screen in exchange for speed</li>
+        <li>"Power-user dashboard" beats "guided setup" for your team</li>
+      </ul>
+      <h4>Trade-off</h4>
+      <p>First-time users get less hand-holding. Edge modes (Introduce Back, InMail, Post Amp, Check DMs) live in <strong>More ▾</strong>. The 6-min floor / parallel toggle still need a tooltip explainer.</p>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- DIRECTION B — MODE-FIRST LANES -->
+<!-- ═══════════════════════════════════════════════ -->
+<div class="dir" data-choice="mode-first" onclick="toggleSelect && toggleSelect(this)">
+  <div class="dir-head">
+    <div class="dir-letter">B</div>
+    <div class="dir-title">Mode-First Lanes</div>
+    <div class="dir-tag">pick a job · only its fields appear</div>
+  </div>
+  <div class="dir-body">
+    <div class="dir-mock-wrap">
+      <div class="app">
+        <div class="app-bar"><div class="d r"></div><div class="d y"></div><div class="d g"></div><div class="t">The Ortus Outreach</div></div>
+
+        <aside class="sb">
+          <div>
+            <div class="sb-brand">Ortus <em>Outreach</em></div>
+            <div class="sb-sub">v2.13.0 · LinkedIn</div>
+          </div>
+          <div>
+            <div class="sb-item on"><span class="n">◇</span> Today</div>
+            <div class="sb-item"><span class="n">↻</span> Replies <span style="margin-left:auto;color:var(--gold)">12</span></div>
+            <div class="sb-item"><span class="n">▦</span> Accounts</div>
+            <div class="sb-item"><span class="n">⏱</span> History</div>
+          </div>
+          <div class="sb-bottom">
+            <div class="who">info@ortus.solutions</div>
+            <div>Wed · 8 May</div>
+          </div>
+        </aside>
+
+        <div class="main">
+          <div class="header-stats">
+            <div class="hs"><span class="k">Today</span><span class="v gold">142</span></div>
+            <div class="hs"><span class="k">Pending</span><span class="v">214</span></div>
+            <div class="hs"><span class="k">Connected</span><span class="v">42</span></div>
+            <div class="hs"><span class="k">Errors</span><span class="v">0</span></div>
+          </div>
+
+          <div class="greet">What are you doing <em>today</em>?</div>
+          <div class="greet-sub">Lanes show live counts from your sheets · pick one to start</div>
+
+          <div class="lanes">
+            <div class="lane">
+              <div class="ic">→</div>
+              <div class="ttl">Connect</div>
+              <div class="desc">Send connection requests to fresh leads</div>
+              <div class="cnt">350 leads ready · 2 sheets</div>
+            </div>
+            <div class="lane active">
+              <div class="ic">⟳</div>
+              <div class="ttl">Check status</div>
+              <div class="desc">Verify which invites were accepted</div>
+              <div class="cnt">214 pending · 4 sheets</div>
+            </div>
+            <div class="lane">
+              <div class="ic">✉</div>
+              <div class="ttl">Message</div>
+              <div class="desc">Follow up with accepted connections</div>
+              <div class="cnt">42 ready to DM</div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:8px; margin-bottom:18px; font-size:11px;">
+            <span class="pill ghost">Introduce back · 6</span>
+            <span class="pill ghost">Check DMs</span>
+            <span class="pill ghost">InMail · 0 credits</span>
+            <span class="pill ghost">Open profile</span>
+            <span class="pill ghost">Post amp</span>
+          </div>
+
+          <div class="lane-detail">
+            <div class="lane-detail-h">
+              <span class="pill gold" style="font-family:var(--display); letter-spacing:.06em">CHECK STATUS · LANE</span>
+              <span style="font-size:11px;color:var(--gray)">Auto-routed · no templates · no rate knobs · read-only</span>
+            </div>
+            <div class="lane-fields">
+              <div class="field">
+                <span class="field-k">Sheet (auto-loaded)</span>
+                <input class="input" value="Spring-UK-Partners-2026 · 214 pending rows" />
+              </div>
+              <div class="field">
+                <span class="field-k">Coverage</span>
+                <span class="field-v">7 accounts · 30 each</span>
+              </div>
+            </div>
+            <div class="lane-foot">
+              <span class="cta">▶ Run check</span>
+              <span class="cta-ghost">Preview rows</span>
+              <span class="info">~12 min · finishes 12:42</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dir-copy">
+      <h4>The bet</h4>
+      <p>The first decision — "what job am I doing?" — strips the screen. Connect campaigns never see Check Status fields. Each lane is its own minimal form, sized to fit on one screen.</p>
+      <h4>You'd love this if…</h4>
+      <ul>
+        <li>You operate in distinct sessions ("connect day" vs "follow-up day")</li>
+        <li>You think 8 modes upfront is the source of cognitive load — not the controls themselves</li>
+        <li>You want to onboard new operators one mode at a time</li>
+      </ul>
+      <h4>Trade-off</h4>
+      <p>Switching lanes mid-thought is a navigation cost. Power users may miss "everything visible at once." The secondary modes (intro back, check DMs…) sit in a quieter pill row below.</p>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════ -->
+<!-- DIRECTION C — CONVERSATION -->
+<!-- ═══════════════════════════════════════════════ -->
+<div class="dir" data-choice="conversation" onclick="toggleSelect && toggleSelect(this)">
+  <div class="dir-head">
+    <div class="dir-letter">C</div>
+    <div class="dir-title">Conversational Setup</div>
+    <div class="dir-tag">progressive reveal · friendlier tone</div>
+  </div>
+  <div class="dir-body">
+    <div class="dir-mock-wrap">
+      <div class="app">
+        <div class="app-bar"><div class="d r"></div><div class="d y"></div><div class="d g"></div><div class="t">The Ortus Outreach</div></div>
+
+        <aside class="sb">
+          <div>
+            <div class="sb-brand">Ortus <em>Outreach</em></div>
+            <div class="sb-sub">v2.13.0 · LinkedIn</div>
+          </div>
+          <div>
+            <div class="sb-item on"><span class="n">+</span> New campaign</div>
+            <div class="sb-item"><span class="n">↻</span> Replies</div>
+            <div class="sb-item"><span class="n">⏱</span> History</div>
+            <div class="sb-item"><span class="n">▦</span> Accounts</div>
+          </div>
+          <div class="sb-bottom">
+            <div class="who">info@ortus.solutions</div>
+            <div>Wed · 8 May</div>
+          </div>
+        </aside>
+
+        <div class="main">
+          <div class="header-stats">
+            <div class="hs"><span class="k">Today</span><span class="v gold">142</span></div>
+            <div class="hs"><span class="k">7-day</span><span class="v">863</span></div>
+            <div class="hs"><span class="k">Errors</span><span class="v">0</span></div>
+          </div>
+
+          <div class="greet">Let's <em>set up</em> a campaign</div>
+          <div class="greet-sub">Answer one at a time — type or click. Press Esc to skip back.</div>
+
+          <div class="convo">
+            <div class="turn">
+              <div class="who">Ortus →</div>
+              <div class="ask">What should we call this campaign?</div>
+              <div class="ans">May UK partners</div>
+            </div>
+
+            <div class="turn">
+              <div class="who">Ortus →</div>
+              <div class="ask">What's the job?</div>
+              <div class="pills">
+                <span class="pill gold">Connect</span>
+                <span class="pill">Check status</span>
+                <span class="pill">Message</span>
+                <span class="pill ghost">More ▾</span>
+              </div>
+            </div>
+
+            <div class="turn">
+              <div class="who">Ortus →</div>
+              <div class="ask">Which sheet has the leads?</div>
+              <div class="input-line">docs.google.com/spreadsheets/…/Spring-UK-Partners-2026 <span style="color:#3fb950;font-size:11px;margin-left:8px">✓ 350 rows</span></div>
+            </div>
+
+            <div class="turn">
+              <div class="who">Ortus →</div>
+              <div class="ask">7 of your 12 accounts are free right now. Use them all?</div>
+              <div class="convo-launch">
+                <span class="cta">Yes — launch ▶</span>
+                <span class="cta-ghost">Pick manually</span>
+                <span class="cta-ghost">Tweak limits</span>
+              </div>
+              <div class="convo-side">Forecast: 350 invites · ~4h 20m · finishes 18:42 — pause 15–45s · cap 50/account</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dir-copy">
+      <h4>The bet</h4>
+      <p>A vertical conversation. One question at a time, each answer summons the next prompt. The forecast lives quietly at the bottom; the controls only appear when relevant. Feels modern, friendly — closer to Linear or Notion than admin panel.</p>
+      <h4>You'd love this if…</h4>
+      <ul>
+        <li>You want the app to feel friendly and modern, not "enterprise admin panel"</li>
+        <li>New operators need to be talked through their first few campaigns</li>
+        <li>You'd trade some speed for guidance and approachability</li>
+      </ul>
+      <h4>Trade-off</h4>
+      <p>Slower for power users — still N steps, just nicer ones. Less spatial: you can't glance at "everything at once." The forecast is at the bottom, not always pinned in view.</p>
+    </div>
+  </div>
+</div>
+
+<p style="text-align:center; color:var(--gray); font-size:13px; max-width:1240px; margin:32px auto 0;">Click a direction to pick · or tell me in chat which elements from each you want fused</p>
+
+</body>
+</html>

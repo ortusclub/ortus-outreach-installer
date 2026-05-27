@@ -1,0 +1,277 @@
+<h2>Sheet column layout — proposed end-state per mode</h2>
+<p class="subtitle">Sheets-realistic mockup. Cell bg, borders, and font sizes as they'd actually render. Compare these against what your operators see today and tell me what to change.</p>
+
+<style>
+  .sheet-mock {
+    font-family: 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 11px;
+    border: 1px solid #c0c0c0;
+    border-collapse: collapse;
+    width: 100%;
+    background: #fff;
+    margin-bottom: 8px;
+  }
+  .sheet-mock th, .sheet-mock td {
+    border: 1px solid #d0d0d0;
+    padding: 4px 6px;
+    text-align: left;
+    vertical-align: middle;
+    white-space: nowrap;
+    font-weight: normal;
+    color: #202124;
+  }
+  .sheet-mock thead th.col-letter {
+    background: #f1f3f4;
+    text-align: center;
+    color: #5f6368;
+    font-weight: 500;
+    font-size: 10px;
+    padding: 2px 4px;
+  }
+  .sheet-mock thead th.col-name {
+    background: #f1f3f4;
+    font-weight: 600;
+    color: #202124;
+  }
+  .sheet-mock td.hidden-cell {
+    background: repeating-linear-gradient(45deg, #fafafa, #fafafa 6px, #f0f0f0 6px, #f0f0f0 12px);
+    color: #9aa0a6;
+    font-style: italic;
+    font-size: 10px;
+  }
+  .sheet-mock th.hidden-cell {
+    background: repeating-linear-gradient(45deg, #ececec, #ececec 6px, #e3e3e3 6px, #e3e3e3 12px);
+    color: #5f6368;
+    font-weight: 500;
+    font-style: italic;
+  }
+  /* STATE_PALETTE values (lifted from ortus-outreach-sheets-bridge.gs) */
+  .state-pending   { background: #fff4d6; color: #8a5a00; font-weight: 600; }
+  .state-sent      { background: #f0f9f1; color: #4a7a54; font-weight: 600; }
+  .state-connected { background: #d9f1da; color: #0a6b27; font-weight: 600; }
+  .state-declined  { background: #fce4e4; color: #a1252b; font-weight: 600; }
+  .mode-block {
+    margin-bottom: 28px;
+    padding: 14px 16px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fafbfc;
+  }
+  .mode-block h3 { margin: 0 0 4px; }
+  .mode-block .mode-meta { font-size: 12px; color: #5f6368; margin-bottom: 10px; }
+  .legend { font-size: 11px; color: #5f6368; margin-top: 6px; }
+  .legend .swatch { display: inline-block; width: 10px; height: 10px; vertical-align: middle; border: 1px solid #ccc; margin-right: 4px; }
+  .scroll-x { overflow-x: auto; }
+  .open-q {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-left: 3px solid #f5a623;
+    background: #fff8e1;
+    font-size: 12px;
+    color: #5f4400;
+  }
+  .open-q strong { color: #5f4400; }
+</style>
+
+<!-- ── Connect Only ────────────────────────────────────────────── -->
+<div class="mode-block">
+  <h3>Connect Only</h3>
+  <div class="mode-meta">Mode-specific column: <strong>Connection Request Status</strong>. Stage + Sender + Date + Time always visible. Last Action, LinkedIn URN, LinkedIn Membership ID provisioned but hidden (your "never touched" rule).</div>
+  <div class="scroll-x">
+    <table class="sheet-mock">
+      <thead>
+        <tr>
+          <th class="col-letter">A</th>
+          <th class="col-letter">B</th>
+          <th class="col-letter">C</th>
+          <th class="col-letter">D</th>
+          <th class="col-letter hidden-cell">E</th>
+          <th class="col-letter">F</th>
+          <th class="col-letter">G</th>
+          <th class="col-letter">H</th>
+          <th class="col-letter hidden-cell">I</th>
+          <th class="col-letter hidden-cell">J</th>
+          <th class="col-letter">K</th>
+        </tr>
+        <tr>
+          <th class="col-name">First Name</th>
+          <th class="col-name">Last Name</th>
+          <th class="col-name">LinkedIn URL</th>
+          <th class="col-name">Stage</th>
+          <th class="hidden-cell">Last Action 🔒</th>
+          <th class="col-name">Sender</th>
+          <th class="col-name">Date of Last Action</th>
+          <th class="col-name">Time of Last Action</th>
+          <th class="hidden-cell">LinkedIn URN 🔒</th>
+          <th class="hidden-cell">LinkedIn Membership ID 🔒</th>
+          <th class="col-name">Connection Request Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Manar</td><td>Shaker</td><td>linkedin.com/in/manar-shaker</td>
+          <td class="state-pending">Connect Pending</td>
+          <td class="hidden-cell">Connection Request</td>
+          <td>matt.adcock@ortus.solutions</td>
+          <td>2026-05-12</td><td>10:22:51</td>
+          <td class="hidden-cell">ACoAAAwvYmgl</td>
+          <td class="hidden-cell">204431976</td>
+          <td class="state-pending">Connection Request Sent</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend">Hidden: <span style="color:#9aa0a6">E · I · J</span> (cross-hatched cells). Legacy columns from prior runs (OP / Message / InMail / Reply / etc.) — not shown at all.</div>
+</div>
+
+<!-- ── Check Status Only ────────────────────────────────────────────── -->
+<div class="mode-block">
+  <h3>Check Status Only</h3>
+  <div class="mode-meta">Mode-specific column: <strong>Connection Accepted Status</strong>. Same always-visible frame.</div>
+  <div class="scroll-x">
+    <table class="sheet-mock">
+      <thead>
+        <tr>
+          <th class="col-letter">A</th>
+          <th class="col-letter">B</th>
+          <th class="col-letter">C</th>
+          <th class="col-letter">D</th>
+          <th class="col-letter hidden-cell">E</th>
+          <th class="col-letter">F</th>
+          <th class="col-letter">G</th>
+          <th class="col-letter">H</th>
+          <th class="col-letter hidden-cell">I</th>
+          <th class="col-letter hidden-cell">J</th>
+          <th class="col-letter">K</th>
+        </tr>
+        <tr>
+          <th class="col-name">First Name</th>
+          <th class="col-name">Last Name</th>
+          <th class="col-name">LinkedIn URL</th>
+          <th class="col-name">Stage</th>
+          <th class="hidden-cell">Last Action 🔒</th>
+          <th class="col-name">Sender</th>
+          <th class="col-name">Date of Last Action</th>
+          <th class="col-name">Time of Last Action</th>
+          <th class="hidden-cell">LinkedIn URN 🔒</th>
+          <th class="hidden-cell">LinkedIn Membership ID 🔒</th>
+          <th class="col-name">Connection Accepted Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Eden</td><td>Park</td><td>linkedin.com/in/eden-park</td>
+          <td class="state-connected">Connected</td>
+          <td class="hidden-cell">Bulk Check</td>
+          <td>katrina.par@ortusclub.com</td>
+          <td>2026-05-12</td><td>11:20:20</td>
+          <td class="hidden-cell">ACoAABcdEf</td>
+          <td class="hidden-cell">301228841</td>
+          <td class="state-connected">Connected</td>
+        </tr>
+        <tr>
+          <td>Harry</td><td>Holroyd</td><td>linkedin.com/in/harry-holroyd</td>
+          <td class="state-pending">Connect Pending</td>
+          <td class="hidden-cell">Bulk Check</td>
+          <td>matt.adcock@ortus.solutions</td>
+          <td>2026-05-12</td><td>11:07:30</td>
+          <td class="hidden-cell">ACoAAAB7-c</td>
+          <td class="hidden-cell">198214553</td>
+          <td class="state-pending">Still Pending (2026-05-12 11:19)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Connect + Introduce Back ────────────────────────────────────────────── -->
+<div class="mode-block">
+  <h3>Connect + Introduce Back</h3>
+  <div class="mode-meta">Three mode-specific columns: <strong>Connection Request Status · Connection Accepted Status · Introduction Status</strong>. Per your "bypass Connection Check update when intro fires" rule, the accepted column stays blank for rows where the auto-intro fired (Introduction Status is the single source of truth for those).</div>
+  <div class="scroll-x">
+    <table class="sheet-mock">
+      <thead>
+        <tr>
+          <th class="col-letter">A</th>
+          <th class="col-letter">B</th>
+          <th class="col-letter">C</th>
+          <th class="col-letter">D</th>
+          <th class="col-letter hidden-cell">E</th>
+          <th class="col-letter">F</th>
+          <th class="col-letter">G</th>
+          <th class="col-letter">H</th>
+          <th class="col-letter hidden-cell">I</th>
+          <th class="col-letter hidden-cell">J</th>
+          <th class="col-letter">K</th>
+          <th class="col-letter">L</th>
+          <th class="col-letter">M</th>
+        </tr>
+        <tr>
+          <th class="col-name">First Name</th>
+          <th class="col-name">Last Name</th>
+          <th class="col-name">LinkedIn URL</th>
+          <th class="col-name">Stage</th>
+          <th class="hidden-cell">Last Action 🔒</th>
+          <th class="col-name">Sender</th>
+          <th class="col-name">Date of Last Action</th>
+          <th class="col-name">Time of Last Action</th>
+          <th class="hidden-cell">LinkedIn URN 🔒</th>
+          <th class="hidden-cell">LinkedIn Membership ID 🔒</th>
+          <th class="col-name">Connection Request Status</th>
+          <th class="col-name">Connection Accepted Status</th>
+          <th class="col-name">Introduction Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Vignesh</td><td>R</td><td>linkedin.com/in/vignesh-r</td>
+          <td class="state-sent">IC Sent</td>
+          <td class="hidden-cell">Auto-Intro DM</td>
+          <td>katrina.par@ortusclub.com</td>
+          <td>2026-05-12</td><td>11:24:18</td>
+          <td class="hidden-cell">ACoAABwvIu</td>
+          <td class="hidden-cell">421889102</td>
+          <td class="state-pending">Connection Request Sent</td>
+          <td></td>
+          <td class="state-sent">Introduction Made</td>
+        </tr>
+        <tr>
+          <td>Abigail</td><td>L</td><td>linkedin.com/in/abigail-l</td>
+          <td class="state-connected">Connected</td>
+          <td class="hidden-cell">Bulk Check</td>
+          <td>matt.adcock@ortus.solutions</td>
+          <td>2026-05-12</td><td>11:18:02</td>
+          <td class="hidden-cell">ACoAAxYZmn</td>
+          <td class="hidden-cell">512883441</td>
+          <td class="state-pending">Connection Request Sent</td>
+          <td class="state-connected">Connected</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>Erya</td><td>Wang</td><td>linkedin.com/in/erya-wang</td>
+          <td class="state-pending">Connect Pending</td>
+          <td class="hidden-cell">Connection Request</td>
+          <td>matt.adcock@ortus.solutions</td>
+          <td>2026-05-12</td><td>11:09:16</td>
+          <td class="hidden-cell">ACoAAFFcc1</td>
+          <td class="hidden-cell">271882203</td>
+          <td class="state-pending">Connection Request Sent</td>
+          <td class="state-pending">Still Pending (2026-05-12 11:19)</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="legend" style="margin-top:8px">
+    Row examples:
+    <ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:#5f6368">
+      <li><strong>Vignesh</strong> — accepted mid-campaign, intro fired. Accepted column intentionally blank, Introduction Status carries the truth.</li>
+      <li><strong>Abigail</strong> — accepted but intro didn't fire (e.g. primary person missing, or browser session expired). Accepted column stamped so operator sees the acceptance.</li>
+      <li><strong>Erya</strong> — still pending, hasn't accepted yet. Last bulk-check stamped "Still Pending (timestamp)".</li>
+    </ul>
+  </div>
+</div>
+
+<div class="open-q">
+  <strong>Two design choices still open</strong> — I'll ask each in a separate turn. For now, just tell me: <strong>does this column layout match what you want for each of the three modes?</strong> Yes / change X.
+</div>

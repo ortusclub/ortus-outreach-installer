@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Ortus Outreach — GDs Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Ortus Outreach — GDs Manual · Print Stylesheet (A4 Landscape)
+   Two-column magazine layout. Matches the app: Bebas Neue display,
+   Hanken Grotesk body, monochrome with gold accent, hairline rules.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --paper: #FAFAFA;
+  --ink: #0A0A0A;
+  --ink-2: #2A2A2A;
+  --gray: #6A6A6A;
+  --gray-2: #999999;
+  --hairline: rgba(10, 10, 10, 0.15);
+  --hairline-soft: rgba(10, 10, 10, 0.08);
+  --gold: #B38829;
+  --red: #C23030;
+
+  --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+  --body: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ── Page geometry — A4 LANDSCAPE ───────────────────────────────────────── */
+@page {
+  size: A4 landscape;
+  margin: 16mm 18mm 16mm 18mm;
+
+  @top-left {
+    content: "ORTUS OUTREACH";
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    color: #6A6A6A;
+  }
+  @top-right {
+    content: "GDS MANUAL";
+    font-family: 'Hanken Grotesk', sans-serif;
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    color: #6A6A6A;
+  }
+  @bottom-left {
+    content: "v{{VERSION}} · {{DATE}}";
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7pt;
+    letter-spacing: 0.08em;
+    color: #999999;
+  }
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7pt;
+    letter-spacing: 0.08em;
+    color: #999999;
+  }
+}
+
+/* Cover page: no headers/footers, full bleed */
+@page cover {
+  margin: 0;
+  @top-left { content: none; }
+  @top-right { content: none; }
+  @bottom-left { content: none; }
+  @bottom-right { content: none; }
+}
+
+/* Reset */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 10.5pt;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Two-column magazine body ───────────────────────────────────────────── */
+main {
+  column-count: 2;
+  column-gap: 12mm;
+  column-fill: auto;
+  column-rule: 1px solid var(--hairline-soft);
+}
+
+/* Elements that break across columns */
+main > h1,
+main > h2,
+main > hr,
+main > table,
+main > pre,
+main > blockquote,
+main > .page-break,
+main > img {
+  column-span: all;
+  -webkit-column-span: all;
+}
+
+/* Figures (image + caption) that should span both columns */
+main > p > img {
+  column-span: all;
+  -webkit-column-span: all;
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--display);
+  font-weight: 400;
+  letter-spacing: 0.015em;
+  line-height: 1;
+  color: var(--ink);
+  break-after: avoid;
+}
+
+/* H1 = chapter title. Forces a new page, spans both columns */
+h1 {
+  font-size: 44pt;
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  margin: 4mm 0 3mm;
+  padding-top: 6mm;
+  border-top: 2px solid var(--ink);
+  break-before: page;
+  page-break-before: always;
+}
+
+/* First h1 in document doesn't force a break */
+body > main > h1:first-of-type { break-before: avoid; page-break-before: avoid; }
+
+h2 {
+  font-size: 18pt;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  margin: 6mm 0 2mm;
+  color: var(--ink);
+}
+h2::before {
+  content: '';
+  display: inline-block;
+  width: 6mm;
+  height: 1px;
+  background: var(--ink);
+  vertical-align: middle;
+  margin-right: 4mm;
+  transform: translateY(-2px);
+}
+
+h3 {
+  font-size: 12pt;
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+  margin: 4mm 0 1.5mm;
+  color: var(--ink);
+}
+
+h4 {
+  font-size: 10pt;
+  font-family: var(--body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  margin: 3mm 0 1mm;
+  color: var(--ink-2);
+}
+
+p {
+  margin: 0 0 2.5mm;
+  orphans: 3;
+  widows: 3;
+  hyphens: auto;
+}
+
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; }
+
+a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 2px; }
+
+code, kbd, samp {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: rgba(10, 10, 10, 0.05);
+  padding: 0.5mm 1.5mm;
+  border-radius: 2px;
+  letter-spacing: -0.01em;
+}
+
+pre {
+  font-family: var(--mono);
+  font-size: 8.5pt;
+  line-height: 1.5;
+  background: #F0F0F0;
+  border-left: 2px solid var(--ink);
+  padding: 3mm 4mm;
+  margin: 3mm 0;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  white-space: pre-wrap;
+  color: var(--ink-2);
+}
+pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Lists */
+ul, ol {
+  margin: 0 0 2.5mm 4mm;
+  padding: 0;
+}
+li {
+  margin-bottom: 1mm;
+  line-height: 1.5;
+}
+li > p { margin-bottom: 1mm; }
+ul { list-style: none; }
+ul > li { position: relative; padding-left: 4mm; }
+ul > li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--gold);
+  font-family: var(--body);
+  font-weight: 600;
+}
+
+/* Blockquotes — used for callouts + warnings */
+blockquote {
+  border-left: 2px solid var(--gold);
+  padding: 2mm 5mm 2mm 5mm;
+  margin: 3mm 0 3mm 2mm;
+  background: rgba(179, 136, 41, 0.05);
+  font-family: var(--body);
+  font-size: 10.5pt;
+  color: var(--ink);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+blockquote p { margin-bottom: 1.5mm; }
+blockquote p:last-child { margin-bottom: 0; }
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 3mm 0 5mm;
+  font-size: 9.5pt;
+  line-height: 1.45;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+thead th {
+  text-align: left;
+  padding: 2.5mm 3mm 2mm;
+  border-bottom: 1.5px solid var(--ink);
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 8.5pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+tbody td {
+  padding: 2.2mm 3mm;
+  border-bottom: 1px solid var(--hairline-soft);
+  vertical-align: top;
+}
+tbody tr:last-child td { border-bottom: 1px solid var(--hairline); }
+
+tbody td:first-child { font-weight: 500; }
+
+/* ── Images ─────────────────────────────────────────────────────────────── */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 3mm auto;
+  border: 1px solid var(--hairline);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Paragraph-wrapped images should behave like figures (span both columns, center) */
+p:has(> img) {
+  column-span: all;
+  -webkit-column-span: all;
+  text-align: center;
+  margin: 3mm 0;
+}
+
+/* Inline right-floated images */
+img.inline-right {
+  float: right;
+  margin: 2mm 0 3mm 5mm;
+  max-width: 55mm;
+}
+
+/* ── Special constructs used in the manual ──────────────────────────────── */
+.page-break { break-after: page; page-break-after: always; }
+.clear { clear: both; }
+
+.cover-meta {
+  margin-top: 6mm;
+  font-family: var(--mono);
+  font-size: 9.5pt;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  line-height: 2;
+  column-span: all;
+  -webkit-column-span: all;
+}
+.cover-meta strong {
+  display: inline-block;
+  min-width: 24mm;
+  font-family: var(--body);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 8pt;
+  letter-spacing: 0.22em;
+  color: var(--gray);
+}
+
+/* ── Cover page (LANDSCAPE 297 × 210) ───────────────────────────────────── */
+.cover {
+  page: cover;
+  position: relative;
+  width: 297mm;
+  height: 210mm;
+  padding: 22mm 26mm;
+  background: var(--ink);
+  color: var(--paper);
+  break-after: page;
+  page-break-after: always;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  grid-template-rows: auto 1fr auto;
+  gap: 12mm 18mm;
+  overflow: hidden;
+  column-count: 1;
+}
+
+.cover-eyebrow {
+  grid-column: 1 / -1;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 9pt;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--paper);
+  opacity: 0.7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cover-eyebrow .mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3mm;
+}
+.cover-eyebrow .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold);
+  display: inline-block;
+}
+
+.cover-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.cover-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.cover-wordmark {
+  font-family: var(--display);
+  font-size: 124pt;
+  line-height: 0.88;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+}
+.cover-wordmark em {
+  font-style: normal;
+  color: var(--gold);
+}
+
+.cover-rule {
+  height: 1px;
+  background: rgba(250, 250, 250, 0.35);
+  margin: 6mm 0 5mm;
+}
+.cover-subtitle {
+  font-family: var(--display);
+  font-size: 32pt;
+  line-height: 1.05;
+  letter-spacing: 0.03em;
+  color: var(--paper);
+  margin-bottom: 5mm;
+}
+.cover-lede {
+  font-family: var(--body);
+  font-size: 11pt;
+  line-height: 1.55;
+  color: var(--paper);
+  opacity: 0.82;
+  margin-bottom: 0;
+}
+
+.cover-meta-wrap {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6mm;
+  border-top: 1px solid rgba(250, 250, 250, 0.25);
+  padding-top: 6mm;
+}
+.cover-meta-cell .k {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 7.5pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--paper);
+  opacity: 0.55;
+  margin-bottom: 2mm;
+}
+.cover-meta-cell .v {
+  font-family: var(--display);
+  font-size: 18pt;
+  letter-spacing: 0.02em;
+  color: var(--paper);
+}
+.cover-meta-cell .v em {
+  font-style: normal;
+  color: var(--gold);
+}
+
+/* Corner ticks on cover */
+.cover::before,
+.cover::after {
+  content: '';
+  position: absolute;
+  width: 10mm; height: 10mm;
+  border-color: var(--gold);
+  border-style: solid;
+  z-index: 1;
+}
+.cover::before {
+  top: 10mm; left: 10mm;
+  border-width: 1px 0 0 1px;
+}
+.cover::after {
+  bottom: 10mm; right: 10mm;
+  border-width: 0 1px 1px 0;
+}
+
+/* ── Running display: horizontal rule ───────────────────────────────────── */
+hr {
+  border: none;
+  border-top: 1px solid var(--ink);
+  margin: 5mm 0;
+}
+
+/* ── First h2 in document shouldn't force break ─────────────────────────── */
+body > main > h2:first-of-type { break-before: avoid; page-break-before: avoid; }
+
+/* ── Tighten paragraph spacing after headings ───────────────────────────── */
+h1 + p, h2 + p, h3 + p { margin-top: 1mm; }
+
+/* ── Colophon / footer block at end of document ─────────────────────────── */
+hr + p, hr + div {
+  font-family: var(--body);
+  font-size: 8pt;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gray);
+  text-align: center;
+  margin-top: 4mm;
+}
+
+/* Suppress markdown artefacts */
+.page-break + h1 { padding-top: 0; border-top: none; }
+
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────── COVER (LANDSCAPE) ───────────────────────── -->
+<section class="cover">
+  <div class="cover-eyebrow">
+    <span class="mark"><span class="dot"></span>ORTUS CLUB · GDS MANUAL</span>
+    <span>EDITION · 01</span>
+  </div>
+
+  <div class="cover-left">
+    <div class="cover-wordmark">
+      Ortus<br><em>Outreach</em>
+    </div>
+  </div>
+
+  <div class="cover-right">
+    <div class="cover-subtitle">The GDs Manual</div>
+    <div class="cover-rule"></div>
+    <div class="cover-lede">
+      A complete guide to running personalised LinkedIn outreach campaigns with the Ortus automation tool — from first sign-in to your first hundred connections, and every control on the deck in between.
+    </div>
+  </div>
+
+  <div class="cover-meta-wrap">
+    <div class="cover-meta-cell">
+      <div class="k">Version</div>
+      <div class="v"><em>{{VERSION}}</em></div>
+    </div>
+    <div class="cover-meta-cell">
+      <div class="k">Date</div>
+      <div class="v">{{DATE}}</div>
+    </div>
+    <div class="cover-meta-cell">
+      <div class="k">Edition</div>
+      <div class="v">01</div>
+    </div>
+    <div class="cover-meta-cell">
+      <div class="k">Audience</div>
+      <div class="v">GDs</div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────── BODY ───────────────────────── -->
+<main>
+{{CONTENT}}
+</main>
+
+</body>
+</html>

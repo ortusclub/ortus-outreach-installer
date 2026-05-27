@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ortus Outreach — Cockpit (faithful to Bugatti Command Deck)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ─── exact Ortus tokens, copied from public/css/style.css ─── */
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #999999;
+    --hairline: rgba(255, 255, 255, 0.15);
+    --hairline-soft: rgba(255, 255, 255, 0.06);
+    --green: #3fb950;
+    --red: #f85149;
+    --gold: #F7BE68;
+    --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+    --mono: 'Hanken Grotesk', sans-serif;
+    --body: 'Hanken Grotesk', sans-serif;
+    --sidebar-w: 240px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--body); background: var(--bg); color: var(--ink); min-height: 100vh; -webkit-font-smoothing: antialiased; font-weight: 400; }
+  button { font: inherit; color: inherit; cursor: pointer; background: transparent; border: none; }
+
+  /* App shell — 2-column (sidebar + main) */
+  .app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0,1fr); min-height: 100vh; }
+
+  /* Sidebar — exact match to current */
+  .sidebar { border-right: 1px solid var(--hairline); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; }
+  .sidebar-brand { padding: 32px 28px; border-bottom: 1px solid var(--hairline); }
+  .sidebar-wordmark { font-family: var(--display); font-weight: 400; font-size: 2rem; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; }
+  .sidebar-sub { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 12px; }
+
+  .sidebar-nav { padding: 20px 0; flex: 1; }
+  .nav-section-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); padding: 18px 28px 8px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 28px; color: var(--ink); font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; border-left: 1px solid transparent; transition: opacity 0.15s; width: 100%; text-align: left; opacity: 0.6; font-weight: 400; }
+  .nav-item:hover { opacity: 1; }
+  .nav-item.active { opacity: 1; border-left-color: var(--ink); }
+  .nav-num { font-family: var(--display); font-size: 1rem; color: var(--gray); width: 22px; }
+  .nav-item.active .nav-num { color: var(--ink); }
+  .nav-badge { margin-left: auto; font-family: var(--display); font-size: 0.95rem; color: var(--gold); }
+
+  .sidebar-footer { padding: 18px 28px; border-top: 1px solid var(--hairline); font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .sidebar-footer .who { color: var(--ink); margin-bottom: 4px; }
+
+  /* Main pane */
+  .main { padding: 32px 36px 24px; min-width: 0; overflow: auto; }
+
+  /* Page header — Bebas h1 + side stats */
+  .page-header { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 24px; padding-bottom: 28px; border-bottom: 1px solid var(--hairline); margin-bottom: 32px; }
+  h1 { font-family: var(--display); font-weight: 400; font-size: 4rem; line-height: 0.95; letter-spacing: 0.01em; text-transform: uppercase; }
+  h1 small { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-left: 18px; vertical-align: middle; }
+  .subtitle { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-top: 8px; }
+
+  .header-stats { display: flex; align-items: stretch; }
+  .header-stat { display: flex; flex-direction: column; gap: 4px; padding: 4px 18px; border-left: 1px solid var(--hairline); white-space: nowrap; }
+  .header-stat:first-child { border-left: none; padding-left: 0; }
+  .header-stat .k { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .header-stat .v { font-family: var(--display); font-size: 1.4rem; line-height: 1; }
+  .header-stat .v.gold { color: var(--gold); }
+
+  /* h2 — section labels */
+  h2 { font-family: var(--display); font-weight: 400; font-size: 1.6rem; line-height: 1; letter-spacing: 0.01em; text-transform: uppercase; margin-bottom: 18px; display: flex; align-items: baseline; gap: 14px; }
+  h2 .summary { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; color: var(--gray); }
+
+  /* ── routes ── */
+  .route { display: none; }
+  .route.active { display: block; }
+
+  /* ─── DASHBOARD: Active/Past lists ─── */
+  .dashboard-actions { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--hairline); display: flex; }
+  .btn-primary { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold); background: transparent; border: 1px solid var(--gold); border-radius: 9999px; padding: 14px 28px; transition: opacity 0.15s; }
+  .btn-primary:hover { opacity: 0.7; }
+
+  .campaign-list { display: grid; gap: 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .campaign-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 24px; align-items: center; padding: 18px 4px; border-bottom: 1px solid var(--hairline-soft); transition: opacity 0.15s; cursor: pointer; }
+  .campaign-row:last-child { border-bottom: none; }
+  .campaign-row:hover { opacity: 0.7; }
+  .campaign-row .ttl { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.01em; text-transform: uppercase; }
+  .campaign-row .meta { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-top: 4px; }
+  .campaign-row .stat { font-family: var(--display); font-size: 1.6rem; color: var(--ink); }
+  .campaign-row .stat.gold { color: var(--gold); }
+  .campaign-row .stat-k { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-top: 2px; }
+  .campaign-row .live-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .campaign-section + .campaign-section { margin-top: 36px; }
+  .campaign-section .section-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  .campaign-section .section-h .lbl { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.01em; text-transform: uppercase; }
+  .campaign-section .section-h .cnt { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+
+  /* ─── COCKPIT: single-screen wizard replacement ─── */
+  .cockpit { display: grid; grid-template-rows: auto auto auto auto; gap: 28px; }
+
+  /* Mode grid — same .preset language as current app (8 modes in 4x2) */
+  .mode-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--hairline); }
+  .preset { background: transparent; border: none; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); cursor: pointer; padding: 18px 22px; text-align: left; transition: opacity 0.15s; display: flex; flex-direction: column; gap: 6px; }
+  .preset:nth-child(4n) { border-right: none; }
+  .preset:nth-child(n+5) { border-bottom: none; }
+  .preset:hover { opacity: 0.65; }
+  .preset.active { background: var(--hairline-soft); }
+  .preset-title { font-family: var(--display); font-size: 1.2rem; line-height: 1; letter-spacing: 0.01em; text-transform: uppercase; }
+  .preset-desc { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .preset-count { font-family: var(--display); font-size: 1.4rem; color: var(--gray); margin-top: 4px; }
+  .preset.active .preset-count { color: var(--ink); }
+
+  /* Three-column row: Sheet | Accounts | Pace */
+  .triple { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 0; border: 1px solid var(--hairline); }
+  .col { padding: 18px 22px; border-right: 1px solid var(--hairline); }
+  .col:last-child { border-right: none; }
+  .col-h { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); margin-bottom: 12px; }
+  .col-h .num { font-family: var(--display); font-size: 0.85rem; color: var(--gray); margin-right: 8px; }
+  .col-v { font-family: var(--display); font-size: 1.6rem; line-height: 1; letter-spacing: 0.01em; }
+  .col-sub { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-top: 6px; }
+
+  /* Underline input — exact match */
+  input[type="text"] { background: transparent; border: none; border-bottom: 1px solid var(--hairline); padding: 8px 0; font-family: var(--body); font-size: 0.95rem; color: var(--ink); width: 100%; outline: none; }
+  input[type="text"]:focus { border-bottom-color: var(--ink); }
+
+  /* Pace knobs */
+  .knobs { display: flex; gap: 18px; align-items: baseline; margin-top: 6px; }
+  .knob { display: flex; flex-direction: column; gap: 2px; }
+  .knob-k { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .knob-v { font-family: var(--display); font-size: 1.2rem; line-height: 1; }
+
+  /* Account picker — preset-first (matches current Ortus UI: 1/92/324) */
+  .acct-presets-stack { display: grid; gap: 0; border: 1px solid var(--hairline); margin-bottom: 14px; }
+  .acct-preset-card {
+    display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center;
+    padding: 12px 14px; background: transparent; cursor: pointer;
+    border: none; border-bottom: 1px solid var(--hairline); text-align: left;
+    transition: opacity 0.15s; color: inherit; font-family: inherit;
+  }
+  .acct-preset-card:last-child { border-bottom: none; }
+  .acct-preset-card:hover { opacity: 0.7; }
+  .acct-preset-card.active { background: var(--hairline-soft); }
+  .acct-preset-card .ttl { font-family: var(--display); font-size: 0.95rem; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; color: var(--ink); }
+  .acct-preset-card .desc { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-top: 4px; }
+  .acct-preset-card .cnt { font-family: var(--display); font-size: 1.6rem; line-height: 1; color: var(--gray); }
+  .acct-preset-card.active .cnt { color: var(--ink); }
+  .acct-preset-card .check { font-family: var(--mono); font-size: 0.6rem; color: var(--ink); margin-right: 4px; opacity: 0; transition: opacity 0.15s; }
+  .acct-preset-card.active .check { opacity: 1; }
+
+  /* Match name + override row */
+  .match-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; margin-bottom: 14px; }
+  .match-row label { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); display: block; margin-bottom: 4px; }
+  .match-row .hint { font-family: var(--mono); font-size: 0.46rem; letter-spacing: 0.06em; text-transform: none; color: var(--gray); margin-left: 6px; }
+  .match-row .override { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; cursor: pointer; padding: 0 0 8px; }
+  .match-row .override:hover { color: var(--ink); }
+  .match-row input { padding: 6px 0; font-size: 0.85rem; }
+
+  /* Browse / search — full-width drawer below the triple row */
+  .browse-toggle { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; cursor: pointer; padding: 8px 14px; display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; transition: opacity 0.15s; margin-top: 8px; }
+  .browse-toggle:hover { opacity: 0.7; color: var(--ink); border-color: var(--ink); }
+  .browse-toggle.open { color: var(--ink); border-color: var(--ink); background: var(--hairline-soft); }
+  .browse-toggle .caret { transition: transform 0.15s; display: inline-block; }
+  .browse-toggle.open .caret { transform: rotate(180deg); }
+  .browse-toggle .summary { margin-left: auto; color: var(--gray); }
+
+  /* The pane — full width, only shows when toggled */
+  .browse-pane { display: none; border: 1px solid var(--hairline); padding: 18px 22px 22px; }
+  .browse-pane.open { display: block; }
+  .browse-pane-h { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline-soft); }
+  .browse-pane-h .h-ttl { font-family: var(--display); font-size: 1.2rem; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; }
+  .browse-pane-h .h-sub { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  .browse-pane-h .h-bulk { margin-left: auto; display: flex; gap: 8px; }
+  .browse-bulk-btn { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 12px; cursor: pointer; transition: opacity 0.15s; }
+  .browse-bulk-btn:hover { color: var(--ink); border-color: var(--ink); opacity: 0.85; }
+
+  .browse-search { width: 100%; padding: 10px 0; font-family: var(--body); font-size: 0.95rem; margin-bottom: 14px; }
+
+  /* Profile grid — exactly mirrors the live Ortus .profile-grid */
+  .browse-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    max-height: 540px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid var(--hairline);
+    background: var(--hairline);
+  }
+  .browse-list::-webkit-scrollbar { width: 5px; }
+  .browse-list::-webkit-scrollbar-thumb { background: var(--hairline); }
+  .browse-row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+    padding: 22px 26px;
+    background: var(--bg);
+    border: none;
+    cursor: pointer; transition: opacity 0.15s;
+    width: 100%; text-align: left; color: inherit; font-family: inherit;
+    overflow: hidden;
+  }
+  .browse-row:hover { opacity: 0.75; }
+  .browse-row.checked { background: var(--hairline-soft); }
+  .browse-row .box { width: 16px; height: 16px; border: 1px solid var(--hairline); display: inline-block; flex-shrink: 0; position: relative; margin-top: 2px; border-radius: 2px; }
+  .browse-row.checked .box { background: var(--ink); border-color: var(--ink); }
+  .browse-row.checked .box::after { content: '✓'; color: var(--bg); font-size: 0.78rem; line-height: 1; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -52%); font-weight: 600; }
+  .browse-row .info { min-width: 0; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
+  .browse-row .email { font-family: var(--body); font-size: 1rem; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; line-height: 1.2; }
+  .browse-row .pool { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Bars row — stretched across info column, with mono caps labels underneath */
+  .browse-row .bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 6px; }
+  .browse-row .bar-wrap { display: flex; flex-direction: column; gap: 8px; align-items: center; min-width: 0; }
+  .browse-row .bar { height: 6px; background: var(--hairline); width: 100%; border-radius: 9999px; }
+  .browse-row .bar.passover { background: #f5a39c; }
+  .browse-row .bar.cc-active { background: var(--gold); }
+  .browse-row .bar-lbl { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .browse-row .raw-id { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em; color: var(--gray); }
+  .browse-count-foot { font-family: var(--body); font-size: 0.85rem; color: var(--gray); margin-top: 12px; padding: 8px 0; }
+  .browse-count-foot strong { color: var(--ink); font-weight: 500; }
+
+  .browse-foot { display: flex; align-items: center; gap: 18px; margin-top: 12px; font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); padding-top: 12px; border-top: 1px solid var(--hairline-soft); }
+  .browse-foot .legend-swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 5px; }
+
+  /* Forecast row — 4-cell hero */
+  .forecast { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--hairline); }
+  .hero-cell { padding: 22px 26px; border-right: 1px solid var(--hairline); }
+  .hero-cell:last-child { border-right: none; }
+  .hero-k { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); margin-bottom: 10px; }
+  .hero-v { font-family: var(--display); font-size: 2.6rem; line-height: 1; letter-spacing: 0.01em; }
+  .hero-v.accent { color: var(--gold); }
+  .hero-sub { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-top: 6px; }
+
+  /* Launch row */
+  .launch-row { display: flex; align-items: center; gap: 16px; padding-top: 8px; }
+  .btn-launch { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); background: transparent; border: 1px solid var(--gold); border-radius: 9999px; padding: 16px 36px; transition: opacity 0.15s; }
+  .btn-launch:hover { opacity: 0.65; }
+  .btn-ghost { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 14px 22px; transition: opacity 0.15s; opacity: 0.7; }
+  .btn-ghost:hover { opacity: 1; }
+  .launch-meta { margin-left: auto; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .keyhint { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+  kbd { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.1em; padding: 2px 6px; border: 1px solid var(--hairline); color: var(--ink); }
+
+  /* Inline overrides drawer */
+  .drawer { display: none; padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--hairline-soft); }
+  .drawer.open { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .drawer label { display: block; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+
+  /* Live state on cockpit (after launch) */
+  .running-banner { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border: 1px solid var(--green); margin-bottom: 24px; }
+  .running-banner .live-dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--green); animation: pulse 1.5s infinite; }
+  .running-banner .lbl { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--green); }
+  .running-banner .ttl { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.01em; text-transform: uppercase; }
+  .running-banner .meta { margin-left: auto; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .running-banner .stop { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--red); border: 1px solid var(--red); border-radius: 9999px; padding: 8px 18px; transition: opacity 0.15s; }
+  .running-banner .stop:hover { opacity: 0.7; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg); border: 1px solid var(--ink); padding: 14px 22px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink); z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .toast.show { opacity: 1; }
+  .toast .gold { color: var(--gold); }
+
+  .back-link { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; cursor: pointer; padding: 0; margin-bottom: 16px; transition: opacity 0.15s; }
+  .back-link:hover { opacity: 0.7; color: var(--ink); }
+
+  /* ─── Live Status route ─── */
+  .live-section-h { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .live-section-h h2 { margin: 0; }
+  .live-popout { margin-left: auto; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 8px 16px; background: transparent; cursor: pointer; transition: opacity 0.15s; }
+  .live-popout:hover { color: var(--ink); border-color: var(--ink); opacity: 0.85; }
+
+  .status-hero { display: grid; grid-template-rows: auto auto; border: 1px solid var(--hairline); padding: 28px 32px; margin-bottom: 24px; }
+  .status-hero-top { display: grid; grid-template-columns: 200px 1fr; gap: 32px; align-items: center; padding-bottom: 28px; border-bottom: 1px solid var(--hairline-soft); }
+
+  .status-circle { width: 160px; height: 160px; border: 1.5px solid var(--hairline); border-radius: 9999px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; position: relative; transition: border-color 0.3s; }
+  .status-circle.running { border-color: var(--green); }
+  .status-circle .num { font-family: var(--display); font-size: 4rem; line-height: 1; letter-spacing: 0.02em; color: var(--ink); }
+  .status-circle.running .num { color: var(--green); }
+  .status-circle .lbl { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .status-circle.running .lbl { color: var(--green); }
+
+  .status-info .pill-state { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 12px; }
+  .status-info .pill-state .dot { width: 8px; height: 8px; border-radius: 9999px; background: var(--gray); }
+  .status-info .pill-state.running .dot { background: var(--green); animation: pulse 1.5s infinite; }
+  .status-info .pill-state.running { color: var(--green); }
+  .status-info h3 { font-family: var(--display); font-weight: 400; font-size: 2.4rem; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; margin-bottom: 22px; }
+  .kv-rows { display: grid; gap: 8px; }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 18px; align-items: baseline; font-size: 0.85rem; }
+  .kv .k { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
+  .kv .v { color: var(--ink); }
+  .kv .v.dim { color: var(--gray); }
+
+  .status-stats-row { display: grid; grid-template-columns: auto auto 1fr; gap: 48px; align-items: center; padding-top: 22px; }
+  .status-stat .k { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .status-stat .v { font-family: var(--display); font-size: 2rem; line-height: 1; letter-spacing: 0.02em; color: var(--ink); }
+  .status-stat .v.err { color: var(--red); }
+  .status-stat .v.err.zero { color: var(--ink); }
+  .status-stat .of { font-size: 0.9rem; color: var(--gray); margin: 0 4px; }
+  .status-progress { height: 1px; background: var(--hairline-soft); position: relative; }
+  .status-progress .fill { position: absolute; top: 0; left: 0; height: 100%; background: var(--gold); width: 0; transition: width 0.5s; }
+
+  /* Log toolbar */
+  .log-toolbar { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--hairline-soft); margin-bottom: 0; }
+  .log-toolbar .left { display: flex; align-items: center; gap: 10px; }
+  .log-toolbar .right { margin-left: auto; display: flex; gap: 8px; }
+  .log-checkbox { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); cursor: pointer; user-select: none; }
+  .log-checkbox input { display: none; }
+  .log-checkbox .box { width: 14px; height: 14px; border: 1px solid var(--hairline); display: inline-block; position: relative; border-radius: 2px; }
+  .log-checkbox input:checked ~ .box { background: var(--ink); border-color: var(--ink); }
+  .log-checkbox input:checked ~ .box::after { content: '✓'; color: var(--bg); font-size: 0.7rem; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -52%); }
+  .log-checkbox:hover { color: var(--ink); }
+  .log-btn { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 9px 18px; cursor: pointer; transition: opacity 0.15s; }
+  .log-btn:hover { opacity: 0.7; border-color: var(--ink); }
+
+  /* Log pane */
+  .log-pane { font-family: var(--mono); font-size: 0.78rem; line-height: 1.7; padding: 18px 0 24px; max-height: 520px; overflow-y: auto; color: var(--ink); white-space: pre-wrap; word-break: break-word; }
+  .log-pane::-webkit-scrollbar { width: 5px; }
+  .log-pane::-webkit-scrollbar-thumb { background: var(--hairline); }
+  .log-line { padding: 2px 0; }
+  .log-line .ts { color: var(--gray); margin-right: 8px; }
+  .log-line .tag { color: var(--gold); margin-right: 8px; }
+  .log-line .msg { color: var(--ink); }
+  .log-line.err .msg { color: var(--red); }
+  .log-line.ok .msg { color: var(--green); }
+  .log-line.server { color: var(--gray); }
+  .log-line.server.hidden { display: none; }
+  .log-empty { padding: 60px 0; text-align: center; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); }
+
+  /* Section progress (3 collapsed steps) for explanation overlay */
+  .step-rail { display: flex; align-items: center; gap: 0; margin-bottom: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline-soft); }
+  .step { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); padding: 0 14px; border-left: 1px solid var(--hairline); }
+  .step:first-child { padding-left: 0; border-left: none; }
+  .step.done { color: var(--ink); }
+  .step.done::before { content: '✓ '; color: var(--green); }
+  .step .num { font-family: var(--display); font-size: 0.85rem; color: var(--gray); margin-right: 6px; }
+  .step.done .num { color: var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ─── SIDEBAR ─── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">v2.13.0 · LinkedIn</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-route="dashboard"><span class="nav-num">◇</span>Dashboard</button>
+      <button class="nav-item" data-route="live"><span class="nav-num">●</span>Live status <span class="nav-badge" id="live-nav-badge" style="display:none">●</span></button>
+      <div class="nav-section-label">Review</div>
+      <button class="nav-item" data-route="replies"><span class="nav-num">↻</span>Replies <span class="nav-badge">12</span></button>
+      <button class="nav-item" data-route="history"><span class="nav-num">⏱</span>History</button>
+      <button class="nav-item" data-route="schedules"><span class="nav-num">⌗</span>Schedules</button>
+      <button class="nav-item" data-route="accounts"><span class="nav-num">▦</span>Accounts</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="who">info@ortus.solutions</div>
+      <div>Wed · 8 May</div>
+    </div>
+  </aside>
+
+  <!-- ─── MAIN ─── -->
+  <div class="main">
+
+    <!-- ════════ DASHBOARD ════════ -->
+    <div class="route active" data-route="dashboard">
+      <div class="page-header">
+        <div>
+          <h1>Dashboard <small>v2.13.0</small></h1>
+          <div class="subtitle">Wed 8 May · 9:14 AM</div>
+        </div>
+        <div class="header-stats">
+          <div class="header-stat"><span class="k">Today</span><span class="v gold">142</span></div>
+          <div class="header-stat"><span class="k">7-day</span><span class="v">863</span></div>
+          <div class="header-stat"><span class="k">Errors 24h</span><span class="v">0</span></div>
+          <div class="header-stat"><span class="k">Browsers</span><span class="v">2/7</span></div>
+          <div class="header-stat"><span class="k">RAM</span><span class="v">3.2G</span></div>
+        </div>
+      </div>
+
+      <div class="campaign-section">
+        <div class="section-h">
+          <span class="lbl">Active</span>
+          <span class="cnt">2 running · 1 queued</span>
+        </div>
+        <div class="campaign-list">
+          <div class="campaign-row" onclick="toast('Open campaign detail')">
+            <div>
+              <div class="ttl">Connect · Tech-DACH</div>
+              <div class="meta">5 senders · 200 leads · started 8:01</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px"><div class="live-dot"></div><span style="font-family:var(--mono); font-size:0.58rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--green)">Live</span></div>
+            <div style="text-align:right"><div class="stat gold">112</div><div class="stat-k">Sent</div></div>
+            <div style="text-align:right"><div class="stat">2h 14m</div><div class="stat-k">Remaining</div></div>
+          </div>
+          <div class="campaign-row" onclick="toast('Open campaign detail')">
+            <div>
+              <div class="ttl">Check status · Spring-UK</div>
+              <div class="meta">7 senders · 38 rows · started 9:02</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px"><div class="live-dot"></div><span style="font-family:var(--mono); font-size:0.58rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--green)">Live</span></div>
+            <div style="text-align:right"><div class="stat gold">36</div><div class="stat-k">Checked</div></div>
+            <div style="text-align:right"><div class="stat">~2m</div><div class="stat-k">Remaining</div></div>
+          </div>
+          <div class="campaign-row" onclick="toast('Open campaign detail')" style="opacity: 0.6">
+            <div>
+              <div class="ttl">Message · DM Now</div>
+              <div class="meta">42 leads · queued — waits for Spring-UK</div>
+            </div>
+            <div><span style="font-family:var(--mono); font-size:0.58rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gray)">Queued</span></div>
+            <div style="text-align:right"><div class="stat">42</div><div class="stat-k">Ready</div></div>
+            <div style="text-align:right"><div class="stat">~1h 10m</div><div class="stat-k">Est.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="campaign-section">
+        <div class="section-h">
+          <span class="lbl">Past</span>
+          <span class="cnt">finished today · 3</span>
+        </div>
+        <div class="campaign-list">
+          <div class="campaign-row" onclick="toast('Open campaign detail')">
+            <div>
+              <div class="ttl">Connect · UK-Founders</div>
+              <div class="meta">7 senders · 142 leads · finished 9:14</div>
+            </div>
+            <div><span style="font-family:var(--mono); font-size:0.58rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gray)">Done</span></div>
+            <div style="text-align:right"><div class="stat">142</div><div class="stat-k">Sent</div></div>
+            <div style="text-align:right"><div class="stat">0</div><div class="stat-k">Errors</div></div>
+          </div>
+          <div class="campaign-row" onclick="toast('Open campaign detail')">
+            <div>
+              <div class="ttl">Check DMs · all senders</div>
+              <div class="meta">12 senders · 412 threads · finished 8:42</div>
+            </div>
+            <div><span style="font-family:var(--mono); font-size:0.58rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gray)">Done</span></div>
+            <div style="text-align:right"><div class="stat gold">12</div><div class="stat-k">Replies</div></div>
+            <div style="text-align:right"><div class="stat">0</div><div class="stat-k">Errors</div></div>
+          </div>
+          <div class="campaign-row" onclick="toast('Open campaign detail')">
+            <div>
+              <div class="ttl">Connect · DACH-Tech</div>
+              <div class="meta">5 senders · 98 leads · finished 8:01</div>
+            </div>
+            <div><span style="font-family:var(--mono); font-size:0.58rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--gray)">Done</span></div>
+            <div style="text-align:right"><div class="stat">98</div><div class="stat-k">Sent</div></div>
+            <div style="text-align:right"><div class="stat">0</div><div class="stat-k">Errors</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-actions">
+        <button class="btn-primary" onclick="goCockpit()">+ Create campaign</button>
+      </div>
+    </div>
+
+    <!-- ════════ COCKPIT — single-screen wizard replacement ════════ -->
+    <div class="route" data-route="cockpit">
+      <button class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+
+      <div class="page-header">
+        <div>
+          <h1>New campaign <small>cockpit · single screen</small></h1>
+          <div class="subtitle">Last preset loaded — adjust if needed, then launch</div>
+        </div>
+        <div class="header-stats">
+          <div class="header-stat"><span class="k">Today</span><span class="v gold">142</span></div>
+          <div class="header-stat"><span class="k">7-day</span><span class="v">863</span></div>
+          <div class="header-stat"><span class="k">Free senders</span><span class="v">7/12</span></div>
+        </div>
+      </div>
+
+      <!-- Step rail (replaces 5 sections worth of scrolling — all inline below) -->
+      <div class="step-rail">
+        <span class="step done"><span class="num">I.</span>Type</span>
+        <span class="step done"><span class="num">II.</span>Data</span>
+        <span class="step done"><span class="num">III.</span>Accounts</span>
+        <span class="step done"><span class="num">IV.</span>Pace</span>
+        <span class="step"><span class="num">V.</span>Launch</span>
+      </div>
+
+      <div class="cockpit">
+
+        <!-- Mode grid — exactly the current .preset language -->
+        <div>
+          <h2><span class="num" style="font-family:var(--display); font-size:1.4rem; color: var(--gray)">I.</span> Campaign type <span class="summary" id="mode-summary">→ Connect</span></h2>
+          <div class="mode-grid" id="mode-grid">
+            <button class="preset active" data-mode="connect" onclick="pickMode(this,'connect','→ Connect','350 fresh leads')">
+              <div class="preset-title">Connect</div>
+              <div class="preset-desc">Send invites</div>
+              <div class="preset-count">350</div>
+            </button>
+            <button class="preset" data-mode="check_status" onclick="pickMode(this,'check_status','⟳ Check status','214 pending')">
+              <div class="preset-title">Check status</div>
+              <div class="preset-desc">Verify acceptances</div>
+              <div class="preset-count">214</div>
+            </button>
+            <button class="preset" data-mode="message" onclick="pickMode(this,'message','✉ Message','42 ready to DM')">
+              <div class="preset-title">Message</div>
+              <div class="preset-desc">Follow up</div>
+              <div class="preset-count">42</div>
+            </button>
+            <button class="preset" data-mode="intro" onclick="pickMode(this,'intro','⊕ Intro back','6 ready')">
+              <div class="preset-title">Intro back</div>
+              <div class="preset-desc">3-way DM</div>
+              <div class="preset-count">6</div>
+            </button>
+            <button class="preset" data-mode="inmail" onclick="pickMode(this,'inmail','✦ InMail','— credits')">
+              <div class="preset-title">InMail</div>
+              <div class="preset-desc">Paid messages</div>
+              <div class="preset-count">0</div>
+            </button>
+            <button class="preset" data-mode="op" onclick="pickMode(this,'op','◇ Open profile','— scan needed')">
+              <div class="preset-title">Open profile</div>
+              <div class="preset-desc">Free messages</div>
+              <div class="preset-count">—</div>
+            </button>
+            <button class="preset" data-mode="check_dms" onclick="pickMode(this,'check_dms','⌕ Check DMs','412 threads')">
+              <div class="preset-title">Check DMs</div>
+              <div class="preset-desc">Scan replies</div>
+              <div class="preset-count">412</div>
+            </button>
+            <button class="preset" data-mode="amp" onclick="pickMode(this,'amp','▲ Post amp','last post')">
+              <div class="preset-title">Post amp</div>
+              <div class="preset-desc">Like + comment</div>
+              <div class="preset-count">—</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Triple column: Data | Accounts | Pace -->
+        <div class="triple">
+          <div class="col">
+            <div class="col-h"><span class="num">II.</span>Data — Google sheet</div>
+            <input type="text" id="sheet-url" value="docs.google.com/spreadsheets/d/Spring-UK-Partners-2026" />
+            <div class="col-sub" id="sheet-status">✓ 350 rows · 4 cols mapped · synced 12:14</div>
+          </div>
+          <div class="col">
+            <div class="col-h"><span class="num">III.</span>GoLogin accounts <span style="margin-left:auto; font-family:var(--display); font-size:1.1rem; color:var(--ink); letter-spacing:0;"><span id="acct-on-count">324</span> / 324</span></div>
+
+            <!-- Three preset cards, stacked vertically — same pattern as the current app -->
+            <div class="acct-presets-stack" id="acct-presets-stack">
+              <button class="acct-preset-card" data-preset="assigned" onclick="pickAcctPreset(this)">
+                <div>
+                  <div class="ttl"><span class="check">✓</span>Assigned to me</div>
+                  <div class="desc">Profiles where assignee matches my identifier</div>
+                </div>
+                <div class="cnt">1</div>
+              </button>
+              <button class="acct-preset-card" data-preset="pool" onclick="pickAcctPreset(this)">
+                <div>
+                  <div class="ttl"><span class="check">✓</span>Unassigned pool</div>
+                  <div class="desc">Shared</div>
+                </div>
+                <div class="cnt">92</div>
+              </button>
+              <button class="acct-preset-card active" data-preset="all" onclick="pickAcctPreset(this)">
+                <div>
+                  <div class="ttl"><span class="check">✓</span>All</div>
+                  <div class="desc">Show every profile</div>
+                </div>
+                <div class="cnt">324</div>
+              </button>
+            </div>
+
+            <!-- Match name -->
+            <div class="match-row">
+              <div>
+                <label>Match name <span class="hint">your ID in the lead sheet</span></label>
+                <input type="text" value="Antonio" />
+              </div>
+              <button class="override" onclick="toast('Override · select individual profiles')">Override</button>
+            </div>
+
+            <!-- Browse / search trigger — actual pane lives below the triple row, full width -->
+            <button class="browse-toggle" id="browse-toggle" onclick="toggleBrowse()">
+              <span class="caret">▾</span> Browse / search profiles
+              <span class="summary"><span id="browse-selected-count">324</span> selected</span>
+            </button>
+          </div>
+          <div class="col">
+            <div class="col-h"><span class="num">IV.</span>Pace</div>
+            <div class="knobs">
+              <div class="knob"><span class="knob-k">Pause</span><span class="knob-v">15–45s</span></div>
+              <div class="knob"><span class="knob-k">Cap / acct</span><span class="knob-v">50</span></div>
+              <div class="knob"><span class="knob-k">Parallel</span><span class="knob-v">×2</span></div>
+            </div>
+            <div class="col-sub" style="margin-top:14px"><button onclick="toggleDrawer()" style="font-family:var(--mono); font-size:0.58rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--gray); border:none; padding:0; cursor:pointer; text-decoration:underline">Override defaults ▾</button></div>
+            <div class="drawer" id="drawer">
+              <div>
+                <label>Pause min–max (s)</label>
+                <input type="text" value="15–45" />
+              </div>
+              <div>
+                <label>Cap per account</label>
+                <input type="text" value="50" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Browse / search pane — full width, only when toggled -->
+        <div class="browse-pane" id="browse-pane">
+          <div class="browse-pane-h">
+            <div>
+              <span class="h-ttl">Browse profiles</span>
+              <span class="h-sub" style="margin-left:14px">324 total · <span id="browse-pane-count">324</span> selected</span>
+            </div>
+            <div class="h-bulk">
+              <button class="browse-bulk-btn" onclick="bulkBrowse('all')">Select all</button>
+              <button class="browse-bulk-btn" onclick="bulkBrowse('none')">Clear</button>
+              <button class="browse-bulk-btn" onclick="bulkBrowse('avail')">Only available</button>
+            </div>
+          </div>
+
+          <input type="text" class="browse-search" placeholder="Search by name or email…" oninput="filterBrowse(this.value)" />
+
+          <div class="browse-list" id="browse-list">
+            <!-- Row 1: zoominfo_ii — raw GoLogin profile (no bars, just ID) -->
+            <button class="browse-row" data-q="zoominfo_ii 688c9c16e171" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">zoominfo_ii</div>
+                <div class="raw-id">688C9C16E171…</div>
+              </div>
+            </button>
+            <!-- Row 2: chatgpt/claude — raw -->
+            <button class="browse-row" data-q="chatgpt claude 6870d600b441" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">chatgpt/claude</div>
+                <div class="raw-id">6870D600B441…</div>
+              </div>
+            </button>
+            <!-- Row 3: squall.caniedo — has bars -->
+            <button class="browse-row checked" data-q="squall.caniedo@ortus.solutions" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">squall.caniedo@ortus.solutions</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 4: kaizuko -->
+            <button class="browse-row checked" data-q="kaizuko@ortus.solutions" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">kaizuko@ortus.solutions</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 5: tony.o -->
+            <button class="browse-row checked" data-q="tony.o@ortus.solutions" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">tony.o@ortus.solutions</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 6: jigar.chaudhary — pool, CC active (gold) -->
+            <button class="browse-row checked" data-q="jigar.chaudhary@ortus.solutions pool" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">jigar.chaudhary@ortus.solutions</div>
+                <div class="pool">POOL — FREE FOR ALL</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar cc-active"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 7: ayush.goswami — pool, CC active -->
+            <button class="browse-row checked" data-q="ayush.goswami@ortus.solutions pool" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">ayush.goswami@ortus.solutions</div>
+                <div class="pool">POOL — FREE FOR ALL</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar cc-active"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 8: jhared.acosta -->
+            <button class="browse-row checked" data-q="jhared.acosta@ortus.solutions" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">jhared.acosta@ortus.solutions</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 9: udit.pandey -->
+            <button class="browse-row checked" data-q="udit.pandey@ortus.solutions" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">udit.pandey@ortus.solutions</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 10: katrina.par — pool -->
+            <button class="browse-row checked" data-q="katrina.par@ortus.solutions pool" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">katrina.par@ortus.solutions</div>
+                <div class="pool">POOL — FREE FOR ALL</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 11: fabian.otunga -->
+            <button class="browse-row checked" data-q="fabian.otunga@ortus.solutions" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">fabian.otunga@ortus.solutions</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+            <!-- Row 12: charles.galsim -->
+            <button class="browse-row checked" data-q="charles.galsim@ortus.solutions" onclick="this.classList.toggle('checked'); refreshBrowseCount()">
+              <span class="box"></span>
+              <div class="info">
+                <div class="email">charles.galsim@ortus.solutions</div>
+                <div class="bars">
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">OP</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">INM</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">SN</div></div>
+                  <div class="bar-wrap"><div class="bar passover"></div><div class="bar-lbl">CC</div></div>
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <div class="browse-count-foot"><strong id="browse-foot-count">10</strong> selected / 324 total</div>
+        </div>
+
+        <!-- Forecast — 4-cell hero -->
+        <div class="forecast">
+          <div class="hero-cell">
+            <div class="hero-k">Actions</div>
+            <div class="hero-v accent" id="forecast-actions">350</div>
+            <div class="hero-sub" id="forecast-actions-sub">across 7 accounts</div>
+          </div>
+          <div class="hero-cell">
+            <div class="hero-k">Duration</div>
+            <div class="hero-v" id="forecast-duration">~4h 20m</div>
+            <div class="hero-sub">approximate</div>
+          </div>
+          <div class="hero-cell">
+            <div class="hero-k">Finishes</div>
+            <div class="hero-v" id="forecast-finish">18:42</div>
+            <div class="hero-sub">local time</div>
+          </div>
+          <div class="hero-cell">
+            <div class="hero-k">Throughput</div>
+            <div class="hero-v" style="font-size: 1.4rem">Auto · 6-min floor</div>
+            <div class="hero-sub">v2.11.0 model</div>
+          </div>
+        </div>
+
+        <!-- Launch row -->
+        <div class="launch-row">
+          <button class="btn-launch" onclick="launchCampaign()">▶ Launch</button>
+          <button class="btn-ghost" onclick="toast('Saved as preset · Daily UK Connect')">Save as preset</button>
+          <span class="launch-meta" id="launch-meta">Esc clears · ⌘↩ launches</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ LIVE STATUS ════════ -->
+    <div class="route" data-route="live">
+      <div class="page-header">
+        <div>
+          <h1>Live status <small id="live-h1-sub">— idle</small></h1>
+          <div class="subtitle">running campaigns · monitor in real time</div>
+        </div>
+        <div class="header-stats">
+          <div class="header-stat"><span class="k">Browsers</span><span class="v" id="live-browsers-stat">0/7</span></div>
+          <div class="header-stat"><span class="k">RAM</span><span class="v">3.2G</span></div>
+          <div class="header-stat"><span class="k">Today</span><span class="v gold" id="live-today-stat">142</span></div>
+        </div>
+      </div>
+
+      <div class="live-section-h">
+        <h2>▾ Live status</h2>
+        <button class="live-popout" onclick="popoutLive()">↗ Open in new window</button>
+      </div>
+
+      <div class="status-hero">
+        <div class="status-hero-top">
+          <div class="status-circle" id="status-circle">
+            <div class="num" id="status-circle-num">—</div>
+            <div class="lbl" id="status-circle-lbl">Idle</div>
+          </div>
+          <div class="status-info">
+            <div class="pill-state" id="status-pill"><span class="dot"></span><span id="status-pill-text">Idle</span></div>
+            <h3 id="status-title">No campaign running</h3>
+            <div class="kv-rows">
+              <div class="kv"><span class="k">Lead</span><span class="v dim" id="status-lead">—</span></div>
+              <div class="kv"><span class="k">Account</span><span class="v dim" id="status-account">—</span></div>
+              <div class="kv"><span class="k">Mode</span><span class="v dim" id="status-mode">—</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="status-stats-row">
+          <div class="status-stat">
+            <div class="k">Sent today</div>
+            <div class="v"><span id="status-sent">0</span><span class="of">of</span><span id="status-cap">0</span></div>
+          </div>
+          <div class="status-stat">
+            <div class="k">Errors</div>
+            <div class="v err zero" id="status-errors">0</div>
+          </div>
+          <div class="status-progress"><div class="fill" id="status-progress-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="log-toolbar">
+        <div class="left">
+          <label class="log-checkbox"><input type="checkbox" id="log-show-server" onchange="toggleServerLines()" /><span class="box"></span>Show server lines</label>
+        </div>
+        <div class="right">
+          <button class="log-btn" onclick="toast('Browser windows brought to front')">Show browsers</button>
+          <button class="log-btn" onclick="copyLog()">Copy log</button>
+          <button class="log-btn" onclick="clearLog()">Clear log</button>
+        </div>
+      </div>
+
+      <div class="log-pane" id="log-pane">
+        <div class="log-empty">Logs will appear here when a campaign starts</div>
+      </div>
+    </div>
+
+    <!-- ════════ Other routes (skeletal) ════════ -->
+    <div class="route" data-route="replies">
+      <div class="page-header"><div><h1>Replies <small>routed from all senders</small></h1><div class="subtitle">12 inbound · last 24h</div></div></div>
+      <p style="font-family:var(--mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--gray); padding-top:32px">Replies surface — same Bugatti language: rows separated by hairlines, mono caps labels, no cards.</p>
+    </div>
+    <div class="route" data-route="history">
+      <div class="page-header"><div><h1>History <small>last 30 days</small></h1></div></div>
+      <p style="font-family:var(--mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--gray); padding-top:32px">Hairline-divided rows — date · campaign · sent · errors.</p>
+    </div>
+    <div class="route" data-route="schedules">
+      <div class="page-header"><div><h1>Schedules <small>recurring runs</small></h1></div></div>
+      <p style="font-family:var(--mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--gray); padding-top:32px">Scheduled campaigns list.</p>
+    </div>
+    <div class="route" data-route="accounts">
+      <div class="page-header"><div><h1>Accounts <small>12 GoLogin profiles</small></h1></div></div>
+      <p style="font-family:var(--mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--gray); padding-top:32px">Profile management — assignees, pauses, browser status.</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ─── routing ───
+  function go(route) {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.route').forEach(r => r.classList.remove('active'));
+    const navBtn = document.querySelector(`.nav-item[data-route="${route}"]`);
+    if (navBtn) navBtn.classList.add('active');
+    document.querySelector(`.route[data-route="${route}"]`).classList.add('active');
+    window.scrollTo(0,0);
+  }
+  document.querySelectorAll('.nav-item[data-route]').forEach(btn => btn.addEventListener('click', () => go(btn.dataset.route)));
+  function goDashboard() { go('dashboard'); }
+  function goCockpit() { go('cockpit'); }
+
+  // ─── toast ───
+  let toastTimer;
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.innerHTML = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  // ─── cockpit interactions ───
+  function pickMode(el, mode, label, count) {
+    document.querySelectorAll('.preset').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('mode-summary').textContent = label;
+    // Update forecast for connect modes (rough)
+    if (mode === 'connect') {
+      document.getElementById('forecast-actions').textContent = '350';
+      document.getElementById('forecast-actions-sub').textContent = 'across 7 accounts';
+      document.getElementById('forecast-duration').textContent = '~4h 20m';
+      document.getElementById('forecast-finish').textContent = '18:42';
+    } else if (mode === 'check_status') {
+      document.getElementById('forecast-actions').textContent = '214';
+      document.getElementById('forecast-actions-sub').textContent = 'across 7 accounts';
+      document.getElementById('forecast-duration').textContent = '~12m';
+      document.getElementById('forecast-finish').textContent = '14:26';
+    } else if (mode === 'message') {
+      document.getElementById('forecast-actions').textContent = '42';
+      document.getElementById('forecast-actions-sub').textContent = 'auto-routed';
+      document.getElementById('forecast-duration').textContent = '~1h 10m';
+      document.getElementById('forecast-finish').textContent = '15:24';
+    } else {
+      document.getElementById('forecast-actions').textContent = count.match(/\d+/) ? count.match(/\d+/)[0] : '—';
+    }
+    toast('<span class="gold">' + label + '</span>');
+  }
+  const ACCT_PRESET_COUNTS = { assigned: 1, pool: 92, all: 324 };
+  const ACCT_PRESET_LABELS = { assigned: 'Assigned to me', pool: 'Unassigned pool', all: 'All' };
+  let activePreset = 'all';
+
+  function pickAcctPreset(card) {
+    document.querySelectorAll('.acct-preset-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+    activePreset = card.dataset.preset;
+    const n = ACCT_PRESET_COUNTS[activePreset];
+    document.getElementById('acct-on-count').textContent = n;
+    document.getElementById('browse-selected-count').textContent = n;
+    // Forecast scales with sheet rows (350) capped by accounts × 50
+    const sheetRows = 350;
+    const cap = 50;
+    const actions = Math.min(sheetRows, n * cap);
+    document.getElementById('forecast-actions').textContent = actions;
+    document.getElementById('forecast-actions-sub').textContent = `across ${n} account${n === 1 ? '' : 's'}`;
+    // Duration: rough — 1 acct does ~12 invites/hour
+    const hours = actions / (n * 12);
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    document.getElementById('forecast-duration').textContent = h > 0 ? `~${h}h ${m}m` : `~${m}m`;
+    toast(`<span class="gold">${ACCT_PRESET_LABELS[activePreset]}</span> · ${n} profile${n === 1 ? '' : 's'}`);
+  }
+
+  function toggleBrowse() {
+    document.getElementById('browse-toggle').classList.toggle('open');
+    document.getElementById('browse-pane').classList.toggle('open');
+    refreshBrowseCount();
+  }
+
+  function filterBrowse(q) {
+    const query = q.toLowerCase().trim();
+    document.querySelectorAll('#browse-list .browse-row').forEach(r => {
+      const match = !query || r.dataset.q.toLowerCase().includes(query);
+      r.style.display = match ? '' : 'none';
+    });
+  }
+
+  function bulkBrowse(mode) {
+    const rows = document.querySelectorAll('#browse-list .browse-row');
+    rows.forEach(r => {
+      if (mode === 'all') r.classList.add('checked');
+      else if (mode === 'none') r.classList.remove('checked');
+      else if (mode === 'avail') {
+        // "available" = no passover bars + no cc-active
+        const hasPassover = r.querySelector('.bar.passover');
+        const hasCC = r.querySelector('.bar.cc-active');
+        if (!hasPassover && !hasCC) r.classList.add('checked');
+        else r.classList.remove('checked');
+      }
+    });
+    refreshBrowseCount();
+    toast('<span class="gold">' + (mode === 'all' ? 'All' : mode === 'none' ? 'Cleared' : 'Available only') + '</span>');
+  }
+
+  function refreshBrowseCount() {
+    const checked = document.querySelectorAll('#browse-list .browse-row.checked').length;
+    const paneCount = document.getElementById('browse-pane-count');
+    const summary = document.getElementById('browse-selected-count');
+    const foot = document.getElementById('browse-foot-count');
+    if (paneCount) paneCount.textContent = checked;
+    if (summary) summary.textContent = checked;
+    if (foot) foot.textContent = checked;
+    document.querySelectorAll('.acct-preset-card').forEach(c => c.classList.remove('active'));
+    document.getElementById('acct-on-count').textContent = checked;
+  }
+  function toggleDrawer() {
+    document.getElementById('drawer').classList.toggle('open');
+  }
+  // ─── Launch + Live status state machine ───
+  let liveTimer = null;
+  let liveSent = 0;
+
+  function launchCampaign() {
+    const mode = (document.querySelector('.preset.active') || {}).dataset?.mode || 'connect';
+    const modeLabel = (document.getElementById('mode-summary')?.textContent || '→ Connect').trim();
+    const cap = parseInt(document.getElementById('forecast-actions')?.textContent || '350', 10);
+    const acctCount = parseInt(document.getElementById('acct-on-count')?.textContent || '7', 10);
+    const sheetUrl = document.getElementById('sheet-url')?.value || '';
+    const sheetName = (sheetUrl.match(/\/([^/]+)$/) || [, 'Spring-UK-Partners-2026'])[1];
+
+    startLive({ mode, modeLabel, cap, acctCount, sheetName });
+    toast('<span class="gold">▶ Launch</span> · live status open');
+    go('live');
+  }
+
+  function startLive({ mode, modeLabel, cap, acctCount, sheetName }) {
+    liveSent = 0;
+    document.getElementById('live-h1-sub').textContent = '— running';
+    document.getElementById('live-nav-badge').style.display = 'inline-block';
+    document.getElementById('live-nav-badge').style.color = 'var(--green)';
+    document.getElementById('status-circle').classList.add('running');
+    document.getElementById('status-circle-num').textContent = '0';
+    document.getElementById('status-circle-lbl').textContent = 'Running';
+    const pill = document.getElementById('status-pill');
+    pill.classList.add('running');
+    document.getElementById('status-pill-text').textContent = 'Running';
+    document.getElementById('status-title').textContent = `${modeLabel} · ${sheetName}`;
+    document.getElementById('status-lead').textContent = '—';
+    document.getElementById('status-lead').classList.add('dim');
+    document.getElementById('status-account').textContent = '—';
+    document.getElementById('status-account').classList.add('dim');
+    document.getElementById('status-mode').textContent = modeLabel;
+    document.getElementById('status-mode').classList.remove('dim');
+    document.getElementById('status-cap').textContent = cap;
+    document.getElementById('status-sent').textContent = '0';
+
+    // seed log
+    const log = document.getElementById('log-pane');
+    log.innerHTML = '';
+    pushLog('server', 'launching ' + mode + ' campaign on ' + sheetName);
+    pushLog(mode, `selected ${acctCount} senders · cap ${cap}`);
+    pushLog('server', 'starting browser pool (parallel × 2)');
+    pushLog('server', 'gologin profile pool ready');
+
+    if (liveTimer) clearInterval(liveTimer);
+    const sampleLeads = ['James Mitchell','Sarah Patel','Dimitri Kovac','Marie Dubois','Tomás Garcia','Lukas Weber','Aiko Tanaka','Carla Rossi','Priya Sharma','Ben Whitaker','Ivan Petrov','Yuki Sato'];
+    const sampleAccts = ['kaizuko@ortus.solutions','tony.o@ortus.solutions','jhared.acosta@ortus.solutions','udit.pandey@ortus.solutions','squall.caniedo@ortus.solutions'];
+    let leadIdx = 0;
+    liveTimer = setInterval(() => {
+      if (liveSent >= cap) {
+        pushLog('server', 'campaign finished — ' + cap + ' actions sent · 0 errors', 'ok');
+        clearInterval(liveTimer); liveTimer = null;
+        document.getElementById('status-pill-text').textContent = 'Done';
+        return;
+      }
+      liveSent++;
+      const lead = sampleLeads[leadIdx % sampleLeads.length];
+      const acct = sampleAccts[leadIdx % sampleAccts.length];
+      leadIdx++;
+      // mix of post-amp / connect / server lines like the screenshot
+      if (liveSent % 7 === 0) pushLog('server', `rotated to ${acct.split('@')[0]}`);
+      pushLog(mode, `sent invite to ${lead}`, 'ok');
+      if (liveSent % 5 === 0) pushLog(mode, `dwelling ${(8 + Math.random() * 6).toFixed(0)}s`);
+      // update live numbers
+      document.getElementById('status-circle-num').textContent = liveSent;
+      document.getElementById('status-sent').textContent = liveSent;
+      document.getElementById('status-lead').textContent = lead;
+      document.getElementById('status-lead').classList.remove('dim');
+      document.getElementById('status-account').textContent = acct;
+      document.getElementById('status-account').classList.remove('dim');
+      document.getElementById('status-progress-fill').style.width = (liveSent / cap * 100) + '%';
+      document.getElementById('live-today-stat').textContent = 142 + liveSent;
+      document.getElementById('live-browsers-stat').textContent = '2/7';
+    }, 600);
+  }
+
+  function pushLog(tag, msg, kind) {
+    const log = document.getElementById('log-pane');
+    if (log.querySelector('.log-empty')) log.innerHTML = '';
+    const ts = new Date().toISOString();
+    const line = document.createElement('div');
+    line.className = 'log-line' + (kind ? ' ' + kind : '') + (tag === 'server' ? ' server' + (document.getElementById('log-show-server').checked ? '' : ' hidden') : '');
+    line.innerHTML = `<span class="ts">[${ts}]</span><span class="tag">[${tag}]</span><span class="msg"></span>`;
+    line.querySelector('.msg').textContent = msg;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function copyLog() {
+    const lines = Array.from(document.querySelectorAll('#log-pane .log-line')).filter(l => !l.classList.contains('hidden'));
+    const text = lines.map(l => `${l.querySelector('.ts').textContent} ${l.querySelector('.tag').textContent} ${l.querySelector('.msg').textContent}`).join('\n');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => toast('<span class="gold">Log copied</span> · ' + lines.length + ' lines'));
+    } else {
+      toast('Copy failed — clipboard blocked');
+    }
+  }
+
+  function clearLog() {
+    document.getElementById('log-pane').innerHTML = '<div class="log-empty">Log cleared</div>';
+    toast('Log cleared');
+  }
+
+  function toggleServerLines() {
+    const show = document.getElementById('log-show-server').checked;
+    document.querySelectorAll('#log-pane .log-line.server').forEach(l => {
+      if (show) l.classList.remove('hidden'); else l.classList.add('hidden');
+    });
+  }
+
+  function popoutLive() {
+    // Open a fresh window onto this page, locked to the live route.
+    const url = location.pathname + '#live';
+    window.open(url, 'ortus-live', 'width=1200,height=900');
+    toast('Live status opened in new window');
+  }
+
+  // Hash routing — supports #live for popout
+  function applyHash() {
+    const h = location.hash.replace('#','');
+    if (h && document.querySelector(`.route[data-route="${h}"]`)) go(h);
+  }
+  window.addEventListener('hashchange', applyHash);
+  window.addEventListener('load', applyHash);
+  // Keyboard: ⌘↩ launches, Esc back
+  document.addEventListener('keydown', (e) => {
+    const cockpitActive = document.querySelector('.route[data-route="cockpit"]').classList.contains('active');
+    if (cockpitActive && (e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); launchCampaign(); }
+    if (cockpitActive && e.key === 'Escape') { goDashboard(); }
+  });
+</script>
+
+</body>
+</html>
