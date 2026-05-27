@@ -16,12 +16,28 @@ const LEGACY_DRAFT_NAME_FILE = dataPath('draft-name.json');
 
 let cache = null;
 
+// 2026-05-27 (drafts-isolation): every persisted draft must expose a
+// `lastEditedAt` ISO string so the wizard can sort/pick the most-recent one
+// for the dashboard's Resume pill. Existing rows on disk may lack it — we
+// backfill on read using updatedAt → createdAt → now, and persist the
+// inferred value on the next write.
+function _nowIso() { return new Date().toISOString(); }
+function _backfillLastEditedAt(d) {
+  if (d && !d.lastEditedAt) {
+    if (d.updatedAt) d.lastEditedAt = new Date(d.updatedAt).toISOString();
+    else if (d.createdAt) d.lastEditedAt = new Date(d.createdAt).toISOString();
+    else d.lastEditedAt = _nowIso();
+  }
+  return d;
+}
+
 async function load() {
   if (cache !== null) return cache;
   try {
     const text = await fs.readFile(DRAFTS_FILE, 'utf8');
     const parsed = JSON.parse(text);
     cache = Array.isArray(parsed) ? parsed : [];
+    cache.forEach(_backfillLastEditedAt);
   } catch {
     // Migrate legacy single-draft if present.
     cache = [];
@@ -34,6 +50,7 @@ async function load() {
           id: 'd_' + Date.now() + '_legacy',
           name: legacyName,
           createdAt: Date.now(),
+          lastEditedAt: _nowIso(),
         });
         await persist();
       }
@@ -55,7 +72,22 @@ export async function getDrafts() {
 
 export async function getDraft(id) {
   await load();
-  return cache.find((d) => d.id === id) || null;
+  const d = cache.find((d) => d.id === id) || null;
+  return d ? _backfillLastEditedAt(d) : null;
+}
+
+// Returns the draft with the latest lastEditedAt (ISO string compare works
+// because all timestamps are ISO-8601 in UTC). null when no drafts exist.
+// Used by the dashboard "Resume draft" pill on app boot.
+export async function getMostRecentDraft() {
+  await load();
+  if (!cache.length) return null;
+  let best = null;
+  for (const d of cache) {
+    _backfillLastEditedAt(d);
+    if (!best || String(d.lastEditedAt) > String(best.lastEditedAt)) best = d;
+  }
+  return best || null;
 }
 
 // v2.59: name uniqueness enforcement. Drops every other draft with the
@@ -85,6 +117,7 @@ export async function addDraft({ name = '', config = null } = {}) {
     id: 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     name: trimmed,
     createdAt: Date.now(),
+    lastEditedAt: _nowIso(),
     config: config || null,
   };
   cache.push(entry);
@@ -104,6 +137,7 @@ export async function updateDraft(id, patch) {
   }
   if (patch && patch.config !== undefined) cache[idx].config = patch.config;
   cache[idx].updatedAt = Date.now();
+  cache[idx].lastEditedAt = _nowIso();
   await persist();
   return cache[idx];
 }
