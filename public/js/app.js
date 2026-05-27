@@ -10618,6 +10618,215 @@ window.dashRemoveQueueItem = async function(id) {
   } catch (err) { console.error('[v3] dashRemoveQueueItem:', err); }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v3 dashboard — Calendar grid (This Week)
+// Builds a Monday→Sunday grid for the visible week. Today is highlighted.
+// Chips: running campaign (today), monitoring sweep (nextCheckAt's day),
+// scheduled cron entries (simple 5-field parser; non-trivial expressions skip
+// with console.warn). Week navigation via _v3CalWeekOffset.
+// ─────────────────────────────────────────────────────────────────────────────
+let _v3CalWeekOffset = 0; // 0 = current week, +1 = next, -1 = prev
+
+window.renderCalendarGrid = async function() {
+  const grid = document.getElementById('calGrid');
+  if (!grid) return;
+
+  const today = new Date();
+  const monday = v3StartOfWeek(today, _v3CalWeekOffset);
+  const range = document.getElementById('calRange');
+  if (range) range.textContent = v3FormatWeekRange(monday);
+
+  let schedules = [];
+  let status = {};
+  try {
+    const [sr, str] = await Promise.all([
+      fetch('/api/schedules'),
+      fetch('/api/campaign/status'),
+    ]);
+    if (sr.ok) {
+      const sBody = await sr.json();
+      schedules = Array.isArray(sBody) ? sBody : (sBody && sBody.schedules) || [];
+    }
+    if (str.ok) status = await str.json();
+  } catch (err) {
+    console.error('[v3] renderCalendarGrid fetch:', err);
+  }
+
+  // Build 7 day cells (Monday → Sunday)
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = v3AddDays(monday, i);
+    days.push({ date: d, isToday: v3SameDay(d, today), chips: [] });
+  }
+
+  // Running campaign chip on today (only if we're viewing the current week)
+  if (status && status.running && _v3CalWeekOffset === 0) {
+    const todayCell = days.find(x => x.isToday);
+    if (todayCell) {
+      todayCell.chips.push({
+        mode: v3ModeBadge(status.mode),
+        name: status.name || '',
+        running: true,
+        kind: 'running',
+      });
+    }
+  }
+
+  // Monitoring next-sweep chip on nextCheckAt's day
+  if (status && status.state === 'monitoring' && status.nextCheckAt) {
+    try {
+      const next = new Date(status.nextCheckAt);
+      const cell = days.find(x => v3SameDay(x.date, next));
+      if (cell) {
+        cell.chips.push({
+          mode: 'SW',
+          name: 'Sweep · ' + (status.name || ''),
+          time: v3FormatTime(next),
+          faded: false,
+          kind: 'sweep',
+        });
+      }
+    } catch (err) { /* ignore malformed nextCheckAt */ }
+  }
+
+  // Scheduled cron entries — only fires within visible week
+  const weekEnd = v3AddDays(monday, 7);
+  for (const sched of schedules) {
+    if (!sched || sched.enabled === false) continue;
+    try {
+      const fireDates = v3ExpandSimpleCronInRange(sched.cron, monday, weekEnd);
+      for (const fd of fireDates) {
+        const cell = days.find(x => v3SameDay(x.date, fd));
+        if (cell) {
+          cell.chips.push({
+            mode: v3ModeBadge(sched.mode),
+            name: sched.name || 'Scheduled',
+            time: v3FormatTime(fd),
+            faded: true,
+            kind: 'scheduled',
+            scheduleId: sched.id,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[v3] calendar cron parse skipped:', sched && sched.cron, err && err.message);
+    }
+  }
+
+  // Render cells
+  grid.innerHTML = '';
+  const dowLabels = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+  days.forEach((day, idx) => {
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (day.isToday ? ' today' : '');
+    cell.dataset.calDate = day.date.toISOString().slice(0, 10);
+    if (!day.isToday) cell.addEventListener('click', () => window.dashCalDayClick(cell));
+
+    const head = '<div class="cal-head"><div class="cal-dow">' + dowLabels[idx] + '</div><div class="cal-date">' + day.date.getDate() + '</div></div>';
+    const chipsHtml = day.chips.slice(0, 3).map(c => v3CalChipHtml(c)).join('');
+    const moreHtml = day.chips.length > 3
+      ? '<div class="cal-more" style="margin-top:6px;font-family:var(--mono);font-size:0.56rem;color:var(--gray);">+ ' + (day.chips.length - 3) + ' more</div>'
+      : '';
+    const hint = day.isToday ? '' : '<div class="cal-hint">+ Schedule</div>';
+    cell.innerHTML = head + chipsHtml + moreHtml + hint;
+    grid.append(cell);
+  });
+};
+
+function v3CalChipHtml(c) {
+  const safe = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s == null ? '' : s));
+  const cls = 'cal-chip' + (c.running ? ' running' : '') + (c.faded ? ' faded' : '');
+  const time = c.time ? '<span class="time">' + safe(c.time) + '</span>' : '';
+  return '<div class="' + cls + '" data-chip-kind="' + safe(c.kind || '') + '" data-chip-name="' + safe(c.name) + '" onclick="window.dashCalChipClick(this, event)"><span class="badge">' + safe(c.mode) + '</span>' + time + '<span class="name">' + safe(c.name) + '</span></div>';
+}
+
+// Date helpers — Monday-based start of week
+function v3StartOfWeek(d, weekOffset) {
+  const base = new Date(d);
+  const day = base.getDay(); // 0=Sun … 6=Sat
+  const diff = (day === 0 ? -6 : 1 - day); // shift back to Monday
+  base.setDate(base.getDate() + diff + ((weekOffset || 0) * 7));
+  base.setHours(0, 0, 0, 0);
+  return base;
+}
+function v3SameDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
+function v3AddDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function v3FormatTime(d) {
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function v3FormatWeekRange(monday) {
+  const sunday = v3AddDays(monday, 6);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (monday.getMonth() === sunday.getMonth()) {
+    return monday.getDate() + ' — ' + sunday.getDate() + ' ' + months[sunday.getMonth()];
+  }
+  return monday.getDate() + ' ' + months[monday.getMonth()] + ' — ' + sunday.getDate() + ' ' + months[sunday.getMonth()];
+}
+
+// Simple cron expander — "M H D M W" with literal numbers or "*".
+// Skips comma lists, ranges, /steps with a console.warn (called by renderer).
+function v3ExpandSimpleCronInRange(cronExpr, start, end) {
+  if (!cronExpr || typeof cronExpr !== 'string') return [];
+  const parts = cronExpr.trim().split(/\s+/);
+  if (parts.length !== 5) { console.warn('[v3] cron not 5-field, skipping:', cronExpr); return []; }
+  const [mP, hP, domP, monP, dowP] = parts;
+  const isSimple = (p) => p === '*' || /^\d+$/.test(p);
+  if (![mP, hP, domP, monP, dowP].every(isSimple)) { console.warn('[v3] cron has non-simple parts, skipping:', cronExpr); return []; }
+  const minute = mP === '*' ? null : parseInt(mP, 10);
+  const hour = hP === '*' ? null : parseInt(hP, 10);
+  const dom = domP === '*' ? null : parseInt(domP, 10);
+  const mon = monP === '*' ? null : parseInt(monP, 10);
+  const dow = dowP === '*' ? null : parseInt(dowP, 10); // 0=Sun, 6=Sat
+  const dates = [];
+  const cursor = new Date(start);
+  while (cursor < end) {
+    if ((dom === null || cursor.getDate() === dom)
+      && (mon === null || (cursor.getMonth() + 1) === mon)
+      && (dow === null || cursor.getDay() === dow)) {
+      const fire = new Date(cursor);
+      if (hour !== null) fire.setHours(hour);
+      if (minute !== null) fire.setMinutes(minute);
+      fire.setSeconds(0);
+      fire.setMilliseconds(0);
+      if (fire >= start && fire < end) dates.push(fire);
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+window.dashCalPrev = function() { _v3CalWeekOffset--; window.renderCalendarGrid(); };
+window.dashCalNext = function() { _v3CalWeekOffset++; window.renderCalendarGrid(); };
+window.dashCalToday = function() { _v3CalWeekOffset = 0; window.renderCalendarGrid(); };
+
+window.dashCalDayClick = function(cell) {
+  const d = cell && cell.dataset && cell.dataset.calDate;
+  if (typeof showCampaignToast === 'function') showCampaignToast('Schedule on ' + (d || 'day') + ' — open wizard');
+  if (typeof window.startNewCampaign === 'function') window.startNewCampaign();
+};
+
+window.dashCalChipClick = function(chip, event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  const kind = (chip && chip.dataset && chip.dataset.chipKind) || '';
+  if (kind === 'running') {
+    const active = document.getElementById('active-card');
+    if (active && active.scrollIntoView) active.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else if (kind === 'sweep') {
+    const monSect = document.getElementById('monitoring-section');
+    if (monSect && monSect.scrollIntoView) monSect.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else {
+    if (typeof window.startNewCampaign === 'function') window.startNewCampaign();
+  }
+};
+
 // toggleDock — shared dock open/close + click-outside dismissal. Used by Active,
 // Monitoring, Up Next item docks, and Past row docks.
 if (typeof window.toggleDock !== 'function') {
