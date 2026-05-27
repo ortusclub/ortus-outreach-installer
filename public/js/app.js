@@ -9091,9 +9091,14 @@ function showRunningEditWarning() {
 }
 
 function wizardDirtyOnInput() {
-  if (wizardDirty) return; // already flagged — no need to re-check
+  // 2026-05-27 (drafts-isolation): every input on the wizard triggers a
+  // debounced autosave — the dirty flag is kept for legacy code paths that
+  // read it (Save Edits button, viewing-running-campaign warning). We no
+  // longer early-return on `wizardDirty`, because the autosave needs to
+  // pick up EVERY keystroke, not just the first.
+  if (!wizardDirty && isViewingRunningCampaign()) showRunningEditWarning();
   wizardDirty = true;
-  if (isViewingRunningCampaign()) showRunningEditWarning();
+  debouncedAutosave();
 }
 
 // Wire input/change listeners on every watched wizard field. Idempotent.
@@ -9119,6 +9124,92 @@ function initWizardDirtyTracking() {
 }
 document.addEventListener('DOMContentLoaded', initWizardDirtyTracking);
 if (document.readyState !== 'loading') initWizardDirtyTracking();
+
+// ─────────────────────────────────────────────────────────────────────────
+// Debounced draft autosave.
+//
+// Called on every wizard input. Serializes pending saves so a later PATCH
+// awaits an earlier one (no two PATCHes in flight to the same draft id at
+// once). flushAutosaveImmediate() is the public hook for callers like the
+// banner's launch CTA — they MUST await the queue before reading wizard
+// values, otherwise the server-side draft would lag behind the form.
+//
+// No-ops when getActiveDraftId() is null (e.g. the wizard is bound to the
+// running campaign, not a draft).
+// ─────────────────────────────────────────────────────────────────────────
+const AUTOSAVE_DEBOUNCE_MS = 500;
+let _autosaveTimer = null;
+let _autosavePending = null;
+let _lastAutosavedAt = null;
+
+function debouncedAutosave() {
+  if (!getActiveDraftId()) return; // no draft → nothing to save
+  if (_autosaveTimer) clearTimeout(_autosaveTimer);
+  _autosaveTimer = setTimeout(() => {
+    _autosaveTimer = null;
+    _flushAutosave();
+  }, AUTOSAVE_DEBOUNCE_MS);
+}
+
+async function flushAutosaveImmediate() {
+  if (_autosaveTimer) { clearTimeout(_autosaveTimer); _autosaveTimer = null; }
+  if (_autosavePending) { try { await _autosavePending; } catch {} }
+  await _flushAutosave();
+}
+
+async function _flushAutosave() {
+  const id = getActiveDraftId();
+  if (!id) return;
+  let config = null;
+  try { config = (typeof collectCurrentConfig === 'function') ? collectCurrentConfig() : null; }
+  catch (err) { console.warn('[drafts] collectCurrentConfig failed:', err); }
+  const nameInput = document.getElementById('campaign-name-input');
+  const name = (nameInput?.value || '').trim();
+  // Serialize: if a previous save is still in-flight, wait it out before
+  // starting a new one.
+  if (_autosavePending) { try { await _autosavePending; } catch {} }
+  _autosavePending = fetch('/api/drafts/' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, config }),
+  }).then(async (r) => {
+    if (r.ok) {
+      _lastAutosavedAt = Date.now();
+      updateSavePip();
+      if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+    } else if (r.status === 404) {
+      // Draft was deleted out from under us — drop the stale id so the
+      // next input doesn't keep firing 404s.
+      clearActiveDraft();
+      if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+    } else {
+      const body = await r.json().catch(() => ({}));
+      console.warn('[drafts] autosave failed:', r.status, body);
+    }
+  }).catch((err) => {
+    console.warn('[drafts] autosave error:', err);
+  }).finally(() => {
+    _autosavePending = null;
+  });
+  return _autosavePending;
+}
+
+function updateSavePip() {
+  const pip = document.getElementById('wiz-save-pip');
+  if (!pip) return;
+  if (!_lastAutosavedAt) { pip.textContent = '— not saved yet'; return; }
+  const sec = Math.round((Date.now() - _lastAutosavedAt) / 1000);
+  if (sec < 5) pip.textContent = 'saved just now';
+  else if (sec < 60) pip.textContent = `saved ${sec}s ago`;
+  else pip.textContent = `saved ${Math.round(sec / 60)}m ago`;
+}
+
+// Tick the pip every 5s so "saved 30s ago" doesn't stay stale at "5s ago".
+setInterval(updateSavePip, 5000);
+
+window.flushAutosaveImmediate = flushAutosaveImmediate;
+window.debouncedAutosave = debouncedAutosave;
+window.updateSavePip = updateSavePip;
 
 async function saveCampaignEdits() {
   const buttons = document.querySelectorAll('.wizard-save-edits');
