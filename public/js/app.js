@@ -10512,3 +10512,34 @@ if (typeof window.toggleDock !== 'function') {
   });
 }
 
+/* ── Global tooltip for [data-tip] attributes ──────────────────────────
+   v0.3 markup decorates dock buttons / toggles with data-tip="…". This
+   listener pops a small fixed-position bubble on hover so the tip text
+   shows up. CSS at body[data-dashboard='v3'] .global-tip in
+   dashboard-v0.3.css. */
+if (!window.__v3TipWired) {
+  window.__v3TipWired = true;
+  const _v3Tip = document.createElement('div');
+  _v3Tip.className = 'global-tip';
+  document.body.appendChild(_v3Tip);
+  function _v3ShowTip(target) {
+    const t = target.getAttribute && target.getAttribute('data-tip');
+    if (!t) return;
+    const r = target.getBoundingClientRect();
+    _v3Tip.textContent = t;
+    _v3Tip.style.left = (r.left + r.width / 2) + 'px';
+    _v3Tip.style.top = r.top + 'px';
+    _v3Tip.classList.add('show');
+  }
+  function _v3HideTip() { _v3Tip.classList.remove('show'); }
+  document.addEventListener('mouseover', (e) => {
+    const t = e.target && e.target.closest && e.target.closest('[data-tip]');
+    if (t) _v3ShowTip(t); else _v3HideTip();
+  });
+  document.addEventListener('mouseout', (e) => {
+    const t = e.target && e.target.closest && e.target.closest('[data-tip]');
+    if (t && (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('[data-tip]'))) _v3HideTip();
+  });
+  document.addEventListener('scroll', _v3HideTip, true);
+}
+
