@@ -33,6 +33,28 @@ function _formatLocalDate(d) {
   return `${months[d.getMonth()]} ${day}${ord}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// v2.61.0: pure decision helper for reverify-and-downgrade (spec
+// 2026-05-27-cc-ic-stamp-resilience). Given the result of
+// getConnectionStatus(page) and the row's current `Connection Accepted Status`
+// value, decide whether to downgrade the row. Strict mode: only clear-negative
+// signals ('connect', 'pending') downgrade; 'message' / 'follow' / 'unknown' /
+// 'error' all return noop so a flaky DOM read never clobbers a real connection.
+export function _decideReverifyAction(connectionStatus, currentCc) {
+  if (currentCc !== 'Connected') {
+    return { action: 'noop', reason: 'cc-not-connected' };
+  }
+  if (connectionStatus === 'connect' || connectionStatus === 'pending') {
+    return { action: 'downgrade' };
+  }
+  if (connectionStatus === 'message') {
+    return { action: 'noop', reason: 'genuine-1st-degree' };
+  }
+  if (connectionStatus === 'follow') {
+    return { action: 'noop', reason: 'follow-only-restricted' };
+  }
+  return { action: 'noop', reason: 'ambiguous' };
+}
+
 // v2.57.x — Translate raw sendIntroMessage error strings into operator-friendly
 // "Failed — <reason>" labels for the Introduction Status sheet column. Mirrors
 // the "Skipped — <reason>" pattern used for CC interrupts so the leads sheet
