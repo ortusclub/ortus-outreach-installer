@@ -1,5 +1,7 @@
   /* ── Tokens ────────────────────────────────────────────────── */
-  :root {
+  /* Scoped to body[data-dashboard='v3'] so values don't bleed into the
+     existing dashboard's :root before Phase 3 toggles the attribute. */
+  body[data-dashboard='v3'] {
     --bg: #fafafa;
     --bg-soft: #faf9f7;
     --ink: #0a0a0a;
