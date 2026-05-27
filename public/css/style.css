@@ -4763,8 +4763,10 @@ body.theme-light .wiz-launch-trigger:hover { background: rgba(0, 0, 0, 0.03); }
 }
 body.theme-light .wiz-launch-menu {
   background: #ffffff;
-  border-color: rgba(0,0,0,0.10);
-  box-shadow: 0 14px 36px -8px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.22);
+  box-shadow:
+    0 24px 60px -10px rgba(0,0,0,0.35),
+    0 4px 12px -2px rgba(0,0,0,0.18);
 }
 .wiz-launch-menu.show {
   opacity: 1;
