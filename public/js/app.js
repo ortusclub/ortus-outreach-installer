@@ -10989,7 +10989,8 @@ function renderLiveConsole(s) {
   setText('[data-lc="lead"]', pill.lead);
   setText('[data-lc="action"]', pill.action);
   const sentStr = `${pill.processed} / ${pill.total}` +
-    (pill.errSegment ? ` ${pill.errSegment}` : '');
+    (pill.errSegment ? ` ${pill.errSegment}` : '') +
+    (pill.parkedSegment ? ` ${pill.parkedSegment}` : '');
   setText('[data-lc="sent"]', sentStr);
   setText('[data-lc="state"]', `state · ${pill.state}`);
 

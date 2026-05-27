@@ -1685,31 +1685,32 @@
        /js/live-console.mjs. Hidden when no campaign is running OR when the
        operator is on the dashboard route (#/). -->
   <div id="live-console" class="live-console is-collapsed" hidden>
-    <!-- Pill (collapsed) -->
-    <button type="button" class="live-console__pill" data-lc="pill" title="Open live console">
+    <!-- Right-edge lip (collapsed) -->
+    <button type="button" class="live-console__lip" data-lc="pill" title="Open live console">
       <span class="live-console__dot" data-lc="dot"></span>
-      <span class="live-console__label" data-lc="label">—</span>
-      <span class="live-console__sep" aria-hidden="true"></span>
-      <span class="live-console__count" data-lc="count">— / —</span>
-      <span class="live-console__seg live-console__seg--err" data-lc="err" hidden></span>
-      <span class="live-console__seg live-console__seg--parked" data-lc="parked" hidden></span>
-      <span class="live-console__chev" aria-hidden="true">›</span>
+      <span class="live-console__lip-lbl">Console</span>
+      <span class="live-console__lip-count" data-lc="count">— / —</span>
     </button>
 
-    <!-- Card (expanded) -->
-    <div class="live-console__card" data-lc="card">
+    <!-- Drawer (expanded) -->
+    <div class="live-console__drawer" data-lc="card">
       <div class="live-console__head">
         <span class="live-console__dot" data-lc="dot-card"></span>
-        <span class="live-console__title" data-lc="title">—</span>
-        <span class="live-console__mode" data-lc="mode">—</span>
-        <button type="button" class="live-console__ctl" data-lc="collapse" title="Collapse">−</button>
+        <div class="live-console__head-text">
+          <div class="live-console__title" data-lc="title">—</div>
+          <div class="live-console__mode" data-lc="mode">—</div>
+        </div>
+        <button type="button" class="live-console__ctl" data-lc="collapse" title="Collapse">×</button>
       </div>
       <div class="live-console__body">
-        <div class="live-console__row"><span class="live-console__k">Account</span><span class="live-console__v" data-lc="account">—</span></div>
-        <div class="live-console__row"><span class="live-console__k">Lead</span>   <span class="live-console__v" data-lc="lead">—</span></div>
-        <div class="live-console__row"><span class="live-console__k">Action</span> <span class="live-console__v" data-lc="action">—</span></div>
-        <div class="live-console__row"><span class="live-console__k">Sent</span>   <span class="live-console__v" data-lc="sent">— / —</span></div>
+        <div class="live-console__campcard">
+          <div class="live-console__camp-sent" data-lc="sent">— / —</div>
+          <div class="live-console__row"><span class="live-console__k">Lead</span><span class="live-console__v" data-lc="lead">—</span></div>
+          <div class="live-console__row"><span class="live-console__k">Account</span><span class="live-console__v" data-lc="account">—</span></div>
+          <div class="live-console__row"><span class="live-console__k">Action</span><span class="live-console__v" data-lc="action">—</span></div>
+        </div>
         <div class="live-console__divider"></div>
+        <div class="live-console__log-label">Recent activity</div>
         <div class="live-console__log" data-lc="log"></div>
       </div>
       <div class="live-console__foot">
