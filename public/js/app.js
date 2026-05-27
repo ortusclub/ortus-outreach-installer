@@ -10185,6 +10185,151 @@ window.dashOpenBatchSettings = function() {
   }, 200);
 };
 
+/* ── Monitoring card ─────────────────────────────────────────────────────── */
+
+const V3_MONITORING_TOTAL_DAYS = 7;
+
+function v3ComputeMonitoringDay(status) {
+  // Day X of 7 — derived from monitoringUntil (7 days from sending end).
+  // Fall back to 0 if we can't compute.
+  if (!status || !status.monitoringUntil) return 0;
+  const endMs = new Date(status.monitoringUntil).getTime();
+  if (Number.isNaN(endMs)) return 0;
+  const startMs = endMs - V3_MONITORING_TOTAL_DAYS * 24 * 3600 * 1000;
+  const ms = Date.now() - startMs;
+  const day = Math.floor(ms / (24 * 3600 * 1000)) + 1;
+  return Math.max(0, Math.min(V3_MONITORING_TOTAL_DAYS, day));
+}
+
+window.renderMonitoringCard = function(status) {
+  const sect = document.getElementById('monitoring-section');
+  if (!sect) return;
+  // Show only when campaign is in monitoring state.
+  if (!status || status.state !== 'monitoring') {
+    sect.style.display = 'none';
+    return;
+  }
+  sect.style.display = '';
+
+  const day = v3ComputeMonitoringDay(status);
+  const pct = Math.round((day / V3_MONITORING_TOTAL_DAYS) * 100);
+  const name = status.name || '(unnamed)';
+  const accepted = status.acceptedCount ?? '—';
+  const replies = status.repliesCount ?? '—';
+  const sent = Number(status.totalProcessed) || 0;
+  const accountsCount = (status.participatingProfileIds || status.profileIds || []).length;
+  const sweepLbl = status.monitoringCheckInProgress ? 'Checking now…' : 'Watching';
+
+  // Compute next-sweep ETA from nextCheckAt
+  let sweepEtaText = '—';
+  if (status.nextCheckAt) {
+    const ms = new Date(status.nextCheckAt).getTime() - Date.now();
+    sweepEtaText = v3FmtMs(ms);
+  }
+
+  // Mini state placeholders
+  v3SetText('monitorMiniName', name);
+  v3SetText('monitorMiniPct', String(pct));
+  v3SetText('monitorMiniDay', String(day));
+  v3SetText('monitorMiniDayTotal', String(V3_MONITORING_TOTAL_DAYS));
+  v3SetText('monitorMiniSent', String(sent));
+  v3SetText('monitorMiniAccepted', String(accepted));
+  v3SetText('sweepEtaMini', sweepEtaText);
+  const miniBar = sect.querySelector('.vj-mini-bar > i');
+  if (miniBar) miniBar.style.width = pct + '%';
+  const miniGlyph = document.getElementById('monitorMiniGlyph');
+  if (miniGlyph) miniGlyph.textContent = v3ModeBadge(status.mode);
+
+  // Full state placeholders
+  v3SetText('monitorName', name);
+  v3SetText('monitorPct', String(pct));
+  v3SetText('monitorDay', String(day));
+  v3SetText('monitorDayTotal', String(V3_MONITORING_TOTAL_DAYS));
+  v3SetText('monitorAccounts', String(accountsCount));
+  v3SetText('monitorSent', String(sent));
+  v3SetText('monitorAccepted', String(accepted));
+  v3SetText('monitorReplies', String(replies));
+  v3SetText('watchingLbl', sweepLbl);
+  v3SetText('sweepEta', sweepEtaText);
+  const fullGlyph = document.getElementById('monitorGlyph');
+  if (fullGlyph) fullGlyph.textContent = v3ModeBadge(status.mode);
+  // Full-J hbar lives in the same section but outside the mini block.
+  // Query for the non-mini hbar.
+  const fullBar = sect.querySelector('.vj-hbar:not(.vj-mini-bar) > i');
+  if (fullBar) fullBar.style.width = pct + '%';
+};
+
+window.toggleMonitorMini = function() {
+  const card = document.getElementById('monitoring-section');
+  if (!card) return;
+  const goingMini = !card.classList.contains('is-mini');
+  card.classList.toggle('is-mini');
+  if (goingMini) card.classList.remove('is-detailed');
+};
+
+window.toggleMonitorDetails = function(btn) {
+  const card = document.getElementById('monitoring-section');
+  if (!card) return;
+  const opening = !card.classList.contains('is-detailed');
+  card.classList.toggle('is-detailed');
+  const svg = btn && btn.querySelector('svg');
+  if (svg) svg.style.transform = opening ? 'rotate(180deg)' : 'rotate(0deg)';
+  if (btn) btn.setAttribute('data-tip', opening ? 'Hide details' : 'Show details');
+};
+
+window.dashStopMonitoring = async function() {
+  if (!confirm('Stop monitoring? Remaining unaccepted leads will be stamped Closed.')) return;
+  try {
+    const r = await fetch('/api/monitoring/stop', { method: 'POST' });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok && body.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Monitoring stopped');
+    } else {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Stop failed: ' + (body.error || 'unknown'));
+    }
+    if (typeof pollStatus === 'function') pollStatus();
+  } catch (err) { console.error('[v3] dashStopMonitoring:', err); }
+};
+
+window.dashForceSweep = async function() {
+  try {
+    const r = await fetch('/api/monitoring/check-now', { method: 'POST' });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok && body.ok) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Sweep firing now…');
+    } else {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Sweep failed: ' + (body.error || body.reason || 'unknown'));
+    }
+    if (typeof pollStatus === 'function') pollStatus();
+  } catch (err) { console.error('[v3] dashForceSweep:', err); }
+};
+
+window.dashCopyMonitorToQueue = async function() {
+  try {
+    const r = await fetch('/api/monitoring/state');
+    const m = await r.json();
+    if (!m || !m.name) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('No monitoring state to copy');
+      return;
+    }
+    await fetch('/api/campaign/queue-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: (m.name || 'Campaign') + ' (rerun)',
+        mode: m.mode,
+        profileIds: m.profileIds || m.participatingProfileIds,
+        sheetUrl: m.sheetUrl,
+        templates: m.templates,
+        dailyLimit: m.dailyLimit,
+        linkedinColumn: m.linkedinColumn,
+      }),
+    });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Copied to queue');
+    if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+  } catch (err) { console.error('[v3] dashCopyMonitorToQueue:', err); }
+};
+
 // toggleDock — shared dock open/close + click-outside dismissal. Used by Active,
 // Monitoring, Up Next item docks, and Past row docks.
 if (typeof window.toggleDock !== 'function') {
