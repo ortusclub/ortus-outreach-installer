@@ -6948,6 +6948,10 @@ function applyRoute() {
     // has changed.
     if (typeof syncCampaignNameInput === 'function') syncCampaignNameInput();
     if (typeof updateWizardQueueState === 'function') updateWizardQueueState();
+    // 2026-05-27 (drafts-isolation): refresh the editing banner whenever the
+    // operator lands on the wizard — covers Cmd+R, back-button, and the
+    // resume-pill click path.
+    if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
     startWizardPolling();
   }
 }
@@ -7140,7 +7144,7 @@ async function editDraft(id) {
   wizardDirty = false;
   _runningEditWarningShown = false;
   // Pre-fill the wizard's name input from the draft so the user sees it
-  // immediately (syncCampaignNameInput will pick up currentDraftId on
+  // immediately (syncCampaignNameInput will pick up the active draft id on
   // wizard entry too, but setting it here avoids a flicker).
   try {
     const r = await fetch('/api/drafts/' + encodeURIComponent(id));
@@ -7151,6 +7155,7 @@ async function editDraft(id) {
     }
   } catch {}
   goCreateCampaign();
+  if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
 }
 window.editDraft = editDraft;
 
@@ -8483,6 +8488,7 @@ async function startNewCampaign() {
   if (typeof renderSelectedPanel === 'function') renderSelectedPanel();
   if (typeof updateChipCounts === 'function') updateChipCounts();
   goCreateCampaign();
+  if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
 }
 window.startNewCampaign = startNewCampaign;
 
@@ -9210,6 +9216,53 @@ setInterval(updateSavePip, 5000);
 window.flushAutosaveImmediate = flushAutosaveImmediate;
 window.debouncedAutosave = debouncedAutosave;
 window.updateSavePip = updateSavePip;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Editing banner (variant B) — pinned to top of the wizard. Shows the
+// draft name + autosave pip + "+ Add to queue" CTA. The banner is the
+// canonical launch surface for drafts; the section-VI Add to Queue
+// button is hidden under the same refactor.
+// ─────────────────────────────────────────────────────────────────────────
+window.updateEditingBanner = function() {
+  const banner = document.getElementById('wiz-editing-banner');
+  if (!banner) return;
+  const id = getActiveDraftId();
+  if (!id) { banner.style.display = 'none'; return; }
+  banner.style.display = 'flex';
+  // The campaign-name-input is the canonical name source — sync the
+  // banner's display name from it whenever this runs.
+  const nameInput = document.getElementById('campaign-name-input');
+  const nameEl = document.getElementById('wiz-editing-name');
+  if (nameEl) nameEl.textContent = (nameInput?.value || '').trim() || 'Untitled draft';
+  updateSavePip();
+};
+
+window.launchFromBanner = async function() {
+  // 1. Flush any pending autosave so the queued config matches what's on
+  // screen (the launch flow reads wizard values directly via startCampaign).
+  try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before launch:', err); }
+  // 2. Delegate to the existing queue-only launch path. submitStartCampaign
+  // already deletes the draft and clears the active id on success.
+  if (typeof addToQueueCampaign === 'function') await addToQueueCampaign();
+  // Repaint the banner — likely hidden now that the draft was consumed.
+  if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+};
+
+// Keep the banner's name display in sync with live edits of the campaign
+// name input. Wires once, idempotent across initWizardDirtyTracking
+// invocations.
+(function _wireEditingBannerNameSync() {
+  function attach() {
+    const input = document.getElementById('campaign-name-input');
+    if (!input || input.__bannerNameWired) return;
+    input.__bannerNameWired = true;
+    input.addEventListener('input', () => {
+      if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+    });
+  }
+  if (document.readyState !== 'loading') attach();
+  document.addEventListener('DOMContentLoaded', attach);
+})();
 
 async function saveCampaignEdits() {
   const buttons = document.querySelectorAll('.wizard-save-edits');

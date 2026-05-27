@@ -382,6 +382,20 @@
         <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
         <button type="button" id="btn-save-edits-top" class="btn btn-secondary wizard-save-edits" onclick="saveCampaignEdits()">Save Edits</button>
       </div>
+      <!-- 2026-05-27 (drafts-isolation): editing-banner pinned to top of wizard.
+           Visible only when an active draft id is set. Shows the draft name +
+           autosave pip + the launch CTA so the operator always knows what
+           they're editing and can ship it in one click. -->
+      <div id="wiz-editing-banner" class="wiz-editing-banner" style="display:none;">
+        <div class="wiz-editing-banner-left">
+          <span class="wiz-editing-banner-lbl">Editing</span>
+          <span class="wiz-editing-banner-name" id="wiz-editing-name">Untitled draft</span>
+        </div>
+        <div class="wiz-editing-banner-right">
+          <span class="wiz-save-pip" id="wiz-save-pip">— not saved yet</span>
+          <button type="button" class="wiz-editing-launch" onclick="window.launchFromBanner()">+ Add to queue</button>
+        </div>
+      </div>
       <!-- Visible only when a campaign is already running. Tells the operator
            the new build will be queued (not edit the running one). -->
       <div id="wizard-queue-banner" class="wizard-queue-banner" style="display:none">
@@ -1002,7 +1016,12 @@
           <div class="launch-panel panel-active" id="launch-now-panel">
             <div class="launch-actions">
               <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
-              <button id="btn-queue" class="btn btn-secondary" onclick="addToQueueCampaign()" title="Stage this campaign to run after the current one (or as soon as you press Run next)">Add to Queue</button>
+              <!-- 2026-05-27 (drafts-isolation): "Add to queue" moved to the
+                   #wiz-editing-banner pinned to the top of the wizard. Kept
+                   in the DOM hidden because the legacy button-mutex logic in
+                   app.js references this id; removing it would force a wider
+                   cleanup. The banner CTA delegates to addToQueueCampaign(). -->
+              <button id="btn-queue" class="btn btn-secondary" style="display:none" onclick="addToQueueCampaign()" title="Stage this campaign to run after the current one (or as soon as you press Run next)">Add to Queue</button>
               <button id="btn-pause" class="btn btn-secondary" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open">Pause</button>
               <button id="btn-stop" class="btn btn-stop" onclick="confirmStopCampaign()" disabled>Stop Campaign</button>
               <!-- 2.9.5: standalone Check DMs button removed. Check DMs is now
