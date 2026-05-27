@@ -55,67 +55,11 @@
   body[data-dashboard='v3'] .skip { position: absolute; left: -9999px; top: 0; background: var(--ink); color: var(--bg); padding: 10px 14px; font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase; z-index: 100; }
   body[data-dashboard='v3'] .skip:focus-visible { left: 8px; top: 8px; }
 
-  /* ── App shell ────────────────────────────────────────────── */
-  body[data-dashboard='v3'] .app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
-
-  /* ── Sidebar ──────────────────────────────────────────────── */
-  body[data-dashboard='v3'] .sidebar { border-right: 1px solid var(--hairline); position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; overflow-y: auto; background: var(--bg); }
-  body[data-dashboard='v3'] .sidebar-brand { padding: 36px 32px 28px; }
-  body[data-dashboard='v3'] .sidebar-wordmark { font-family: var(--display); font-weight: 400; font-size: 2.6rem; line-height: 1; letter-spacing: 0.01em; text-transform: uppercase; color: var(--ink); }
-  body[data-dashboard='v3'] .sidebar-sub { font-family: var(--mono); color: var(--gray); font-size: 0.6rem; letter-spacing: 0.26em; text-transform: uppercase; margin-top: 16px; }
-  body[data-dashboard='v3'] .side-group { padding: 0 32px 24px; }
-  body[data-dashboard='v3'] .side-group-label { font-family: var(--mono); color: var(--gray); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; margin-bottom: 10px; }
-  body[data-dashboard='v3'] .pill-toggle { display: inline-flex; border: 1px solid var(--hairline); border-radius: 9999px; padding: 3px; }
-  body[data-dashboard='v3'] .pill-toggle button { background: transparent; border: 1px solid transparent; border-radius: 9999px; padding: 7px 18px; color: var(--gray); font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; }
-  body[data-dashboard='v3'] .pill-toggle button.active { color: var(--ink); border-color: var(--ink); }
-  body[data-dashboard='v3'] .notif-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
-  body[data-dashboard='v3'] .notif-row-k { color: var(--ink); font-size: 0.82rem; }
-  body[data-dashboard='v3'] .notif-row-v { color: var(--gray); letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.58rem; font-family: var(--mono); }
-  body[data-dashboard='v3'] .notif-row-v.ok { color: var(--green); }
-  body[data-dashboard='v3'] .switch { position: relative; width: 36px; height: 20px; }
-  body[data-dashboard='v3'] .switch input { opacity: 0; width: 0; height: 0; }
-  body[data-dashboard='v3'] .switch span { position: absolute; inset: 0; background: var(--gray); border-radius: 9999px; transition: 0.15s; cursor: pointer; }
-  body[data-dashboard='v3'] .switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 9999px; background: var(--bg); transition: 0.15s; }
-  body[data-dashboard='v3'] .switch input:checked + span { background: var(--green); }
-  body[data-dashboard='v3'] .switch input:checked + span::after { left: 18px; }
-  body[data-dashboard='v3'] .btn-pill { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 7px 16px; color: var(--ink); font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; }
-  body[data-dashboard='v3'] .btn-pill:hover { border-color: var(--ink); background: var(--bg); }
-  body[data-dashboard='v3'] .side-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
-  body[data-dashboard='v3'] .sidebar-footer { margin-top: auto; padding: 24px 32px 32px; border-top: 1px solid var(--hairline); }
-  body[data-dashboard='v3'] .user-chip strong { color: var(--ink); font-weight: 400; display: block; font-size: 0.78rem; }
-  body[data-dashboard='v3'] .user-chip span { color: var(--gray); font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.26em; text-transform: uppercase; }
-  body[data-dashboard='v3'] .sidebar-footer .btn-pill { margin-top: 14px; padding-left: 24px; padding-right: 24px; }
-
-  /* ── Main ─────────────────────────────────────────────────── */
-  body[data-dashboard='v3'] .main { padding: 36px 56px 0; min-width: 0; display: flex; flex-direction: column; }
-  body[data-dashboard='v3'] .container { max-width: 1320px; width: 100%; margin: 0 auto; flex: 1; display: flex; flex-direction: column; }
-
-  /* Greeting + header stats */
-  body[data-dashboard='v3'] .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; padding-bottom: 40px; border-bottom: 1px solid var(--hairline); }
-  body[data-dashboard='v3'] .greeting-wordmark { font-family: var(--display); font-weight: 400; font-size: 2.2rem; line-height: 1; letter-spacing: 0.01em; color: var(--ink); text-transform: uppercase; margin-bottom: 14px; }
-  body[data-dashboard='v3'] .greeting-subtitle { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
-  body[data-dashboard='v3'] .greeting-subtitle small { margin-left: 12px; color: var(--gray); }
-  body[data-dashboard='v3'] .header-stats { display: flex; align-items: stretch; flex-shrink: 0; }
-  body[data-dashboard='v3'] .header-stat { display: flex; flex-direction: column; gap: 6px; padding: 4px 18px; border-left: 1px solid var(--hairline); white-space: nowrap; }
-  body[data-dashboard='v3'] .header-stat:first-child { border-left: none; padding-left: 0; }
-  body[data-dashboard='v3'] .header-stat .k { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); }
-  body[data-dashboard='v3'] .header-stat .v { font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); letter-spacing: 0.01em; }
-  body[data-dashboard='v3'] .header-stat .v.err { color: var(--red); }
-  body[data-dashboard='v3'] .header-stat .v.err[data-zero] { color: var(--ink); }
-  body[data-dashboard='v3'] .header-stat .v.small { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; padding-top: 4px; }
-  body[data-dashboard='v3'] .passover-pill { display: inline-block; padding: 2px 8px; border: 1px solid var(--hairline); border-radius: 9999px; font-size: 0.56rem; letter-spacing: 0.18em; margin-right: 4px; }
-  body[data-dashboard='v3'] .passover-pill.active { color: var(--green); border-color: var(--green); }
-
-  /* Dashboard title */
-  body[data-dashboard='v3'] .dashboard-header { display: flex; align-items: center; justify-content: space-between; padding: 40px 0 28px; gap: 16px; }
-  body[data-dashboard='v3'] .dashboard-title { font-family: var(--display); font-weight: 400; font-size: 2.6rem; line-height: 1; letter-spacing: 0.01em; color: var(--ink); text-transform: uppercase; }
-  body[data-dashboard='v3'] .dashboard-header-right { display: flex; align-items: center; gap: 18px; }
-  body[data-dashboard='v3'] .slots-pill { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); display: flex; align-items: center; gap: 8px; cursor: help; }
-  body[data-dashboard='v3'] .slots-dot { width: 7px; height: 7px; border-radius: 9999px; border: 1px solid var(--hairline); display: inline-block; }
-  body[data-dashboard='v3'] .slots-dot.on { background: var(--ink); border-color: var(--ink); }
-  body[data-dashboard='v3'] .slots-dot.future { background: transparent; border-style: dashed; }
-  body[data-dashboard='v3'] .btn-start { background: var(--ink); color: var(--gold); border: 1px solid var(--ink); border-radius: 9999px; padding: 11px 24px; font-family: var(--mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; }
-  body[data-dashboard='v3'] .btn-start:hover { opacity: 0.85; }
+  /* App shell, sidebar, header, page wrapper, .main, .container, .btn-start,
+     .passover-pill, .header-stat — INTENTIONALLY NOT styled here. The existing
+     app's style.css already provides them. v0.3 was a standalone sketch that
+     redefined them; overriding them in the integrated app broke the 3-column
+     grid (sidebar / main / right-pane) and the existing sidebar widgets. */
 
   /* ── Section bands — v0.3 unified: all sections sit on page bg with the
      same vertical rhythm. Cards inside carry the only visual weight. ─── */
