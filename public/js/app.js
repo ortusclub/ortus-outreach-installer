@@ -9248,10 +9248,12 @@ window.updateEditingBanner = function() {
   if (!id) {
     if (inline) inline.style.display = 'none';
     if (rail) rail.style.display = 'none';
+    document.body.classList.remove('has-launch-rail');
     return;
   }
   if (inline) inline.style.display = 'inline-flex';
   if (rail) rail.style.display = 'flex';
+  document.body.classList.add('has-launch-rail');
   // Sync the display name from the canonical campaign-name-input.
   const nameInput = document.getElementById('campaign-name-input');
   const nameEl = document.getElementById('wiz-editing-name');
