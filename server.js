@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
+import { relaunchHistoryEntry } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
@@ -2479,6 +2480,33 @@ app.patch('/api/history/:idx/name', async (req, res) => {
     history[idx].name = name.trim();
     await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
     res.json({ ok: true, name: history[idx].name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// v2.60.0 — Rerun a finished campaign by enqueuing a copy of its stored
+// settings. The on-disk index :idx maps 1:1 to history.json (oldest-first).
+// Logic lives in src/history-helpers.js#relaunchHistoryEntry — this route
+// is a pure HTTP translator (result code → status code). Returns 422 when
+// the history entry pre-dates the settings-capture change and has no
+// rerunnable config.
+app.post('/api/history/:idx/relaunch', async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const result = await relaunchHistoryEntry(idx);
+    if (!result.ok) {
+      if (result.code === 'invalid_idx') return res.status(400).json({ error: 'Invalid idx' });
+      if (result.code === 'out_of_range') return res.status(404).json({ error: 'No such history entry' });
+      if (result.code === 'missing_settings') return res.status(422).json({ error: 'history_entry_missing_settings' });
+      return res.status(500).json({ error: 'unknown_error' });
+    }
+    res.json({
+      ok: true,
+      queueId: result.entry.id,
+      message: `Queued "${result.entry.name}"`,
+      entry: result.entry,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
