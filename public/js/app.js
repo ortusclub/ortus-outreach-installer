@@ -1527,6 +1527,10 @@ function onModeChange() {
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   const cadenceBlock = document.getElementById('check-cadence-block');
   if (cadenceBlock) cadenceBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  // v2.62: hide the 2-up row wrapper too when neither child is visible —
+  // otherwise its grid gap + top margin shows as an empty band.
+  const introRow = document.getElementById('intro-config-row');
+  if (introRow) introRow.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   const introTitleBlock = document.getElementById('intro-title-block');
   if (introTitleBlock) introTitleBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
@@ -2330,7 +2334,10 @@ async function previewSheet() {
     const res = await fetch(`/api/sheet/preview?url=${encodeURIComponent(url)}`);
     const data = await res.json();
     if (data.error) { preview.innerHTML = `<p style="color:#f85149">Error: ${escHtml(data.error)}</p>`; return; }
-    let html = `<p style="color:#8b949e; font-size:0.8rem; margin-bottom:8px">${data.totalRows} row(s)</p>`;
+    // v2.62: count becomes data-count so the CSS in .sheet-hero-preview can
+    // render it as the big hero stat via ::before. Plain text fallback also
+    // reads sensibly outside the hero context.
+    let html = `<p data-count="${data.totalRows}">rows pulled · just now</p>`;
     if (data.preview.length > 0) {
       html += '<table class="preview-table"><thead><tr>';
       data.columns.forEach(col => { html += `<th>${escHtml(col)}</th>`; });

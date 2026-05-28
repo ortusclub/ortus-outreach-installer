@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>IC Sheet Section · B · Field Grid</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --ink: #0a0a0a;
+      --gray: #6b6b6b;
+      --gray-faint: #b8b8b6;
+      --gold: #F7BE68;
+      --hairline: rgba(0, 0, 0, 0.15);
+      --hairline-soft: rgba(0, 0, 0, 0.06);
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.18);
+      --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+      --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+      --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--ink); font-family: var(--mono); padding: 40px; line-height: 1.45; }
+    .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      padding: 0;
+      overflow: hidden;
+    }
+    .card-eyebrow {
+      font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase;
+      font-weight: 600; color: var(--ink); padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--hairline-soft);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-eyebrow .meta { color: var(--gray); font-weight: 500; font-size: 0.62rem; }
+
+    /* Two-column field row: label/helper on left, value on right */
+    .row {
+      display: grid; grid-template-columns: 260px 1fr; gap: 24px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+    .row:last-child { border-bottom: none; }
+    .row .lbl { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+    .row .hint { font-size: 0.74rem; color: var(--gray); line-height: 1.55; }
+    .row .hint code { font-family: ui-monospace, monospace; font-size: 0.7rem; background: var(--hairline-soft); padding: 1px 5px; border-radius: 3px; }
+    .row .value { font-size: 1.05rem; color: var(--ink); padding: 6px 0 8px; border-bottom: 1px solid var(--hairline); display: block; width: 100%; }
+    .row .value-mono { font-family: ui-monospace, monospace; font-size: 0.82rem; }
+
+    /* Section 2 header */
+    .section-h2 { display: flex; align-items: baseline; gap: 14px; padding: 6px 4px 14px; margin-top: 6px; }
+    .section-h2 .caret { color: var(--gold); font-size: 0.9rem; }
+    .section-h2 .num { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 500; }
+    .section-h2 .meta { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+
+    .btn { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; padding: 8px 16px; border-radius: 9999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); cursor: pointer; }
+    .btn.is-active { border-color: var(--gold); color: var(--gold); }
+    .btn-row { display: flex; gap: 8px; }
+
+    .chip { display: inline-block; font-size: 0.58rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--gold); border: 1px solid var(--gold); padding: 3px 8px; border-radius: 9999px; margin-left: 10px; vertical-align: 2px; }
+
+    .table-wrap { padding: 14px 24px 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th { text-align: left; padding: 8px 10px; font-size: 0.58rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--gray); border-bottom: 1px solid var(--hairline); }
+    td { padding: 9px 10px; border-bottom: 1px solid var(--hairline-soft); color: var(--ink); }
+    td.url-cell { font-family: ui-monospace, monospace; font-size: 0.7rem; max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+    .row-count { display: inline-block; font-family: var(--display); font-size: 1.1rem; font-weight: 500; color: var(--ink); margin-right: 4px; }
+    .row-count-lbl { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--gray); }
+
+    .select {
+      width: 100%; padding: 10px 14px; font-family: var(--mono); font-size: 0.95rem; color: var(--ink);
+      background: #fff; border: 1px solid var(--hairline); border-radius: 8px;
+      appearance: none; cursor: pointer;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23999' stroke-width='1.5' d='M1 1.5l5 5 5-5'/></svg>");
+      background-repeat: no-repeat; background-position: right 14px center;
+    }
+
+    .variant-tag { position: fixed; top: 16px; right: 16px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; padding: 6px 12px; border: 1px solid var(--ink); border-radius: 9999px; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="variant-tag">Variant B · Field Grid</div>
+  <div class="wrap">
+
+    <!-- Primary Person card — label-left, value-right grid -->
+    <div class="card">
+      <div class="card-eyebrow">Primary Person · who the lead gets introduced to</div>
+      <div class="row">
+        <div>
+          <div class="lbl">Full name</div>
+          <div class="hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
+        </div>
+        <div>
+          <input class="value" value="Antonio Varlese" readonly />
+        </div>
+      </div>
+    </div>
+
+    <!-- Cadence card -->
+    <div class="card">
+      <div class="card-eyebrow">Auto-check &amp; intro cadence</div>
+      <div class="row">
+        <div>
+          <div class="lbl">Cadence</div>
+          <div class="hint">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
+        </div>
+        <div>
+          <div class="value">Every <strong>1 hour</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2 header -->
+    <div class="section-h2">
+      <span class="caret">▾</span>
+      <span class="num">2. Google Sheet tab URL</span>
+      <span class="meta">4 leads · just now</span>
+    </div>
+
+    <!-- Sheet card — same field-grid pattern, multi-row -->
+    <div class="card">
+      <div class="card-eyebrow">
+        Public Google Sheet
+        <span class="meta">tab detected</span>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="lbl">Sheet URL</div>
+          <div class="hint">Open the specific tab inside the sheet, then copy the URL — it should include <code>#gid=…</code>.</div>
+        </div>
+        <div>
+          <input class="value value-mono" value="https://docs.google.com/spreadsheets/d/1HTGdKv0u4Qh1XhdNJazZd5Cp_vH_C75k8aWaE750m04/edit?gid=1006068394#gid=1006068394" readonly />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="lbl">Actions</div>
+          <div class="hint">Preview parses the sheet and surfaces the column list. Open launches it in your browser.</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn is-active">Preview Sheet</button>
+          <button class="btn">Open Sheet</button>
+        </div>
+      </div>
+
+      <div class="row" style="grid-template-columns: 260px 1fr; align-items: start;">
+        <div>
+          <div class="lbl">Preview <span class="chip">4 rows</span></div>
+          <div class="hint">First 4 rows pulled from the tab.</div>
+        </div>
+        <div class="table-wrap" style="padding: 0;">
+          <table>
+            <thead>
+              <tr><th>First name</th><th>Last name</th><th>Slug</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>RJ</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0001</td></tr>
+              <tr><td>Nicola</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0002</td></tr>
+              <tr><td>Alessia</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0003</td></tr>
+              <tr><td colspan="2" style="color:var(--gray); font-style:italic;">(no name)</td><td class="url-cell">https://www.ortusclub.com/wp-content/uploads/playbook/The-Ortus-…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="lbl">LinkedIn URL column</div>
+          <div class="hint">Cell values must be full LinkedIn profile URLs (e.g. <code>https://www.linkedin.com/in/…</code>). Rows where this is blank are skipped.</div>
+        </div>
+        <div>
+          <select class="select"><option>First Name</option></select>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

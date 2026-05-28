@@ -1300,6 +1300,193 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   v2.62: Variant-C wiring — Primary Person + Cadence mini-cards (2-up)
+   and the Sheet hero card. Uses the radio-card token system for the
+   surfaces, with a gold-tint banner for the LinkedIn URL Column mapping
+   so the load-bearing decision gets visual weight.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Two-up row holding Primary Person + Cadence. Visibility is toggled by
+   onModeChange in app.js — the row itself flips display:none when neither
+   block applies so the grid gap doesn't show as an empty band. */
+.intro-config-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.intro-config-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  padding: 18px 22px;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.intro-config-eyebrow {
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em;
+  text-transform: uppercase; font-weight: 600; color: var(--ink);
+  margin-bottom: 14px;
+}
+.intro-config-field { margin-bottom: 4px; }
+.intro-config-field:last-child { margin-bottom: 0; }
+.intro-config-label {
+  display: block;
+  font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.18em;
+  text-transform: uppercase; font-weight: 500; color: var(--gray);
+  margin-bottom: 4px;
+}
+.intro-config-input {
+  width: 100%; background: transparent; border: none;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink); padding: 8px 0;
+  font-family: var(--body); font-size: 1rem; font-weight: 500; outline: none;
+}
+.intro-config-input:focus { border-bottom-color: var(--ink); }
+.intro-config-input::placeholder { color: var(--gray-faint, #b8b8b6); font-weight: 400; }
+.intro-config-hint {
+  font-size: 0.74rem; color: var(--gray); margin-top: 6px; line-height: 1.5;
+}
+.intro-config-hint code {
+  font-family: ui-monospace, monospace; font-size: 0.7rem;
+  background: var(--hairline-soft); padding: 1px 5px; border-radius: 3px;
+}
+.intro-config-inline {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0 4px;
+  border-bottom: 1px solid var(--hairline);
+}
+.intro-config-prefix { font-size: 1rem; color: var(--ink); font-weight: 500; }
+.intro-config-select {
+  background: transparent; border: none; color: var(--ink);
+  font-family: var(--body); font-size: 1rem; font-weight: 500;
+  outline: none; cursor: pointer; padding: 0;
+}
+
+@media (max-width: 800px) {
+  .intro-config-row { grid-template-columns: 1fr; }
+}
+
+/* Sheet hero card — single card wrapping URL block, preview, and mapping */
+.sheet-hero {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.sheet-hero-top {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: end;
+  padding: 20px 24px 18px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.sheet-hero-url-block { min-width: 0; }
+.sheet-hero-url-label {
+  display: block;
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em;
+  text-transform: uppercase; font-weight: 600; color: var(--ink);
+  margin-bottom: 6px;
+}
+.sheet-hero-url-input {
+  width: 100%; background: transparent; border: none;
+  border-bottom: 1px solid var(--hairline);
+  font-family: ui-monospace, 'SF Mono', monospace; font-size: 0.85rem;
+  color: var(--ink); padding: 6px 0; outline: none;
+}
+.sheet-hero-url-input:focus { border-bottom-color: var(--ink); }
+.sheet-hero .sheet-tab-hint {
+  font-size: 0.72rem; color: var(--gray); margin-top: 6px; line-height: 1.5;
+}
+.sheet-hero .sheet-tab-hint code {
+  font-family: ui-monospace, monospace; font-size: 0.7rem;
+  background: var(--hairline-soft); padding: 1px 5px; border-radius: 3px;
+}
+.sheet-hero-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.sheet-hero-btn {
+  padding: 8px 16px;
+  font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.16em;
+  text-transform: uppercase; font-weight: 600;
+}
+
+/* Preview output container — when filled, becomes the table band */
+.sheet-hero-preview { padding: 0; }
+.sheet-hero-preview:not(.hidden) { padding: 16px 24px 8px; }
+/* Row count line from previewSheet() — restyle the plain <p> it writes */
+.sheet-hero-preview > p:first-child {
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em;
+  text-transform: uppercase; font-weight: 600; color: var(--gray);
+  margin: 0 0 4px 0;
+  display: flex; align-items: baseline; gap: 10px;
+}
+.sheet-hero-preview > p:first-child::before {
+  content: attr(data-count);
+  font-family: var(--display); font-size: 1.6rem; font-weight: 500;
+  color: var(--ink); letter-spacing: 0.01em;
+}
+/* Preview table inside the hero card — tighter, denser, more presence */
+.sheet-hero-preview .preview-table {
+  margin-top: 8px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 0.85rem;
+}
+.sheet-hero-preview .preview-table th {
+  background: var(--hairline-soft);
+  padding: 10px 14px;
+  font-size: 0.58rem; font-weight: 600;
+}
+.sheet-hero-preview .preview-table td {
+  padding: 11px 14px;
+}
+
+/* LinkedIn URL Column mapping — gold-tint banner (written by previewSheet
+   as .ic-filled > .ic-row). Only when inside the sheet hero — global .ic-row
+   uses elsewhere keep their existing styling. */
+.sheet-hero-preview .ic-filled {
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  background: var(--gold-tint-bg);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  border-top: 1px solid var(--gold);  /* override .ic-filled's top hairline */
+}
+.sheet-hero-preview .ic-filled .ic-row {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 0;
+}
+.sheet-hero-preview .ic-filled .ic-label-block .ic-label {
+  font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.2em;
+  text-transform: uppercase; font-weight: 700; color: var(--ink);
+  line-height: 1.3;
+}
+.sheet-hero-preview .ic-filled .ic-label-block .ic-sub {
+  font-size: 0.74rem; color: var(--ink); opacity: 0.78; margin-top: 4px;
+  line-height: 1.5;
+}
+.sheet-hero-preview .ic-filled .ic-label-block .ic-sub code {
+  background: #fff; border: 1px solid var(--gold);
+  padding: 1px 5px; border-radius: 3px;
+}
+.sheet-hero-preview .ic-filled .ic-select {
+  background: #fff; border: 1px solid var(--gold); color: var(--ink);
+  font-weight: 500;
+}
+
+@media (max-width: 700px) {
+  .sheet-hero-top { grid-template-columns: 1fr; }
+  .sheet-hero-actions { width: 100%; }
+  .sheet-hero-preview .ic-filled .ic-row { grid-template-columns: 1fr; }
+}
+
 .hidden { display: none; }
 
 /* Placeholder tags */

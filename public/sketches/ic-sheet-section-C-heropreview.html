@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>IC Sheet Section · C · Hero Preview</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --ink: #0a0a0a;
+      --gray: #6b6b6b;
+      --gray-faint: #b8b8b6;
+      --gold: #F7BE68;
+      --gold-tint-bg: rgba(247, 190, 104, 0.16);
+      --hairline: rgba(0, 0, 0, 0.15);
+      --hairline-soft: rgba(0, 0, 0, 0.06);
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.18);
+      --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+      --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+      --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--ink); font-family: var(--mono); padding: 40px; line-height: 1.45; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+    /* Compact 2-up: Primary person + Cadence as small inline cards */
+    .compact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .mini-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      padding: 14px 18px;
+      display: grid; grid-template-columns: auto 1fr; gap: 16px;
+      align-items: center;
+    }
+    .mini-card .lbl-stack { min-width: 0; }
+    .mini-card .lbl { font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--gray); }
+    .mini-card .val { font-family: var(--display); font-size: 1.5rem; line-height: 1; font-weight: 500; color: var(--ink); margin-top: 4px; }
+    .mini-card .sub { font-size: 0.7rem; color: var(--gray); margin-top: 6px; line-height: 1.45; }
+    .mini-card .icon {
+      width: 36px; height: 36px; border-radius: 9999px;
+      border: 1px solid var(--ink);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: var(--mono); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em;
+    }
+
+    /* Section 2 header */
+    .section-h2 { display: flex; align-items: baseline; gap: 14px; padding: 6px 4px 14px; margin-top: 6px; }
+    .section-h2 .caret { color: var(--gold); font-size: 0.9rem; }
+    .section-h2 .num { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 500; }
+    .section-h2 .meta { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+
+    /* Sheet hero card */
+    .hero {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+    }
+    .hero-top {
+      padding: 16px 22px;
+      display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+    .hero-url-block { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .hero-url-lbl { font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--gray); }
+    .hero-url { font-family: ui-monospace, monospace; font-size: 0.78rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hero-url .gid { color: var(--gold); }
+    .hero-actions { display: flex; gap: 8px; align-items: center; }
+    .btn-icon {
+      width: 38px; height: 38px; border-radius: 9999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 0.85rem;
+    }
+    .btn-icon.is-gold { border-color: var(--gold); color: var(--gold); background: var(--gold-tint-bg); }
+
+    /* Preview as the hero — big bold table */
+    .preview-band {
+      padding: 18px 22px 6px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .preview-band .lhs { display: flex; align-items: baseline; gap: 14px; }
+    .preview-band .num { font-family: var(--display); font-size: 2.2rem; font-weight: 500; color: var(--ink); line-height: 1; }
+    .preview-band .lbl { font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--gray); }
+    .preview-band .ts { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+
+    .table-wrap { padding: 0 22px 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    th { text-align: left; padding: 10px 12px; font-size: 0.58rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--gray); border-bottom: 1px solid var(--hairline); background: var(--hairline-soft); }
+    td { padding: 12px 12px; border-bottom: 1px solid var(--hairline-soft); color: var(--ink); }
+    tr:last-child td { border-bottom: none; }
+    td.url-cell { font-family: ui-monospace, monospace; font-size: 0.74rem; color: var(--gray); max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Mapping banner under the table — prominent, with gold tint */
+    .map-banner {
+      margin: 0 22px 18px; padding: 14px 16px;
+      background: var(--gold-tint-bg); border: 1px solid var(--gold); border-radius: 10px;
+      display: grid; grid-template-columns: 1fr 280px; gap: 16px; align-items: center;
+    }
+    .map-banner .lhs .lbl { font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
+    .map-banner .lhs .sub { font-size: 0.74rem; color: var(--ink); opacity: 0.78; margin-top: 4px; line-height: 1.5; }
+    .map-banner .lhs .sub code { font-family: ui-monospace, monospace; font-size: 0.7rem; background: #fff; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--gold); }
+    .select {
+      width: 100%; padding: 11px 14px; font-family: var(--mono); font-size: 0.95rem; color: var(--ink);
+      background: #fff; border: 1px solid var(--gold); border-radius: 8px;
+      appearance: none; cursor: pointer;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23F7BE68' stroke-width='1.5' d='M1 1.5l5 5 5-5'/></svg>");
+      background-repeat: no-repeat; background-position: right 14px center;
+    }
+
+    .variant-tag { position: fixed; top: 16px; right: 16px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; padding: 6px 12px; border: 1px solid var(--ink); border-radius: 9999px; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="variant-tag">Variant C · Hero Preview</div>
+  <div class="wrap">
+
+    <!-- Primary Person + Cadence as small horizontal cards -->
+    <div class="compact-row">
+      <div class="mini-card">
+        <span class="icon">P1</span>
+        <div class="lbl-stack">
+          <div class="lbl">Primary Person</div>
+          <div class="val">Antonio Varlese</div>
+          <div class="sub">Used as the <code style="font-family:ui-monospace,monospace;background:var(--hairline-soft);padding:1px 4px;border-radius:3px;">{primary name}</code> placeholder in the intro DM body.</div>
+        </div>
+      </div>
+      <div class="mini-card">
+        <span class="icon">⟲</span>
+        <div class="lbl-stack">
+          <div class="lbl">Auto-check cadence</div>
+          <div class="val">Every 1 hour</div>
+          <div class="sub">Re-check window is 7 days. Faster cadences increase LinkedIn API load.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2 header -->
+    <div class="section-h2">
+      <span class="caret">▾</span>
+      <span class="num">2. Google Sheet tab URL</span>
+      <span class="meta">4 leads · just now</span>
+    </div>
+
+    <!-- Sheet hero card: URL chip up top, preview table as the hero, mapping banner below -->
+    <div class="hero">
+      <div class="hero-top">
+        <div class="hero-url-block">
+          <span class="hero-url-lbl">Public Google Sheet · tab detected</span>
+          <span class="hero-url">https://docs.google.com/spreadsheets/d/1HTGdKv0u4Qh1XhdNJazZd5Cp_vH_C75k8aWaE750m04/edit?<span class="gid">gid=1006068394</span></span>
+        </div>
+        <div class="hero-actions">
+          <button class="btn-icon is-gold" title="Refresh preview">↻</button>
+          <button class="btn-icon" title="Open sheet in browser">↗</button>
+        </div>
+      </div>
+
+      <div class="preview-band">
+        <div class="lhs">
+          <span class="num">4</span>
+          <span class="lbl">Rows pulled</span>
+        </div>
+        <span class="ts">Just now</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>First name</th><th>Last name</th><th>Slug</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>RJ</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0001</td></tr>
+            <tr><td>Nicola</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0002</td></tr>
+            <tr><td>Alessia</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0003</td></tr>
+            <tr><td colspan="2" style="color:var(--gray); font-style:italic;">(no name)</td><td class="url-cell">https://www.ortusclub.com/wp-content/uploads/playbook/The-Ortus-…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="map-banner">
+        <div class="lhs">
+          <div class="lbl">LinkedIn URL column</div>
+          <div class="sub">Pick the column that holds full LinkedIn profile URLs (e.g. <code>https://www.linkedin.com/in/…</code>). Rows where this is blank are skipped.</div>
+        </div>
+        <div>
+          <select class="select"><option>First Name</option></select>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

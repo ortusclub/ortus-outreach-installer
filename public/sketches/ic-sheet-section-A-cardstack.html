@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>IC Sheet Section · A · Card Stack</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --ink: #0a0a0a;
+      --gray: #6b6b6b;
+      --gray-faint: #b8b8b6;
+      --gold: #F7BE68;
+      --hairline: rgba(0, 0, 0, 0.15);
+      --hairline-soft: rgba(0, 0, 0, 0.06);
+      --card-bg: #ffffff;
+      --card-border: rgba(0, 0, 0, 0.18);
+      --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+      --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+      --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--ink); font-family: var(--mono); padding: 40px; line-height: 1.45; }
+    .wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      padding: 22px 26px;
+    }
+    .card-eyebrow {
+      font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase;
+      font-weight: 600; color: var(--ink); margin-bottom: 14px;
+    }
+    .field-label { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); font-weight: 500; margin-bottom: 6px; }
+    .field-value { font-size: 1.05rem; color: var(--ink); padding: 6px 0 8px; border-bottom: 1px solid var(--hairline); }
+    .field-hint { font-size: 0.78rem; color: var(--gray); margin-top: 8px; }
+    .field-hint code { font-family: ui-monospace, monospace; font-size: 0.72rem; background: var(--hairline-soft); padding: 1px 5px; border-radius: 3px; }
+
+    /* Section 2 header — matches the wizard's section header style */
+    .section-h2 { display: flex; align-items: baseline; gap: 14px; padding: 6px 4px 14px; margin-top: 6px; }
+    .section-h2 .caret { color: var(--gold); font-size: 0.9rem; }
+    .section-h2 .num { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 500; }
+    .section-h2 .meta { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); }
+
+    /* URL block inside card */
+    .url-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--hairline-soft); border-radius: 8px; border: 1px solid var(--hairline-soft); }
+    .url-row .url { flex: 1; font-family: ui-monospace, monospace; font-size: 0.82rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .url-row .chip { font-size: 0.6rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--gold); border: 1px solid var(--gold); padding: 3px 8px; border-radius: 9999px; }
+
+    .btn-row { display: flex; gap: 10px; margin-top: 14px; }
+    .btn { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; padding: 8px 18px; border-radius: 9999px; border: 1px solid var(--ink); background: transparent; color: var(--ink); cursor: pointer; }
+    .btn.is-active { border-color: var(--gold); color: var(--gold); }
+
+    /* Preview sub-card nested inside Section 2 card */
+    .preview-sub { margin-top: 18px; border-top: 1px solid var(--hairline-soft); padding-top: 16px; }
+    .preview-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+    .preview-head .lbl { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+    .preview-head .count { font-family: var(--display); font-size: 1.4rem; color: var(--ink); font-weight: 500; }
+    .preview-head .count .of { font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin-left: 6px; font-weight: 600; font-family: var(--mono); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th { text-align: left; padding: 8px 10px; font-size: 0.58rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--gray); border-bottom: 1px solid var(--hairline); }
+    td { padding: 10px 10px; border-bottom: 1px solid var(--hairline-soft); color: var(--ink); vertical-align: top; }
+    td.url-cell { font-family: ui-monospace, monospace; font-size: 0.72rem; max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+
+    /* LinkedIn URL column dropdown — labeled, inset card */
+    .map-block { margin-top: 18px; padding: 14px 16px; background: var(--hairline-soft); border-radius: 10px; border: 1px solid var(--hairline-soft); display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+    .map-block .lbl { font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
+    .map-block .sub { font-size: 0.74rem; color: var(--gray); margin-top: 6px; line-height: 1.55; }
+    .map-block .sub code { font-family: ui-monospace, monospace; font-size: 0.7rem; background: #fff; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--hairline); }
+    .select {
+      width: 100%; padding: 11px 14px; font-family: var(--mono); font-size: 0.95rem; color: var(--ink);
+      background: #fff; border: 1px solid var(--hairline); border-radius: 8px; box-shadow: var(--card-shadow);
+      appearance: none; cursor: pointer;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23999' stroke-width='1.5' d='M1 1.5l5 5 5-5'/></svg>");
+      background-repeat: no-repeat; background-position: right 14px center;
+    }
+
+    .variant-tag { position: fixed; top: 16px; right: 16px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; padding: 6px 12px; border: 1px solid var(--ink); border-radius: 9999px; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="variant-tag">Variant A · Card Stack</div>
+  <div class="wrap">
+
+    <!-- Primary Person card -->
+    <div class="card">
+      <div class="card-eyebrow">Primary Person · who the lead gets introduced to</div>
+      <div class="field-label">Full name</div>
+      <div class="field-value">Antonio Varlese</div>
+      <div class="field-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
+    </div>
+
+    <!-- Cadence card -->
+    <div class="card">
+      <div class="card-eyebrow">Auto-check &amp; intro cadence</div>
+      <div class="field-label">Every</div>
+      <div class="field-value">1 hour</div>
+      <div class="field-hint">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
+    </div>
+
+    <!-- Section 2 header -->
+    <div class="section-h2">
+      <span class="caret">▾</span>
+      <span class="num">2. Google Sheet tab URL</span>
+      <span class="meta">4 leads · just now</span>
+    </div>
+
+    <!-- Sheet card — URL + buttons + preview table + mapping inside ONE card -->
+    <div class="card">
+      <div class="field-label">Public Google Sheet with LinkedIn URLs</div>
+      <div class="url-row">
+        <span class="url">https://docs.google.com/spreadsheets/d/1HTGdKv0u4Qh1XhdNJazZd5Cp_vH_C75k8aWaE750m04/edit?gid=1006068394#gid=1006068394</span>
+        <span class="chip">Tab detected</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn is-active">Preview Sheet</button>
+        <button class="btn">Open Sheet</button>
+      </div>
+
+      <div class="preview-sub">
+        <div class="preview-head">
+          <span class="lbl">Preview rows</span>
+          <span class="count">4<span class="of">rows</span></span>
+        </div>
+        <table>
+          <thead>
+            <tr><th>First name</th><th>Last name</th><th>Slug</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>RJ</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0001</td></tr>
+            <tr><td>Nicola</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0002</td></tr>
+            <tr><td>Alessia</td><td>Varlese</td><td class="url-cell">https://ortus-links.ortus-eb6.workers.dev/testmegarj-0003</td></tr>
+            <tr><td colspan="2" style="color:var(--gray); font-style:italic;">(no name)</td><td class="url-cell">https://www.ortusclub.com/wp-content/uploads/playbook/The-Ortus-…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="map-block">
+        <div>
+          <div class="lbl">LinkedIn URL column</div>
+          <div class="sub">Cell values must be full LinkedIn profile URLs (e.g. <code>https://www.linkedin.com/in/…</code>). Rows where this is blank are skipped.</div>
+        </div>
+        <div>
+          <select class="select"><option>First Name</option></select>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

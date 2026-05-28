@@ -445,47 +445,52 @@
         <option value="post_amplification">Post Amplification</option>
       </select>
 
-      <!-- Connect + Introduce Back: primary person to introduce the lead to.
-           Visible only when connect_and_introduce is selected. The bot sends
-           a connection request first; once accepted (verified by bulk-check),
-           the same sender auto-DMs an intro that references the primary. -->
-      <div id="primary-person-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
-        <div style="font-family:var(--display); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:14px;">Primary Person — who the lead gets introduced to</div>
-        <div style="margin-bottom:14px">
-          <label for="primary-person-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Full name</label>
-          <input type="text" id="primary-person-name" placeholder="e.g. Sam Adcock" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
-          <div style="font-size:11px; color:var(--gray); margin-top:4px">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
+      <!-- v2.62: variant-C wiring — Primary Person + Cadence sit as a
+           horizontal 2-up of mini-cards using the radio-card token system
+           (.intro-config-row container, .intro-config-card mini-cards).
+           Each card keeps its existing IDs + input handlers so the save/load,
+           onModeChange visibility, and launch payload code paths stay intact.
+           When neither mode shows them, the row collapses to display:none via
+           JS toggling the inner blocks (existing logic, unchanged). -->
+      <div class="intro-config-row" id="intro-config-row">
+        <!-- Connect + Introduce Back: primary person to introduce the lead to.
+             Visible only when connect_and_introduce is selected. -->
+        <div id="primary-person-block" class="intro-config-card" style="display:none;">
+          <div class="intro-config-eyebrow">Primary Person · who the lead gets introduced to</div>
+          <div class="intro-config-field">
+            <label for="primary-person-name" class="intro-config-label">Full name</label>
+            <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()">
+            <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
+          </div>
+          <!-- v2.52.0: visual hidden per operator request. Input element kept
+               alive so the existing primaryUrl flow keeps working. -->
+          <div class="intro-config-field" style="display:none;">
+            <label for="primary-person-url" class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
+            <input type="text" id="primary-person-url" class="intro-config-input" placeholder="https://www.linkedin.com/in/..." oninput="savePrimaryPersonFields()">
+            <div class="intro-config-hint">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
+          </div>
         </div>
-        <!-- v2.52.0: visual hidden per operator request. Input element kept
-             alive so the existing primaryUrl flow (localStorage save/load,
-             campaign launch payload, Voyager intro resolver) keeps working
-             with whatever URL was previously saved. Revert by removing the
-             display:none style if the field needs to return. -->
-        <div style="margin-bottom:14px; display:none">
-          <label for="primary-person-url" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
-          <input type="text" id="primary-person-url" placeholder="https://www.linkedin.com/in/..." style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="savePrimaryPersonFields()">
-          <div style="font-size:11px; color:var(--gray); margin-top:4px">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
-        </div>
-      </div>
 
-      <!-- v2.14.x: Auto-check cadence (CC+IC only). Sets how often the
-           monitoring watcher fires the bulk-check + auto-intro DM during
-           the 7-day acceptance window. -->
-      <div id="check-cadence-block" style="display:none; margin-top:24px; padding:18px; border:1px solid var(--hairline); border-radius:6px; background:var(--bg-soft, #faf9f7);">
-        <div style="font-family:var(--display); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:14px;">Auto-check &amp; intro cadence</div>
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-          <span style="font-size:0.95rem; color:var(--ink);">Every</span>
-          <select id="check-cadence-select" style="background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:6px 0; font-family:var(--body); font-size:0.95rem; outline:none;">
-            <option value="15">15 minutes</option>
-            <option value="30">30 minutes</option>
-            <option value="60" selected>1 hour</option>
-            <option value="90">1.5 hours</option>
-            <option value="120">2 hours</option>
-            <option value="180">3 hours</option>
-            <option value="360">6 hours</option>
-          </select>
+        <!-- v2.14.x: Auto-check cadence (CC+IC only). -->
+        <div id="check-cadence-block" class="intro-config-card" style="display:none;">
+          <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
+          <div class="intro-config-field">
+            <label for="check-cadence-select" class="intro-config-label">Cadence</label>
+            <div class="intro-config-inline">
+              <span class="intro-config-prefix">Every</span>
+              <select id="check-cadence-select" class="intro-config-select">
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60" selected>1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+                <option value="180">3 hours</option>
+                <option value="360">6 hours</option>
+              </select>
+            </div>
+            <div class="intro-config-hint">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
+          </div>
         </div>
-        <div style="font-size:11px; color:var(--gray); margin-top:8px">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
       </div>
 
     </div>
@@ -607,12 +612,26 @@
     <div class="section collapsible collapsed" id="nav-sheet">
       <h2 class="section-toggle" onclick="toggleSection('nav-sheet')"><span class="caret">▾</span> <span data-edit="h2-sheet">2. Google Sheet tab URL</span> <span class="section-summary" id="summary-sheet"></span></h2>
       <div class="collapsible-body">
-        <label for="sheet-url">Public Google Sheet with LinkedIn URLs</label>
-        <input type="text" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=..." oninput="updateSheetTabHint(); _refreshOpenSheetButtons && _refreshOpenSheetButtons()" />
-        <p class="sheet-tab-hint" id="sheet-tab-hint">Open the specific tab inside the sheet, then copy the URL from your browser address bar — it should include <code>#gid=…</code>.</p>
-        <button class="btn btn-secondary" onclick="previewSheet()">Preview Sheet</button>
-        <button class="btn btn-secondary" onclick="openSheetInBrowser()">Open Sheet</button>
-        <div id="sheet-preview" class="hidden" style="margin-top:12px"></div>
+        <!-- v2.62: variant-C wiring — sheet block is now a single hero card.
+             URL + Preview/Open actions sit as the card's top band; the
+             preview table (filled by previewSheet) is the hero in the middle;
+             the LinkedIn URL Column mapping (also filled by previewSheet)
+             gets the gold-tint banner treatment. All existing IDs and event
+             handlers preserved. -->
+        <div class="sheet-hero">
+          <div class="sheet-hero-top">
+            <div class="sheet-hero-url-block">
+              <label for="sheet-url" class="sheet-hero-url-label">Public Google Sheet with LinkedIn URLs</label>
+              <input type="text" id="sheet-url" class="sheet-hero-url-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=..." oninput="updateSheetTabHint(); _refreshOpenSheetButtons && _refreshOpenSheetButtons()" />
+              <p class="sheet-tab-hint" id="sheet-tab-hint">Open the specific tab inside the sheet, then copy the URL from your browser address bar — it should include <code>#gid=…</code>.</p>
+            </div>
+            <div class="sheet-hero-actions">
+              <button class="btn btn-secondary sheet-hero-btn" onclick="previewSheet()">Preview Sheet</button>
+              <button class="btn btn-secondary sheet-hero-btn" onclick="openSheetInBrowser()">Open Sheet</button>
+            </div>
+          </div>
+          <div id="sheet-preview" class="hidden sheet-hero-preview"></div>
+        </div>
 
         <!-- v2.58.x — IC sheet mapping (Variant C — progressive disclosure).
              Two states:
