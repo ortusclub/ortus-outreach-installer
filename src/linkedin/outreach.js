@@ -252,6 +252,40 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       }
     } catch { /* cookie check is best-effort */ }
 
+    // ── v2.61: Direct Messages (force_message non-intro) fast-path ──
+    //
+    // Mirror of the IC fast-path at the top of this function. The operator
+    // vouches via the wizard's sender column + "all leads connected"
+    // controls (same UI block IC uses) that every targeted row is already
+    // a 1st-degree connection. So we skip the profile navigation + DOM
+    // settle + Voyager degree check + getConnectionStatus entirely and
+    // go straight to /messaging/compose/?recipient=<publicId>.
+    //
+    // SCOPED TO STANDALONE DM ONLY: gate is `modeHint === 'force_message'`
+    // AND `!templates.introMode`. The IC variant (introMode === true) was
+    // already handled at the top of this function. CC+IC and Message Only
+    // legacy intro flows are unaffected.
+    if (modeHint === 'force_message' && (!templates || !templates.introMode)) {
+      if (state.messageSent) return { action: 'already_processed' };
+      if (!templates || !templates.followUpMessage) {
+        return { action: 'skipped', error: 'No message template' };
+      }
+      const m = url.match(/\/in\/([^/?#]+)/);
+      if (!m) {
+        return { action: 'skipped', error: 'URL not in /in/<publicId> format — cannot fast-path DM' };
+      }
+      const publicId = m[1];
+      const data = (templates && templates.data) || {};
+      const body = personalizeTemplate(templates.followUpMessage, data);
+      console.log(`[outreach] DM fast-path → clean compose (publicId="${publicId}") — skipping profile visit + degree check`);
+      try {
+        await sendMessage(page, body, publicId);
+        return { action: 'message_sent' };
+      } catch (err) {
+        return { action: 'skipped', error: `Message failed: ${err.message}` };
+      }
+    }
+
     // ── Step 1: Navigate to lead's profile ──
     // 2.8.29 perf: check_only used domcontentloaded (not networkidle0) — the
     // Voyager API only needs the URL pathname + cookies, both available as

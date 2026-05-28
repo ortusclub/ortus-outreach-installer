@@ -632,8 +632,14 @@ function buildCampaignConfig(body) {
     linkedinColumn: linkedinColumn || '',
     // v2.58.x — IC-only overrides. Frontend already clears these for
     // non-IC modes; backend coerces here too for defence-in-depth.
-    senderColumn: (mode === 'introduce_back') ? (typeof senderColumn === 'string' ? senderColumn : '') : '',
-    allLeadsConnected: (mode === 'introduce_back') ? !!allLeadsConnected : false,
+    // v2.61: extended to include 'message_only' (Direct Messages) which
+    // now mirrors IC's wizard extras (sender column + all-connected).
+    senderColumn: (mode === 'introduce_back' || mode === 'message_only')
+      ? (typeof senderColumn === 'string' ? senderColumn : '')
+      : '',
+    allLeadsConnected: (mode === 'introduce_back' || mode === 'message_only')
+      ? !!allLeadsConnected
+      : false,
     senderFirstNames: senderFirstNames || {},
     concurrency: concurrencyClean,
     name: typeof name === 'string' ? name : '',

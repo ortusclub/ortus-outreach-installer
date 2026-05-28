@@ -203,7 +203,9 @@ function gatherCampaignFormState() {
   // row sender lookups for IC and message_only (where the sender comes
   // from the sheet, not the wizard's profile picker). senderColumn mirrors
   // startCampaign's IC-only override at app.js:2708-2710.
-  const senderColumn = (mode === 'introduce_back')
+  // v2.61: Extended to message_only (Direct Messages) — same #ic-extras
+  // sender-column dropdown is shared.
+  const senderColumn = (mode === 'introduce_back' || mode === 'message_only')
     ? (document.getElementById('ic-sender-col-select')?.value || '')
     : '';
 
@@ -1536,9 +1538,14 @@ function onModeChange() {
   // v2.58.x — IC-only sheet-mapping extras (sender column + "all connected"
   // toggle). Block lives inside the sheet preview, rendered by previewSheet.
   // Visibility is mode-gated here so it never appears for other campaigns.
+  // v2.61: Direct Messages (message_only) shares the same extras block —
+  // both modes need to pick a sender column (auto-routed per row).
   try {
     const icExtras = document.getElementById('ic-extras');
-    if (icExtras) icExtras.style.display = (mode === 'introduce_back') ? '' : 'none';
+    if (icExtras) {
+      const showExtras = (mode === 'introduce_back' || mode === 'message_only');
+      icExtras.style.display = showExtras ? '' : 'none';
+    }
   } catch (_) {}
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -2113,12 +2120,16 @@ const MODE_LIST = [
     ],
   },
   {
+    // v2.61: Renamed display "Message Only" → "Direct Messages" and
+    // refactored to mirror introduce_back semantics (workflow A — full
+    // IC symmetry). Internal value stays 'message_only' so existing
+    // saved drafts/schedules/history rows keep working.
     value: 'message_only',
-    name: 'Message Only',
+    name: 'Direct Messages',
     bullets: [
-      'Follow-up messages to 1st-degree connections',
-      'Skips pending or not-yet-connected leads',
-      'Fast, low-risk after the connection step',
+      '1:1 direct messages to your connections',
+      'Adds no intro person — sender messages the lead directly',
+      'Runs on a sheet of already-connected leads',
     ],
   },
   {
@@ -2900,12 +2911,14 @@ async function startCampaign(opts = {}) {
     delayMax,
     linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
     // v2.58.x — Introduction Campaign (introduce_back) optional overrides.
-    // Both are read regardless of mode; the server only honors them when
-    // mode === 'introduce_back' so other campaigns are unaffected.
-    senderColumn: (mode === 'introduce_back')
+    // v2.61: Extended to Direct Messages (message_only) — same wizard
+    // extras block (#ic-extras) is shared so both modes pick a sender
+    // column and can toggle "all leads connected". Server coerces to
+    // empty/false for other modes (server.js:635-636).
+    senderColumn: (mode === 'introduce_back' || mode === 'message_only')
       ? (document.getElementById('ic-sender-col-select')?.value || '')
       : '',
-    allLeadsConnected: (mode === 'introduce_back')
+    allLeadsConnected: (mode === 'introduce_back' || mode === 'message_only')
       ? !!document.getElementById('ic-all-connected-toggle')?.checked
       : false,
     senderFirstNames,
@@ -4428,7 +4441,7 @@ async function pollStatus() {
     if (modeEl) {
       const modeLabels = {
         connect_only: 'Connect Only',
-        message_only: 'Message Only', inmail_only: 'InMail Only', check_status: 'Check Status',
+        message_only: 'Direct Messages', inmail_only: 'InMail Only', check_status: 'Check Status',
         open_profile_only: 'Open Profile',
       };
       modeEl.textContent = modeLabels[s.mode] || s.mode || '—';
@@ -4777,7 +4790,7 @@ async function fetchHistory() {
 
     const modeLabels = {
       connect_only: 'Connect Only',
-      message_only: 'Message Only', inmail_only: 'InMail Only', check_status: 'Check Status',
+      message_only: 'Direct Messages', inmail_only: 'InMail Only', check_status: 'Check Status',
       open_profile_only: 'Open Profile',
     };
 
@@ -6940,7 +6953,7 @@ if (document.readyState !== 'loading') restoreIntroState();
 const DASHBOARD_MODE_LABELS = {
   connect_only: 'Connect Only',
   check_status: 'Check Status',
-  message_only: 'Message Only',
+  message_only: 'Direct Messages',
   inmail_only: 'InMail Only',
   open_profile_only: 'Open Profile Message',
   check_dms: 'Check DMs',

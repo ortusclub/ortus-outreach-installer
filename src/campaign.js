@@ -1021,10 +1021,13 @@ export function buildSheetDataForAction({
         // to Introduction Status so IC tabs don't depend on Stage. Filter
         // also reads from Introduction Status (campaign.js:~1442).
         out.introStatus = 'IC Sent';
-      } else if (introMode && mode === 'message_only') {
-        out.status      = 'IC Sent';
-        out.introStatus = 'IC Sent';
-        out.stage       = 'IC Sent';
+      } else if (mode === 'message_only') {
+        // v2.61: Direct Messages mirrors IC — write ONLY DM Status.
+        // (workflow A — full IC symmetry). Dropping the legacy
+        // stage / status writes since the new filter reads only from
+        // DM Status. Sheets that previously gated on Stage = 'DM Sent'
+        // need to migrate to gating on DM Status = 'DM Sent'.
+        out.dmStatus = 'DM Sent';
       } else {
         out.status   = 'DM Sent';
         out.dmStatus = 'DM Sent';
@@ -1087,9 +1090,8 @@ export function buildSheetDataForAction({
         out.connectionStatus = 'Connection Request Sent';
       }
       else if (mode === 'message_only')     {
-        out.stage = introMode ? 'IC Sent' : 'DM Sent';
-        out.status = out.stage;
-        out.dmStatus = out.stage;
+        // v2.61: Mirror IC — write only DM Status. See message_sent above.
+        out.dmStatus = 'DM Sent';
       }
       else if (mode === 'introduce_back')   { out.introStatus = 'IC Sent'; /* v2.59: IC writes only Introduction Status — see message_sent above */ }
       else if (mode === 'inmail_only')      { out.stage = 'InM Sent'; out.status = 'InM Sent'; out.inmStatus = 'InM Sent'; }
@@ -1409,8 +1411,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // honor as the terminal-marker here. Failed rows (Introduction
     // Status starts with "Failed —") remain retryable.
     const icAllConnectedBypass = (mode === 'introduce_back' && allLeadsConnected);
+    const dmAllConnectedBypass = (mode === 'message_only' && allLeadsConnected);
     if (icAllConnectedBypass) {
       log(`Introduction Campaign · "all leads already connected" — Stage filter bypassed.`);
+    }
+    if (dmAllConnectedBypass) {
+      log(`Direct Messages · "all leads already connected" — Stage filter bypassed.`);
     }
 
     const targets = rows.filter(row => {
@@ -1435,6 +1441,18 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // Already sent → terminal. Anything else (blank or "Failed —" reason)
         // is eligible for this run.
         if (introStatus === 'IC Sent') return false;
+        return true;
+      }
+
+      if (dmAllConnectedBypass) {
+        // v2.61: DM mirrors IC. Single-column terminal check on DM Status.
+        // Header per google-apps-script.js is 'DM Status'; aliases for
+        // back-compat sheets and JSON-cased lookups.
+        const dmStatus = (
+          row['DM Status'] || row['dm status'] || row['DM status'] ||
+          row['Direct Message Status'] || row['dmStatus'] || ''
+        ).toString().trim();
+        if (dmStatus === 'DM Sent') return false;
         return true;
       }
 
@@ -1478,10 +1496,19 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           return introStatus === '';
         }
         if (mode === 'message_only') {
-          // message_only is 'coming soon' in v2.59 but logic kept intact.
-          // v2.14.x rationale: accept any row that represents a known
-          // connection regardless of which path stamped it.
-          return isDmIbEligible(row);
+          // v2.61: Workflow A — full IC symmetry. Renamed display
+          // "Message Only" → "Direct Messages". Single-column predicate
+          // mirroring introduce_back: blank DM Status → process, anything
+          // else (DM Sent, Failed — …, operator note) → skip. No Stage /
+          // Connection Accepted Status read here; the operator vouches
+          // for connection status by curating the sheet (or running
+          // check_status first and pruning manually). Mirrored in the
+          // in-loop re-validation further down this file.
+          const dmStatus = (
+            row['DM Status'] || row['dm status'] || row['DM status'] ||
+            row['Direct Message Status'] || row['dmStatus'] || ''
+          ).toString().trim();
+          return dmStatus === '';
         }
         // Cold-lead modes — operator-confirmed: process only blank-Stage
         // rows. Any non-blank value means 'leave alone' (either a prior
@@ -2222,19 +2249,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           ).toString().trim();
           if (_introStatusNow !== '') { delete state.processed[url]; continue; }
         } else if (mode === 'message_only') {
-          if (_hasStageHere) {
-            // New schema: Stage drives messageability. Pre-filter passed
-            // 'Connected · DM Now'; if it changed under us, skip.
-            if (_stage !== 'Connected · DM Now') { delete state.processed[url]; continue; }
-          } else {
-            // Legacy schema: re-validate connected status + msg-not-sent.
-            // Accepts either Sam's new "Connected Status" column ("Connected")
-            // or the legacy "CC" column (" Y" suffix).
-            const ccRaw = (row['Connected Status'] || row['connected status'] || row['CC'] || row['cc'] || '').toString().trim();
-            const isConnected = ccRaw === 'Connected' || /\sY\s*$/.test(ccRaw);
-            if (!isConnected) { delete state.processed[url]; continue; }
-            if (msgSent) { delete state.processed[url]; continue; }
-          }
+          // v2.61: DM mirrors IC — read only from DM Status. Pre-filter
+          // passed blank dmStatus; if a concurrent operator or worker
+          // stamped it (DM Sent / Failed — … / operator note), skip.
+          const _dmStatusNow = (
+            row['DM Status'] || row['dm status'] || row['DM status'] ||
+            row['Direct Message Status'] || row['dmStatus'] || ''
+          ).toString().trim();
+          if (_dmStatusNow !== '') { delete state.processed[url]; continue; }
         } else if (mode === 'open_profile_only' || mode === 'inmail_only') {
           if (_hasStageHere) {
             // New schema: pre-filter required Stage in {'', 'Send Connect'}.

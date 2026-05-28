@@ -1212,7 +1212,7 @@ export async function sendConnectionRequest(page, noteArg) {
 // sendMessage
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendMessage(page, message) {
+export async function sendMessage(page, message, explicitPublicId = null) {
   // ── 2.8.48 — Compose-page navigation + plain Enter to send ──────────
   // History: tried injecting the LinkedIn DM Assistant content.js into the
   // page via a <script> tag — LinkedIn's CSP blocks inline scripts, so the
@@ -1227,13 +1227,22 @@ export async function sendMessage(page, message) {
   // is an "Open send options" overflow), but pressing Enter on the
   // composer triggers send because the Ortus accounts have LinkedIn's
   // "Press Enter to send message" setting enabled.
-
-  const currentUrl = page.url();
-  const publicIdMatch = currentUrl.match(/\/in\/([^/?#]+)/);
-  if (!publicIdMatch) {
-    throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${currentUrl})`);
+  //
+  // v2.61: Optional `explicitPublicId` param lets callers (the DM fast-path
+  // in outreach.js — mirror of the IC fast-path) skip the profile-nav step
+  // entirely. When passed, the URL parse below is bypassed; otherwise the
+  // function works exactly as before (parses from page.url()).
+  let publicId;
+  if (explicitPublicId) {
+    publicId = explicitPublicId;
+  } else {
+    const currentUrl = page.url();
+    const publicIdMatch = currentUrl.match(/\/in\/([^/?#]+)/);
+    if (!publicIdMatch) {
+      throw new Error(`MESSAGE_SEND_FAILED: not on a profile page (${currentUrl})`);
+    }
+    publicId = publicIdMatch[1];
   }
-  const publicId = publicIdMatch[1];
 
   const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(publicId)}`;
   console.log(`[actions] Navigating to ${composeUrl}`);
