@@ -7054,11 +7054,20 @@ function dashboardFormatDate(iso) {
 let _dashboardPollTimer = null;
 function startDashboardPolling() {
   if (_dashboardPollTimer) return;
-  _dashboardPollTimer = setInterval(() => {
+  _dashboardPollTimer = setInterval(async () => {
     if (document.body.classList.contains('route-dashboard')) {
       refreshActiveCampaign();
-      // v0.3 dashboard — queue + past refresh on the same 5s cadence. Active +
-      // Monitoring cards are driven by the 2s pollStatus loop instead.
+      // v0.3 dashboard: don't rely on the indirect pollStatus chain to keep the
+      // active card painted. When the previous campaign ends, pollStatus stops
+      // itself; if a queued campaign drains in the background, the active card
+      // would freeze on "No campaign running" until the operator navigated
+      // away and back. Paint directly here every 5s so the tile reflects
+      // reality even when pollStatus is dead.
+      try {
+        const s = await fetch('/api/campaign/status').then(r => r.json());
+        if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
+        if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
+      } catch { /* best-effort; refreshActiveCampaign covers the legacy path */ }
       if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
       if (typeof window.renderPastSection === 'function') window.renderPastSection();
       if (typeof window.renderCalendarGrid === 'function') window.renderCalendarGrid();

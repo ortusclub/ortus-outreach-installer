@@ -155,27 +155,19 @@
     border-radius: 9999px;
     background: var(--bg);
   }
+  /* All dock actions are always visible — operator has plenty of real
+     estate on the active campaign card, no reason to hide Stop/Restart/
+     Copy behind a chevron. The chevron trigger + separator below are
+     hidden too. */
   body[data-dashboard='v3'] .dock-actions {
     display: inline-flex; align-items: center; gap: 2px;
-    max-width: 0;
-    margin-right: 0;
-    opacity: 0;
-    overflow: hidden;
-    transition: max-width 0.26s cubic-bezier(0.34, 1.4, 0.64, 1),
-                margin-right 0.26s cubic-bezier(0.34, 1.4, 0.64, 1),
-                opacity 0.18s ease;
-  }
-  body[data-dashboard='v3'] .dock[data-open="true"] .dock-actions {
-    max-width: 220px;
+    max-width: none;
     margin-right: 4px;
     opacity: 1;
+    overflow: visible;
   }
-  body[data-dashboard='v3'] .dock[data-open="true"] .dock-trigger {
-    background: var(--ink); color: var(--bg);
-  }
-  body[data-dashboard='v3'] .dock[data-open="true"] .dock-trigger:hover {
-    background: var(--ink);
-  }
+  body[data-dashboard='v3'] .dock-trigger,
+  body[data-dashboard='v3'] .dock-sep { display: none; }
   body[data-dashboard='v3'] .dock-btn {
     position: relative;
     width: 30px; height: 30px;
