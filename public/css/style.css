@@ -2117,50 +2117,63 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 
 /* v2.61: Schedule modal — wider card to fit date/time/days form. */
 .schedule-modal__card {
-  width: min(560px, calc(100vw - 48px));
-  padding: 28px 30px;
+  width: min(720px, calc(100vw - 48px));
+  padding: 40px 44px 36px;
 }
 .schedule-modal__title {
   font-family: var(--display);
-  font-size: 1.8rem;
+  font-size: 2.8rem;
   line-height: 1;
   letter-spacing: 0.02em;
   color: var(--ink);
-  margin-bottom: 24px;
-  padding-bottom: 16px;
+  margin-bottom: 32px;
+  padding-bottom: 22px;
   border-bottom: 1px solid var(--hairline-soft);
 }
 .schedule-modal__field {
   display: block;
-  margin-bottom: 18px;
+  margin-bottom: 26px;
 }
 .schedule-modal__field-label {
   display: block;
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.95rem;
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--gray);
-  margin-bottom: 10px;
+  color: var(--ink);
+  margin-bottom: 14px;
 }
 .schedule-modal__optional {
   color: var(--gray);
   font-weight: 400;
   letter-spacing: 0.14em;
-  opacity: 0.7;
+  opacity: 0.75;
+  font-size: 0.78rem;
+}
+/* Scope input rules to .schedule-modal__card so specificity (0,2,0)
+   beats `body[data-dashboard='v3'] input { font: inherit }` (0,1,2)
+   in dashboard-v0.3.css — otherwise the inputs render at inherited
+   14px instead of 1.4rem. Same gotcha that bit us on the throughput
+   knobs and mode-card buttons. */
+.schedule-modal__card .prompt-modal__input {
+  font-size: 1.4rem;
+  font-family: var(--body);
+  padding: 16px 0;
+  margin-bottom: 0;
+  letter-spacing: 0.01em;
 }
 .schedule-modal__row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 32px;
   margin-bottom: 6px;
 }
-.schedule-modal__row .schedule-modal__field { margin-bottom: 12px; }
+.schedule-modal__row .schedule-modal__field { margin-bottom: 20px; }
 .schedule-modal__days {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: 10px;
 }
 .schedule-modal__day {
   position: relative;
@@ -2168,15 +2181,15 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 0.62rem;
+  font-size: 0.9rem;
   font-weight: 500;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--gray);
   background: var(--bg-soft);
   border: 1px solid var(--hairline);
   border-radius: 9999px;
-  padding: 10px 0;
+  padding: 16px 0;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   user-select: none;
@@ -2195,14 +2208,23 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   color: var(--gold);
 }
 .schedule-modal__summary {
-  margin: 16px 0 24px;
-  padding: 14px 18px;
+  margin: 22px 0 32px;
+  padding: 20px 24px;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: 1.05rem;
+  font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--ink);
   background: var(--bg-soft);
-  border-left: 2px solid var(--gold);
+  border-left: 3px solid var(--gold);
+}
+.schedule-modal__card .prompt-modal__actions {
+  gap: 14px;
+}
+.schedule-modal__card .prompt-modal__actions .btn {
+  padding: 16px 32px;
+  font-size: 0.85rem;
+  letter-spacing: 0.22em;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
