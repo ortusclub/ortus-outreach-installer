@@ -30,3 +30,6 @@ dist/
 # Local junk
 .DS_Store
 .playwright-mcp/
+
+# Parallel-work worktrees (per-developer, not source)
+.worktrees/
