@@ -4508,8 +4508,35 @@ async function pollStatus() {
     // Floating live console — runs on every poll tick. Idempotent; only
     // writes DOM when values change (see _lcWriteCache).
     try { renderLiveConsole(s); } catch (err) { console.warn('[live-console] render failed:', err.message); }
+
+    // v2.61: Live Status section visibility — only renders when we're on
+    // the wizard view of the currently-running campaign. Hidden for
+    // drafts/queue/schedule views so the Launch section becomes the last
+    // visible section (no blank space underneath).
+    try { syncLiveStatusVisibility(); } catch (err) { console.warn('[live-status] sync failed:', err.message); }
   } catch { /* */ }
 }
+
+// v2.61: Live Status section visibility. The section (#nav-status) and its
+// sidebar nav item are display:none unless:
+//   - we're on the wizard view (#/new)
+//   - AND a campaign is currently running (__cockpit.running)
+//   - AND we are NOT editing a draft (isOnNewCampaignView() === false)
+// The "editing a draft" check leverages the existing heuristic: clicking
+// "View running" from the dashboard clears activeDraftId, so navigating
+// into a running campaign satisfies the third condition.
+function syncLiveStatusVisibility() {
+  const sec = document.getElementById('nav-status');
+  if (!sec) return;
+  const onNew = typeof location !== 'undefined' && location.hash === '#/new';
+  const editingDraft = (typeof isOnNewCampaignView === 'function') && isOnNewCampaignView();
+  const running = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.running);
+  const show = onNew && running && !editingDraft;
+  sec.style.display = show ? '' : 'none';
+  const navBtn = document.querySelector('[data-nav="nav-status"]');
+  if (navBtn) navBtn.style.display = show ? '' : 'none';
+}
+if (typeof window !== 'undefined') window.syncLiveStatusVisibility = syncLiveStatusVisibility;
 
 // ─── Phase 11.1: resource tiles + slow-mode banner ─────────────────────────
 // Populated every 2s by pollStatus(). Thresholds match src/resource-monitor.js
@@ -4843,15 +4870,26 @@ async function clearHistory() {
 // Campaign Schedules
 // ─────────────────────────────────────────────────────────────────────────────
 function setLaunchMode(mode) {
+  // v2.61: Launch section's Now/Schedule toggle was replaced by 4 inline
+  // buttons (Start / Queue / Schedule / Save as draft). The toggle and its
+  // two panels no longer exist in the DOM, so each getElementById can
+  // legitimately return null. Guard each access so any stale caller
+  // (autosave restore, preset load) becomes a no-op instead of a throw.
   const isSchedule = mode === 'schedule';
-  document.getElementById('launch-mode-now').classList.toggle('active', !isSchedule);
-  document.getElementById('launch-mode-schedule').classList.toggle('active', isSchedule);
+  const tabNow = document.getElementById('launch-mode-now');
+  const tabSched = document.getElementById('launch-mode-schedule');
+  if (tabNow) tabNow.classList.toggle('active', !isSchedule);
+  if (tabSched) tabSched.classList.toggle('active', isSchedule);
   const now = document.getElementById('launch-now-panel');
   const sched = document.getElementById('launch-schedule-panel');
-  now.classList.toggle('panel-active', !isSchedule);
-  now.classList.toggle('panel-inactive', isSchedule);
-  sched.classList.toggle('panel-active', isSchedule);
-  sched.classList.toggle('panel-inactive', !isSchedule);
+  if (now) {
+    now.classList.toggle('panel-active', !isSchedule);
+    now.classList.toggle('panel-inactive', isSchedule);
+  }
+  if (sched) {
+    sched.classList.toggle('panel-active', isSchedule);
+    sched.classList.toggle('panel-inactive', !isSchedule);
+  }
 }
 
 function buildQuickCron() {
@@ -11099,13 +11137,22 @@ function _lcInit() {
   // Re-evaluate visibility when the route changes.
   window.addEventListener('hashchange', () => {
     const root2 = document.getElementById('live-console');
-    if (!root2) return;
-    if (!shouldShowConsole({ running: _lcPrevRunning, hash: location.hash || '' })) {
-      root2.hidden = true;
-    } else {
-      root2.hidden = false;
+    if (root2) {
+      if (!shouldShowConsole({ running: _lcPrevRunning, hash: location.hash || '' })) {
+        root2.hidden = true;
+      } else {
+        root2.hidden = false;
+      }
     }
+    // v2.61: Live Status section also reacts to hash changes — switching
+    // away from #/new or into a draft view must hide it immediately,
+    // not wait for the next 2s poll tick.
+    try { syncLiveStatusVisibility(); } catch {}
   });
+
+  // v2.61: Initial sync so we don't flash the Live Status section on load
+  // before the first 2s poll tick decides whether to hide it.
+  try { syncLiveStatusVisibility(); } catch {}
 }
 
 // Initialize once DOM is ready.

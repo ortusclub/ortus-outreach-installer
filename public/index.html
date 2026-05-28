@@ -1016,65 +1016,31 @@
           </div>
         </div>
         <div class="launch-right">
-          <div class="launch-mode-toggle">
-            <button type="button" id="launch-mode-now" class="launch-mode-btn active" onclick="setLaunchMode('now')">Now</button>
-            <button type="button" id="launch-mode-schedule" class="launch-mode-btn" onclick="setLaunchMode('schedule')">Schedule</button>
+          <!-- v2.61: 4 launch-options buttons (Start / Queue / Schedule /
+               Save as draft) replace the Now/Schedule toggle + Start panel.
+               Handlers are the same ones used by the floating launch-options
+               pill menu (launchStartNow / launchQueueIt / launchScheduleIt /
+               launchSaveAsDraft) so behavior is identical.
+               #btn-start and #btn-queue keep their IDs so existing
+               button-mutex logic in app.js continues to enable/disable them
+               based on campaign state. -->
+          <div class="launch-actions launch-actions--four">
+            <button type="button" id="btn-start" class="btn btn-start" onclick="window.launchStartNow()">Start a campaign</button>
+            <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
+            <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
+            <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
           </div>
 
-          <div class="launch-panel-stage">
-
-          <!-- Now panel — Start / Stop directly under the toggle -->
-          <div class="launch-panel panel-active" id="launch-now-panel">
-            <div class="launch-actions">
-              <button id="btn-start" class="btn btn-start" onclick="startCampaign()">Start Campaign</button>
-              <!-- 2026-05-27 (drafts-isolation): "Add to queue" moved to the
-                   #wiz-editing-banner pinned to the top of the wizard. Kept
-                   in the DOM hidden because the legacy button-mutex logic in
-                   app.js references this id; removing it would force a wider
-                   cleanup. The banner CTA delegates to addToQueueCampaign(). -->
-              <button id="btn-queue" class="btn btn-secondary" style="display:none" onclick="addToQueueCampaign()" title="Stage this campaign to run after the current one (or as soon as you press Run next)">Add to Queue</button>
-              <button id="btn-pause" class="btn btn-secondary" onclick="pauseOrResumeCampaign()" disabled title="Pauses after current lead — browsers stay open">Pause</button>
-              <button id="btn-stop" class="btn btn-stop" onclick="confirmStopCampaign()" disabled>Stop Campaign</button>
-              <!-- 2.9.5: standalone Check DMs button removed. Check DMs is now
-                   a first-class option in the campaign mode dropdown — pick
-                   "Check DMs" and click Start Campaign. The btn-check-dms
-                   element is kept hidden so app.js mutex logic still no-ops
-                   safely (it guards with `if (btn)`). -->
-              <button id="btn-check-dms" style="display:none" onclick="startCheckDms()"></button>
-            </div>
-          </div>
-
-          <!-- Schedule panel — captures current page state when saved -->
-          <div class="launch-panel panel-inactive" id="launch-schedule-panel">
-            <div class="schedule-inline-row">
-              <div>
-                <label for="quick-sched-name">Name</label>
-                <input type="text" id="quick-sched-name" placeholder="Morning outreach" />
-              </div>
-              <div>
-                <label for="quick-sched-time">Time</label>
-                <input type="time" id="quick-sched-time" value="09:00" />
-              </div>
-            </div>
-            <div class="schedule-inline-days">
-              <label class="schedule-days-label">Days</label>
-              <div class="day-row">
-                <label><input type="checkbox" class="quick-sched-day" value="1" checked/> Mon</label>
-                <label><input type="checkbox" class="quick-sched-day" value="2" checked/> Tue</label>
-                <label><input type="checkbox" class="quick-sched-day" value="3" checked/> Wed</label>
-                <label><input type="checkbox" class="quick-sched-day" value="4" checked/> Thu</label>
-                <label><input type="checkbox" class="quick-sched-day" value="5" checked/> Fri</label>
-                <label><input type="checkbox" class="quick-sched-day" value="6"/> Sat</label>
-                <label><input type="checkbox" class="quick-sched-day" value="0"/> Sun</label>
-              </div>
-            </div>
-            <div class="launch-actions">
-              <button class="btn btn-start" onclick="saveQuickSchedule()">Save Schedule</button>
-            </div>
-            <p class="schedule-note">Captures everything currently on the page (mode, accounts, templates, sheet, limits). Email reminders go to your address.</p>
-          </div>
-
-          </div><!-- /.launch-panel-stage -->
+          <!-- Hidden legacy elements — kept in the DOM so app.js handlers
+               (button-mutex, setLaunchMode null-guards, btn-pause/stop
+               disabled-state propagation) continue to find their targets.
+               #btn-pause and #btn-stop live visibly inside the Live Status
+               run-bar (#btn-pause-rb / #btn-stop-rb); these hidden mirrors
+               only exist so the older `['btn-pause', 'btn-pause-rb'].forEach`
+               iterations remain no-ops rather than throws. -->
+          <button id="btn-pause" style="display:none" onclick="pauseOrResumeCampaign()" disabled></button>
+          <button id="btn-stop" style="display:none" onclick="confirmStopCampaign()" disabled></button>
+          <button id="btn-check-dms" style="display:none" onclick="startCheckDms()"></button>
         </div>
       </div>
       </div><!-- /.collapsible-body (launch) -->
