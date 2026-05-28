@@ -2515,10 +2515,28 @@ app.post('/api/history/:idx/relaunch', async (req, res) => {
       if (result.code === 'missing_settings') return res.status(422).json({ error: 'history_entry_missing_settings' });
       return res.status(500).json({ error: 'unknown_error' });
     }
+    // Operator expectation: rerun behaves like /api/campaign/start —
+    // start immediately when idle, queue when a campaign is already
+    // running. relaunchHistoryEntry always queues (FIFO-safe); we drain
+    // the head here so an idle app fires the rerun right away instead of
+    // leaving it parked in the queue.
+    let started = false;
+    if (!campaign.running) {
+      try {
+        await runNextFromQueue();
+        started = true;
+      } catch (err) {
+        console.error('[history] Rerun drain failed:', err.message);
+      }
+    }
     res.json({
       ok: true,
       queueId: result.entry.id,
-      message: `Queued "${result.entry.name}"`,
+      started,
+      queued: !started,
+      message: started
+        ? `Starting "${result.entry.name}" now`
+        : `Queued "${result.entry.name}" — will start when current campaign finishes`,
       entry: result.entry,
     });
   } catch (err) {

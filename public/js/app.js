@@ -11074,6 +11074,16 @@ window.dashRerunPast = async function(originalIdx) {
     if (r.ok && body.ok) {
       if (typeof showCampaignToast === 'function') showCampaignToast(body.message || 'Queued rerun');
       if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+      // When the server fired the campaign immediately (idle path), kick
+      // the 2s pollStatus loop + a direct active-card paint so the tile
+      // populates without waiting up to 5s for the dashboard timer.
+      if (body.started) {
+        if (typeof startPolling === 'function') startPolling();
+        try {
+          const s = await fetch('/api/campaign/status').then(r => r.json());
+          if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
+        } catch { /* best-effort */ }
+      }
     } else {
       if (typeof showCampaignToast === 'function') showCampaignToast('Rerun failed: ' + (body.error || r.statusText));
     }
