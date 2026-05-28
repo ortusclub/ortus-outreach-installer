@@ -405,6 +405,31 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     return { matched: 0, fetched: 0, error: reason };
   }
 
+  // 3) Read the sheet. Done BEFORE the sidecar write so we can extract the
+  // active-sender set (distinct Sender column values) — Apps Script needs it
+  // to filter out non-campaign accounts from the "Recent Connections" tab.
+  let rows;
+  try {
+    rows = await fetchSheet(sheetUrl);
+  } catch (err) {
+    return { matched: 0, fetched: conns.length, error: `sheet-fetch: ${err.message}` };
+  }
+
+  // v2.62: active senders for this campaign — distinct values in the Sender
+  // column. Used by the sidecar write to scope the "Recent Connections" tab
+  // to accounts running THIS campaign (operator rule: the tab is the Bible
+  // for matching, so anyone who isn't a campaign sender doesn't belong in
+  // it). Also passed into computeBulkCheckUpdates for sender-scoped matching.
+  const activeSendersList = [];
+  const activeSendersSeen = new Set();
+  for (const row of rows) {
+    const s = (row['Sender'] || row['sender'] || '').toString().trim();
+    if (s && !activeSendersSeen.has(s.toLowerCase())) {
+      activeSendersSeen.add(s.toLowerCase());
+      activeSendersList.push(s);
+    }
+  }
+
   // Mirror the fetched connections into a sidecar tab on the same sheet so
   // the operator has a visible audit log of what Voyager actually returned.
   // Best-effort — failures are non-fatal to the bulk-check flow.
@@ -420,19 +445,9 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
       connectedAt: c.connectedAt || 0,
       profileSentBy: pName || '',
     }));
-    await writeRecentConnectionsTab(sheetUrl, pName, sidecarRows);
+    await writeRecentConnectionsTab(sheetUrl, pName, sidecarRows, activeSendersList);
   } catch (err) {
     console.warn(`[bulk-check] sidecar tab write failed: ${err.message}`);
-  }
-
-  // 3) Read the sheet. Match each row's public identifier against the
-  // connected set. Skip rows that already show Connected/Declined — only
-  // promote rows that are still pending or unverified.
-  let rows;
-  try {
-    rows = await fetchSheet(sheetUrl);
-  } catch (err) {
-    return { matched: 0, fetched: conns.length, error: `sheet-fetch: ${err.message}` };
   }
 
   // Build a single human-readable timestamp for every "Still Pending" stamp

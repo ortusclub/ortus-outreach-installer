@@ -1399,6 +1399,18 @@ var RECENT_HEADERS = ['Account', 'First Name', 'Last Name', 'Public ID', 'Linked
 function handleWriteRecentConnections(spreadsheet, data) {
   var connections = Array.isArray(data.connections) ? data.connections : [];
   var sender = (data.sender || '').toString().trim();
+  // v2.62: client passes the set of accounts assigned to this campaign's
+  // Sender column. Rows whose Account isn't in this set get dropped on
+  // every refresh — the tab is now scoped strictly to the campaign's
+  // active senders ("the Bible" the operator described). Empty array →
+  // legacy behavior (keep everything except current sender).
+  var activeSendersRaw = Array.isArray(data.activeSenders) ? data.activeSenders : [];
+  var activeSendersLower = {};
+  var hasActiveSenderScope = false;
+  for (var i = 0; i < activeSendersRaw.length; i++) {
+    var v = (activeSendersRaw[i] || '').toString().trim().toLowerCase();
+    if (v) { activeSendersLower[v] = true; hasActiveSenderScope = true; }
+  }
 
   var sheet = spreadsheet.getSheetByName(RECENT_TAB_NAME);
   if (!sheet) {
@@ -1419,17 +1431,20 @@ function handleWriteRecentConnections(spreadsheet, data) {
     sheet.setFrozenRows(1);
   }
 
-  // Refresh strategy: read everything, filter out rows for THIS sender,
-  // clear the data area, and re-write the kept rows + the new ones in
-  // a single pass. This avoids the visible per-row deleteRow churn that
-  // made the operator watch rows blink out one at a time.
+  // Refresh strategy: read everything, filter out rows for THIS sender AND
+  // any rows whose Account isn't in the campaign's active-senders set, then
+  // write back the kept rows + the new ones in a single pass. This avoids
+  // the visible per-row deleteRow churn that made the operator watch rows
+  // blink out one at a time.
   var lastRow = sheet.getLastRow();
   var keptRows = [];
   if (lastRow >= 2) {
     var existing = sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).getValues();
     for (var r = 0; r < existing.length; r++) {
       var rowSender = (existing[r][0] || '').toString().trim();
-      if (rowSender !== sender) keptRows.push(existing[r]);
+      if (rowSender === sender) continue;  // current sender's rows are about to be re-added
+      if (hasActiveSenderScope && !activeSendersLower[rowSender.toLowerCase()]) continue;  // drop non-campaign accounts
+      keptRows.push(existing[r]);
     }
   }
 

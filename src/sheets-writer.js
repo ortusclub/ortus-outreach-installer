@@ -287,8 +287,14 @@ export async function appendReplyRow(sheetUrl, reply) {
  * Dump the bulk-check's fetched connections into a sidecar tab on the same
  * sheet for transparency / manual matching. One tab per sender so multi-
  * account sweeps don't overwrite each other.
+ *
+ * v2.62: `activeSenders` scopes the tab to just the senders of the current
+ * campaign. The Apps Script filters out rows whose Account isn't in the
+ * list, so the tab acts as a per-campaign Bible — only connections from
+ * accounts assigned in the sheet's Sender column survive a refresh.
+ * Omit (legacy callers) → no filtering, current behavior preserved.
  */
-export async function writeRecentConnectionsTab(sheetUrl, sender, connections) {
+export async function writeRecentConnectionsTab(sheetUrl, sender, connections, activeSenders) {
   if (!getWebAppUrl()) return false;
   const sheetId = extractSheetId(sheetUrl);
   try {
@@ -297,6 +303,7 @@ export async function writeRecentConnectionsTab(sheetUrl, sender, connections) {
       sheetId,
       sender: sender || '',
       connections: connections || [],
+      activeSenders: Array.isArray(activeSenders) ? activeSenders : [],
     });
     if (result?.ok) {
       console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}"`);
