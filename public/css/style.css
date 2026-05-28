@@ -5086,3 +5086,182 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
 }
 .live-console__dashboard-link:hover { text-decoration: underline; }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   v2.61 — Throughput section V3
+   Top headline (big number + equation rows) above two-column controls.
+   All colors use existing tokens so light theme works automatically.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Headline — repurposes existing .alpha-big / .alpha-big-unit / .alpha-eq
+   tokens. Adds the new equation-row layout. */
+.alpha-throughput .alpha-headline {
+  display: flex;
+  align-items: flex-start;
+  gap: 32px;
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.alpha-headline-left { display: flex; flex-direction: column; min-width: 140px; }
+.alpha-headline-eq {
+  margin-left: auto;
+  display: flex; flex-direction: column;
+  gap: 10px;
+  min-width: 280px;
+}
+.alpha-eq-row {
+  display: grid;
+  grid-template-columns: 90px auto 1fr;
+  align-items: baseline;
+  gap: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.alpha-eq-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.alpha-eq-k {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+.alpha-eq-v {
+  font-family: var(--display);
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.alpha-eq-sub {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--gray);
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+/* Two-column controls */
+.alpha-controls.alpha-controls--two-col {
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  margin-top: 0;
+}
+.alpha-controls.alpha-controls--two-col > div + div {
+  border-left: 1px solid var(--hairline-soft);
+  padding-left: 36px;
+}
+
+.alpha-knob-sublabel { color: var(--gray); font-weight: 400; opacity: 0.7; margin-left: 4px; }
+
+/* Unlock pill (shown when concurrency is locked at <2 accounts) */
+.unlock-pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  padding: 3px 9px;
+  border: 1px solid var(--gold);
+  background: transparent;
+  border-radius: 9999px;
+  margin-left: 10px;
+  vertical-align: middle;
+  opacity: 0.7;
+}
+.alpha-concurrency.is-unlocked .unlock-pill { display: none; }
+
+/* Locked state — dim everything in the row but keep it visible */
+.alpha-concurrency:not(.is-unlocked) .alpha-knob-row > *:not(.alpha-toggle):not(.unlock-pill),
+.alpha-concurrency:not(.is-unlocked) .alpha-knob-help {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.alpha-concurrency:not(.is-unlocked) .alpha-toggle { opacity: 0.35; pointer-events: none; }
+
+/* Toggle switch — replaces the old <label><input><span> inline checkbox */
+.alpha-toggle {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  width: 38px; height: 22px;
+  margin-left: auto;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.alpha-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 100%; height: 100%;
+  margin: 0; cursor: pointer;
+}
+.alpha-toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.alpha-toggle-track::after {
+  content: "";
+  position: absolute;
+  left: 2px; top: 50%;
+  transform: translateY(-50%);
+  width: 16px; height: 16px;
+  background: var(--gray);
+  border-radius: 50%;
+  transition: left 0.15s, background 0.15s;
+}
+.alpha-toggle input:checked + .alpha-toggle-track {
+  background: rgba(247, 190, 104, 0.18);
+  border-color: var(--gold);
+}
+.alpha-toggle input:checked + .alpha-toggle-track::after {
+  left: 18px;
+  background: var(--gold);
+}
+body.theme-light .alpha-toggle-track { background: rgba(0, 0, 0, 0.03); }
+body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
+  background: rgba(247, 190, 104, 0.22);
+}
+
+/* Advanced disclosure — inline, minimal */
+.alpha-throughput details.alpha-advanced {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline-soft);
+}
+.alpha-throughput details.alpha-advanced > summary {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gray);
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.alpha-throughput details.alpha-advanced > summary::-webkit-details-marker { display: none; }
+.alpha-throughput details.alpha-advanced > summary::before {
+  content: "▸";
+  color: var(--gold);
+  font-size: 0.6rem;
+  transition: transform 0.15s;
+}
+.alpha-throughput details.alpha-advanced[open] > summary::before { transform: rotate(90deg); }
+.alpha-throughput details.alpha-advanced > .alpha-advanced-body { margin-top: 16px; }
+
+@media (max-width: 900px) {
+  .alpha-controls.alpha-controls--two-col { grid-template-columns: 1fr; gap: 24px; }
+  .alpha-controls.alpha-controls--two-col > div + div {
+    border-left: 0; padding-left: 0;
+    border-top: 1px solid var(--hairline-soft); padding-top: 24px;
+  }
+  .alpha-throughput .alpha-headline { flex-direction: column; gap: 18px; }
+  .alpha-headline-eq { margin-left: 0; min-width: 0; width: 100%; }
+}
+

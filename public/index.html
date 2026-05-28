@@ -488,83 +488,85 @@
     <div class="section collapsible collapsed" id="nav-pace">
       <h2 class="section-toggle" onclick="toggleSection('nav-pace')"><span class="caret">▾</span> <span data-edit="h2-pace">4. Throughput</span> <span class="section-summary" id="summary-pace"></span></h2>
       <div class="collapsible-body">
-        <!-- v2.11.0: Throughput model rewritten. The arbitrary batchesPerHour
-             knob is gone. The campaign now runs as fast as the queue can rotate,
-             with a 6-min per-account turn floor (anti-eject-cascade). The only
-             knobs left here are: pause-between-leads (jitter) and the per-account
-             campaign limit. -->
+        <!-- v2.61: Throughput section restyled (V3). Forecast headline moved to
+             top of card; controls laid out in two columns (Daily limit / Parallel
+             accounts) instead of stacked. Same IDs preserved so
+             updateCampaignSummary writes through unchanged. -->
         <div class="alpha-throughput">
-          <div class="alpha-controls">
-            <!-- Primary knob — the only thing most operators need to think about. -->
+          <!-- Top headline (was the bottom forecast). IDs hero-actions /
+               hero-duration / hero-finish + subs are unchanged. -->
+          <div id="campaign-summary" class="alpha-headline">
+            <div class="alpha-headline-left">
+              <div class="alpha-big" id="hero-actions">—</div>
+              <div class="alpha-big-unit" id="hero-actions-sub">select accounts to see forecast</div>
+            </div>
+            <div class="alpha-headline-eq">
+              <div class="alpha-eq-row">
+                <span class="alpha-eq-k">Duration</span>
+                <span class="alpha-eq-v" id="hero-duration">—</span>
+                <span class="alpha-eq-sub" id="hero-duration-sub">—</span>
+              </div>
+              <div class="alpha-eq-row">
+                <span class="alpha-eq-k">Finishes</span>
+                <span class="alpha-eq-v" id="hero-finish">—</span>
+                <span class="alpha-eq-sub" id="hero-finish-sub">—</span>
+              </div>
+            </div>
+            <div id="summary-stats" style="display:none"></div>
+          </div>
+
+          <div class="alpha-controls alpha-controls--two-col">
+            <!-- Left column — daily limit knob -->
             <div id="daily-limit-knob">
-              <div class="alpha-knob-label">Connections per account per day</div>
+              <div class="alpha-knob-label">Daily limit <span class="alpha-knob-sublabel">· per account per day</span></div>
               <div class="alpha-knob-row">
                 <input class="alpha-knob-input" type="number" id="daily-limit-input" value="50" min="1" max="500" oninput="alphaSyncDailyLimit()" onblur="alphaBlurDailyLimit()" />
                 <div class="step-col">
                   <button type="button" class="step-btn" onclick="alphaStepDaily(5)">+</button>
                   <button type="button" class="step-btn" onclick="alphaStepDaily(-5)">−</button>
                 </div>
-                <span class="alpha-knob-suffix">invites / account</span>
+                <span class="alpha-knob-suffix">invites / day</span>
               </div>
-              <div class="alpha-knob-help">LinkedIn caps invites at ~100/account/week. <b>50</b> is a safe daily default — runs back-to-back for 2 days before LinkedIn starts throttling. Today this is enforced per-run only; daily/weekly tracking is on the roadmap.</div>
+              <div class="alpha-knob-help">LinkedIn caps invites at ~100/account/week. <b>50</b> is a safe daily default — runs back-to-back for 2 days before LinkedIn starts throttling.</div>
             </div>
 
-            <!-- Concurrency toggle. Unlocked at ≥2 accounts (handled by
-                 alphaRecalc). Sits above the Advanced disclosure so the
-                 operator sees it without scrolling past pause/track/bulk. -->
-            <div id="alpha-concurrency-row" class="alpha-concurrency" style="margin-top:24px; padding-top:24px; border-top:1px solid var(--hairline-soft);">
-              <div class="alpha-knob-label">Parallel accounts</div>
+            <!-- Right column — parallel accounts. Visibility/disabled state
+                 managed by alphaRecalc; pill shown when locked (<2 accounts). -->
+            <div id="alpha-concurrency-row" class="alpha-concurrency">
+              <div class="alpha-knob-label">
+                Parallel accounts
+                <span class="unlock-pill" id="concurrency-unlock-pill">unlocks at 2+ accounts</span>
+              </div>
               <div class="alpha-knob-row" style="gap:14px;">
-                <label style="display:inline-flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
-                  <input type="checkbox" id="concurrency-toggle" onchange="alphaSyncConcurrency()" />
-                  <span>Run accounts in parallel</span>
-                </label>
                 <input class="alpha-knob-input" type="number" id="concurrency-count" value="2" min="2" max="5" disabled oninput="updateCampaignSummary()" />
+                <div class="step-col">
+                  <button type="button" class="step-btn" onclick="alphaStepConcurrency(1)">+</button>
+                  <button type="button" class="step-btn" onclick="alphaStepConcurrency(-1)">−</button>
+                </div>
                 <span class="alpha-knob-suffix">at a time</span>
+                <label class="alpha-toggle" title="Run accounts in parallel">
+                  <input type="checkbox" id="concurrency-toggle" onchange="alphaSyncConcurrency()" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
               </div>
               <div class="alpha-knob-help">Speeds up campaigns by running multiple GoLogin browsers simultaneously. If RAM gets tight, the bot drops back to one at a time automatically.</div>
             </div>
+          </div>
 
-            <!-- Advanced — pause-between-leads is rarely changed; tucked behind
-                 a disclosure so the section reads as "one knob, done". IDs
-                 preserved so alphaRecalc / updateCampaignSummary still work. -->
-            <details class="alpha-advanced">
-              <summary>Advanced</summary>
-              <div class="alpha-advanced-body">
-                <div class="alpha-knob-label">Pause between leads</div>
-                <div class="alpha-knob-row">
-                  <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="15" min="5" max="120" oninput="updateCampaignSummary()" />
-                  <span class="alpha-pause-sep">to</span>
-                  <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
-                  <span class="alpha-knob-suffix">seconds</span>
-                </div>
-                <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
-
+          <details class="alpha-advanced">
+            <summary>Advanced · pause between leads</summary>
+            <div class="alpha-advanced-body">
+              <div class="alpha-knob-label">Pause between leads</div>
+              <div class="alpha-knob-row">
+                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="15" min="5" max="120" oninput="updateCampaignSummary()" />
+                <span class="alpha-pause-sep">to</span>
+                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="45" min="10" max="300" oninput="updateCampaignSummary()" />
+                <span class="alpha-knob-suffix">seconds</span>
               </div>
-            </details>
-          </div>
+              <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
+            </div>
+          </details>
 
-          <!-- Phase 2.8.15: Forecast row absorbed from the old standalone
-               campaign-hero block. Same IDs (hero-actions / hero-duration /
-               hero-finish + subs) so updateCampaignSummary writes here unchanged. -->
-          <div id="campaign-summary" class="campaign-hero alpha-forecast">
-            <div class="hero-cell">
-              <div class="hero-k" data-edit="hero-actions-k">Actions</div>
-              <div class="hero-v accent" id="hero-actions">—</div>
-              <div class="hero-sub" id="hero-actions-sub">across 0 accounts</div>
-            </div>
-            <div class="hero-cell">
-              <div class="hero-k" data-edit="hero-duration-k">Duration</div>
-              <div class="hero-v" id="hero-duration">—</div>
-              <div class="hero-sub" id="hero-duration-sub">approximate</div>
-            </div>
-            <div class="hero-cell">
-              <div class="hero-k" data-edit="hero-finish-k">Finishes</div>
-              <div class="hero-v" id="hero-finish">—</div>
-              <div class="hero-sub" id="hero-finish-sub">local time</div>
-            </div>
-            <div id="summary-stats" style="display:none"></div>
-          </div>
           <!-- Hidden alpha-foot anchors retained so alphaRecalc doesn't null-throw -->
           <span id="alpha-daily-target" style="display:none"></span>
           <span id="alpha-round-time" style="display:none"></span>

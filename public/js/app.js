@@ -2507,6 +2507,19 @@ function alphaStepDaily(delta) {
   alphaSyncDailyLimit();
 }
 
+// v2.61: Concurrency stepper. Mirrors alphaStepDaily — adjusts the
+// concurrency-count input and triggers a forecast refresh. Bounded by the
+// input's own min/max (2–5).
+function alphaStepConcurrency(delta) {
+  const el = document.getElementById('concurrency-count');
+  if (!el || el.disabled) return;
+  const cur = parseInt(el.value, 10) || 2;
+  const min = parseInt(el.min, 10) || 2;
+  const max = parseInt(el.max, 10) || 5;
+  el.value = String(Math.max(min, Math.min(max, cur + delta)));
+  updateCampaignSummary();
+}
+
 // 2.9.8: Concurrency toggle. Enables/disables the count input and updates
 // the campaign summary. Visibility (≥5 accounts) is handled in alphaRecalc.
 function alphaSyncConcurrency() {
@@ -2535,11 +2548,23 @@ function alphaRecalc() {
   if (eqTotalEl)   eqTotalEl.textContent   = String(total);
 
   // Concurrency toggle unlocked at ≥2 accounts (the mathematical minimum).
-  // Previous gate was ≥5 — too restrictive; concurrency is useful at 2-4
-  // accounts too. Hide entirely when only one account is selected.
+  // v2.61: Row is always rendered; the .is-unlocked class controls whether
+  // the controls are interactive or dimmed (CSS handles the visual state and
+  // shows the "unlocks at 2+" pill when locked).
   const concurrencyRow = document.getElementById('alpha-concurrency-row');
+  const concurrencyToggle = document.getElementById('concurrency-toggle');
+  const concurrencyCount = document.getElementById('concurrency-count');
   if (concurrencyRow) {
-    concurrencyRow.style.display = numAccounts >= 2 ? '' : 'none';
+    const unlocked = numAccounts >= 2;
+    concurrencyRow.classList.toggle('is-unlocked', unlocked);
+    if (!unlocked) {
+      // Auto-disable + uncheck when locked so the math falls back to 1
+      if (concurrencyToggle) concurrencyToggle.checked = false;
+      if (concurrencyCount) concurrencyCount.disabled = true;
+    } else if (concurrencyCount) {
+      // When unlocked, count is enabled iff the toggle is on
+      concurrencyCount.disabled = !concurrencyToggle?.checked;
+    }
   }
 }
 
@@ -2579,7 +2604,10 @@ function updateCampaignSummary() {
   // total invites = limit × numAccounts).
   const concurrencyToggle = document.getElementById('concurrency-toggle');
   const concurrencyCount = document.getElementById('concurrency-count');
-  const concurrency = (concurrencyToggle?.checked && numAccounts >= 5)
+  // v2.61: gate matches alphaRecalc visual gate (≥2 accounts). Previously
+  // ≥5 — inconsistent with the row's unlock threshold and made the toggle
+  // a visual no-op for 2-4 accounts.
+  const concurrency = (concurrencyToggle?.checked && numAccounts >= 2)
     ? Math.max(1, Math.min(5, parseInt(concurrencyCount?.value, 10) || 2))
     : 1;
   const TURN_FLOOR_MIN = 6;
@@ -6250,6 +6278,7 @@ window.alphaSyncRate = alphaSyncRate;
 window.alphaStepLeads = alphaStepLeads;
 window.alphaSyncDailyLimit = alphaSyncDailyLimit;
 window.alphaStepDaily = alphaStepDaily;
+window.alphaStepConcurrency = alphaStepConcurrency;
 window.alphaSyncConcurrency = alphaSyncConcurrency;
 window.toggleSection = toggleSection;
 window.openUnifiedLog = openUnifiedLog;
