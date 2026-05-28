@@ -235,34 +235,41 @@
      subtle fill, gap-separated. Chips inside are smaller nested cards. */
   body[data-dashboard='v3'] .cal-grid {
     display: grid; grid-template-columns: repeat(7, 1fr);
-    gap: 8px;
+    gap: 12px;
     margin-bottom: 4px;
   }
-  /* Resolution 3 — calendar shares design vocabulary with Up Next:
-     transparent background, hairline outline, no shadow, 4px radius.
-     Today signaled via a small green dot beside the date. */
+  /* v2.61: Calendar cells reuse the radio-card token system
+     (--card-bg / --card-border / --card-shadow). Same surface contrast
+     as the mode-picker cards so both themes read cleanly. Today uses
+     the gold tint + gold border like a selected radio-card. */
   body[data-dashboard='v3'] .cal-cell {
-    border: 1px solid var(--hairline);
-    border-radius: 4px;
-    background: transparent;
-    min-height: 132px; padding: 12px 12px 14px;
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    background: var(--card-bg);
+    box-shadow: var(--card-shadow);
+    min-height: 140px; padding: 14px 14px 16px;
     display: flex; flex-direction: column;
     cursor: pointer;
-    transition: background 0.12s, border-color 0.12s;
+    transition: background 0.2s ease, border-color 0.2s ease,
+                transform 0.2s ease, box-shadow 0.2s ease;
   }
   body[data-dashboard='v3'] .cal-cell:hover {
-    background: rgba(0, 0, 0, 0.02);
-    border-color: var(--ink);
+    background: var(--card-bg-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--card-shadow-hover);
   }
-  body[data-dashboard='v3'].theme-dark .cal-cell:hover { background: rgba(255, 255, 255, 0.03); }
   body[data-dashboard='v3'] .cal-cell.today {
-    background: rgba(0, 0, 0, 0.02);
-    border-color: var(--hairline);
+    background: var(--gold-tint-bg);
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1.5px var(--gold), 0 10px 28px var(--gold-tint-shadow);
+    transform: translateY(-2px);
     cursor: default;
   }
-  body[data-dashboard='v3'].theme-dark .cal-cell.today { background: rgba(255, 255, 255, 0.03); }
-  body[data-dashboard='v3'] .cal-cell.today:hover { background: rgba(0, 0, 0, 0.02); border-color: var(--hairline); }
-  body[data-dashboard='v3'].theme-dark .cal-cell.today:hover { background: rgba(255, 255, 255, 0.03); }
+  body[data-dashboard='v3'] .cal-cell.today:hover {
+    background: var(--gold-tint-bg);
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1.5px var(--gold), 0 14px 34px var(--gold-tint-shadow);
+  }
   body[data-dashboard='v3'] .cal-cell.today .cal-date::after {
     content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 9999px;
     background: var(--green); margin-left: 6px; vertical-align: 2px;
