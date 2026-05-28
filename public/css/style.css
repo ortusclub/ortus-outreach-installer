@@ -1395,9 +1395,51 @@ select {
 .btn-secondary { border-color: var(--hairline); color: var(--ink); }
 .btn-secondary:hover { opacity: 0.6; border-color: var(--ink); }
 
-/* Campaign Name row — input + Save Name button on a single line. */
-.campaign-name-row { display: flex; align-items: flex-end; gap: 16px; }
-.campaign-name-row > input { flex: 1; margin-bottom: 0; }
+/* Campaign Name — hero-pill card matching Sections 2 / 4 / 6 */
+.section.campaign-name-section {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  padding: 20px 24px 18px;
+  margin-bottom: 28px;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.section.campaign-name-section:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+.section.campaign-name-section h2 {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 10px 0;
+}
+.campaign-name-row { display: flex; align-items: center; gap: 16px; }
+.campaign-name-row > input {
+  flex: 1;
+  margin-bottom: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--display);
+  font-size: 1.4rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  padding: 6px 0 8px;
+  outline: none;
+  transition: border-bottom-color 0.18s ease;
+}
+.campaign-name-row > input::placeholder {
+  color: var(--gray);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.campaign-name-row > input:focus { border-bottom-color: var(--ink); }
 .campaign-name-row > .btn { margin-bottom: 4px; white-space: nowrap; }
 
 /* Start CTA — transparent pill with 1px white border + GOLD label (the only gold in the UI) */
