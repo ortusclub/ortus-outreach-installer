@@ -1269,14 +1269,15 @@ document.addEventListener('DOMContentLoaded', updateTplNoteCount);
 if (document.readyState !== 'loading') updateTplNoteCount();
 
 function applyTemplateUIVisibility(_mode, _addNoteOn) {
-  // v2.59: template management UI permanently hidden per operator request.
-  // The Select / Save / Create New / Delete bar + Preview Messages button
-  // aren't needed for the current CC+IB / IC flow. To restore, replace
-  // 'none' with the prior mode-aware logic.
+  // v2.59: template-bar (Select/Save/Create New/Delete) stays hidden — the
+  // reusable-template save/load system isn't needed for the current
+  // CC+IB / IC flow.
+  // v2.62: Preview Messages button is back, surfaced in the visible
+  // .tpl-cta-row at the top of Section 5. Visibility is no longer forced
+  // here — refreshPreviewButtonState manages disabled state based on
+  // sheet URL + template presence.
   const tplBar = document.getElementById('template-bar');
-  const previewBtn = document.getElementById('btn-preview-messages');
   if (tplBar) tplBar.style.display = 'none';
-  if (previewBtn) previewBtn.style.display = 'none';
 }
 
 function syncAddNoteUI(on) {
