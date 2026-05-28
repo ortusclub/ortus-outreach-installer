@@ -309,11 +309,17 @@
      hero of the page. Monitoring uses the same primitive but quiet, so it
      reads as a sibling to Up Next / Past / Calendar instead of a second
      hero. */
+  /* v2.62: vj-card adopts the radio mode-card surface tokens
+     (--card-bg / --card-border / --card-shadow) so the contrast matches.
+     Typography is bumped one notch heavier/darker than the radio cards
+     to make the live state pop more than the picker. The green left rail
+     stays — it's the active-state identity for the dashboard. */
   body[data-dashboard='v3'] .vj-card {
     position: relative;
-    background: transparent;
-    border: 1px solid var(--hairline);
-    border-radius: 4px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    box-shadow: var(--card-shadow);
     padding: 22px 26px;
     margin: 0 0 12px;
     overflow: hidden;
@@ -328,24 +334,17 @@
       "hero    hero"
       "stats   controls";
   }
-  /* Active card — the only hero. Filled background + green accent rail.
-     Monitoring intentionally skips both. */
-  body[data-dashboard='v3'] .vj-card:not(.is-monitor) {
-    background: var(--band-active);
-  }
-  body[data-dashboard='v3'].theme-dark .vj-card:not(.is-monitor) {
-    background: rgba(255, 255, 255, 0.04);
-  }
+  /* Active card — green accent rail on the left edge. Monitoring skips it. */
   body[data-dashboard='v3'] .vj-card:not(.is-monitor)::before {
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
     background: var(--green);
   }
 
-  body[data-dashboard='v3'] .vj-eyebrow { grid-area: eyebrow; display: flex; align-items: center; gap: 14px; color: var(--gray); padding-right: 64px; }
-  body[data-dashboard='v3'] .vj-eyebrow .vj-tag { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-eyebrow { grid-area: eyebrow; display: flex; align-items: center; gap: 14px; color: var(--ink); padding-right: 64px; }
+  body[data-dashboard='v3'] .vj-eyebrow .vj-tag { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--green); display: inline-block; }
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-eyebrow .vj-tag .dot { background: var(--blue); }
-  body[data-dashboard='v3'] .vj-when { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-when { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; color: var(--ink); font-weight: 500; }
 
   /* C+I badge pinned to the top-right corner of the card */
   body[data-dashboard='v3'] .vj-glyph-circle {
@@ -358,7 +357,7 @@
 
   body[data-dashboard='v3'] .vj-name {
     grid-area: name;
-    font-family: var(--display); font-weight: 400;
+    font-family: var(--display); font-weight: 500;
     font-size: 2.13rem; letter-spacing: 0.02em; line-height: 1; margin: 0;
     color: var(--ink); padding-right: 64px;
   }
@@ -371,18 +370,18 @@
      children — letting stats sit on the same grid row as the controls cluster. */
   body[data-dashboard='v3'] .vj-hero { display: contents; }
   body[data-dashboard='v3'] .vj-hero-row { grid-area: hero; display: flex; align-items: baseline; gap: 18px; }
-  body[data-dashboard='v3'] .vj-hero-row .num { font-family: var(--display); font-size: 3.13rem; line-height: 0.9; letter-spacing: 0.01em; color: var(--ink); }
-  body[data-dashboard='v3'] .vj-hero-row .num .sub { font-size: 1.43rem; color: var(--gray); margin-left: 4px; }
-  body[data-dashboard='v3'] .vj-meta { display: flex; flex-direction: column; gap: 2px; font-family: var(--mono); font-size: 0.87rem; color: var(--gray); }
-  body[data-dashboard='v3'] .vj-meta b { color: var(--ink); font-weight: 500; }
+  body[data-dashboard='v3'] .vj-hero-row .num { font-family: var(--display); font-weight: 500; font-size: 3.13rem; line-height: 0.9; letter-spacing: 0.01em; color: var(--ink); }
+  body[data-dashboard='v3'] .vj-hero-row .num .sub { font-size: 1.43rem; color: var(--ink); margin-left: 4px; font-weight: 500; }
+  body[data-dashboard='v3'] .vj-meta { display: flex; flex-direction: column; gap: 2px; font-family: var(--mono); font-size: 0.87rem; color: var(--ink); font-weight: 500; }
+  body[data-dashboard='v3'] .vj-meta b { color: var(--ink); font-weight: 700; }
 
   body[data-dashboard='v3'] .vj-stats {
     grid-area: stats; align-self: center;
     display: flex; gap: 14px; flex-wrap: wrap;
-    font-family: var(--mono); font-size: 0.81rem; letter-spacing: 0.04em; color: var(--gray);
+    font-family: var(--mono); font-size: 0.81rem; letter-spacing: 0.04em; color: var(--ink); font-weight: 500;
     min-width: 0;
   }
-  body[data-dashboard='v3'] .vj-stats b { color: var(--ink); font-weight: 500; }
+  body[data-dashboard='v3'] .vj-stats b { color: var(--ink); font-weight: 700; }
 
   body[data-dashboard='v3'] .vj-controls {
     grid-area: controls;
