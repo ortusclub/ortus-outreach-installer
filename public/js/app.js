@@ -10441,10 +10441,8 @@ function v3BuildQueueDock(q, isScheduled) {
   const otherSvg = isScheduled ? V3_SVG_PLAY : V3_SVG_CAL;
   const otherFn = isScheduled ? 'dashStartQueueItem' : 'dashRescheduleQueueItem';
   return `
-    <div class="dock" id="${dockId}" data-open="false" role="toolbar" aria-label="${safeName} actions">
+    <div class="dock" id="${dockId}" role="toolbar" aria-label="${safeName} actions">
       <button class="dock-btn" data-tip="${primaryTip}" aria-label="${primaryTip}" onclick="window.${primaryFn}('${safeId}')">${primarySvg}</button>
-      <span class="dock-sep" aria-hidden="true"></span>
-      <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('${dockId}', event)">${V3_SVG_CHEV}</button>
       <div class="dock-actions">
         <button class="dock-btn" data-tip="${otherTip}" aria-label="${otherTip}" onclick="window.${otherFn}('${safeId}')">${otherSvg}</button>
         <button class="dock-btn" data-tip="Edit" aria-label="Edit" onclick="window.dashEditQueueItem('${safeId}')">${V3_SVG_PENCIL}</button>
@@ -11041,10 +11039,8 @@ function v3RenderPastRow(p, displayIdx, safe) {
       <div class="pa-when">${safe(ago)}</div>
       <div class="pa-stats"><b>${sent}</b> sent · <b>${replies}</b> replies</div>
       ${rateHtml}
-      <div class="dock" id="${dockId}" data-open="false" role="toolbar" aria-label="${safe(p.name || '')} actions">
+      <div class="dock" id="${dockId}" role="toolbar" aria-label="${safe(p.name || '')} actions">
         <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx})">${V3_SVG_RESTART}</button>
-        <span class="dock-sep" aria-hidden="true"></span>
-        <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('${dockId}', event)">${V3_SVG_CHEV}</button>
         <div class="dock-actions">
           <button class="dock-btn" data-tip="Open log" aria-label="Open log" onclick="window.dashOpenPastLog(${oIdx})">${V3_SVG_DOC}</button>
           <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyPastToQueue(${oIdx})">${V3_SVG_COPY}</button>

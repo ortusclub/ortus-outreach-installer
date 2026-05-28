@@ -213,13 +213,9 @@
           <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details" onclick="window.toggleActiveDetails(this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="dock" id="dock-active" data-open="false" role="toolbar" aria-label="Active campaign actions">
+          <div class="dock" id="dock-active" role="toolbar" aria-label="Active campaign actions">
             <button class="dock-btn" id="dock-active-pause" data-tip="Pause" aria-label="Pause" onclick="window.dashPauseActive()">
               <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            </button>
-            <span class="dock-sep" aria-hidden="true"></span>
-            <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-active', event)">
-              <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
             </button>
             <div class="dock-actions">
               <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="window.dashStopActive()">
@@ -310,10 +306,7 @@
           <button class="vj-toggle-btn" data-tip="Collapse to mini view" aria-label="Collapse to mini view" onclick="window.toggleMonitorMini()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
           </button>
-          <div class="dock" id="dock-monitor" data-open="false" role="toolbar" aria-label="Monitoring campaign actions">
-            <button class="dock-btn dock-trigger" data-tip="More actions" aria-label="Toggle more actions" aria-expanded="false" onclick="toggleDock('dock-monitor', event)">
-              <svg class="dock-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
-            </button>
+          <div class="dock" id="dock-monitor" role="toolbar" aria-label="Monitoring campaign actions">
             <div class="dock-actions">
               <button class="dock-btn danger" data-tip="Stop watch" aria-label="Stop watch" onclick="window.dashStopMonitoring()">
                 <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
