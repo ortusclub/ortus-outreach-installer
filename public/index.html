@@ -961,8 +961,8 @@
       <!-- v2.59: templates header + bar hidden per operator request — the
            reusable-template save/load system isn't needed for the current
            CC+IB / IC flow. Markup kept (not removed) so JS that references
-           these IDs (#btn-preview-messages, #tpl-select, etc.) doesn't
-           throw. To bring it back, drop the style="display:none" wrapper. -->
+           these IDs (#tpl-select, etc.) doesn't throw. To bring it back,
+           drop the style="display:none" wrapper. -->
       <div class="templates-header" style="display:none">
         <div class="templates-question" id="templates-question" style="display:none">
           <span class="q-text" id="templates-q-text">Do you want to add a note while connecting?</span>
@@ -971,7 +971,17 @@
             <button type="button" id="add-note-no" class="yesno-btn active" onclick="setAddNote(false)">No</button>
           </div>
         </div>
-        <button type="button" id="btn-preview-messages" class="btn btn-secondary" onclick="handlePreviewClick()" title="Enter a sheet URL and at least one template to preview">Preview Messages</button>
+      </div>
+      <!-- v2.62: visible Preview Messages CTA — moved out of the hidden
+           templates-header so operators can preview rendered output without
+           leaving the wizard. handlePreviewClick + state management
+           (enabled/disabled by sheet URL + at least one template) unchanged. -->
+      <div class="tpl-cta-row">
+        <button type="button" id="btn-preview-messages" class="tpl-preview-btn" onclick="handlePreviewClick()" title="Enter a sheet URL and at least one template to preview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span>Preview messages</span>
+        </button>
+        <div class="tpl-cta-hint">See the connection note + intro DM rendered with real sheet rows before launching.</div>
       </div>
       <div class="template-bar" id="template-bar" style="display:none">
         <select id="tpl-select" onchange="loadSelectedTemplate()">
