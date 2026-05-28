@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Templates Section · B · Editor + Live Preview Split</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --ink: #0a0a0a;
+      --gray: #6b6b6b;
+      --gray-faint: #b8b8b6;
+      --gold: #F7BE68;
+      --gold-tint-bg: rgba(247, 190, 104, 0.16);
+      --green: #3fb950;
+      --hairline: rgba(0, 0, 0, 0.15);
+      --hairline-soft: rgba(0, 0, 0, 0.06);
+      --card-bg: #ffffff;
+      --card-bg-hover: #fbfaf6;
+      --card-border: rgba(0, 0, 0, 0.18);
+      --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+      --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+      --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--ink); font-family: var(--mono); padding: 40px; line-height: 1.45; }
+    .wrap { max-width: 1280px; margin: 0 auto; }
+
+    .section-h2 { display: flex; align-items: baseline; gap: 14px; padding: 6px 4px 18px; }
+    .section-h2 .caret { color: var(--gold); font-size: 0.9rem; }
+    .section-h2 .num { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 500; }
+
+    /* Sample-data row at top */
+    .sample-bar {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      padding: 12px 18px;
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    }
+    .sample-bar .lbl { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
+    .sample-bar .pair { display: flex; align-items: baseline; gap: 6px; font-family: ui-monospace, monospace; font-size: 0.78rem; }
+    .sample-bar .key { color: var(--gray); }
+    .sample-bar .val { color: var(--ink); padding: 2px 6px; background: var(--gold-tint-bg); border-radius: 4px; }
+
+    /* Template card with split */
+    .tpl-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .tpl-head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--hairline-soft);
+      gap: 14px;
+    }
+    .tpl-head .lhs { display: flex; align-items: baseline; gap: 12px; }
+    .tpl-head .eyebrow { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
+    .tpl-head .badge { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; color: var(--gray); border: 1px solid var(--hairline); padding: 3px 8px; border-radius: 9999px; }
+    .tpl-head .badge.req { color: var(--gold); border-color: var(--gold); }
+    .tpl-head .char-count { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); font-variant-numeric: tabular-nums; }
+
+    .tpl-split { display: grid; grid-template-columns: 1fr 1fr; min-height: 180px; }
+    .tpl-editor { padding: 16px 22px; border-right: 1px solid var(--hairline-soft); display: flex; flex-direction: column; gap: 12px; }
+    .tpl-editor-lbl { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--gray); }
+    .tpl-input, .tpl-textarea {
+      width: 100%;
+      background: var(--hairline-soft);
+      border: 1px solid var(--hairline-soft);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--body); font-size: 0.92rem; color: var(--ink);
+      line-height: 1.55;
+      outline: none;
+      resize: vertical;
+      flex: 1;
+    }
+    .tpl-input:focus, .tpl-textarea:focus { border-color: var(--ink); background: #fff; }
+    .tpl-textarea { min-height: 80px; }
+
+    .tpl-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip-var {
+      display: inline-block;
+      font-family: ui-monospace, monospace; font-size: 0.68rem;
+      padding: 3px 9px; border-radius: 9999px;
+      background: #fff; border: 1px solid var(--hairline);
+      color: var(--ink); cursor: pointer;
+    }
+    .chip-var:hover { background: var(--gold-tint-bg); border-color: var(--gold); }
+
+    .tpl-preview { padding: 16px 22px; background: var(--hairline-soft); display: flex; flex-direction: column; gap: 12px; }
+    .tpl-preview-lbl { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--gray); display: flex; align-items: center; gap: 8px; }
+    .tpl-preview-lbl .live-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--green); display: inline-block; }
+    .tpl-preview-body {
+      background: #fff;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: var(--body); font-size: 0.92rem; line-height: 1.55;
+      color: var(--ink);
+      flex: 1;
+    }
+    .tpl-preview-body .resolved { color: var(--ink); }
+    .tpl-preview-body mark { background: var(--gold-tint-bg); color: var(--ink); padding: 0 3px; border-radius: 3px; }
+
+    @media (max-width: 900px) {
+      .tpl-split { grid-template-columns: 1fr; }
+      .tpl-editor { border-right: none; border-bottom: 1px solid var(--hairline-soft); }
+    }
+
+    .variant-tag { position: fixed; top: 16px; right: 16px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; padding: 6px 12px; border: 1px solid var(--ink); border-radius: 9999px; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="variant-tag">Variant B · Editor + Live Preview</div>
+  <div class="wrap">
+    <div class="section-h2">
+      <span class="caret">▾</span>
+      <span class="num">5. Message templates</span>
+    </div>
+
+    <!-- Sample data driving the live preview -->
+    <div class="sample-bar">
+      <span class="lbl">Preview sample</span>
+      <div class="pair"><span class="key">{first name}</span><span class="val">Sarah</span></div>
+      <div class="pair"><span class="key">{company}</span><span class="val">Acme Corp</span></div>
+      <div class="pair"><span class="key">{title}</span><span class="val">VP Operations</span></div>
+      <div class="pair"><span class="key">{primary name}</span><span class="val">Antonio Varlese</span></div>
+    </div>
+
+    <!-- Connection Note -->
+    <div class="tpl-card">
+      <div class="tpl-head">
+        <div class="lhs">
+          <span class="eyebrow">Connection note</span>
+          <span class="badge">Optional</span>
+        </div>
+        <span class="char-count">142 / 300</span>
+      </div>
+      <div class="tpl-split">
+        <div class="tpl-editor">
+          <span class="tpl-editor-lbl">Template</span>
+          <textarea class="tpl-textarea">Hi {first name}, I came across your profile and noticed you lead operations at {company}. I'd love to connect and learn how Ortus could fit your roadmap.</textarea>
+          <div class="tpl-chips">
+            <button class="chip-var">{first name}</button>
+            <button class="chip-var">{company}</button>
+            <button class="chip-var">{title}</button>
+          </div>
+        </div>
+        <div class="tpl-preview">
+          <span class="tpl-preview-lbl"><span class="live-dot"></span> Live preview</span>
+          <div class="tpl-preview-body">
+            Hi <mark>Sarah</mark>, I came across your profile and noticed you lead operations at <mark>Acme Corp</mark>. I'd love to connect and learn how Ortus could fit your roadmap.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group Conversation Title -->
+    <div class="tpl-card">
+      <div class="tpl-head">
+        <div class="lhs">
+          <span class="eyebrow">Group conversation title</span>
+          <span class="badge req">Required</span>
+        </div>
+      </div>
+      <div class="tpl-split">
+        <div class="tpl-editor">
+          <span class="tpl-editor-lbl">Template</span>
+          <input class="tpl-input" value="Introduction: {first name} <> {intro name}" />
+          <div class="tpl-chips">
+            <button class="chip-var">{first name}</button>
+            <button class="chip-var">{intro name}</button>
+            <button class="chip-var">{intro first name}</button>
+          </div>
+        </div>
+        <div class="tpl-preview">
+          <span class="tpl-preview-lbl"><span class="live-dot"></span> Live preview</span>
+          <div class="tpl-preview-body">
+            Introduction: <mark>Sarah</mark> &lt;&gt; <mark>Antonio Varlese</mark>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Intro DM Body -->
+    <div class="tpl-card">
+      <div class="tpl-head">
+        <div class="lhs">
+          <span class="eyebrow">Group conversation body</span>
+          <span class="badge req">Required</span>
+        </div>
+      </div>
+      <div class="tpl-split">
+        <div class="tpl-editor">
+          <span class="tpl-editor-lbl">Template</span>
+          <textarea class="tpl-textarea" rows="5">Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they lead our community team and would be a great person for you to know.</textarea>
+          <div class="tpl-chips">
+            <button class="chip-var">{first name}</button>
+            <button class="chip-var">{primary name}</button>
+            <button class="chip-var">{primary url}</button>
+          </div>
+        </div>
+        <div class="tpl-preview">
+          <span class="tpl-preview-lbl"><span class="live-dot"></span> Live preview</span>
+          <div class="tpl-preview-body">
+            Hey <mark>Sarah</mark>, thanks for connecting! I'd love to introduce you to <mark>Antonio Varlese</mark> — they lead our community team and would be a great person for you to know.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

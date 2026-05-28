@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Templates Section · A · Hero Card Per Template</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --ink: #0a0a0a;
+      --gray: #6b6b6b;
+      --gray-faint: #b8b8b6;
+      --gold: #F7BE68;
+      --gold-tint-bg: rgba(247, 190, 104, 0.16);
+      --hairline: rgba(0, 0, 0, 0.15);
+      --hairline-soft: rgba(0, 0, 0, 0.06);
+      --card-bg: #ffffff;
+      --card-bg-hover: #fbfaf6;
+      --card-border: rgba(0, 0, 0, 0.18);
+      --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+      --display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+      --mono: 'Hanken Grotesk', -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--ink); font-family: var(--mono); padding: 40px; line-height: 1.45; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+    .section-h2 { display: flex; align-items: baseline; gap: 14px; padding: 6px 4px 18px; }
+    .section-h2 .caret { color: var(--gold); font-size: 0.9rem; }
+    .section-h2 .num { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; font-weight: 500; }
+
+    .tpl-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: var(--card-shadow);
+      padding: 22px 26px;
+      margin-bottom: 14px;
+    }
+    .tpl-head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 14px;
+      gap: 14px;
+    }
+    .tpl-head .lhs {
+      display: flex; align-items: baseline; gap: 12px; min-width: 0;
+    }
+    .tpl-head .eyebrow {
+      font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em;
+      text-transform: uppercase; font-weight: 600; color: var(--ink);
+    }
+    .tpl-head .badge {
+      font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.16em;
+      text-transform: uppercase; font-weight: 600;
+      color: var(--gray); border: 1px solid var(--hairline);
+      padding: 3px 8px; border-radius: 9999px;
+    }
+    .tpl-head .badge.req { color: var(--gold); border-color: var(--gold); }
+    .tpl-head .char-count {
+      font-family: var(--mono); font-size: 0.7rem; color: var(--gray);
+      font-variant-numeric: tabular-nums;
+    }
+    .tpl-head .char-count.warn { color: var(--gold); }
+
+    .tpl-input, .tpl-textarea {
+      width: 100%;
+      background: var(--hairline-soft);
+      border: 1px solid var(--hairline-soft);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: var(--body); font-size: 0.95rem; color: var(--ink);
+      line-height: 1.55;
+      outline: none;
+      resize: vertical;
+    }
+    .tpl-input:focus, .tpl-textarea:focus { border-color: var(--ink); background: #fff; }
+    .tpl-input::placeholder, .tpl-textarea::placeholder { color: var(--gray-faint); }
+    .tpl-textarea { min-height: 88px; }
+    .tpl-subj { margin-bottom: 8px; }
+
+    .tpl-chips {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px;
+      padding-top: 12px; border-top: 1px solid var(--hairline-soft);
+    }
+    .tpl-chips .lbl {
+      font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.2em;
+      text-transform: uppercase; font-weight: 600; color: var(--gray);
+      align-self: center; margin-right: 4px;
+    }
+    .chip-var {
+      display: inline-block;
+      font-family: ui-monospace, monospace; font-size: 0.7rem;
+      padding: 4px 10px; border-radius: 9999px;
+      background: #fff; border: 1px solid var(--hairline);
+      color: var(--ink); cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .chip-var:hover { background: var(--gold-tint-bg); border-color: var(--gold); }
+
+    .variant-tag { position: fixed; top: 16px; right: 16px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase; font-weight: 600; padding: 6px 12px; border: 1px solid var(--ink); border-radius: 9999px; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="variant-tag">Variant A · Hero Card Per Template</div>
+  <div class="wrap">
+    <div class="section-h2">
+      <span class="caret">▾</span>
+      <span class="num">5. Message templates</span>
+    </div>
+
+    <!-- Connection Note -->
+    <div class="tpl-card">
+      <div class="tpl-head">
+        <div class="lhs">
+          <span class="eyebrow">Connection note</span>
+          <span class="badge">Optional</span>
+        </div>
+        <span class="char-count">142 / 300</span>
+      </div>
+      <textarea class="tpl-textarea" placeholder="Hi {firstName}, I'd love to connect!">Hi {firstName}, I came across your profile and noticed you lead operations at {company}. I'd love to connect and learn how Ortus could fit your roadmap.</textarea>
+      <div class="tpl-chips">
+        <span class="lbl">Insert</span>
+        <button class="chip-var">{firstName}</button>
+        <button class="chip-var">{lastName}</button>
+        <button class="chip-var">{company}</button>
+        <button class="chip-var">{title}</button>
+      </div>
+    </div>
+
+    <!-- Group Conversation Title -->
+    <div class="tpl-card">
+      <div class="tpl-head">
+        <div class="lhs">
+          <span class="eyebrow">Group conversation title</span>
+          <span class="badge req">Required</span>
+        </div>
+      </div>
+      <input class="tpl-input" value="Introduction: {first name} <> {intro name}" />
+      <div class="tpl-chips">
+        <span class="lbl">Insert</span>
+        <button class="chip-var">{first name}</button>
+        <button class="chip-var">{intro name}</button>
+        <button class="chip-var">{intro first name}</button>
+        <button class="chip-var">{intro last name}</button>
+      </div>
+    </div>
+
+    <!-- Intro DM Body -->
+    <div class="tpl-card">
+      <div class="tpl-head">
+        <div class="lhs">
+          <span class="eyebrow">Group conversation body</span>
+          <span class="badge req">Required</span>
+        </div>
+      </div>
+      <textarea class="tpl-textarea" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name}…">Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they lead our community team and would be a great person for you to know.</textarea>
+      <div class="tpl-chips">
+        <span class="lbl">Insert</span>
+        <button class="chip-var">{first name}</button>
+        <button class="chip-var">{primary name}</button>
+        <button class="chip-var">{primary url}</button>
+        <button class="chip-var">{company}</button>
+        <button class="chip-var">{title}</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
