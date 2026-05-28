@@ -7826,7 +7826,12 @@ function dashboardNameButton(name, rowKind, rowKey) {
 
 async function refreshActiveCampaign() {
   const list = document.getElementById('active-campaign-list');
-  if (!list) return;
+  // v0.3 dashboard doesn't have #active-campaign-list — the active state is
+  // rendered by renderActiveCard from the 2s pollStatus loop. We still need
+  // to fetch status here so the queued-campaign-drain restart of pollStatus
+  // works on the v0.3 dashboard too (previously this returned early before
+  // the fetch, leaving the v0.3 active tile frozen on "No campaign running"
+  // until the operator manually re-entered the wizard).
   try {
     const status = await fetch('/api/campaign/status').then((r) => r.json());
     const isActive = status && (status.running || status.paused);
@@ -7835,6 +7840,9 @@ async function refreshActiveCampaign() {
     // it here so setCampaignButtons fires and the run-bar's Stop pill
     // re-enables. startPolling is idempotent — no-op if already ticking.
     if (isActive && typeof startPolling === 'function') startPolling();
+    // No legacy list element → v0.3 dashboard. The pollStatus restart above
+    // handles updating the v0.3 active card; nothing more to paint here.
+    if (!list) return;
     if (!isActive) {
       // Drafts belong in the Drafts tab, not Active. (refreshDashboardDrafts
       // surfaces the legacy /api/draft-name fallback so nothing is lost.)
