@@ -57,9 +57,9 @@ body.theme-light {
   /* v2.61: Mode-picker card surfaces (light) */
   --card-bg: #ffffff;
   --card-bg-hover: #fbfaf6;
-  --card-border: rgba(0, 0, 0, 0.12);
-  --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  --card-shadow-hover: 0 8px 22px rgba(0, 0, 0, 0.10);
+  --card-border: rgba(0, 0, 0, 0.18);
+  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+  --card-shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.16);
   --gold-tint-bg: rgba(247, 190, 104, 0.16);
   --gold-tint-shadow: rgba(247, 190, 104, 0.22);
 }
@@ -1727,11 +1727,11 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 
 .mode-card-title {
   font-family: var(--display);
-  font-weight: 400;
+  font-weight: 500;
   font-size: 1.25rem;
   line-height: 1.1;
   letter-spacing: 0.02em;
-  color: var(--gray);
+  color: var(--ink);
   text-transform: uppercase;
   margin-bottom: 14px;
   padding-right: 28px; /* room for the pulse dot */
@@ -1744,7 +1744,8 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   font-family: var(--mono);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
-  color: var(--gray);
+  color: var(--ink);
+  opacity: 0.82;
   line-height: 1.6;
 }
 .mode-card-bullets li {
