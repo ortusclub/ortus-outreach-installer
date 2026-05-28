@@ -3382,9 +3382,28 @@ function confirmStopCampaign() {
     if (modal) modal.classList.remove('hidden');
     return;
   }
-  if (__cockpit && __cockpit.mode === 'connect_and_introduce') {
+  // CC+IC and CC+DM both run a phase-2 monitoring loop after the
+  // connection phase. Give the operator the choice between halting
+  // everything vs. just stopping new sends and letting acceptances
+  // continue to flow through auto-intro / auto-DM dispatch.
+  if (__cockpit && (__cockpit.mode === 'connect_and_introduce' || __cockpit.mode === 'connect_and_message')) {
     const modal = document.getElementById('stop-choice-modal');
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+      const isDm = __cockpit.mode === 'connect_and_message';
+      const eyebrow = modal.querySelector('.stop-choice-eyebrow');
+      const monitorSub = modal.querySelector('.stop-choice-pill.is-monitor .stop-choice-pill-sub');
+      if (eyebrow) {
+        eyebrow.textContent = isDm
+          ? 'Stop campaign · Connect + DM'
+          : 'Stop campaign · Connect + Introduce Back';
+      }
+      if (monitorSub) {
+        monitorSub.textContent = isDm
+          ? 'Bulk-check fires now, then every 6 h for 7 days. Auto-DMs still fire on accept.'
+          : 'Bulk-check fires now, then every 6 h for 7 days. Auto-intro DMs still fire on accept.';
+      }
+      modal.classList.remove('hidden');
+    }
     return;
   }
   const modal = document.getElementById('confirm-stop-modal');
@@ -10138,16 +10157,15 @@ window.dashPauseActive = async function() {
 };
 
 window.dashStopActive = async function() {
-  if (!confirm('Stop the active campaign? It will move to Past.')) return;
-  try {
-    const r = await fetch('/api/campaign/stop', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    if (r.ok && typeof showCampaignToast === 'function') showCampaignToast('Campaign stopped');
-    if (typeof pollStatus === 'function') pollStatus();
-  } catch (err) { console.error('[v3] dashStopActive:', err); }
+  // Route through confirmStopCampaign so CC+IC / CC+DM get the
+  // "Stop everything vs. keep monitoring" choice modal, monitoring-only
+  // state hits the dedicated stop-monitoring modal, and simpler modes
+  // get the plain confirm. Previously this bypassed all of that and
+  // sent an empty body, which meant operators saw "It will move to
+  // Past" but actually got the soft stop (and CC+IC/DM had no choice).
+  if (typeof confirmStopCampaign === 'function') {
+    confirmStopCampaign();
+  }
 };
 
 window.dashRestartActive = async function() {
