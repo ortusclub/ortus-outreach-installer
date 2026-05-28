@@ -1706,6 +1706,12 @@ function onModeChange() {
 
   // Keep kinetic picker in sync
   renderModeSelector();
+
+  // Mirror the new mode onto the launch pill so the operator sees their
+  // selection without waiting for the autosave debounce.
+  if (typeof window.updateEditingBanner === 'function') {
+    try { window.updateEditingBanner(); } catch (_) {}
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -9298,6 +9304,17 @@ function initWizardDirtyTracking() {
       el.__dirtyWired = true;
     }
   }
+  // Snappier feedback for the launch pill: live-mirror the campaign name
+  // as the user types instead of waiting for the 500ms autosave debounce.
+  const nameInput = document.getElementById('campaign-name-input');
+  if (nameInput && !nameInput.__pillMirrorWired) {
+    nameInput.addEventListener('input', () => {
+      if (typeof window.updateEditingBanner === 'function') {
+        try { window.updateEditingBanner(); } catch (_) {}
+      }
+    });
+    nameInput.__pillMirrorWired = true;
+  }
 }
 document.addEventListener('DOMContentLoaded', initWizardDirtyTracking);
 if (document.readyState !== 'loading') initWizardDirtyTracking();
@@ -9412,8 +9429,24 @@ window.updateEditingBanner = function() {
   document.body.classList.add('has-launch-rail');
   // Sync the display name from the canonical campaign-name-input.
   const nameInput = document.getElementById('campaign-name-input');
+  const draftName = (nameInput?.value || '').trim() || 'Untitled draft';
   const nameEl = document.getElementById('wiz-editing-name');
-  if (nameEl) nameEl.textContent = (nameInput?.value || '').trim() || 'Untitled draft';
+  if (nameEl) nameEl.textContent = draftName;
+
+  // Mirror name + mode onto the launch pill so the operator can see at a
+  // glance what they're drafting. Mode falls back to "—" before selection.
+  const modeEl = document.getElementById('campaign-mode');
+  const modeVal = modeEl?.value || '';
+  const modeLabel = modeVal ? dashboardModeLabel(modeVal) : 'No mode yet';
+  const triggerName = document.getElementById('wiz-launch-trigger-name');
+  const triggerMode = document.getElementById('wiz-launch-trigger-mode');
+  const triggerMeta = document.getElementById('wiz-launch-trigger-meta');
+  const triggerDivider = document.getElementById('wiz-launch-trigger-divider');
+  if (triggerName) triggerName.textContent = draftName;
+  if (triggerMode) triggerMode.textContent = modeLabel;
+  if (triggerMeta) triggerMeta.hidden = false;
+  if (triggerDivider) triggerDivider.hidden = false;
+
   updateSavePip();
 };
 

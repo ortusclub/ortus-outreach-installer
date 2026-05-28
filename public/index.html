@@ -1344,7 +1344,12 @@
     <div class="wiz-launch-rail" id="wiz-launch-rail" style="display:none;">
       <div class="wiz-launch-wrap">
         <button type="button" class="wiz-launch-trigger" id="wiz-launch-trigger" onclick="window.toggleLaunchMenu(event)" aria-haspopup="menu" aria-expanded="false">
-          + Launch options
+          <span class="wiz-launch-trigger-meta" id="wiz-launch-trigger-meta" hidden>
+            <span class="wiz-launch-trigger-mode" id="wiz-launch-trigger-mode">—</span>
+            <span class="wiz-launch-trigger-name" id="wiz-launch-trigger-name">Untitled draft</span>
+          </span>
+          <span class="wiz-launch-trigger-divider" id="wiz-launch-trigger-divider" hidden></span>
+          <span class="wiz-launch-trigger-cta">+ Launch options</span>
           <svg class="wiz-launch-trigger-chev wiz-launch-trigger-chev-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
         </button>
         <div class="wiz-launch-menu opens-up" id="wiz-launch-menu" role="menu" aria-hidden="true">
