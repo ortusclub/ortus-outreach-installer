@@ -35,6 +35,15 @@
      The action cluster now lives inside the Live Status section. Keep the
      variable at 0 so the main/right-pane bottom padding collapses. */
   --runbar-h: 0px;
+
+  /* v2.61: Mode-picker card surfaces (dark) */
+  --card-bg: rgba(255, 255, 255, 0.05);
+  --card-bg-hover: rgba(255, 255, 255, 0.08);
+  --card-border: rgba(255, 255, 255, 0.18);
+  --card-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  --card-shadow-hover: 0 10px 26px rgba(0, 0, 0, 0.55);
+  --gold-tint-bg: rgba(247, 190, 104, 0.10);
+  --gold-tint-shadow: rgba(247, 190, 104, 0.15);
 }
 
 body.theme-light {
@@ -44,6 +53,15 @@ body.theme-light {
   --gray: #999999;
   --hairline: rgba(0, 0, 0, 0.15);
   --hairline-soft: rgba(0, 0, 0, 0.06);
+
+  /* v2.61: Mode-picker card surfaces (light) */
+  --card-bg: #ffffff;
+  --card-bg-hover: #fbfaf6;
+  --card-border: rgba(0, 0, 0, 0.12);
+  --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+  --card-shadow-hover: 0 8px 22px rgba(0, 0, 0, 0.10);
+  --gold-tint-bg: rgba(247, 190, 104, 0.16);
+  --gold-tint-shadow: rgba(247, 190, 104, 0.22);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1607,53 +1625,106 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Campaign Mode picker — kinetic prev / center / next
+   Campaign Mode picker — v2.61 rounded radio-cards, gold pulse on active
+   Scoped to .mode-grid so specificity (0,2,0) beats the
+   `body[data-dashboard='v3'] button { font: inherit }` rule in
+   dashboard-v0.3.css (which is 0,1,2).
    ───────────────────────────────────────────────────────────────────────── */
 .mode-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 14px;
   padding: 24px 0;
   border-top: 1px solid var(--hairline);
   border-bottom: 1px solid var(--hairline);
   margin-bottom: 32px;
 }
-.mode-card {
+.mode-grid .mode-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   text-align: left;
-  padding: 18px 20px;
-  background: transparent;
-  border: 1px solid var(--hairline);
-  border-radius: 0;
+  padding: 22px 24px 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
   cursor: pointer;
   font-family: inherit;
   color: inherit;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: background 0.2s ease, border-color 0.2s ease,
+              transform 0.2s ease, box-shadow 0.2s ease;
   min-height: 160px;
 }
-.mode-card:hover { border-color: var(--gray); }
-.mode-card.active { border-color: var(--ink); }
-.mode-card.is-coming-soon {
-  position: relative;
-  cursor: not-allowed;
-  opacity: 0.65;
-  border-style: dashed;
+.mode-grid .mode-card:hover {
+  background: var(--card-bg-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
 }
-.mode-card.is-coming-soon:hover { border-color: var(--hairline); }
+.mode-grid .mode-card.active {
+  background: var(--gold-tint-bg);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1.5px var(--gold), 0 10px 28px var(--gold-tint-shadow);
+  transform: translateY(-2px);
+}
+.mode-grid .mode-card.active:hover {
+  box-shadow: 0 0 0 1.5px var(--gold), 0 14px 34px var(--gold-tint-shadow);
+}
+
+/* Pulsing gold dot indicator on selected card — pure CSS via pseudos */
+.mode-grid .mode-card.active::before,
+.mode-grid .mode-card.active::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold);
+  pointer-events: none;
+}
+.mode-grid .mode-card.active::before {
+  opacity: 0.7;
+  animation: mode-card-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.mode-grid .mode-card.active::after {
+  box-shadow: 0 0 8px 2px rgba(247, 190, 104, 0.55);
+}
+@keyframes mode-card-ping {
+  75%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Disabled (coming-soon) */
+.mode-grid .mode-card.is-coming-soon {
+  cursor: not-allowed;
+  opacity: 0.55;
+  border-style: dashed;
+  box-shadow: none;
+}
+.mode-grid .mode-card.is-coming-soon:hover {
+  transform: none;
+  background: var(--card-bg);
+  box-shadow: none;
+}
+.mode-grid .mode-card.is-coming-soon::before,
+.mode-grid .mode-card.is-coming-soon::after { display: none; }
+
 .mode-card-badge {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 14px;
+  right: 14px;
   font-family: var(--mono);
-  font-size: 0.52rem;
+  font-size: 0.55rem;
+  font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--gray);
   border: 1px solid var(--hairline);
-  padding: 3px 8px;
+  padding: 4px 9px;
   border-radius: 9999px;
 }
+
 .mode-card-title {
   font-family: var(--display);
   font-weight: 400;
@@ -1663,8 +1734,9 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   color: var(--gray);
   text-transform: uppercase;
   margin-bottom: 14px;
+  padding-right: 28px; /* room for the pulse dot */
 }
-.mode-card.active .mode-card-title { color: var(--ink); }
+.mode-grid .mode-card.active .mode-card-title { color: var(--gold); }
 .mode-card-bullets {
   list-style: none;
   padding: 0;
@@ -1684,17 +1756,17 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   content: '✓';
   position: absolute;
   left: 0;
-  color: var(--gray);
+  color: var(--gold);
+  opacity: 0.7;
 }
-.mode-card.active .mode-card-bullets,
-.mode-card.active .mode-card-bullets li::before { color: var(--ink); }
+.mode-grid .mode-card.active .mode-card-bullets li::before { opacity: 1; }
 
 @media (max-width: 960px) {
   .mode-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 600px) {
   .mode-grid { grid-template-columns: 1fr; }
-  .mode-card { min-height: 0; }
+  .mode-grid .mode-card { min-height: 0; }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
