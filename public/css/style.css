@@ -2899,12 +2899,12 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
 }
 .alpha-knob-label {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 1.05rem;
+  font-size: 0.85rem;
   font-weight: 500;
   color: var(--ink);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  margin-bottom: 22px;
+  margin-bottom: 18px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -5248,7 +5248,7 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 }
 .alpha-throughput details.alpha-advanced > summary {
   font-family: var(--mono);
-  font-size: 1.05rem;
+  font-size: 0.85rem;
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
