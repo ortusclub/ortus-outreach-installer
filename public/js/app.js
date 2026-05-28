@@ -9378,48 +9378,171 @@ window.launchQueueIt = async function() {
   if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
 };
 
-// Schedule it — prompt for an ISO timestamp, then POST /api/schedules with
-// a one-shot cron expression matching that exact moment. Backend already
-// supports this via existing schedules infra.
-window.launchScheduleIt = async function() {
+// v2.61: Schedule modal — opens #schedule-modal and resolves to
+// { name, cron } or null. Supports both one-shot (specific date+time) and
+// recurring (weekly on selected days). No backend call here — caller is
+// responsible for gathering the rest of the campaign config and POSTing
+// to /api/schedules.
+function openScheduleModal({ defaultName = '' } = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('schedule-modal');
+    if (!modal) { resolve(null); return; }
+    const nameInput = document.getElementById('schedule-modal-name');
+    const dateInput = document.getElementById('schedule-modal-date');
+    const timeInput = document.getElementById('schedule-modal-time');
+    const dayInputs = Array.from(document.querySelectorAll('.schedule-modal-day'));
+    const summaryEl = document.getElementById('schedule-modal-summary');
+    const saveBtn = document.getElementById('schedule-modal-save');
+    const cancelBtn = document.getElementById('schedule-modal-cancel');
+    if (!nameInput || !dateInput || !timeInput || !summaryEl || !saveBtn || !cancelBtn) {
+      resolve(null); return;
+    }
+
+    // Defaults — pre-fill name from campaign field if available, date = today,
+    // time = next round hour after now.
+    nameInput.value = defaultName || '';
+    const soon = new Date(Date.now() + 60 * 60 * 1000);
+    dateInput.value = soon.toISOString().slice(0, 10);
+    timeInput.value = `${String(soon.getHours()).padStart(2, '0')}:00`;
+    dayInputs.forEach((d) => { d.checked = false; });
+
+    const computeCron = () => {
+      const time = timeInput.value || '09:00';
+      const parts = time.split(':').map((n) => parseInt(n, 10));
+      const h = parts[0]; const m = parts[1];
+      if (Number.isNaN(h) || Number.isNaN(m)) return null;
+      const days = dayInputs.filter((d) => d.checked).map((d) => d.value);
+      if (days.length > 0) {
+        const dayStr = days.length === 7 ? '*' : days.join(',');
+        return { cron: `${m} ${h} * * ${dayStr}`, kind: 'weekly', days, time };
+      }
+      if (!dateInput.value) return null;
+      const dParts = dateInput.value.split('-').map((n) => parseInt(n, 10));
+      const mm = dParts[1]; const dd = dParts[2];
+      return { cron: `${m} ${h} ${dd} ${mm} *`, kind: 'once', date: dateInput.value, time };
+    };
+
+    const DAY_LABELS = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+    const formatSummary = () => {
+      const r = computeCron();
+      if (!r) { summaryEl.textContent = '—'; return; }
+      if (r.kind === 'weekly') {
+        const labels = r.days.map((d) => DAY_LABELS[d]).join(' · ');
+        summaryEl.textContent = `Every ${labels} at ${r.time}`;
+      } else {
+        const dt = new Date(`${r.date}T${r.time}`);
+        const fmt = dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        summaryEl.textContent = `Once on ${fmt} at ${r.time}`;
+      }
+    };
+    formatSummary();
+    const reactive = [dateInput, timeInput, ...dayInputs];
+    reactive.forEach((el) => el.addEventListener('input', formatSummary));
+    reactive.forEach((el) => el.addEventListener('change', formatSummary));
+
+    modal.hidden = false;
+    setTimeout(() => { try { nameInput.focus(); } catch (_) {} }, 0);
+
+    const cleanup = () => {
+      modal.hidden = true;
+      saveBtn.removeEventListener('click', onSave);
+      cancelBtn.removeEventListener('click', onCancel);
+      reactive.forEach((el) => {
+        el.removeEventListener('input', formatSummary);
+        el.removeEventListener('change', formatSummary);
+      });
+    };
+    const onSave = () => {
+      const r = computeCron();
+      if (!r) {
+        if (typeof showCampaignToast === 'function') {
+          showCampaignToast('Pick a date+time (or at least one repeat day).');
+        }
+        return;
+      }
+      cleanup();
+      const name = (nameInput.value || '').trim() || defaultName || 'Scheduled campaign';
+      resolve({ name, cron: r.cron });
+    };
+    const onCancel = () => { cleanup(); resolve(null); };
+    saveBtn.addEventListener('click', onSave);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+if (typeof window !== 'undefined') window.openScheduleModal = openScheduleModal;
+
+// v2.61: Schedule it — opens the schedule modal, gathers the full campaign
+// config (mirrors saveQuickSchedule), POSTs to /api/schedules. Fixes the
+// previous launchScheduleIt bug where the POST omitted required fields
+// (profileIds, sheetUrl) and server returned 400.
+window.launchScheduleIt = async function () {
   _closeLaunchMenu();
-  let when;
-  if (typeof promptModal === 'function') {
-    when = await promptModal({ label: 'Schedule for ISO timestamp (e.g. 2026-05-28T10:00:00Z):' });
-  } else {
-    when = window.prompt('Schedule for ISO timestamp (e.g. 2026-05-28T10:00:00Z):');
-  }
-  if (!when) return;
-  const dt = new Date(when);
-  if (Number.isNaN(dt.getTime())) {
-    if (typeof showCampaignToast === 'function') showCampaignToast('Invalid timestamp');
+  const nameInput = document.getElementById('campaign-name-input');
+  const result = await openScheduleModal({ defaultName: (nameInput?.value || '').trim() });
+  if (!result) return;
+
+  // Validation mirrors saveQuickSchedule's prerequisites.
+  if (!Array.isArray(selectedProfileIds) || selectedProfileIds.length === 0) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Select at least one GoLogin account first.');
     return;
   }
+  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
+  if (!sheetUrl) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Enter the Google Sheet URL first.');
+    return;
+  }
+  const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 50;
+  const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
+
+  // Mirror saveQuickSchedule's delay derivation (message_only uses message-gap,
+  // others use within-batch-min/max).
+  let delayMin; let delayMax;
+  if (mode === 'message_only') {
+    const gap = parseInt(document.getElementById('message-gap')?.value, 10) || 60;
+    delayMin = Math.max(5, Math.round(gap * 0.8));
+    delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
+  } else {
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 15;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 45;
+    if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
+  }
+
+  const templates = {
+    connectionNote: document.getElementById('tpl-note')?.value || '',
+    followUp1: document.getElementById('tpl-followup')?.value || '',
+    inmailSubject: document.getElementById('tpl-inmail-subject')?.value || '',
+    inmailBody: document.getElementById('tpl-inmail-body')?.value || '',
+    openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
+    openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+  };
+
   try { await flushAutosaveImmediate(); } catch {}
-  // Build a one-shot cron for this exact date+time: M H D Mon * (DOW omitted via *)
-  const cron = `${dt.getMinutes()} ${dt.getHours()} ${dt.getDate()} ${dt.getMonth() + 1} *`;
-  const nameInput = document.getElementById('campaign-name-input');
-  const scheduleName = (nameInput?.value || '').trim() || 'Scheduled draft';
   try {
     const r = await fetch('/api/schedules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: scheduleName,
-        cron,
+        name: result.name,
+        cron: result.cron,
+        profileIds: selectedProfileIds,
+        sheetUrl,
+        mode,
+        templates,
+        dailyLimit,
+        delayMin,
+        delayMax,
         enabled: true,
-        // Other fields the schedules endpoint expects — operator can refine via the
-        // existing schedules UI if needed. The draft's config will be the source.
       }),
     });
     if (r.ok) {
-      if (typeof showCampaignToast === 'function') showCampaignToast(`Scheduled for ${dt.toLocaleString()}`);
+      if (typeof showCampaignToast === 'function') showCampaignToast('Scheduled!');
     } else {
       const body = await r.json().catch(() => ({}));
-      if (typeof showCampaignToast === 'function') showCampaignToast('Schedule failed: ' + (body.error || r.statusText));
+      if (typeof showCampaignToast === 'function') showCampaignToast(`Schedule failed: ${body.error || r.statusText}`);
     }
   } catch (err) {
     console.error('[drafts] schedule:', err);
+    if (typeof showCampaignToast === 'function') showCampaignToast('Schedule failed');
   }
 };
 

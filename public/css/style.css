@@ -2115,6 +2115,96 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   gap: 12px; justify-content: flex-end;
 }
 
+/* v2.61: Schedule modal — wider card to fit date/time/days form. */
+.schedule-modal__card {
+  width: min(560px, calc(100vw - 48px));
+  padding: 28px 30px;
+}
+.schedule-modal__title {
+  font-family: var(--display);
+  font-size: 1.8rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.schedule-modal__field {
+  display: block;
+  margin-bottom: 18px;
+}
+.schedule-modal__field-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gray);
+  margin-bottom: 10px;
+}
+.schedule-modal__optional {
+  color: var(--gray);
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  opacity: 0.7;
+}
+.schedule-modal__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 6px;
+}
+.schedule-modal__row .schedule-modal__field { margin-bottom: 12px; }
+.schedule-modal__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.schedule-modal__day {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gray);
+  background: var(--bg-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  padding: 10px 0;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+.schedule-modal__day input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0; height: 0;
+  margin: 0; padding: 0;
+}
+.schedule-modal__day:hover { border-color: var(--ink); color: var(--ink); }
+.schedule-modal__day:has(input:checked) {
+  background: var(--gold-tint-bg);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.schedule-modal__summary {
+  margin: 16px 0 24px;
+  padding: 14px 18px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--bg-soft);
+  border-left: 2px solid var(--gold);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    Preview Messages modal — reuses .prompt-modal layout, widens card + adds
    scrollable body, card-per-lead layout, char-count color states.
