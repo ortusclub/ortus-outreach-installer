@@ -145,7 +145,10 @@ test('row with missing LinkedIn URL: silently skipped, doesn\'t throw', () => {
 });
 
 // v2.14.x — pre-existing 1st-degree connection branching
-test('matched + wasInvited: stamps Connected (normal acceptance flow)', () => {
+test('matched + wasInvited: stamps Connected + Stage=Connected (v2.62 sync fix)', () => {
+  // v2.62: Stage now flips to 'Connected' alongside cc so the row reads
+  // consistently. Previously Stage stayed at 'Connect Pending' while cc
+  // showed 'Connected' — operator confusion fix.
   const rows = [baseRow({ 'Connection Request Status': 'Connection Request Sent' })];
   const { updates } = computeBulkCheckUpdates(
     rows, baseConns, linkedinColumn, stillPendingLabel,
@@ -155,8 +158,8 @@ test('matched + wasInvited: stamps Connected (normal acceptance flow)', () => {
   assert.ok(match);
   assert.equal(match.cc, 'Connected');
   assert.equal(match.checkStatus, 'Connected');
-  assert.equal(match.stage, undefined, 'wasInvited path does NOT stamp stage');
-  assert.equal(match.sender, undefined, 'wasInvited path does NOT stamp sender');
+  assert.equal(match.stage, 'Connected', 'v2.62: wasInvited path stamps stage to keep columns in sync');
+  assert.equal(match.sender, undefined, 'wasInvited path does NOT stamp sender (assigned sender stays)');
 });
 
 test('matched + NOT invited: stamps Sender + Stage = "Already connected" (pre-existing 1st-degree)', () => {
@@ -264,4 +267,142 @@ test('cap: no composeAttempts opt (undefined) defaults to allow', () => {
     connectedUrls.includes('https://linkedin.com/in/jane-doe'),
     'omitted composeAttempts must not block any URL (back-compat)'
   );
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// v2.62 — sender-scoped matching (cross-account false-positive prevention)
+// ──────────────────────────────────────────────────────────────────────
+
+const rowWithSender = (sender, overrides = {}) => baseRow({
+  Sender: sender,
+  ...overrides,
+});
+
+test('v2.62: cross-sender match → Stage="Already connected to X", no CC stamp, no connectedUrls push', () => {
+  // Row's Sender is carmella but eryca's bulk-check finds the lead in her
+  // network. Eryca should NOT stamp cc=Connected (would be a false positive
+  // for carmella's still-pending invite) and should NOT push to connectedUrls
+  // (would fire eryca's auto-DM/intro on a row that isn't hers).
+  const rows = [rowWithSender('carmella.s@ortus.solutions')];
+  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  // activeSenders = { carmella, eryca? } — no, only carmella. So eryca isn't
+  // in activeSenders. Hmm need a second sheet row with Sender=eryca to put
+  // her in activeSenders. Re-run with both senders present.
+  assert.equal(updates.length, 0, 'eryca not in activeSenders → no stamps');
+  assert.equal(connectedUrls.length, 0);
+  assert.equal(diag.skippedNotActiveSender, 1, 'caller-not-active-sender defense fired');
+});
+
+test('v2.62: cross-sender match (both senders active) → "Already connected to X" Stage, no CC stamp', () => {
+  const rows = [
+    rowWithSender('carmella.s@ortus.solutions'),
+    rowWithSender('eryca.bilazon@ortus.solutions', {
+      'First Name': 'Other',
+      'Last Name': 'Person',
+      'LinkedIn URL': 'https://linkedin.com/in/other-person',
+    }),
+  ];
+  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  // Jane is in eryca's connections (baseConns). Eryca's bulk-check runs.
+  // Jane's row has Sender=carmella. → cross-sender match.
+  const janeUpdate = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(janeUpdate, 'jane gets an informational stage stamp');
+  assert.equal(janeUpdate.stage, 'Already connected to eryca.bilazon@ortus.solutions');
+  assert.equal(janeUpdate.cc, undefined, 'cc NOT stamped — would be false positive for carmella');
+  assert.equal(janeUpdate.checkStatus, undefined, 'checkStatus NOT stamped either');
+  assert.ok(!connectedUrls.includes('https://linkedin.com/in/jane-doe'),
+    'jane NOT in connectedUrls — eryca shouldn\'t fire auto-DM on carmella\'s row');
+  assert.equal(diag.crossSender, 1);
+});
+
+test('v2.62: same-sender match still works (normal acceptance, with Stage=Connected fix)', () => {
+  const rows = [rowWithSender('eryca.bilazon@ortus.solutions')];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  const match = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(match);
+  assert.equal(match.cc, 'Connected');
+  assert.equal(match.stage, 'Connected', 'Bug 2 fix: Stage flips to Connected alongside cc');
+  assert.equal(connectedUrls.length, 1, 'auto-DM/intro can fire (same-sender)');
+});
+
+test('v2.62: cross-sender no-match does NOT downgrade to Still Pending', () => {
+  // Two-sender campaign. Jane's row Sender=carmella. Eryca's bulk-check runs
+  // but doesn't have Jane in her connections (empty conns). Eryca should NOT
+  // stamp Still Pending on carmella's row.
+  const rows = [
+    rowWithSender('carmella.s@ortus.solutions'),
+    rowWithSender('eryca.bilazon@ortus.solutions', {
+      'First Name': 'Other', 'Last Name': 'Person',
+      'LinkedIn URL': 'https://linkedin.com/in/other-person',
+    }),
+  ];
+  const emptyConns = []; // eryca has no matching connections
+  const { updates } = computeBulkCheckUpdates(
+    rows, emptyConns, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  const janeStamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(janeStamp, undefined,
+    'eryca must not stamp Still Pending on carmella\'s row');
+});
+
+test('v2.62: cross-sender match where assigned sender already stamped Connected → leave alone', () => {
+  // Carmella already stamped cc=Connected on Jane. Eryca then finds Jane.
+  // Eryca should NOT overwrite Stage with "Already connected to eryca" because
+  // the assigned sender's acceptance has already been confirmed.
+  const rows = [rowWithSender('carmella.s@ortus.solutions', {
+    'Connection Accepted Status': 'Connected',
+  }), rowWithSender('eryca.bilazon@ortus.solutions', {
+    'First Name': 'Other', 'Last Name': 'Person',
+    'LinkedIn URL': 'https://linkedin.com/in/other-person',
+  })];
+  const { updates } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  const janeStamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(janeStamp, undefined,
+    'eryca leaves the already-Connected row alone (idempotency)');
+});
+
+test('v2.62: legacy sheet with no Sender column behaves like pre-fix code', () => {
+  // baseRow doesn't include a Sender column. activeSenders is empty →
+  // senderScopingActive=false → no scoping applied → existing behavior.
+  const rows = [baseRow()];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  const match = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(match, 'legacy no-Sender sheet still gets stamped');
+  assert.equal(match.cc, 'Connected');
+  assert.equal(connectedUrls.length, 1);
+});
+
+test('v2.62: caller not in activeSenders → defensive empty return', () => {
+  // Sara is selected in the UI but no sheet row has Sara as Sender.
+  // Defense: sara's bulk-check returns empty updates.
+  const rows = [
+    rowWithSender('eryca.bilazon@ortus.solutions'),
+    rowWithSender('carmella.s@ortus.solutions', {
+      'First Name': 'Carm', 'Last Name': 'Row',
+      'LinkedIn URL': 'https://linkedin.com/in/carm-row',
+    }),
+  ];
+  const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { profileName: 'sara@ortus.solutions' }
+  );
+  assert.equal(updates.length, 0, 'sara isn\'t a campaign sender → no stamps');
+  assert.equal(connectedUrls.length, 0);
+  assert.equal(diag.skippedNotActiveSender, 2, 'defense counted all rows');
 });

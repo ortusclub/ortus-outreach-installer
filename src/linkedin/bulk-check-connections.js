@@ -54,6 +54,26 @@ function memberIdFromAny(value) {
 export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendingLabel, opts = {}) {
   const { suppressAcceptedStamp = false, profileName = '', introducedInRun = null, composeAttempts = null } = opts;
 
+  // v2.62: sender-scoped matching. Builds the set of accounts ACTIVELY
+  // running this campaign from distinct Sender values in the sheet. Used
+  // to prevent cross-account false-positive Connected stamps: if eryca's
+  // bulk-check finds a lead in her network but the row's Sender is
+  // carmella, eryca shouldn't stamp the row as Connected (carmella's
+  // invitation may still be pending). Operator's rule, verbatim:
+  // "if Antonio isn't running the campaign, who cares?"
+  //
+  // Backward-compat: empty profileName or sheets with no Sender column
+  // skip the scoping entirely (legacy single-account / pre-sender-column
+  // behavior preserved).
+  const activeSenders = new Set();
+  for (const row of rows) {
+    const s = (row['Sender'] || row['sender'] || '').toString().toLowerCase().trim();
+    if (s) activeSenders.add(s);
+  }
+  const profileNameNorm = (profileName || '').toLowerCase().trim();
+  const senderScopingActive = !!profileNameNorm && activeSenders.size > 0;
+  const callerIsActiveSender = !senderScopingActive || activeSenders.has(profileNameNorm);
+
   // Build matching sets (same logic as the inline version)
   const connectedSlugs = new Set();
   const connectedMemberIds = new Set();
@@ -79,9 +99,32 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   let dbgAlreadyIntroduced = 0;
   let dbgAlreadyUnverified = 0;
   let dbgComposeCapped = 0;
+  let dbgCrossSender = 0;
+  let dbgSkippedNotActiveSender = 0;
   const sampleSheetSlugs = [];
   const sampleSheetMemberIds = [];
   const sampleCRSValues = new Set();
+
+  // Defense: if sender scoping is active and this caller isn't a
+  // campaign sender, return empty. The bulk-check shouldn't have
+  // run for this account; we won't make it worse by touching rows.
+  if (senderScopingActive && !callerIsActiveSender) {
+    dbgSkippedNotActiveSender = rows.length;
+    return {
+      updates: [],
+      connectedUrls: [],
+      diag: {
+        rowsScanned: rows.length, withUrl: 0, withCRS: 0,
+        alreadyConnected: 0, alreadyDeclined: 0, alreadyIntroduced: 0,
+        alreadyUnverified: 0, composeCapped: 0, pidMatched: 0,
+        crossSender: 0, skippedNotActiveSender: dbgSkippedNotActiveSender,
+        slugs: connectedSlugs.size, memberIds: connectedMemberIds.size, names: connectedNames.size,
+        sampleSheetSlugs: [], sampleSheetMemberIds: [],
+        sampleConnectedSlugs, sampleConnectedMemberIds, sampleConnectedNames,
+        sampleCRSValues: new Set(),
+      },
+    };
+  }
 
   for (const row of rows) {
     dbgRowsScanned++;
@@ -117,6 +160,15 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     const firstName = (row['First Name'] || row['first name'] || row['firstName'] || '').toString().toLowerCase().trim();
     const lastName  = (row['Last Name']  || row['last name']  || row['lastName']  || '').toString().toLowerCase().trim();
     const nameKey = `${firstName} ${lastName}`.trim();
+
+    // Sender-scoping read — what account does this row's lead belong to?
+    // Empty means "no one assigned yet" → legacy behavior. Otherwise we
+    // compare against the calling profile (profileNameNorm).
+    const rowSenderRaw = (row['Sender'] || row['sender'] || '').toString().trim();
+    const rowSenderNorm = rowSenderRaw.toLowerCase();
+    const rowSenderMismatch = senderScopingActive
+      && rowSenderNorm
+      && rowSenderNorm !== profileNameNorm;
 
     const isMatch = (slug && connectedSlugs.has(slug))
       || (memberId && connectedMemberIds.has(memberId))
@@ -176,6 +228,26 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         continue;
       }
 
+      // v2.62: cross-sender match. This account has the lead in its
+      // network, but the row is assigned to a DIFFERENT campaign sender.
+      // We DON'T stamp cc (the assigned sender's invitation may still
+      // be pending), DON'T push to connectedUrls (don't fire this
+      // account's auto-DM/intro — that's the assigned sender's job),
+      // and DON'T stamp Stage if the assigned sender already wrote
+      // Connected. We DO write an informational "Already connected to
+      // {profileName}" into Stage so the operator can see at a glance
+      // that another campaign account already has this person.
+      if (rowSenderMismatch) {
+        dbgCrossSender++;
+        if (suppressAcceptedStamp) continue;
+        if (cs === 'Connected' || cs.startsWith('Already connected')) continue;
+        updates.push({
+          linkedinUrl: url,
+          stage: `Already connected to ${profileName}`,
+        });
+        continue;
+      }
+
       // Not yet introduced — queue for the auto-intro pass. Even if the
       // CC column is already 'Connected' (from a prior bulk-check), the
       // intro still needs to fire — this is the path that lets
@@ -197,9 +269,14 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         // there. In v2.13.x they're separate columns — this fills both.
         if (wasInvited) {
           // Normal acceptance — bot invited, recipient accepted.
+          // v2.62: also stamp Stage='Connected' so the Stage column
+          // reflects reality. Previously the Stage stayed at 'Connect
+          // Pending' while cc flipped to 'Connected', confusing
+          // operators reading the row at a glance.
           updates.push({
             linkedinUrl: url,
             cc: 'Connected',
+            stage: 'Connected',
             connectedAlready: 'Yes',
             checkStatus: 'Connected',
           });
@@ -228,6 +305,10 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     // Not in recent connections — stamp "Still Pending" if the bot invited.
     if (sampleCRSValues.size < 5 && requestStatus) sampleCRSValues.add(requestStatus);
     if (requestStatus !== 'Connection Request Sent') continue;
+    // v2.62: don't let other accounts' bulk-checks downgrade a row to
+    // Still Pending. Only the assigned Sender should refresh its own
+    // pending timestamp.
+    if (rowSenderMismatch) continue;
     // v2.14.x: never overwrite a row that's already known-connected or
     // already-introduced. LinkedIn's recent-connections endpoint returns at
     // most ~80 most-recent connections — older accepted invites silently
@@ -263,6 +344,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       alreadyUnverified: dbgAlreadyUnverified,
       composeCapped: dbgComposeCapped,
       pidMatched: dbgPidMatched,
+      crossSender: dbgCrossSender,
+      skippedNotActiveSender: dbgSkippedNotActiveSender,
       slugs: connectedSlugs.size,
       memberIds: connectedMemberIds.size,
       names: connectedNames.size,
