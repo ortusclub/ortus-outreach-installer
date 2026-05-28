@@ -377,8 +377,11 @@
           <div class="section-rail-line"></div>
           <button class="section-rail-action" id="past-toggle-btn" onclick="window.togglePastExpanded()">Show all</button>
         </div>
-        <!-- Collapsed summary (default) -->
-        <div class="past-collapsed" id="pastCollapsed">
+        <!-- Collapsed summary (default) — clicking the row toggles the
+             expanded list (same as the "Show all" button to the right).
+             v2.61: previously the row had cursor:pointer + hover state but
+             no onclick, so clicking did nothing. -->
+        <div class="past-collapsed" id="pastCollapsed" onclick="window.togglePastExpanded()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.togglePastExpanded();}">
           <div class="pc-count" id="pcCount">0<span class="pc-lbl">past</span></div>
           <div class="pc-summary" id="pcSummary">No past campaigns yet</div>
         </div>
