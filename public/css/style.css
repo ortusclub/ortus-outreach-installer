@@ -2921,7 +2921,11 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
   gap: 18px;
   flex-wrap: nowrap;
 }
-.alpha-knob-input {
+/* Scoped to .alpha-throughput so specificity (0,2,0) wins over
+   `body[data-dashboard='v3'] input { font: inherit }` (0,1,2) in
+   public/css/dashboard-v0.3.css line 51 — which was silently killing
+   font-size on all inputs that had only a single-class selector. */
+.alpha-throughput .alpha-knob-input {
   background: transparent;
   border: none;
   color: var(--ink);
@@ -2937,7 +2941,7 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
   -webkit-appearance: none;
   box-shadow: none;
 }
-.alpha-knob-input.alpha-pause-input { width: 100px; font-size: 4rem; }
+.alpha-throughput .alpha-knob-input.alpha-pause-input { width: 100px; font-size: 4rem; }
 .alpha-knob-input::-webkit-outer-spin-button,
 .alpha-knob-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .alpha-knob-input { -moz-appearance: textfield; }
