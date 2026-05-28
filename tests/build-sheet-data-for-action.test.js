@@ -167,6 +167,19 @@ test('already_processed connect_only → Stage = Connect Pending', () => {
   const r = buildSheetDataForAction({ action: 'already_processed', mode: 'connect_only' });
   assert.equal(r.stage, 'Connect Pending');
 });
+// v2.62: CC+IC and CC+DM share the connect-phase stamps because phase 1
+// is identical (send connection request). Phase-2 stamps (Introduction
+// Status / DM Status) are written by runAutoIntros / runAutoDms separately.
+test('already_processed connect_and_introduce → Stage = Connect Pending', () => {
+  const r = buildSheetDataForAction({ action: 'already_processed', mode: 'connect_and_introduce' });
+  assert.equal(r.stage, 'Connect Pending');
+  assert.equal(r.connectionStatus, 'Connection Request Sent');
+});
+test('already_processed connect_and_message → Stage = Connect Pending', () => {
+  const r = buildSheetDataForAction({ action: 'already_processed', mode: 'connect_and_message' });
+  assert.equal(r.stage, 'Connect Pending');
+  assert.equal(r.connectionStatus, 'Connection Request Sent');
+});
 test('already_processed message_only + introMode → Stage = IC Sent', () => {
   const r = buildSheetDataForAction({ action: 'already_processed', mode: 'message_only', introMode: true });
   assert.equal(r.stage, 'IC Sent');

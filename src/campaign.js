@@ -32,6 +32,7 @@ import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
+import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
@@ -137,7 +138,7 @@ export function shouldCloseBetweenBatches({ waitMs, closeGapMin }) {
  * All seven gates must pass. Exported for tests/idle-bulk-check.test.js.
  *
  * @param {object} ctx
- * @param {string}  ctx.mode                  - campaign mode (only connect_and_introduce triggers idle checks)
+ * @param {string}  ctx.mode                  - campaign mode (only the connect-then-followup modes connect_and_introduce / connect_and_message trigger idle checks)
  * @param {number}  ctx.campaignStartTime     - epoch ms when campaign began
  * @param {boolean} ctx.profileBrowserOpen    - is this profile's browser currently open? (in-batch trigger handles those)
  * @param {boolean} ctx.profileWeeklyLimited  - is this profile parked permanently?
@@ -147,7 +148,9 @@ export function shouldCloseBetweenBatches({ waitMs, closeGapMin }) {
  * @returns {boolean}
  */
 export function shouldFireIdleBulkCheck(ctx) {
-  if (ctx.mode !== 'connect_and_introduce') return false;
+  // v2.62: connect_and_message (CC+DM) shares the same connect-then-
+  // followup loop shape as CC+IC, so idle bulk-checks apply equally.
+  if (ctx.mode !== 'connect_and_introduce' && ctx.mode !== 'connect_and_message') return false;
   if (ctx.now - ctx.campaignStartTime < IDLE_CAMPAIGN_MIN_DURATION_MS) return false;
   if (ctx.profileBrowserOpen) return false;
   if (ctx.profileWeeklyLimited) return false;
@@ -360,11 +363,12 @@ export function extractLinkedInUrl(row, linkedinColumn) {
 
 export function getModeHint(mode, prevAction) {
   if (mode === 'connect_only') return 'force_connect';
-  // Phase 1 of connect_and_introduce is identical to connect_only — send the
-  // connection request. Phase 2 (the intro DM after acceptance) is handled
-  // by the bulk-check sweep + a follow-up pass; this mode hint just covers
-  // the per-lead connect step.
-  if (mode === 'connect_and_introduce') return 'force_connect';
+  // Phase 1 of connect_and_introduce + connect_and_message is identical to
+  // connect_only — send the connection request. Phase 2 (the post-acceptance
+  // message — intro 3-way DM for CC+IC, plain 1:1 DM for CC+DM) is handled
+  // by the bulk-check sweep + runAutoIntros/runAutoDms; this mode hint just
+  // covers the per-lead connect step.
+  if (mode === 'connect_and_introduce' || mode === 'connect_and_message') return 'force_connect';
   if (mode === 'message_only' || mode === 'introduce_back') return 'force_message';
   if (mode === 'check_status') return 'check_only';
   if (mode === 'inmail_only') return 'force_inmail';
@@ -473,6 +477,10 @@ export const campaign = {
   // to connectedUrls; auto-intro .add()s URLs after successful (or already-
   // exists) intros. Reset on each new campaign start.
   introducedInRun: new Set(),
+  // v2.62: same defense for the connect_and_message (CC+DM) mode — auto-dm
+  // .add()s URLs after a successful DM so the next bulk-check sweep doesn't
+  // re-fire the same message. Sheet stamp is `DM Status = "DM Sent"`.
+  dmSentInRun: new Set(),
   // v2.61.0: count of MESSAGE_SEND_FAILED: compose-textbox failures per URL
   // within this process. Bulk-check uses it to stop re-queueing leads that
   // fail repeatedly even when reverify-and-downgrade (auto-intro.js) was
@@ -1084,7 +1092,7 @@ export function buildSheetDataForAction({
       // the real source of truth: outreach.js returned already_processed
       // because the connect/DM/InMail is actually in flight).
       out.auditAction = 'Already in target state';
-      if (mode === 'connect_only' || mode === 'connect_and_introduce') {
+      if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
         out.stage            = 'Connect Pending';
         out.status           = 'Connection Request Sent';
         out.connectionStatus = 'Connection Request Sent';
@@ -1191,6 +1199,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign.nextCheckAt = null;
   campaign.participatingProfileIds = [];
   campaign.introducedInRun = new Set();
+  campaign.dmSentInRun = new Set();
   campaign.composeAttempts = new Map();
   campaign._paused = false;
   campaign._pauseRequested = false;
@@ -1260,6 +1269,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       log('⚠ Connect+IntroBack started WITHOUT primary person fields — auto-intros will be skipped on every acceptance. Stop and reconfigure to enable intros.');
     }
   }
+  // v2.62: same defensive guard for connect_and_message (CC+DM). If the
+  // wizard's Start handler missed enforcing the body field — or if a
+  // queued/restored payload was built before the guard — log loudly so
+  // the audit trail shows why auto-DMs never fired on acceptances.
+  if (mode === 'connect_and_message') {
+    const _ccDmBody = (templates && templates.ccDmBody || '').trim();
+    if (!_ccDmBody) {
+      log('⚠ Connect+DM started WITHOUT ccDmBody template — auto-DMs will be skipped on every acceptance. Stop and reconfigure to enable DMs.');
+    }
+  }
 
   // Normalize templates
   const tpl = {
@@ -1281,6 +1300,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     introMode: !!templates.introMode || mode === 'introduce_back',
     introName: (templates.introName || '').trim(),
     introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+    // v2.62: CC+DM (connect_and_message) phase-2 body. Plain 1:1 DM sent
+    // after acceptance, no primary person involved. runAutoDms reads
+    // tpl.ccDmBody when mode === 'connect_and_message'.
+    ccDmBody: (templates.ccDmBody || '').trim(),
+    // primaryName / primaryUrl / primaryIntroBody passed through unchanged
+    // for CC+IC's runAutoIntros — auto-dm.js ignores these fields.
+    primaryName: templates.primaryName,
+    primaryUrl: templates.primaryUrl,
+    primaryIntroBody: templates.primaryIntroBody,
   };
 
   const campaignStartTime = Date.now();
@@ -1513,7 +1541,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // Cold-lead modes — operator-confirmed: process only blank-Stage
         // rows. Any non-blank value means 'leave alone' (either a prior
         // run touched it, it's terminal, or it's a manual note).
-        if (mode === 'connect_only' || mode === 'connect_and_introduce') {
+        if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
           return stage === '';
         }
         if (mode === 'inmail_only' || mode === 'open_profile_only') {
@@ -1568,7 +1596,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
       if (status === 'done') return false;
 
-      if (mode === 'connect_only' || mode === 'connect_and_introduce') {
+      if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
         // Per-tab source of truth: only the Status column gates re-processing.
         // CC may carry residual data from past attempts (sender name, status
         // colours, "—" placeholder) and is no longer a blocker on its own.
@@ -1930,9 +1958,15 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         log(`  📡 [${pName}] Idle bulk-check — briefly reopening profile…`);
         launched = await launchProfile(profileId, token);
 
-        const willAutoIntro = !!(
+        const willAutoIntro = mode === 'connect_and_introduce' && !!(
           templates && templates.primaryName && templates.primaryName.trim() &&
           templates.primaryIntroBody && templates.primaryIntroBody.trim()
+        );
+        // v2.62: CC+DM equivalent gate. Same shape — only fires when the
+        // body template is non-empty (otherwise runAutoDms internal early-
+        // return would skip every lead anyway).
+        const willAutoDm = mode === 'connect_and_message' && !!(
+          templates && templates.ccDmBody && templates.ccDmBody.trim()
         );
         const r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn, pName, {
           // v2.14.x: stamp Connection Accepted immediately at bulk-check detection
@@ -1950,6 +1984,18 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
 
         if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           await runAutoIntros({
+            page: launched.page,
+            profileId,
+            profileName: pName,
+            sheetUrl,
+            linkedinColumn,
+            connectedUrls: r.connectedUrls,
+            templates,
+            senderFirstNames,
+            log,
+          });
+        } else if (willAutoDm && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+          await runAutoDms({
             page: launched.page,
             profileId,
             profileName: pName,
@@ -2166,11 +2212,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             // EXCEPT for modes where re-touching is intentional (message_only
             // sends DMs after acceptance; open_profile_only is fire-and-forget;
             // introduce_back fires from already-connected rows;
-            // connect_and_introduce trusts the sheet as source of truth so a
-            // cleared row gets re-processed even if the local state remembers it).
-            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && mode !== 'connect_and_introduce' && state.processed[candidateUrl]) continue;
+            // connect_and_introduce / connect_and_message trust the sheet as
+            // source of truth so a cleared row gets re-processed even if the
+            // local state remembers it).
+            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && mode !== 'connect_and_introduce' && mode !== 'connect_and_message' && state.processed[candidateUrl]) continue;
             const sheetStatus = (candidate['Connection Status'] || candidate['connection status'] || candidate['Status'] || candidate['status'] || '').toLowerCase();
-            if (mode === 'connect_only' || mode === 'connect_and_introduce') {
+            if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
               if (sheetStatus) continue;
             }
             row = candidate;
@@ -2569,13 +2616,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
 
-            // Connect + Introduce Back: piggy-back a bulk acceptance sweep
-            // on this profile's turn, but only once every 6h per
-            // (sheetId, profileId). The sweep is one Voyager call, so it
-            // doesn't materially extend the turn or risk rate-limiting.
-            // The Connected column flip in bulk-check is what later triggers
-            // the intro DM follow-up (separate pass — TODO).
-            if (mode === 'connect_and_introduce' && result.action === 'connection_sent') {
+            // Connect + Introduce Back / Connect + DM: piggy-back a bulk
+            // acceptance sweep on this profile's turn, but only once every
+            // 5 min per (sheetId, profileId). The sweep is one Voyager call,
+            // so it doesn't materially extend the turn or risk rate-limiting.
+            // The Connected column flip in bulk-check is what triggers the
+            // phase-2 follow-up (intro DM for CC+IC, plain DM for CC+DM).
+            if ((mode === 'connect_and_introduce' || mode === 'connect_and_message') && result.action === 'connection_sent') {
               try {
                 const _sheetId = _extractSheetIdFromUrl(sheetUrl);
                 const cooldown = await readBulkCheckCooldown();
@@ -2585,13 +2632,16 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 if (Date.now() - last >= IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS) {
                   log(`  📡 [${pName}] In-batch bulk Connection Status check (5-min cooldown elapsed)…`);
 
-                  // Dual-stamp avoidance: when primary fields are configured, the
-                  // auto-intro will fire for newly-Connected rows — suppress the
-                  // Connection Accepted Status stamp for those so Introduction Status
-                  // is the single source of truth.
-                  const willAutoIntro = !!(
+                  // Dual-stamp avoidance: when phase-2 will fire for newly-
+                  // Connected rows, suppress the Connection Accepted Status
+                  // stamp for those so the phase-2 status column (Introduction
+                  // Status / DM Status) is the single source of truth.
+                  const willAutoIntro = mode === 'connect_and_introduce' && !!(
                     templates && templates.primaryName && templates.primaryName.trim() &&
                     templates.primaryIntroBody && templates.primaryIntroBody.trim()
+                  );
+                  const willAutoDm = mode === 'connect_and_message' && !!(
+                    templates && templates.ccDmBody && templates.ccDmBody.trim()
                   );
 
                   const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName, {
@@ -2610,10 +2660,21 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                   cooldown[_key] = Date.now();
                   await writeBulkCheckCooldown(cooldown);
 
-                  // Auto-introduction pass via shared helper — same logic
-                  // the manual button + post-campaign scheduler use.
+                  // Phase-2 dispatch — same helper pattern, mode-routed.
                   if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
                     await runAutoIntros({
+                      page,
+                      profileId,
+                      profileName: pName,
+                      sheetUrl,
+                      linkedinColumn,
+                      connectedUrls: r.connectedUrls,
+                      templates,
+                      senderFirstNames,
+                      log,
+                    });
+                  } else if (willAutoDm && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+                    await runAutoDms({
                       page,
                       profileId,
                       profileName: pName,
@@ -2920,9 +2981,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         // v2.14: connect_and_introduce idle bulk-check pass. Each pool iteration,
         // for every profileId that's parked between batches, check if its 5-min
         // cooldown has elapsed and a semaphore slot is free — if so, briefly
-        // reopen the profile to fire a bulk-check + auto-intros, then close.
-        // All seven gates live in shouldFireIdleBulkCheck (pure, unit-tested).
-        if (mode === 'connect_and_introduce') {
+        // reopen the profile to fire a bulk-check + auto-intros/auto-DMs, then
+        // close. All seven gates live in shouldFireIdleBulkCheck (pure, unit-
+        // tested) which now also covers connect_and_message.
+        if (mode === 'connect_and_introduce' || mode === 'connect_and_message') {
           const _idleSheetId = _extractSheetIdFromUrl(sheetUrl);
           // Refresh cooldown cache if stale (2s TTL)
           if (!_idleCooldownCache || Date.now() - _idleCooldownCacheAt > 2000) {
@@ -3011,7 +3073,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // bot signature, and in-campaign idle bulk-checks already catch
     // mid-run acceptances while the 6h post-campaign scheduler catches
     // the rest.
-    if (!campaign._skipCleanup && mode === 'connect_and_introduce' && profilesThatSentAtLeastOne.size > 0) {
+    if (!campaign._skipCleanup && (mode === 'connect_and_introduce' || mode === 'connect_and_message') && profilesThatSentAtLeastOne.size > 0) {
       const updated = transitionToMonitoring(campaign, {
         now: new Date(),
         participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
@@ -3122,12 +3184,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       // sent, and logging those would mislead anyone reading the
       // Campaign Activity sheet.
       const _templateBlocks = [];
-      const _wantsConnect  = (mode === 'connect_only' || mode === 'connect_and_introduce');
+      const _wantsConnect  = (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message');
       const _wantsMessage  = (mode === 'message_only' || mode === 'introduce_back');
       const _wantsInmail   = (mode === 'inmail_only');
       const _wantsOp       = (mode === 'open_profile_only')
                           || (mode === 'connect_only' && !!messageOpenProfiles);
       const _wantsAutoIntro = (mode === 'connect_and_introduce');
+      const _wantsAutoDm    = (mode === 'connect_and_message');
       if (_wantsConnect && tpl.connectionNote)
         _templateBlocks.push(`Connection note: "${tpl.connectionNote}"`);
       if (_wantsMessage && tpl.followUpMessage)
@@ -3149,6 +3212,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         const _pBody = (templates && templates.primaryIntroBody ? templates.primaryIntroBody : '').trim();
         if (_pName) _templateBlocks.push(`Primary person: ${_pName}`);
         if (_pBody) _templateBlocks.push(`Intro DM body: "${_pBody}"`);
+      }
+      // CC+DM → post-acceptance plain 1:1 DM. No primary person.
+      if (_wantsAutoDm) {
+        const _ccDmBody = (templates && templates.ccDmBody ? templates.ccDmBody : '').trim();
+        if (_ccDmBody) _templateBlocks.push(`CC+DM body: "${_ccDmBody}"`);
       }
       campaignLogAppendRun({
         ts: new Date().toISOString(),
@@ -3176,7 +3244,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // CC+IC stop-choice modal (_skipCleanup) — the operator has explicitly
     // opted out of post-campaign monitoring.
     try {
-      const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_introduce');
+      const trackingApplies = (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message');
       if (!campaign._skipCleanup && trackingApplies && acceptanceTrackingDays > 0) {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
         // v2.14 verified: per-profile registration ensures every participating
@@ -3825,9 +3893,16 @@ export async function runMonitoringCheck(profileId, profileName) {
 
     launched = await launchProfile(profileId, token);
 
-    const willAutoIntro = !!(
+    // v2.62: phase-2 mode-routing — CC+IC fires runAutoIntros, CC+DM fires
+    // runAutoDms. campaign.mode is persisted in monitoring state so this
+    // works on resume after restart.
+    const _campaignMode = campaign.mode || '';
+    const willAutoIntro = _campaignMode === 'connect_and_introduce' && !!(
       templates.primaryName && templates.primaryName.trim() &&
       templates.primaryIntroBody && templates.primaryIntroBody.trim()
+    );
+    const willAutoDm = _campaignMode === 'connect_and_message' && !!(
+      templates.ccDmBody && templates.ccDmBody.trim()
     );
     const r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn, profileName, {
       // v2.14.x: stamp Connection Accepted immediately at bulk-check detection
@@ -3847,6 +3922,21 @@ export async function runMonitoringCheck(profileId, profileName) {
 
     if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
       await runAutoIntros({
+        page: launched.page,
+        profileId,
+        profileName,
+        sheetUrl,
+        linkedinColumn,
+        connectedUrls: r.connectedUrls,
+        templates,
+        senderFirstNames: campaign.senderFirstNames || {},
+        log: (line) => {
+          const ts3 = `[${new Date().toISOString()}]`;
+          campaign.logs.push(`${ts3} ${line}`);
+        },
+      });
+    } else if (willAutoDm && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+      await runAutoDms({
         page: launched.page,
         profileId,
         profileName,

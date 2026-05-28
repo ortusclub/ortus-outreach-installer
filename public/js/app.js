@@ -135,6 +135,7 @@ const PREVIEW_FIELD_LABELS = {
   opProfileBody: 'Open Profile Body',
   introTitle: 'Group conversation title',
   primaryIntroBody: 'Intro DM Body',
+  ccDmBody: 'Post-acceptance DM',
 };
 
 // Collects the same form state that startCampaign() sends to /api/campaign/start.
@@ -191,6 +192,10 @@ function gatherCampaignFormState() {
     primaryUrl:  _isIc
       ? ''
       : (document.getElementById('primary-person-url')?.value?.trim() || ''),
+    // v2.62: CC+DM post-acceptance body. Only meaningful when
+    // mode === 'connect_and_message'; campaign.js reads templates.ccDmBody
+    // from runAutoDms. Other modes ignore it.
+    ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
 
   const senderFirstNames = {};
@@ -1527,13 +1532,20 @@ function onModeChange() {
   if (intro) intro.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   const cadenceBlock = document.getElementById('check-cadence-block');
-  if (cadenceBlock) cadenceBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  // v2.62: cadence applies to CC+DM too (same idle bulk-check window).
+  if (cadenceBlock) cadenceBlock.style.display = (mode === 'connect_and_introduce' || mode === 'connect_and_message') ? '' : 'none';
   // v2.62: hide the 2-up row wrapper too when neither child is visible —
-  // otherwise its grid gap + top margin shows as an empty band.
+  // otherwise its grid gap + top margin shows as an empty band. CC+DM has
+  // no primary-person block (no intro) but DOES use the cadence block, so
+  // the row stays visible for CC+DM too — the empty primary slot will be
+  // hidden by primaryBlock's own display:none.
   const introRow = document.getElementById('intro-config-row');
-  if (introRow) introRow.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  if (introRow) introRow.style.display = (mode === 'connect_and_introduce' || mode === 'connect_and_message') ? '' : 'none';
   const introTitleBlock = document.getElementById('intro-title-block');
   if (introTitleBlock) introTitleBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
+  // v2.62: CC+DM post-acceptance body — its own template section.
+  const ccDmSection = document.getElementById('tpl-cc-dm-section');
+  if (ccDmSection) ccDmSection.style.display = (mode === 'connect_and_message') ? '' : 'none';
   if (tplMgmt) tplMgmt.style.display = (mode === 'check_status') ? 'none' : '';
 
   // v2.14.x: variable chips are mode-aware (CC+IC hides {intro X},
@@ -1573,7 +1585,7 @@ function onModeChange() {
     }
   }
 
-  if (mode === 'connect_only' || mode === 'connect_and_introduce') {
+  if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
     // v2.59: Yes/No toggle (templates-question) is hidden, so the
     // Connection Note section is always visible for connect modes.
     // Operator leaves the textarea empty if they don't want a note.
@@ -1659,7 +1671,7 @@ function onModeChange() {
   if (navSheet) navSheet.style.display = isPostAmp ? 'none' : '';
   // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
   // caps invitations per account per day). DM/IC/OP/InMail are unlimited.
-  const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_introduce');
+  const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message');
   const dailyKnob = document.getElementById('daily-limit-knob');
   if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
   if (isCheckStatus) {
@@ -2113,6 +2125,15 @@ const MODE_LIST = [
       'Send connection requests to new profiles',
       'Once accepted, auto-DM with an intro to a primary person',
       'End-to-end cold-lead → intro pipeline',
+    ],
+  },
+  {
+    value: 'connect_and_message',
+    name: 'Connect + DM',
+    bullets: [
+      'Send connection requests to new profiles',
+      'Once accepted, auto-DM the lead directly (no intro person)',
+      'End-to-end cold-lead → direct outreach pipeline',
     ],
   },
   {
@@ -2818,6 +2839,26 @@ async function startCampaign(opts = {}) {
       return;
     }
   }
+  // v2.62: CC+DM validation — the post-acceptance body is required.
+  // Without it, every accepted invite would silently skip the DM
+  // (auto-dm.js logs a warning but the operator never sees it).
+  if (_mode === 'connect_and_message') {
+    const _ccDmBody = (document.getElementById('tpl-cc-dm-body')?.value || '').trim();
+    if (!_ccDmBody) {
+      alert(
+        "Connect + DM can't start without the post-acceptance DM body.\n\n" +
+        'Missing:\n• Post-acceptance DM\n\n' +
+        "Without it, accepted invites can't be auto-messaged. " +
+        'Fill in the field and try again.'
+      );
+      const el = document.getElementById('tpl-cc-dm-body');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => el.focus(), 400);
+      }
+      return;
+    }
+  }
 
   // v2.58.x — IC validation: intro-name (the primary person) + Intro DM Body
   // (primary-intro-body) must both be filled. Same gate as CC+IC's primary
@@ -2902,6 +2943,8 @@ async function startCampaign(opts = {}) {
     primaryName: document.getElementById('primary-person-name')?.value?.trim() || '',
     primaryUrl:  document.getElementById('primary-person-url')?.value?.trim() || '',
     primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
+    // v2.62: CC+DM post-acceptance body — read at launch time too
+    ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
 
   // Show account queue
@@ -3895,6 +3938,7 @@ function formatMode(m) {
   const map = {
     connect_only: 'Connect',
     connect_and_introduce: 'CC+IB',
+    connect_and_message: 'CC+DM',
     introduce_back: 'IC',
     message_only: 'Message',
     inmail_only: 'InMail',
@@ -4714,6 +4758,7 @@ async function saveExistingTemplate() {
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
     primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
+    ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
   try {
     const res = await fetch('/api/templates', {
@@ -4745,6 +4790,7 @@ async function saveCurrentTemplate() {
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
     primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
+    ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
   try {
     const res = await fetch('/api/templates', {
@@ -6941,6 +6987,24 @@ function restorePrimaryPersonState() {
 window.savePrimaryPersonFields = savePrimaryPersonFields;
 document.addEventListener('DOMContentLoaded', restorePrimaryPersonState);
 if (document.readyState !== 'loading') restorePrimaryPersonState();
+
+// v2.62: CC+DM (connect_and_message) post-acceptance body. Same persist
+// pattern as savePrimaryPersonFields so the textarea repopulates after
+// navigation. No primary person fields — CC+DM only needs the body.
+function saveCcDmFields() {
+  try {
+    localStorage.setItem('ortus-cc-dm-body', document.getElementById('tpl-cc-dm-body')?.value || '');
+  } catch { /* storage blocked */ }
+}
+function restoreCcDmState() {
+  try {
+    const bodyEl = document.getElementById('tpl-cc-dm-body');
+    if (bodyEl) bodyEl.value = localStorage.getItem('ortus-cc-dm-body') || bodyEl.value;
+  } catch { /* storage blocked — DOM defaults stand */ }
+}
+window.saveCcDmFields = saveCcDmFields;
+document.addEventListener('DOMContentLoaded', restoreCcDmState);
+if (document.readyState !== 'loading') restoreCcDmState();
 // app.js is loaded as <script type="module">, so top-level `function`
 // declarations are module-scoped. onclick="setIntroMode(true)" in the HTML
 // can't see them unless we explicitly attach to window. Same pattern as
@@ -6966,6 +7030,7 @@ const DASHBOARD_MODE_LABELS = {
   open_profile_only: 'Open Profile Message',
   check_dms: 'Check DMs',
   connect_and_introduce: 'CC + IB',
+  connect_and_message: 'CC + DM',
   introduce_back: 'IC',
 };
 function dashboardModeLabel(value) {
@@ -9865,6 +9930,7 @@ window.closePreviewIntroModal = closePreviewIntroModal;
 const V3_MODE_BADGE = {
   connect_only: 'CC',
   connect_and_introduce: 'C+I',
+  connect_and_message: 'C+D',
   introduce_back: 'IB',
   message_only: 'DM',
   inmail_only: 'IM',

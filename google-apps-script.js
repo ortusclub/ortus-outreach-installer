@@ -104,7 +104,15 @@ var MODE_COLUMNS_V2 = {
   // Connection Accepted Status = 'Connected' stamp as fallback.
   connect_and_introduce: ['Connection Request Status',
                           'Connection Accepted Status',
-                          'Introduction Status']
+                          'Introduction Status'],
+  // v2.62: Connect + DM (CC+DM) — same connect-then-followup pipeline as
+  // CC+IC but phase-2 stamps DM Status instead of Introduction Status.
+  // Connection Accepted Status stays blank when the auto-DM fires (single
+  // source of truth = DM Status); rows where auto-DM doesn't fire fall
+  // back to the normal 'Connected' stamp.
+  connect_and_message:   ['Connection Request Status',
+                          'Connection Accepted Status',
+                          'DM Status']
 };
 
 // Every per-mode column across every mode — used to compute the "hide
@@ -254,6 +262,9 @@ var MODE_TRACKING_COLUMNS = {
   // Connection Status (it's that flow + an intro DM follow-up, with the
   // intro tracked elsewhere for now).
   connect_and_introduce:     ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
+  // v2.62: CC+DM uses the same tracking column set as CC+IC — it's the
+  // same connect-then-followup flow, just with a 1:1 DM in phase 2.
+  connect_and_message:       ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
   message_only:              ['Connection Request Status', 'Message',  'Account Used', 'Date of Last Action', 'Time of Last Action'],
   inmail_only:               ['Connection Request Status', 'InMail',   'Account Used', 'Date of Last Action', 'Time of Last Action'],
   open_profile_only:         ['Connection Request Status', 'OP',       'Account Used', 'Date of Last Action', 'Time of Last Action'],

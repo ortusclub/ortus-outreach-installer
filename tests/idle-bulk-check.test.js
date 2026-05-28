@@ -16,8 +16,16 @@ test('fires when all gates pass', () => {
   assert.equal(shouldFireIdleBulkCheck(baseInput()), true);
 });
 
-test('skips when mode is not connect_and_introduce', () => {
+test('skips when mode is not a connect-then-followup mode', () => {
   assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'connect_only' }), false);
+  assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'message_only' }), false);
+  assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'introduce_back' }), false);
+});
+
+// v2.62: connect_and_message (CC+DM) shares the connect-then-followup
+// loop with connect_and_introduce — idle bulk-checks apply equally.
+test('fires when mode is connect_and_message', () => {
+  assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'connect_and_message' }), true);
 });
 
 test('skips when campaign uptime < 30 min', () => {

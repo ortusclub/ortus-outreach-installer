@@ -437,6 +437,7 @@
         <option value="connect_only">Connect Only</option>
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="connect_and_introduce">Connect + Introduce Back</option>
+        <option value="connect_and_message">Connect + DM</option>
         <option value="message_only">Direct Messages</option>
         <option value="introduce_back">Introduction Campaign (3-way intro DM)</option>
         <option value="inmail_only">InMail Only</option>
@@ -1030,6 +1031,15 @@
       <h2 data-edit="h2-intro-dm">Group Conversation Body</h2>
       <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="primary-intro-body"></div>
+    </div>
+
+    <!-- v2.62: CC+DM (connect_and_message) post-acceptance body. Plain 1:1
+         DM template — no primary person, no group title. Visibility gated
+         by onModeChange to mode === 'connect_and_message'. -->
+    <div class="section tpl-section" id="tpl-cc-dm-section" style="display:none">
+      <h2 data-edit="h2-cc-dm">Post-acceptance DM</h2>
+      <textarea id="tpl-cc-dm-body" rows="5" placeholder="Hi {firstName}, thanks for connecting! I wanted to reach out because…" oninput="saveCcDmFields()"></textarea>
+      <div class="placeholder-tags" data-target="tpl-cc-dm-body"></div>
     </div>
 
     <!-- ── Open Profile (open_profile_only) ── -->

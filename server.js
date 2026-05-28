@@ -420,6 +420,9 @@ app.post('/api/templates/preview', async (req, res) => {
       // differs by mode (IC via followUpMessage, CC+IC via runAutoIntros'
       // primaryIntroBody) but the preview just needs to show the text.
       primaryIntroBody: templates.primaryIntroBody || '',
+      // v2.62 — CC+DM (connect_and_message) phase-2 body. Plain 1:1 DM
+      // after acceptance, no primary person.
+      ccDmBody: templates.ccDmBody || '',
     };
 
     // v2.11.14: extract intro-mode signals so the preview can mirror the
@@ -563,6 +566,7 @@ app.post('/api/templates/preview', async (req, res) => {
         opProfileBody: 'Open Profile Body',
         introTitle: 'Group conversation title',
         primaryIntroBody: 'Intro DM Body',
+        ccDmBody: 'CC+DM body',
       };
       for (const [key, raw] of Object.entries(tpl)) {
         if (!raw) { rendered[key] = ''; continue; }
