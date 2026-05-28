@@ -10901,17 +10901,24 @@ window.renderPastSection = async function() {
 
   let all = [];
   try {
-    const r = await fetch('/api/history?includeArchived=false');
+    // Fetch the full history (including archived rows) so onDiskIdx aligns
+    // with history.json's actual indexing — server-side filtering would
+    // make the per-row idx point to a different (possibly already-archived)
+    // record, which is the "delete does nothing" bug. Archived rows are
+    // filtered out below AFTER the on-disk idx is recorded.
+    const r = await fetch('/api/history');
     if (r.ok) all = await r.json();
   } catch (err) {
     console.error('[v3] renderPastSection fetch:', err);
   }
   if (!Array.isArray(all)) all = [];
 
-  // Display newest-first. Track each entry's ORIGINAL on-disk idx — matches
-  // existing refreshPastCampaigns convention (data.map((c, idx) => ...)) so
-  // /api/history/:idx/{archive,relaunch,log} hit the right record.
+  // Display newest-first. Record each entry's actual on-disk idx FIRST,
+  // then drop archived rows. /api/history/:idx/{archive,relaunch,log}
+  // operate by on-disk index — getting this wrong silently mutates the
+  // wrong record.
   _v3PastEntries = all.map((entry, onDiskIdx) => ({ ...entry, _originalIdx: onDiskIdx }))
+                      .filter((entry) => !entry.archived)
                       .slice().reverse();
 
   if (countEl) countEl.textContent = String(_v3PastEntries.length);
@@ -11045,7 +11052,7 @@ function v3RenderPastRow(p, displayIdx, safe) {
           <button class="dock-btn" data-tip="Open log" aria-label="Open log" onclick="window.dashOpenPastLog(${oIdx})">${V3_SVG_DOC}</button>
           <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyPastToQueue(${oIdx})">${V3_SVG_COPY}</button>
           <button class="dock-btn" data-tip="Export CSV" aria-label="Export CSV" onclick="window.dashExportPast(${oIdx})">${V3_SVG_DOWNLOAD}</button>
-          <button class="dock-btn danger" data-tip="Archive" aria-label="Archive" onclick="window.dashArchivePast(${oIdx})">${V3_SVG_ARCHIVE}</button>
+          <button class="dock-btn danger" data-tip="Delete" aria-label="Delete" onclick="window.dashArchivePast(${oIdx})">${V3_SVG_ARCHIVE}</button>
         </div>
       </div>
     </div>
@@ -11170,15 +11177,17 @@ window.dashExportPast = function(originalIdx) {
 };
 
 window.dashArchivePast = async function(originalIdx) {
-  if (!confirm('Archive this campaign? It will be hidden from the list.')) return;
+  if (!confirm('Delete this campaign? It will be removed from the list.')) return;
   try {
+    // Soft-delete on the server (history record kept for audit), shown as
+    // a hard "Delete" in the UI because "Archive" was confusing operators.
     const r = await fetch('/api/history/' + originalIdx + '/archive', { method: 'PATCH' });
     if (r.ok) {
-      if (typeof showCampaignToast === 'function') showCampaignToast('Archived');
+      if (typeof showCampaignToast === 'function') showCampaignToast('Deleted');
       if (typeof window.renderPastSection === 'function') window.renderPastSection();
     } else {
       const body = await r.json().catch(() => ({}));
-      if (typeof showCampaignToast === 'function') showCampaignToast('Archive failed: ' + (body.error || r.statusText));
+      if (typeof showCampaignToast === 'function') showCampaignToast('Delete failed: ' + (body.error || r.statusText));
     }
   } catch (err) { console.error('[v3] dashArchivePast:', err); }
 };
