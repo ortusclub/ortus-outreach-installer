@@ -6113,6 +6113,47 @@ body[data-dashboard='v3'] .past-frame.is-expanded #pastList {
   padding-left: 36px;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   v2.62: Section 4 (Throughput) — hero-pill card. Reuses the existing
+   .alpha-throughput inner structure but wraps it in the card token system
+   (white bg, soft shadow, 14px radius) matching the sheet hero pattern.
+   ───────────────────────────────────────────────────────────────────────── */
+.alpha-throughput {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  padding: 0;  /* internal sections handle their own padding */
+  margin-bottom: 14px;
+  margin-top: 12px;
+}
+.alpha-throughput .alpha-headline {
+  padding: 22px 26px 20px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.alpha-throughput .alpha-controls {
+  padding: 22px 26px;
+  margin-top: 0;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.alpha-throughput .alpha-controls.alpha-controls--two-col > div + div {
+  padding-left: 26px;  /* match horizontal rhythm of outer card padding */
+}
+.alpha-throughput .alpha-advanced {
+  padding: 0 26px;
+}
+.alpha-throughput .alpha-advanced > summary {
+  padding: 14px 0;
+}
+.alpha-throughput .alpha-advanced[open] > summary {
+  border-bottom: 1px solid var(--hairline-soft);
+  margin-bottom: 0;
+}
+.alpha-throughput .alpha-advanced-body {
+  padding: 18px 0 22px;
+}
+
 /* Unlock pill (shown when concurrency is locked at <2 accounts) */
 .unlock-pill {
   display: inline-block;
