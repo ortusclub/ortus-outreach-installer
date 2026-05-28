@@ -1801,22 +1801,30 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .launch-actions { display: flex; flex-direction: row; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .launch-actions .btn { padding: 12px 24px; font-size: 0.64rem; letter-spacing: 0.18em; flex: 0 0 auto; }
 
-/* v2.61: 4-button launch grid — Start a campaign / Queue it / Schedule it /
-   Save as draft. Lays out 2x2 within the 320px right column. The primary
-   "Start" button spans the full width on top for emphasis. */
+/* v2.61: 4-button launch column — Start a campaign / Queue it / Schedule it /
+   Save as draft. Vertical stack within the 320px right column; all buttons
+   equal width so nothing reads as orphaned. Start is the primary CTA, the
+   other three are secondary actions. */
 .launch-actions.launch-actions--four {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  justify-content: stretch;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+.launch-actions.launch-actions--four .btn {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-align: center;
+  justify-content: center;
 }
 .launch-actions.launch-actions--four #btn-start {
-  grid-column: 1 / -1;
-  padding: 16px 24px;
-  font-size: 0.72rem;
-  letter-spacing: 0.2em;
+  padding: 18px 20px;
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
 }
-.launch-actions.launch-actions--four .btn { width: 100%; padding: 12px 16px; }
 
 .launch-right {
   display: flex; flex-direction: column; gap: 18px;
