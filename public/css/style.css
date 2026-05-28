@@ -2868,7 +2868,7 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
 }
 .alpha-big {
   font-family: var(--display);
-  font-size: 5.2rem;
+  font-size: 6.8rem;
   line-height: 1;
   color: var(--gold);
   font-variant-numeric: tabular-nums;
@@ -2908,22 +2908,23 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
 .alpha-knob-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  gap: 18px;
+  flex-wrap: nowrap;
 }
 .alpha-knob-input {
   background: transparent;
   border: none;
   color: var(--ink);
   font-family: var(--display);
-  font-size: 2.6rem;
+  font-size: 4.4rem;
   line-height: 1;
-  width: 80px;
+  width: 120px;
   outline: none;
   font-variant-numeric: tabular-nums;
   padding: 0;
+  letter-spacing: 0.01em;
 }
-.alpha-knob-input.alpha-pause-input { width: 60px; }
+.alpha-knob-input.alpha-pause-input { width: 70px; font-size: 2.2rem; }
 .alpha-knob-input::-webkit-outer-spin-button,
 .alpha-knob-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .alpha-knob-input { -moz-appearance: textfield; }
@@ -5127,14 +5128,15 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
 }
 .alpha-eq-v {
   font-family: var(--display);
-  font-size: 1.6rem;
+  font-size: 2.4rem;
   line-height: 1;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 .alpha-eq-sub {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--gray);
   letter-spacing: 0.04em;
   text-align: right;
@@ -5227,33 +5229,57 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   background: rgba(247, 190, 104, 0.22);
 }
 
-/* Advanced disclosure — inline, minimal */
+/* Advanced disclosure — full-width row, prominent label, big rotating chevron */
 .alpha-throughput details.alpha-advanced {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid var(--hairline-soft);
+  margin-top: 28px;
+  border-top: 1px solid var(--hairline);
 }
 .alpha-throughput details.alpha-advanced > summary {
   font-family: var(--mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.16em;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--gray);
+  color: var(--ink);
   cursor: pointer;
   list-style: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
+  padding: 18px 0;
+  user-select: none;
+  transition: color 0.15s;
 }
+.alpha-throughput details.alpha-advanced > summary:hover { color: var(--gold); }
 .alpha-throughput details.alpha-advanced > summary::-webkit-details-marker { display: none; }
 .alpha-throughput details.alpha-advanced > summary::before {
-  content: "▸";
-  color: var(--gold);
-  font-size: 0.6rem;
-  transition: transform 0.15s;
+  content: "";
+  display: inline-block;
+  width: 14px; height: 14px;
+  border-right: 2px solid var(--gold);
+  border-bottom: 2px solid var(--gold);
+  transform: rotate(45deg);
+  transform-origin: 60% 60%;
+  margin-top: -4px;
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
 }
-.alpha-throughput details.alpha-advanced[open] > summary::before { transform: rotate(90deg); }
-.alpha-throughput details.alpha-advanced > .alpha-advanced-body { margin-top: 16px; }
+.alpha-throughput details.alpha-advanced[open] > summary::before {
+  transform: rotate(-135deg);
+  margin-top: 4px;
+}
+.alpha-throughput details.alpha-advanced > summary::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hairline-soft);
+  margin-left: 8px;
+}
+.alpha-throughput details.alpha-advanced > .alpha-advanced-body {
+  margin-top: 4px;
+  padding: 20px 0 8px;
+  border-top: 1px solid var(--hairline-soft);
+}
 
 @media (max-width: 900px) {
   .alpha-controls.alpha-controls--two-col { grid-template-columns: 1fr; gap: 24px; }
