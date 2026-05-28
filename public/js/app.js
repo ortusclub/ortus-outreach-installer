@@ -9482,7 +9482,11 @@ document.addEventListener('keydown', (e) => {
 window.launchStartNow = async function() {
   _closeLaunchMenu();
   try { await flushAutosaveImmediate(); } catch (err) { console.warn('[drafts] flush before start:', err); }
-  if (typeof addToQueueCampaign === 'function') await addToQueueCampaign();
+  // Hit /api/campaign/start (NOT /queue-only) — that endpoint fires
+  // immediately when idle, and only falls back to queueing if a campaign
+  // is already running. Earlier wiring routed this to addToQueueCampaign,
+  // which always queued regardless of idle state.
+  if (typeof startCampaign === 'function') await startCampaign();
   if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
 };
 
