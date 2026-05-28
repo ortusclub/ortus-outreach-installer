@@ -6487,9 +6487,7 @@ function computeSectionReadiness() {
   const noteOn = (() => { try { return localStorage.getItem('ortus-add-note') === '1'; } catch (_) { return false; } })();
   out.settings = {
     state: mode ? 'done' : 'empty',
-    summary: mode
-      ? (mode === 'connect_only' ? `Connect · ${noteOn ? 'with note' : 'no note'}` : _prettyMode(mode))
-      : '',
+    summary: '',
   };
 
   // Sheet — done if URL field non-empty
