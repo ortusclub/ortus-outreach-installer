@@ -815,71 +815,85 @@
       <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>
       <div class="collapsible-body">
 
-      <!-- Presets -->
-      <div class="preset-row">
-        <button type="button" class="preset" data-preset="assigned" onclick="applyPreset('assigned')">
-          <div>
-            <div class="preset-title">Assigned to me</div>
-            <div class="preset-desc">Profiles where assignee matches my identifier</div>
-          </div>
-          <div class="preset-count" id="preset-count-assigned">—</div>
+      <!-- v2.62 (variant C): slim summary bar consolidating the 3 preset
+           cells + Match Name input. Local Browser is separate because the JS
+           renders it as a full tile (checkbox + body + first-name row) into
+           #local-browser-host, which sits at the top of the profile grid. -->
+      <div class="acct-summary-bar">
+        <button type="button" class="acct-sb-stat preset" data-preset="assigned" onclick="applyPreset('assigned')">
+          <div class="acct-sb-stat-lbl">Assigned to me</div>
+          <div class="acct-sb-stat-num preset-count" id="preset-count-assigned">—</div>
+          <div class="acct-sb-stat-desc preset-desc">Profiles where assignee matches my identifier</div>
         </button>
-        <button type="button" class="preset" data-preset="pool" onclick="applyPreset('pool')">
-          <div>
-            <div class="preset-title">Unassigned Pool</div>
-            <div class="preset-desc">Shared</div>
-          </div>
-          <div class="preset-count" id="preset-count-pool">—</div>
+        <div class="acct-sb-divider"></div>
+        <button type="button" class="acct-sb-stat preset" data-preset="pool" onclick="applyPreset('pool')">
+          <div class="acct-sb-stat-lbl">Unassigned pool</div>
+          <div class="acct-sb-stat-num preset-count" id="preset-count-pool">—</div>
+          <div class="acct-sb-stat-desc preset-desc">Shared</div>
         </button>
-        <button type="button" class="preset active" data-preset="all" onclick="applyPreset('all')">
-          <div>
-            <div class="preset-title">All</div>
-            <div class="preset-desc">Show every profile</div>
-          </div>
-          <div class="preset-count" id="preset-count-all-accounts">—</div>
+        <div class="acct-sb-divider"></div>
+        <button type="button" class="acct-sb-stat preset active" data-preset="all" onclick="applyPreset('all')">
+          <div class="acct-sb-stat-lbl">All</div>
+          <div class="acct-sb-stat-num preset-count" id="preset-count-all-accounts">—</div>
+          <div class="acct-sb-stat-desc preset-desc">Show every profile</div>
         </button>
+        <div class="acct-sb-divider"></div>
+        <div class="acct-sb-match my-identity-row">
+          <label class="acct-sb-match-lbl my-identity-label" for="my-identifier">
+            Match name
+            <a href="#" id="identifier-toggle" onclick="event.preventDefault(); toggleIdentifierMode()" class="identifier-toggle-link">Override</a>
+          </label>
+          <input type="text" id="my-identifier" readonly placeholder="auto-derived from email"
+                 oninput="saveMyIdentifier()" />
+        </div>
       </div>
-      <div class="my-identity-row">
-        <label class="my-identity-label" for="my-identifier">
-          Match name <span class="my-identity-hint">(your ID in the lead sheet — links you to your assigned LinkedIn accounts)</span>
-          <a href="#" id="identifier-toggle" onclick="event.preventDefault(); toggleIdentifierMode()" class="identifier-toggle-link">Override</a>
-        </label>
-        <input type="text" id="my-identifier" readonly placeholder="auto-derived from email · click Override to edit"
-               oninput="saveMyIdentifier()" />
-      </div>
+      <div class="acct-sb-hint">Match name is your ID in the lead sheet — it links you to your assigned LinkedIn accounts. Click Override to edit.</div>
 
-      <!-- Local Browser tile — separate from the GoLogin profile grid because
-           it has unique semantics (uses local Chromium, not Orbita). Rendered
-           into this host by renderProfiles(). The first-name input is shown
-           only when the operator ticks the checkbox. -->
-      <div id="local-browser-host" class="local-browser-host"></div>
-
-      <div class="accounts-browser collapsible" id="accounts-browser">
-        <h3 class="section-toggle accounts-browser-toggle" onclick="toggleSection('accounts-browser')"><span class="caret">▾</span> <span data-edit="h3-browse">Browse Accounts</span></h3>
-        <div class="collapsible-body">
-          <input type="text" id="profile-search" placeholder="Search by name or email…" oninput="filterProfiles()" />
-          <div style="margin:8px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-            <button class="btn btn-secondary" onclick="selectAllVisible()">Select All Visible</button>
-            <button class="btn btn-secondary" onclick="deselectAll()">Deselect All</button>
-            <button class="btn btn-secondary" onclick="loadProfiles()">Refresh</button>
-            <button class="btn btn-secondary refresh-soo" id="refresh-soo-btn" onclick="refreshSoO()" title="Re-fetch account statuses from the State of Operations sheet">
-              <span>Refresh SoO</span>
-              <span class="refresh-soo-progress"><span class="refresh-soo-bar" id="refresh-soo-bar"></span></span>
-            </button>
+      <!-- v2.62 (variant C): browse panel consolidated into a single card.
+           Toolbar = search + filter chips + icon-style refresh buttons.
+           Secondary row = passover legend + bulk-select pill buttons.
+           Local Browser tile + profile grid live inside the same card. -->
+      <div class="accounts-browser browse-card collapsible" id="accounts-browser">
+        <h3 class="section-toggle browse-card-head accounts-browser-toggle" onclick="toggleSection('accounts-browser')"><span class="caret">▾</span> <span data-edit="h3-browse">Browse accounts</span></h3>
+        <div class="collapsible-body browse-card-body">
+          <div class="browse-toolbar">
+            <div class="browse-search">
+              <input type="text" id="profile-search" placeholder="Search by name or email…" oninput="filterProfiles()" />
+            </div>
+            <div class="chip-row">
+              <button type="button" class="chip active" data-filter="all" onclick="applyFilter('all')">All <span class="count" id="chip-count-all">0</span></button>
+              <button type="button" class="chip" data-filter="available" onclick="applyFilter('available')">Available <span class="count" id="chip-count-available">0</span></button>
+              <button type="button" class="chip" data-filter="in-use" onclick="applyFilter('in-use')">In use <span class="count" id="chip-count-in-use">0</span></button>
+              <button type="button" class="chip" data-filter="selected" onclick="applyFilter('selected')">Selected <span class="count" id="chip-count-selected">0</span></button>
+            </div>
+            <div class="browse-icon-row">
+              <button class="browse-icon-btn" onclick="loadProfiles()" title="Refresh profile list" aria-label="Refresh profile list">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+              </button>
+              <button class="browse-icon-btn refresh-soo" id="refresh-soo-btn" onclick="refreshSoO()" title="Re-fetch account statuses from the State of Operations sheet" aria-label="Refresh State of Operations">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+                <span class="refresh-soo-progress"><span class="refresh-soo-bar" id="refresh-soo-bar"></span></span>
+              </button>
+            </div>
           </div>
 
-          <!-- Filter chips -->
-          <div class="chip-row">
-            <button type="button" class="chip active" data-filter="all" onclick="applyFilter('all')">All <span class="count" id="chip-count-all">0</span></button>
-            <button type="button" class="chip" data-filter="available" onclick="applyFilter('available')">Available <span class="count" id="chip-count-available">0</span></button>
-            <button type="button" class="chip" data-filter="in-use" onclick="applyFilter('in-use')">In use <span class="count" id="chip-count-in-use">0</span></button>
-            <button type="button" class="chip" data-filter="selected" onclick="applyFilter('selected')">Selected only <span class="count" id="chip-count-selected">0</span></button>
+          <div class="browse-secondary">
+            <div id="passover-banner" class="passover-banner"></div>
+            <div class="browse-bulk-row">
+              <button class="bulk-pill" onclick="selectAllVisible()">Select all visible</button>
+              <button class="bulk-pill" onclick="deselectAll()">Deselect all</button>
+            </div>
           </div>
 
-          <div id="passover-banner" class="passover-banner"></div>
+          <!-- Local Browser tile — separate from the GoLogin profile grid because
+               it has unique semantics (uses local Chromium, not Orbita). Rendered
+               into this host by renderProfiles(). Lives at the top of the grid
+               area as the first selectable tile. -->
+          <div id="local-browser-host" class="local-browser-host"></div>
+
           <div id="profiles-loading">Loading profiles…</div>
           <div id="profiles-grid" class="profile-grid hidden"></div>
-          <div id="profiles-count" style="color:#8b949e; font-size:0.8rem; margin-top:4px"></div>
+          <div id="profiles-count" style="color:#8b949e; font-size:0.8rem; margin-top:8px"></div>
         </div>
       </div>
 
