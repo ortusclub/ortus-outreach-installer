@@ -1398,8 +1398,13 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 .intro-config-select {
   background: transparent; border: none; color: var(--ink);
   font-family: var(--body); font-size: 1rem; font-weight: 500; line-height: 1.45;
-  outline: none; cursor: pointer; padding: 0; margin: 0;
+  outline: none; cursor: pointer; margin: 0;
+  padding: 0 22px 0 0;  /* room for chevron on the right */
   vertical-align: baseline;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%230a0a0a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 2px center;
 }
 
 @media (max-width: 800px) {
