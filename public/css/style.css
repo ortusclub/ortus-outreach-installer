@@ -1307,15 +1307,51 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
    so the load-bearing decision gets visual weight.
    ───────────────────────────────────────────────────────────────────────── */
 
-/* Two-up row holding Primary Person + Cadence. Visibility is toggled by
-   onModeChange in app.js — the row itself flips display:none when neither
-   block applies so the grid gap doesn't show as an empty band. */
+/* Two-up row holding Primary Person + Cadence (CC+IC mode) OR
+   Sender-column picker + Intro person name (IC mode). Visibility is toggled
+   by onModeChange in app.js — the row itself flips display:none when no
+   children apply so the grid gap doesn't show as an empty band. */
 .intro-config-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
   margin-top: 18px;
+  align-items: start;
 }
+/* The left column of the IC variant holds two mutually-exclusive states
+   (empty vs filled) — both stack here so the grid column only ever has
+   one visible card. */
+.ic-extras-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* When .ic-empty / .ic-filled live inside .intro-config-card, neutralize
+   their default borders/paddings so the card chrome is the only frame. */
+.intro-config-card.ic-empty {
+  border-style: dashed;
+  text-align: center;
+  padding: 22px 22px;
+}
+.intro-config-card.ic-filled {
+  padding-top: 18px;
+  border-top: 1px solid var(--card-border);  /* match outer border, not hairline */
+}
+.intro-config-card.ic-filled > .ic-row {
+  display: block;  /* override the default 220px/1fr grid */
+  margin-bottom: 0;
+}
+/* Wide select used for the sender-column picker inside the IC mini-card */
+.intro-config-select-wide {
+  width: 100%;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-family: var(--body); font-size: 0.95rem; color: var(--ink); font-weight: 500;
+  outline: none; cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23999' stroke-width='1.5' d='M1 1.5l5 5 5-5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.intro-config-select-wide:focus { border-color: var(--ink); }
 
 .intro-config-card {
   background: var(--card-bg);

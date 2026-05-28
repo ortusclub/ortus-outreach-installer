@@ -642,61 +642,57 @@
                   previewSheet() once the column list is known.
              Both states are wrapped in #ic-extras whose visibility is gated
              by onModeChange (mode === 'introduce_back'). -->
-        <div id="ic-extras" style="display:none; margin-top:10px;">
-          <!-- Empty state -->
-          <div id="ic-extras-empty" class="ic-empty">
-            <div class="ic-empty__icon">↓</div>
-            <div class="ic-empty__lead">Press <em>Preview Sheet</em> to load the column list.</div>
-            <div class="ic-empty__sub">You'll pick which column holds the LinkedIn 1st-connection sender.</div>
-          </div>
+        <!-- v2.62: IC mode hero pills — same .intro-config-row 2-up layout
+             used by CC+IC's Primary Person + Cadence. Left cell holds the
+             sender-column picker (empty until previewSheet runs, filled
+             after). Right cell holds the intro-person name input. -->
+        <div id="ic-extras" class="intro-config-row" style="display:none;">
+          <div class="ic-extras-col">
+            <!-- Empty state — visible until previewSheet runs -->
+            <div id="ic-extras-empty" class="intro-config-card ic-empty">
+              <div class="ic-empty__icon">↓</div>
+              <div class="ic-empty__lead">Press <em>Preview Sheet</em> to load the column list.</div>
+              <div class="ic-empty__sub">You'll pick which column holds the LinkedIn 1st-connection sender.</div>
+            </div>
 
-          <!-- Filled state (after preview) -->
-          <div id="ic-extras-filled" class="ic-filled hidden">
-            <div class="ic-row">
-              <div class="ic-label-block">
-                <div class="ic-label">1st Connection<br>Column</div>
-                <div class="ic-sub">Cell values must match a GoLogin profile display name (e.g. <code>alecx@ortus.solutions</code>). Rows whose sender doesn't match are skipped.</div>
-              </div>
-              <div>
-                <select id="ic-sender-col-select" class="ic-select" onchange="_icSenderColManualPick()">
+            <!-- Filled state (after preview) -->
+            <div id="ic-extras-filled" class="intro-config-card ic-filled hidden">
+              <div class="intro-config-eyebrow">1st Connection Column</div>
+              <div class="intro-config-field">
+                <select id="ic-sender-col-select" class="ic-select intro-config-select-wide" onchange="_icSenderColManualPick()">
                   <option value="">— Use "Sender" column —</option>
                 </select>
                 <div id="ic-auto-detected-badge" class="ic-auto-detected hidden">Auto-detected from header name</div>
+                <div class="intro-config-hint">Cell values must match a GoLogin profile display name (e.g. <code>alecx@ortus.solutions</code>). Rows whose sender doesn't match are skipped.</div>
               </div>
-            </div>
-            <!-- v2.59: 'All leads already connected' Stage-filter bypass
-                 removed per operator request. The campaign loop now treats
-                 blank-Stage as 'process this row' for every active mode
-                 (Connect Only, Connect + Introduce Back, Introduction
-                 Campaign), making this toggle redundant. Backend
-                 allLeadsConnected variable kept; it just never gets set
-                 from the UI now. -->
-            <div class="ic-row" style="display:none">
-              <div class="ic-label-block">
-                <div class="ic-label">Stage<br>Filter</div>
-                <div class="ic-sub">Skip the Stage column requirement so a plain sheet works.</div>
-              </div>
-              <div>
-                <label class="ic-check">
-                  <input type="checkbox" id="ic-all-connected-toggle" />
-                  <div>
-                    <div class="ic-check-label">All leads in this sheet are already connected</div>
-                    <div class="ic-check-hint">Drops the <code>Stage = "Connected · DM Now"</code> filter. Already-sent rows still blocked by <code>Introduction Status = "IC Sent"</code>.</div>
-                  </div>
-                </label>
+              <!-- v2.59: 'All leads already connected' Stage-filter bypass
+                   kept hidden but DOM-alive for backend compatibility. -->
+              <div class="ic-row" style="display:none">
+                <div class="ic-label-block">
+                  <div class="ic-label">Stage<br>Filter</div>
+                  <div class="ic-sub">Skip the Stage column requirement so a plain sheet works.</div>
+                </div>
+                <div>
+                  <label class="ic-check">
+                    <input type="checkbox" id="ic-all-connected-toggle" />
+                    <div>
+                      <div class="ic-check-label">All leads in this sheet are already connected</div>
+                      <div class="ic-check-hint">Drops the <code>Stage = "Connected · DM Now"</code> filter. Already-sent rows still blocked by <code>Introduction Status = "IC Sent"</code>.</div>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- v2.59: Intro person input moved here from the deleted section
-               2C so the operator configures everything for an Introduction
-               Campaign inside section 2. Visibility piggybacks on #ic-extras
-               which onModeChange already gates to mode==='introduce_back'. -->
-          <div id="intro-mode-block" style="margin-top:18px; padding-top:16px; border-top:1px solid var(--hairline);">
-            <div id="intro-mode-fields">
-              <label for="intro-name" style="display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); margin-bottom:4px;">Intro person — full LinkedIn name</label>
-              <input type="text" id="intro-name" placeholder="e.g. Antonio Varlese" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
-              <div style="font-size:11px; color:var(--gray); margin-top:4px">Typed into LinkedIn's recipient typeahead. Must be a 1st-degree connection of every sender that runs this campaign.</div>
+          <!-- v2.59: Intro person input — was the only IC-specific config
+               besides the column picker. Now a mini-card on the right. -->
+          <div id="intro-mode-block" class="intro-config-card">
+            <div class="intro-config-eyebrow">Intro person · full LinkedIn name</div>
+            <div id="intro-mode-fields" class="intro-config-field">
+              <label for="intro-name" class="intro-config-label">Full name</label>
+              <input type="text" id="intro-name" class="intro-config-input" placeholder="e.g. Antonio Varlese" oninput="saveIntroFields()">
+              <div class="intro-config-hint">Typed into LinkedIn's recipient typeahead. Must be a 1st-degree connection of every sender that runs this campaign.</div>
             </div>
           </div>
         </div>
