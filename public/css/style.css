@@ -1855,8 +1855,13 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   padding: 1px 5px; border-radius: 3px;
 }
 .sheet-hero-preview .ic-filled .ic-select {
-  background: #fff; border: 1px solid var(--gold); color: var(--ink);
+  background-color: #fff;
+  border: 1px solid var(--gold);
+  color: var(--ink);
   font-weight: 500;
+  /* Use background-color above so the inherited .ic-select chevron is
+     preserved. Override the chevron tint to gold for the gold-tint context. */
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23b69653' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
 }
 
 @media (max-width: 700px) {
