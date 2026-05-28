@@ -5315,6 +5315,71 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
 .live-console__dashboard-link:hover { text-decoration: underline; }
 
 /* ─────────────────────────────────────────────────────────────────────────
+   v2.61 — Past section V3 expand pattern
+   Single bordered frame; header (collapsed summary) stays at the top
+   when the list expands beneath it. Gold chevron rotates on toggle.
+   Scoped with body[data-dashboard='v3'] .past-frame so specificity beats
+   the existing .past-collapsed rule in dashboard-v0.3.css.
+   ───────────────────────────────────────────────────────────────────────── */
+body[data-dashboard='v3'] .past-frame {
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+body[data-dashboard='v3'] .past-frame:hover { border-color: var(--ink); }
+
+body[data-dashboard='v3'] .past-frame .past-collapsed {
+  /* Override standalone-card styling — the frame owns the border now. */
+  border: 0;
+  border-radius: 0;
+  grid-template-columns: auto 1fr auto;
+  background: transparent;
+}
+body[data-dashboard='v3'] .past-frame .past-collapsed:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: transparent;
+}
+body[data-dashboard='v3'].theme-dark .past-frame .past-collapsed:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+body[data-dashboard='v3'].theme-light .past-frame .past-collapsed:hover {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+body[data-dashboard='v3'] .past-frame .past-chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--gray);
+  transition: transform 0.25s ease, color 0.15s;
+  margin-left: 8px;
+}
+body[data-dashboard='v3'] .past-frame .past-chev::before {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+body[data-dashboard='v3'] .past-frame.is-expanded .past-chev {
+  transform: rotate(90deg);
+  color: var(--gold);
+}
+
+body[data-dashboard='v3'] .past-frame #pastList {
+  display: none;
+  border-top: 1px solid var(--hairline-soft);
+}
+body[data-dashboard='v3'] .past-frame.is-expanded #pastList {
+  display: block;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
    v2.61 — Throughput section V3
    Top headline (big number + equation rows) above two-column controls.
    All colors use existing tokens so light theme works automatically.

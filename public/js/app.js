@@ -10918,20 +10918,18 @@ function v3RenderPastRow(p, displayIdx, safe) {
 }
 
 window.togglePastExpanded = function() {
-  const collapsedEl = document.getElementById('pastCollapsed');
-  const listEl = document.getElementById('pastList');
+  // v2.61: V3 expand pattern — the bordered frame (#pastFrame) contains
+  // both the header (#pastCollapsed) and the list (#pastList). Toggling
+  // .is-expanded on the frame rotates the chevron, slides the list into
+  // view, and keeps the header visible at the top. No more display:none
+  // swap between two visually-different containers.
+  const frame = document.getElementById('pastFrame');
+  const header = document.getElementById('pastCollapsed');
   const btn = document.getElementById('past-toggle-btn');
-  if (!collapsedEl || !listEl) return;
-  const isExpanded = listEl.style.display !== 'none' && listEl.style.display !== '';
-  if (!isExpanded) {
-    collapsedEl.style.display = 'none';
-    listEl.style.display = 'block';
-    if (btn) btn.textContent = 'Collapse';
-  } else {
-    collapsedEl.style.display = 'grid';
-    listEl.style.display = 'none';
-    if (btn) btn.textContent = 'Show all';
-  }
+  if (!frame) return;
+  const isExpanded = frame.classList.toggle('is-expanded');
+  if (btn) btn.textContent = isExpanded ? 'Collapse' : 'Show all';
+  if (header) header.setAttribute('aria-expanded', String(isExpanded));
 };
 
 window.dashRerunPast = async function(originalIdx) {

@@ -377,16 +377,19 @@
           <div class="section-rail-line"></div>
           <button class="section-rail-action" id="past-toggle-btn" onclick="window.togglePastExpanded()">Show all</button>
         </div>
-        <!-- Collapsed summary (default) — clicking the row toggles the
-             expanded list (same as the "Show all" button to the right).
-             v2.61: previously the row had cursor:pointer + hover state but
-             no onclick, so clicking did nothing. -->
-        <div class="past-collapsed" id="pastCollapsed" onclick="window.togglePastExpanded()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.togglePastExpanded();}">
-          <div class="pc-count" id="pcCount">0<span class="pc-lbl">past</span></div>
-          <div class="pc-summary" id="pcSummary">No past campaigns yet</div>
+        <!-- v2.61: V3 expand pattern — single bordered frame containing a
+             clickable header row (collapsed summary) and the full list
+             beneath it. Clicking the header rotates the gold chevron and
+             reveals the list inside the same frame, so there's no
+             visual jump between collapsed and expanded states. -->
+        <div class="past-frame" id="pastFrame">
+          <div class="past-collapsed past-header" id="pastCollapsed" onclick="window.togglePastExpanded()" role="button" tabindex="0" aria-expanded="false" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.togglePastExpanded();}">
+            <div class="pc-count" id="pcCount">0<span class="pc-lbl">past</span></div>
+            <div class="pc-summary" id="pcSummary">No past campaigns yet</div>
+            <span class="past-chev" aria-hidden="true"></span>
+          </div>
+          <div role="grid" aria-labelledby="sect-past" id="pastList"><!-- Phase 4 fills --></div>
         </div>
-        <!-- Expanded full list (hidden by default) -->
-        <div role="grid" aria-labelledby="sect-past" id="pastList" style="display:none;"><!-- Phase 4 fills --></div>
       </section>
     </div>
 
