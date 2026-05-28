@@ -1029,9 +1029,10 @@ select {
 .browse-card .profile-item .id { font-size: 0.56rem; margin-top: 3px; }
 .browse-card .profile-item input[type="checkbox"] { margin-top: 2px; }
 
-/* Local browser tile inside the new browse card — compact full-width tile
-   sitting at the top of the grid area. Smaller padding + body text so it
-   doesn't tower over the regular profile cards below. */
+/* Local browser tile inside the new browse card — compact full-width
+   row: [checkbox] [Local Browser] [— your system Chrome…]. Name and
+   description sit inline on the same baseline, so the row reads like
+   one sentence instead of a two-line stat block. */
 .browse-card .local-browser-host { padding: 12px 18px 0; margin: 0; }
 .browse-card .local-browser-host .local-browser-tile {
   border-radius: 8px;
@@ -1040,19 +1041,49 @@ select {
   padding: 10px 14px;
   gap: 12px;
   align-items: center;
-  grid-template-columns: auto 1fr auto;  /* checkbox · body · spacer for symmetry */
+  grid-template-columns: auto 1fr;
+}
+/* Kill the .profile-item.local-browser::before bullet inside browse-card —
+   the checkbox already signals selectability, the bullet just adds noise. */
+.browse-card .local-browser-host .local-browser-tile::before { display: none; }
+
+/* Body becomes a flex baseline row so name + description sit on one line.
+   The first-name input row (.local-browser-name-row) wraps to its own line
+   below via flex-basis: 100% when revealed. */
+.browse-card .local-browser-host .local-browser-tile .local-browser-body {
+  display: flex; align-items: baseline; gap: 10px;
+  flex-wrap: wrap;
 }
 .browse-card .local-browser-host .local-browser-tile .name {
-  font-family: var(--mono); font-size: 0.78rem; font-weight: 600;
-  letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--ink); margin-bottom: 2px;
+  font-family: var(--body);
+  font-size: 0.92rem; font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+.browse-card .local-browser-host .local-browser-tile .name::after {
+  content: " ·";
+  color: var(--gray);
+  margin-left: 4px;
 }
 .browse-card .local-browser-host .local-browser-tile .id {
-  font-size: 0.7rem; color: var(--gray); line-height: 1.4;
+  font-size: 0.78rem; color: var(--gray); line-height: 1.45;
   white-space: normal; letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--body);
+  font-weight: 400;
+  flex: 1; min-width: 200px;
 }
 .browse-card .local-browser-host .local-browser-tile > input[type="checkbox"] {
   margin-top: 0;
+  align-self: center;
+}
+/* First-name input row breaks to its own line when revealed */
+.browse-card .local-browser-host .local-browser-tile .local-browser-name-row {
+  flex-basis: 100%;
+  margin-top: 6px;
 }
 
 @media (max-width: 1100px) {
