@@ -401,6 +401,9 @@ function doPost(e) {
       case 'writeRecentConnections':
         return handleWriteRecentConnections(spreadsheet, data);
 
+      case 'clearRecentConnections':
+        return handleClearRecentConnections(spreadsheet, data);
+
       case 'getRowStatus':
         return handleGetRowStatus(sheet, data);
     }
@@ -1431,48 +1434,90 @@ function handleWriteRecentConnections(spreadsheet, data) {
     sheet.setFrozenRows(1);
   }
 
-  // Refresh strategy: read everything, filter out rows for THIS sender AND
-  // any rows whose Account isn't in the campaign's active-senders set, then
-  // write back the kept rows + the new ones in a single pass. This avoids
-  // the visible per-row deleteRow churn that made the operator watch rows
-  // blink out one at a time.
+  // Read existing rows once.
   var lastRow = sheet.getLastRow();
-  var keptRows = [];
+  var existing = [];
   if (lastRow >= 2) {
-    var existing = sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).getValues();
-    for (var r = 0; r < existing.length; r++) {
-      var rowSender = (existing[r][0] || '').toString().trim();
-      if (rowSender === sender) continue;  // current sender's rows are about to be re-added
-      if (hasActiveSenderScope && !activeSendersLower[rowSender.toLowerCase()]) continue;  // drop non-campaign accounts
-      keptRows.push(existing[r]);
-    }
+    existing = sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).getValues();
+  }
+
+  // Identity key for dedupe, scoped per account. URN (ACoAA…) wins, then
+  // Public ID slug, then first+last name. Mirrors the Node matcher's keys.
+  function _identityKey(account, urn, publicId, firstName, lastName) {
+    var acct = (account || '').toString().trim().toLowerCase();
+    var u = (urn || '').toString().trim().toLowerCase();
+    if (u) return acct + '|urn:' + u;
+    var p = (publicId || '').toString().trim().toLowerCase();
+    if (p) return acct + '|pid:' + p;
+    var n = ((firstName || '') + ' ' + (lastName || '')).toString().trim().toLowerCase();
+    return acct + '|name:' + n;
+  }
+
+  // Keep rows from other campaign accounts (drop non-campaign accounts), and
+  // keep THIS sender's existing rows too — we only ADD new people, never wipe.
+  var keptRows = [];
+  var seenKeys = {};
+  for (var r = 0; r < existing.length; r++) {
+    var rowSender = (existing[r][0] || '').toString().trim();
+    if (hasActiveSenderScope && !activeSendersLower[rowSender.toLowerCase()]) continue;
+    keptRows.push(existing[r]);
+    // existing columns: [Account, First, Last, PublicId, URN, MemberId, ...]
+    seenKeys[_identityKey(rowSender, existing[r][4], existing[r][3], existing[r][1], existing[r][2])] = true;
   }
 
   var fetchedAt = new Date().toISOString();
-  var newRows = connections.map(function(c) {
-    return [
-      sender || (c.profileSentBy || ''),
+  var appended = 0;
+  for (var i = 0; i < connections.length; i++) {
+    var c = connections[i];
+    var acct = sender || (c.profileSentBy || '');
+    var key = _identityKey(acct, c.urn, c.publicId, c.firstName, c.lastName);
+    if (seenKeys[key]) continue;     // dedupe — already in the tab for this account
+    seenKeys[key] = true;
+    keptRows.push([
+      acct,
       c.firstName || '',
       c.lastName || '',
       c.publicId || '',
-      c.urn || '',           // ACoAA… portion only
-      c.memberNumber || '',  // numeric (urn:li:member:NNN), or blank
+      c.urn || '',
+      c.memberNumber || '',
       c.connectedAt ? new Date(c.connectedAt).toISOString() : '',
       fetchedAt,
-    ];
-  });
+    ]);
+    appended++;
+  }
 
-  var allRows = keptRows.concat(newRows);
-
-  // Clear old data area, then write the combined set. setValues is one
-  // network round-trip regardless of row count, so this is fast even with
-  // hundreds of rows from multiple accounts.
+  // Rewrite the data area with the combined (kept + newly-appended) set.
   if (lastRow >= 2) {
     sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
   }
-  if (allRows.length > 0) {
-    sheet.getRange(2, 1, allRows.length, RECENT_HEADERS.length).setValues(allRows);
+  if (keptRows.length > 0) {
+    sheet.getRange(2, 1, keptRows.length, RECENT_HEADERS.length).setValues(keptRows);
   }
 
-  return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, rows: newRows.length });
+  // Return the full accumulated set so the bot matches against the tab, not
+  // the live 80-fetch. Shape mirrors the Node `conns` objects + `account`.
+  var accumulated = keptRows.map(function (row) {
+    return {
+      account: row[0], firstName: row[1], lastName: row[2],
+      publicId: row[3], urn: row[4], memberNumber: row[5],
+    };
+  });
+
+  return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, rows: appended, accumulated: accumulated });
+}
+
+// Action: clearRecentConnections — wipe the tab clean at campaign start.
+// Keeps the header row; removes all data rows. Idempotent (no-op if absent).
+function handleClearRecentConnections(spreadsheet, data) {
+  var sheet = spreadsheet.getSheetByName(RECENT_TAB_NAME);
+  if (!sheet) {
+    return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: 0 });
+  }
+  var lastRow = sheet.getLastRow();
+  var cleared = 0;
+  if (lastRow >= 2) {
+    cleared = lastRow - 1;
+    sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
+  }
+  return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: cleared });
 }
