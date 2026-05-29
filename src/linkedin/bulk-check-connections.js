@@ -455,24 +455,37 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     }
   }
 
-  // Mirror the fetched connections into a sidecar tab on the same sheet so
-  // the operator has a visible audit log of what Voyager actually returned.
-  // Best-effort — failures are non-fatal to the bulk-check flow.
+  // Mirror the fetched connections into the accumulating sidecar tab and get
+  // back the full accumulated, sender-scoped set. That set — not the live
+  // 80-fetch — is what we match against (the tab is the Bible). Best-effort:
+  // if the round-trip fails, fall back to the live fetch attributed to this
+  // sweeping profile so a sweep is never worse than the pre-tab behavior.
+  let matchSet = null;
   try {
     const sidecarRows = conns.map((c) => ({
       firstName: c.firstName || '',
       lastName: c.lastName || '',
       publicId: c.publicId || '',
-      // LinkedIn URN column carries just the ACoAA… portion (no
-      // `urn:li:fsd_profile:` prefix) — same convention as the campaign tab.
       urn: memberIdFromAny(c.urn) || memberIdFromAny(c.publicId) || '',
       memberNumber: c.memberNumber || '',
       connectedAt: c.connectedAt || 0,
       profileSentBy: pName || '',
     }));
-    await writeRecentConnectionsTab(sheetUrl, pName, sidecarRows, activeSendersList);
+    matchSet = await writeRecentConnectionsTab(sheetUrl, pName, sidecarRows, activeSendersList);
   } catch (err) {
     console.warn(`[bulk-check] sidecar tab write failed: ${err.message}`);
+  }
+  if (!Array.isArray(matchSet)) {
+    // Degrade: match against the live fetch, attributed to the sweeping account.
+    console.warn('[bulk-check] accumulated set unavailable — matching against live fetch');
+    matchSet = conns.map((c) => ({
+      firstName: c.firstName || '',
+      lastName: c.lastName || '',
+      publicId: c.publicId || '',
+      urn: memberIdFromAny(c.urn) || memberIdFromAny(c.publicId) || '',
+      memberNumber: c.memberNumber || '',
+      account: pName || '',
+    }));
   }
 
   // Build a single human-readable timestamp for every "Still Pending" stamp
@@ -484,7 +497,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
 
   const { updates, connectedUrls, diag } = computeBulkCheckUpdates(
     rows,
-    conns,
+    matchSet,
     linkedinColumn,
     stillPendingLabel,
     {

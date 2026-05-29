@@ -507,3 +507,32 @@ test('attribution: name-only match (no slug/urn overlap) still attributes to the
   assert.equal(jane.cc, 'Connected', 'name match attributed to assigned sender → Connected');
   assert.ok(connectedUrls.includes('https://linkedin.com/in/jane-d-99'));
 });
+
+test('live-fallback contract: conn attributed to sweeping profile → assigned-sender row reads Connected', () => {
+  // Mirrors bulkCheckConnections' degrade path: when the accumulated tab set
+  // is unavailable, the live fetch is attributed to the sweeping profile
+  // (account = pName). A row assigned to that same sender must read Connected.
+  const rows = [rowWithSender('carmella.s@ortus.solutions')];
+  const attributed = [connWithAccount('carmella.s@ortus.solutions')];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, attributed, linkedinColumn, stillPendingLabel,
+    { profileName: 'carmella.s@ortus.solutions' }
+  );
+  const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(jane.cc, 'Connected', 'live-fetch attributed to sweeper → Connected');
+  assert.ok(connectedUrls.includes('https://linkedin.com/in/jane-doe'));
+});
+
+test('live-fallback contract: account-less conn does NOT mark a sender-scoped row Connected (why attribution is required)', () => {
+  // If the fallback forgot to attribute (account = ''), the assigned-sender
+  // row would NOT read Connected — documenting why bulkCheckConnections must
+  // set account = pName on the degrade path.
+  const rows = [rowWithSender('carmella.s@ortus.solutions')];
+  const accountLess = [connWithAccount('')]; // account: ''
+  const { updates } = computeBulkCheckUpdates(
+    rows, accountLess, linkedinColumn, stillPendingLabel,
+    { profileName: 'carmella.s@ortus.solutions' }
+  );
+  const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.notEqual(jane && jane.cc, 'Connected', 'account-less conn must not produce a Connected stamp on a scoped row');
+});
