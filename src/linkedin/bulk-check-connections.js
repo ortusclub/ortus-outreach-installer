@@ -74,23 +74,39 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   const senderScopingActive = !!profileNameNorm && activeSenders.size > 0;
   const callerIsActiveSender = !senderScopingActive || activeSenders.has(profileNameNorm);
 
-  // Build matching sets (same logic as the inline version)
-  const connectedSlugs = new Set();
-  const connectedMemberIds = new Set();
-  const connectedNames = new Set();
+  // Build account-attributed match indexes. Each connection carries the
+  // `account` (campaign Sender) that owns it — supplied by the caller from
+  // the accumulated "Recent Connections" tab, or attributed to the sweeping
+  // profile on the live-fetch fallback path. Key → Set<accountNorm>.
+  // CONTRACT: on a sender-scoped sheet the caller MUST set `account` on every
+  // conn. An account-less conn ('') won't match a row whose Sender is set, so
+  // bulkCheckConnections attributes the live-fetch fallback to the sweeping
+  // profile (see bulk-check-connections.js fallback path).
+  const slugToAccounts = new Map();
+  const memberIdToAccounts = new Map();
+  const nameToAccounts = new Map();
+  const accountDisplay = new Map(); // accountNorm → original-case (for stamps)
+  const _addAcct = (map, key, acct) => {
+    if (!key) return;
+    let set = map.get(key);
+    if (!set) { set = new Set(); map.set(key, set); }
+    set.add(acct);
+  };
   for (const c of conns) {
-    if (c.publicId) connectedSlugs.add(c.publicId.toLowerCase());
+    const acctRaw = (c.account || '').toString().trim();
+    const acct = acctRaw.toLowerCase();
+    if (acct && !accountDisplay.has(acct)) accountDisplay.set(acct, acctRaw);
+    if (c.publicId) _addAcct(slugToAccounts, c.publicId.toLowerCase(), acct);
     const mid = memberIdFromAny(c.urn) || memberIdFromAny(c.publicId);
-    if (mid) connectedMemberIds.add(mid);
+    if (mid) _addAcct(memberIdToAccounts, mid, acct);
     const nameKey = `${(c.firstName || '').toLowerCase().trim()} ${(c.lastName || '').toLowerCase().trim()}`.trim();
-    if (nameKey && nameKey !== ' ') connectedNames.add(nameKey);
+    if (nameKey && nameKey !== ' ') _addAcct(nameToAccounts, nameKey, acct);
   }
 
-  // Snapshot a few extracted IDs from the connections list so we can
-  // eyeball-compare against what's in the sheet rows.
-  const sampleConnectedSlugs = [...connectedSlugs].slice(0, 3);
-  const sampleConnectedMemberIds = [...connectedMemberIds].slice(0, 3);
-  const sampleConnectedNames = [...connectedNames].slice(0, 3);
+  // Snapshot a few extracted IDs for the diag eyeball-compare.
+  const sampleConnectedSlugs = [...slugToAccounts.keys()].slice(0, 3);
+  const sampleConnectedMemberIds = [...memberIdToAccounts.keys()].slice(0, 3);
+  const sampleConnectedNames = [...nameToAccounts.keys()].slice(0, 3);
 
   const updates = [];
   const connectedUrls = [];
@@ -118,7 +134,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         alreadyConnected: 0, alreadyDeclined: 0, alreadyIntroduced: 0,
         alreadyUnverified: 0, composeCapped: 0, pidMatched: 0,
         crossSender: 0, skippedNotActiveSender: dbgSkippedNotActiveSender,
-        slugs: connectedSlugs.size, memberIds: connectedMemberIds.size, names: connectedNames.size,
+        slugs: slugToAccounts.size, memberIds: memberIdToAccounts.size, names: nameToAccounts.size,
         sampleSheetSlugs: [], sampleSheetMemberIds: [],
         sampleConnectedSlugs, sampleConnectedMemberIds, sampleConnectedNames,
         sampleCRSValues: new Set(),
@@ -170,9 +186,18 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       && rowSenderNorm
       && rowSenderNorm !== profileNameNorm;
 
-    const isMatch = (slug && connectedSlugs.has(slug))
-      || (memberId && connectedMemberIds.has(memberId))
-      || (nameKey && nameKey !== ' ' && connectedNames.has(nameKey));
+    // Which campaign accounts have this lead in the accumulated tab?
+    const _matchedAccounts = new Set();
+    for (const a of (slugToAccounts.get(slug) || [])) _matchedAccounts.add(a);
+    if (memberId) for (const a of (memberIdToAccounts.get(memberId) || [])) _matchedAccounts.add(a);
+    if (nameKey && nameKey !== ' ') for (const a of (nameToAccounts.get(nameKey) || [])) _matchedAccounts.add(a);
+    const isMatch = _matchedAccounts.size > 0;
+
+    // Is the row's ASSIGNED sender among the accounts connected to this lead?
+    // Legacy sheets (no Sender column) → any match counts as the assigned one.
+    const _assignedConnected = rowSenderNorm
+      ? _matchedAccounts.has(rowSenderNorm)
+      : isMatch;
 
     // v2.14.x: extract requestStatus BEFORE the isMatch branch so we can
     // distinguish two match cases:
@@ -228,22 +253,22 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         continue;
       }
 
-      // v2.62: cross-sender match. This account has the lead in its
-      // network, but the row is assigned to a DIFFERENT campaign sender.
-      // We DON'T stamp cc (the assigned sender's invitation may still
-      // be pending), DON'T push to connectedUrls (don't fire this
-      // account's auto-DM/intro — that's the assigned sender's job),
-      // and DON'T stamp Stage if the assigned sender already wrote
-      // Connected. We DO write an informational "Already connected to
-      // {profileName}" into Stage so the operator can see at a glance
-      // that another campaign account already has this person.
-      if (rowSenderMismatch) {
+      // v2.62 (v2.63 attribution): a DIFFERENT campaign sender owns this
+      // lead in the tab — the row's assigned sender's invite may still be
+      // pending. DON'T stamp cc, DON'T push to connectedUrls (the assigned
+      // sender fires its own auto-DM/intro), DON'T overwrite an existing
+      // Connected stamp. DO write an informational "Already connected to
+      // <owning account>" into Stage so the operator sees which campaign
+      // account already has this person.
+      if (!_assignedConnected) {
         dbgCrossSender++;
         if (suppressAcceptedStamp) continue;
         if (cs === 'Connected' || cs.startsWith('Already connected')) continue;
+        let _other = '';
+        for (const a of _matchedAccounts) { if (a) { _other = accountDisplay.get(a) || a; break; } }
         updates.push({
           linkedinUrl: url,
-          stage: `Already connected to ${profileName}`,
+          stage: `Already connected to ${_other}`,
         });
         continue;
       }
@@ -291,7 +316,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
           // immediately in the same bulk-check pass.
           updates.push({
             linkedinUrl: url,
-            sender: profileName,
+            sender: rowSenderRaw || accountDisplay.get([..._matchedAccounts].find((a) => a) || '') || profileName,
             stage: 'Already connected',
             cc: 'Already connected',
             connectedAlready: 'Yes',
@@ -346,9 +371,9 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       pidMatched: dbgPidMatched,
       crossSender: dbgCrossSender,
       skippedNotActiveSender: dbgSkippedNotActiveSender,
-      slugs: connectedSlugs.size,
-      memberIds: connectedMemberIds.size,
-      names: connectedNames.size,
+      slugs: slugToAccounts.size,
+      memberIds: memberIdToAccounts.size,
+      names: nameToAccounts.size,
       sampleSheetSlugs,
       sampleSheetMemberIds,
       sampleConnectedSlugs,

@@ -12,7 +12,7 @@ const baseRow = (overrides = {}) => ({
 });
 
 const baseConns = [
-  { firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111' },
+  { firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'eryca.bilazon@ortus.solutions' },
 ];
 
 const stillPendingLabel = 'Still Pending (2026-05-12 10:00)';
@@ -83,8 +83,9 @@ test('SB-2 fix: row with CC=Connected but BLANK introductionStatus is re-pushed 
     'Connected Status': '',
     // No Introduction Status — intro never fired or got interrupted.
   })];
+  const conns = [{ firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'kenya5@ortus.solutions' }];
   const { connectedUrls, updates } = computeBulkCheckUpdates(
-    rows, baseConns, linkedinColumn, stillPendingLabel,
+    rows, conns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
   );
   assert.equal(connectedUrls.length, 1, 'CC=Connected without intro IS re-pushed for retry');
@@ -102,8 +103,9 @@ test('SB-2 fix: row with CC=Connected + Skipped — Stop pressed is re-pushed fo
     'Connection Accepted Status': 'Connected',
     'Introduction Status': 'Skipped — Stop pressed',
   })];
+  const conns = [{ firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'kenya5@ortus.solutions' }];
   const { connectedUrls, updates } = computeBulkCheckUpdates(
-    rows, baseConns, linkedinColumn, stillPendingLabel,
+    rows, conns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
   );
   assert.equal(connectedUrls.length, 1, 'Skipped status is treated as not-yet-introduced');
@@ -150,8 +152,9 @@ test('matched + wasInvited: stamps Connected + Stage=Connected (v2.62 sync fix)'
   // consistently. Previously Stage stayed at 'Connect Pending' while cc
   // showed 'Connected' — operator confusion fix.
   const rows = [baseRow({ 'Connection Request Status': 'Connection Request Sent' })];
+  const conns = [{ firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'kenya5@ortus.solutions' }];
   const { updates } = computeBulkCheckUpdates(
-    rows, baseConns, linkedinColumn, stillPendingLabel,
+    rows, conns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
   );
   const match = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
@@ -168,8 +171,9 @@ test('matched + NOT invited: stamps Sender + Stage = "Already connected" (pre-ex
   // account that's connected so the operator sees WHO, and pre-filter
   // can skip the row from new connect sends.
   const rows = [baseRow({ 'Connection Request Status': '' })];
+  const conns = [{ firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'kenya5@ortus.solutions' }];
   const { updates, connectedUrls } = computeBulkCheckUpdates(
-    rows, baseConns, linkedinColumn, stillPendingLabel,
+    rows, conns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
   );
   assert.equal(connectedUrls.length, 1, 'still pushed to connectedUrls so runAutoIntros fires');
@@ -184,8 +188,9 @@ test('matched + NOT invited: stamps Sender + Stage = "Already connected" (pre-ex
 
 test('matched + NOT invited + suppressAcceptedStamp: no stamp but URL returned for IC DM', () => {
   const rows = [baseRow({ 'Connection Request Status': '' })];
+  const conns = [{ firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'kenya5@ortus.solutions' }];
   const { updates, connectedUrls } = computeBulkCheckUpdates(
-    rows, baseConns, linkedinColumn, stillPendingLabel,
+    rows, conns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: true, profileName: 'kenya5@ortus.solutions' }
   );
   assert.equal(connectedUrls.length, 1, 'connectedUrls still populated');
@@ -203,8 +208,9 @@ test('row marked "Already connected" + introduction already made: skipped (no re
     'Connected Status': '',
     'Introduction Status': 'Introduction Made',
   })];
+  const conns = [{ firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'kenya5@ortus.solutions' }];
   const { connectedUrls, updates } = computeBulkCheckUpdates(
-    rows, baseConns, linkedinColumn, stillPendingLabel,
+    rows, conns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
   );
   assert.equal(connectedUrls.length, 0, 'intro-already-made rows not re-pushed');
@@ -405,4 +411,99 @@ test('v2.62: caller not in activeSenders → defensive empty return', () => {
   assert.equal(updates.length, 0, 'sara isn\'t a campaign sender → no stamps');
   assert.equal(connectedUrls.length, 0);
   assert.equal(diag.skippedNotActiveSender, 2, 'defense counted all rows');
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// Tab-as-Bible — per-entry account attribution (accumulated tab matching)
+// ──────────────────────────────────────────────────────────────────────
+
+// A connection carrying an explicit owning account (as stored in the tab).
+const connWithAccount = (account, overrides = {}) => ({
+  firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe',
+  urn: 'ACoAAaaa', memberNumber: '111', account, ...overrides,
+});
+
+test('accumulation: lead owned by the row\'s assigned sender → Connected (even when another account is sweeping)', () => {
+  // Carmella swept earlier and recorded Jane under her account. Eryca sweeps
+  // now; the accumulated tab still carries Jane@carmella. Jane's row is
+  // assigned to carmella → must read Connected, NOT cross-sender.
+  const rows = [
+    rowWithSender('carmella.s@ortus.solutions'),
+    rowWithSender('eryca.bilazon@ortus.solutions', {
+      'First Name': 'Other', 'Last Name': 'Person',
+      'LinkedIn URL': 'https://linkedin.com/in/other-person',
+    }),
+  ];
+  const accumulated = [connWithAccount('carmella.s@ortus.solutions')];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, accumulated, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(jane, 'jane gets stamped');
+  assert.equal(jane.cc, 'Connected', 'assigned-sender ownership → Connected');
+  assert.ok(connectedUrls.includes('https://linkedin.com/in/jane-doe'));
+});
+
+test('attribution: lead owned ONLY by a different campaign sender → "Already connected to <that account>"', () => {
+  const rows = [
+    rowWithSender('carmella.s@ortus.solutions'),
+    rowWithSender('eryca.bilazon@ortus.solutions', {
+      'First Name': 'Other', 'Last Name': 'Person',
+      'LinkedIn URL': 'https://linkedin.com/in/other-person',
+    }),
+  ];
+  // Jane is owned by eryca in the tab, but her row is assigned to carmella.
+  const accumulated = [connWithAccount('eryca.bilazon@ortus.solutions')];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, accumulated, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(jane);
+  assert.equal(jane.stage, 'Already connected to eryca.bilazon@ortus.solutions');
+  assert.equal(jane.cc, undefined, 'no Connected stamp on another sender\'s row');
+  assert.ok(!connectedUrls.includes('https://linkedin.com/in/jane-doe'));
+});
+
+test('attribution: lead owned by BOTH assigned sender and another → Connected wins', () => {
+  const rows = [
+    rowWithSender('carmella.s@ortus.solutions'),
+    rowWithSender('eryca.bilazon@ortus.solutions', {
+      'First Name': 'Other', 'Last Name': 'Person',
+      'LinkedIn URL': 'https://linkedin.com/in/other-person',
+    }),
+  ];
+  const accumulated = [
+    connWithAccount('carmella.s@ortus.solutions'),
+    connWithAccount('eryca.bilazon@ortus.solutions'),
+  ];
+  const { updates } = computeBulkCheckUpdates(
+    rows, accumulated, linkedinColumn, stillPendingLabel,
+    { profileName: 'eryca.bilazon@ortus.solutions' }
+  );
+  const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(jane.cc, 'Connected', 'assigned sender owns it → Connected regardless of others');
+});
+
+test('attribution: name-only match (no slug/urn overlap) still attributes to the owning account', () => {
+  // The tab entry shares neither publicId nor urn with the row's URL — only
+  // the first+last name matches. Attribution must still flow through the
+  // nameToAccounts index so the assigned-sender decision is correct.
+  const rows = [rowWithSender('carmella.s@ortus.solutions', {
+    'First Name': 'Jane', 'Last Name': 'Doe',
+    'LinkedIn URL': 'https://linkedin.com/in/jane-d-99',
+  })];
+  const accumulated = [{
+    firstName: 'Jane', lastName: 'Doe', publicId: 'someone-else-slug',
+    urn: 'ACoAAzzz', memberNumber: '999', account: 'carmella.s@ortus.solutions',
+  }];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, accumulated, linkedinColumn, stillPendingLabel,
+    { profileName: 'carmella.s@ortus.solutions' }
+  );
+  const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-d-99');
+  assert.ok(jane, 'name-only match still produces a stamp');
+  assert.equal(jane.cc, 'Connected', 'name match attributed to assigned sender → Connected');
+  assert.ok(connectedUrls.includes('https://linkedin.com/in/jane-d-99'));
 });
