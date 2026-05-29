@@ -1467,6 +1467,11 @@ function handleWriteRecentConnections(spreadsheet, data) {
 
   var fetchedAt = new Date().toISOString();
   var appended = 0;
+  // Note: this append isn't gated by activeSendersLower. If `sender` isn't a
+  // campaign Sender, its rows get written now and evicted on the next sweep's
+  // kept-rows filter. Harmless — the bot's matcher (computeBulkCheckUpdates
+  // Guard-1) returns empty for a non-active-sender caller, so nothing is ever
+  // stamped from these rows; this is just transient write churn.
   for (var i = 0; i < connections.length; i++) {
     var c = connections[i];
     var acct = sender || (c.profileSentBy || '');

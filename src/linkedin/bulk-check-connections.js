@@ -2,13 +2,19 @@
  * Bulk Connection Status check.
  *
  * Replaces the per-lead Voyager-degree check with a single paginated fetch
- * of the account's recent connections, then matches against pending invites
- * in the sheet. Matched rows get Connected Status = 'Connected' written
- * back via the existing batchUpdate path.
+ * of the account's recent connections. Each sweep appends its fetch into the
+ * per-campaign "Recent Connections" tab (the accumulating source of truth),
+ * then matches sheet rows against that ACCUMULATED set — not the live fetch —
+ * so acceptances that fall off LinkedIn's ~80-most-recent window are still
+ * remembered. Matched rows get Connected Status = 'Connected' written back
+ * via the existing batchUpdate path.
  *
- * Match key: LinkedIn public identifier (the slug after /in/). Both the
- * sheet's URL column and the connections payload carry this, so collision
- * risk is effectively zero.
+ * Match keys (any one hits): LinkedIn public-id slug, ACoAA member id (URN),
+ * or first+last name — each attributed to the owning campaign Sender (the
+ * `account` field). "Is this lead connected?" is answered from the account
+ * that owns the connection in the tab, not from which profile is sweeping:
+ * the row's assigned Sender owning it → Connected; only a different campaign
+ * sender owning it → "Already connected to <that account>".
  *
  * Caller is responsible for cooldown gating + navigating the page to a
  * LinkedIn URL before invoking (so JSESSIONID is present for Voyager).
