@@ -25,7 +25,7 @@ import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
-import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz } from './sheets-writer.js';
+import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
 import { opsLogEvent, campaignLogAppendRun } from './log-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
@@ -1215,6 +1215,17 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   const _resumeTotal = resumeContext && Number.isFinite(Number(resumeContext.totalProcessed)) ? Number(resumeContext.totalProcessed) : 0;
   campaign.processedToday = 0;
   campaign.totalProcessed = _resumeTotal;
+  // Tab-as-Bible: the "Recent Connections" tab is a per-campaign record. Wipe
+  // it clean at the start of a NEW campaign so stale rows from a prior run on
+  // the same sheet can't produce false matches. On resume, keep the tab — the
+  // accumulated record belongs to the campaign we're continuing.
+  if (!resumeContext) {
+    try {
+      await clearRecentConnectionsTab(sheetUrl);
+    } catch (err) {
+      console.warn(`[campaign] Recent Connections wipe failed (non-fatal): ${err.message}`);
+    }
+  }
   campaign.totalTargets = 0;
   campaign.mode = mode;
   // ISO timestamp marking when this campaign run began. Used by the
