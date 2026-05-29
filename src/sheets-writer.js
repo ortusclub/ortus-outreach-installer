@@ -295,7 +295,7 @@ export async function appendReplyRow(sheetUrl, reply) {
  * Omit (legacy callers) → no filtering, current behavior preserved.
  */
 export async function writeRecentConnectionsTab(sheetUrl, sender, connections, activeSenders) {
-  if (!getWebAppUrl()) return false;
+  if (!getWebAppUrl()) return null;
   const sheetId = extractSheetId(sheetUrl);
   try {
     const result = await postToWebApp({
@@ -306,13 +306,36 @@ export async function writeRecentConnectionsTab(sheetUrl, sender, connections, a
       activeSenders: Array.isArray(activeSenders) ? activeSenders : [],
     });
     if (result?.ok) {
-      console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}"`);
-      return true;
+      console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}" (accumulated: ${Array.isArray(result.accumulated) ? result.accumulated.length : 0})`);
+      return Array.isArray(result.accumulated) ? result.accumulated : [];
     }
     if (result?.error) console.warn(`[sheets-writer] writeRecentConnections failed: ${result.error}`);
-    return false;
+    return null;
   } catch (err) {
     console.warn(`[sheets-writer] writeRecentConnections threw: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Wipe the "Recent Connections" tab clean (keeps the header row). Called once
+ * at campaign start so the tab is a fresh per-campaign record. Best-effort —
+ * returns false on any failure; a stale tab is non-fatal (active-sender
+ * scoping still prevents foreign-account false positives).
+ */
+export async function clearRecentConnectionsTab(sheetUrl) {
+  if (!getWebAppUrl()) return false;
+  const sheetId = extractSheetId(sheetUrl);
+  try {
+    const result = await postToWebApp({ action: 'clearRecentConnections', sheetId });
+    if (result?.ok) {
+      console.log('[sheets-writer] ✓ Cleared "Recent Connections" tab');
+      return true;
+    }
+    if (result?.error) console.warn(`[sheets-writer] clearRecentConnections failed: ${result.error}`);
+    return false;
+  } catch (err) {
+    console.warn(`[sheets-writer] clearRecentConnections threw: ${err.message}`);
     return false;
   }
 }
