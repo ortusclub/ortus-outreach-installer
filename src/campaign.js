@@ -55,16 +55,22 @@ import * as browserSemaphore from './browser-semaphore.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
-// v2.14 — per-mode bulk-check cadence. connect_and_introduce mode lowers
-// the in-campaign cooldown from 6h → 5 min so acceptances detected mid-run
-// can trigger intro DMs before the campaign ends. Other modes keep the 6h
-// floor via BULK_CHECK_INTERVAL_MS below.
-const IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-// Idle-account bulk-checks only fire for campaigns that have been running
-// long enough to be worth optimizing. Short campaigns rely on the in-batch
-// trigger alone. Used by the idle-bulk-check trigger added in a follow-up
-// task; defined here so both triggers share one source of truth.
-const IDLE_CAMPAIGN_MIN_DURATION_MS = 30 * 60 * 1000;
+// v2.71 — first-hour blackout + 1/hr-per-account cap on automatic
+// bulk-checks. No bulk-check fires in the first 60 min of a campaign;
+// after that, each (sheet, profile) pair is capped at one bulk-check
+// per hour. Manual /api/bulk-check-now bypasses both rules.
+//
+// The single 60-min constant below serves as both:
+//   • per-(sheet, profile) cooldown (in-batch trigger + idle trigger)
+//   • idle-trigger first-hour campaign-age gate (IDLE_CAMPAIGN_MIN_DURATION_MS)
+// The in-batch trigger also enforces FIRST_HOUR_BLACKOUT_MS explicitly
+// against campaign.startedAt so the very first profile turn doesn't fire
+// at minute 1 just because the cooldown file shows "never checked".
+const IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const FIRST_HOUR_BLACKOUT_MS = 60 * 60 * 1000;
+// Same 60-min floor as the cooldown — the idle trigger already double-
+// counted as the first-hour gate, this keeps them in sync.
+const IDLE_CAMPAIGN_MIN_DURATION_MS = 60 * 60 * 1000;
 // Per-(profileId, sheetId) timestamp of the last bulk Connection Status
 // check. Used to gate the bulk-check to once every BULK_CHECK_INTERVAL_MS
 // per profile per sheet, avoiding redundant Voyager hits.
@@ -1501,24 +1507,18 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       if (!url) return false;
 
       if (icAllConnectedBypass) {
-        // v2.59 split IC into its own "Intro Status" column (short-form,
-        // operator-friendly). CC+IC's auto-intro still writes the legacy
-        // "Introduction Status" (long-form) via auto-intro.js. The bypass
-        // must check BOTH headers so an IC re-run on a previously-sent
-        // sheet (regardless of which column header it has) treats
-        // "IC Sent" as terminal. Without both aliases, an operator with
-        // a "Intro Status" sheet would re-send already-sent rows at the
-        // filter stage (the in-loop re-validation at L2206 caught it
-        // eventually but only after wasted profile navigation).
+        // v2.71: Intro Status is a one-shot column. ANY non-empty value
+        // is terminal — 'IC Sent', 'Introduction Made', 'Failed — …',
+        // 'Skipped — …', operator notes, anything. Operator must clear
+        // the cell manually to re-enable a retry. Both header aliases
+        // checked because CC+IC writes long-form 'Introduction Status'
+        // and pure IC writes short-form 'Intro Status'.
         const introStatus = (
           row['Intro Status'] || row['intro status'] || row['Intro status'] ||
           row['Introduction Status'] || row['introduction status'] ||
           row['Introduction status'] || row['introStatus'] || ''
         ).toString().trim();
-        // Already sent → terminal. Anything else (blank or "Failed —" reason)
-        // is eligible for this run.
-        if (introStatus === 'IC Sent') return false;
-        return true;
+        return introStatus === '';
       }
 
       if (dmAllConnectedBypass) {
@@ -2672,20 +2672,26 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             consecutive429s.set(profileId, 0);
 
             // Connect + Introduce Back / Connect + DM: piggy-back a bulk
-            // acceptance sweep on this profile's turn, but only once every
-            // 5 min per (sheetId, profileId). The sweep is one Voyager call,
-            // so it doesn't materially extend the turn or risk rate-limiting.
+            // acceptance sweep on this profile's turn, but with two gates:
+            // (a) first-hour blackout — no sweep in the first 60 min of the
+            //     campaign at all (gives LinkedIn time to actually start
+            //     accepting; sweeping at minute 1 is wasted Voyager calls).
+            // (b) per-(sheetId, profileId) cap — at most 1 sweep / hour.
             // The Connected column flip in bulk-check is what triggers the
             // phase-2 follow-up (intro DM for CC+IC, plain DM for CC+DM).
+            // Manual /api/bulk-check-now bypasses both (operator override).
             if ((mode === 'connect_and_introduce' || mode === 'connect_and_message') && result.action === 'connection_sent') {
               try {
+                const _campaignStartMs = campaign.startedAt ? Date.parse(campaign.startedAt) : Date.now();
+                const _campaignAgeMs = Date.now() - _campaignStartMs;
                 const _sheetId = _extractSheetIdFromUrl(sheetUrl);
                 const cooldown = await readBulkCheckCooldown();
                 const _key = bulkCheckKey(_sheetId, profileId);
                 const last = cooldown[_key] || 0;
-                // v2.14: per-mode interval — 5 min for connect_and_introduce (was 6h).
-                if (Date.now() - last >= IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS) {
-                  log(`  📡 [${pName}] In-batch bulk Connection Status check (5-min cooldown elapsed)…`);
+                if (_campaignAgeMs < FIRST_HOUR_BLACKOUT_MS) {
+                  // first-hour blackout — skip silently to avoid log spam
+                } else if (Date.now() - last >= IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS) {
+                  log(`  📡 [${pName}] In-batch bulk Connection Status check (60-min cooldown elapsed)…`);
 
                   // Dual-stamp avoidance: when phase-2 will fire for newly-
                   // Connected rows, suppress the Connection Accepted Status
@@ -3827,7 +3833,12 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
     } finally {
       // Reschedule ONLY if still in monitoring state (operator may have stopped mid-fire)
       if (campaign.state === 'monitoring') {
-        const ms = (campaign.checkIntervalMinutes || 60) * 60_000;
+        // v2.71: enforce 1/hr-per-account cap on monitoring sweeps too.
+        // Floor the operator-chosen cadence at 60 min — anything tighter
+        // would breach the global rule. Wizard UI still lets them pick
+        // smaller values; this is the runtime safety net.
+        const cadenceMin = Math.max(60, campaign.checkIntervalMinutes || 60);
+        const ms = cadenceMin * 60_000;
         // v2.14.x: schedule the next tick from the PREVIOUS nextCheckAt
         // boundary, not from "now" (which is whenever the bulk-check
         // happened to finish). Without this, a 1-2 min bulk-check

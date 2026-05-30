@@ -258,9 +258,13 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         row['Introduction Status'] || row['introduction status'] || ''
       ).toString().trim();
 
-      // Authoritative intro-already-done signals: sheet-side (cross-restart)
-      // and in-memory blacklist (this-process, beats CSV cache lag).
-      if (introductionStatus === 'Introduction Made' || introductionStatus === 'Introduction Already Made') {
+      // v2.71: Introduction Status is a one-shot column. ANY value blocks
+      // re-attempts — 'Introduction Made', 'IC Sent', 'Failed — …',
+      // 'Skipped — …', operator notes, anything. Operator intent: never
+      // retry an intro automatically; manual reset (clear the cell) is the
+      // explicit re-enable signal. Previously only the two success strings
+      // blocked, so failed/skipped rows looped on every bulk-check sweep.
+      if (introductionStatus !== '') {
         dbgAlreadyIntroduced++;
         continue;
       }
@@ -385,10 +389,12 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     // even though the lead IS still a connection. Operator screenshot
     // 2026-05-16: Cindy (intro'd 14:48) shown as "Still Pending (17:07)".
     if (cs === 'Connected' || cs === 'Already connected') continue;
+    // v2.71: any non-empty Intro Status blocks the Still-Pending downgrade
+    // too — same one-shot semantics as the connectedUrls gate above.
     const _introStatusForGuard = (
       row['Introduction Status'] || row['introduction status'] || ''
     ).toString().trim();
-    if (_introStatusForGuard === 'Introduction Made' || _introStatusForGuard === 'Introduction Already Made') continue;
+    if (_introStatusForGuard !== '') continue;
     dbgWithCRS++;
     // Same dual-write as the matched branch — see comment above.
     updates.push({

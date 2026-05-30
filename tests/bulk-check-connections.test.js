@@ -94,11 +94,12 @@ test('SB-2 fix: row with CC=Connected but BLANK introductionStatus is re-pushed 
   assert.equal(stamp, undefined, 'no CC re-stamp when already Connected');
 });
 
-test('SB-2 fix: row with CC=Connected + Skipped — Stop pressed is re-pushed for intro retry', () => {
-  // Specifically tests the new 'Skipped — Stop pressed' / 'Skipped — browser
-  // closed' status from auto-intro.js's graceful-abort path. These statuses
-  // must be treated identically to 'no intro status' — re-push for retry,
-  // do not re-stamp CC.
+test('v2.71: row with CC=Connected + Skipped — Stop pressed is NOT re-pushed (Intro Status one-shot)', () => {
+  // v2.71 spec change: Intro Status is one-shot. ANY non-empty value blocks
+  // a retry — 'Skipped — Stop pressed', 'Skipped — browser closed',
+  // 'Failed — …', operator notes, anything. Operator must clear the cell
+  // manually to re-enable. Reverses the SB-2 design where Skipped statuses
+  // were treated as re-introducible.
   const rows = [baseRow({
     'Connection Accepted Status': 'Connected',
     'Introduction Status': 'Skipped — Stop pressed',
@@ -108,7 +109,7 @@ test('SB-2 fix: row with CC=Connected + Skipped — Stop pressed is re-pushed fo
     rows, conns, linkedinColumn, stillPendingLabel,
     { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
   );
-  assert.equal(connectedUrls.length, 1, 'Skipped status is treated as not-yet-introduced');
+  assert.equal(connectedUrls.length, 0, 'any non-empty Intro Status blocks re-intro');
   const stamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
   assert.equal(stamp, undefined, 'no CC re-stamp');
 });
