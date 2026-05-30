@@ -76,19 +76,57 @@ test('computePillState: precedence — paused beats throttle', () => {
   assert.equal(r.dot, 'gray');
 });
 
-// ── shouldShowConsole ────────────────────────────────────────────────────
-test('shouldShowConsole: hidden when no campaign running', () => {
-  assert.equal(shouldShowConsole({ running: false, hash: '#/new' }), false);
+// ── computePillState: roster + state ──────────────────────────────────────
+test('computePillState: surfaces selected account roster, marks active one', () => {
+  const r = computePillState({
+    ...baseStatus,
+    currentProfile: 'Marlon',
+    profileNames: ['Marlon', 'Priya', 'Dev'],
+  });
+  assert.deepEqual(r.accounts, [
+    { name: 'Marlon', active: true },
+    { name: 'Priya', active: false },
+    { name: 'Dev', active: false },
+  ]);
 });
 
-test('shouldShowConsole: hidden on dashboard hash (#/) even when running', () => {
-  assert.equal(shouldShowConsole({ running: true, hash: '#/' }), false);
+test('computePillState: empty roster when no profileNames', () => {
+  const r = computePillState({ ...baseStatus, profileNames: undefined });
+  assert.deepEqual(r.accounts, []);
 });
 
-test('shouldShowConsole: hidden on empty hash (treated as dashboard)', () => {
-  assert.equal(shouldShowConsole({ running: true, hash: '' }), false);
+test('computePillState: running with null/idle server state → display "running"', () => {
+  // Server sends raw campaign.state, which is null (→ idle) during active
+  // sending. The footer must NOT read "idle" while running.
+  const r = computePillState({ ...baseStatus, running: true, state: null });
+  assert.equal(r.state, 'running');
 });
 
-test('shouldShowConsole: visible when running and off dashboard', () => {
+test('computePillState: monitoring state surfaces as "monitoring"', () => {
+  const r = computePillState({ ...baseStatus, running: false, state: 'monitoring' });
+  assert.equal(r.state, 'monitoring');
+});
+
+// ── shouldShowConsole (persistent monitor) ────────────────────────────────
+test('shouldShowConsole: visible whenever running, regardless of route', () => {
+  assert.equal(shouldShowConsole({ running: true, hash: '#/' }), true);
+  assert.equal(shouldShowConsole({ running: true, hash: '' }), true);
   assert.equal(shouldShowConsole({ running: true, hash: '#/new' }), true);
+});
+
+test('shouldShowConsole: visible while paused', () => {
+  assert.equal(shouldShowConsole({ running: false, paused: true }), true);
+});
+
+test('shouldShowConsole: visible during monitoring (after stop)', () => {
+  assert.equal(shouldShowConsole({ running: false, state: 'monitoring' }), true);
+});
+
+test('shouldShowConsole: visible when a roster is staged (before/after a run)', () => {
+  assert.equal(shouldShowConsole({ running: false, hasRoster: true }), true);
+});
+
+test('shouldShowConsole: hidden only when fully idle with no roster', () => {
+  assert.equal(shouldShowConsole({ running: false, paused: false, state: 'idle', hasRoster: false }), false);
+  assert.equal(shouldShowConsole({}), false);
 });

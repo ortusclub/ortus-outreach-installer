@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Console — 4 size/layout sketches (v1)</title>
+<style>
+  /* Real app tokens (from public/css/style.css). The console is a permanently
+     dark surface, so it pins its own light tokens regardless of page theme. */
+  :root{
+    --ink:#fafafa; --gray:#9a9a9a; --dim:#6f6f6f;
+    --hairline:rgba(255,255,255,.18); --hairline-soft:rgba(255,255,255,.08);
+    --surface:rgba(11,11,11,.97); --panel:rgba(20,20,20,.92);
+    --gold:#c9a227; --blue:#4a7bb8; --green:#4caf50;
+    --body:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    --display:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#ececed;color:#0a0a0a;font-family:var(--body);padding:28px 32px 80px}
+  .page-h{font-size:1.5rem;font-weight:700;letter-spacing:-.01em;margin:0 0 4px}
+  .page-sub{color:#555;font-size:.9rem;margin:0 0 6px;max-width:760px;line-height:1.5}
+  .fields-note{color:#777;font-size:.78rem;margin:0 0 28px;max-width:760px;line-height:1.5}
+  .fields-note code{background:#dfe0e2;padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.72rem}
+
+  .variant{margin:0 0 46px}
+  .variant-head{display:flex;align-items:baseline;gap:12px;margin:0 0 4px}
+  .variant-tag{font-family:var(--mono);font-size:.72rem;font-weight:700;letter-spacing:.08em;
+    background:#0a0a0a;color:#fafafa;padding:3px 9px;border-radius:9999px}
+  .variant-name{font-size:1.05rem;font-weight:650;margin:0}
+  .variant-desc{color:#555;font-size:.84rem;margin:6px 0 16px;max-width:780px;line-height:1.5}
+
+  /* ── shared console primitives (dark surface) ───────────────────── */
+  .lc{background:var(--surface);color:var(--ink);border:1px solid var(--hairline);
+    box-shadow:0 18px 50px rgba(0,0,0,.4);backdrop-filter:blur(10px)}
+  .lc-dot{display:inline-block;width:8px;height:8px;border-radius:9999px;background:var(--green);
+    box-shadow:0 0 0 3px rgba(76,175,80,.18)}
+  .lc-dot.blue{background:var(--blue);box-shadow:0 0 0 3px rgba(74,123,184,.22)}
+  .lc-eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+  .lc-mode-chip{font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;color:var(--ink);
+    border:1px solid var(--hairline);border-radius:9999px;padding:2px 8px}
+  .lc-title{font-size:1rem;font-weight:650;letter-spacing:-.01em}
+  .lc-x{appearance:none;border:1px solid var(--hairline);background:transparent;color:var(--ink);
+    border-radius:9999px;cursor:pointer;display:grid;place-items:center}
+  .lc-k{color:var(--gray);font-size:.74rem}
+  .lc-v{color:var(--ink);font-size:.82rem;font-weight:550}
+  .roster{display:flex;flex-wrap:wrap;gap:6px}
+  .acct{font-size:.74rem;color:var(--gray);border:1px solid var(--hairline-soft);
+    border-radius:9999px;padding:3px 10px;display:flex;align-items:center;gap:6px}
+  .acct.is-active{color:var(--ink);border-color:var(--ink)}
+  .acct .pin{width:6px;height:6px;border-radius:9999px;background:var(--dim)}
+  .acct.is-active .pin{background:var(--green)}
+  .log{font-family:var(--mono);font-size:.74rem;line-height:1.7;color:var(--gray);
+    background:rgba(0,0,0,.4);border:1px solid var(--hairline-soft);border-radius:5px;padding:10px 12px;overflow:auto}
+  .log b{color:var(--ink);font-weight:600}
+  .log .t{color:var(--dim)}
+  .hero-num{font-family:var(--display);font-weight:700;letter-spacing:-.02em;line-height:1;color:var(--ink)}
+  .hero-cap{font-size:.72rem;color:var(--gray);text-transform:uppercase;letter-spacing:.1em}
+  .bar{height:6px;border-radius:9999px;background:rgba(255,255,255,.12);overflow:hidden}
+  .bar > span{display:block;height:100%;background:var(--gold)}
+  .bar.blue > span{background:var(--blue)}
+  .scale-note{font-family:var(--mono);font-size:.68rem;color:#999;margin-top:8px}
+
+  /* ── A: WIDE DRAWER ─────────────────────────────────────────────── */
+  .A{width:480px;border-radius:10px;padding:0;overflow:hidden}
+  .A .head{display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid var(--hairline)}
+  .A .head .txt{flex:1;min-width:0}
+  .A .lc-x{width:30px;height:30px;font-size:1.15rem}
+  .A .body{padding:16px 18px;display:flex;flex-direction:column;gap:16px}
+  .A .sentrow{display:flex;align-items:flex-end;gap:10px}
+  .A .sentrow .hero-num{font-size:2.2rem}
+  .A .grid{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;align-items:center}
+  .A .log{max-height:230px}
+
+  /* ── B: COCKPIT PANEL ───────────────────────────────────────────── */
+  .B{width:520px;border-radius:12px;padding:22px 24px;display:flex;flex-direction:column;gap:20px}
+  .B .top{display:flex;align-items:center;gap:12px}
+  .B .top .txt{flex:1}
+  .B .lc-x{width:30px;height:30px;font-size:1.15rem}
+  .B .cock{display:flex;gap:26px;align-items:center}
+  .B .ring{width:128px;height:128px;border-radius:9999px;display:grid;place-items:center;flex:none;
+    background:conic-gradient(var(--gold) 0 42%, rgba(255,255,255,.10) 42% 100%)}
+  .B .ring .inner{width:104px;height:104px;border-radius:9999px;background:var(--surface);
+    display:grid;place-items:center;text-align:center}
+  .B .ring .hero-num{font-size:2.1rem}
+  .B .cock .stats{display:flex;flex-direction:column;gap:14px;flex:1}
+  .B .statline .lc-k{display:block;margin-bottom:2px}
+  .B .log{max-height:170px}
+
+  /* ── C: BOTTOM DOCK ─────────────────────────────────────────────── */
+  .C{width:100%;max-width:1080px;border-radius:10px;padding:0;overflow:hidden}
+  .C .bar-top{display:flex;align-items:stretch;gap:0;border-bottom:1px solid var(--hairline)}
+  .C .cell{padding:14px 20px;border-right:1px solid var(--hairline-soft);display:flex;flex-direction:column;gap:6px;justify-content:center}
+  .C .cell.camp{min-width:230px}
+  .C .cell.sent{min-width:150px}
+  .C .cell.sent .hero-num{font-size:1.9rem}
+  .C .cell.act{flex:1}
+  .C .cell.x{border-right:none;justify-content:center;align-items:center}
+  .C .lc-x{width:30px;height:30px;font-size:1.15rem}
+  .C .dock-log{padding:12px 20px}
+  .C .log{max-height:120px}
+
+  /* ── D: SPLIT TWO-PANE ──────────────────────────────────────────── */
+  .D{width:680px;border-radius:12px;padding:0;overflow:hidden;display:grid;grid-template-columns:300px 1fr}
+  .D .left{padding:18px 18px;display:flex;flex-direction:column;gap:16px;border-right:1px solid var(--hairline)}
+  .D .left .hero-num{font-size:2.1rem}
+  .D .right{display:flex;flex-direction:column}
+  .D .right .rhead{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px}
+  .D .lc-x{width:30px;height:30px;font-size:1.15rem}
+  .D .right .log{flex:1;margin:0 16px 16px;max-height:none;min-height:230px}
+  .D .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 12px}
+</style>
+</head>
+<body>
+  <h1 class="page-h">Live Console — 4 size / layout sketches</h1>
+  <p class="page-sub">You said the console is "way too small" and you want it to read like the cockpit / log-status section.
+  Here are four directions at realistic scale. The dark panels sit on a light page on purpose, so you can also judge the <b>×</b> close button contrast (it's now bright + larger in all four).</p>
+  <p class="fields-note">Every field shown is a <b>real</b> field the console already has: campaign name + mode, sent <code>processed / total</code>, current <code>lead</code> / <code>account</code> / <code>action</code>, the selected <code>accounts</code> roster (active one highlighted), and the last few <code>activity log</code> lines. Sample values are illustrative only — no invented stats.</p>
+
+  <!-- ───────────────────────── A ───────────────────────── -->
+  <section class="variant">
+    <div class="variant-head"><span class="variant-tag">A</span><h2 class="variant-name">Wide drawer</h2></div>
+    <p class="variant-desc">The same right-edge slide-out you have now, but ~40% wider, with bigger fonts, a tall scrollable activity log, and a bright 30px ×. Smallest change — keeps the click-to-open lip exactly as-is.</p>
+    <div class="lc A">
+      <div class="head">
+        <span class="lc-dot"></span>
+        <div class="txt">
+          <div class="lc-title">Q2 Founders — London</div>
+          <div class="lc-eyebrow" style="margin-top:3px">RUNNING · <span class="lc-mode-chip" style="padding:1px 6px">CC+DM</span></div>
+        </div>
+        <button class="lc-x" title="Close">×</button>
+      </div>
+      <div class="body">
+        <div class="sentrow">
+          <span class="hero-num">23</span><span class="lc-k" style="padding-bottom:5px">/ 55 sent</span>
+          <div style="flex:1"></div>
+          <div style="width:140px"><div class="bar"><span style="width:42%"></span></div></div>
+        </div>
+        <div class="grid">
+          <span class="lc-k">Lead</span><span class="lc-v">Milena Fuda</span>
+          <span class="lc-k">Account</span><span class="lc-v">eryca.bilazon@ortus.solutions</span>
+          <span class="lc-k">Action</span><span class="lc-v">Sending connection request…</span>
+          <span class="lc-k">Accounts</span>
+          <span class="roster">
+            <span class="acct is-active"><span class="pin"></span>eryca.bilazon</span>
+            <span class="acct"><span class="pin"></span>alecx</span>
+            <span class="acct"><span class="pin"></span>ortus</span>
+          </span>
+        </div>
+        <div>
+          <div class="lc-eyebrow" style="margin-bottom:6px">Recent activity</div>
+          <div class="log">
+            <div><span class="t">12:46:21</span> 🤝 <b>Pravin Bisen</b> — connection request sent</div>
+            <div><span class="t">12:46:18</span> 💬 <b>Milena Fuda</b> — DM sent</div>
+            <div><span class="t">12:46:09</span> 📡 Idle bulk-check: <b>2</b> Connected, 3 still pending</div>
+            <div><span class="t">12:45:55</span> 🤝 <b>Irwin Kath</b> — connection request sent</div>
+            <div><span class="t">12:45:41</span> 💬 <b>Vinícius Gregório</b> — DM sent</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scale-note">≈ 480px wide · log scrolls · vs. current 340px / 160px-capped log</div>
+  </section>
+
+  <!-- ───────────────────────── B ───────────────────────── -->
+  <section class="variant">
+    <div class="variant-head"><span class="variant-tag">B</span><h2 class="variant-name">Cockpit panel</h2></div>
+    <p class="variant-desc">The console literally becomes the cockpit: a big progress ring + large stat numbers (same 2.4rem display type as the dashboard cockpit), roster as chips, and a log underneath. Most "command-deck" of the four.</p>
+    <div class="lc B">
+      <div class="top">
+        <span class="lc-dot"></span>
+        <div class="txt"><div class="lc-title">Q2 Founders — London</div>
+          <div class="lc-eyebrow" style="margin-top:3px">RUNNING · CC+DM</div></div>
+        <button class="lc-x" title="Close">×</button>
+      </div>
+      <div class="cock">
+        <div class="ring"><div class="inner"><div><div class="hero-num">23</div><div class="hero-cap" style="font-size:.6rem">of 55</div></div></div></div>
+        <div class="stats">
+          <div class="statline"><span class="lc-k">Lead</span><span class="lc-v" style="font-size:.95rem">Milena Fuda</span></div>
+          <div class="statline"><span class="lc-k">Action</span><span class="lc-v" style="font-size:.95rem">Sending connection request…</span></div>
+          <div class="statline"><span class="lc-k">Accounts</span>
+            <div class="roster" style="margin-top:5px">
+              <span class="acct is-active"><span class="pin"></span>eryca.bilazon</span>
+              <span class="acct"><span class="pin"></span>alecx</span>
+              <span class="acct"><span class="pin"></span>ortus</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="lc-eyebrow" style="margin-bottom:6px">Recent activity</div>
+        <div class="log">
+          <div><span class="t">12:46:21</span> 🤝 <b>Pravin Bisen</b> — connection request sent</div>
+          <div><span class="t">12:46:18</span> 💬 <b>Milena Fuda</b> — DM sent</div>
+          <div><span class="t">12:46:09</span> 📡 Idle bulk-check: <b>2</b> Connected, 3 still pending</div>
+          <div><span class="t">12:45:55</span> 🤝 <b>Irwin Kath</b> — connection request sent</div>
+        </div>
+      </div>
+    </div>
+    <div class="scale-note">≈ 520px wide · matches the dashboard cockpit's ring + 2.4rem stat type</div>
+  </section>
+
+  <!-- ───────────────────────── C ───────────────────────── -->
+  <section class="variant">
+    <div class="variant-head"><span class="variant-tag">C</span><h2 class="variant-name">Bottom dock (full-width)</h2></div>
+    <p class="variant-desc">Drops the right-edge drawer for a full-width bar pinned to the bottom that expands upward — like a terminal / status bar. Stats run left→right; the activity log spans the whole width, so it's the most readable log of the four.</p>
+    <div class="lc C">
+      <div class="bar-top">
+        <div class="cell camp">
+          <div style="display:flex;align-items:center;gap:9px"><span class="lc-dot"></span><span class="lc-title" style="font-size:.92rem">Q2 Founders — London</span></div>
+          <div class="lc-eyebrow">RUNNING · CC+DM</div>
+        </div>
+        <div class="cell sent">
+          <div style="display:flex;align-items:flex-end;gap:6px"><span class="hero-num">23</span><span class="lc-k" style="padding-bottom:4px">/ 55</span></div>
+          <div class="bar" style="width:120px"><span style="width:42%"></span></div>
+        </div>
+        <div class="cell act">
+          <div><span class="lc-k">Lead&nbsp;</span><span class="lc-v">Milena Fuda</span> &nbsp;·&nbsp; <span class="lc-k">Action&nbsp;</span><span class="lc-v">Sending connection request…</span></div>
+          <div class="roster" style="margin-top:4px">
+            <span class="acct is-active"><span class="pin"></span>eryca.bilazon</span>
+            <span class="acct"><span class="pin"></span>alecx</span>
+            <span class="acct"><span class="pin"></span>ortus</span>
+          </div>
+        </div>
+        <div class="cell x"><button class="lc-x" title="Collapse">▾</button></div>
+      </div>
+      <div class="dock-log">
+        <div class="log">
+          <div><span class="t">12:46:21</span> 🤝 <b>Pravin Bisen</b> — connection request sent</div>
+          <div><span class="t">12:46:18</span> 💬 <b>Milena Fuda</b> — DM sent</div>
+          <div><span class="t">12:46:09</span> 📡 Idle bulk-check: <b>2</b> Connected, 3 still pending</div>
+        </div>
+      </div>
+    </div>
+    <div class="scale-note">full-width · collapses to a thin bottom strip instead of a right-edge lip</div>
+  </section>
+
+  <!-- ───────────────────────── D ───────────────────────── -->
+  <section class="variant">
+    <div class="variant-head"><span class="variant-tag">D</span><h2 class="variant-name">Split two-pane drawer</h2></div>
+    <p class="variant-desc">Wider drawer split in two: left = campaign stats + roster (cockpit-ish), right = a big live activity log (the "terminal"). You get the numbers <i>and</i> a large log at once. This one also shows the <b>monitoring</b> state — the hero flips to a next-check countdown with a blue bar.</p>
+    <div class="lc D">
+      <div class="left">
+        <div style="display:flex;align-items:center;gap:9px"><span class="lc-dot blue"></span>
+          <div><div class="lc-title" style="font-size:.92rem">Q2 Founders — London</div>
+          <div class="lc-eyebrow" style="margin-top:2px">MONITORING · CC+DM</div></div></div>
+        <div>
+          <div class="hero-num">04:58</div>
+          <div class="hero-cap" style="margin-top:4px">until next check</div>
+          <div class="bar blue" style="margin-top:10px"><span style="width:17%"></span></div>
+          <div class="lc-k" style="margin-top:7px">checks every <b style="color:var(--ink)">5 min</b> · ends <b style="color:var(--ink)">Jun 5</b></div>
+        </div>
+        <div class="grid">
+          <span class="lc-k">Sent</span><span class="lc-v">55 / 55</span>
+          <span class="lc-k">Accounts</span>
+          <span class="roster">
+            <span class="acct"><span class="pin"></span>eryca.bilazon</span>
+            <span class="acct"><span class="pin"></span>alecx</span>
+            <span class="acct"><span class="pin"></span>ortus</span>
+          </span>
+        </div>
+      </div>
+      <div class="right">
+        <div class="rhead"><span class="lc-eyebrow">Recent activity</span><button class="lc-x" title="Close">×</button></div>
+        <div class="log">
+          <div><span class="t">12:47:19</span> 💬 <b>Milena Fuda</b> — DM sent (just accepted)</div>
+          <div><span class="t">12:47:00</span> 📡 Check now: <b>1</b> Connected, 3 still pending</div>
+          <div><span class="t">12:46:53</span> 📡 Bulk check pass starting…</div>
+          <div><span class="t">12:46:32</span> 🛏 Monitoring started · next check 12:51</div>
+          <div><span class="t">12:46:21</span> ■ Sending stopped — monitoring kept on</div>
+          <div><span class="t">12:46:18</span> 💬 <b>Vinícius Gregório</b> — DM sent</div>
+          <div><span class="t">12:46:09</span> 🤝 <b>Pravin Bisen</b> — connection request sent</div>
+        </div>
+      </div>
+    </div>
+    <div class="scale-note">≈ 680px wide · stats + big log together · shown here in monitoring state</div>
+  </section>
+
+</body>
+</html>

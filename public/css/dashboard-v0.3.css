@@ -92,14 +92,14 @@
   /* Section rail — v0.3: one eyebrow style for every section. The cards
      beneath are the visual interest, not the section headers. */
   body[data-dashboard='v3'] .section-rail { display: flex; align-items: baseline; gap: 18px; margin-bottom: 14px; }
-  body[data-dashboard='v3'] .section-rail h2 { font-family: var(--mono); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
-  body[data-dashboard='v3'] .section-rail h2 small { color: var(--gray); font-weight: 400; margin-left: 14px; font-size: 0.92em; letter-spacing: 0.22em; }
+  body[data-dashboard='v3'] .section-rail h2 { font-family: var(--mono); font-size: 0.78rem; font-weight: 600; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+  body[data-dashboard='v3'] .section-rail h2 small { color: var(--gray); font-weight: 400; margin-left: 14px; font-size: 0.86em; letter-spacing: 0.2em; }
   body[data-dashboard='v3'] .section-rail-line { flex: 1; height: 1px; background: var(--hairline); align-self: center; }
-  body[data-dashboard='v3'] .section-rail-action { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; padding: 6px 0; }
+  body[data-dashboard='v3'] .section-rail-action { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); background: transparent; border: none; padding: 6px 0; }
   body[data-dashboard='v3'] .section-rail-action:hover { color: var(--ink); }
   body[data-dashboard='v3'] .section-rail-cal { display: flex; align-items: center; gap: 4px; }
-  body[data-dashboard='v3'] .section-rail-cal button { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; width: 26px; height: 22px; color: var(--ink); font-size: 0.74rem; padding: 0; }
-  body[data-dashboard='v3'] .section-rail-cal button.today { width: auto; padding: 0 12px; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  body[data-dashboard='v3'] .section-rail-cal button { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; width: 30px; height: 26px; color: var(--ink); font-size: 0.86rem; padding: 0; }
+  body[data-dashboard='v3'] .section-rail-cal button.today { width: auto; padding: 0 14px; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
   /* ── Campaign rows ────────────────────────────────────────── */
   body[data-dashboard='v3'] .campaign-row {
@@ -317,11 +317,12 @@
     overflow: hidden;
     display: grid;
     grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto auto auto auto;
+    grid-template-rows: auto auto auto auto auto auto;
     gap: 14px 24px;
     grid-template-areas:
       "eyebrow eyebrow"
       "name    name"
+      "live    live"
       "bar     bar"
       "hero    hero"
       "stats   controls";
@@ -331,6 +332,30 @@
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
     background: var(--green);
   }
+
+  /* v2.59.19: live activity line — what the campaign is doing right now. */
+  body[data-dashboard='v3'] .vj-live {
+    grid-area: live; display: flex; align-items: center; gap: 12px;
+    padding: 12px 15px; border-radius: 11px;
+    background: rgba(255,255,255,.03); border: 1px solid var(--hairline-soft);
+  }
+  body[data-dashboard='v3'] .vj-live[hidden] { display: none; }
+  body[data-dashboard='v3'] .vj-live-ico {
+    flex: 0 0 auto; width: 20px; text-align: center; font-size: 1.05rem; color: var(--green);
+  }
+  body[data-dashboard='v3'] .vj-card.is-monitor .vj-live-ico { color: var(--blue); }
+  body[data-dashboard='v3'] .vj-live.is-checking .vj-live-ico {
+    color: var(--blue); display: inline-block; animation: vj-live-spin 1.1s linear infinite;
+  }
+  body[data-dashboard='v3'] .vj-live.is-paused .vj-live-ico { color: var(--gray); }
+  @keyframes vj-live-spin { to { transform: rotate(360deg); } }
+  body[data-dashboard='v3'] .vj-live-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  body[data-dashboard='v3'] .vj-live-l1 { font-size: 1.12rem; font-weight: 600; color: var(--ink); line-height: 1.25; }
+  body[data-dashboard='v3'] .vj-live-l2 {
+    font-family: var(--mono); font-size: 0.9rem; color: var(--gray); letter-spacing: 0.02em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  body[data-dashboard='v3'] .vj-live-l2:empty { display: none; }
 
   body[data-dashboard='v3'] .vj-eyebrow { grid-area: eyebrow; display: flex; align-items: center; gap: 14px; color: var(--ink); padding-right: 64px; }
   body[data-dashboard='v3'] .vj-eyebrow .vj-tag { display: inline-flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 600; color: var(--ink); }
@@ -357,6 +382,40 @@
   body[data-dashboard='v3'] .vj-hbar { grid-area: bar; position: relative; height: 3px; background: var(--hairline); border-radius: 9999px; overflow: hidden; }
   body[data-dashboard='v3'] .vj-hbar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--green); transition: width 0.4s ease; }
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-hbar > i { background: var(--blue); }
+
+  /* Monitoring: blue accent rail on the left edge (mirrors the green one). */
+  body[data-dashboard='v3'] .vj-card.is-monitor::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--blue);
+  }
+
+  /* Monitoring hero (Variant E). Hidden unless .is-monitor, where it replaces
+     the % progress bar + sending hero with a big next-check countdown. */
+  body[data-dashboard='v3'] .vj-monitor { display: none; }
+  body[data-dashboard='v3'] .vj-card.is-monitor .vj-hbar,
+  body[data-dashboard='v3'] .vj-card.is-monitor .vj-hero { display: none; }
+  body[data-dashboard='v3'] .vj-card.is-monitor .vj-monitor { display: block; grid-area: hero; }
+  body[data-dashboard='v3'] .vj-mon-hero { display: flex; align-items: flex-end; gap: 14px; }
+  body[data-dashboard='v3'] .vj-mon-count {
+    font-family: var(--display); font-weight: 500; font-size: 3.13rem; line-height: 0.85;
+    letter-spacing: 0.01em; color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  body[data-dashboard='v3'] .vj-mon-cap {
+    font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--gray); padding-bottom: 9px;
+  }
+  /* Bug 12: CHECKING NOW — shrink the big count so "CHECKING" fits the hero,
+     tint it gold and pulse while the check runs. */
+  body[data-dashboard='v3'] .vj-mon-hero.is-checking .vj-mon-count {
+    font-size: 1.5rem; color: var(--gold); letter-spacing: 0.07em;
+    animation: vj-checking-pulse 1.3s ease-in-out infinite;
+  }
+  body[data-dashboard='v3'] .vj-mon-hero.is-checking .vj-mon-cap { color: var(--gold); }
+  @keyframes vj-checking-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  body[data-dashboard='v3'] .vj-mon-line {
+    font-family: var(--mono); font-size: 0.82rem; color: var(--gray); margin-top: 14px;
+  }
+  body[data-dashboard='v3'] .vj-mon-line b { color: var(--ink); font-weight: 600; }
 
   /* hero uses display:contents so .vj-hero-row + .vj-stats become direct grid
      children — letting stats sit on the same grid row as the controls cluster. */
@@ -520,6 +579,24 @@
   body[data-dashboard='v3'] .pa-row:last-child { border-bottom: none; }
   body[data-dashboard='v3'] .pa-row:hover { background: rgba(0,0,0,0.02); }
   body[data-dashboard='v3'].theme-dark .pa-row:hover { background: rgba(255,255,255,0.03); }
+  /* Bug 13: select-to-delete. The checkbox is display:none by default (so it's
+     not a grid item and the 6-col layout is untouched); manage mode reveals it
+     and adds a leading column. */
+  body[data-dashboard='v3'] .pa-check { display: none; width: 16px; height: 16px; accent-color: var(--gold); cursor: pointer; }
+  body[data-dashboard='v3'] #pastList.is-managing .pa-row { grid-template-columns: auto auto 1fr auto auto auto auto; }
+  body[data-dashboard='v3'] #pastList.is-managing .pa-check { display: inline-block; }
+  body[data-dashboard='v3'] .pa-row.is-selected { background: rgba(247,190,104,0.10); }
+  body[data-dashboard='v3'] .past-bulk-bar { display: flex; align-items: center; gap: 10px; padding: 10px 8px; margin: 4px 4px 6px; border: 1px solid var(--gold); border-radius: 8px; background: rgba(247,190,104,0.06); }
+  body[data-dashboard='v3'] .past-bulk-bar[hidden] { display: none; }
+  body[data-dashboard='v3'] .past-bulk-count { font-family: var(--mono); font-size: 0.72rem; color: var(--gold); font-weight: 600; }
+  body[data-dashboard='v3'].theme-light .past-bulk-count { color: #6e520f; }
+  body[data-dashboard='v3'] .past-bulk-spacer { flex: 1; }
+  body[data-dashboard='v3'] .past-bulk-btn { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.06em; color: var(--ink); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 13px; cursor: pointer; }
+  body[data-dashboard='v3'] .past-bulk-btn:hover { border-color: var(--gold); }
+  body[data-dashboard='v3'] .past-bulk-btn.danger { color: var(--red); border-color: rgba(248,81,73,0.45); }
+  body[data-dashboard='v3'] .past-bulk-btn.danger:hover { border-color: var(--red); background: rgba(248,81,73,0.08); }
+  body[data-dashboard='v3'] .past-bulk-btn.danger:disabled { opacity: 0.4; cursor: default; border-color: var(--hairline); color: var(--gray); background: transparent; }
+  body[data-dashboard='v3'] .past-bulk-btn.ghost { color: var(--gray); }
   body[data-dashboard='v3'] .pa-name { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.02em; color: var(--gray); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   body[data-dashboard='v3'] .pa-row:hover .pa-name { color: var(--ink); }
   body[data-dashboard='v3'] .pa-when { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--gray-faint); white-space: nowrap; }
@@ -634,16 +711,40 @@
   body[data-dashboard='v3'] .vj-card.is-detailed .vj-details { display: grid; grid-template-columns: 1fr 260px; }
   /* When in mini state, also hide details */
   body[data-dashboard='v3'] .vj-card.is-mini .vj-details { display: none; }
-  body[data-dashboard='v3'] .vj-details-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+
+  /* v2.59.22: #active-card relocated into the wizard Live Status (same element,
+     identical styling). Hide the legacy cockpit/runbar; give the card the full
+     wizard width with a taller, always-open log and no collapse toggle. */
+  #nav-status.is-card-live .live-status-grid,
+  #nav-status.is-card-live .live-status-actions { display: none; }
+  body[data-dashboard='v3'] .vj-card.in-wizard { margin: 0; }
+  body[data-dashboard='v3'] .vj-card.in-wizard .vj-toggle-btn { display: none; }
+  body[data-dashboard='v3'] .vj-card.in-wizard .vj-log { max-height: 460px; }
+  body[data-dashboard='v3'] .vj-card.is-log-expanded .vj-log { max-height: 72vh; }
+  body[data-dashboard='v3'] .vj-details-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); font-weight: 500; }
+  /* v2.59.8 — live-log header: label on the left, Copy-all / Open-sheet on the right. */
+  body[data-dashboard='v3'] .vj-log-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  body[data-dashboard='v3'] .vj-log-head .vj-details-head { margin-bottom: 0; }
+  body[data-dashboard='v3'] .vj-log-acts { display: flex; gap: 6px; }
+  body[data-dashboard='v3'] .vj-log-act {
+    font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em;
+    color: var(--gray); background: transparent;
+    border: 1px solid var(--hairline); border-radius: 9999px;
+    padding: 4px 11px; cursor: pointer; white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  body[data-dashboard='v3'] .vj-log-act:hover { color: var(--ink); border-color: var(--gold); }
   body[data-dashboard='v3'] .vj-log {
-    background: var(--bg-soft); border: 1px solid var(--hairline-soft); border-radius: 4px;
-    padding: 10px 12px;
+    background: var(--bg-soft); border: 1px solid var(--hairline-soft); border-radius: 6px;
+    padding: 8px 12px;
     max-height: 200px; overflow-y: auto;
     font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
     font-size: 0.72rem; line-height: 1.5;
   }
   body[data-dashboard='v3'].theme-dark .vj-log { background: rgba(255,255,255,0.03); }
-  body[data-dashboard='v3'] .vj-log-line { display: grid; grid-template-columns: 60px 100px 1fr; gap: 12px; padding: 2px 0; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-log:empty::after { content: 'No events yet'; color: var(--gray-faint); font-style: italic; }
+  body[data-dashboard='v3'] .vj-log-line { display: grid; grid-template-columns: 64px 70px 1fr; gap: 12px; padding: 3px 6px; margin: 0 -6px; border-radius: 4px; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-log-line:hover { background: var(--hairline-soft); }
   body[data-dashboard='v3'] .vj-log-line .time { color: var(--gray-faint); }
   body[data-dashboard='v3'] .vj-log-line .evt { color: var(--ink); text-transform: uppercase; font-size: 0.62rem; letter-spacing: 0.06em; }
   body[data-dashboard='v3'] .vj-log-line.is-ok .evt { color: var(--green); }
@@ -654,18 +755,18 @@
   body[data-dashboard='v3'] .vj-bulk {
     display: flex; flex-direction: column; gap: 10px;
   }
-  body[data-dashboard='v3'] .vj-bulk-status { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-bulk-status { font-family: var(--mono); font-size: 0.8rem; color: var(--gray); }
   body[data-dashboard='v3'] .vj-bulk-status b { color: var(--ink); font-weight: 500; }
   body[data-dashboard='v3'] .vj-bulk-btn {
     font: inherit; background: var(--ink); color: var(--bg); border: 1px solid var(--ink);
-    border-radius: 9999px; padding: 10px 16px;
-    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
+    border-radius: 9999px; padding: 12px 18px;
+    font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.2em; text-transform: uppercase;
     cursor: pointer; transition: opacity 0.12s;
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   }
   body[data-dashboard='v3'] .vj-bulk-btn:hover { opacity: 0.85; }
-  body[data-dashboard='v3'] .vj-bulk-btn svg { width: 14px; height: 14px; }
-  body[data-dashboard='v3'] .vj-bulk-hint { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.04em; color: var(--gray-faint); }
+  body[data-dashboard='v3'] .vj-bulk-btn svg { width: 16px; height: 16px; }
+  body[data-dashboard='v3'] .vj-bulk-hint { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.03em; color: var(--gray-faint); line-height: 1.5; }
 
   /* ── Wizard ───────────────────────────────────────────────── */
   body[data-dashboard='v3'] .modal-shade { position: fixed; inset: 0; background: rgba(0,0,0,0.32); display: none; z-index: 50; }

@@ -64,7 +64,7 @@ test('getKnownModes returns all 9 modes', () => {
 test('getTipsForMode resolves connect_only with dynamic tokens', () => {
   const set = getTipsForMode('connect_only', { dailyLimit: 50, delayMin: 15, delayMax: 45 });
   assert.equal(set.modalTitle, "YOU'RE LIVE. A FEW THINGS TO KNOW.");
-  assert.equal(set.tips.length, 4);
+  assert.equal(set.tips.length, 5);
   const dailyLimitTip = set.tips.find(t => t.icon === '📤');
   assert.ok(dailyLimitTip.full.includes('Daily limit: 50/profile'));
   assert.ok(dailyLimitTip.full.includes('15–45 s'));
@@ -118,10 +118,12 @@ test('every mode has a lid-open (💻) tip — the universal one', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 test('renderModalTipsHtml emits <ul class="ptm-list"> with one <li> per tip', () => {
-  const html = renderModalTipsHtml('connect_only', { dailyLimit: 50, delayMin: 15, delayMax: 45 });
+  const opts = { dailyLimit: 50, delayMin: 15, delayMax: 45 };
+  const html = renderModalTipsHtml('connect_only', opts);
   assert.ok(html.startsWith('<ul class="ptm-list">'));
   const liCount = (html.match(/<li>/g) || []).length;
-  assert.equal(liCount, 4);
+  // Derive from the tip set so this stays correct as tips are added/removed.
+  assert.equal(liCount, getTipsForMode('connect_only', opts).tips.length);
 });
 
 test('renderSidebarTipsHtml emits <ul class="pts-list"> with one-liner per tip', () => {
@@ -142,11 +144,19 @@ test('renderModalTipsHtml returns empty string for unknown mode', () => {
 // Regression guards — claims we verified against codebase, must stay accurate
 // ─────────────────────────────────────────────────────────────────────────
 
-test('regression: CC tip set does NOT mention monitoring (CC has no monitoring state)', () => {
+test('regression: CC tip set does not promote a monitoring phase', () => {
+  // connect_only has no acceptance-watching phase to advertise, so it must not
+  // carry the dedicated monitoring tips that the intro flows use (the 7-day
+  // re-check 🔁 and the pre-check heads-up ⏰), nor describe monitoring as an
+  // active running feature. The shared "sheet snapshot" tip may still list
+  // "monitoring" incidentally as one of the frozen states — that's allowed.
   const set = getTipsForMode('connect_only', {});
+  const dedicatedMonitoringIcons = ['🔁', '⏰'];
   for (const tip of set.tips) {
-    assert.equal(/monitor/i.test(tip.full), false, `CC tip should not mention monitoring: "${tip.full}"`);
-    assert.equal(/monitor/i.test(tip.short), false, `CC short tip should not mention monitoring: "${tip.short}"`);
+    assert.equal(dedicatedMonitoringIcons.includes(tip.icon), false,
+      `CC tip set should not include a dedicated monitoring tip: "${tip.full}"`);
+    assert.equal(/monitoring (runs|active|re-?checks?)|re-?check every/i.test(tip.full), false,
+      `CC tip should not promote monitoring as a phase: "${tip.full}"`);
   }
 });
 

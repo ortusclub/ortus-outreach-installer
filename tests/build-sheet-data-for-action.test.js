@@ -75,32 +75,24 @@ test('message_sent without introMode: writes DM Status', () => {
   assert.equal(r.message, '=HYPERLINK("x","Sent")');
 });
 
-// ── message_sent (intro mode) ──
-test('message_sent with introMode + message_only: writes Intro Status', () => {
-  const r = buildSheetDataForAction({
-    action: 'message_sent',
-    mode: 'message_only',
-    introMode: true
-  });
-  assert.equal(r.introStatus, 'IC Sent');
-  assert.equal(r.dmStatus, undefined);
-  assert.equal(r.status, 'IC Sent');
-  assert.equal(r.stage, 'IC Sent');
-});
+// NOTE: the old "message_only + introMode" (Introduction Messages sub-mode of
+// Direct Messages) was retired in v2.11.17 — Introduce Back is now its own mode
+// and legacy configs auto-migrate (app.js:6089: message_only+introMode →
+// introduce_back). buildSheetDataForAction no longer reads introMode, so the
+// two tests that asserted that combo were removed as obsolete.
 
-test('message_sent + introduce_back: writes ONLY Introduction Status (no stage/status)', () => {
-  // v2.59: Introduction Campaign tabs are separate from connection tabs
-  // and may not have Stage / Status columns. The send action writes only
-  // to Introduction Status. introMode flag is irrelevant for IC mode —
-  // mode === 'introduce_back' is the trigger.
+test('message_sent + introduce_back: writes Introduction Status + Status + Stage mirror', () => {
+  // Introduction Status is the per-mode source of truth (IC dedup reads it);
+  // Status + Stage are mirrored for consistency with other modes. introMode
+  // flag is irrelevant for IC — mode === 'introduce_back' is the trigger.
   const r = buildSheetDataForAction({
     action: 'message_sent',
     mode: 'introduce_back',
     introMode: true
   });
   assert.equal(r.introStatus, 'IC Sent');
-  assert.equal(r.stage, undefined);
-  assert.equal(r.status, undefined);
+  assert.equal(r.stage, 'IC Sent');
+  assert.equal(r.status, 'IC Sent');
 });
 
 // ── op_message_sent ──
@@ -180,10 +172,8 @@ test('already_processed connect_and_message → Stage = Connect Pending', () => 
   assert.equal(r.stage, 'Connect Pending');
   assert.equal(r.connectionStatus, 'Connection Request Sent');
 });
-test('already_processed message_only + introMode → Stage = IC Sent', () => {
-  const r = buildSheetDataForAction({ action: 'already_processed', mode: 'message_only', introMode: true });
-  assert.equal(r.stage, 'IC Sent');
-});
+// (removed: already_processed message_only + introMode → IC Sent — obsolete
+// sub-mode, see note above; message_only+introMode now auto-migrates to IC.)
 test('already_processed message_only without introMode → Stage = DM Sent', () => {
   const r = buildSheetDataForAction({ action: 'already_processed', mode: 'message_only' });
   assert.equal(r.stage, 'DM Sent');

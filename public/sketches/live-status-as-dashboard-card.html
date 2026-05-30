@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Status = dashboard card (bigger log)</title>
+<style>
+  :root{
+    --bg:#0a0a0a; --ink:#fafafa; --gray:#8a8a8a; --gold:#F7BE68;
+    --card-bg:rgba(255,255,255,.045); --card-border:rgba(255,255,255,.14);
+    --hairline:rgba(255,255,255,.13); --hairline-soft:rgba(255,255,255,.06);
+    --green:#3fb950; --red:#f85149; --blue:#6ea3d4;
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --body:'Hanken Grotesk',-apple-system,sans-serif;
+    --mono:'Hanken Grotesk',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:30px 46px 80px;}
+  h1{font-family:var(--display);font-size:1.85rem;letter-spacing:.02em;margin:0 0 4px;}
+  .sub{color:var(--gray);font-size:.86rem;margin:0 0 26px;max-width:900px;line-height:1.55;}
+  .sub b{color:var(--ink);} .sub .b{color:var(--blue);}
+  .secTitle{font-family:var(--display);font-size:1.5rem;letter-spacing:.04em;margin:0 0 16px;display:flex;align-items:center;gap:12px;}
+  .secTitle .caret{color:var(--gray);font-size:1rem;}
+
+  /* faithful vj-card, but wizard-width */
+  .card{position:relative;background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;
+        box-shadow:0 6px 18px rgba(0,0,0,.4);padding:24px 28px;overflow:hidden;}
+  .card.monitoring::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue);}
+  .eyebrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .tag{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.85rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:var(--ink);}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--blue);animation:pulse 2.2s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:.35;}50%{opacity:1;}}
+  .glyph{width:48px;height:48px;border:1px solid var(--hairline);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.66rem;color:var(--gray);}
+  .name{font-family:var(--display);font-size:2.3rem;letter-spacing:.01em;line-height:.95;margin:0 0 16px;}
+
+  .live{display:flex;align-items:center;gap:12px;padding:13px 16px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid var(--hairline-soft);margin-bottom:18px;}
+  .live .ico{font-size:1.05rem;color:var(--blue);width:20px;text-align:center;}
+  .live .l1{font-size:.98rem;font-weight:600;}
+  .live .l2{font-family:var(--mono);font-size:.78rem;color:var(--gray);margin-top:3px;}
+  .live .big{margin-left:auto;text-align:right;}
+  .live .big .n{font-family:var(--display);font-size:2rem;line-height:.85;}
+  .live .big .u{font-family:var(--mono);font-size:.56rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+
+  .stats{font-family:var(--mono);font-size:.84rem;color:var(--gray);margin-bottom:20px;}
+  .stats b{color:var(--ink);font-weight:600;}
+
+  /* controls row — same actions as the dashboard card's dock + a Run check */
+  .controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:18px;border-top:1px solid var(--hairline-soft);}
+  .btn{font-family:var(--body);font-size:.84rem;font-weight:500;color:var(--ink);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:11px 22px;cursor:pointer;}
+  .btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600;}
+  .btn.danger{color:var(--red);border-color:rgba(248,81,73,.4);}
+  .btn.sm{font-size:.76rem;padding:8px 15px;}
+  .controls .spacer{flex:1;}
+  .controls .lbl{font-family:var(--mono);font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);}
+
+  /* THE BIGGER LOG */
+  .logwrap{margin-top:20px;}
+  .loghead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .loghead .h{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .loghead .acts{display:flex;gap:8px;}
+  .log{background:rgba(255,255,255,.02);border:1px solid var(--hairline-soft);border-radius:12px;
+       padding:14px 16px;font-family:var(--mono);font-size:.82rem;line-height:1.85;max-height:420px;overflow:auto;}
+  .log .ln{display:flex;gap:14px;white-space:nowrap;}
+  .log .t{color:#5a5a5a;flex:0 0 auto;}
+  .log .m{color:var(--ink);overflow:hidden;text-overflow:ellipsis;}
+  .log .g{color:var(--green);} .log .b2{color:var(--blue);} .log .y{color:var(--gold);}
+  .note{font-size:.82rem;color:var(--gray);margin-top:22px;max-width:900px;line-height:1.6;}
+  .note b{color:var(--ink);} .note .b{color:var(--blue);}
+</style>
+</head>
+<body>
+  <h1>Live Status = the dashboard card</h1>
+  <p class="sub">The wizard's <b>Live Status</b> section renders the <b>exact same card</b> as the dashboard (left blue rail, eyebrow, name, the new live line, countdown), so the two never diverge. The only difference: the wizard has full-width real estate, so the <b>log is much bigger</b> — ~15 visible lines and taller, instead of the dashboard's "last 6 events".</p>
+
+  <div class="secTitle"><span class="caret">▾</span> LIVE STATUS</div>
+
+  <div class="card monitoring">
+    <div class="eyebrow"><span class="tag"><span class="dot"></span> Monitoring</span><span class="glyph">C+D</span></div>
+    <div class="name">(unnamed)</div>
+    <div class="live">
+      <span class="ico">◷</span>
+      <span>
+        <div class="l1">Waiting for next check</div>
+        <div class="l2">2 accounts · checks every 15 min · nothing running right now</div>
+      </span>
+      <span class="big"><div class="n">12:43</div><div class="u">next check</div></span>
+    </div>
+    <div class="stats"><b>50</b> sent · <b>8</b> accepted · ends <b>Sat, 6 Jun</b></div>
+
+    <div class="controls">
+      <button class="btn primary">Run check now</button>
+      <button class="btn">Open sheet</button>
+      <span class="spacer"></span>
+      <span class="lbl">Run</span>
+      <button class="btn sm">Start campaign</button>
+      <button class="btn sm">Pause</button>
+      <button class="btn sm danger">Stop</button>
+      <button class="btn sm">↻ Reset</button>
+    </div>
+
+    <div class="logwrap">
+      <div class="loghead">
+        <span class="h">Live log · last 15 events</span>
+        <span class="acts"><button class="btn sm">Copy all</button><button class="btn sm">Clear</button><button class="btn sm">Show browsers</button></span>
+      </div>
+      <div class="log">
+        <div class="ln"><span class="t">00:30:39</span><span class="m b2">🛏 Monitoring started · next check at 00:45 (cadence=15m)</span></div>
+        <div class="ln"><span class="t">00:30:39</span><span class="m">═══ Campaign ended ═══</span></div>
+        <div class="ln"><span class="t">00:45:01</span><span class="m b2">🛏 Monitoring · auto-check starting (cadence=15m)</span></div>
+        <div class="ln"><span class="t">00:45:02</span><span class="m">📡 [justine.mangera@ortus.solutions] Launching browser…</span></div>
+        <div class="ln"><span class="t">00:45:09</span><span class="m">📡 [justine.mangera@ortus.solutions] Sweeping recent connections…</span></div>
+        <div class="ln"><span class="t">00:45:31</span><span class="m g">✓ [justine.mangera@ortus.solutions] 3 marked Connected, 0 still pending</span></div>
+        <div class="ln"><span class="t">00:45:33</span><span class="m">📡 [christian.saguid@ortus.solutions] Launching browser…</span></div>
+        <div class="ln"><span class="t">00:45:40</span><span class="m">📡 [christian.saguid@ortus.solutions] Sweeping recent connections…</span></div>
+        <div class="ln"><span class="t">00:45:58</span><span class="m g">✓ [christian.saguid@ortus.solutions] 1 marked Connected</span></div>
+        <div class="ln"><span class="t">00:46:00</span><span class="m b2">🛏 Monitoring · next check at 01:00</span></div>
+        <div class="ln"><span class="t">01:00:01</span><span class="m b2">🛏 Monitoring · auto-check starting (cadence=15m)</span></div>
+        <div class="ln"><span class="t">01:00:08</span><span class="m">📡 [justine.mangera@ortus.solutions] Sweeping recent connections…</span></div>
+        <div class="ln"><span class="t">01:00:29</span><span class="m">📡 No new acceptances this sweep</span></div>
+        <div class="ln"><span class="t">01:00:31</span><span class="m b2">🛏 Monitoring · next check at 01:15</span></div>
+        <div class="ln"><span class="t">01:15:30</span><span class="m y">⏰ Bulk check fires in 15s — about to check 2 accounts</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>Same component, both places.</b> The dashboard card stays compact (last 6 events); the wizard Live Status shows the identical card with a tall scrollable log (last 15+). Live line, countdown, accent colour — all shared, so they can't drift.
+  <br><br>Question: keep the <b>Start campaign · Pause · Stop · Reset</b> run controls in the wizard version (they're not on the dashboard card)? Or make it truly identical (dashboard only has Run check / pause / stop / restart)?</p>
+</body>
+</html>

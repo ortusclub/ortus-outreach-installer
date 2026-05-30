@@ -18,6 +18,7 @@ import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
+import { runAutoDms } from './linkedin/auto-dm.js';
 import { notifyEmail, enqueueDesktopNotification } from './notifier.js';
 import { getPrefs } from './notification-prefs.js';
 import { appendCampaignLog } from './campaign-log-bus.js';
@@ -40,6 +41,42 @@ async function writeSchedule(s) {
 
 function key(sheetId, profileId) { return `${sheetId}|${profileId}`; }
 
+/**
+ * Decide whether a post-campaign sweep entry should fire a group intro.
+ *
+ * Only CC+IC (connect_and_introduce) ever sends a post-acceptance group
+ * intro. The mode gate is load-bearing: a CC+DM campaign launched after a
+ * CC+IC config was filled in carries leftover primaryName/primaryIntroBody
+ * on its schedule entry, and without this check the sweep would send a real
+ * group intro on a plain DM campaign. The in-campaign path is already
+ * mode-gated (campaign.js willAutoIntro); this mirrors that guard for the
+ * background sweep so neither path can fire an intro for the wrong mode.
+ */
+export function shouldFirePostCampaignIntro(entry, connectedUrls) {
+  if (!entry) return false;
+  if (!Array.isArray(connectedUrls) || connectedUrls.length === 0) return false;
+  if (entry.mode !== 'connect_and_introduce') return false;
+  return !!(entry.primaryName && entry.primaryIntroBody);
+}
+
+/**
+ * Decide whether a post-campaign sweep entry should fire a 1:1 auto-DM.
+ *
+ * The CC+DM counterpart of shouldFirePostCampaignIntro. Only CC+DM
+ * (connect_and_message) entries with a persisted DM body fire here. Without
+ * this the post-campaign sweep stamped acceptances as Connected but never sent
+ * the post-acceptance DM — the auto-DM dispatch + the persisted ccDmBody were
+ * both missing on this path (the in-campaign and in-app monitoring paths
+ * already handle CC+DM via willAutoDm). Mode-gated so it's mutually exclusive
+ * with the intro gate.
+ */
+export function shouldFirePostCampaignDm(entry, connectedUrls) {
+  if (!entry) return false;
+  if (!Array.isArray(connectedUrls) || connectedUrls.length === 0) return false;
+  if (entry.mode !== 'connect_and_message') return false;
+  return !!entry.ccDmBody;
+}
+
 // Lazy import to avoid a load-time circular dep with campaign.js (which
 // also imports from this file). Resolved at call time, never at module init.
 async function isCampaignRunning() {
@@ -59,7 +96,7 @@ async function isCampaignRunning() {
 export async function registerSchedule({ sheetId, sheetUrl, profileId, profileName, linkedinColumn, days,
                                           operatorEmail,
                                           mode = '', primaryName = '', primaryIntroBody = '',
-                                          primaryUrl = '', introTitle = '' }) {
+                                          primaryUrl = '', introTitle = '', ccDmBody = '' }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
@@ -79,6 +116,10 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     primaryIntroBody: primaryIntroBody || '',
     primaryUrl: primaryUrl || '',
     introTitle: introTitle || '',
+    // v2.59.x: CC+DM post-acceptance body — persisted so the sweep can fire the
+    // 1:1 auto-DM (runAutoDms reads templates.ccDmBody). Was previously dropped,
+    // so even with a DM dispatch the body wouldn't have survived to send time.
+    ccDmBody: ccDmBody || '',
     registeredAt: (sched[k]?.registeredAt) || now,
     expiresAt: now + days * 86400000,
     // The campaign's own bulk-check just ran, so no need to immediately
@@ -193,9 +234,10 @@ async function tick() {
         console.log(`[post-campaign] ${entry.profileName}: ${r.matched} Connected, ${r.stamped || 0} Still Pending`);
         appendCampaignLog(entry.sheetId, entry.profileId, _resultMsg);
         // Auto-intro pass for connect_and_introduce campaigns whose
-        // primary fields were stored at registration time.
-        if (Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0
-            && entry.primaryName && entry.primaryIntroBody) {
+        // primary fields were stored at registration time. Mode-gated so a
+        // leftover CC+IC config on a CC+DM (or other) campaign can never
+        // fire a stray group intro during the acceptance window.
+        if (shouldFirePostCampaignIntro(entry, r.connectedUrls)) {
           try {
             // v2.14.x: runAutoIntros reads primary fields from `templates.*`
             // (auto-intro.js:63-65), NOT from top-level kwargs. The previous
@@ -229,6 +271,34 @@ async function tick() {
             });
           } catch (introErr) {
             console.warn(`[post-campaign] ${entry.profileName} auto-intro threw: ${introErr.message}`);
+          }
+        }
+        // Auto-DM pass for connect_and_message campaigns — the CC+DM mirror of
+        // the auto-intro above. Mode-gated + body-gated by shouldFirePostCampaignDm
+        // so it's mutually exclusive with the intro branch. Fixes the gap where
+        // CC+DM acceptances in the 6h/7-day window were stamped Connected but
+        // never DM'd (the in-campaign + in-app monitoring paths already DM via
+        // willAutoDm; this background sweep was the one path that didn't).
+        else if (shouldFirePostCampaignDm(entry, r.connectedUrls)) {
+          try {
+            await runAutoDms({
+              page: launched.page,
+              profileId: entry.profileId,
+              profileName: entry.profileName,
+              sheetUrl: entry.sheetUrl,
+              linkedinColumn: entry.linkedinColumn,
+              connectedUrls: r.connectedUrls,
+              // runAutoDms reads only templates.ccDmBody. senderFirstNames is not
+              // persisted on the schedule entry today (same limitation as the
+              // intro path) — {sender first name} falls back to the email split.
+              templates: { ccDmBody: entry.ccDmBody },
+              log: (line) => {
+                console.log(`[post-campaign] ${line}`);
+                appendCampaignLog(entry.sheetId, entry.profileId, line);
+              },
+            });
+          } catch (dmErr) {
+            console.warn(`[post-campaign] ${entry.profileName} auto-DM threw: ${dmErr.message}`);
           }
         }
       }

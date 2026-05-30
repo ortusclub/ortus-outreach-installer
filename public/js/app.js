@@ -23,6 +23,8 @@ import {
   isTourCompleted,
 } from '/js/tour.mjs';
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
+import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
+import { buildLiveActivity } from '/js/live-activity.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -154,6 +156,7 @@ function gatherCampaignFormState() {
   // body (sent post-acceptance via runAutoIntros).
   const _isIc   = mode === 'introduce_back';
   const _isCcIc = mode === 'connect_and_introduce';
+  const _isCcDm = mode === 'connect_and_message';
   const _isIntroFlow = _isIc || _isCcIc;
   const _tplFollow = document.getElementById('tpl-followup').value;
   const _primaryIntro = document.getElementById('primary-intro-body')?.value || '';
@@ -174,11 +177,20 @@ function gatherCampaignFormState() {
     // because Chrome enterprise/privacy enforcement can block storage reads.
     introMode: _isIc,
     introName: document.getElementById('intro-name')?.value?.trim() || '',
-    introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
+    // v2.13.x — Group conversation title is an intro-flow field only. Without
+    // this gate it was sent (and previewed) in every mode — even falling back
+    // to the hardcoded default — so CC+DM showed a phantom "Group conversation
+    // title" with {first name}/{intro name} warnings. Mirror the primary-* gating.
+    introTitle: _isIntroFlow
+      ? (document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}')
+      : '',
     // For IC, send the resolved body (primary-intro-body OR tpl-followup
     // fallback). For CC+IC and any other mode that uses it, send the raw
     // primary-intro-body value.
-    primaryIntroBody: _isIc ? _icResolvedBody : _primaryIntro,
+    // v2.59.2: CC+DM never uses primary/intro fields — blank them so a
+    // leftover CC+IC config can't leak "Antonio Varlese" into the DM run's
+    // campaign.templates (which the bulk-check path read to send an IC).
+    primaryIntroBody: _isIc ? _icResolvedBody : (_isCcDm ? '' : _primaryIntro),
     // v2.59.x — Route the right name into templates.primaryName based on
     // mode so primary-* token substitution matches what outreach.js does
     // at send time. In IC mode the operator fills `intro-name` (Sam Adcock);
@@ -188,8 +200,8 @@ function gatherCampaignFormState() {
     // into the other's preview.
     primaryName: _isIc
       ? (document.getElementById('intro-name')?.value?.trim() || '')
-      : (document.getElementById('primary-person-name')?.value?.trim() || ''),
-    primaryUrl:  _isIc
+      : (_isCcDm ? '' : (document.getElementById('primary-person-name')?.value?.trim() || '')),
+    primaryUrl:  (_isIc || _isCcDm)
       ? ''
       : (document.getElementById('primary-person-url')?.value?.trim() || ''),
     // v2.62: CC+DM post-acceptance body. Only meaningful when
@@ -225,41 +237,28 @@ function gatherCampaignFormState() {
   };
 }
 
-// Returns { disabled: bool, reason: string | null } — drives the Preview button state.
-function getPreviewDisabledReason() {
-  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
-  if (!sheetUrl) return { disabled: true, reason: 'Enter a Google Sheet URL first' };
-  // v2.59.x — Include the IC/CC+IC fields too. Previously this list only
-  // covered the 6 "classic" templates, so IC operators with only the Intro
-  // DM Body filled in saw the button stay silently disabled — Preview just
-  // didn't fire on click. Group Conversation Title also counts since it's
-  // a rendered template.
-  const anyTemplate = [
-    document.getElementById('tpl-note')?.value,
-    document.getElementById('tpl-followup')?.value,
-    document.getElementById('tpl-inmail-subject')?.value,
-    document.getElementById('tpl-inmail-body')?.value,
-    document.getElementById('tpl-op-subject')?.value,
-    document.getElementById('tpl-op-body')?.value,
-    document.getElementById('primary-intro-body')?.value,
-    document.getElementById('intro-title')?.value,
-  ].some(v => v && v.trim());
-  if (!anyTemplate) return { disabled: true, reason: 'Fill in at least one template to preview' };
-  return { disabled: false, reason: null };
-}
-
 function refreshPreviewButtonState() {
+  // Bug 6: the Preview button is ALWAYS enabled now. The old enable/disable
+  // gating (on sheet URL + which template fields had content) was a recurring
+  // source of "locked until you type X" bugs across modes. Instead the button
+  // is always clickable and handlePreviewClick() shows a friendly message in
+  // the modal when there's nothing to render yet.
   const btn = document.getElementById('btn-preview-messages');
   if (!btn) return;
-  const { disabled, reason } = getPreviewDisabledReason();
-  btn.disabled = disabled;
-  btn.title = disabled ? reason : 'Render current templates against 3 sample leads';
+  btn.disabled = false;
+  btn.title = 'Render your templates against sample rows from the sheet';
 }
 
 async function handlePreviewClick() {
   const btn = document.getElementById('btn-preview-messages');
-  const { disabled } = getPreviewDisabledReason();
-  if (disabled) { refreshPreviewButtonState(); return; }
+  if (!btn) return;
+  // Always openable. Need a sheet to render against real rows — if it's missing,
+  // open the modal with guidance instead of silently doing nothing.
+  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
+  if (!sheetUrl) {
+    renderPreviewModal([], 'Enter a Google Sheet URL first — the preview renders your templates against real rows from your sheet.');
+    return;
+  }
 
   const state = gatherCampaignFormState();
   const originalText = btn.textContent;
@@ -368,6 +367,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // didn't update the Preview button state until something else (mode
     // change, etc.) re-ran refreshPreviewButtonState.
     'primary-intro-body', 'intro-title',
+    // v2.59.8 — CC+DM post-acceptance DM body. Its own oninput= calls
+    // saveCcDmFields (not refreshPreviewButtonState), so without this the
+    // Preview button wouldn't re-enable live as the operator typed the DM.
+    'tpl-cc-dm-body',
   ];
   for (const id of watchIds) {
     const el = document.getElementById(id);
@@ -894,6 +897,9 @@ function renderProfiles(profiles) {
         if (localNameRow) localNameRow.hidden = true;
       }
       renderSelectedPanel();
+      // The Local Browser counts as an account toward the 2+-account parallel
+      // unlock and the throughput math — recompute, matching the GoLogin handler.
+      updateCampaignSummary();
     });
     localHost.appendChild(localItem);
   }
@@ -993,6 +999,9 @@ function removeProfile(id) {
   const cb = document.querySelector(`#profiles-grid input[value="${id}"]`);
   if (cb) { cb.checked = false; cb.closest('.profile-item')?.classList.remove('selected'); }
   renderSelectedPanel();
+  // Recompute throughput + the 2+-account parallel unlock — removing via the X
+  // chip changes the account count just like unticking the checkbox does.
+  if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
 }
 window.removeProfile = removeProfile;
 
@@ -1532,15 +1541,16 @@ function onModeChange() {
   if (intro) intro.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
   const cadenceBlock = document.getElementById('check-cadence-block');
-  // v2.62: cadence applies to CC+DM too (same idle bulk-check window).
-  if (cadenceBlock) cadenceBlock.style.display = (mode === 'connect_and_introduce' || mode === 'connect_and_message') ? '' : 'none';
+  // Cadence applies to every monitoring mode (CC+IC + CC+DM). Same predicate
+  // drives the launch payload read so visibility and persistence stay in lockstep.
+  if (cadenceBlock) cadenceBlock.style.display = usesMonitoringCadence(mode) ? '' : 'none';
   // v2.62: hide the 2-up row wrapper too when neither child is visible —
   // otherwise its grid gap + top margin shows as an empty band. CC+DM has
   // no primary-person block (no intro) but DOES use the cadence block, so
   // the row stays visible for CC+DM too — the empty primary slot will be
   // hidden by primaryBlock's own display:none.
   const introRow = document.getElementById('intro-config-row');
-  if (introRow) introRow.style.display = (mode === 'connect_and_introduce' || mode === 'connect_and_message') ? '' : 'none';
+  if (introRow) introRow.style.display = usesMonitoringCadence(mode) ? '' : 'none';
   const introTitleBlock = document.getElementById('intro-title-block');
   if (introTitleBlock) introTitleBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   // v2.62: CC+DM post-acceptance body — its own template section.
@@ -2578,30 +2588,41 @@ function alphaSyncConcurrency() {
 
 function alphaRecalc() {
   // v2.11.0: simpler model. Total max invites this run = N accounts × campaign limit.
+  // v2.61 redesign removed the alpha-total-leads/acct-count/per-acct/eq-total
+  // hero elements from index.html. The OLD `if (!totalEl) return` guard then
+  // short-circuited this whole function — so the concurrency-unlock block below
+  // (the ONLY place that adds .is-unlocked) never ran, leaving "Parallel
+  // accounts" permanently locked in EVERY mode no matter how many accounts were
+  // selected. Don't gate on those removed elements; every write below is
+  // individually null-guarded, so the function safely no-ops when they're absent.
   const totalEl = document.getElementById('alpha-total-leads');
   const acctCountEl = document.getElementById('alpha-acct-count');
   const perAcctEl = document.getElementById('alpha-per-acct');
   const eqTotalEl = document.getElementById('alpha-eq-total');
-  if (!totalEl) return; // panel not on page — nothing to do
 
   const numAccounts = Array.isArray(selectedProfileIds) ? selectedProfileIds.length : 0;
   const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 50;
   const total = dailyLimit * numAccounts;
 
-  totalEl.textContent = total > 0 ? String(total) : '—';
+  if (totalEl) totalEl.textContent = total > 0 ? String(total) : '—';
   if (acctCountEl) acctCountEl.textContent = String(numAccounts);
   if (perAcctEl)   perAcctEl.textContent   = String(dailyLimit);
   if (eqTotalEl)   eqTotalEl.textContent   = String(total);
 
-  // Concurrency toggle unlocked at ≥2 accounts (the mathematical minimum).
-  // v2.61: Row is always rendered; the .is-unlocked class controls whether
-  // the controls are interactive or dimmed (CSS handles the visual state and
-  // shows the "unlocks at 2+" pill when locked).
+  // Concurrency toggle unlocked at ≥5 accounts. The server only honors
+  // concurrency>1 when ≥5 accounts are selected (server.js buildCampaignConfig),
+  // so the UI threshold MUST match — otherwise the toggle is enabled but a
+  // silent no-op for 2-4 accounts (the bug this restores the fix for).
+  // v2.61 briefly lowered this to ≥2 to match a then-incorrect assumption;
+  // reverted to ≥5 to stay honest with the backend gate.
+  // Row is always rendered; the .is-unlocked class controls whether the
+  // controls are interactive or dimmed (CSS handles the visual state and
+  // shows the "available with 5+ accounts" pill when locked).
   const concurrencyRow = document.getElementById('alpha-concurrency-row');
   const concurrencyToggle = document.getElementById('concurrency-toggle');
   const concurrencyCount = document.getElementById('concurrency-count');
   if (concurrencyRow) {
-    const unlocked = numAccounts >= 2;
+    const unlocked = numAccounts >= 5;
     concurrencyRow.classList.toggle('is-unlocked', unlocked);
     if (!unlocked) {
       // Auto-disable + uncheck when locked so the math falls back to 1
@@ -2650,10 +2671,10 @@ function updateCampaignSummary() {
   // total invites = limit × numAccounts).
   const concurrencyToggle = document.getElementById('concurrency-toggle');
   const concurrencyCount = document.getElementById('concurrency-count');
-  // v2.61: gate matches alphaRecalc visual gate (≥2 accounts). Previously
-  // ≥5 — inconsistent with the row's unlock threshold and made the toggle
-  // a visual no-op for 2-4 accounts.
-  const concurrency = (concurrencyToggle?.checked && numAccounts >= 2)
+  // Gate matches alphaRecalc visual gate AND the server gate (≥5 accounts).
+  // Below 5 accounts the server forces concurrency=1, so the forecast must
+  // not promise a parallel multiplier it won't deliver.
+  const concurrency = (concurrencyToggle?.checked && numAccounts >= 5)
     ? Math.max(1, Math.min(5, parseInt(concurrencyCount?.value, 10) || 2))
     : 1;
   const TURN_FLOOR_MIN = 6;
@@ -2791,6 +2812,16 @@ async function startCampaign(opts = {}) {
     return startPostAmplification();
   }
 
+  // One-at-a-time: a campaign in the monitoring phase occupies the single
+  // campaign slot. Launching a new one resets that state (campaign.js
+  // startCampaign), silently ending the acceptance watch. Warn first.
+  try {
+    if (typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring') {
+      const ok = confirm('A campaign is currently monitoring for acceptances. Starting a new campaign will end that monitoring. Continue?');
+      if (!ok) return;
+    }
+  } catch { /* if __cockpit is unavailable, don't block the launch */ }
+
   // 2.8.29 / 2.8.31: check_status and message_only auto-derive profiles from
   // the sheet's Account Used column. UI selection ignored — skip validation.
   // v2.58.x: introduce_back (Introduction Campaign) is also auto-routed from
@@ -2902,6 +2933,15 @@ async function startCampaign(opts = {}) {
   }
 
   const mode = document.getElementById('campaign-mode').value;
+  // v2.13.x — Group conversation title + primary-person / Intro DM Body fields
+  // belong ONLY to the two intro flows (CC+IC connect_and_introduce, IC
+  // introduce_back). Switching CC+IC → CC+DM only hides those inputs, it
+  // doesn't clear them, so a leftover CC+IC config would otherwise leak into
+  // the campaign config and the post-campaign sweep (which fires a real group
+  // intro on primaryName+primaryIntroBody). Gate them at the source. Mirrors
+  // gatherCampaignFormState's preview gating; backed by the sweep's mode gate
+  // (post-campaign-bulk-check.js shouldFirePostCampaignIntro) as defense-in-depth.
+  const _isIntroFlow = (mode === 'connect_and_introduce' || mode === 'introduce_back');
 
   // Phase 11.2 (D-02, D-07): within-batch gap comes from explicit steppers for
   // non-message modes. Message mode keeps the #message-gap stepper because
@@ -2942,13 +2982,18 @@ async function startCampaign(opts = {}) {
     // v2.11.13: in-memory state instead of localStorage (storage may be blocked).
     introMode: mode === 'introduce_back',
     introName: document.getElementById('intro-name')?.value?.trim() || '',
-    introTitle: document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}',
+    // Intro-flows-only — blank for CC+DM / connect_only / message_only / InMail /
+    // Open Profile so a leftover CC+IC config can't leak into the campaign
+    // config or the post-campaign sweep.
+    introTitle: _isIntroFlow
+      ? (document.getElementById('intro-title')?.value || 'Introduction: {first name} <> {intro name}')
+      : '',
     // Connect + Introduce Back: primary person + intro DM body. Backend
     // stores these on the campaign config; auto-send-after-acceptance is
-    // the next chunk of work.
-    primaryName: document.getElementById('primary-person-name')?.value?.trim() || '',
-    primaryUrl:  document.getElementById('primary-person-url')?.value?.trim() || '',
-    primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
+    // the next chunk of work. Gated to intro flows for the same reason.
+    primaryName: _isIntroFlow ? (document.getElementById('primary-person-name')?.value?.trim() || '') : '',
+    primaryUrl:  _isIntroFlow ? (document.getElementById('primary-person-url')?.value?.trim() || '') : '',
+    primaryIntroBody: _isIntroFlow ? (document.getElementById('primary-intro-body')?.value || '') : '',
     // v2.62: CC+DM post-acceptance body — read at launch time too
     ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
@@ -3001,11 +3046,14 @@ async function startCampaign(opts = {}) {
       if (mode === 'introduce_back') return !!document.getElementById('preflight-check-toggle-ib')?.checked;
       return false;
     })(),
-    // v2.14.x: operator-chosen cadence for the monitoring auto-trigger.
-    // Only relevant for CC+IC mode; server clamps to [15, 360] and ignores
-    // the field for non-CC+IC modes.
+    // Operator-chosen cadence for the monitoring auto-trigger. Honoured for
+    // EVERY mode that monitors for acceptance (CC+IC and CC+DM) — gated on the
+    // same usesMonitoringCadence() predicate that shows the dropdown, so the
+    // two can never drift. (Previously this read only fired for CC+IC, so the
+    // CC+DM dropdown was shown but its value silently dropped → default 60.)
+    // Server clamps to [15, 360] and ignores the field for other modes.
     checkIntervalMinutes: (() => {
-      if (mode !== 'connect_and_introduce') return undefined;
+      if (!usesMonitoringCadence(mode)) return undefined;
       const v = parseInt(document.getElementById('check-cadence-select')?.value, 10);
       return Number.isFinite(v) ? v : 60;
     })(),
@@ -3465,10 +3513,9 @@ async function confirmStopMonitoringNow() {
       if (typeof pollStatus === 'function') pollStatus().catch(() => {});
 
       // alreadyStopped → operator double-clicked; first call already did the work.
-      const stamped = res.stampedCount || 0;
       const msg = res.alreadyStopped
-        ? 'Monitoring already ended — sheet stamps were applied.'
-        : `Monitoring ended. ${stamped} lead(s) stamped Closed - Not Connected.`;
+        ? 'Monitoring already ended.'
+        : 'Monitoring ended. Still-pending leads kept as "Connection Request Sent".';
       showCampaignToast(msg, 6000);
       if (typeof refreshDashboardSchedules === 'function') refreshDashboardSchedules();
     } else {
@@ -3664,7 +3711,7 @@ function showMonitoringEndedOverlay() {
     el.innerHTML = '<div style="background:#fafafa;color:#111;padding:40px 56px;border:1px solid #222;border-radius:0;text-align:center;font-family:inherit;max-width:520px;">'
       + '<div style="font-size:0.78rem;letter-spacing:0.18em;color:#c9a233;margin-bottom:12px;">● MONITORING ENDED</div>'
       + '<h2 style="margin:0 0 14px;font-size:1.6rem;letter-spacing:0.04em;">Campaign complete.</h2>'
-      + '<p style="margin:0 0 22px;color:#444;font-size:0.95rem;line-height:1.45;">All still-pending invitations have been stamped <i>Closed - Not Connected</i> in your sheet. Returning to the dashboard…</p>'
+      + '<p style="margin:0 0 22px;color:#444;font-size:0.95rem;line-height:1.45;">Still-pending invitations remain <i>Connection Request Sent</i> — they may still accept later. Returning to the dashboard…</p>'
       + '<button type="button" id="mon-ended-go-now" style="background:#111;color:#fff;border:0;padding:10px 22px;letter-spacing:0.12em;font-size:0.78rem;cursor:pointer;border-radius:9999px;">DASHBOARD NOW</button>'
       + '</div>';
     document.body.appendChild(el);
@@ -4063,6 +4110,12 @@ function setCampaignButtons(running, paused = false, pauseRequested = false) {
       b.textContent = 'Pause';
     }
   });
+  // Bug 15: keep the editor's launch rail in sync with live campaign state every
+  // poll — swaps "+ Launch options" for the Pause/Stop/Save control bar while a
+  // campaign runs/monitors, and back once it's fully stopped.
+  if (typeof window.updateEditingBanner === 'function') {
+    try { window.updateEditingBanner(); } catch (_) {}
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4610,8 +4663,14 @@ async function pollStatus() {
 // v2.61: Live Status section visibility. The section (#nav-status) and its
 // sidebar nav item are display:none unless:
 //   - we're on the wizard view (#/new)
-//   - AND a campaign is currently running (__cockpit.running)
+//   - AND a campaign is currently running (__cockpit.running) OR monitoring
+//     (__cockpit.state === 'monitoring')
 //   - AND we are NOT editing a draft (isOnNewCampaignView() === false)
+// v2.59.16: the monitoring clause was missing — during the post-send
+// monitoring phase __cockpit.running is false, so the Live Status section
+// (and its log) AND the "Open log" / "Live Status" nav buttons were hidden.
+// That's why the log "disappeared" in monitoring and "Open log" did nothing
+// (it scrolled to a display:none element). Monitoring is a live phase too.
 // The "editing a draft" check leverages the existing heuristic: clicking
 // "View running" from the dashboard clears activeDraftId, so navigating
 // into a running campaign satisfies the third condition.
@@ -4621,12 +4680,53 @@ function syncLiveStatusVisibility() {
   const onNew = typeof location !== 'undefined' && location.hash === '#/new';
   const editingDraft = (typeof isOnNewCampaignView === 'function') && isOnNewCampaignView();
   const running = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.running);
-  const show = onNew && running && !editingDraft;
+  const monitoring = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring');
+  const show = onNew && (running || monitoring) && !editingDraft;
   sec.style.display = show ? '' : 'none';
   const navBtn = document.querySelector('[data-nav="nav-status"]');
   if (navBtn) navBtn.style.display = show ? '' : 'none';
+  // v2.59.22: relocate the live card into / out of the wizard slot.
+  try { placeLiveCard(); } catch (_) { /* */ }
 }
 if (typeof window !== 'undefined') window.syncLiveStatusVisibility = syncLiveStatusVisibility;
+
+// v2.59.22: move the single #active-card between its dashboard home and the
+// wizard Live Status slot so both routes show the IDENTICAL card (zero drift —
+// renderActiveCard drives the same element wherever it lives). In the wizard
+// it gets full width + a taller, always-open log via .in-wizard.
+let _activeCardHome = null;
+function placeLiveCard() {
+  const card = document.getElementById('active-card');
+  const slot = document.getElementById('wiz-live-slot');
+  const sec = document.getElementById('nav-status');
+  if (!card) return;
+  // Capture the dashboard home (parent + next sibling) once, before any move.
+  if (!_activeCardHome && card.parentElement && card.parentElement.id !== 'wiz-live-slot') {
+    _activeCardHome = { parent: card.parentElement, next: card.nextElementSibling };
+  }
+  const onWizard = document.body.classList.contains('route-wizard');
+  const liveVisible = !!sec && sec.style.display !== 'none';
+  const wantWizard = onWizard && liveVisible && !card.classList.contains('is-empty');
+  if (wantWizard && slot) {
+    if (card.parentElement !== slot) {
+      slot.appendChild(card);
+      // Expand the section once on first placement so the card is visible —
+      // not every poll, so a manual collapse afterwards still sticks.
+      if (sec) sec.classList.remove('collapsed');
+    }
+    card.classList.add('in-wizard', 'is-detailed');
+    if (sec) sec.classList.add('is-card-live');
+  } else {
+    if (card.classList.contains('in-wizard')) {
+      card.classList.remove('in-wizard');
+      if (_activeCardHome && _activeCardHome.parent) {
+        _activeCardHome.parent.insertBefore(card, _activeCardHome.next || null);
+      }
+    }
+    if (sec) sec.classList.remove('is-card-live');
+  }
+}
+if (typeof window !== 'undefined') window.placeLiveCard = placeLiveCard;
 
 // ─── Phase 11.1: resource tiles + slow-mode banner ─────────────────────────
 // Populated every 2s by pollStatus(). Thresholds match src/resource-monitor.js
@@ -6111,6 +6211,21 @@ function applyPresetConfig(config) {
   setV('primary-intro-body', t.primaryIntroBody || '');
   if (t.introTitle) setV('intro-title', t.introTitle);
 
+  // v2.62: CC+DM post-acceptance body — symmetric with the primary-intro-body
+  // restore above. Without it, Re-run dropped the DM body and relaunched a
+  // CC+DM campaign with an empty ccDmBody → no auto-DMs ever fired. Persist to
+  // localStorage too, since setV() doesn't trigger the field's oninput=
+  // saveCcDmFields handler (so the value survives a reload / restoreCcDmState).
+  setV('tpl-cc-dm-body', t.ccDmBody || '');
+  try { if (typeof saveCcDmFields === 'function') saveCcDmFields(); } catch (_) {}
+
+  // Restore the monitoring cadence on Re-run. The value is persisted to history
+  // (settings.checkIntervalMinutes → spread onto config), but applyPresetConfig
+  // never wrote it back into the dropdown, so re-runs silently reset to the
+  // HTML default (60 = 1 hour) regardless of what the original run used. Applies
+  // to every monitoring mode (CC+IC + CC+DM).
+  if (config.checkIntervalMinutes) setV('check-cadence-select', String(config.checkIntervalMinutes));
+
   // v2.14.x: concurrency restore. concurrency=1 means single-worker
   // (toggle off); >1 means parallel mode (toggle on + count set).
   const _conc = Number(config.concurrency || 1);
@@ -7144,6 +7259,9 @@ function applyRoute() {
     if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
     startWizardPolling();
   }
+  // v2.59.22: re-evaluate the Live Status card placement on every route change
+  // (sync visibility first so placeLiveCard sees the right display state).
+  try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
 }
 
 // Updates the wizard's banner + Start button label based on whether a
@@ -7731,7 +7849,7 @@ function renderMonitoringCard(state) {
   const badgeClass = endingSoon ? 'mon-badge ending-soon' : 'mon-badge';
   const badgeText = endingSoon ? '● ENDING SOON' : '● MONITORING';
   const endingLine = endingSoon
-    ? `Window ends in <b>${escHtml(_fmtRemaining(remainingMs))}</b> — still-pending leads will be stamped <i>Closed - Not Connected</i>`
+    ? `Window ends in <b>${escHtml(_fmtRemaining(remainingMs))}</b> — monitoring stops; still-pending leads stay <i>Connection Request Sent</i>`
     : `Next check: <b>${escHtml(hhmm(next))}</b> · ends in <b>${escHtml(_fmtRemaining(remainingMs))}</b>`;
 
   return `
@@ -7796,11 +7914,11 @@ async function monitoringCheckNow() {
 window.monitoringCheckNow = monitoringCheckNow;
 
 async function monitoringStop() {
-  if (!confirm('End monitoring now? Any still-pending leads will be stamped Closed - Not Connected.')) return;
+  if (!confirm('End monitoring now? Still-pending leads stay "Connection Request Sent" — they may still accept later.')) return;
   try {
     const res = await fetch('/api/monitoring/stop', { method: 'POST' }).then((r) => r.json());
     if (res.ok) {
-      alert(`Monitoring ended. ${res.stampedCount || 0} lead(s) stamped Closed - Not Connected.`);
+      alert('Monitoring ended. Still-pending leads kept as "Connection Request Sent".');
       refreshDashboardSchedules();
     } else {
       alert('Stop failed: ' + (res.error || 'unknown'));
@@ -9453,16 +9571,64 @@ window.updateEditingBanner = function() {
   // visibilities are mirrored on the active-draft state.
   const inline = document.getElementById('wiz-editing-inline');
   const rail = document.getElementById('wiz-launch-rail');
+  const trigger = document.getElementById('wiz-launch-trigger');
+  const controls = document.getElementById('wiz-launch-controls');
   const id = getActiveDraftId();
-  if (!id) {
+  // Bug 15: a launched campaign consumes the draft (clearActiveDraft in
+  // startCampaign), so `id` goes null even though the operator is still in the
+  // editor watching a live run. Keep the rail up when a campaign is running /
+  // paused / monitoring, and swap its contents to campaign controls.
+  const running = !!(typeof __cockpit !== 'undefined' && __cockpit &&
+    (__cockpit.running || __cockpit.paused || __cockpit.state === 'monitoring'));
+  if (!id && !running) {
     if (inline) inline.style.display = 'none';
     if (rail) rail.style.display = 'none';
+    if (controls) controls.hidden = true;
+    if (trigger) trigger.style.display = '';
     document.body.classList.remove('has-launch-rail');
     return;
   }
-  if (inline) inline.style.display = 'inline-flex';
   if (rail) rail.style.display = 'flex';
   document.body.classList.add('has-launch-rail');
+
+  if (running) {
+    // Control-bar mode — hide the launch trigger + its menu, show Pause/Stop/
+    // Save-as-draft. (The rail's fixed ancestor is display:none on the
+    // dashboard route, so this never bleeds outside the editor.)
+    if (inline) inline.style.display = 'none';
+    if (trigger) trigger.style.display = 'none';
+    _closeLaunchMenu();
+    if (controls) controls.hidden = false;
+    // Distinguish the post-send monitoring phase from active sending. During
+    // monitoring campaign.running is false but state === 'monitoring' — the
+    // bar must REPORT "Monitoring" (not the "Running campaign" fallback) and
+    // drop the Pause button, which is gated on campaign.running server-side
+    // and so does nothing while monitoring.
+    const monitoring = !!(__cockpit && __cockpit.state === 'monitoring' && !__cockpit.running);
+    if (controls) controls.classList.toggle('is-monitoring', monitoring);
+    const modeVal = (__cockpit && __cockpit.mode) || document.getElementById('campaign-mode')?.value || '';
+    const nm = (__cockpit && __cockpit.name) ||
+      (document.getElementById('campaign-name-input')?.value || '').trim() || 'Running campaign';
+    const cmEl = document.getElementById('wiz-controls-mode');
+    const cnEl = document.getElementById('wiz-controls-name');
+    if (cmEl) cmEl.textContent = modeVal ? dashboardModeLabel(modeVal) : 'Live';
+    if (cnEl) cnEl.textContent = monitoring ? 'Monitoring' : nm;
+    const pauseBtn = document.getElementById('wiz-ctrl-pause');
+    if (pauseBtn) {
+      // Pause is a no-op during monitoring (nothing is sending) — hide it.
+      pauseBtn.hidden = monitoring;
+      const paused = !!(__cockpit && __cockpit.paused);
+      const pausing = !!(__cockpit && __cockpit.pauseRequested);
+      pauseBtn.textContent = paused ? 'Resume' : (pausing ? 'Pausing…' : 'Pause');
+      pauseBtn.disabled = pausing;
+    }
+    return;
+  }
+
+  // Draft (not running) — original launch-options behaviour.
+  if (controls) controls.hidden = true;
+  if (trigger) trigger.style.display = '';
+  if (inline) inline.style.display = 'inline-flex';
   // Sync the display name from the canonical campaign-name-input.
   const nameInput = document.getElementById('campaign-name-input');
   const draftName = (nameInput?.value || '').trim() || 'Untitled draft';
@@ -9711,6 +9877,36 @@ window.launchSaveAsDraft = function() {
   // No backend call — autosave has the data. Just navigate back.
   window.location.hash = '#/';
   if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
+};
+
+// Bug 15: "Save as draft" from the running-campaign control bar. The launch
+// consumed the original draft (deleted server-side + activeDraftId cleared), so
+// there's nothing to autosave into — spawn a fresh draft from the still-populated
+// editor form so the operator can re-run / tweak it later. Does NOT stop the
+// running campaign or navigate away.
+window.railSaveAsDraft = async function() {
+  try {
+    const nameInput = document.getElementById('campaign-name-input');
+    const name = (nameInput?.value || '').trim();
+    const r = await fetch('/api/drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const newId = data?.draft?.id || '';
+    if (newId) {
+      setActiveDraftId(newId);
+      // Persist the current form (sheet URL, templates, cadence, profiles) into
+      // the new draft via the existing autosave path.
+      if (typeof flushAutosaveImmediate === 'function') await flushAutosaveImmediate();
+    }
+    if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
+  } catch (err) {
+    console.warn('[drafts] railSaveAsDraft failed:', err);
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not save draft');
+  }
 };
 
 // Delete the draft currently being edited. Confirms first, DELETEs the
@@ -10037,8 +10233,14 @@ function v3FmtClock(d) {
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
-  if (!status || !status.running) {
+  // A campaign in the monitoring phase has running:false but is NOT idle —
+  // it's watching for acceptances. The card must render it, not fall through
+  // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM
+  // monitoring story; the cockpit ring already handled this state).
+  const isMonitoring = !!(status && !status.running && status.state === 'monitoring');
+  if (!status || (!status.running && !isMonitoring)) {
     card.classList.add('is-empty');
+    card.classList.remove('is-monitor');
     v3SetText('activeName', 'No campaign running');
     v3SetText('activeEyebrow', 'No campaign running');
     v3SetText('activePct', '0');
@@ -10046,7 +10248,6 @@ window.renderActiveCard = function(status) {
     v3SetText('activeTotal', '0');
     v3SetText('activeAccounts', '0');
     v3SetText('activeAccepted', '—');
-    v3SetText('activeReplies', '—');
     v3SetText('sendingLbl', 'Idle');
     v3SetText('batchEta', '—');
     const glyph = document.getElementById('activeGlyph');
@@ -10055,22 +10256,53 @@ window.renderActiveCard = function(status) {
     if (bar) bar.style.width = '0%';
     const logEl = document.getElementById('active-log');
     if (logEl) logEl.innerHTML = '';
+    // Bug 14: campaign is fully stopped/idle — collapse the live log and reset
+    // the "was active" latch so the NEXT launch auto-opens it again.
+    _setActiveDetails(false);
+    window.__activeCardActive = false;
+    const liveEl0 = document.getElementById('active-live');
+    if (liveEl0) liveEl0.hidden = true;
     return;
   }
   card.classList.remove('is-empty');
+  card.classList.toggle('is-monitor', isMonitoring);
+  // v2.59.19: live activity line — what the campaign is doing right now.
+  try {
+    const la = buildLiveActivity(status);
+    const liveEl = document.getElementById('active-live');
+    if (liveEl) {
+      liveEl.hidden = (la.state === 'idle');
+      liveEl.classList.toggle('is-checking', la.state === 'checking');
+      liveEl.classList.toggle('is-paused', la.state === 'paused');
+      v3SetText('activeLiveIco', la.icon);
+      v3SetText('activeLiveL1', la.l1);
+      v3SetText('activeLiveL2', la.l2);
+    }
+  } catch (_) { /* live line is best-effort */ }
+  // Bug 14: once a campaign is launched, keep the live log visible through the
+  // whole running → monitoring lifecycle. Auto-open the details panel on the
+  // transition INTO active/monitoring (not every poll, so a manual collapse via
+  // the chevron still sticks). It only re-collapses on a FULL stop (the empty
+  // branch above), matching "stays on until you stop it completely".
+  if (!window.__activeCardActive) {
+    _setActiveDetails(true);
+    window.__activeCardActive = true;
+  }
+  if (isMonitoring && typeof v3RenderMonitorHero === 'function') v3RenderMonitorHero(status);
   const total = Number(status.totalTargets) || 0;
   const done = Number(status.totalProcessed) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   v3SetText('activeName', status.name || '(unnamed)');
-  v3SetText('activeEyebrow', status._paused || status.paused ? 'Paused' : 'Running');
+  v3SetText('activeEyebrow', isMonitoring ? 'Monitoring' : (status._paused || status.paused ? 'Paused' : 'Running'));
   v3SetText('activePct', String(pct));
   v3SetText('activeSent', String(done));
   v3SetText('activeTotal', String(total));
-  v3SetText('activeAccounts', String((status.profileIds || []).length));
+  v3SetText('activeAccounts', String(((isMonitoring ? status.participatingProfileIds : status.profileIds) || status.profileIds || []).length));
   v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
-  v3SetText('activeReplies', String(status.repliesCount ?? '—'));
   const isPaused = !!(status._paused || status.paused);
-  v3SetText('sendingLbl', isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : 'Sending'));
+  v3SetText('sendingLbl', isMonitoring
+    ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Monitoring')
+    : (isPaused ? 'Paused' : (status.pauseRequested ? 'Pausing…' : 'Sending')));
   const glyph = document.getElementById('activeGlyph');
   if (glyph) glyph.textContent = v3ModeBadge(status.mode);
   const bar = card.querySelector('.vj-hbar > i');
@@ -10084,12 +10316,29 @@ window.renderActiveCard = function(status) {
     pauseBtn.setAttribute('data-tip', isPaused ? 'Resume' : 'Pause');
     pauseBtn.setAttribute('aria-label', isPaused ? 'Resume' : 'Pause');
   }
-  // Live log lines (last 6 from status.logs[])
+  // Live log lines — 6 on the compact dashboard card, 15 when the card is
+  // relocated into the wizard Live Status (v2.59.22: more real estate there).
   const logEl = document.getElementById('active-log');
   if (logEl && Array.isArray(status.logs)) {
-    const last6 = status.logs.slice(-6);
-    logEl.innerHTML = last6.map(line => v3RenderLogLine(line)).join('');
+    const inWizard = card.classList.contains('in-wizard');
+    const expanded = !!window.__wizLogExpanded;
+    const defaultN = inWizard ? 15 : 6;
+    const limit = expanded ? 100 : defaultN;
+    const lastN = status.logs.slice(-limit);
+    logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
+    const head = card.querySelector('.vj-log-head .vj-details-head');
+    if (head) head.textContent = `Live log · last ${lastN.length} events`;
+    const moreBtn = document.getElementById('wiz-log-more');
+    if (moreBtn) {
+      // Show the toggle whenever there's more to reveal (or we're expanded).
+      moreBtn.hidden = !(expanded || status.logs.length > defaultN);
+      moreBtn.textContent = expanded ? 'Show less' : 'Show more';
+    }
+    card.classList.toggle('is-log-expanded', expanded);
   }
+  // Stash the FULL log (not just the 6 rendered) so the "Copy all" button can
+  // copy everything the campaign has emitted (in-memory log, capped ~500).
+  window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
   // Batch ETA — best-effort from nextCheckAt or currentAction.endsAt
   const etaEl = document.getElementById('batchEta');
   if (etaEl) {
@@ -10104,6 +10353,79 @@ window.renderActiveCard = function(status) {
     etaEl.textContent = etaText;
   }
 };
+
+// Variant E monitoring hero: big live countdown to the next acceptance check
+// + one quiet stat line. Driven by the same 2s pollStatus tick as the rest of
+// the card. All values come straight from /api/campaign/status.
+function v3FmtCountdown(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return 'now';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// v2.59.19: the dashboard monitoring card only re-renders on the 5s dashboard
+// poll, so the "until next check" countdown stepped in 5-second jumps. Cache
+// the latest nextCheckAt and tick the *display* once a second (no re-fetch —
+// nextCheckAt only changes every cadence interval) so it counts down smoothly.
+let _monHeroNextCheckAt = null;
+function v3RenderMonitorHero(status) {
+  const countEl = document.getElementById('monCount');
+  const capEl = document.querySelector('#active-monitor .vj-mon-cap');
+  const heroEl = document.querySelector('#active-monitor .vj-mon-hero');
+  _monHeroNextCheckAt = status.nextCheckAt || null;
+  if (countEl) {
+    // Bug 12: while a connection check is actually running, replace the
+    // "12:00 / until next check" countdown with a pulsing "CHECKING / NOW" in
+    // the same hero slot, instead of a confusing "now / until next check".
+    if (status.monitoringCheckInProgress) {
+      countEl.textContent = 'CHECKING';
+      if (capEl) capEl.textContent = 'now';
+      if (heroEl) heroEl.classList.add('is-checking');
+    } else {
+      const txt = status.nextCheckAt
+        ? v3FmtCountdown(new Date(status.nextCheckAt).getTime() - Date.now())
+        : '—';
+      countEl.textContent = txt;
+      if (capEl) capEl.textContent = 'until next check';
+      if (heroEl) heroEl.classList.remove('is-checking');
+    }
+  }
+  const lineEl = document.getElementById('monLine');
+  if (lineEl) {
+    const sent = Number(status.totalProcessed) || 0;
+    const accepted = status.acceptedCount ?? '—';
+    const cadMin = Number(status.checkIntervalMinutes) || 60;
+    const cad = cadMin >= 60 ? (cadMin / 60) + 'h' : cadMin + ' min';
+    let ends = '—';
+    if (status.monitoringUntil) {
+      ends = new Date(status.monitoringUntil).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+    }
+    // Bug 10: "replies" removed from the dashboard.
+    lineEl.innerHTML =
+      `<b>${sent}</b> sent · <b>${accepted}</b> accepted · checks every <b>${cad}</b> · ends <b>${ends}</b>`;
+  }
+}
+
+// v2.59.19: smooth 1s display tick for the monitoring countdown. Only touches
+// the monCount text, only while the active card is in monitor mode and NOT
+// mid-check (CHECKING stays put). Recomputes from the cached nextCheckAt — no
+// network — so the number ticks every second instead of jumping every 5s.
+function _tickMonHeroCountdown() {
+  const card = document.getElementById('active-card');
+  if (!card || !card.classList.contains('is-monitor')) return;
+  if (!_monHeroNextCheckAt) return;
+  const heroEl = document.querySelector('#active-monitor .vj-mon-hero');
+  if (heroEl && heroEl.classList.contains('is-checking')) return; // leave "CHECKING"
+  const countEl = document.getElementById('monCount');
+  if (countEl) {
+    countEl.textContent = v3FmtCountdown(new Date(_monHeroNextCheckAt).getTime() - Date.now());
+  }
+}
+setInterval(_tickMonHeroCountdown, 1000);
 
 function v3RenderLogLine(rawLine) {
   const safe = (typeof escHtml === 'function') ? escHtml : (s) =>
@@ -10130,14 +10452,58 @@ function v3RenderLogLine(rawLine) {
   return `<div class="vj-log-line ${cls}"><span class="time">${safe(timeStr)}</span><span class="evt">${safe(evtStr)}</span><span class="what">${safe(restStr)}</span></div>`;
 }
 
+// Single setter for the active card's details panel (live log + bulk check) so
+// the manual chevron AND the auto-expand-on-monitoring (bug 14) stay in sync —
+// class, chevron rotation, and tooltip all move together.
+function _setActiveDetails(open) {
+  const card = document.getElementById('active-card');
+  if (!card) return;
+  card.classList.toggle('is-detailed', open);
+  const btn = card.querySelector('.vj-toggle-btn');
+  const svg = btn && btn.querySelector('svg');
+  if (svg) svg.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+  if (btn) btn.setAttribute('data-tip', open ? 'Hide details' : 'Show details');
+}
+
 window.toggleActiveDetails = function(btn) {
   const card = document.getElementById('active-card');
   if (!card) return;
-  const opening = !card.classList.contains('is-detailed');
-  card.classList.toggle('is-detailed');
-  const svg = btn && btn.querySelector('svg');
-  if (svg) svg.style.transform = opening ? 'rotate(180deg)' : 'rotate(0deg)';
-  if (btn) btn.setAttribute('data-tip', opening ? 'Hide details' : 'Show details');
+  _setActiveDetails(!card.classList.contains('is-detailed'));
+};
+
+// "[ISO] message" → "HH:MM:SS  message" for a clean clipboard paste.
+function _logLineToPlain(raw) {
+  const s = String(raw == null ? '' : raw);
+  const m = s.match(/^\[([^\]]+)\]\s*(.*)$/);
+  if (m) {
+    const t = new Date(m[1]);
+    if (!Number.isNaN(t.getTime())) {
+      const hh = String(t.getHours()).padStart(2, '0');
+      const mm = String(t.getMinutes()).padStart(2, '0');
+      const ss = String(t.getSeconds()).padStart(2, '0');
+      return `${hh}:${mm}:${ss}  ${m[2]}`;
+    }
+    return m[2];
+  }
+  return s;
+}
+
+// Copy the FULL live log (all events, not just the 6 shown) to the clipboard.
+window.dashCopyLog = async function(btn) {
+  const lines = Array.isArray(window.__activeFullLogs) ? window.__activeFullLogs : [];
+  const text = lines.map(_logLineToPlain).join('\n');
+  const flash = (label) => {
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = label;
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(lines.length ? 'Copied ✓' : 'Log empty');
+  } catch (_) {
+    flash('Copy failed');
+  }
 };
 
 window.dashPauseActive = async function() {
@@ -10157,12 +10523,20 @@ window.dashPauseActive = async function() {
 };
 
 window.dashStopActive = async function() {
-  // Route through confirmStopCampaign so CC+IC / CC+DM get the
-  // "Stop everything vs. keep monitoring" choice modal, monitoring-only
-  // state hits the dedicated stop-monitoring modal, and simpler modes
-  // get the plain confirm. Previously this bypassed all of that and
-  // sent an empty body, which meant operators saw "It will move to
-  // Past" but actually got the soft stop (and CC+IC/DM had no choice).
+  // If the campaign is already in the MONITORING phase, the dashboard Stop
+  // button must END MONITORING (→ /api/monitoring/stop → stopMonitoring,
+  // state → 'done'), not run the campaign-stop flow. The active card is what
+  // shows during monitoring, so its Stop ■ lands here — route it straight to
+  // the monitoring stop so "end monitoring on the dashboard" actually ends it,
+  // regardless of modal routing or the running flag.
+  if (typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring'
+      && typeof window.dashStopMonitoring === 'function') {
+    window.dashStopMonitoring();
+    return;
+  }
+  // Otherwise route through confirmStopCampaign so CC+IC / CC+DM get the
+  // "Stop everything vs. keep monitoring" choice modal and simpler modes
+  // get the plain confirm.
   if (typeof confirmStopCampaign === 'function') {
     confirmStopCampaign();
   }
@@ -10251,12 +10625,48 @@ window.dashBulkCheck = async function() {
   } catch (err) { console.error('[v3] dashBulkCheck:', err); }
 };
 
-window.dashOpenActive = function() {
-  window.location.hash = '#/new';
+window.dashOpenActive = async function() {
+  // "Open" enters the RUNNING/MONITORING campaign's editor. It MUST clear the
+  // active draft first — otherwise it just navigates to #/new and shows
+  // whatever draft was last open (a new campaign, or another campaign you
+  // touched), NOT the live one. viewRunningCampaign() is the same path the
+  // past-list "Edit" button uses: flush autosave → clearActiveDraft →
+  // goCreateCampaign. Without the clear, "Open" was opening the wrong campaign.
+  if (typeof viewRunningCampaign === 'function') {
+    try { await viewRunningCampaign(); } catch (_) { window.location.hash = '#/new'; }
+  } else {
+    clearActiveDraft();
+    window.location.hash = '#/new';
+  }
+  // Then scroll to Section 5 (Message Templates / Campaign Settings) so the
+  // operator lands where the post-acceptance DM body + other message fields are.
   setTimeout(() => {
-    const target = document.getElementById('nav-status');
-    if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth' });
+    const target = document.getElementById('nav-templates');
+    if (target && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }, 200);
+};
+
+// v2.59.24: "Show more / less" log toggle for the wizard Live Status card.
+// Re-renders immediately from the stashed full log so it doesn't wait for the
+// next 2s poll. Only meaningful in-wizard (the button is hidden elsewhere).
+window.dashToggleLogLines = function(btn) {
+  window.__wizLogExpanded = !window.__wizLogExpanded;
+  const logs = window.__activeFullLogs || [];
+  const card = document.getElementById('active-card');
+  const inWizard = !!(card && card.classList.contains('in-wizard'));
+  const expanded = window.__wizLogExpanded;
+  const defaultN = inWizard ? 15 : 6;
+  const lastN = logs.slice(-(expanded ? 100 : defaultN));
+  const logEl = document.getElementById('active-log');
+  if (logEl) logEl.innerHTML = lastN.map(l => v3RenderLogLine(l)).join('');
+  const head = card && card.querySelector('.vj-log-head .vj-details-head');
+  if (head) head.textContent = `Live log · last ${lastN.length} events`;
+  if (btn) btn.textContent = expanded ? 'Show less' : 'Show more';
+  if (card) card.classList.toggle('is-log-expanded', expanded);
 };
 
 window.dashOpenBatchSettings = function() {
@@ -10283,62 +10693,12 @@ function v3ComputeMonitoringDay(status) {
   return Math.max(0, Math.min(V3_MONITORING_TOTAL_DAYS, day));
 }
 
-window.renderMonitoringCard = function(status) {
+window.renderMonitoringCard = function(_status) {
+  // v2.59.x: monitoring is now shown in the main active card (Variant E —
+  // blue, next-check countdown). This standalone section is retired so the
+  // dashboard doesn't render the same monitoring campaign twice.
   const sect = document.getElementById('monitoring-section');
-  if (!sect) return;
-  // Show only when campaign is in monitoring state.
-  if (!status || status.state !== 'monitoring') {
-    sect.style.display = 'none';
-    return;
-  }
-  sect.style.display = '';
-
-  const day = v3ComputeMonitoringDay(status);
-  const pct = Math.round((day / V3_MONITORING_TOTAL_DAYS) * 100);
-  const name = status.name || '(unnamed)';
-  const accepted = status.acceptedCount ?? '—';
-  const replies = status.repliesCount ?? '—';
-  const sent = Number(status.totalProcessed) || 0;
-  const accountsCount = (status.participatingProfileIds || status.profileIds || []).length;
-  const sweepLbl = status.monitoringCheckInProgress ? 'Checking now…' : 'Watching';
-
-  // Compute next-sweep ETA from nextCheckAt
-  let sweepEtaText = '—';
-  if (status.nextCheckAt) {
-    const ms = new Date(status.nextCheckAt).getTime() - Date.now();
-    sweepEtaText = v3FmtMs(ms);
-  }
-
-  // Mini state placeholders
-  v3SetText('monitorMiniName', name);
-  v3SetText('monitorMiniPct', String(pct));
-  v3SetText('monitorMiniDay', String(day));
-  v3SetText('monitorMiniDayTotal', String(V3_MONITORING_TOTAL_DAYS));
-  v3SetText('monitorMiniSent', String(sent));
-  v3SetText('monitorMiniAccepted', String(accepted));
-  v3SetText('sweepEtaMini', sweepEtaText);
-  const miniBar = sect.querySelector('.vj-mini-bar > i');
-  if (miniBar) miniBar.style.width = pct + '%';
-  const miniGlyph = document.getElementById('monitorMiniGlyph');
-  if (miniGlyph) miniGlyph.textContent = v3ModeBadge(status.mode);
-
-  // Full state placeholders
-  v3SetText('monitorName', name);
-  v3SetText('monitorPct', String(pct));
-  v3SetText('monitorDay', String(day));
-  v3SetText('monitorDayTotal', String(V3_MONITORING_TOTAL_DAYS));
-  v3SetText('monitorAccounts', String(accountsCount));
-  v3SetText('monitorSent', String(sent));
-  v3SetText('monitorAccepted', String(accepted));
-  v3SetText('monitorReplies', String(replies));
-  v3SetText('watchingLbl', sweepLbl);
-  v3SetText('sweepEta', sweepEtaText);
-  const fullGlyph = document.getElementById('monitorGlyph');
-  if (fullGlyph) fullGlyph.textContent = v3ModeBadge(status.mode);
-  // Full-J hbar lives in the same section but outside the mini block.
-  // Query for the non-mini hbar.
-  const fullBar = sect.querySelector('.vj-hbar:not(.vj-mini-bar) > i');
-  if (fullBar) fullBar.style.width = pct + '%';
+  if (sect) sect.style.display = 'none';
 };
 
 window.toggleMonitorMini = function() {
@@ -10483,6 +10843,9 @@ window.renderUpNextDeck = async function() {
     console.error('[v3] renderUpNextDeck fetch:', err);
   }
   v3SetText('queueCount', String(queue.length));
+  // Bug 13: "Clear all" only when there's something to clear.
+  const clearBtn = document.getElementById('queue-clear-btn');
+  if (clearBtn) clearBtn.hidden = queue.length === 0;
 
   if (queue.length === 0) {
     list.innerHTML = '<div class="vc-empty" style="padding:24px;color:var(--gray);font-size:13px">No queued campaigns.</div>';
@@ -10956,7 +11319,7 @@ window.renderPastSection = async function() {
       rate = '<b>stopped early</b>';
     } else if (latest.totalProcessed && latest.totalProcessed > 0) {
       const r = ((latest.successCount || 0) / latest.totalProcessed) * 100;
-      rate = '<b>' + r.toFixed(1) + '%</b> reply rate';
+      rate = '<b>' + r.toFixed(1) + '%</b> success rate';
     } else {
       rate = '<b>—</b>';
     }
@@ -10969,6 +11332,9 @@ window.renderPastSection = async function() {
   const safe = (typeof escHtml === 'function') ? escHtml : (s) => String(s || '');
   const rows = _v3PastEntries.map((p, displayIdx) => v3RenderPastRow(p, displayIdx, safe)).join('');
   listEl.innerHTML = '<div class="pa-list">' + rows + '</div>';
+  // Bug 13: reflect manage ("Select") mode + refresh the bulk-delete bar.
+  listEl.classList.toggle('is-managing', pastManageMode);
+  _v3UpdatePastBulkBar();
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -11046,23 +11412,28 @@ function v3RenderPastRow(p, displayIdx, safe) {
   const ago = (typeof _humanAgo === 'function' && p.date) ? _humanAgo(new Date(p.date).getTime()) : '';
   const isStopped = (p.endReason === 'stopped' || p.fullStop);
   const sent = p.totalProcessed || 0;
-  const replies = p.successCount || 0;
+  // Bug 10: "replies" removed from the dashboard. successCount still drives the
+  // success-rate %, just no longer labelled "replies".
+  const succeeded = p.successCount || 0;
   let rateHtml;
   if (isStopped) {
     rateHtml = '<div class="pa-stopped">Stopped early</div>';
   } else if (sent > 0) {
-    const r = (replies / sent) * 100;
+    const r = (succeeded / sent) * 100;
     rateHtml = `<div class="pa-rate">${r.toFixed(1)}<span class="pct">%</span></div>`;
   } else {
     rateHtml = `<div class="pa-rate">—</div>`;
   }
   const dockId = 'dock-past-' + oIdx;
+  const selected = pastSelectedIdxs.has(oIdx) ? ' is-selected' : '';
+  const checkedAttr = pastSelectedIdxs.has(oIdx) ? 'checked' : '';
   return `
-    <div class="pa-row">
+    <div class="pa-row${selected}">
+      <input type="checkbox" class="pa-check" ${checkedAttr} onclick="event.stopPropagation()" onchange="window.togglePastSelect(${oIdx}, event)" aria-label="Select campaign" />
       <div class="glyph">${safe(v3ModeBadge(p.mode))}</div>
       <div class="pa-name">${safe(p.name || '(unnamed)')}</div>
       <div class="pa-when">${safe(ago)}</div>
-      <div class="pa-stats"><b>${sent}</b> sent · <b>${replies}</b> replies</div>
+      <div class="pa-stats"><b>${sent}</b> sent</div>
       ${rateHtml}
       <div class="dock" id="${dockId}" role="toolbar" aria-label="${safe(p.name || '')} actions">
         <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx})">${V3_SVG_RESTART}</button>
@@ -11210,6 +11581,107 @@ window.dashArchivePast = async function(originalIdx) {
   } catch (err) { console.error('[v3] dashArchivePast:', err); }
 };
 
+// ── Bug 13: Past bulk delete (manage / "Select" mode) ────────────────────────
+// Reuses the module-scoped pastManageMode + pastSelectedIdxs state. Selection is
+// keyed on _originalIdx (on-disk history index). Delete = soft-archive, the same
+// endpoint the single-row Delete uses; archive never reindexes history.json, so
+// a whole batch of indexes stays valid.
+window.togglePastManage = function() {
+  pastManageMode = !pastManageMode;
+  if (!pastManageMode) pastSelectedIdxs.clear();
+  const btn = document.getElementById('past-manage-btn');
+  if (btn) btn.textContent = pastManageMode ? 'Done' : 'Select';
+  // Entering Select mode auto-expands the list so rows + checkboxes are visible.
+  if (pastManageMode) {
+    const frame = document.getElementById('pastFrame');
+    if (frame && !frame.classList.contains('is-expanded') && typeof window.togglePastExpanded === 'function') {
+      window.togglePastExpanded();
+    }
+  }
+  if (typeof window.renderPastSection === 'function') window.renderPastSection();
+};
+
+window.togglePastSelect = function(oIdx, event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  if (pastSelectedIdxs.has(oIdx)) pastSelectedIdxs.delete(oIdx);
+  else pastSelectedIdxs.add(oIdx);
+  const row = event && event.target && event.target.closest && event.target.closest('.pa-row');
+  if (row) row.classList.toggle('is-selected', pastSelectedIdxs.has(oIdx));
+  _v3UpdatePastBulkBar();
+};
+
+function _v3UpdatePastBulkBar() {
+  const bar = document.getElementById('past-bulk-bar');
+  if (!bar) return;
+  if (!pastManageMode) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const n = pastSelectedIdxs.size;
+  const countEl = document.getElementById('past-bulk-count');
+  const delBtn = document.getElementById('past-bulk-delete-btn');
+  if (countEl) countEl.textContent = `${n} selected`;
+  if (delBtn) {
+    delBtn.disabled = n === 0;
+    delBtn.textContent = n > 0 ? `Delete ${n}` : 'Delete selected';
+  }
+}
+
+async function _v3ArchivePastIdxs(indexes) {
+  let ok = 0;
+  for (const idx of indexes) {
+    try {
+      const r = await fetch('/api/history/' + idx + '/archive', { method: 'PATCH' });
+      if (r.ok) ok++;
+    } catch (err) { console.warn('[v3] archive idx', idx, err); }
+  }
+  return ok;
+}
+
+function _v3ExitPastManage() {
+  pastSelectedIdxs.clear();
+  pastManageMode = false;
+  const btn = document.getElementById('past-manage-btn');
+  if (btn) btn.textContent = 'Select';
+}
+
+window.bulkDeletePastSelected = async function() {
+  const idxs = [...pastSelectedIdxs];
+  if (idxs.length === 0) return;
+  if (!confirm(`Delete ${idxs.length} campaign${idxs.length === 1 ? '' : 's'}? They'll be removed from the list.`)) return;
+  const ok = await _v3ArchivePastIdxs(idxs);
+  _v3ExitPastManage();
+  if (typeof showCampaignToast === 'function') showCampaignToast(`Deleted ${ok}`);
+  if (typeof window.renderPastSection === 'function') window.renderPastSection();
+};
+
+window.deleteAllPast = async function() {
+  const all = (Array.isArray(_v3PastEntries) ? _v3PastEntries : []).map((p) => p._originalIdx);
+  if (all.length === 0) return;
+  if (!confirm(`Delete ALL ${all.length} past campaign${all.length === 1 ? '' : 's'}? This clears the Past list.`)) return;
+  const ok = await _v3ArchivePastIdxs(all);
+  _v3ExitPastManage();
+  if (typeof showCampaignToast === 'function') showCampaignToast(`Deleted ${ok}`);
+  if (typeof window.renderPastSection === 'function') window.renderPastSection();
+};
+
+// Bug 13: clear the whole queue (per-item Remove already exists on each card).
+window.dashClearQueue = async function() {
+  let items = [];
+  try {
+    const r = await fetch('/api/queue');
+    const data = await r.json();
+    items = Array.isArray(data?.queue) ? data.queue : [];
+  } catch (err) { console.warn('[v3] dashClearQueue fetch', err); }
+  if (items.length === 0) return;
+  if (!confirm(`Clear all ${items.length} queued campaign${items.length === 1 ? '' : 's'}?`)) return;
+  for (const q of items) {
+    if (!q || !q.id) continue;
+    try { await fetch('/api/queue/' + encodeURIComponent(q.id), { method: 'DELETE' }); }
+    catch (err) { console.warn('[v3] dashClearQueue delete', q.id, err); }
+  }
+  if (typeof showCampaignToast === 'function') showCampaignToast('Queue cleared');
+  if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
+};
+
 // toggleDock — shared dock open/close + click-outside dismissal. Used by Active,
 // Monitoring, Up Next item docks, and Past row docks.
 if (typeof window.toggleDock !== 'function') {
@@ -11281,10 +11753,19 @@ function renderLiveConsole(s) {
   if (!root) return;
 
   const running = !!(s && s.running);
-  const visible = shouldShowConsole({ running, hash: location.hash || '' });
+  const hasRoster = !!(s && Array.isArray(s.profileNames) && s.profileNames.length);
+  const visible = shouldShowConsole({
+    running,
+    paused: !!(s && (s.paused || s.pauseRequested)),
+    state: s && s.state,
+    hasRoster,
+  });
 
   if (!visible) {
     root.hidden = true;
+    // Console is disappearing entirely (fully idle, no roster). Collapse back
+    // to the lip so it re-appears as a lip next time, never auto-opened.
+    if (_lcPrevRunning) _lcApplyState(false);
     _lcPrevRunning = running;
     return;
   }
@@ -11321,38 +11802,105 @@ function renderLiveConsole(s) {
     _lcWriteCache[key] = v;
   };
 
-  // Pill content
-  setAttr('[data-lc="dot"]', 'data-color', pill.dot);
-  setAttr('[data-lc="dot"]', 'data-pulse', pill.pulse ? '1' : '0');
-  setText('[data-lc="label"]', pill.label);
-  setText('[data-lc="count"]', `${pill.processed} / ${pill.total}`);
+  // ── v2.59.26 redesign: state class drives lip/head colours; drawer body is
+  // a mini dashboard card (shared buildLiveActivity live line + countdown). ──
+  const isMon = !s.running && s.state === 'monitoring';
+  const isPaused = !!(s.paused || s.pauseRequested);
+  const isRunning = !!s.running && !isPaused;
+  const isWarn = !!((s.throttle && s.throttle.active) || (Array.isArray(s.parked) && s.parked.length));
+  const stateClass = isMon ? 'lc-monitoring'
+    : isPaused ? 'lc-paused'
+    : isWarn ? 'lc-warn'
+    : isRunning ? 'lc-running'
+    : 'lc-idle';
+  ['lc-monitoring', 'lc-running', 'lc-paused', 'lc-warn', 'lc-idle'].forEach((c) => {
+    root.classList.toggle(c, c === stateClass);
+  });
 
-  if (pill.errSegment) {
-    setText('[data-lc="err"]', pill.errSegment);
-    setHidden('[data-lc="err"]', false);
-  } else {
-    setHidden('[data-lc="err"]', true);
+  // Head — status label + campaign name + mode badge.
+  const statusLabel = isMon ? 'Monitoring' : isPaused ? 'Paused' : isRunning ? 'Running' : (pill.state || 'idle');
+  setText('[data-lc="hstatus"]', statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1));
+  setText('[data-lc="title"]', (pill.name && pill.name !== '—') ? pill.name.toUpperCase() : '(UNNAMED)');
+  // Short mode tag ("C+D") — pill.mode can be the full mode string for modes
+  // missing from MODE_LABELS, which overflowed the badge into the × button.
+  setText('[data-lc="badge"]', (typeof v3ModeBadge === 'function') ? v3ModeBadge(s.mode) : pill.mode);
+
+  // Mini card — the same live line as the dashboard card + big number.
+  const la = buildLiveActivity(s);
+  setText('[data-lc="live-ico"]', la.icon);
+  setText('[data-lc="live-l1"]', la.l1);
+  setText('[data-lc="live-l2"]', la.l2);
+  let bigN = '—', bigU = '';
+  if (isMon) {
+    bigN = s.nextCheckAt ? v3FmtCountdown(new Date(s.nextCheckAt).getTime() - Date.now()) : '—';
+    bigU = 'next check';
+  } else if (isRunning || isPaused) {
+    bigN = pill.total > 0 ? `${Math.round((pill.processed / pill.total) * 100)}%` : String(pill.processed);
+    bigU = pill.total > 0 ? 'done' : 'sent';
   }
-  if (pill.parkedSegment) {
-    setText('[data-lc="parked"]', pill.parkedSegment);
-    setHidden('[data-lc="parked"]', false);
+  setText('[data-lc="live-n"]', bigN);
+  setText('[data-lc="live-u"]', bigU);
+
+  // Mini stats line.
+  const _sent = Number(s.totalProcessed) || pill.processed || 0;
+  const _accepted = (s.acceptedCount != null ? s.acceptedCount : '—');
+  let _statsHTML = `<b>${_sent}</b> sent · <b>${_accepted}</b> accepted`;
+  if (isMon && s.monitoringUntil) {
+    const _ends = new Date(s.monitoringUntil).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+    _statsHTML += ` · ends <b>${_ends}</b>`;
   } else {
-    setHidden('[data-lc="parked"]', true);
+    const _acc = (Array.isArray(s.profileNames) ? s.profileNames.length : 0);
+    _statsHTML += ` · <b>${_acc}</b> account${_acc === 1 ? '' : 's'}`;
+  }
+  const _statsEl = root.querySelector('[data-lc="mini-stats"]');
+  if (_statsEl && _lcWriteCache['__mini_stats'] !== _statsHTML) {
+    _statsEl.innerHTML = _statsHTML;
+    _lcWriteCache['__mini_stats'] = _statsHTML;
   }
 
-  // Card content
-  setAttr('[data-lc="dot-card"]', 'data-color', pill.dot);
-  setAttr('[data-lc="dot-card"]', 'data-pulse', pill.pulse ? '1' : '0');
-  setText('[data-lc="title"]', pill.name.toUpperCase());
-  setText('[data-lc="mode"]', pill.mode);
-  setText('[data-lc="account"]', pill.account);
-  setText('[data-lc="lead"]', pill.lead);
-  setText('[data-lc="action"]', pill.action);
+  // Selected GoLogin account roster — "who we selected", with the currently
+  // acting account marked. Re-render only when the roster signature changes.
+  const acctEl = root.querySelector('[data-lc="accounts"]');
+  if (acctEl) {
+    const accts = pill.accounts || [];
+    const sig = accts.map((a) => (a.active ? '*' : '') + a.name).join('|');
+    if (_lcWriteCache['__acct_sig'] !== sig) {
+      acctEl.innerHTML = '';
+      if (!accts.length) {
+        acctEl.textContent = '—';
+      } else {
+        accts.forEach((a) => {
+          const span = document.createElement('span');
+          span.className = 'live-console__acct' + (a.active ? ' is-active' : '');
+          span.textContent = a.name;
+          acctEl.appendChild(span);
+        });
+      }
+      _lcWriteCache['__acct_sig'] = sig;
+    }
+  }
   const sentStr = `${pill.processed} / ${pill.total}` +
     (pill.errSegment ? ` ${pill.errSegment}` : '') +
     (pill.parkedSegment ? ` ${pill.parkedSegment}` : '');
   setText('[data-lc="sent"]', sentStr);
   setText('[data-lc="state"]', `state · ${pill.state}`);
+
+  // Cockpit ring (Variant B): fill % = sent / total, gold while running and
+  // blue while monitoring. Center = processed count, caption = "of total".
+  const ringEl = root.querySelector('[data-lc="ring"]');
+  if (ringEl) {
+    const pct = pill.total > 0
+      ? Math.max(0, Math.min(100, Math.round((pill.processed / pill.total) * 100)))
+      : 0;
+    const accent = pill.state === 'monitoring' ? 'var(--blue)' : 'var(--gold)';
+    const bg = `conic-gradient(${accent} 0 ${pct}%, rgba(255,255,255,0.10) ${pct}% 100%)`;
+    if (_lcWriteCache['__ring_bg'] !== bg) {
+      ringEl.style.background = bg;
+      _lcWriteCache['__ring_bg'] = bg;
+    }
+  }
+  setText('[data-lc="ring-num"]', String(pill.processed));
+  setText('[data-lc="ring-cap"]', `of ${pill.total}`);
 
   // Log tail (3 lines)
   const logEl = root.querySelector('[data-lc="log"]');
@@ -11371,29 +11919,17 @@ function renderLiveConsole(s) {
     }
   }
 
-  // Detect running → idle transition: clear localStorage so the next campaign
-  // starts collapsed regardless of how the last one was left.
-  if (_lcPrevRunning && !running) {
-    _lcClearExpanded();
-    _lcApplyState(false);
-  }
-
+  // Note: run-end collapse is handled in the !visible branch above. While the
+  // console remains visible (running → monitoring, or roster staged), we keep
+  // the operator's chosen expand state instead of force-collapsing.
   _lcPrevRunning = running;
 }
 
-// ── Live console: persistence + interaction ──────────────────────────────
-const LC_LS_KEY = 'liveConsole.expanded';
-
-function _lcReadExpanded() {
-  try { return localStorage.getItem(LC_LS_KEY) === '1'; }
-  catch { return false; }
-}
-function _lcWriteExpanded(expanded) {
-  try { localStorage.setItem(LC_LS_KEY, expanded ? '1' : '0'); } catch { /* */ }
-}
-function _lcClearExpanded() {
-  try { localStorage.removeItem(LC_LS_KEY); } catch { /* */ }
-}
+// ── Live console: expand / collapse interaction ───────────────────────────
+// The console is a LIP by default and only opens on an explicit click on the
+// lip. It never restores an "expanded" state automatically — operator
+// feedback was that an auto-opening drawer covered the dashboard. The drawer's
+// × button (and a click on the dashboard link) collapses it back to the lip.
 
 function _lcApplyState(expanded) {
   const root = document.getElementById('live-console');
@@ -11402,17 +11938,17 @@ function _lcApplyState(expanded) {
   root.classList.toggle('is-collapsed', !expanded);
 }
 
-function _lcExpand()   { _lcApplyState(true);  _lcWriteExpanded(true);  }
-function _lcCollapse() { _lcApplyState(false); _lcWriteExpanded(false); }
+function _lcExpand()   { _lcApplyState(true);  }
+function _lcCollapse() { _lcApplyState(false); }
 
 function _lcInit() {
   const root = document.getElementById('live-console');
   if (!root) return;
 
-  // Restore expand state from localStorage on init.
-  _lcApplyState(_lcReadExpanded());
+  // Always start as a collapsed lip — never auto-open.
+  _lcApplyState(false);
 
-  // Click pill → expand. Click collapse button → collapse.
+  // Click lip → expand. Click × (collapse) button → back to lip.
   // Click dashboard link → goDashboard() (defined elsewhere in app.js).
   const pillBtn = root.querySelector('[data-lc="pill"]');
   if (pillBtn) pillBtn.addEventListener('click', _lcExpand);
@@ -11427,16 +11963,9 @@ function _lcInit() {
     else window.location.hash = '#/';
   });
 
-  // Re-evaluate visibility when the route changes.
+  // Console visibility is route-independent now (it's a persistent monitor),
+  // so the route change no longer toggles it — the 2s poll owns visibility.
   window.addEventListener('hashchange', () => {
-    const root2 = document.getElementById('live-console');
-    if (root2) {
-      if (!shouldShowConsole({ running: _lcPrevRunning, hash: location.hash || '' })) {
-        root2.hidden = true;
-      } else {
-        root2.hidden = false;
-      }
-    }
     // v2.61: Live Status section also reacts to hash changes — switching
     // away from #/new or into a draft view must hide it immediately,
     // not wait for the next 2s poll tick.

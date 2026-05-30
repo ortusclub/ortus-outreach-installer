@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Throughput · sketch variants</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #0f0f0f;
+    --ink: #ededed;
+    --muted: #8a8a8a;
+    --dim: #5a5a5a;
+    --hair: #1f1f1f;
+    --hair-soft: #161616;
+    --gold: #c8a96a;
+    --gold-soft: rgba(200,169,106,.12);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 -apple-system, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1280px; margin: 0 auto; padding: 48px 56px 120px; }
+  h1 {
+    font: 500 13px/1 -apple-system, system-ui, sans-serif;
+    letter-spacing: .18em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .page > .lede { color: var(--dim); margin: 0 0 40px; font-size: 13px; }
+
+  .variant { margin: 0 0 80px; }
+  .variant-tag {
+    font: 500 11px/1 -apple-system, system-ui, sans-serif;
+    letter-spacing: .2em; text-transform: uppercase;
+    color: var(--gold); margin: 0 0 4px;
+  }
+  .variant-title {
+    font: italic 400 28px/1.1 "Iowan Old Style", "Palatino", Georgia, serif;
+    margin: 0 0 28px; color: var(--ink);
+  }
+
+  /* ─── Section frame (matches app) ─── */
+  .section-head {
+    display: flex; align-items: baseline; gap: 12px;
+    padding-bottom: 16px; margin-bottom: 24px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .section-roman {
+    font: 500 11px/1 -apple-system, system-ui, sans-serif;
+    letter-spacing: .22em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .section-roman::before { content: "—  "; color: var(--gold); margin-right: 6px; }
+  .section-title {
+    font: italic 400 26px/1 "Iowan Old Style", "Palatino", Georgia, serif;
+    color: var(--ink); margin: 0;
+  }
+  .section-sub { color: var(--dim); font-size: 13px; margin: 6px 0 0; }
+
+  /* ─── Two-column grid ─── */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--hair);
+    border: 1px solid var(--hair);
+  }
+  .cell {
+    background: var(--bg);
+    padding: 22px 24px;
+  }
+  .cell-head {
+    display: flex; align-items: baseline; gap: 10px;
+    margin-bottom: 14px;
+  }
+  .label {
+    font: 500 11px/1 -apple-system, system-ui, sans-serif;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .pill-unlock {
+    font: 500 10px/1 -apple-system, system-ui, sans-serif;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: var(--gold);
+    padding: 4px 8px;
+    border: 1px solid var(--gold-soft);
+    border-radius: 9999px;
+    background: var(--gold-soft);
+  }
+
+  /* ─── Stepper (V1) ─── */
+  .stepper {
+    display: flex; align-items: center; gap: 0;
+  }
+  .stepper .num {
+    font: italic 400 56px/1 "Iowan Old Style", "Palatino", Georgia, serif;
+    color: var(--gold);
+    min-width: 96px;
+  }
+  .stepper .steps {
+    display: flex; flex-direction: column; gap: 4px;
+    margin-left: 12px;
+  }
+  .stepper button {
+    background: transparent;
+    border: 1px solid var(--hair);
+    color: var(--ink);
+    width: 32px; height: 22px;
+    font-size: 14px; line-height: 1;
+    cursor: pointer; border-radius: 0;
+  }
+  .stepper button:hover { border-color: var(--gold); color: var(--gold); }
+
+  .helper {
+    color: var(--dim); font-size: 12px; margin-top: 14px;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+
+  /* ─── Parallel accounts row ─── */
+  .parallel {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 18px;
+  }
+  .parallel .body { color: var(--dim); font-size: 13px; }
+  .parallel .body strong { color: var(--ink); font-weight: 500; }
+
+  /* dropdown */
+  .dd {
+    background: transparent;
+    border: 1px solid var(--hair);
+    color: var(--ink);
+    padding: 6px 28px 6px 12px;
+    font: 500 13px/1 -apple-system, system-ui, sans-serif;
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%;
+    background-size: 4px 4px, 4px 4px;
+    background-repeat: no-repeat;
+    cursor: pointer;
+  }
+
+  /* toggle */
+  .toggle {
+    width: 38px; height: 22px;
+    background: var(--hair);
+    border-radius: 9999px;
+    position: relative;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    left: 3px; top: 3px;
+    width: 16px; height: 16px;
+    background: var(--ink);
+    border-radius: 50%;
+    transition: left .15s;
+  }
+  .toggle.on { background: var(--gold); }
+  .toggle.on::after { left: 19px; background: #fff; }
+
+  /* ─── Advanced disclosure ─── */
+  .advanced {
+    margin-top: 1px;
+    background: var(--hair-soft);
+    border: 1px solid var(--hair);
+    border-top: none;
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 12px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .advanced .caret { color: var(--gold); }
+  .advanced .sep { color: var(--dim); }
+
+  /* ─── Forecast row ─── */
+  .forecast {
+    margin-top: 1px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--hair);
+    border: 1px solid var(--hair);
+    border-top: none;
+  }
+  .forecast .fcell {
+    background: var(--bg);
+    padding: 18px 24px;
+  }
+  .forecast .fk {
+    font: 500 11px/1 -apple-system, system-ui, sans-serif;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .forecast .fv {
+    font: italic 400 28px/1 "Iowan Old Style", "Palatino", Georgia, serif;
+    color: var(--gold);
+  }
+  .forecast .fv.plain { color: var(--ink); font-style: normal; font-family: -apple-system, system-ui, sans-serif; font-weight: 300; font-size: 22px; }
+
+  /* ─── V2: Slider variant ─── */
+  .slider-wrap { margin-top: 8px; }
+  .slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 1px;
+    background: var(--hair);
+    outline: none;
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    background: var(--gold);
+    border-radius: 50%;
+    cursor: pointer;
+    margin-top: -7px;
+  }
+  .slider-ticks {
+    display: flex; justify-content: space-between;
+    margin-top: 8px;
+    font-size: 10px; color: var(--dim);
+    letter-spacing: .1em;
+  }
+
+  /* ─── V3: Inline minimal ─── */
+  .inline-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 18px;
+    padding: 20px 24px;
+    border: 1px solid var(--hair);
+  }
+  .inline-row + .inline-row { border-top: none; }
+  .inline-row .lbl {
+    font: 500 11px/1 -apple-system, system-ui, sans-serif;
+    letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .inline-row .lbl-sub {
+    color: var(--dim); font-size: 12px; margin-top: 4px;
+  }
+  .inline-row .big-num {
+    font: italic 400 36px/1 "Iowan Old Style", "Palatino", Georgia, serif;
+    color: var(--gold);
+    text-align: right;
+    min-width: 80px;
+  }
+  .inline-row .step-pair {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .inline-row .step-pair button {
+    background: transparent;
+    border: 1px solid var(--hair);
+    color: var(--ink);
+    width: 28px; height: 20px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* ─── V2 forecast strip ─── */
+  .forecast-strip {
+    display: flex; align-items: baseline; gap: 28px;
+    margin-top: 1px;
+    padding: 16px 24px;
+    border: 1px solid var(--hair);
+    border-top: none;
+  }
+  .forecast-strip .fs-k {
+    font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .forecast-strip .fs-v {
+    font: italic 400 22px/1 "Iowan Old Style", "Palatino", Georgia, serif;
+    color: var(--gold); margin-left: 8px;
+  }
+  .forecast-strip .fs-v.plain { color: var(--ink); font-style: normal; font-family: -apple-system, system-ui, sans-serif; font-weight: 300; }
+  .fs-sep { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Throughput · sketch variants</h1>
+  <p class="lede">3 takes on Section IV. All dark, all use the existing math (50 leads/hr/account × concurrency, 6-min turn floor).</p>
+
+  <!-- ─────────────── V1 ─────────────── -->
+  <section class="variant">
+    <div class="variant-tag">Variant A</div>
+    <h2 class="variant-title">Two-column · italic numerals · forecast underneath</h2>
+
+    <div class="section-head">
+      <div>
+        <div class="section-roman">Section IV</div>
+        <div class="section-title">Throughput</div>
+        <div class="section-sub">LinkedIn caps at ~100/week per profile. 50/day is safe.</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Left cell: daily limit -->
+      <div class="cell">
+        <div class="cell-head">
+          <span class="label">Daily limit</span>
+          <span class="label" style="color:var(--dim);">· per account per day</span>
+        </div>
+        <div class="stepper">
+          <span class="num">50</span>
+          <div class="steps">
+            <button>+</button>
+            <button>−</button>
+          </div>
+        </div>
+        <div class="helper">connections/messages per day</div>
+      </div>
+      <!-- Right cell: parallel accounts -->
+      <div class="cell">
+        <div class="cell-head">
+          <span class="label">Parallel accounts</span>
+          <span class="pill-unlock">unlocks at 2+ accounts</span>
+        </div>
+        <div class="parallel">
+          <div class="body">
+            Run multiple GoLogin browsers simultaneously · RAM-constrained auto-fallback
+          </div>
+          <select class="dd">
+            <option>2</option><option>3</option><option>4</option><option>5</option>
+          </select>
+          <div class="toggle on"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Advanced -->
+    <div class="advanced">
+      <span class="caret">▸</span>
+      <span>Advanced</span>
+      <span class="sep">·</span>
+      <span>Pause between leads</span>
+    </div>
+
+    <!-- Forecast -->
+    <div class="forecast">
+      <div class="fcell">
+        <div class="fk">Total actions</div>
+        <div class="fv">100</div>
+      </div>
+      <div class="fcell">
+        <div class="fk">Approx duration</div>
+        <div class="fv plain">2h 30m</div>
+      </div>
+      <div class="fcell">
+        <div class="fk">Estimated finish</div>
+        <div class="fv plain">today · 17:14</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────── V2 ─────────────── -->
+  <section class="variant">
+    <div class="variant-tag">Variant B</div>
+    <h2 class="variant-title">Slider · single-line forecast strip</h2>
+
+    <div class="section-head">
+      <div>
+        <div class="section-roman">Section IV</div>
+        <div class="section-title">Throughput</div>
+        <div class="section-sub">LinkedIn caps at ~100/week per profile. 50/day is safe.</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Left cell: slider -->
+      <div class="cell">
+        <div class="cell-head">
+          <span class="label">Daily limit</span>
+          <span class="label" style="color:var(--dim);">· per account</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:10px;">
+          <span class="num" style="font: italic 400 56px/1 'Iowan Old Style', Georgia, serif; color: var(--gold);">50</span>
+          <span class="label" style="color:var(--dim);">/ day</span>
+        </div>
+        <div class="slider-wrap">
+          <input class="slider" type="range" min="10" max="100" value="50">
+          <div class="slider-ticks">
+            <span>10</span><span>25</span><span>50 SAFE</span><span>75</span><span>100 cap</span>
+          </div>
+        </div>
+      </div>
+      <!-- Right cell: parallel -->
+      <div class="cell">
+        <div class="cell-head">
+          <span class="label">Parallel accounts</span>
+          <span class="pill-unlock">unlocks at 2+ accounts</span>
+        </div>
+        <div style="display:flex; align-items:baseline; gap:10px; margin-top:8px;">
+          <span class="num" style="font: italic 400 56px/1 'Iowan Old Style', Georgia, serif; color: var(--gold);">2</span>
+          <span class="label" style="color:var(--dim);">at a time</span>
+        </div>
+        <div style="margin-top:16px; display:flex; align-items:center; gap:14px;">
+          <div class="toggle on"></div>
+          <span style="color:var(--dim); font-size:12px;">Run accounts in parallel · RAM auto-fallback</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Advanced + forecast as single strips -->
+    <div class="advanced">
+      <span class="caret">▸</span>
+      <span>Advanced · pause between leads</span>
+    </div>
+    <div class="forecast-strip">
+      <span><span class="fs-k">Actions</span><span class="fs-v">100</span></span>
+      <span class="fs-sep">·</span>
+      <span><span class="fs-k">Duration</span><span class="fs-v plain">2h 30m</span></span>
+      <span class="fs-sep">·</span>
+      <span><span class="fs-k">Finishes</span><span class="fs-v plain">today · 17:14</span></span>
+    </div>
+  </section>
+
+  <!-- ─────────────── V3 ─────────────── -->
+  <section class="variant">
+    <div class="variant-tag">Variant C</div>
+    <h2 class="variant-title">Single-column · stacked rows · minimal chrome</h2>
+
+    <div class="section-head">
+      <div>
+        <div class="section-roman">Section IV</div>
+        <div class="section-title">Throughput</div>
+        <div class="section-sub">LinkedIn caps at ~100/week per profile. 50/day is safe.</div>
+      </div>
+    </div>
+
+    <div class="inline-row">
+      <div>
+        <div class="lbl">Daily limit</div>
+        <div class="lbl-sub">connections/messages per account per day</div>
+      </div>
+      <div class="step-pair">
+        <button>+</button><button>−</button>
+      </div>
+      <div class="big-num">50</div>
+    </div>
+
+    <div class="inline-row">
+      <div>
+        <div class="lbl">Parallel accounts <span style="color:var(--gold); font-weight:500;">· unlocks at 2+</span></div>
+        <div class="lbl-sub">multiple GoLogin browsers · RAM auto-fallback</div>
+      </div>
+      <select class="dd">
+        <option>2</option><option>3</option><option>4</option><option>5</option>
+      </select>
+      <div class="toggle on"></div>
+    </div>
+
+    <div class="advanced">
+      <span class="caret">▸</span>
+      <span>Advanced · pause between leads</span>
+    </div>
+
+    <div class="forecast-strip">
+      <span><span class="fs-k">Actions</span><span class="fs-v">100</span></span>
+      <span class="fs-sep">·</span>
+      <span><span class="fs-k">Duration</span><span class="fs-v plain">2h 30m</span></span>
+      <span class="fs-sep">·</span>
+      <span><span class="fs-k">Finishes</span><span class="fs-v plain">today · 17:14</span></span>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

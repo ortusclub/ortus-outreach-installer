@@ -1147,8 +1147,38 @@ function normalizeUrl(url) {
   return url.toString().trim().toLowerCase().replace(/\/+$/, '');
 }
 
+// PERFORMANCE NOTE (v2.59.x): Apps Script buffers setValue() writes and
+// commits them in one batch — BUT any getValue()/getValues() forces an
+// immediate flush of that buffer (it must commit pending writes before it can
+// read). So interleaving reads among writes turns one batched commit into
+// several backend round-trips. (Verified: Google best-practices doc +
+// SpreadsheetApp.flush reference.) The old writeFields read each action cell
+// AFTER the FIELD_MAP writes (3 reads interleaved among ~10 writes) → multiple
+// flushes per row. This version does the ONE read it needs up front (only when
+// the sheet actually has action columns), then performs every write with no
+// read interleaved, so the writes commit as a single batch. Behaviour is
+// identical — same cells, same values, same dash-fill decision.
 function writeFields(sheet, headers, row, data) {
   var updated = [];
+
+  // ── READ FIRST (only if there are action columns to dash-fill) ──
+  // The only read that previously interleaved with writes was the dash-fill's
+  // per-cell getValue(). We do it once here, before any write, so it can't
+  // flush a pending write buffer. We read the whole used row in one getValues()
+  // and reuse it for every action-column check. Skipped entirely when no action
+  // column exists (e.g. clean v2 sheets) so we never add a read the old code
+  // didn't make. Reading returns computed values for any operator formula
+  // cells, but we only READ from preVals — we never write the row back — so
+  // operator formulas are never clobbered.
+  var hasActionCols = false;
+  for (var a = 0; a < ACTION_COLUMNS.length; a++) {
+    if (headers.indexOf(ACTION_COLUMNS[a]) !== -1) { hasActionCols = true; break; }
+  }
+  var preVals = (hasActionCols && headers.length > 0)
+    ? sheet.getRange(row, 1, 1, headers.length).getValues()[0]
+    : null;
+
+  // ── From here down: WRITES ONLY — no getValue()/getValues() interleaved ──
 
   // Split dateLastAction into separate 'Date' and 'Time' columns. Prefers
   // the per-operator tz the bot sends (v2.58.x — launcher's stored
@@ -1173,6 +1203,10 @@ function writeFields(sheet, headers, row, data) {
       updated.push(colName);
     });
   }
+
+  // Track which column indices FIELD_MAP wrote this call, so the dash-fill can
+  // tell "still blank?" from preVals + this set without re-reading each cell.
+  var wroteIdx = {};
 
   for (var field in FIELD_MAP) {
     if (data[field] !== undefined && data[field] !== null && data[field] !== '') {
@@ -1204,17 +1238,22 @@ function writeFields(sheet, headers, row, data) {
       } else {
         cell.setValue(value);
       }
+      wroteIdx[colIndex] = true;
       updated.push(colName);
     }
   }
 
-  // Dash-fill any action column on this row that's still blank.
+  // Dash-fill any action column still blank — decided from the up-front read
+  // (preVals) plus the columns FIELD_MAP just wrote (wroteIdx). Equivalent to
+  // the old post-write getValue() check: a cell ends blank iff it was blank
+  // before AND FIELD_MAP didn't write it this call. No reads here → the writes
+  // above stay batched. The `(x || '')` coercion matches the old check exactly.
   ACTION_COLUMNS.forEach(function(col) {
     var idx = headers.indexOf(col);
     if (idx === -1) return;
-    var cell = sheet.getRange(row, idx + 1);
-    var cur = (cell.getValue() || '').toString().trim();
-    if (cur === '') cell.setValue('—');
+    if (wroteIdx[idx]) return; // FIELD_MAP filled it this call
+    var prev = (preVals && (preVals[idx] || '').toString().trim()) || '';
+    if (prev === '') sheet.getRange(row, idx + 1).setValue('—');
   });
 
   // Append audit entry if this write represents an action (has accountUsed).
@@ -1230,6 +1269,53 @@ function writeFields(sheet, headers, row, data) {
 
   return updated;
 }
+
+/*
+ * ── ROLLBACK: original writeFields (pre-v2.59.x batching reorder) ──
+ * If the optimized version above ever misbehaves after redeploy, delete it and
+ * uncomment this one. It is behaviourally identical except it reads each action
+ * cell after the writes (slower: interleaved reads force write-buffer flushes).
+ *
+ * function writeFields(sheet, headers, row, data) {
+ *   var updated = [];
+ *   if (data.dateLastAction !== undefined && data.dateLastAction !== null && data.dateLastAction !== '') {
+ *     var nowDt = new Date();
+ *     var tz = (data && data.tz) || Session.getScriptTimeZone();
+ *     var dateStr = Utilities.formatDate(nowDt, tz, 'yyyy-MM-dd');
+ *     var timeStr = Utilities.formatDate(nowDt, tz, 'HH:mm:ss');
+ *     [['Date of Last Action', dateStr], ['Time of Last Action', timeStr]].forEach(function(pair) {
+ *       var colName = pair[0], v = pair[1];
+ *       var idx = headers.indexOf(colName);
+ *       if (idx === -1) { idx = headers.length; sheet.getRange(1, idx + 1).setValue(colName); sheet.getRange(1, idx + 1).setFontWeight('bold'); headers.push(colName); }
+ *       sheet.getRange(row, idx + 1).setValue(v);
+ *       updated.push(colName);
+ *     });
+ *   }
+ *   for (var field in FIELD_MAP) {
+ *     if (data[field] !== undefined && data[field] !== null && data[field] !== '') {
+ *       var colName = FIELD_MAP[field];
+ *       var colIndex = headers.indexOf(colName);
+ *       if (field === 'status' && colIndex === -1) { var altIdx = headers.indexOf('Last Action'); if (altIdx !== -1) { colIndex = altIdx; colName = 'Last Action'; } }
+ *       if (colIndex === -1) continue;
+ *       var cell = sheet.getRange(row, colIndex + 1);
+ *       var value = data[field];
+ *       if (typeof value === 'string' && value.charAt(0) === '=') { cell.setFormula(value); } else { cell.setValue(value); }
+ *       updated.push(colName);
+ *     }
+ *   }
+ *   ACTION_COLUMNS.forEach(function(col) {
+ *     var idx = headers.indexOf(col);
+ *     if (idx === -1) return;
+ *     var cell = sheet.getRange(row, idx + 1);
+ *     var cur = (cell.getValue() || '').toString().trim();
+ *     if (cur === '') cell.setValue('—');
+ *   });
+ *   if (data.accountUsed) {
+ *     appendAuditLog(sheet.getParent(), { date: data.dateLastAction || new Date().toISOString(), linkedinUrl: data.linkedinUrl || '', action: data.auditAction || data.status || '', account: data.accountUsed, notes: data.auditNotes || '' });
+ *   }
+ *   return updated;
+ * }
+ */
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Audit Log — separate tab, full history

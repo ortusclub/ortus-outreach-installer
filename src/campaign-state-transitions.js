@@ -11,7 +11,12 @@ function _logTs(d) {
 export function transitionToMonitoring(campaign, { now, participatingProfileIds }) {
   if (campaign.state === 'monitoring' || campaign.state === 'done') return campaign;
 
-  if (campaign.mode !== 'connect_and_introduce' || !participatingProfileIds || participatingProfileIds.length === 0) {
+  // v2.62: both connect-then-followup modes run a phase-2 monitoring loop —
+  // CC+IC fires runAutoIntros, CC+DM fires runAutoDms (see runMonitoringCheck).
+  // The caller gate (campaign.js) and the monitoring tick already route both;
+  // this helper must accept both or CC+DM silently drops straight to 'done'.
+  const monitoredMode = campaign.mode === 'connect_and_introduce' || campaign.mode === 'connect_and_message';
+  if (!monitoredMode || !participatingProfileIds || participatingProfileIds.length === 0) {
     return { ...campaign, state: 'done' };
   }
 

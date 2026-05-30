@@ -24,33 +24,62 @@ export function setOperatorTz(tz) {
   _operatorTz = typeof tz === 'string' ? tz : '';
 }
 
-/**
- * POST to the Apps Script web app.
- */
-async function postToWebApp(payload) {
-  const url = getWebAppUrl();
-  if (!url) {
-    console.log('[sheets-writer] No SHEETS_WEBAPP_URL configured — skipping');
-    return null;
-  }
+// A transient write error is a network/timeout/5xx-class failure that a retry
+// can plausibly fix — as opposed to a permanent one (auth, row-not-found, bad
+// request) where retrying just wastes time. The Apps Script write actions are
+// idempotent (they set fixed cell values), so retrying a transient failure is
+// safe — at worst it re-stamps the same value (and may add a duplicate Audit
+// Log row, which is harmless).
+const _TRANSIENT_WRITE_RE =
+  /timeout|abort|ECONN|EAI_AGAIN|socket|network|fetch failed|terminated|\b(429|500|502|503|504)\b/i;
 
+export function isTransientWriteError(msg) {
+  return _TRANSIENT_WRITE_RE.test(String(msg || ''));
+}
+
+/**
+ * Retry an idempotent write attempt across transient failures.
+ *
+ * `attemptFn(attempt)` returns the bridge result object. A result with no
+ * `.error` (including `null`, meaning no webapp configured) is success and is
+ * returned immediately. A result whose `.error` is permanent (auth, not-found)
+ * is also returned immediately — retrying won't help. Only transient errors
+ * are retried, up to `maxAttempts`, with linear backoff (baseDelayMs × attempt).
+ * `sleep` is injectable so tests don't actually wait.
+ */
+export async function withWriteRetry(attemptFn, {
+  maxAttempts = 3,
+  baseDelayMs = 1000,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  log = () => {},
+} = {}) {
+  let result;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    result = await attemptFn(attempt);
+    if (!result || !result.error) return result;        // success (or no-op)
+    if (!isTransientWriteError(result.error)) return result; // permanent — don't retry
+    if (attempt < maxAttempts) {
+      log(`transient write error (attempt ${attempt}/${maxAttempts}): ${result.error} — retrying`);
+      await sleep(baseDelayMs * attempt);
+    }
+  }
+  return result; // exhausted retries — return last (transient) error
+}
+
+// One POST attempt to the Apps Script web app. Returns the parsed result or
+// an { error } object; never throws. Wrapped by postToWebApp's retry loop.
+async function _postOnce(url, body) {
   try {
     // Apps Script returns 302 on POST. Node fetch converts POST→GET on
     // redirect, hitting doGet() instead of doPost(). Handle manually.
     // P-05 fix (2.8.18): 15s timeout on both legs of the redirect chain.
     // Without it, an Apps Script hang stalls the campaign loop indefinitely.
-    // v2.58.x: attach tz so GAS can stamp dateLastAction in the launcher's
-    // local time. GAS uses `data.tz || Session.getScriptTimeZone()` so older
-    // GAS deployments (pre-paste) silently ignore this field.
-    const enriched = _operatorTz ? { ...payload, tz: _operatorTz } : payload;
-    const body = JSON.stringify(enriched);
-    const signal = AbortSignal.timeout(15000);
     const initial = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
       redirect: 'manual',
-      signal,
+      signal: AbortSignal.timeout(15000),
     });
 
     let res;
@@ -73,9 +102,38 @@ async function postToWebApp(payload) {
       return { raw: text };
     }
   } catch (err) {
-    console.warn(`[sheets-writer] POST failed: ${err.message}`);
     return { error: err.message };
   }
+}
+
+/**
+ * POST to the Apps Script web app, retrying transient (timeout/network)
+ * failures so a one-off Google-side latency spike doesn't permanently drop a
+ * row's write (the bug behind "Kyra's row never got written").
+ */
+async function postToWebApp(payload) {
+  const url = getWebAppUrl();
+  if (!url) {
+    console.log('[sheets-writer] No SHEETS_WEBAPP_URL configured — skipping');
+    return null;
+  }
+
+  // v2.58.x: attach tz so GAS can stamp dateLastAction in the launcher's
+  // local time. GAS uses `data.tz || Session.getScriptTimeZone()` so older
+  // GAS deployments (pre-paste) silently ignore this field.
+  const enriched = _operatorTz ? { ...payload, tz: _operatorTz } : payload;
+  const body = JSON.stringify(enriched);
+
+  const result = await withWriteRetry(() => _postOnce(url, body), {
+    maxAttempts: 3,
+    baseDelayMs: 1000,
+    log: (m) => console.warn(`[sheets-writer] ${m}`),
+  });
+
+  if (result && result.error) {
+    console.warn(`[sheets-writer] POST failed: ${result.error}`);
+  }
+  return result;
 }
 
 /**

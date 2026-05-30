@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<!--
+  Sketch: how the sheet-write FALLBACK (retry/backoff) behaves.
+  Grounded in src/sheets-writer.js withWriteRetry: maxAttempts=3,
+  baseDelayMs=1000 (linear backoff 1s→2s), retry only on transient errors.
+  Throwaway visual explainer — not wired into the app.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sheet-write fallback — sketch</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --sub:#6b6b6b; --faint:#9a9a9a;
+    --line:#d9d9d9; --line2:#ececec; --paper:#fafafa; --card:#ffffff;
+    --gold:#b9975b; --gold-bg:#faf6ee; --gold-line:#e6d8bd;
+    --dead:#a23b3b; --dead-bg:#fbf1f1; --dead-line:#eccaca;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+       padding:40px 48px 64px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+  h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin:6px 0 2px}
+  .lede{color:var(--sub);font-size:14px;margin:0 0 34px;max-width:760px}
+  .panel{background:var(--card);border:1px solid var(--line);margin-bottom:26px;padding:26px 28px}
+  .panel h2{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin:0 0 4px}
+  .panel .cap{font-size:12.5px;color:var(--sub);margin:0 0 22px}
+  .num{font-family:var(--mono);color:var(--faint);font-size:12px;margin-right:8px}
+
+  /* generic node */
+  .node{border:1px solid var(--line);background:#fff;padding:10px 13px;font-size:12.5px;
+        display:inline-flex;flex-direction:column;gap:2px;min-width:104px}
+  .node b{font-weight:600;font-size:12.5px}
+  .node small{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.02em}
+  .ok{border-color:var(--gold-line);background:var(--gold-bg)}
+  .ok b{color:var(--gold)}
+  .bad{border-color:var(--dead-line);background:var(--dead-bg)}
+  .bad b{color:var(--dead)}
+  .pill{border-radius:9999px;padding:5px 12px;font-family:var(--mono);font-size:11px;display:inline-block}
+
+  .row{display:flex;align-items:center;gap:0;flex-wrap:wrap}
+  .arrow{color:var(--faint);font-size:18px;padding:0 10px;flex:0 0 auto}
+  .arrow small{display:block;font-family:var(--mono);font-size:9.5px;color:var(--faint);text-align:center;margin-top:1px}
+
+  /* before/after two-up */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line2)}
+  .col{padding:22px 22px 26px}
+  .col+.col{border-left:1px solid var(--line2)}
+  .col.before{background:#fcfcfc}
+  .col.after{background:var(--gold-bg)}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:14px;display:inline-block}
+  .tag.b{color:var(--dead)} .tag.a{color:var(--gold)}
+  .chain{display:flex;flex-direction:column;gap:0}
+  .step{display:flex;align-items:center;gap:11px;padding:6px 0}
+  .dot{width:9px;height:9px;border-radius:9999px;flex:0 0 auto;border:1px solid var(--line)}
+  .dot.t{background:#efe3c8;border-color:var(--gold-line)}
+  .dot.x{background:var(--dead);border-color:var(--dead)}
+  .dot.o{background:var(--gold);border-color:var(--gold)}
+  .vbar{width:1px;height:14px;background:var(--line);margin-left:4px}
+  .step .lbl{font-size:12.5px}
+  .step .lbl em{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .outcome{margin-top:14px;font-size:12.5px;font-weight:600}
+  .outcome.bad{color:var(--dead)} .outcome.ok{color:var(--gold)}
+  .strike{color:var(--faint);text-decoration:line-through}
+
+  /* timeline */
+  .tl{position:relative;margin:8px 4px 0;padding:42px 0 66px}
+  .axis{height:2px;background:var(--line);position:relative;border-radius:9999px}
+  .tick{position:absolute;top:-6px;width:1px;height:14px;background:var(--line)}
+  .tlab{position:absolute;top:-30px;font-family:var(--mono);font-size:10px;color:var(--faint);transform:translateX(-50%)}
+  .seg{position:absolute;top:-3px;height:8px;border-radius:9999px}
+  .seg.try{background:#e7d7b4}
+  .seg.wait{background:repeating-linear-gradient(90deg,#dcdcdc 0 4px,transparent 4px 8px)}
+  .marker{position:absolute;top:16px;transform:translateX(-50%);text-align:center;font-family:var(--mono);font-size:10px;color:var(--sub);width:104px;line-height:1.35}
+  .waitcap{position:absolute;top:-4px;transform:translateX(-50%);font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap}
+  .marker .m{display:inline-block;width:16px;height:16px;line-height:15px;border-radius:9999px;font-size:10px;margin-bottom:3px;border:1px solid}
+  .m.x{background:var(--dead-bg);border-color:var(--dead-line);color:var(--dead)}
+  .m.o{background:var(--gold-bg);border-color:var(--gold-line);color:var(--gold)}
+  .m.r{background:#f3f3f3;border-color:var(--line);color:var(--sub)}
+
+  /* decision flow */
+  .flow{display:flex;align-items:center;gap:0;flex-wrap:wrap}
+  .diamond{font-size:12px;text-align:center;border:1px dashed var(--line);background:#fff;padding:12px 14px;min-width:150px}
+  .diamond b{font-weight:600}
+  .branch{display:flex;flex-direction:column;gap:14px}
+  .ylabel{font-family:var(--mono);font-size:10px;color:var(--faint);padding:0 8px}
+  .legend{display:flex;gap:22px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--sub)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .sw{width:11px;height:11px;border-radius:9999px;display:inline-block;border:1px solid var(--line)}
+  .foot{font-size:12px;color:var(--sub);margin-top:8px;border-top:1px solid var(--line2);padding-top:14px}
+  code{font-family:var(--mono);font-size:11.5px;background:#f2f2f2;padding:1px 5px;border-radius:3px}
+</style>
+</head>
+<body>
+  <div class="eyebrow">Ortus Outreach · v2.59.3 · sheet-writer</div>
+  <h1>The sheet-write fallback, visually</h1>
+  <p class="lede">When a row write to the Apps Script times out, the bot no longer gives up after one try. It
+  retries idempotent writes a few times with a growing pause — so a one-off Google latency spike (like Kyra's)
+  self-heals instead of leaving a blank row.</p>
+
+  <!-- PANEL 1 -->
+  <div class="panel">
+    <h2><span class="num">01</span>Before vs after</h2>
+    <p class="cap">Same event — one write hits a 15-second timeout. Old code dropped the row; new code recovers it.</p>
+    <div class="twoup">
+      <div class="col before">
+        <span class="tag b">Before · v2.59.2</span>
+        <div class="chain">
+          <div class="step"><span class="dot t"></span><span class="lbl">Write “Kyra” → Apps Script <em>attempt 1</em></span></div>
+          <div class="vbar"></div>
+          <div class="step"><span class="dot x"></span><span class="lbl">15s passes — <em>timeout, aborted</em></span></div>
+          <div class="vbar"></div>
+          <div class="step"><span class="dot x"></span><span class="lbl">give up · log “Update failed”</span></div>
+        </div>
+        <div class="outcome bad">✕ Kyra’s row stays <span class="strike">blank</span> — lost</div>
+      </div>
+      <div class="col after">
+        <span class="tag a">After · v2.59.3</span>
+        <div class="chain">
+          <div class="step"><span class="dot t"></span><span class="lbl">Write “Kyra” → <em>attempt 1</em></span></div>
+          <div class="vbar"></div>
+          <div class="step"><span class="dot x"></span><span class="lbl">timeout — <em>transient?</em> yes</span></div>
+          <div class="vbar"></div>
+          <div class="step"><span class="dot t"></span><span class="lbl">wait 1s · <em>attempt 2</em></span></div>
+          <div class="vbar"></div>
+          <div class="step"><span class="dot o"></span><span class="lbl">Apps Script responds <em>200 OK</em></span></div>
+        </div>
+        <div class="outcome ok">✓ Kyra’s row written — recovered</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL 2 -->
+  <div class="panel">
+    <h2><span class="num">02</span>What the retry timeline looks like</h2>
+    <p class="cap">Worst-case shape: each attempt can run up to 15s, with a growing pause between tries (1s, then 2s).</p>
+    <div class="tl">
+      <div class="axis">
+        <div class="tick" style="left:0%"></div><div class="tlab" style="left:0%">0s</div>
+        <div class="tick" style="left:33%"></div><div class="tlab" style="left:33%">15s</div>
+        <div class="tick" style="left:37%"></div><div class="tlab" style="left:37%">+1s</div>
+        <div class="tick" style="left:70%"></div>
+        <div class="tick" style="left:100%"></div><div class="tlab" style="left:100%">~17s</div>
+
+        <div class="seg try" style="left:0%;width:33%"></div>
+        <div class="seg wait" style="left:33%;width:4%"></div>
+        <div class="seg try" style="left:37%;width:33%"></div>
+
+        <div class="waitcap" style="left:35%">↻ wait 1s</div>
+        <div class="marker x" style="left:33%"><span class="m x">✕</span><br>attempt 1 · timeout</div>
+        <div class="marker o" style="left:70%"><span class="m o">✓</span><br>attempt 2 · success</div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:#e7d7b4;border-color:#e6d8bd"></i> attempt (up to 15s)</span>
+      <span><i class="sw" style="background:#dcdcdc"></i> backoff pause (1s → 2s)</span>
+      <span><i class="sw" style="background:var(--gold);border-color:var(--gold)"></i> success → row written</span>
+    </div>
+    <p class="foot">If attempt 2 also timed out, it would wait <b>2s</b> and try a 3rd time. After 3 failed attempts it
+    finally gives up and logs — but the connection itself was still sent, only the sheet stamp is missing.</p>
+  </div>
+
+  <!-- PANEL 3 -->
+  <div class="panel">
+    <h2><span class="num">03</span>The decision: retry vs don’t</h2>
+    <p class="cap">Not every failure is worth retrying. Only transient (timeout/network) errors retry — permanent ones stop instantly so we don’t waste 30 seconds on a hopeless write.</p>
+    <div class="flow">
+      <div class="node"><b>Write attempt</b><small>POST → Apps Script</small></div>
+      <span class="arrow">→</span>
+      <div class="diamond"><b>Got an error?</b></div>
+      <span class="arrow">→<small>no</small></span>
+      <div class="node ok"><b>✓ Done</b><small>row written</small></div>
+    </div>
+
+    <div class="flow" style="margin-top:18px;margin-left:286px">
+      <span class="ylabel">└ yes ↓</span>
+    </div>
+
+    <div class="flow" style="margin-top:8px;margin-left:286px">
+      <div class="diamond"><b>Transient?</b><br><small style="font-family:var(--mono);color:var(--faint)">timeout · network · 429/502/503</small></div>
+      <span class="arrow">→<small>no</small></span>
+      <div class="node bad"><b>Stop now</b><small>auth · row-not-found</small></div>
+    </div>
+
+    <div class="flow" style="margin-top:14px;margin-left:286px">
+      <span class="ylabel">└ yes ↓</span>
+    </div>
+
+    <div class="flow" style="margin-top:8px;margin-left:286px">
+      <div class="diamond"><b>Attempts left?</b><br><small style="font-family:var(--mono);color:var(--faint)">max 3</small></div>
+      <span class="arrow">→<small>yes</small></span>
+      <div class="node"><b>Wait &amp; retry</b><small>1s, then 2s</small></div>
+      <span class="arrow">↺</span>
+      <div class="pill" style="border:1px solid var(--line);color:var(--sub)">back to “Write attempt”</div>
+    </div>
+
+    <div class="flow" style="margin-top:14px;margin-left:286px">
+      <span class="ylabel">└ no (3 tried) →</span>
+      <div class="node bad"><b>Give up · log</b><small>row stamp missing</small></div>
+    </div>
+
+    <p class="foot">Safe because every write is <b>idempotent</b> — it just sets the same cell values (<code>Stage = "Connect Pending"</code>, etc.). Retrying can’t re-send a connection or double-DM anyone; worst case it re-stamps the identical value.</p>
+  </div>
+</body>
+</html>

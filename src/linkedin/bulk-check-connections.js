@@ -58,7 +58,7 @@ function memberIdFromAny(value) {
  * @returns {{ updates: object[], connectedUrls: string[], diag: object }}
  */
 export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendingLabel, opts = {}) {
-  const { suppressAcceptedStamp = false, profileName = '', introducedInRun = null, composeAttempts = null } = opts;
+  const { suppressAcceptedStamp = false, profileName = '', introducedInRun = null, composeAttempts = null, dmSentTerminal = false } = opts;
 
   // v2.62: sender-scoped matching. Builds the set of accounts ACTIVELY
   // running this campaign from distinct Sender values in the sheet. Used
@@ -119,6 +119,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   let dbgRowsScanned = 0, dbgWithUrl = 0, dbgWithCRS = 0;
   let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
   let dbgAlreadyIntroduced = 0;
+  let dbgAlreadyDmd = 0;
+  let dbgRequestHealed = 0;
   let dbgAlreadyUnverified = 0;
   let dbgComposeCapped = 0;
   let dbgCrossSender = 0;
@@ -219,7 +221,24 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       || row['Connection Status']        || row['connection status']
       || row['Status'] || row['status'] || ''
     ).toString().trim();
-    const wasInvited = requestStatus === 'Connection Request Sent';
+
+    // v2.6x (operator rule 2026-05): 'Connection Request Status' must never
+    // read 'Closed - Not Connected'. That stamp came from an older
+    // stop-monitoring build, but the LinkedIn invite was never actually
+    // withdrawn — so the moment we re-encounter the row we heal the cell back
+    // to 'Connection Request Sent'. The heal is pushed as its own update
+    // object, BEFORE the isMatch/terminal-skip guards below, so it lands even
+    // when the row is subsequently short-circuited (already-DM'd /
+    // already-intro'd). handleBatchUpdate applies each update object's fields
+    // independently, so co-existing with a cc/stage stamp for the same URL is
+    // safe. We also treat a healed row as wasInvited so a later acceptance
+    // flows through the normal 'Connected' path (not 'Already connected').
+    const needsRequestHeal = requestStatus === 'Closed - Not Connected';
+    if (needsRequestHeal) {
+      updates.push({ linkedinUrl: url, connectionStatus: 'Connection Request Sent' });
+      dbgRequestHealed++;
+    }
+    const wasInvited = requestStatus === 'Connection Request Sent' || needsRequestHeal;
 
     if (isMatch) {
       dbgPidMatched++;
@@ -248,6 +267,23 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       if (introducedInRun && introducedInRun.has(url)) {
         dbgAlreadyIntroduced++;
         continue;
+      }
+
+      // v2.6x — CC+DM symmetry with the introductionStatus guard above. When
+      // this campaign's phase-2 action is the 1:1 auto-DM (dmSentTerminal),
+      // a row whose DM Status already reads 'DM Sent' is terminal: do NOT
+      // re-queue it into connectedUrls. Without this guard every monitoring
+      // sweep re-DMs already-messaged 1st-degree connections; the content-
+      // dedup in auto-dm.js then overwrites their 'DM Sent' with
+      // 'Skipped — DM already sent' (operator confusion), and a since-edited
+      // template would send a real duplicate DM. Gated by dmSentTerminal so
+      // CC+IC / other modes on a mixed sheet are unaffected.
+      if (dmSentTerminal) {
+        const dmStatus = (
+          row['DM Status'] || row['dm status'] || row['DM status'] ||
+          row['Direct Message Status'] || row['dmStatus'] || ''
+        ).toString().trim();
+        if (dmStatus === 'DM Sent') { dbgAlreadyDmd++; continue; }
       }
 
       // v2.61.0: per-URL compose-textbox failure cap. If reverify-and-downgrade
@@ -372,6 +408,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       alreadyConnected: dbgAlreadyConnected,
       alreadyDeclined: dbgAlreadyDeclined,
       alreadyIntroduced: dbgAlreadyIntroduced,
+      alreadyDmd: dbgAlreadyDmd,
+      requestHealed: dbgRequestHealed,
       alreadyUnverified: dbgAlreadyUnverified,
       composeCapped: dbgComposeCapped,
       pidMatched: dbgPidMatched,
@@ -515,10 +553,17 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
       // every call site benefits without needing to pass the Set explicitly.
       introducedInRun: opts.introducedInRun || campaign.introducedInRun,
       composeAttempts: opts.composeAttempts || campaign.composeAttempts,
+      // v2.6x — when phase-2 is the 1:1 auto-DM, already-'DM Sent' rows are
+      // terminal and must not be re-queued. Defaults from the campaign mode so
+      // every call site (in-batch, monitoring, post-campaign) benefits without
+      // threading the flag through; an explicit opt still overrides.
+      dmSentTerminal: opts.dmSentTerminal !== undefined
+        ? opts.dmSentTerminal
+        : (campaign.mode === 'connect_and_message'),
     }
   );
 
-  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyUnverified=${diag.alreadyUnverified}, composeCapped=${diag.composeCapped}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
+  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyDmd=${diag.alreadyDmd}, requestHealed=${diag.requestHealed}, alreadyUnverified=${diag.alreadyUnverified}, composeCapped=${diag.composeCapped}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);

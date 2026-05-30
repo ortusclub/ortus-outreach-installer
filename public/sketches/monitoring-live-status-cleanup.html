@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Status during monitoring — cleanup variants</title>
+<style>
+  :root{
+    --bg:#0a0a0a; --ink:#fafafa; --gray:#8a8a8a; --gold:#F7BE68;
+    --hairline:rgba(255,255,255,.13); --hairline-soft:rgba(255,255,255,.06);
+    --green:#3fb950; --red:#f85149; --blue:#4a7bb8; --blue-bright:#6ea3d4;
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --body:'Hanken Grotesk',-apple-system,sans-serif;
+    --card-bg:rgba(255,255,255,.045);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);padding:38px 46px 90px;}
+  h1{font-family:var(--display);font-size:1.8rem;letter-spacing:.02em;margin:0 0 4px;}
+  .sub{color:var(--gray);font-size:.86rem;margin:0 0 30px;max-width:820px;line-height:1.55;}
+  h2{font-family:var(--display);font-size:1.25rem;letter-spacing:.04em;margin:42px 0 4px;}
+  .vtag{font-size:.8rem;color:var(--gray);margin:0 0 16px;}
+  .vtag b{color:var(--blue-bright);}
+
+  /* status header */
+  .status-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px;}
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:0 0 auto;
+       background:var(--blue);box-shadow:0 0 0 3px rgba(74,123,184,.22);animation:pulse 2.2s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:.35;transform:scale(.85);}50%{opacity:1;transform:scale(1);}}
+  .st-name{font-family:var(--display);font-size:1.35rem;letter-spacing:.02em;line-height:1;}
+  .st-name .mode{color:var(--blue-bright);}
+  .st-meta{font-size:.82rem;color:var(--gray);margin-top:6px;}
+  .st-meta b{color:var(--ink);font-weight:600;}
+  .st-meta .ph{color:var(--blue-bright);font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:.7rem;}
+
+  /* buttons */
+  .btn{font-family:var(--body);font-size:.82rem;font-weight:500;color:var(--ink);background:transparent;
+       border:1px solid var(--hairline);border-radius:9999px;padding:11px 22px;cursor:pointer;white-space:nowrap;}
+  .btn:hover{border-color:var(--ink);}
+  .btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600;}
+  .btn.danger{color:var(--red);border-color:rgba(248,81,73,.45);}
+  .btn.sm{font-size:.74rem;padding:8px 16px;}
+  .btn.ghost{border-color:var(--hairline-soft);color:var(--gray);}
+  .btn.ghost:hover{color:var(--ink);border-color:var(--hairline);}
+
+  .panel{background:var(--card-bg);border:1px solid var(--hairline-soft);border-radius:18px;padding:24px 26px;}
+
+  /* ── Variant A — minimal ── */
+  .rowA{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .rowA .spacer{flex:1;}
+  .utilA{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--hairline-soft);}
+  .utilA .lbl{font-family:var(--display);font-size:.72rem;letter-spacing:.16em;color:var(--gray);margin-right:4px;}
+
+  /* ── Variant B — grouped ── */
+  .rowB{display:flex;align-items:center;gap:0;flex-wrap:wrap;}
+  .grp{display:flex;align-items:center;gap:10px;padding:0 20px;border-right:1px solid var(--hairline-soft);}
+  .grp:first-child{padding-left:0;} .grp:last-child{border-right:0;}
+  .grp .glabel{font-family:var(--display);font-size:.72rem;letter-spacing:.16em;color:var(--gray);}
+  .utilB{display:flex;align-items:center;gap:10px;margin-top:16px;}
+  .chk{display:flex;align-items:center;gap:7px;font-size:.72rem;color:var(--gray);}
+  .chk i{width:14px;height:14px;border:1px solid var(--hairline);border-radius:3px;display:inline-block;}
+  .legend{font-size:.78rem;color:var(--gray);margin-top:14px;line-height:1.5;}
+  .legend .x{color:var(--red);} .legend .k{color:var(--blue-bright);}
+</style>
+</head>
+<body>
+  <h1>Live Status — monitoring cleanup</h1>
+  <p class="sub">The Live Status section was built for an <i>actively sending</i> campaign. Now that it shows during monitoring, half its controls don't apply — <b>Start</b>, <b>Pause</b>, <b>Status</b> (you're already on it), and <b>Saved configs</b> (a setup-time tool). Both variants below fold the <i>two</i> scattered clusters you flagged into one clean block, keep only what's real during monitoring, and turn the accent <b>blue</b> (dot + "CC+DM" + phase label). Pick a layout.</p>
+
+  <!-- BEFORE -->
+  <h2 style="color:var(--red);">Now (both parts you flagged)</h2>
+  <p class="vtag">Two separate rows of controls, most irrelevant to monitoring.</p>
+  <div class="panel" style="border-color:rgba(248,81,73,.25);">
+    <div style="font-size:.68rem;letter-spacing:.16em;color:var(--gray);margin-bottom:10px;">PART 2 — bulk-check + log row</div>
+    <div class="rowA" style="margin-bottom:8px;">
+      <button class="btn">Bulk check connections</button>
+      <button class="btn">Open sheet</button>
+    </div>
+    <div class="utilA" style="border-top:0;padding-top:0;margin-top:0;">
+      <label class="chk"><i></i> Show server lines</label>
+      <button class="btn sm">Show browsers</button>
+      <button class="btn sm">Copy log</button>
+      <button class="btn sm">Clear log</button>
+    </div>
+    <div style="font-size:.68rem;letter-spacing:.16em;color:var(--gray);margin:22px 0 10px;">PART 1 — action runbar</div>
+    <div class="status-head" style="margin-bottom:12px;">
+      <span class="dot" style="background:var(--green);box-shadow:0 0 0 3px rgba(63,185,80,.18);"></span>
+      <div>
+        <div class="st-name" style="color:var(--ink);">UNTITLED · <span style="color:var(--ink);">CC+DM</span></div>
+        <div class="st-meta">MONITORING · next <b>01:00</b> · ends in <b>6d 23h</b></div>
+      </div>
+    </div>
+    <div class="rowB">
+      <div class="grp"><span class="glabel">RUN</span><button class="btn sm">Start</button><button class="btn sm">Pause</button><button class="btn sm danger">Stop</button></div>
+      <div class="grp"><span class="glabel">VIEW</span><button class="btn sm">Status</button></div>
+      <div class="grp"><span class="glabel">RECOVERY</span><button class="btn sm">↻ Force restart</button></div>
+      <div class="grp"><span class="glabel">SAVED</span><button class="btn sm">Saved configs ▾</button></div>
+    </div>
+  </div>
+
+  <!-- FINAL -->
+  <h2 style="color:var(--blue-bright);">Final — clean block, your buttons kept</h2>
+  <p class="vtag">Minimal Variant-A look, blue accents, but with <b>Start · Pause · Reset</b> kept as you asked. Three tidy tiers: primary check actions, run controls, then a quiet log strip.</p>
+  <div class="panel" style="border-color:rgba(110,163,212,.35);">
+    <div class="status-head">
+      <span class="dot"></span>
+      <div>
+        <div class="st-name">UNTITLED · <span class="mode">CC+DM</span></div>
+        <div class="st-meta"><span class="ph">Monitoring</span> &nbsp;·&nbsp; next <b>01:00</b> · ends in <b>6d 23h</b></div>
+      </div>
+    </div>
+    <!-- tier 1: primary check actions -->
+    <div class="rowA" style="margin-bottom:14px;">
+      <button class="btn primary">Run check now</button>
+      <button class="btn">Open sheet</button>
+    </div>
+    <!-- tier 2: run controls -->
+    <div class="rowB" style="margin-bottom:4px;">
+      <div class="grp"><span class="glabel">RUN</span>
+        <button class="btn sm">Start campaign</button>
+        <button class="btn sm">Pause</button>
+        <button class="btn sm danger">Stop</button>
+      </div>
+      <div class="grp"><span class="glabel">RECOVERY</span>
+        <button class="btn sm ghost">↻ Reset</button>
+      </div>
+    </div>
+    <!-- tier 3: log strip -->
+    <div class="utilA">
+      <span class="lbl">LOG</span>
+      <button class="btn sm ghost">Copy</button>
+      <button class="btn sm ghost">Clear</button>
+      <button class="btn sm ghost">Show browsers</button>
+      <label class="chk" style="margin-left:auto;"><i></i> Show server lines</label>
+    </div>
+  </div>
+
+  <p class="legend">Kept: <span class="k">Start campaign · Pause · Stop · Reset</span> (Force restart) + Run check now + Open sheet + log tools. <span class="x">Removed:</span> Status (you're already on it) and Saved configs (a setup-time tool). <span class="k">Blue</span> accents on the dot, the CC+DM mode, and the "Monitoring" phase label. While a campaign is actively <i>sending</i>, the bar stays exactly as it is today — this restyle only applies in the monitoring phase.</p>
+</body>
+</html>

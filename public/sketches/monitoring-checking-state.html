@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Monitoring "CHECKING" state — sketch</title>
+<style>
+  :root{
+    --bg:#0a0a0a; --ink:#fafafa; --gray:#8a8a8a; --gold:#F7BE68;
+    --card-bg:rgba(255,255,255,.045); --hairline:rgba(255,255,255,.12);
+    --green:#3fb950; --red:#f85149; --blue:#6ea8fe;
+    --display:"Helvetica Neue",Arial,sans-serif; --mono:"SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--display);padding:40px 48px 80px;}
+  h1{font-size:1.1rem;letter-spacing:.04em;font-weight:600;margin:0 0 6px;}
+  .sub{color:var(--gray);font-size:.85rem;margin:0 0 38px;max-width:760px;line-height:1.5;}
+  h2{font-family:var(--mono);font-size:.62rem;letter-spacing:.24em;text-transform:uppercase;color:var(--gray);margin:48px 0 16px;border-bottom:1px solid var(--hairline);padding-bottom:10px;}
+  .pair{display:flex;gap:28px;flex-wrap:wrap;}
+  .col{flex:1;min-width:420px;}
+  .tag{font-family:var(--mono);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);margin-bottom:10px;display:block;}
+  .tag.before{color:var(--red);} .tag.after{color:var(--green);}
+
+  /* ── monitoring card (collapsed) ── */
+  .card{position:relative;background:var(--card-bg);border:1px solid var(--hairline);border-radius:22px;padding:30px 34px;overflow:hidden;}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--blue);}
+  .eyebrow{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.64rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray);}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--blue);}
+  .name{font-family:var(--display);font-weight:700;font-size:1.7rem;letter-spacing:-.01em;margin:14px 0 22px;}
+  .hero{display:flex;align-items:flex-end;gap:14px;}
+  .count{font-family:var(--display);font-weight:500;font-size:3.13rem;line-height:.85;letter-spacing:.01em;font-variant-numeric:tabular-nums;}
+  .cap{font-family:var(--mono);font-size:.6rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray);padding-bottom:9px;}
+  /* checking variant — exactly the existing .is-checking rule */
+  .hero.checking .count{font-size:1.5rem;color:var(--gold);letter-spacing:.07em;animation:pulse 1.3s ease-in-out infinite;}
+  .hero.checking .cap{color:var(--gold);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.45;}}
+  .statline{font-family:var(--mono);font-size:.82rem;color:var(--gray);margin-top:18px;}
+  .statline b{color:var(--ink);font-weight:600;}
+  .badge{position:absolute;top:30px;right:34px;width:54px;height:54px;border:1px solid var(--hairline);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.7rem;letter-spacing:.04em;color:var(--gray);}
+
+  /* ── control bar ── */
+  .bar{display:inline-flex;align-items:center;gap:14px;background:#000;border:1px solid var(--hairline);border-radius:18px;padding:14px 16px;}
+  .bar .meta{display:flex;flex-direction:column;gap:3px;padding:0 6px;}
+  .bar .mode{font-family:var(--mono);font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--green);}
+  .bar .mode.mon{color:var(--blue);}
+  .bar .status{font-family:var(--display);font-weight:600;font-size:1.05rem;}
+  .bar .divider{width:1px;height:26px;background:var(--hairline);}
+  .bar button{font-family:var(--display);font-size:.95rem;font-weight:500;background:transparent;color:var(--ink);border:1px solid var(--hairline);border-radius:9999px;padding:10px 24px;cursor:pointer;}
+  .bar button.danger{color:var(--red);}
+  .note{font-size:.78rem;color:var(--gray);margin-top:10px;line-height:1.5;}
+  .note .k{color:var(--gold);}
+</style>
+</head>
+<body>
+  <h1>Monitoring state — "it should report it"</h1>
+  <p class="sub">Three fixes, all about making the monitoring phase legible. The gold "CHECKING" treatment already exists in the codebase — it just never fires for the manual <b>RUN&nbsp;CHECK&nbsp;NOW</b> button (only the scheduled auto-check sets the flag). These mockups use the real tokens + the real <code>.is-checking</code> rule.</p>
+
+  <h2>1 · Dashboard card — the big number reports the check (collapsed view)</h2>
+  <div class="pair">
+    <div class="col">
+      <span class="tag before">Now — even mid-sweep it just keeps counting down</span>
+      <div class="card">
+        <div class="badge">C+D</div>
+        <div class="eyebrow"><span class="dot"></span> Monitoring</div>
+        <div class="name">(unnamed)</div>
+        <div class="hero"><span class="count">14:51</span><span class="cap">until next check</span></div>
+        <div class="statline"><b>1</b> sent · — accepted · checks every <b>15 min</b> · ends <b>Sat, 6 Jun</b></div>
+      </div>
+    </div>
+    <div class="col">
+      <span class="tag after">After — flips to gold pulsing CHECKING while the sweep runs</span>
+      <div class="card">
+        <div class="badge">C+D</div>
+        <div class="eyebrow"><span class="dot"></span> Monitoring</div>
+        <div class="name">(unnamed)</div>
+        <div class="hero checking"><span class="count">CHECKING</span><span class="cap">now</span></div>
+        <div class="statline"><b>1</b> sent · — accepted · checks every <b>15 min</b> · ends <b>Sat, 6 Jun</b></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Works whether the card is collapsed or open — the hero number is always visible. When the sweep finishes it falls back to the countdown. (The scheduled auto-check already does this; the fix wires the manual button to the same flag.)</p>
+
+  <h2>2 · Wizard control bar — say "Monitoring", drop the dead Pause</h2>
+  <div class="pair">
+    <div class="col">
+      <span class="tag before">Now — still says "Running campaign", Pause does nothing</span>
+      <div class="bar">
+        <div class="meta"><span class="mode">CC + DM</span><span class="status">Running campaign</span></div>
+        <div class="divider"></div>
+        <button>Pause</button>
+        <button class="danger">Stop</button>
+        <button>Save as draft</button>
+      </div>
+    </div>
+    <div class="col">
+      <span class="tag after">After (monitoring) — reports the phase, Pause removed</span>
+      <div class="bar">
+        <div class="meta"><span class="mode mon">CC + DM</span><span class="status">Monitoring</span></div>
+        <div class="divider"></div>
+        <button class="danger">Stop</button>
+        <button>Save as draft</button>
+      </div>
+    </div>
+  </div>
+  <p class="note">Pause is gated on <code>campaign.running</code> in the backend — during monitoring it's a no-op, so the button is removed. <span class="k">Stop</span> ends monitoring; <span class="k">Save&nbsp;as&nbsp;draft</span> stays. While sending (not monitoring) the bar is unchanged.</p>
+
+  <h2>3 · (already works) — same gold treatment for the scheduled auto-check</h2>
+  <p class="note">The 15-min auto-check already flips the hero to CHECKING via the backend re-entrancy flag. Fix #1 just makes the manual button behave identically, so the two paths can't drift.</p>
+</body>
+</html>

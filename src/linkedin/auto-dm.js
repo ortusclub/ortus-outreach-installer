@@ -21,6 +21,7 @@ import { personalizeTemplate, getConnectionStatus } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
+import { hasDmBeenSent, recordDmSent } from '../dm-sent-log.js';
 
 function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -199,6 +200,22 @@ export async function runAutoDms({
     }
 
     const row = rowByUrl.get(url) || {};
+
+    // v2.6x — defense-in-depth (primary guard is in bulk-check's connectedUrls
+    // builder, computeBulkCheckUpdates + dmSentTerminal). If this row already
+    // shows DM Status='DM Sent' on the freshly-fetched sheet, skip it silently:
+    // never overwrite a terminal 'DM Sent' with 'Skipped — DM already sent',
+    // and never send a duplicate DM if the template was since edited.
+    const _existingDm = (
+      row['DM Status'] || row['dm status'] || row['DM status'] ||
+      row['Direct Message Status'] || row['dmStatus'] || ''
+    ).toString().trim();
+    if (_existingDm === 'DM Sent') {
+      log(`  ⤼ [${profileName}] ${url}: already 'DM Sent' on the sheet — skipping (no re-stamp).`);
+      result.skipped++;
+      continue;
+    }
+
     const resolvedFirst = senderFirstNames[profileId];
     const leadFirstName = row['First Name'] || row['First name'] || row['first name']
       || row['FIRST NAME'] || row['firstName'] || row['FirstName'] || row['first_name'] || '';
@@ -239,6 +256,23 @@ export async function runAutoDms({
     }
     const publicId = m[1];
     const body = personalizeTemplate(ccDmBody, data);
+
+    // Content-level dedup (cross-campaign): never re-send the SAME message to
+    // the same person. If we recorded sending this exact rendered message to
+    // this lead in a past campaign, skip + stamp instead of re-DMing. Changing
+    // the template produces a different render → not a match → sends normally.
+    if (await hasDmBeenSent(publicId, body)) {
+      log(`  ⤼ [${profileName}] ${url}: identical DM already sent before — skipping.`);
+      await updateSheetRow(sheetUrl, url, {
+        dmStatus: 'Skipped — DM already sent',
+        sender: profileName,
+        accountUsed: profileName,
+        dateLastAction: _formatLocalDate(new Date()),
+        auditAction: 'DM skipped: identical message already sent (prior campaign)',
+      }, linkedinColumn).catch(() => {});
+      result.skipped++;
+      continue;
+    }
 
     let ok = false;
     let errMsg = '';
@@ -294,6 +328,9 @@ export async function runAutoDms({
       // CSV-export cache lag so the next bulk-check sweep doesn't
       // re-fire the same DM.
       try { campaign.dmSentInRun?.add(url); } catch { /* */ }
+      // Record the exact message so a future campaign won't re-send an
+      // identical DM to this person.
+      try { await recordDmSent(publicId, body); } catch { /* non-fatal */ }
       result.sent++;
       log(`  💬 [${profileName}] ${url}: DM Sent`);
     } else if (interrupted) {

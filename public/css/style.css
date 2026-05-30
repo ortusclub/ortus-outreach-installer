@@ -19,6 +19,10 @@
   /* Functional-only */
   --green: #3fb950;
   --red: #f85149;
+  /* Monitoring accent — matches the dashboard monitoring card's blue.
+     Brightened for legibility now that it's used for text (mode chip),
+     not just the pulsing dot. Light theme darkens it for contrast. */
+  --blue: #6ea3d4;
 
   /* Gold — used ONLY on the primary Start CTA label */
   --gold: #F7BE68;
@@ -53,6 +57,7 @@ body.theme-light {
   --gray: #999999;
   --hairline: rgba(0, 0, 0, 0.15);
   --hairline-soft: rgba(0, 0, 0, 0.06);
+  --blue: #3a6ea5;
 
   /* v2.61: Mode-picker card surfaces (light) */
   --card-bg: #ffffff;
@@ -124,34 +129,45 @@ body {
   margin-top: 14px;
 }
 
-.sidebar-nav { padding: 24px 0; flex: 1; }
+/* v2.59.12 — nav restyled to the card language: container holds the horizontal
+   inset (12px) so each item is an inset rounded row; items are buttons/cards
+   with a clear hover surface; the active step gets the selected-card treatment
+   (gold-tint fill + gold hairline + bold). 12px container + 16px item padding =
+   the same 28px text inset as the rest of the sidebar, so alignment is kept. */
+.sidebar-nav { padding: 24px 12px; flex: 1; }
 .nav-section-label {
   font-family: var(--mono);
   font-size: 0.62rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--gray);
-  padding: 20px 28px 8px;
+  padding: 18px 16px 8px;
 }
 .nav-item {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 28px;
+  padding: 10px 16px;
   color: var(--ink);
   cursor: pointer;
   font-family: var(--mono);
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  border-left: 1px solid transparent;
-  transition: opacity 0.15s;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
   background: none;
-  border-top: none; border-right: none; border-bottom: none;
-  width: 100%; text-align: left;
+  width: 100%; box-sizing: border-box; text-align: left;
   font-weight: 400;
-  opacity: 0.65;
+  opacity: 0.78;
 }
-.nav-item:hover { opacity: 1; }
-.nav-item.active { opacity: 1; border-left-color: var(--ink); }
+.nav-item:hover { opacity: 1; background: var(--hairline-soft); }
+.nav-item.active {
+  opacity: 1;
+  background: var(--gold-tint-bg);
+  border-color: var(--gold);
+  color: var(--ink);
+  font-weight: 600;
+}
 .nav-num {
   font-family: var(--display);
   font-size: 1rem;
@@ -160,7 +176,7 @@ body {
   letter-spacing: 0;
   line-height: 1;
 }
-.nav-item.active .nav-num { color: var(--ink); }
+.nav-item.active .nav-num { color: var(--gold); }
 
 /* Theme toggle — two mono pills */
 .theme-toggle-group { padding: 0 28px 20px; }
@@ -953,7 +969,7 @@ select {
   background-position: 12px center;
 }
 .browse-search input::placeholder { color: var(--gray-faint, #b8b8b6); }
-.browse-search input:focus { border-color: var(--ink); background-color: #fff; }
+.browse-search input:focus { border-color: var(--ink); background-color: var(--card-bg); }
 
 .browse-icon-row { display: flex; gap: 4px; }
 .browse-icon-btn {
@@ -1005,7 +1021,7 @@ select {
   padding: 6px 12px; font-size: 0.58rem; letter-spacing: 0.14em;
   background: transparent;
 }
-.browse-toolbar .chip.active { background: #fff; box-shadow: var(--card-shadow); }
+.browse-toolbar .chip.active { background: var(--ink); color: var(--bg); box-shadow: var(--card-shadow); }
 
 /* Profile grid inside browse card: 6-col dense, compact items */
 .browse-card .profile-grid {
@@ -1019,7 +1035,9 @@ select {
   padding: 10px 12px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: #fff;
+  /* v2.59.9 — was hardcoded #fff: account cards were white with light text in
+     dark mode (unreadable). var(--card-bg) inverts per theme. */
+  background: var(--card-bg);
   min-width: 0;
   align-items: flex-start;
   gap: 8px;
@@ -1038,7 +1056,7 @@ select {
 .browse-card .local-browser-host .local-browser-tile {
   border-radius: 8px;
   border: 1px solid var(--hairline);
-  background: #fff;
+  background: var(--card-bg);
   padding: 10px 14px;
   gap: 12px;
   align-items: center;
@@ -1677,7 +1695,7 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 .intro-config-select-wide {
   width: 100%;
   padding: 10px 14px;
-  background: #fff;
+  background: var(--card-bg);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   font-family: var(--body); font-size: 0.95rem; color: var(--ink); font-weight: 500;
@@ -1719,7 +1737,8 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 .intro-config-input:focus { border-bottom-color: var(--ink); }
 .intro-config-input::placeholder { color: var(--gray-faint, #b8b8b6); font-weight: 400; }
 .intro-config-hint {
-  font-size: 0.74rem; color: var(--gray); margin-top: 6px; line-height: 1.5;
+  /* v2.59.8 — bumped 0.74→0.82rem for legibility of explanatory copy. */
+  font-size: 0.82rem; color: var(--gray); margin-top: 6px; line-height: 1.5;
 }
 .intro-config-hint code {
   font-family: ui-monospace, monospace; font-size: 0.7rem;
@@ -1851,11 +1870,14 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   line-height: 1.5;
 }
 .sheet-hero-preview .ic-filled .ic-label-block .ic-sub code {
-  background: #fff; border: 1px solid var(--gold);
+  /* v2.59.8 — was hardcoded #fff → in dark mode the example URL was white
+     text on white (invisible). Gold-tint surface reads in both themes. */
+  background: var(--gold-tint-bg); border: 1px solid var(--gold);
   padding: 1px 5px; border-radius: 3px;
 }
 .sheet-hero-preview .ic-filled .ic-select {
-  background-color: #fff;
+  /* v2.59.8 — was hardcoded #fff (invisible dropdown text in dark mode). */
+  background-color: var(--card-bg);
   border: 1px solid var(--gold);
   color: var(--ink);
   font-weight: 500;
@@ -1903,16 +1925,20 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 }
 .tpl-preview-btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 18px;
-  background: var(--ink); color: #fff;
-  border: 1px solid var(--ink); border-radius: 9999px;
-  font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.16em;
-  text-transform: uppercase; font-weight: 600;
+  padding: 11px 20px;
+  /* v2.59.12 — outlined pill: transparent bg + var(--ink) text/border. This is
+     theme-safe by construction (ink always contrasts the page in both themes),
+     so it can't go white-on-white (dark) or black-text-on-black (light) like the
+     inverted fill did. Hover fills with ink and flips text to bg. */
+  background: transparent; color: var(--ink);
+  border: 1.5px solid var(--ink); border-radius: 9999px;
+  font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.16em;
+  text-transform: uppercase; font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
   flex-shrink: 0;
 }
-.tpl-preview-btn:hover:not([disabled]) { background: #1a1a1a; }
+.tpl-preview-btn:hover:not([disabled]) { background: var(--ink); color: var(--bg); }
 .tpl-preview-btn[disabled] {
   background: var(--hairline-soft);
   color: var(--gray);
@@ -1920,7 +1946,7 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   cursor: not-allowed;
 }
 .tpl-preview-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
-.tpl-cta-hint { font-size: 0.74rem; color: var(--gray); line-height: 1.5; }
+.tpl-cta-hint { font-size: 0.82rem; color: var(--gray); line-height: 1.5; } /* v2.59.8 — bumped 0.74→0.82 */
 
 /* Each template sub-section becomes a hero card. Override the legacy
    .section.tpl-section's top hairline / padding so it reads as a card. */
@@ -1974,7 +2000,7 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 .section.tpl-section textarea:focus,
 .section.tpl-section input[type="text"]:focus {
   border-color: var(--ink);
-  background: #fff;
+  background: var(--card-bg);
 }
 .section.tpl-section textarea::placeholder,
 .section.tpl-section input[type="text"]::placeholder {
@@ -2018,10 +2044,19 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   font-family: ui-monospace, monospace;
   text-transform: none;
   letter-spacing: 0;
-  font-size: 0.7rem;
-  background: #fff;
+  font-size: 0.72rem;
+  /* v2.59.8 — was hardcoded #fff: white pill + var(--ink) (near-white) text in
+     dark mode = invisible. var(--card-bg) is a lifted surface in dark, white in
+     light, so the chip reads in both. */
+  background: var(--card-bg);
   border-color: var(--hairline);
   padding: 4px 10px;
+}
+/* v2.59.8 — light mode: white-on-white chips read as faint, so give them a
+   stronger border + subtle fill ("even more visible in the light version"). */
+body.theme-light .section.tpl-section .placeholder-tags .tag {
+  background: #f1efe9;
+  border-color: rgba(0, 0, 0, 0.28);
 }
 .section.tpl-section .placeholder-tags .tag:hover {
   background: var(--gold-tint-bg);
@@ -2186,6 +2221,15 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 }
 .passover-pill.active { color: var(--green); border-color: var(--green); }
 .passover-pill.closed { color: var(--gray); border-color: var(--hairline); }
+/* v2.59.8 — light mode: the bright --green (#3fb950) and #999 gray read as faint
+   on the light canvas at this small size. Use darker, higher-contrast tones and
+   a hairline fill so the OP·IM·SN / CC pills are clearly visible. */
+body.theme-light .passover-pill.active {
+  color: #1c7a2e; border-color: #1c7a2e; background: rgba(63, 185, 80, 0.10);
+}
+body.theme-light .passover-pill.closed {
+  color: #6a6a68; border-color: rgba(0, 0, 0, 0.25);
+}
 
 /* ── Right-pane SoO error pill ─────────────────────────────────────────────
    Surfaces when /api/soo-status returns a non-200 or an error payload. */
@@ -2536,16 +2580,37 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 }
 .launch-actions.launch-actions--four .btn {
   width: 100%;
-  padding: 14px 20px;
-  font-size: 0.68rem;
-  letter-spacing: 0.2em;
+  /* v2.59.12 — bigger, bolder labels that fill the pill + full-contrast text
+     on the secondary ("white") buttons (was 0.68rem / weight 400, reading thin
+     and low-contrast). */
+  padding: 16px 22px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
   text-align: center;
   justify-content: center;
+}
+.launch-actions.launch-actions--four .btn-secondary {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 .launch-actions.launch-actions--four #btn-start {
   padding: 18px 20px;
   font-size: 0.78rem;
   letter-spacing: 0.22em;
+  /* v2.59.12 — dark mode: a FILLED WHITE pill (var(--ink) is near-white in dark)
+     with dark text — the inverse of light mode's filled-black pill. Scoped to the
+     launch Start only (not the shared "+ New campaign" / resume buttons). */
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+  font-weight: 700;
+}
+/* Light mode keeps the filled-black pill with the signature gold label. */
+body.theme-light .launch-actions.launch-actions--four #btn-start {
+  background: var(--ink);
+  color: var(--gold);
+  border-color: var(--ink);
 }
 
 .launch-right {
@@ -3248,14 +3313,16 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   color: var(--ink);
   margin-bottom: 4px;
 }
-.ic-sub { font-size: 0.7rem; color: var(--gray); line-height: 1.45; }
+.ic-sub { font-size: 0.82rem; color: var(--gray); line-height: 1.5; } /* v2.59.8 — bumped 0.7→0.82 */
 .ic-sub code { font-family: var(--mono); font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 5px; }
 .ic-select {
   width: 100%;
   padding: 10px 14px;
   font-family: var(--mono);
   font-size: 0.9rem;
-  background: white;
+  /* v2.59.8 — was hardcoded `white`: in dark mode the placeholder/value text
+     (var(--ink), near-white) was white-on-white. var(--card-bg) inverts. */
+  background: var(--card-bg);
   border: 1px solid var(--hairline);
   color: var(--ink);
   appearance: none;
@@ -3266,10 +3333,13 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
   padding-right: 36px;
 }
 .ic-select.is-detected { border-color: var(--ink); }
+/* v2.59.8 — light mode: strengthen the dropdown border so it doesn't read as a
+   faint near-white box on the light canvas. */
+body.theme-light .ic-select { border-color: rgba(0, 0, 0, 0.3); }
 .ic-check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding-top: 4px; }
 .ic-check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--ink); }
 .ic-check-label { font-size: 0.9rem; color: var(--ink); line-height: 1.4; }
-.ic-check-hint { font-size: 0.7rem; color: var(--gray); margin-top: 3px; line-height: 1.45; }
+.ic-check-hint { font-size: 0.82rem; color: var(--gray); margin-top: 3px; line-height: 1.5; } /* v2.59.8 — bumped 0.7→0.82 */
 .ic-check-hint code { font-family: var(--mono); font-size: 0.85em; background: rgba(0,0,0,0.05); padding: 1px 5px; }
 .ic-auto-detected {
   display: inline-flex; align-items: center; gap: 4px;
@@ -4014,6 +4084,32 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
 .notif-row-v.warn { color: var(--gray); }
 .notif-row-v.bad  { color: var(--red); }
 .notif-actions { display: flex; gap: 6px; margin-top: 4px; }
+
+/* Bug 17: Sidebar tightened (Variant A) — inline actions + chips, less clutter. */
+.sb-tight { padding: 0 28px 18px; display: flex; flex-direction: column; gap: 12px; }
+.sb-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sb-line-k { font-size: 0.82rem; color: var(--ink); }
+.sb-line-v { display: inline-flex; align-items: center; gap: 8px; }
+.sb-icon-btn {
+  width: 24px; height: 24px; border: 1px solid var(--hairline); border-radius: 50%;
+  background: transparent; color: var(--gray); cursor: pointer; font-size: 0.72rem;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+  transition: border-color 0.12s, color 0.12s;
+}
+.sb-icon-btn:hover { border-color: var(--gold); color: var(--ink); }
+.sb-link {
+  background: transparent; border: none; padding: 0; cursor: pointer;
+  font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--gold); text-decoration: underline; text-underline-offset: 3px;
+}
+.sb-link:hover { opacity: 0.75; }
+body.theme-light .sb-link { color: #6e520f; }
+.sb-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sb-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--hairline); border-radius: 9999px; padding: 3px 9px;
+}
+.sb-chip-k { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
 .notif-pref-row { padding-top: 2px; }
 .notif-pref-toggle { position: relative; display: inline-block; width: 28px; height: 16px; flex-shrink: 0; }
 .notif-pref-toggle input { opacity: 0; width: 0; height: 0; }
@@ -5728,6 +5824,76 @@ body.theme-light .wiz-launch-trigger:hover { background: #fafaf9; border-color: 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Bug 15: running-campaign control bar — same pill shell as the launch trigger,
+   shown in its place once a campaign is live (Pause / Stop / Save as draft). */
+.wiz-launch-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  padding: 9px 12px 9px 20px;
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.35);
+}
+.wiz-launch-controls[hidden] { display: none; }
+body.theme-light .wiz-launch-controls {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.22), 0 2px 6px -2px rgba(0, 0, 0, 0.10);
+}
+.wiz-launch-controls-meta {
+  display: inline-flex; flex-direction: row; align-items: center;
+  gap: 11px; line-height: 1.1; max-width: 280px;
+  cursor: pointer; border-radius: 13px; padding: 5px 9px; margin: -5px -3px;
+  background: transparent; border: none; text-align: left;
+  transition: background 0.12s;
+}
+.wiz-launch-controls-meta:hover { background: var(--hairline-soft); }
+.wiz-launch-controls-meta:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.wlc-meta-stack { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.wlc-open-arrow {
+  color: var(--gray); font-size: 0.95rem; flex: 0 0 auto;
+  transition: color 0.12s, transform 0.12s;
+}
+.wiz-launch-controls-meta:hover .wlc-open-arrow { color: var(--ink); transform: translate(2px, -2px); }
+.wiz-launch-controls-meta:hover .wiz-launch-controls-name { text-decoration: underline; text-underline-offset: 3px; }
+.wiz-launch-controls-mode {
+  font-family: var(--mono); font-size: 0.68rem; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--green);
+}
+.wiz-launch-controls-name {
+  font-family: var(--body); font-size: 1rem; font-weight: 600; color: var(--ink);
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Monitoring phase — report it with a blue pulsing dot matching the dashboard
+   monitoring card's accent, so "Monitoring" reads as live (and consistent
+   with the blue monitoring treatment on the dashboard). */
+.wiz-launch-controls.is-monitoring .wiz-launch-controls-name {
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.wiz-launch-controls.is-monitoring .wiz-launch-controls-name::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--blue); box-shadow: 0 0 0 3px rgba(74, 123, 184, 0.22);
+  animation: cockpit-pulse 2.2s ease-in-out infinite;
+}
+/* During monitoring the mode chip turns blue too (was green for sending). */
+.wiz-launch-controls.is-monitoring .wiz-launch-controls-mode { color: var(--blue); }
+.wiz-launch-controls-divider { width: 1px; height: 26px; background: var(--hairline); }
+.wiz-ctrl-btn {
+  font-family: var(--body); font-size: 0.92rem; font-weight: 500;
+  color: var(--ink); background: transparent;
+  border: 1px solid var(--hairline); border-radius: 9999px;
+  padding: 9px 18px; cursor: pointer; white-space: nowrap;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.wiz-ctrl-btn:hover { border-color: var(--ink); }
+.wiz-ctrl-btn:disabled { opacity: 0.5; cursor: default; }
+.wiz-ctrl-btn.danger { color: var(--red); border-color: rgba(248, 81, 73, 0.45); }
+.wiz-ctrl-btn.danger:hover { border-color: var(--red); background: rgba(248, 81, 73, 0.08); }
+body.theme-light .wiz-ctrl-btn { border-color: rgba(0, 0, 0, 0.2); }
 .wiz-launch-trigger-divider {
   width: 1px;
   height: 26px;
@@ -5857,176 +6023,308 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
    ───────────────────────────────────────────────────────────────────────── */
 
 .live-console {
+  /* v2.59.26: full-height container so the drawer can slide in smoothly. The
+     container itself is inert (pointer-events:none); the lip + drawer re-enable
+     pointer events so the empty full-height area never blocks the page. */
   position: fixed;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
   z-index: 60;
   font-family: var(--body);
+  pointer-events: none;
+  /* Permanently-dark surface — pin the dark tokens so the light theme doesn't
+     render console text black-on-black. */
+  --ink: #fafafa;
+  --gray: #9a9a9a;
+  --hairline: rgba(255, 255, 255, 0.18);
+  --blue: #6ea3d4;
+  --green: #3fb950;
+  color: var(--ink);
 }
 .live-console[hidden] { display: none !important; }
-.live-console.is-expanded {
-  top: 0; bottom: 0; transform: none;
-}
 
-.live-console.is-collapsed .live-console__drawer { display: none; }
-.live-console.is-expanded .live-console__lip { display: none; }
-
-/* ── Lip (collapsed, right-edge tab) ──────────────────────────────────── */
+/* ── Lip (collapsed, right-edge tab): blinking light + CONSOLE ─────────── */
 .live-console__lip {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  pointer-events: auto;
   background: rgba(19, 19, 19, 0.95);
   color: var(--ink);
   border: 1px solid var(--hairline);
   border-right: none;
-  border-radius: 6px 0 0 6px;
-  padding: 16px 9px;
+  border-radius: 9px 0 0 9px;
+  padding: 32px 11px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   cursor: pointer;
   font-family: inherit;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4);
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, opacity 0.2s ease;
 }
+.live-console.is-expanded .live-console__lip { opacity: 0; pointer-events: none; }
 .live-console__lip:hover { border-color: var(--gold); background: rgba(28, 28, 28, 0.98); }
 
-.live-console__dot {
+/* Status dot — lip + drawer head. Colour + blink driven by the root state class
+   (lc-running = green, lc-monitoring = blue, lc-warn = amber). */
+.live-console__dot, .live-console__hdot {
   display: inline-block;
-  width: 8px; height: 8px;
+  width: 9px; height: 9px;
   border-radius: 9999px;
   background: var(--gray);
   flex-shrink: 0;
 }
-.live-console__dot[data-color="green"]  { background: var(--green); }
-.live-console__dot[data-color="amber"]  { background: #d29922; }
-.live-console__dot[data-color="gray"]   { background: var(--gray); }
-.live-console__dot[data-pulse="1"][data-color="green"] {
+.live-console.lc-running .live-console__dot,
+.live-console.lc-running .live-console__hdot { background: var(--green); }
+.live-console.lc-monitoring .live-console__dot,
+.live-console.lc-monitoring .live-console__hdot { background: var(--blue); }
+.live-console.lc-warn .live-console__dot,
+.live-console.lc-warn .live-console__hdot { background: #d29922; }
+.live-console.lc-running .live-console__dot {
   box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55);
-  animation: live-console-pulse 1.6s infinite;
+  animation: live-console-pulse-green 1.6s infinite;
 }
-@keyframes live-console-pulse {
+.live-console.lc-monitoring .live-console__dot {
+  box-shadow: 0 0 0 0 rgba(110, 163, 212, 0.55);
+  animation: live-console-pulse-blue 1.6s infinite;
+}
+@keyframes live-console-pulse-green {
   0%   { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55); }
-  70%  { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+  70%  { box-shadow: 0 0 0 7px rgba(63, 185, 80, 0); }
   100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+}
+@keyframes live-console-pulse-blue {
+  0%   { box-shadow: 0 0 0 0 rgba(110, 163, 212, 0.55); }
+  70%  { box-shadow: 0 0 0 7px rgba(110, 163, 212, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(110, 163, 212, 0); }
 }
 
 .live-console__lip-lbl {
   font-family: var(--display);
-  font-size: 0.72rem;
-  letter-spacing: 0.22em;
+  font-size: 0.84rem;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   color: var(--ink);
   writing-mode: vertical-rl;
   transform: rotate(180deg);
 }
-.live-console__lip-count {
-  font-family: var(--mono);
-  font-size: 0.6rem;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-}
 
-/* ── Drawer (expanded) ────────────────────────────────────────────────── */
+/* ── Drawer (expanded) — wider + smooth slide-in ──────────────────────── */
 .live-console__drawer {
-  width: 340px;
-  height: 100%;
-  background: rgba(11, 11, 11, 0.97);
+  position: absolute; right: 0; top: 0; bottom: 0;
+  width: 660px;
+  max-width: 94vw;
+  background: rgba(11, 11, 11, 0.98);
   border-left: 1px solid var(--hairline);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+.live-console.is-expanded .live-console__drawer {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
 }
 
+/* ── Head: status + name + mode badge + close ─────────────────────────── */
 .live-console__head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--hairline-soft);
+  gap: 13px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--hairline);
 }
 .live-console__head-text { flex: 1; min-width: 0; }
+.live-console__status {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--gray);
+}
+.live-console.lc-running .live-console__status { color: var(--green); }
+.live-console.lc-monitoring .live-console__status { color: var(--blue); }
 .live-console__title {
   font-family: var(--display);
-  font-size: 1rem;
-  letter-spacing: 0.04em;
+  font-size: 1.5rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  margin-top: 4px;
   color: var(--ink);
   text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.live-console__mode {
-  font-size: 0.55rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--gold);
-  margin-top: 2px;
+.live-console__badge {
+  width: 42px; height: 42px; flex: 0 0 auto;
+  border: 1px solid var(--hairline); border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.02em; color: var(--gray);
+  overflow: hidden; white-space: nowrap; text-align: center; padding: 0 2px;
 }
+
+/* ── Mini dashboard card inside the drawer ────────────────────────────── */
+.live-console__mini {
+  position: relative; overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--hairline-soft);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+.live-console__mini::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--gray);
+}
+.live-console.lc-running .live-console__mini::before { background: var(--green); }
+.live-console.lc-monitoring .live-console__mini::before { background: var(--blue); }
+.live-console__live { display: flex; align-items: center; gap: 12px; }
+.live-console__live-ico { flex: 0 0 auto; width: 18px; text-align: center; font-size: 1rem; color: var(--gray); }
+.live-console.lc-running .live-console__live-ico { color: var(--green); }
+.live-console.lc-monitoring .live-console__live-ico { color: var(--blue); }
+.live-console__live-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.live-console__live-l1 { font-size: 0.98rem; font-weight: 600; color: var(--ink); line-height: 1.2; }
+.live-console__live-l2 {
+  font-family: var(--mono); font-size: 0.76rem; color: var(--gray); letter-spacing: 0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.live-console__live-l2:empty { display: none; }
+.live-console__live-big { margin-left: auto; text-align: right; flex: 0 0 auto; }
+.live-console__live-n {
+  display: block; font-family: var(--display); font-size: 1.9rem; line-height: 0.85;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.live-console__live-u {
+  display: block; font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--gray); margin-top: 3px;
+}
+.live-console__live-u:empty { display: none; }
+.live-console__mini-stats {
+  font-family: var(--mono); font-size: 0.8rem; color: var(--gray);
+  margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--hairline-soft);
+}
+.live-console__mini-stats b { color: var(--ink); font-weight: 600; }
 .live-console__ctl {
-  width: 22px; height: 22px;
+  width: 32px; height: 32px;
+  flex: none;
   border-radius: 9999px;
   border: 1px solid var(--hairline);
-  background: transparent;
-  color: var(--gray);
-  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font-size: 1.3rem;
   line-height: 1;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
-.live-console__ctl:hover { color: var(--ink); border-color: var(--ink); }
+.live-console__ctl:hover { background: rgba(255, 255, 255, 0.12); border-color: var(--ink); }
 
 .live-console__body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 20px;
 }
 
-.live-console__campcard {
-  border: 1px solid var(--hairline-soft);
-  border-radius: 4px;
-  padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.02);
-  margin-bottom: 14px;
+/* ── Cockpit row (Variant B): progress ring + stacked stats ─────────── */
+.live-console__cockpit {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 20px;
 }
-.live-console__camp-sent {
-  font-family: var(--mono);
-  font-size: 0.85rem;
+.live-console__ring {
+  width: 120px; height: 120px;
+  flex: none;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  /* fill % set in JS (gold while running, blue while monitoring) */
+  background: conic-gradient(var(--gold) 0 0%, rgba(255, 255, 255, 0.10) 0% 100%);
+}
+.live-console__ring-inner {
+  width: 96px; height: 96px;
+  border-radius: 9999px;
+  background: rgba(11, 11, 11, 0.97);
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+.live-console__ring-num {
+  display: block;
+  font-family: var(--display);
+  font-size: 2.3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
-  margin-bottom: 10px;
 }
-.live-console__row {
-  display: grid;
-  grid-template-columns: 70px 1fr;
-  gap: 10px;
-  padding: 4px 0;
-  align-items: center;
+.live-console__ring-cap {
+  display: block;
+  font-size: 0.58rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gray);
+  margin-top: 5px;
 }
+.live-console__stats {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.live-console__stat { min-width: 0; }
 .live-console__k {
+  display: block;
   font-size: 0.55rem;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--gray);
+  margin-bottom: 4px;
 }
 .live-console__v {
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: 0.86rem;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
-  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.live-console__divider {
-  height: 1px;
-  background: var(--hairline-soft);
-  margin: 14px 0 10px;
+/* Selected GoLogin account roster — left-aligned chips, acting account lit. */
+.live-console__stat--accounts .live-console__accounts { margin-top: 2px; }
+.live-console__accounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--body);
+  font-size: 0.74rem;
+}
+.live-console__acct {
+  color: var(--gray);
+  white-space: nowrap;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 9999px;
+  padding: 3px 11px;
+}
+.live-console__acct.is-active {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.live-console__acct.is-active::before {
+  content: '▸ ';
+  color: var(--green, #4caf50);
 }
 
 .live-console__log-label {
@@ -6038,15 +6336,15 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
 }
 .live-console__log {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--gray);
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid var(--hairline-soft);
-  border-radius: 3px;
-  padding: 8px 10px;
-  line-height: 1.55;
-  max-height: 160px;
-  overflow: hidden;
+  border-radius: 5px;
+  padding: 12px 14px;
+  line-height: 1.7;
+  max-height: 240px;
+  overflow-y: auto;
 }
 .live-console__log-line {
   display: block;
@@ -6260,7 +6558,15 @@ body[data-dashboard='v3'] .past-frame.is-expanded #pastList {
   border-radius: 9999px;
   margin-left: 10px;
   vertical-align: middle;
-  opacity: 0.7;
+  /* v2.59.8 — removed opacity:0.7. On the light canvas the already-pale gold at
+     70% opacity was barely legible ("UNLOCKS AT 2+ ACCOUNTS"). */
+}
+/* v2.59.8 — light mode: pale gold on white is low-contrast; darken text/border
+   and add a gold-tint fill so the pill is clearly readable. */
+body.theme-light .unlock-pill {
+  color: #6e520f;
+  border-color: #b9892b;
+  background: var(--gold-tint-bg);
 }
 .alpha-concurrency.is-unlocked .unlock-pill { display: none; }
 

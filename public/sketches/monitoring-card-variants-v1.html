@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoring card — variants v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Real tokens — light theme (matches what's on screen now). */
+  :root{
+    --bg:#fafafa; --bg-soft:#faf9f7; --ink:#0a0a0a; --gray:#999;
+    --hairline:rgba(0,0,0,0.15); --hairline-soft:rgba(0,0,0,0.06);
+    --green:#3fb950; --red:#f85149; --gold:#F7BE68;
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --body:'Hanken Grotesk',-apple-system,sans-serif;
+    --card-bg:#fff; --card-shadow:0 4px 16px rgba(0,0,0,.10);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);padding:48px 40px 80px;-webkit-font-smoothing:antialiased}
+  .pagehead{max-width:1040px;margin:0 auto 8px}
+  .pagehead h1{font-family:var(--display);font-size:2rem;letter-spacing:.04em;font-weight:400}
+  .pagehead p{color:var(--gray);font-size:.85rem;margin-top:4px}
+  .wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:34px}
+  .variant-label{font-size:.6rem;letter-spacing:.24em;text-transform:uppercase;color:var(--gray);margin:26px 0 12px;display:flex;gap:10px;align-items:center}
+  .variant-label b{color:var(--ink);font-weight:600;letter-spacing:.18em}
+  .variant-label .note{text-transform:none;letter-spacing:0;font-size:.8rem;color:var(--gray)}
+
+  /* ── Shared card chrome (mirrors .vj-card) ─────────────────────────── */
+  .card{position:relative;background:var(--card-bg);border:1px solid var(--hairline-soft);border-radius:14px;
+    box-shadow:var(--card-shadow);padding:26px 30px;border-left:3px solid var(--green)}
+  .eyebrow{display:flex;align-items:center;gap:9px;font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray)}
+  .eyebrow .dot{width:8px;height:8px;border-radius:9999px;background:var(--green);box-shadow:0 0 0 0 rgba(63,185,80,.5);animation:pulse 1.8s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,185,80,.5)}70%{box-shadow:0 0 0 7px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+  .glyph{position:absolute;top:24px;right:30px;width:54px;height:54px;border:1px solid var(--hairline);border-radius:9999px;
+    display:flex;align-items:center;justify-content:center;font-size:.66rem;letter-spacing:.08em;color:var(--ink)}
+  .name{font-family:var(--display);font-size:2.1rem;letter-spacing:.02em;font-weight:400;margin:8px 0 16px}
+  .stats{display:flex;flex-wrap:wrap;gap:18px;font-size:.82rem;color:var(--gray);margin-top:16px;align-items:center}
+  .stats b{color:var(--ink);font-weight:600}
+  .controls{display:flex;align-items:center;gap:12px;margin-top:22px}
+  .btn-pill{border:1px solid var(--hairline);background:transparent;color:var(--ink);border-radius:9999px;
+    padding:9px 22px;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;font-family:var(--body)}
+  .dock{margin-left:auto;display:flex;gap:8px}
+  .dock button{width:38px;height:38px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);
+    display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .dock button.danger{color:var(--red)}
+  .dock svg{width:15px;height:15px}
+
+  /* ── A: repurposed progress bar (current impl) ─────────────────────── */
+  .hbar{height:4px;border-radius:9999px;background:var(--hairline-soft);overflow:hidden;margin:4px 0 18px}
+  .hbar i{display:block;height:100%;background:var(--green);border-radius:9999px}
+  .hero-row{display:flex;align-items:baseline;gap:22px}
+  .num{font-family:var(--display);font-size:3.4rem;line-height:.9;font-weight:400}
+  .num .sub{font-size:1.1rem;color:var(--gray);margin-left:3px}
+  .meta{display:flex;flex-direction:column;gap:3px;font-size:.86rem;color:var(--gray)}
+  .meta b{color:var(--ink);font-weight:600}
+
+  /* ── B: countdown-focused ──────────────────────────────────────────── */
+  .countwrap{display:flex;align-items:center;gap:26px;margin:18px 0 2px}
+  .count{font-family:var(--display);font-size:4rem;line-height:.85;font-weight:400;font-variant-numeric:tabular-nums}
+  .count-cap{font-size:.58rem;letter-spacing:.24em;text-transform:uppercase;color:var(--gray);margin-top:8px}
+  .watch{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--gray)}
+  .watch .ping{width:9px;height:9px;border-radius:9999px;border:1.5px solid var(--green);position:relative}
+  .watch .ping::after{content:'';position:absolute;inset:-5px;border-radius:9999px;border:1.5px solid var(--green);opacity:.35;animation:ring 1.8s infinite}
+  @keyframes ring{0%{transform:scale(.6);opacity:.5}100%{transform:scale(1.4);opacity:0}}
+  .bchips{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+  .bchip{border:1px solid var(--hairline-soft);border-radius:10px;padding:10px 14px;min-width:96px}
+  .bchip .k{font-size:.54rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray)}
+  .bchip .v{font-family:var(--display);font-size:1.5rem;margin-top:3px}
+
+  /* ── C: 7-day window timeline ──────────────────────────────────────── */
+  .tl{margin:20px 0 4px}
+  .tl-head{display:flex;justify-content:space-between;font-size:.58rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray);margin-bottom:10px}
+  .tl-track{position:relative;height:2px;background:var(--hairline);margin:22px 8px 8px}
+  .tl-fill{position:absolute;left:0;top:0;height:100%;width:9%;background:var(--green)}
+  .tick{position:absolute;top:50%;width:9px;height:9px;border-radius:9999px;background:var(--bg);border:1.5px solid var(--hairline);transform:translate(-50%,-50%)}
+  .tick.done{background:var(--green);border-color:var(--green)}
+  .tick.next{border-color:var(--green);box-shadow:0 0 0 4px rgba(63,185,80,.18)}
+  .tick .lbl{position:absolute;top:14px;left:50%;transform:translateX(-50%);font-size:.56rem;color:var(--gray);white-space:nowrap}
+  .tick.next .lbl{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="pagehead">
+  <h1>Monitoring card — how it could look</h1>
+  <p>Dashboard card shown after a CC+DM / CC+IC campaign finishes sending and enters the acceptance-watching phase. Light theme, real tokens. 3 directions.</p>
+</div>
+
+<div class="wrap">
+
+  <!-- VARIANT A -->
+  <div>
+    <div class="variant-label"><b>Variant A</b> · Repurposed bar <span class="note">— current build: same card as a running campaign, relabelled</span></div>
+    <div class="card">
+      <div class="eyebrow"><span class="dot"></span><span>Monitoring</span></div>
+      <div class="glyph">C+D</div>
+      <div class="name">TEST CC+DM (RERUN)</div>
+      <div class="hbar"><i style="width:11%"></i></div>
+      <div class="hero-row">
+        <div class="num">11<span class="sub">%</span></div>
+        <div class="meta">
+          <span><b>6</b> of 57 sent</span>
+          <span>Next check in <b>41m 59s</b></span>
+        </div>
+      </div>
+      <div class="stats">
+        <span><b>3</b> accounts</span><span><b>0</b> accepted</span><span><b>0</b> replies</span>
+        <span>· <b>Monitoring</b> · <span style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px">batch settings</span></span>
+      </div>
+      <div class="controls">
+        <button class="btn-pill">Open</button>
+        <div class="dock">
+          <button class="danger" title="Stop monitoring"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          <button title="Check now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VARIANT B -->
+  <div>
+    <div class="variant-label"><b>Variant B</b> · Countdown focus <span class="note">— sending's done, so the rhythm of the next check leads; acceptances as chips</span></div>
+    <div class="card">
+      <div class="eyebrow"><span class="dot"></span><span>Monitoring · watching for acceptances</span></div>
+      <div class="glyph">C+D</div>
+      <div class="name">TEST CC+DM (RERUN)</div>
+      <div class="countwrap">
+        <div>
+          <div class="count">41:59</div>
+          <div class="count-cap">until next check</div>
+        </div>
+        <div class="watch"><span class="ping"></span> Watching <b style="color:var(--ink);margin:0 3px">3</b> accounts · ends in 7d</div>
+      </div>
+      <div class="bchips">
+        <div class="bchip"><div class="k">Sent</div><div class="v">6</div></div>
+        <div class="bchip"><div class="k">Accepted</div><div class="v">0</div></div>
+        <div class="bchip"><div class="k">Messaged</div><div class="v">0</div></div>
+        <div class="bchip"><div class="k">Replies</div><div class="v">0</div></div>
+      </div>
+      <div class="controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill" style="border-color:var(--green);color:var(--green)">Check now</button>
+        <div class="dock">
+          <button class="danger" title="Stop monitoring"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VARIANT C -->
+  <div>
+    <div class="variant-label"><b>Variant C</b> · 7-day window timeline <span class="note">— shows the whole watch window + scheduled checks; next check highlighted</span></div>
+    <div class="card">
+      <div class="eyebrow"><span class="dot"></span><span>Monitoring</span></div>
+      <div class="glyph">C+D</div>
+      <div class="name">TEST CC+DM (RERUN)</div>
+      <div class="tl">
+        <div class="tl-head"><span>Sending done · 6 sent</span><span>Window ends Fri 5 Jun · 18:00</span></div>
+        <div class="tl-track">
+          <div class="tl-fill"></div>
+          <div class="tick done" style="left:0%"><span class="lbl">start</span></div>
+          <div class="tick next" style="left:9%"><span class="lbl">next · 41m</span></div>
+          <div class="tick" style="left:28%"><span class="lbl">+1h</span></div>
+          <div class="tick" style="left:47%"></div>
+          <div class="tick" style="left:66%"></div>
+          <div class="tick" style="left:85%"><span class="lbl">day 7</span></div>
+          <div class="tick" style="left:100%"><span class="lbl">end</span></div>
+        </div>
+      </div>
+      <div class="stats" style="margin-top:30px">
+        <span><b>3</b> accounts</span><span><b>0</b> accepted</span><span><b>0</b> messaged</span><span><b>0</b> replies</span>
+        <span>· checks every <b>1h</b></span>
+      </div>
+      <div class="controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill" style="border-color:var(--green);color:var(--green)">Check now</button>
+        <div class="dock">
+          <button class="danger" title="Stop monitoring"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

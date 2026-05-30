@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Campaign page · PB redesign v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #0d0d0d;
+    --panel-2: #131313;
+    --ink: #fafafa;
+    --gray: #8a8a8a;
+    --gray-2: #6a6a6a;
+    --gray-faint: #4d4d4d;
+    --hairline: rgba(255,255,255,0.14);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --gold: #F7BE68;
+    --gold-soft: rgba(247,190,104,0.45);
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    --body: 'Hanken Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--body); background: var(--bg); color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+  /* ── Intro ──────────────────────────────────────────────────────────── */
+  .intro { padding: 32px 48px 12px; }
+  .intro h1 { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; margin-bottom: 6px; }
+  .intro .lead { color: var(--gray); font-size: 0.85rem; max-width: 760px; margin-bottom: 8px; }
+  .intro .note { color: var(--gray-faint); font-size: 0.7rem; max-width: 760px; font-style: italic; }
+
+  /* ── App frame (the campaign page) ─────────────────────────────────── */
+  .app {
+    margin: 24px 48px 80px;
+    border: 1px solid var(--hairline);
+    background: var(--panel);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 880px;
+    position: relative;
+  }
+
+  /* ── Sidebar ────────────────────────────────────────────────────────── */
+  .side {
+    border-right: 1px solid var(--hairline);
+    padding: 22px 18px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.014), rgba(255,255,255,0));
+  }
+  .side__back {
+    background: transparent; border: 1px solid var(--hairline); color: var(--gray);
+    border-radius: 9999px; padding: 6px 12px;
+    font-family: inherit; font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase;
+    margin-bottom: 26px; cursor: pointer;
+  }
+  .side__back:hover { color: var(--ink); border-color: var(--ink); }
+  .side__group { margin-bottom: 20px; }
+  .side__group-lbl {
+    font-size: 0.5rem; letter-spacing: 0.22em; color: var(--gray-faint);
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .side__item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 0;
+    font-size: 0.8rem; color: var(--gray);
+    cursor: pointer;
+    position: relative;
+  }
+  .side__item:hover { color: var(--ink); }
+  .side__item.on {
+    color: var(--ink);
+  }
+  .side__item.on::before {
+    content: ''; position: absolute;
+    left: -18px; top: 50%; transform: translateY(-50%);
+    width: 2px; height: 18px;
+    background: var(--gold);
+  }
+  .side__num {
+    font-family: var(--display); font-size: 0.72rem; color: var(--gold);
+    width: 24px; letter-spacing: 0.04em;
+  }
+  .side__item.done .side__num { color: var(--green); }
+  .side__check { margin-left: auto; font-size: 0.7rem; color: var(--green); }
+
+  .side__divider {
+    height: 1px; background: var(--hairline-soft); margin: 14px 0;
+  }
+
+  /* ── Main column ────────────────────────────────────────────────────── */
+  .main {
+    padding: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  /* Header bar: campaign name + status pill */
+  .head {
+    display: flex; align-items: center; gap: 14px;
+    padding: 22px 32px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .head__lbl {
+    font-size: 0.55rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .head__name-wrap { flex: 1; min-width: 0; }
+  .head__name {
+    width: 100%;
+    background: transparent; border: none;
+    color: var(--ink); font-family: var(--display); font-size: 1.9rem;
+    letter-spacing: 0.02em; outline: none; padding: 0;
+  }
+  .head__name::placeholder { color: var(--gray-faint); }
+  .head__status {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 9999px;
+    font-size: 0.55rem; letter-spacing: 0.22em; color: var(--gray);
+    text-transform: uppercase;
+  }
+  .head__status .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--gray); }
+  .head__save {
+    background: transparent; border: 1px solid var(--hairline); color: var(--gray);
+    border-radius: 9999px; padding: 6px 12px;
+    font-family: inherit; font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .head__save:hover { color: var(--ink); border-color: var(--ink); }
+
+  /* Step progress bar (slim row under header) */
+  .stepbar {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .stepbar__cell {
+    padding: 10px 16px;
+    border-right: 1px solid var(--hairline-soft);
+    font-size: 0.55rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--gray-faint);
+    cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    position: relative;
+  }
+  .stepbar__cell:last-child { border-right: none; }
+  .stepbar__cell:hover { color: var(--gray); }
+  .stepbar__cell.on { color: var(--ink); background: rgba(255,255,255,0.025); }
+  .stepbar__cell.on::after {
+    content: ''; position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 1px; background: var(--gold);
+  }
+  .stepbar__cell.done { color: var(--green); }
+  .stepbar__num { font-family: var(--display); font-size: 0.78rem; color: inherit; }
+
+  /* ── Section container ─────────────────────────────────────────────── */
+  .scroll { padding-right: 360px; /* room for right-lip drawer */ }
+  .sec { padding: 28px 32px; border-bottom: 1px solid var(--hairline-soft); }
+  .sec:last-child { border-bottom: none; }
+  .sec__head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+  .sec__num {
+    font-family: var(--display); font-size: 0.85rem; letter-spacing: 0.22em; color: var(--gold);
+    width: 22px; flex-shrink: 0;
+  }
+  .sec__title { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.02em; }
+  .sec__sub { color: var(--gray); font-size: 0.78rem; margin-left: 36px; margin-bottom: 18px; }
+
+  /* ── Section I: Mode cards (3-col grid) ─────────────────────────────── */
+  .modes {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin-left: 36px;
+  }
+  .mode {
+    border: 1px solid var(--hairline-soft); border-radius: 4px;
+    padding: 14px 16px;
+    cursor: pointer; position: relative;
+    transition: border-color 0.12s;
+  }
+  .mode:hover { border-color: var(--gray); }
+  .mode.on {
+    border-color: var(--gold);
+    background: rgba(247,190,104,0.04);
+  }
+  .mode.locked { opacity: 0.42; cursor: not-allowed; }
+  .mode__tag {
+    font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; color: var(--gold);
+    text-transform: uppercase; margin-bottom: 6px;
+  }
+  .mode__name { font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.02em; margin-bottom: 6px; }
+  .mode__desc { font-size: 0.7rem; color: var(--gray); line-height: 1.45; }
+  .mode__warn { color: var(--amber); font-weight: 600; }
+  .mode__pin {
+    position: absolute; top: 10px; right: 12px;
+    font-size: 0.48rem; letter-spacing: 0.22em; color: var(--gray-faint);
+    text-transform: uppercase;
+  }
+  .mode.on .mode__check {
+    position: absolute; top: 10px; right: 12px;
+    width: 16px; height: 16px; border-radius: 9999px;
+    background: var(--gold); color: var(--bg);
+    font-size: 0.6rem; line-height: 16px; text-align: center;
+  }
+
+  /* ── Section II: Sheet picker + preview ────────────────────────────── */
+  .field-block { margin-left: 36px; }
+  .field-row { display: flex; gap: 10px; margin-bottom: 14px; }
+  .input {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+    padding: 10px 14px;
+    font-family: var(--mono); font-size: 0.78rem;
+    border-radius: 4px;
+    outline: none;
+  }
+  .input:focus { border-color: var(--gold); }
+  .input::placeholder { color: var(--gray-faint); }
+  .btn {
+    background: transparent; color: var(--ink);
+    border: 1px solid var(--hairline); border-radius: 9999px;
+    padding: 8px 16px;
+    font-family: inherit; font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--ink); }
+  .btn.gold { color: var(--gold); border-color: var(--gold-soft); }
+  .btn.gold:hover { background: rgba(247,190,104,0.06); border-color: var(--gold); }
+  .btn.ink {
+    background: var(--ink); color: var(--bg); border-color: var(--ink);
+  }
+  .btn.ink:hover { background: var(--gold); border-color: var(--gold); }
+
+  .preview-card {
+    border: 1px solid var(--hairline-soft); border-radius: 4px;
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.015);
+    display: none;  /* hidden until preview clicked — shown here for sketch */
+  }
+  .preview-card.show { display: block; }
+  .preview-card__head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 10px; border-bottom: 1px solid var(--hairline-soft);
+    margin-bottom: 12px;
+  }
+  .preview-card__name { font-family: var(--display); font-size: 1.1rem; letter-spacing: 0.02em; }
+  .preview-card__meta { font-size: 0.7rem; color: var(--gray); font-family: var(--mono); }
+  .preview-card__meta .ok { color: var(--green); }
+
+  /* ── Section III: Accounts (sub-tabs + list) ───────────────────────── */
+  .tab-row {
+    display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;
+    margin-left: 36px;
+  }
+  .chip {
+    background: transparent; border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 6px 12px;
+    font-family: inherit; font-size: 0.62rem; letter-spacing: 0.04em;
+    color: var(--gray); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip:hover { color: var(--ink); }
+  .chip.on { color: var(--ink); border-color: var(--ink); background: rgba(255,255,255,0.05); }
+  .chip .ct { font-family: var(--display); font-size: 0.68rem; color: var(--gold); }
+
+  .acct-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-left: 36px; }
+  .acct {
+    border: 1px solid var(--hairline-soft); border-radius: 4px;
+    padding: 10px 12px;
+    display: grid; grid-template-columns: 32px 1fr auto;
+    gap: 10px; align-items: center; cursor: pointer;
+  }
+  .acct:hover { border-color: var(--gray); }
+  .acct.on { border-color: var(--gold); background: rgba(247,190,104,0.03); }
+  .acct__av {
+    width: 32px; height: 32px; border-radius: 9999px;
+    background: var(--panel-2); border: 1px solid var(--hairline);
+    font-family: var(--mono); font-size: 0.66rem; color: var(--gray);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .acct.on .acct__av { color: var(--gold); border-color: var(--gold); }
+  .acct__name { font-size: 0.78rem; color: var(--ink); }
+  .acct__email { font-size: 0.6rem; color: var(--gray); font-family: var(--mono); margin-top: 1px; }
+  .acct__badge { font-size: 0.5rem; letter-spacing: 0.22em; color: var(--gray); text-transform: uppercase; text-align: right; }
+  .acct.on .acct__badge { color: var(--gold); }
+
+  /* Search + actions row */
+  .acct-toolbar {
+    display: flex; gap: 10px; margin-left: 36px; margin-bottom: 12px;
+  }
+  .acct-toolbar .input { padding: 7px 12px; font-family: var(--body); font-size: 0.74rem; }
+
+  /* ── Section IV: Throughput (slim stat row) ────────────────────────── */
+  .throughput {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-left: 36px;
+  }
+  .field {
+    border: 1px solid var(--hairline-soft); border-radius: 4px;
+    padding: 14px 16px;
+  }
+  .field__lbl { font-size: 0.5rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; margin-bottom: 6px; }
+  .field__sub { font-size: 0.65rem; color: var(--gray); margin-top: 6px; }
+  .stepper {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .stepper button {
+    width: 28px; height: 28px; border-radius: 9999px;
+    border: 1px solid var(--hairline); background: transparent; color: var(--ink);
+    font-family: var(--display); font-size: 1.1rem; line-height: 1; cursor: pointer;
+  }
+  .stepper button:hover { border-color: var(--gold); color: var(--gold); }
+  .stepper .val { font-family: var(--display); font-size: 1.8rem; letter-spacing: 0.02em; min-width: 50px; text-align: center; }
+  .num-pair { display: flex; gap: 12px; align-items: center; font-family: var(--mono); }
+  .num-pair input {
+    width: 56px; padding: 6px 10px;
+    background: transparent; border: 1px solid var(--hairline);
+    color: var(--ink); font-family: inherit; font-size: 0.85rem; border-radius: 4px;
+    text-align: center; outline: none;
+  }
+  .num-pair input:focus { border-color: var(--gold); }
+  .num-pair span { color: var(--gray); font-size: 0.7rem; }
+
+  .forecast {
+    margin-left: 36px; margin-top: 14px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  }
+  .stat-tile {
+    border: 1px solid var(--hairline-soft); border-radius: 4px;
+    padding: 12px 14px;
+  }
+  .stat-tile .k { font-size: 0.5rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; }
+  .stat-tile .v { font-family: var(--display); font-size: 1.6rem; line-height: 1; margin-top: 4px; }
+  .stat-tile .sub { font-size: 0.62rem; color: var(--gray); margin-top: 4px; }
+
+  /* ── Section V: Templates (cards with var pills) ───────────────────── */
+  .tmpl-list { margin-left: 36px; display: flex; flex-direction: column; gap: 14px; }
+  .tmpl {
+    border: 1px solid var(--hairline-soft); border-radius: 4px;
+    padding: 14px 16px;
+  }
+  .tmpl__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .tmpl__lbl { font-size: 0.55rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; }
+  .tmpl__count { font-size: 0.6rem; color: var(--gray); font-family: var(--mono); }
+  .tmpl__vars { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .var-pill {
+    background: rgba(255,255,255,0.04); border: 1px solid var(--hairline-soft);
+    color: var(--gray); font-family: var(--mono); font-size: 0.62rem;
+    padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  }
+  .var-pill:hover { color: var(--ink); border-color: var(--ink); }
+  .tmpl__field {
+    width: 100%; min-height: 70px;
+    background: transparent; border: 1px solid var(--hairline-soft);
+    color: var(--ink); padding: 10px 12px;
+    font-family: var(--body); font-size: 0.8rem; line-height: 1.5;
+    border-radius: 3px; outline: none; resize: vertical;
+  }
+  .tmpl__field:focus { border-color: var(--gold); }
+
+  .preview-row { margin-left: 36px; margin-top: 14px; }
+
+  /* ── Section VI: Launch hero ───────────────────────────────────────── */
+  .launch-hero {
+    margin-left: 36px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    border: 1px solid var(--gold-soft); border-radius: 4px;
+    padding: 18px 22px;
+    background: rgba(247,190,104,0.025);
+  }
+  .launch-left { display: flex; flex-direction: column; gap: 10px; }
+  .launch-num {
+    font-family: var(--display); font-size: 3.4rem; line-height: 1;
+    color: var(--ink);
+  }
+  .launch-num .of { color: var(--gray); font-size: 1.4rem; }
+  .launch-cap { font-size: 0.74rem; color: var(--gray); }
+  .launch-cap .ink { color: var(--ink); font-family: var(--mono); }
+  .launch-when { display: flex; flex-direction: column; gap: 8px; }
+  .when-lbl { font-size: 0.5rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; }
+  .when-toggle {
+    display: flex; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden;
+  }
+  .when-toggle button {
+    flex: 1; padding: 9px 12px;
+    background: transparent; color: var(--gray); border: none;
+    font-family: inherit; font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .when-toggle button.on { background: var(--ink); color: var(--bg); }
+  .when-toggle button:hover:not(.on) { color: var(--ink); }
+
+  .launch-actions {
+    margin-left: 36px; margin-top: 18px;
+    display: flex; gap: 10px; align-items: center;
+  }
+  .launch-cta {
+    background: var(--gold); color: var(--bg);
+    border: 1px solid var(--gold); border-radius: 9999px;
+    padding: 13px 32px;
+    font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .launch-cta:hover { background: #ffd084; border-color: #ffd084; }
+
+  /* ── Floating launch pill (bottom-left) + console right-lip ────────── */
+  .floating-pill {
+    position: fixed; bottom: 18px; left: 18px;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 16px 9px 12px;
+    background: var(--ink); color: var(--bg);
+    border: 1px solid var(--ink); border-radius: 9999px;
+    font-family: inherit; font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    z-index: 50;
+  }
+  .floating-pill:hover { background: var(--gold); border-color: var(--gold); }
+  .floating-pill .plus { font-size: 0.95rem; line-height: 0.5; }
+
+  .right-lip {
+    position: absolute; top: 50%; right: 0;
+    transform: translateY(-50%);
+    background: rgba(19,19,19,0.95);
+    border: 1px solid var(--hairline);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    padding: 16px 9px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    cursor: pointer; z-index: 20;
+  }
+  .right-lip:hover { border-color: var(--gold); }
+  .right-lip .dot {
+    width: 8px; height: 8px; border-radius: 9999px; background: var(--green);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(63,185,80,0.55); }
+    70% { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
+    100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+  }
+  .right-lip .lbl {
+    font-family: var(--display); font-size: 0.7rem; letter-spacing: 0.22em;
+    color: var(--ink); writing-mode: vertical-rl; transform: rotate(180deg);
+    text-transform: uppercase;
+  }
+  .right-lip .num {
+    font-family: var(--mono); font-size: 0.6rem; color: var(--gold);
+    writing-mode: vertical-rl; transform: rotate(180deg);
+  }
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <h1>Campaign page — PB redesign v2</h1>
+  <div class="lead">
+    Same wizard, same 6 sections, same data, same launch logic. Restyled into clearer card
+    layouts with a slim top stepbar + Roman-numeral sidebar + section gutter.
+  </div>
+  <div class="note">
+    Real fields only. Mode cards from <code>MODE_LIST</code>. Templates use the actual variable
+    placeholders (<code>{firstName}</code>, <code>{company}</code>, <code>{senderFirstName}</code>,
+    <code>{primaryName}</code>). Launch hero reads from the existing <code>launch-number</code>
+    /  <code>launch-accounts</code> / <code>launch-connections</code> / <code>launch-eta</code>
+    IDs. Floating launch pill bottom-left + console right-lip preserved from the prior sketch.
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+  <div class="side">
+    <button class="side__back">← Dashboard</button>
+    <div class="side__group">
+      <div class="side__group-lbl">Campaign</div>
+      <div class="side__item done"><span class="side__num">I</span>Type<span class="side__check">✓</span></div>
+      <div class="side__item done"><span class="side__num">II</span>Data<span class="side__check">✓</span></div>
+      <div class="side__item on"><span class="side__num">III</span>Accounts</div>
+      <div class="side__item"><span class="side__num">IV</span>Throughput</div>
+      <div class="side__item"><span class="side__num">V</span>Templates</div>
+      <div class="side__item"><span class="side__num">VI</span>Launch</div>
+    </div>
+    <div class="side__divider"></div>
+    <div class="side__group">
+      <div class="side__group-lbl">Live</div>
+      <div class="side__item">Live Status</div>
+      <div class="side__item">Open log</div>
+    </div>
+    <div class="side__group">
+      <div class="side__group-lbl">Help</div>
+      <div class="side__item">Take tour</div>
+      <div class="side__item">Manual</div>
+    </div>
+  </div>
+
+  <!-- ── Main ─────────────────────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Header bar -->
+    <div class="head">
+      <div class="head__name-wrap">
+        <div class="head__lbl">Campaign name</div>
+        <input class="head__name" placeholder="e.g. Q2 founders" />
+      </div>
+      <div class="head__status">
+        <span class="dot"></span>Draft · unsaved
+      </div>
+      <button class="head__save">Save</button>
+    </div>
+
+    <!-- Stepbar -->
+    <div class="stepbar">
+      <div class="stepbar__cell done"><span class="stepbar__num">I</span>Type</div>
+      <div class="stepbar__cell done"><span class="stepbar__num">II</span>Data</div>
+      <div class="stepbar__cell on"><span class="stepbar__num">III</span>Accounts</div>
+      <div class="stepbar__cell"><span class="stepbar__num">IV</span>Throughput</div>
+      <div class="stepbar__cell"><span class="stepbar__num">V</span>Templates</div>
+      <div class="stepbar__cell"><span class="stepbar__num">VI</span>Launch</div>
+    </div>
+
+    <!-- Scroll body — single column, all sections visible -->
+    <div class="scroll">
+
+      <!-- ── Section I: Campaign Type ────────────────────────────────── -->
+      <div class="sec">
+        <div class="sec__head">
+          <span class="sec__num">I</span>
+          <span class="sec__title">Campaign Type</span>
+        </div>
+        <div class="sec__sub">Pick the workflow. Field visibility and throughput defaults adapt to your choice.</div>
+        <div class="modes">
+          <div class="mode">
+            <span class="mode__pin">CC</span>
+            <div class="mode__tag">Connect</div>
+            <div class="mode__name">Connect Only</div>
+            <div class="mode__desc">Send connection requests with optional 300-char note.</div>
+          </div>
+          <div class="mode on">
+            <span class="mode__check">✓</span>
+            <div class="mode__tag">Connect + Intro</div>
+            <div class="mode__name">Connect + Introduce</div>
+            <div class="mode__desc">Send requests, monitor 7 days, auto-DM intro on acceptance.</div>
+          </div>
+          <div class="mode">
+            <span class="mode__pin">DM</span>
+            <div class="mode__tag">Message</div>
+            <div class="mode__name">Message Only</div>
+            <div class="mode__desc">DM already-connected leads · auto-routed by Sender column.</div>
+          </div>
+          <div class="mode">
+            <span class="mode__pin">IB</span>
+            <div class="mode__tag">Intro back</div>
+            <div class="mode__name">Introduce Back</div>
+            <div class="mode__desc">3-way group intro via LinkedIn · per-row sender routing.</div>
+          </div>
+          <div class="mode">
+            <span class="mode__pin">IM</span>
+            <div class="mode__tag">InMail</div>
+            <div class="mode__name">InMail Only</div>
+            <div class="mode__desc">Premium InMail. <span class="mode__warn">Experimental — uses credits.</span></div>
+          </div>
+          <div class="mode">
+            <span class="mode__pin">OP</span>
+            <div class="mode__tag">Open Profile</div>
+            <div class="mode__name">Open Profile Message</div>
+            <div class="mode__desc">Free DM to Open Profile members. <span class="mode__warn">Experimental — needs Sales Nav.</span></div>
+          </div>
+          <div class="mode">
+            <span class="mode__pin">CS</span>
+            <div class="mode__tag">Check status</div>
+            <div class="mode__name">Check Status</div>
+            <div class="mode__desc">Verify pending acceptances · updates Stage in the sheet.</div>
+          </div>
+          <div class="mode">
+            <span class="mode__pin">CD</span>
+            <div class="mode__tag">Check DMs</div>
+            <div class="mode__name">Check DMs</div>
+            <div class="mode__desc">Scrape inbox threads for inbound replies · syncs Replies tab.</div>
+          </div>
+          <div class="mode locked">
+            <span class="mode__pin">PA · soon</span>
+            <div class="mode__tag">Amplification</div>
+            <div class="mode__name">Post Amplification</div>
+            <div class="mode__desc">Like + comment on a LinkedIn post · per-account.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section II: Data ────────────────────────────────────────── -->
+      <div class="sec">
+        <div class="sec__head">
+          <span class="sec__num">II</span>
+          <span class="sec__title">Data source</span>
+        </div>
+        <div class="sec__sub">Point to the Google Sheet tab. URL must contain <code>#gid=…</code>.</div>
+        <div class="field-block">
+          <div class="field-row">
+            <input class="input" placeholder="https://docs.google.com/spreadsheets/d/…/edit#gid=0" />
+            <button class="btn">Preview</button>
+            <button class="btn">Open ↗</button>
+          </div>
+          <div class="preview-card show">
+            <div class="preview-card__head">
+              <div class="preview-card__name">— sheet name appears after preview —</div>
+              <div class="preview-card__meta"><span class="ok">●</span> rows · columns · Sender column · Stage column</div>
+            </div>
+            <div style="font-size: 0.7rem; color: var(--gray); line-height: 1.6;">
+              Once a sheet is loaded, this card shows real eligible-row counts, per-account routing,
+              and Sender-column detection. Empty until preview is clicked.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section III: Accounts ────────────────────────────────────── -->
+      <div class="sec">
+        <div class="sec__head">
+          <span class="sec__num">III</span>
+          <span class="sec__title">LinkedIn Accounts</span>
+        </div>
+        <div class="sec__sub">Pick GoLogin profiles. Selection order = execution sequence.</div>
+        <div class="tab-row">
+          <button class="chip on">All <span class="ct">374</span></button>
+          <button class="chip">Available</button>
+          <button class="chip">In use</button>
+          <button class="chip">Selected <span class="ct">0</span></button>
+        </div>
+        <div class="acct-toolbar">
+          <input class="input" placeholder="Search by name or email…" />
+          <button class="btn">↻ Refresh</button>
+          <button class="btn">Select all visible</button>
+          <button class="btn">Deselect all</button>
+        </div>
+        <div class="acct-list">
+          <div class="acct">
+            <div class="acct__av">—</div>
+            <div>
+              <div class="acct__name">— profile name —</div>
+              <div class="acct__email">— email —</div>
+            </div>
+            <div class="acct__badge">Available</div>
+          </div>
+          <div class="acct">
+            <div class="acct__av">—</div>
+            <div>
+              <div class="acct__name">— profile name —</div>
+              <div class="acct__email">— email —</div>
+            </div>
+            <div class="acct__badge">Available</div>
+          </div>
+          <div class="acct">
+            <div class="acct__av">—</div>
+            <div>
+              <div class="acct__name">— profile name —</div>
+              <div class="acct__email">— email —</div>
+            </div>
+            <div class="acct__badge">In use</div>
+          </div>
+          <div class="acct">
+            <div class="acct__av">—</div>
+            <div>
+              <div class="acct__name">— profile name —</div>
+              <div class="acct__email">— email —</div>
+            </div>
+            <div class="acct__badge">Available</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section IV: Throughput ───────────────────────────────────── -->
+      <div class="sec">
+        <div class="sec__head">
+          <span class="sec__num">IV</span>
+          <span class="sec__title">Throughput</span>
+        </div>
+        <div class="sec__sub">LinkedIn caps at ~100/week per profile. 50/day is the safe default.</div>
+        <div class="throughput">
+          <div class="field">
+            <div class="field__lbl">Daily limit · per account</div>
+            <div class="stepper">
+              <button>−</button>
+              <span class="val">50</span>
+              <button>+</button>
+            </div>
+            <div class="field__sub">connections or messages per day</div>
+          </div>
+          <div class="field">
+            <div class="field__lbl">Parallel accounts</div>
+            <div class="stepper">
+              <button>−</button>
+              <span class="val">1</span>
+              <button>+</button>
+            </div>
+            <div class="field__sub">unlocks at 2+ accounts · RAM-constrained fallback</div>
+          </div>
+          <div class="field" style="grid-column: 1 / -1;">
+            <div class="field__lbl">Pause between leads · seconds</div>
+            <div class="num-pair">
+              <input value="15" /><span>min</span>
+              <input value="45" /><span>max</span>
+            </div>
+            <div class="field__sub">A random pause is picked from this range. Affects throttle + forecast.</div>
+          </div>
+        </div>
+        <div class="forecast">
+          <div class="stat-tile">
+            <div class="k">Total actions</div>
+            <div class="v">—</div>
+            <div class="sub">populated from selected accounts × daily limit</div>
+          </div>
+          <div class="stat-tile">
+            <div class="k">Duration</div>
+            <div class="v">—</div>
+            <div class="sub">based on pause range</div>
+          </div>
+          <div class="stat-tile">
+            <div class="k">Estimated finish</div>
+            <div class="v">—</div>
+            <div class="sub">today · clock</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section V: Templates ─────────────────────────────────────── -->
+      <div class="sec">
+        <div class="sec__head">
+          <span class="sec__num">V</span>
+          <span class="sec__title">Message Templates</span>
+        </div>
+        <div class="sec__sub">Use placeholders. Body shown depends on the selected mode.</div>
+        <div class="tmpl-list">
+          <div class="tmpl">
+            <div class="tmpl__head">
+              <span class="tmpl__lbl">Connection note · max 300 chars</span>
+              <span class="tmpl__count">— / 300</span>
+            </div>
+            <div class="tmpl__vars">
+              <span class="var-pill">{firstName}</span>
+              <span class="var-pill">{company}</span>
+              <span class="var-pill">{senderFirstName}</span>
+            </div>
+            <textarea class="tmpl__field" placeholder="Hi {firstName} — short personal note. Mention {company} or the operator's first name {senderFirstName} for warmth."></textarea>
+          </div>
+          <div class="tmpl">
+            <div class="tmpl__head">
+              <span class="tmpl__lbl">Intro DM body · sent to the primary on acceptance</span>
+            </div>
+            <div class="tmpl__vars">
+              <span class="var-pill">{primaryName}</span>
+              <span class="var-pill">{firstName}</span>
+              <span class="var-pill">{company}</span>
+              <span class="var-pill">{topic}</span>
+            </div>
+            <textarea class="tmpl__field" placeholder="Hi {primaryName} — meet {firstName} from {company}. {firstName} is exploring {topic}."></textarea>
+          </div>
+        </div>
+        <div class="preview-row">
+          <button class="btn">Preview messages</button>
+        </div>
+      </div>
+
+      <!-- ── Section VI: Launch ───────────────────────────────────────── -->
+      <div class="sec">
+        <div class="sec__head">
+          <span class="sec__num">VI</span>
+          <span class="sec__title">Launch</span>
+        </div>
+        <div class="sec__sub">Start now or schedule. Real forecasts populate as you fill the sections above.</div>
+        <div class="launch-hero">
+          <div class="launch-left">
+            <div class="launch-num">—<span class="of"> targets</span></div>
+            <div class="launch-cap">
+              <span class="ink">— accounts</span> · ETA <span class="ink">—</span> · throttle <span class="ink">—</span>
+            </div>
+          </div>
+          <div class="launch-when">
+            <div class="when-lbl">When to run</div>
+            <div class="when-toggle">
+              <button class="on">Now</button>
+              <button>Schedule</button>
+            </div>
+            <div class="field__sub" style="color:var(--gray-faint); font-size:0.6rem;">
+              Schedule mode reveals a date+time picker. Or use the floating Launch pill bottom-left
+              for Queue · Schedule · Save as draft.
+            </div>
+          </div>
+        </div>
+        <div class="launch-actions">
+          <button class="launch-cta">Start campaign</button>
+          <button class="btn">+ Add to queue</button>
+          <button class="btn">Save as draft</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Console right-lip -->
+    <div class="right-lip">
+      <span class="dot"></span>
+      <span class="lbl">Console</span>
+      <span class="num">— / —</span>
+    </div>
+  </div>
+</div>
+
+<!-- Floating launch pill (fixed, page-level) -->
+<button class="floating-pill">
+  <span class="plus">+</span>
+  Launch
+  <span style="opacity:0.5; margin-left:2px;">▴</span>
+</button>
+
+</body>
+</html>

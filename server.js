@@ -18,7 +18,7 @@ import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
@@ -1268,6 +1268,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
     const token = process.env.GOLOGIN_API_TOKEN;
     const { bulkCheckConnections } = await import('./src/linkedin/bulk-check-connections.js');
     const { runAutoIntros } = await import('./src/linkedin/auto-intro.js');
+    const { runAutoDms } = await import('./src/linkedin/auto-dm.js');
     const { closeProfile: _closeProfile } = await import('./src/gologin-launcher.js');
 
     // Build the list of profiles to sweep. Explicit selection wins (in
@@ -1352,6 +1353,12 @@ app.post('/api/bulk-check-now', async (req, res) => {
     let totalStamped = 0;
     let totalFetched = 0;
     campaignLog(`📡 Manual bulk Connection Status check — sweeping ${profileIdsToSweep.length} account(s)…`);
+    // v2.59.15: report "a check is running" so the monitoring dashboard hero
+    // flips to the gold pulsing "CHECKING / now" during a manual sweep (it
+    // previously only fired for the scheduled auto-check). try/finally so the
+    // flag always clears — a stuck flag would block scheduled ticks forever.
+    setBulkCheckInProgress(true);
+    try {
     for (const pid of profileIdsToSweep) {
       const pName = nameByProfileId.get(pid) || pid;
       const wasAlreadyRunning = !!getProfilePid(pid);
@@ -1387,22 +1394,54 @@ app.post('/api/bulk-check-now', async (req, res) => {
         const _effectiveTemplates = (_reqTemplates.primaryName && _reqTemplates.primaryIntroBody)
           ? _reqTemplates
           : (campaign.templates || {});
-        if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0
-            && _effectiveTemplates.primaryName && _effectiveTemplates.primaryIntroBody) {
-          try {
-            await runAutoIntros({
-              page: launched.page,
-              profileId: pid,
-              profileName: pName,
-              sheetUrl,
-              linkedinColumn: linkedinColumn || '',
-              connectedUrls: r.connectedUrls,
-              templates: _effectiveTemplates,
-              senderFirstNames: campaign.senderFirstNames || {},
-              log: campaignLog,
-            });
-          } catch (introErr) {
-            campaignLog(`⚠ [${pName}] Auto-intro pass threw: ${introErr.message}`);
+        // v2.59.2: phase-2 routing MUST respect the campaign mode. Previously
+        // this block fired runAutoIntros for ANY campaign whose templates
+        // happened to carry primaryName + primaryIntroBody — so a CC+DM run
+        // whose campaign.templates still held leftover primary fields (from a
+        // prior CC+IC config) sent a 3-way INTRO instead of a plain DM. Repro
+        // in dev-app.log 2026-05-29T12:47:19 ("Auto-introducing … to Antonio
+        // Varlese" during a connect_and_message campaign). Gate by mode:
+        // CC+DM → runAutoDms (plain DM only, never an IC), everything else →
+        // the existing intro path.
+        const _phaseMode = campaign.mode || '';
+        if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+          if (_phaseMode === 'connect_and_message') {
+            const _ccDmBody = ((campaign.templates && campaign.templates.ccDmBody) || '').trim();
+            if (_ccDmBody) {
+              try {
+                await runAutoDms({
+                  page: launched.page,
+                  profileId: pid,
+                  profileName: pName,
+                  sheetUrl,
+                  linkedinColumn: linkedinColumn || '',
+                  connectedUrls: r.connectedUrls,
+                  templates: campaign.templates || {},
+                  senderFirstNames: campaign.senderFirstNames || {},
+                  log: campaignLog,
+                });
+              } catch (dmErr) {
+                campaignLog(`⚠ [${pName}] Auto-DM pass threw: ${dmErr.message}`);
+              }
+            } else {
+              campaignLog(`⚠ [${pName}] CC+DM bulk-check: post-acceptance DM body missing — no DM sent.`);
+            }
+          } else if (_effectiveTemplates.primaryName && _effectiveTemplates.primaryIntroBody) {
+            try {
+              await runAutoIntros({
+                page: launched.page,
+                profileId: pid,
+                profileName: pName,
+                sheetUrl,
+                linkedinColumn: linkedinColumn || '',
+                connectedUrls: r.connectedUrls,
+                templates: _effectiveTemplates,
+                senderFirstNames: campaign.senderFirstNames || {},
+                log: campaignLog,
+              });
+            } catch (introErr) {
+              campaignLog(`⚠ [${pName}] Auto-intro pass threw: ${introErr.message}`);
+            }
           }
         }
       } catch (err) {
@@ -1427,6 +1466,9 @@ app.post('/api/bulk-check-now', async (req, res) => {
       }
     }
     campaignLog(`📡 Manual bulk check complete — ${totalMatched} Connected, ${totalStamped} Still Pending across ${profileIdsToSweep.length} account(s).`);
+    } finally {
+      setBulkCheckInProgress(false);
+    }
 
     res.json({
       ok: true,

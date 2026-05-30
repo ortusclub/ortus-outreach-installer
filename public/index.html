@@ -64,45 +64,37 @@
         </div>
       </div>
 
-      <div class="edit-toggle-group">
-        <div class="edit-toggle-label">Timezone</div>
-        <div class="notif-state-rows">
-          <div class="notif-row">
-            <span class="notif-row-k">Sheet timestamps</span>
+      <!-- Bug 17: Sidebar tightened (Variant A). Same functions/IDs as before —
+           Change becomes an inline ✎, push/SMTP become compact chips, Send test
+           becomes a "Test" link — just less button-heavy. -->
+      <div class="sb-tight">
+        <div class="sb-line">
+          <span class="sb-line-k">Timestamps</span>
+          <span class="sb-line-v">
             <span id="op-tz-current" class="notif-row-v">—</span>
-          </div>
-          <div class="notif-actions">
-            <button type="button" class="btn btn-sm" onclick="openOpTzModal()">Change</button>
-          </div>
+            <button type="button" class="sb-icon-btn" title="Change timezone" aria-label="Change timezone" onclick="openOpTzModal()">✎</button>
+          </span>
         </div>
-      </div>
 
-      <div class="edit-toggle-group">
-        <div class="edit-toggle-label">Notifications</div>
-        <div class="notif-state-rows" id="notif-state-rows">
-          <div class="notif-row">
-            <span class="notif-row-k">Browser push</span>
-            <span id="notif-push-state" class="notif-row-v">—</span>
-          </div>
-          <div class="notif-row">
-            <span class="notif-row-k">Email · SMTP</span>
-            <span id="notif-smtp-state" class="notif-row-v">—</span>
-          </div>
-          <div class="notif-row">
-            <span class="notif-row-k">Last test</span>
-            <span id="notif-last-test" class="notif-row-v">never</span>
-          </div>
-          <div class="notif-row notif-pref-row">
-            <span class="notif-row-k">Connection-check reminders</span>
-            <label class="notif-pref-toggle">
-              <input type="checkbox" id="notif-pref-conn-check" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
-              <span class="notif-pref-slider"></span>
-            </label>
-          </div>
-          <div class="notif-actions">
-            <button type="button" id="notif-enable-btn" class="btn btn-sm" onclick="requestNotificationPermission()" style="display:none">Enable</button>
-            <button type="button" class="btn btn-sm" onclick="sendTestNotification()">Send test</button>
-          </div>
+        <div class="sb-line">
+          <span class="sb-line-k">Notifications</span>
+          <span class="sb-line-v">
+            <button type="button" id="notif-enable-btn" class="sb-link" onclick="requestNotificationPermission()" style="display:none">Enable</button>
+            <button type="button" class="sb-link" onclick="sendTestNotification()">Test</button>
+          </span>
+        </div>
+        <div class="sb-chips" id="notif-state-rows">
+          <span class="sb-chip"><span class="sb-chip-k">Push</span> <span id="notif-push-state" class="notif-row-v">—</span></span>
+          <span class="sb-chip"><span class="sb-chip-k">Email</span> <span id="notif-smtp-state" class="notif-row-v">—</span></span>
+          <span id="notif-last-test" class="notif-row-v sb-lasttest" hidden>never</span>
+        </div>
+
+        <div class="sb-line">
+          <span class="sb-line-k">Check reminders</span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-conn-check" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
         </div>
       </div>
 
@@ -177,10 +169,9 @@
              renderResumeDraftBadge() in app.js. -->
         <div class="dashboard-new-wrap">
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
-          <button type="button" class="resume-draft-badge" id="resume-draft-badge" style="display:none;" onclick="event.stopPropagation(); window.dashResumeDraft();" data-tip="Resume draft" aria-label="Resume draft">
-            <span id="resume-draft-badge-count">1</span>
-            <span class="resume-draft-name" id="resume-draft-name" hidden></span>
-          </button>
+          <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
+               indicator (drafts remain reachable via the Drafts & Stops section).
+               renderResumeDraftPill null-guards the missing node. -->
         </div>
       </div>
 
@@ -192,7 +183,25 @@
         </div>
         <div class="vj-glyph-circle" id="activeGlyph" aria-hidden="true"></div>
         <h2 class="vj-name" id="sect-active"><span id="activeName">No campaign running</span></h2>
+        <!-- v2.59.19: live activity line — what the campaign is doing right now.
+             Populated by renderActiveCard via buildLiveActivity(status). -->
+        <div class="vj-live" id="active-live" aria-live="polite" hidden>
+          <span class="vj-live-ico" id="activeLiveIco"></span>
+          <span class="vj-live-txt">
+            <span class="vj-live-l1" id="activeLiveL1"></span>
+            <span class="vj-live-l2" id="activeLiveL2"></span>
+          </span>
+        </div>
         <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="0" aria-label="Active campaign progress"><i id="activeBar" style="width:0%"></i></div>
+        <!-- Monitoring hero (Variant E) — shown only when .is-monitor. Big
+             live countdown to the next acceptance check + a quiet stat line. -->
+        <div class="vj-monitor" id="active-monitor" aria-hidden="true">
+          <div class="vj-mon-hero">
+            <span class="vj-mon-count" id="monCount">—</span>
+            <span class="vj-mon-cap">until next check</span>
+          </div>
+          <div class="vj-mon-line" id="monLine">— sent</div>
+        </div>
         <div class="vj-hero">
           <div class="vj-hero-row">
             <div class="num"><span id="activePct">0</span><span class="sub">%</span></div>
@@ -204,7 +213,6 @@
           <div class="vj-stats" aria-live="polite">
             <span><b id="activeAccounts">0</b> accounts</span>
             <span><b id="activeAccepted">0</b> accepted</span>
-            <span><b id="activeReplies">0</b> replies</span>
             <span>· <b id="sendingLbl">Idle</b> · <a onclick="window.dashOpenBatchSettings()" style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px;cursor:pointer">batch settings</a></span>
           </div>
         </div>
@@ -233,7 +241,16 @@
         <!-- Details panel (live log + bulk check) — only visible when .is-detailed -->
         <div class="vj-details">
           <div>
-            <div class="vj-details-head">Live log · last 6 events</div>
+            <div class="vj-log-head">
+              <span class="vj-details-head">Live log · last 6 events</span>
+              <span class="vj-log-acts">
+                <!-- v2.59.24: in the wizard Live Status only, toggle the log
+                     between the recent tail and a much longer view. -->
+                <button type="button" class="vj-log-act" id="wiz-log-more" onclick="window.dashToggleLogLines(this)" title="Show more / fewer log lines" hidden>Show more</button>
+                <button type="button" class="vj-log-act" onclick="window.dashCopyLog(this)" title="Copy the full log to your clipboard">Copy all</button>
+                <button type="button" class="vj-log-act" onclick="window.openRunningSheet()" title="Open this campaign's Google Sheet">Open sheet</button>
+              </span>
+            </div>
             <div class="vj-log" id="active-log"><!-- Phase 4 fills --></div>
           </div>
           <div class="vj-bulk">
@@ -294,7 +311,6 @@
             <span><b id="monitorAccounts">0</b> accounts</span>
             <span><b id="monitorSent">0</b> sent</span>
             <span><b id="monitorAccepted">0</b> accepted</span>
-            <span><b id="monitorReplies">0</b> replies</span>
             <span>· <b id="watchingLbl">Idle</b> · sweeps every 30 min</span>
           </div>
         </div>
@@ -343,6 +359,7 @@
         <div class="section-rail">
           <h2 id="sect-queue">Up Next <small><span id="queueCount">0</span> waiting</small></h2>
           <div class="section-rail-line"></div>
+          <button class="section-rail-action" id="queue-clear-btn" onclick="window.dashClearQueue()" hidden>Clear all</button>
           <button class="section-rail-action" onclick="window.startNewCampaign()">+ Add to queue</button>
         </div>
         <div role="grid" aria-labelledby="sect-queue" id="queueList"><!-- Phase 4 fills --></div>
@@ -368,7 +385,16 @@
         <div class="section-rail">
           <h2 id="sect-past">Past <small><span id="pastCount">0</span> campaigns</small></h2>
           <div class="section-rail-line"></div>
+          <button class="section-rail-action" id="past-manage-btn" onclick="window.togglePastManage()">Select</button>
           <button class="section-rail-action" id="past-toggle-btn" onclick="window.togglePastExpanded()">Show all</button>
+        </div>
+        <!-- Bug 13: bulk-delete bar — visible only in manage ("Select") mode. -->
+        <div class="past-bulk-bar" id="past-bulk-bar" hidden>
+          <span class="past-bulk-count" id="past-bulk-count">0 selected</span>
+          <span class="past-bulk-spacer"></span>
+          <button type="button" class="past-bulk-btn" onclick="window.deleteAllPast()">Delete all</button>
+          <button type="button" class="past-bulk-btn danger" id="past-bulk-delete-btn" onclick="window.bulkDeletePastSelected()" disabled>Delete selected</button>
+          <button type="button" class="past-bulk-btn ghost" onclick="window.togglePastManage()">Cancel</button>
         </div>
         <!-- v2.61: V3 expand pattern — single bordered frame containing a
              clickable header row (collapsed summary) and the full list
@@ -397,13 +423,9 @@
 -->
 <div class="wizard-back-row">
   <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
-  <div class="wiz-editing-inline" id="wiz-editing-inline" style="display:none;">
-    <span class="wiz-editing-inline-sep" aria-hidden="true">|</span>
-    <span class="wiz-editing-inline-lbl">Editing</span>
-    <span class="wiz-editing-inline-name" id="wiz-editing-name">Untitled draft</span>
-    <span class="wiz-editing-inline-pip-sep" aria-hidden="true">·</span>
-    <span class="wiz-save-pip" id="wiz-save-pip">not saved yet</span>
-  </div>
+  <!-- Bug 17b: the inline "| Editing <draft> · saved" indicator was removed as
+       redundant (the campaign-name field + the launch rail already convey the
+       draft). updateEditingBanner / updateSavePip null-guard the missing nodes. -->
 </div>
       <!-- Visible only when a campaign is already running. Tells the operator
            the new build will be queued (not edit the running one). -->
@@ -536,11 +558,13 @@
             </div>
 
             <!-- Right column — parallel accounts. Visibility/disabled state
-                 managed by alphaRecalc; pill shown when locked (<2 accounts). -->
+                 managed by alphaRecalc; pill shown when locked (<5 accounts).
+                 Server only honors concurrency at ≥5 accounts (server.js
+                 buildCampaignConfig), so the UI unlock threshold matches. -->
             <div id="alpha-concurrency-row" class="alpha-concurrency">
               <div class="alpha-knob-label">
                 Parallel accounts
-                <span class="unlock-pill" id="concurrency-unlock-pill">unlocks at 2+ accounts</span>
+                <span class="unlock-pill" id="concurrency-unlock-pill">available with 5+ accounts</span>
               </div>
               <div class="alpha-knob-row" style="gap:14px;">
                 <input class="alpha-knob-input" type="number" id="concurrency-count" value="2" min="2" max="5" disabled oninput="updateCampaignSummary()" />
@@ -1095,6 +1119,12 @@
     <div class="section collapsible collapsed" id="nav-status">
       <h2 class="section-toggle" onclick="toggleSection('nav-status')"><span class="caret">▾</span> <span data-edit="h2-status">Live Status</span></h2>
       <div class="collapsible-body">
+      <!-- v2.59.22: when a campaign is running/monitoring the SAME dashboard
+           card (#active-card) is relocated into this slot by placeLiveCard(),
+           giving the wizard Live Status an identical card (zero drift — it's
+           the same element renderActiveCard already drives) with a bigger log.
+           The legacy cockpit/runbar below are hidden via #nav-status.is-card-live. -->
+      <div id="wiz-live-slot"></div>
       <!-- Post-launch tips — 2-col grid: cockpit + queue + log on the left,
            tips card on the right (320 px fixed). Tips card is hidden by
            default and shown by renderPostLaunchSidebar() during running /
@@ -1392,6 +1422,27 @@
               <span class="wiz-launch-menu-hint">Throw away this draft — can't be undone</span>
             </span>
           </button>
+        </div>
+        <!-- Bug 15: once a campaign is launched the draft is consumed and the
+             "+ Launch options" trigger above is hidden; this control bar takes
+             its place (same pill) so the operator keeps Pause / Stop / Save-as-
+             draft at hand without leaving the editor. updateEditingBanner swaps
+             between the trigger and this bar based on live campaign state. -->
+        <div class="wiz-launch-controls" id="wiz-launch-controls" hidden>
+          <!-- v2.59.24: the mode/status pill is clickable → opens this
+               campaign in the editor (same as the dashboard "Open" button).
+               The ↗ arrow + pointer cursor signal it's clickable. -->
+          <span class="wiz-launch-controls-meta" id="wiz-controls-open" role="button" tabindex="0" title="Open this campaign in the editor" onclick="window.dashOpenActive()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.dashOpenActive();}">
+            <span class="wlc-meta-stack">
+              <span class="wiz-launch-controls-mode" id="wiz-controls-mode">—</span>
+              <span class="wiz-launch-controls-name" id="wiz-controls-name">Running</span>
+            </span>
+            <span class="wlc-open-arrow" aria-hidden="true">↗</span>
+          </span>
+          <span class="wiz-launch-controls-divider"></span>
+          <button type="button" class="wiz-ctrl-btn" id="wiz-ctrl-pause" onclick="pauseOrResumeCampaign()">Pause</button>
+          <button type="button" class="wiz-ctrl-btn danger" onclick="confirmStopCampaign()">Stop</button>
+          <button type="button" class="wiz-ctrl-btn" onclick="window.railSaveAsDraft()">Save as draft</button>
         </div>
       </div>
     </div>
@@ -1748,32 +1799,43 @@
        renderLiveConsole(s) in public/js/app.js, which uses pure helpers from
        /js/live-console.mjs. Hidden when no campaign is running OR when the
        operator is on the dashboard route (#/). -->
+  <!-- v2.59.26: console redesign. Lip shows pulsing colored status dot +
+       status + live number (countdown when monitoring / progress when sending)
+       + CONSOLE. Drawer is a mini dashboard card (live line + countdown +
+       stats + log), wider, and slides in smoothly (transform, not display). -->
   <div id="live-console" class="live-console is-collapsed" hidden>
-    <!-- Right-edge lip (collapsed) -->
+    <!-- Right-edge lip (collapsed): blinking light (colored by state) + CONSOLE -->
     <button type="button" class="live-console__lip" data-lc="pill" title="Open live console">
       <span class="live-console__dot" data-lc="dot"></span>
       <span class="live-console__lip-lbl">Console</span>
-      <span class="live-console__lip-count" data-lc="count">— / —</span>
     </button>
 
-    <!-- Drawer (expanded) -->
+    <!-- Drawer (expanded) — mini dashboard card -->
     <div class="live-console__drawer" data-lc="card">
       <div class="live-console__head">
-        <span class="live-console__dot" data-lc="dot-card"></span>
+        <span class="live-console__hdot" data-lc="hdot"></span>
         <div class="live-console__head-text">
+          <div class="live-console__status" data-lc="hstatus">—</div>
           <div class="live-console__title" data-lc="title">—</div>
-          <div class="live-console__mode" data-lc="mode">—</div>
         </div>
-        <button type="button" class="live-console__ctl" data-lc="collapse" title="Collapse">×</button>
+        <span class="live-console__badge" data-lc="badge">—</span>
+        <button type="button" class="live-console__ctl" data-lc="collapse" title="Close" aria-label="Close console">×</button>
       </div>
       <div class="live-console__body">
-        <div class="live-console__campcard">
-          <div class="live-console__camp-sent" data-lc="sent">— / —</div>
-          <div class="live-console__row"><span class="live-console__k">Lead</span><span class="live-console__v" data-lc="lead">—</span></div>
-          <div class="live-console__row"><span class="live-console__k">Account</span><span class="live-console__v" data-lc="account">—</span></div>
-          <div class="live-console__row"><span class="live-console__k">Action</span><span class="live-console__v" data-lc="action">—</span></div>
+        <div class="live-console__mini" data-lc="mini">
+          <div class="live-console__live">
+            <span class="live-console__live-ico" data-lc="live-ico"></span>
+            <span class="live-console__live-txt">
+              <span class="live-console__live-l1" data-lc="live-l1">—</span>
+              <span class="live-console__live-l2" data-lc="live-l2">—</span>
+            </span>
+            <span class="live-console__live-big">
+              <span class="live-console__live-n" data-lc="live-n">—</span>
+              <span class="live-console__live-u" data-lc="live-u"></span>
+            </span>
+          </div>
+          <div class="live-console__mini-stats" data-lc="mini-stats">—</div>
         </div>
-        <div class="live-console__divider"></div>
         <div class="live-console__log-label">Recent activity</div>
         <div class="live-console__log" data-lc="log"></div>
       </div>

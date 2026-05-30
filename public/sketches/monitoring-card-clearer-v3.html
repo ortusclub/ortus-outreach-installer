@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoring card — clearer variants v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fafafa; --ink:#0a0a0a; --gray:#8a8a8a;
+    --hairline:rgba(0,0,0,0.14); --hairline-soft:rgba(0,0,0,0.06);
+    --red:#f85149; --gold:#F7BE68;
+    --blue:#2f7fd1; --blue-soft:rgba(47,127,209,0.12);
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --body:'Hanken Grotesk',-apple-system,sans-serif;
+    --card-bg:#fff; --card-shadow:0 4px 16px rgba(0,0,0,.08);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);padding:44px 40px 90px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-family:var(--display);font-size:2rem;letter-spacing:.04em;font-weight:400}
+  .sub{color:var(--gray);font-size:.85rem;margin:4px 0 30px}
+  .vlabel{font-size:.6rem;letter-spacing:.24em;text-transform:uppercase;color:var(--gray);margin:30px 0 12px}
+  .vlabel b{color:var(--ink);font-weight:600;letter-spacing:.18em}
+  .vlabel .n{text-transform:none;letter-spacing:0;font-size:.8rem;color:var(--gray);margin-left:6px}
+
+  /* shared card chrome */
+  .card{position:relative;background:var(--card-bg);border:1px solid var(--hairline-soft);border-radius:14px;
+    box-shadow:var(--card-shadow);padding:24px 28px;border-left:3px solid var(--blue)}
+  .ebrow{display:flex;align-items:center;gap:9px;font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray)}
+  .ebrow .dot{width:8px;height:8px;border-radius:9999px;background:var(--blue);box-shadow:0 0 0 0 rgba(47,127,209,.5);animation:p 1.9s infinite}
+  @keyframes p{0%{box-shadow:0 0 0 0 rgba(47,127,209,.5)}70%{box-shadow:0 0 0 7px rgba(47,127,209,0)}100%{box-shadow:0 0 0 0 rgba(47,127,209,0)}}
+  .glyph{position:absolute;top:22px;right:26px;width:50px;height:50px;border:1px solid var(--hairline);border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:.66rem;color:var(--ink)}
+  .name{font-family:var(--display);font-size:2rem;letter-spacing:.02em;font-weight:400;margin:8px 0 0}
+  .controls{display:flex;align-items:center;gap:12px;margin-top:22px}
+  .btn{border:1px solid var(--hairline);background:transparent;color:var(--ink);border-radius:9999px;padding:9px 20px;font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;cursor:pointer;font-family:var(--body)}
+  .btn.accent{border-color:var(--blue);color:var(--blue)}
+  .stop{margin-left:auto;width:38px;height:38px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--red);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .stop svg{width:14px;height:14px}
+
+  /* D — numbers first */
+  .d-stats{display:flex;gap:40px;margin:22px 0 4px}
+  .d-stat .k{font-size:.56rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray)}
+  .d-stat .v{font-family:var(--display);font-size:2.6rem;line-height:1;margin-top:4px}
+  .d-stat .v.muted{color:var(--gray)}
+  .d-line{font-size:.85rem;color:var(--gray);margin-top:14px}
+  .d-line b{color:var(--ink);font-weight:600}
+
+  /* E — next-check hero */
+  .e-hero{display:flex;align-items:flex-end;gap:14px;margin:18px 0 2px}
+  .e-big{font-family:var(--display);font-size:4rem;line-height:.85;font-variant-numeric:tabular-nums}
+  .e-cap{font-size:.58rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray);padding-bottom:8px}
+  .e-row{display:flex;gap:18px;font-size:.82rem;color:var(--gray);margin-top:16px;flex-wrap:wrap}
+  .e-row b{color:var(--ink);font-weight:600}
+
+  /* F — acceptance progress */
+  .f-top{display:flex;justify-content:space-between;align-items:baseline;margin:20px 0 8px;font-size:.82rem;color:var(--gray)}
+  .f-top b{color:var(--ink);font-weight:600}
+  .f-bar{height:8px;border-radius:9999px;background:var(--hairline-soft);overflow:hidden}
+  .f-bar i{display:block;height:100%;background:var(--blue);border-radius:9999px}
+  .f-line{font-size:.82rem;color:var(--gray);margin-top:12px}
+  .f-line b{color:var(--ink);font-weight:600}
+
+  /* G — mini one-line strip */
+  .mini{position:relative;background:var(--card-bg);border:1px solid var(--hairline-soft);border-radius:12px;box-shadow:var(--card-shadow);
+    border-left:3px solid var(--blue);padding:14px 20px;display:flex;align-items:center;gap:16px}
+  .mini .mglyph{width:34px;height:34px;border-radius:9999px;border:1px solid var(--ink);display:flex;align-items:center;justify-content:center;font-size:.58rem}
+  .mini .mname{font-family:var(--display);font-size:1.3rem}
+  .mini .mtag{font-size:.55rem;letter-spacing:.2em;text-transform:uppercase;color:var(--blue);border:1px solid var(--blue);border-radius:9999px;padding:3px 9px}
+  .mini .mmeta{font-size:.8rem;color:var(--gray)}
+  .mini .mmeta b{color:var(--ink);font-weight:600}
+  .mini .stop{margin-left:auto}
+  .stopsvg{width:14px;height:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Monitoring card — clearer options</h1>
+  <div class="sub">No abstract timeline ruler. Same campaign as before: CC+DM, finished sending 6, now watching for acceptances, checks every 1h, 7-day window. Blue = monitoring.</div>
+
+  <!-- D -->
+  <div class="vlabel"><b>Variant D</b> · Numbers first <span class="n">— the counts that matter, big and plain</span></div>
+  <div class="card">
+    <div class="ebrow"><span class="dot"></span>Monitoring · watching for acceptances</div>
+    <div class="glyph">C+D</div>
+    <div class="name">TEST CC+DM (RERUN)</div>
+    <div class="d-stats">
+      <div class="d-stat"><div class="k">Sent</div><div class="v">6</div></div>
+      <div class="d-stat"><div class="k">Accepted</div><div class="v">0</div></div>
+      <div class="d-stat"><div class="k">Messaged</div><div class="v muted">0</div></div>
+      <div class="d-stat"><div class="k">Replies</div><div class="v muted">0</div></div>
+    </div>
+    <div class="d-line">Next check in <b>41m</b> · checks <b>every 1h</b> · <b>3</b> accounts · ends <b>Fri 5 Jun</b></div>
+    <div class="controls">
+      <button class="btn">Open</button>
+      <button class="btn accent">Check now</button>
+      <button class="stop" title="Stop monitoring"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+    </div>
+  </div>
+
+  <!-- E -->
+  <div class="vlabel"><b>Variant E</b> · Next-check hero <span class="n">— the live countdown leads; everything else is a quiet line</span></div>
+  <div class="card">
+    <div class="ebrow"><span class="dot"></span>Monitoring</div>
+    <div class="glyph">C+D</div>
+    <div class="name">TEST CC+DM (RERUN)</div>
+    <div class="e-hero"><div class="e-big">41:02</div><div class="e-cap">until next check</div></div>
+    <div class="e-row"><span><b>6</b> sent</span><span><b>0</b> accepted</span><span><b>0</b> messaged</span><span>checks <b>every 1h</b></span><span>ends <b>Fri 5 Jun</b></span></div>
+    <div class="controls">
+      <button class="btn">Open</button>
+      <button class="btn accent">Check now</button>
+      <button class="stop" title="Stop monitoring"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+    </div>
+  </div>
+
+  <!-- F -->
+  <div class="vlabel"><b>Variant F</b> · Acceptance progress <span class="n">— a real progress bar: how many of the sent invites came back</span></div>
+  <div class="card">
+    <div class="ebrow"><span class="dot"></span>Monitoring · watching for acceptances</div>
+    <div class="glyph">C+D</div>
+    <div class="name">TEST CC+DM (RERUN)</div>
+    <div class="f-top"><span><b>0</b> of <b>6</b> accepted</span><span>0%</span></div>
+    <div class="f-bar"><i style="width:2%"></i></div>
+    <div class="f-line">Next check in <b>41m</b> · <b>3</b> accounts · checks every <b>1h</b> · ends <b>Fri 5 Jun</b></div>
+    <div class="controls">
+      <button class="btn">Open</button>
+      <button class="btn accent">Check now</button>
+      <button class="stop" title="Stop monitoring"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+    </div>
+  </div>
+
+  <!-- G -->
+  <div class="vlabel"><b>Variant G</b> · Mini strip <span class="n">— compact one-liner, so a monitoring campaign barely takes space</span></div>
+  <div class="mini">
+    <span class="mglyph">C+D</span>
+    <span class="mname">TEST CC+DM (RERUN)</span>
+    <span class="mtag">Monitoring</span>
+    <span class="mmeta"><b>0</b>/6 accepted · next check <b>41m</b> · ends Fri 5 Jun</span>
+    <button class="stop" title="Stop monitoring"><svg class="stopsvg" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+  </div>
+
+</div>
+</body>
+</html>

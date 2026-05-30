@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ortus Outreach — Bug-fix sketches (v2)</title>
+<style>
+  :root{
+    --bg:#0a0a0a; --ink:#fafafa; --gray:#999; --hairline:rgba(255,255,255,.15);
+    --hairline-soft:rgba(255,255,255,.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68;
+    --mono:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --panel:rgba(255,255,255,.04);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);line-height:1.5;padding:40px 28px 80px}
+  h1{font-weight:600;letter-spacing:.02em;font-size:1.6rem;margin:0 0 4px}
+  .sub{color:var(--gray);font-size:.9rem;margin:0 0 36px}
+  h2{font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);
+     border-bottom:1px solid var(--hairline);padding-bottom:8px;margin:48px 0 18px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:start}
+  @media(max-width:880px){.grid2,.grid3{grid-template-columns:1fr}}
+  .ba{border:1px solid var(--hairline);border-radius:10px;padding:16px;background:var(--panel)}
+  .ba .tag{font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray);margin-bottom:12px;display:block}
+  .ba.after .tag{color:var(--green)}
+  .note{color:var(--gray);font-size:.82rem;margin:10px 2px 0}
+  .note b{color:var(--ink);font-weight:600}
+
+  .btn{border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);
+       font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;padding:8px 16px;cursor:pointer}
+  .btn:hover{border-color:var(--gold)}
+  .btn.gold{color:var(--gold);border-color:var(--gold)}
+  .btn.red{color:var(--red);border-color:rgba(248,81,73,.5)}
+  .btn.sm{padding:5px 11px;font-size:.66rem}
+  .mono-sm{font-family:ui-monospace,monospace;font-size:.74rem}
+
+  /* ---- 11 lip: SAME style, just taller ---- */
+  .stage{position:relative;border:1px solid var(--hairline-soft);border-radius:12px;height:260px;overflow:hidden;background:#070707}
+  .stage-lbl{position:absolute;top:10px;left:14px;font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray)}
+  .lip{position:absolute;right:0;top:50%;transform:translateY(-50%);
+       background:rgba(19,19,19,.95);border:1px solid var(--hairline);border-right:none;
+       border-radius:6px 0 0 6px;display:flex;flex-direction:column;align-items:center;cursor:pointer;
+       box-shadow:-4px 0 16px rgba(0,0,0,.4)}
+  /* current */
+  .lip.old{padding:16px 9px;gap:12px}
+  /* taller — identical look, just more vertical room */
+  .lip.tall{padding:34px 9px;gap:18px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+  .lip-lbl{writing-mode:vertical-rl;transform:rotate(180deg);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--ink)}
+  .lip-count{font-size:.58rem;color:var(--gray);writing-mode:vertical-rl;transform:rotate(180deg)}
+
+  /* ---- 4 log toolbar (same lip) ---- */
+  .drawer{position:absolute;right:0;top:0;bottom:0;width:330px;background:rgba(11,11,11,.98);
+          border-left:1px solid var(--hairline);display:flex;flex-direction:column}
+  .dhead{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--hairline-soft)}
+  .dhead .t{font-weight:600;font-size:.82rem}
+  .dhead .m{font-size:.6rem;color:var(--gray);text-transform:uppercase;letter-spacing:.12em}
+  .logbar{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--hairline-soft)}
+  .logbar .lbl{font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray)}
+  .logbar .acts{display:flex;gap:7px}
+  .log{flex:1;overflow:auto;padding:10px 14px;font-family:ui-monospace,monospace;font-size:.72rem}
+  .log .ln{padding:4px 0;border-bottom:1px solid var(--hairline-soft);display:flex;gap:8px}
+  .log .ts{color:var(--gray)}
+  .log .ok{color:var(--green)}
+  .log .gd{color:var(--gold)}
+
+  /* ---- 12 action card replica ---- */
+  .card{border:1px solid var(--hairline);border-left:3px solid var(--green);border-radius:12px;padding:18px;background:var(--panel);position:relative}
+  .card .status{font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);display:flex;align-items:center;gap:7px}
+  .card .ring{position:absolute;top:16px;right:16px}
+  .ring{width:74px;height:74px;border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative}
+  .ring .inner{display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;text-align:center}
+  .ring .n{font-size:1rem;font-weight:600}
+  .ring .c{font-size:.46rem;color:var(--gray);text-transform:uppercase;letter-spacing:.1em;margin-top:2px}
+  /* running: green progress */
+  .ring.run{border:2px solid var(--hairline);background:conic-gradient(var(--green) 0 37%, var(--hairline-soft) 37% 100%)}
+  .ring.run .inner{background:var(--panel);width:60px;height:60px;border-radius:50%}
+  /* monitoring: countdown */
+  .ring.mon{border:2px solid var(--green);box-shadow:0 0 0 3px rgba(63,185,80,.08)}
+  /* checking: gold spinner, label fits inside */
+  .ring.chk{border:2px solid var(--hairline)}
+  .ring.chk::before{content:'';position:absolute;inset:-2px;border-radius:50%;border:2px solid transparent;border-top-color:var(--gold);animation:spin 1s linear infinite}
+  .ring.chk .n{color:var(--gold);font-size:.62rem;letter-spacing:.06em}
+  .ring.chk .c{color:var(--gold)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .card .big{font-family:var(--mono);font-size:1.7rem;font-weight:600;margin:14px 0 2px}
+  .card .meta{font-size:.78rem;color:var(--gray)}
+  .card .meta b{color:var(--ink)}
+  .sweep{margin-top:14px;border-top:1px solid var(--hairline-soft);padding-top:12px}
+  .sweep .k{font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray)}
+  .sweep .v{font-size:.78rem;margin-top:3px}
+  .sweep .v.chking{color:var(--gold);font-weight:600}
+
+  /* ---- 13 delete ---- */
+  .row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--hairline-soft);
+       border-radius:8px;margin-bottom:8px;background:var(--panel)}
+  .row.sel{border-color:var(--gold);background:rgba(247,190,104,.05)}
+  .cb{width:16px;height:16px;border:1px solid var(--hairline);border-radius:4px;flex:0 0 auto}
+  .cb.on{background:var(--gold);border-color:var(--gold);position:relative}
+  .cb.on::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#000;font-size:.7rem}
+  .row .nm{font-size:.82rem;flex:1}
+  .row .st{font-size:.66rem;color:var(--gray)}
+  .bulkbar{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--gold);
+           border-radius:8px;background:rgba(247,190,104,.07);margin-bottom:12px}
+  .bulkbar .c{font-size:.78rem;color:var(--gold);font-weight:600;flex:1}
+
+  /* ---- 15 launch rail ---- */
+  .rail{display:inline-flex;align-items:center;background:#111;border:1px solid var(--hairline);
+        border-radius:9999px;padding:6px 6px 6px 16px;gap:12px}
+  .rail .meta{display:flex;flex-direction:column;line-height:1.15}
+  .rail .meta .md{font-size:.56rem;letter-spacing:.18em;color:var(--gray)}
+  .rail .meta .nmn{font-size:.78rem}
+  .rail .div{width:1px;height:24px;background:var(--hairline)}
+  .rail .cta{font-size:.8rem;padding:0 6px}
+  .rail .ctrls{display:flex;gap:6px}
+
+  /* ---- 1/2/5 contrast ---- */
+  .swatch{display:flex;gap:16px;flex-wrap:wrap}
+  .sw{border:1px solid var(--hairline-soft);border-radius:8px;padding:14px;flex:1;min-width:240px}
+  .sw.light{background:#fafafa;color:#0a0a0a}
+  .sw .h{font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);margin-bottom:10px}
+  .tagpill{display:inline-block;border-radius:9999px;padding:4px 10px;font-family:ui-monospace,monospace;font-size:.68rem;margin:3px}
+  .tagpill.old{background:#fff;color:#fafafa;border:1px solid var(--hairline)}
+  .tagpill.new{background:rgba(255,255,255,.06);color:var(--ink);border:1px solid var(--hairline)}
+  /* light-mode INSERT pills: even more visible */
+  .tagpill.lold{background:#fff;color:#cfcfcf;border:1px solid #eee}
+  .tagpill.lnew{background:#f0ead9;color:#5a4a1f;border:1px solid #c79a3a;font-weight:600}
+  .selold{background:#fff;color:#cfcfcf;border:1px solid #eee;padding:9px 12px;border-radius:6px;font-family:ui-monospace,monospace;font-size:.72rem}
+  .selnew{background:rgba(255,255,255,.06);color:var(--ink);border:1px solid var(--hairline);padding:9px 12px;border-radius:6px;font-family:ui-monospace,monospace;font-size:.72rem}
+  .lselold{background:#fff;color:#cfcfcf;border:1px solid #eee;padding:9px 12px;border-radius:6px;font-family:ui-monospace,monospace;font-size:.72rem}
+  .lselnew{background:#fff;color:#0a0a0a;border:1px solid #555;padding:9px 12px;border-radius:6px;font-family:ui-monospace,monospace;font-size:.72rem}
+  .passpill{display:inline-block;border-radius:9999px;padding:3px 9px;font-family:ui-monospace,monospace;font-size:.58rem;letter-spacing:.14em;border:1px solid}
+  .passpill.oldfaint{color:#bbb;border-color:#ddd}
+  .passpill.newclear{color:#15601f;border-color:#15601f;background:rgba(63,185,80,.12);font-weight:600}
+  .unlockold{color:#F7BE68;border:1px solid #F7BE68;opacity:.5;border-radius:9999px;padding:3px 9px;font-size:.58rem;letter-spacing:.14em}
+  .unlocknew{color:#6e520f;border:1px solid #b9892b;background:rgba(247,190,104,.28);border-radius:9999px;padding:3px 9px;font-size:.58rem;letter-spacing:.14em;font-weight:600}
+  .helpold{font-size:.7rem;color:#8a8a8a}
+  .helpnew{font-size:.84rem;color:#1c1c1c;font-weight:500}
+</style>
+</head>
+<body>
+  <h1>Bug-fix sketches · v2</h1>
+  <p class="sub">Updated per your notes: lip taller-only, CHECKING-NOW inside the circle, stronger light-mode contrast.</p>
+
+  <!-- 11 -->
+  <h2>#11 Console lip — same look, just taller</h2>
+  <div class="grid2">
+    <div class="ba">
+      <span class="tag">Now</span>
+      <div class="stage">
+        <span class="stage-lbl">dashboard edge</span>
+        <div class="lip old"><span class="dot"></span><span class="lip-lbl">Console</span><span class="lip-count">2 / 55</span></div>
+      </div>
+    </div>
+    <div class="ba after">
+      <span class="tag">After — longer vertically, same narrow lip</span>
+      <div class="stage">
+        <span class="stage-lbl">dashboard edge</span>
+        <div class="lip tall"><span class="dot"></span><span class="lip-lbl">Console</span><span class="lip-count">2 / 55</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Identical style, colours and width — only the vertical padding/gap grow so it's easier to spot. Still a small, non-invasive lip.</p>
+
+  <!-- 4 -->
+  <h2>#4 Better log + Copy-all + Open-sheet (lip unchanged)</h2>
+  <div class="ba" style="max-width:560px">
+    <span class="tag after" style="color:var(--green)">Console open</span>
+    <div class="stage" style="height:280px">
+      <div class="lip tall"><span class="dot"></span><span class="lip-lbl">Console</span><span class="lip-count">2 / 55</span></div>
+      <div class="drawer">
+        <div class="dhead"><span class="dot"></span><div><div class="t">Atlas Q2 — CC+DM</div><div class="m">Monitoring</div></div></div>
+        <div class="logbar">
+          <span class="lbl">Live log</span>
+          <span class="acts"><button class="btn sm">⧉ Copy all</button><button class="btn sm gold">↗ Open sheet</button></span>
+        </div>
+        <div class="log">
+          <div class="ln"><span class="ts">14:02</span><span class="ok">✓ Pravin accepted → DM sent</span></div>
+          <div class="ln"><span class="ts">14:02</span><span class="ok">✓ Yamin accepted → DM sent</span></div>
+          <div class="ln"><span class="ts">13:47</span><span class="gd">⟳ Check complete · 2 new</span></div>
+          <div class="ln"><span class="ts">13:32</span><span>· Watching for acceptances</span></div>
+          <div class="ln"><span class="ts">13:31</span><span class="ok">✓ Connection sent · 4 leads</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>Copy all</b> = full log text. <b>Open sheet</b> = this run's Google Sheet (<code>__cockpit.sheetUrl</code>). Lip stays exactly as #11.</p>
+
+  <!-- 12 -->
+  <h2>#12 CHECKING NOW — inside the circle, on the real card</h2>
+  <div class="grid3">
+    <div class="ba">
+      <span class="tag">Running</span>
+      <div class="card">
+        <div class="status"><span class="dot"></span>Campaign running</div>
+        <div class="ring run"><div class="inner"><span class="n">37%</span></div></div>
+        <div class="big">12 / 32</div>
+        <div class="meta"><b>12</b> sent · next batch in <b>4m</b></div>
+        <div class="sweep"><div class="k">Bulk check connection</div><div class="v">Last sweep · 13:47 · 2 newly accepted</div></div>
+      </div>
+    </div>
+    <div class="ba">
+      <span class="tag">Monitoring (idle between checks)</span>
+      <div class="card">
+        <div class="status"><span class="dot"></span>Monitoring</div>
+        <div class="ring mon"><div class="inner"><span class="n">12m</span><span class="c">next check</span></div></div>
+        <div class="big">Watching</div>
+        <div class="meta"><b>4</b> sent · <b>2</b> accepted</div>
+        <div class="sweep"><div class="k">Bulk check connection</div><div class="v">Last sweep · 13:47 · 2 newly accepted</div></div>
+      </div>
+    </div>
+    <div class="ba after">
+      <span class="tag">A check is running → CHECKING NOW</span>
+      <div class="card">
+        <div class="status"><span class="dot"></span>Monitoring</div>
+        <div class="ring chk"><div class="inner"><span class="n">CHECKING</span><span class="c">now</span></div></div>
+        <div class="big">Watching</div>
+        <div class="meta"><b>4</b> sent · <b>2</b> accepted</div>
+        <div class="sweep"><div class="k">Bulk check connection</div><div class="v chking">Checking now…</div></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">The countdown ("12m / next check") lives <b>inside the circle</b>. When a check fires, the circle gets a gold spinner ring + "CHECKING / now" (fits the same inner slot), and the sweep line flips to "Checking now…". Same treatment whether the card is <b>running</b> or <b>monitoring</b>. Driven by the existing <code>monitoringCheckInProgress</code> flag.</p>
+
+  <!-- 13 -->
+  <h2>#13 Delete past / queued — approved ✓</h2>
+  <div class="grid2">
+    <div class="ba">
+      <span class="tag">Default — Manage toggle</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span class="mono-sm" style="color:var(--gray)">PAST · 6 campaigns</span>
+        <button class="btn sm">Manage</button>
+      </div>
+      <div class="row"><span class="cb"></span><span class="nm">Atlas Q2 — CC+DM</span><span class="st">4 sent</span></div>
+      <div class="row"><span class="cb"></span><span class="nm">Fintech EU — CC+IC</span><span class="st">22 sent</span></div>
+    </div>
+    <div class="ba after">
+      <span class="tag">Manage on — select-to-delete + delete all</span>
+      <div class="bulkbar"><span class="c">2 selected</span><button class="btn sm">Cancel</button><button class="btn sm red">Delete selected</button></div>
+      <div class="row sel"><span class="cb on"></span><span class="nm">Atlas Q2 — CC+DM</span><span class="st">4 sent</span></div>
+      <div class="row"><span class="cb"></span><span class="nm">Fintech EU — CC+IC</span><span class="st">22 sent</span></div>
+      <div style="text-align:right;margin-top:4px"><button class="btn sm red">Delete all past</button></div>
+    </div>
+  </div>
+  <p class="note">Keeps the existing 5-second <b>Undo</b>. Same for queued.</p>
+
+  <!-- 15 + 14 -->
+  <h2>#15 Launch pill → control bar &nbsp;+&nbsp; #14 live log persists — approved ✓</h2>
+  <div class="grid2">
+    <div class="ba">
+      <span class="tag">Before launch</span>
+      <div class="rail">
+        <div class="meta"><span class="md">CC + DM</span><span class="nmn">Atlas Q2</span></div>
+        <div class="div"></div>
+        <span class="cta">+ Launch options ⌃</span>
+      </div>
+    </div>
+    <div class="ba after">
+      <span class="tag">After launch — Pause / Stop / Save</span>
+      <div class="rail">
+        <div class="meta"><span class="md">CC + DM · LIVE</span><span class="nmn">Atlas Q2</span></div>
+        <div class="div"></div>
+        <div class="ctrls">
+          <button class="btn sm">⏸ Pause</button>
+          <button class="btn sm red">⏹ Stop</button>
+          <button class="btn sm">💾 Save draft</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">#14: live log stays through "stop CCs, keep monitoring" — only vanishes on a <b>full</b> stop.</p>
+
+  <!-- 1 / 2 / 5 -->
+  <h2>#1 Visibility — light mode pushed harder &nbsp;·&nbsp; #2 faint pills &nbsp;·&nbsp; #5 text size</h2>
+  <div class="swatch">
+    <div class="sw">
+      <div class="h">#1 DARK — INSERT pills + dropdown</div>
+      <div><span class="tagpill old">{First Name}</span><span class="tagpill old">{linkedin url}</span></div>
+      <div style="margin-top:8px"><span class="tagpill new">{First Name}</span><span class="tagpill new">{linkedin url}</span></div>
+      <div style="margin-top:10px"><div class="selold">linkedin url ▾</div><div style="margin-top:6px" class="selnew">linkedin url ▾</div></div>
+      <p class="note" style="font-size:.72rem">top = now (invisible) · bottom = fixed</p>
+    </div>
+    <div class="sw light">
+      <div class="h">#1 LIGHT — even more visible</div>
+      <div><span class="tagpill lold">{First Name}</span><span class="tagpill lold">{linkedin url}</span></div>
+      <div style="margin-top:8px"><span class="tagpill lnew">{First Name}</span><span class="tagpill lnew">{linkedin url}</span></div>
+      <div style="margin-top:10px"><div class="lselold">linkedin url ▾</div><div style="margin-top:6px" class="lselnew">linkedin url ▾</div></div>
+      <p class="note" style="font-size:.72rem;color:#777">stronger borders + readable fill, not faint</p>
+    </div>
+    <div class="sw light">
+      <div class="h">#2 light pills &nbsp;·&nbsp; #5 text</div>
+      <div><span class="passpill oldfaint">OP·IM·SN</span><span class="passpill oldfaint">CC</span> <span class="unlockold">UNLOCKS 2+</span></div>
+      <div style="margin-top:10px"><span class="passpill newclear">OP·IM·SN</span><span class="passpill newclear">CC</span> <span class="unlocknew">UNLOCKS 2+</span></div>
+      <div style="margin-top:14px" class="h">#5 helper text</div>
+      <div class="helpold">Cell values must be full LinkedIn profile URLs.</div>
+      <div class="helpnew" style="margin-top:6px">Cell values must be full LinkedIn profile URLs.</div>
+    </div>
+  </div>
+  <p class="note">Each block: top = current, bottom = fixed. Light mode now uses solid borders + darker fills so nothing reads as faint.</p>
+
+  <!-- 17 sidebar -->
+  <h2>#17 Sidebar — declutter (3 variants, pick one)</h2>
+  <style>
+    .sbwrap{display:grid;grid-template-columns:repeat(3,248px);gap:22px;align-items:start}
+    @media(max-width:880px){.sbwrap{grid-template-columns:1fr}}
+    .sbtag{font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray);margin-bottom:10px;display:block}
+    .sb{width:248px;background:#fafafa;color:#0a0a0a;border:1px solid rgba(0,0,0,.12);border-radius:14px;padding:20px 18px;
+        font-family:var(--mono)}
+    .sb .brand{font-family:'Bebas Neue','Arial Narrow',sans-serif;font-weight:400;font-size:1.5rem;letter-spacing:.01em;line-height:1}
+    .sb .ver{font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:#999;margin-top:6px}
+    .sb hr{border:none;border-top:1px solid rgba(0,0,0,.08);margin:16px 0}
+    .sb .lbl{font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:#999;margin-bottom:9px}
+    .seg{display:inline-flex;border:1px solid rgba(0,0,0,.2);border-radius:9999px;overflow:hidden;width:100%}
+    .seg button{flex:1;border:none;background:transparent;padding:7px 0;font-family:var(--mono);font-size:.72rem;
+                letter-spacing:.12em;text-transform:uppercase;color:#555;cursor:pointer}
+    .seg button.on{background:#0a0a0a;color:#fff}
+    .sbrow{display:flex;align-items:center;justify-content:space-between;font-size:.8rem;padding:5px 0}
+    .sbrow .v{color:#555;display:flex;align-items:center;gap:7px}
+    .ico{width:24px;height:24px;border:1px solid rgba(0,0,0,.18);border-radius:50%;display:inline-flex;align-items:center;
+         justify-content:center;font-size:.7rem;color:#333;cursor:pointer}
+    .chips{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 4px}
+    .chip{font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;border-radius:9999px;padding:3px 9px;border:1px solid}
+    .chip.ok{color:#15601f;border-color:#15601f;background:rgba(63,185,80,.1)}
+    .chip.off{color:#999;border-color:#ddd}
+    .link{font-size:.7rem;color:#b9892b;text-decoration:underline;cursor:pointer}
+    .tog{width:34px;height:18px;border-radius:9999px;background:var(--green);position:relative;flex:0 0 auto}
+    .tog::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;top:2px;right:2px}
+    .disc{display:flex;align-items:center;justify-content:space-between;font-size:.74rem;letter-spacing:.06em;
+          text-transform:uppercase;color:#333;cursor:pointer;padding:8px 0}
+    .sbfoot{margin-top:16px;padding-top:14px;border-top:1px solid rgba(0,0,0,.08);display:flex;align-items:center;justify-content:space-between}
+    .sbfoot .em{font-size:.66rem;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+    .sbfoot .out{font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:#999;cursor:pointer}
+    .statusdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green)}
+  </style>
+
+  <div class="ba" style="margin-bottom:18px">
+    <span class="sbtag" style="color:#bbb">Current — cluttered: 3 stacked sections, 3 big buttons, 4 status rows</span>
+    <div class="sb">
+      <div class="brand">ORTUS OUTREACH</div>
+      <div class="ver">LinkedIn · v2.59.7</div>
+      <hr>
+      <div class="lbl">Theme</div>
+      <div class="seg"><button>Dark</button><button class="on">Light</button></div>
+      <hr>
+      <div class="lbl">Timezone</div>
+      <div class="sbrow"><span>Sheet timestamps</span><span class="v">Rome</span></div>
+      <button class="btn sm" style="color:#333;border-color:rgba(0,0,0,.2);margin-top:8px">Change</button>
+      <hr>
+      <div class="lbl">Notifications</div>
+      <div class="sbrow"><span>Browser push</span><span class="v" style="color:#15601f">Granted</span></div>
+      <div class="sbrow"><span>Email · SMTP</span><span class="v" style="color:#15601f">Wired</span></div>
+      <div class="sbrow"><span>Last test</span><span class="v">Never</span></div>
+      <div class="sbrow"><span>Connection-check reminders</span><span class="tog"></span></div>
+      <button class="btn sm" style="color:#333;border-color:rgba(0,0,0,.2);margin-top:8px">Send test</button>
+      <div class="sbfoot"><span class="em">antonio@ortusclub.com</span><span class="out">Sign out</span></div>
+    </div>
+  </div>
+
+  <div class="sbwrap">
+    <!-- A -->
+    <div>
+      <span class="sbtag after" style="color:var(--green)">A — Tightened (same info, inline actions)</span>
+      <div class="sb">
+        <div class="brand">ORTUS OUTREACH</div>
+        <div class="ver">LinkedIn · v2.59.7</div>
+        <hr>
+        <div class="seg"><button>Dark</button><button class="on">Light</button></div>
+        <hr>
+        <div class="sbrow"><span>Timestamps</span><span class="v">Rome <span class="ico">✎</span></span></div>
+        <hr>
+        <div class="sbrow" style="margin-bottom:4px"><span>Notifications</span><span class="link">Test</span></div>
+        <div class="chips"><span class="chip ok">Push ✓</span><span class="chip ok">Email ✓</span></div>
+        <div class="sbrow"><span>Check reminders</span><span class="tog"></span></div>
+        <div class="sbfoot"><span class="em">antonio@ortusclub.com</span><span class="out">Sign out ↪</span></div>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div>
+      <span class="sbtag" style="color:var(--gold)">B — Collapsed (advanced behind a disclosure)</span>
+      <div class="sb">
+        <div class="brand">ORTUS OUTREACH</div>
+        <div class="ver">LinkedIn · v2.59.7</div>
+        <hr>
+        <div class="seg"><button>Dark</button><button class="on">Light</button></div>
+        <div class="disc">Preferences <span style="color:#999">▸</span></div>
+        <div class="disc" style="border-top:1px solid rgba(0,0,0,.06)">Notifications <span class="statusdot"></span></div>
+        <div class="sbfoot"><span class="em">antonio@ortusclub.com</span><span class="out">Sign out ↪</span></div>
+      </div>
+      <p class="note" style="font-size:.72rem">Only Theme + account always visible. Timezone & notif details expand on click — least clutter.</p>
+    </div>
+
+    <!-- C -->
+    <div>
+      <span class="sbtag" style="color:#bbb">C — Status-light (one health line + gear)</span>
+      <div class="sb">
+        <div class="brand">ORTUS OUTREACH</div>
+        <div class="ver">LinkedIn · v2.59.7</div>
+        <hr>
+        <div class="seg"><button>Dark</button><button class="on">Light</button></div>
+        <hr>
+        <div class="sbrow"><span class="v" style="color:#15601f;gap:8px"><span class="statusdot"></span>All systems wired</span><span class="ico">⚙</span></div>
+        <div class="sbrow" style="color:#777;font-size:.72rem"><span>Timestamps · Rome</span></div>
+        <div class="sbrow"><span>Check reminders</span><span class="tog"></span></div>
+        <div class="sbfoot"><span class="em">antonio@ortusclub.com</span><span class="out">Sign out ↪</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">All three keep every function (theme, timezone, push/email status, test, reminders toggle, sign out) — just fewer big buttons and tighter grouping. The ✎ / ⚙ / disclosures open the same controls inline or in a small popover.</p>
+
+</body>
+</html>

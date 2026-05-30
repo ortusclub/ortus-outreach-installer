@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoring — Variant C (timeline) v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fafafa; --ink:#0a0a0a; --gray:#999;
+    --hairline:rgba(0,0,0,0.15); --hairline-soft:rgba(0,0,0,0.06);
+    --green:#3fb950; --red:#f85149; --gold:#F7BE68;
+    /* NEW: monitoring accent — blue (distinct from running = green) */
+    --blue:#2f81f7; --blue-soft:rgba(47,129,247,0.14);
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --body:'Hanken Grotesk',-apple-system,sans-serif;
+    --card-bg:#fff; --card-shadow:0 4px 16px rgba(0,0,0,.10);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);padding:44px 40px 90px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-family:var(--display);font-size:2rem;letter-spacing:.04em;font-weight:400}
+  .sub{color:var(--gray);font-size:.85rem;margin:4px 0 26px}
+
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;font-size:.78rem;color:var(--gray)}
+  .toolbar .seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;overflow:hidden}
+  .toolbar .seg button{border:0;background:transparent;color:var(--gray);padding:7px 14px;font-size:.72rem;cursor:pointer;font-family:var(--body)}
+  .toolbar .seg button.on{background:var(--blue);color:#fff}
+
+  /* ── Monitoring card (blue accent) ─────────────────────────────────── */
+  .card{position:relative;background:var(--card-bg);border:1px solid var(--hairline-soft);border-radius:14px;
+    box-shadow:var(--card-shadow);padding:26px 30px;border-left:3px solid var(--blue)}
+  .eyebrow{display:flex;align-items:center;gap:9px;font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray)}
+  .eyebrow .dot{width:8px;height:8px;border-radius:9999px;background:var(--blue);box-shadow:0 0 0 0 rgba(47,129,247,.5);animation:pulse 1.9s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,129,247,.5)}70%{box-shadow:0 0 0 7px rgba(47,129,247,0)}100%{box-shadow:0 0 0 0 rgba(47,129,247,0)}}
+  .glyph{position:absolute;top:24px;right:30px;width:54px;height:54px;border:1px solid var(--hairline);border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:.66rem;color:var(--ink)}
+  .name{font-family:var(--display);font-size:2.1rem;letter-spacing:.02em;font-weight:400;margin:8px 0 4px}
+
+  /* timeline */
+  .tl-head{display:flex;justify-content:space-between;font-size:.58rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray);margin:18px 0 22px}
+  .tl-head b{color:var(--ink);font-weight:600}
+  .track{position:relative;height:30px;margin:0 6px}
+  /* the cadence ruler — repeating ticks whose DENSITY = check interval */
+  .ruler{position:absolute;left:0;right:0;top:13px;height:4px;border-radius:9999px;
+    background:var(--hairline-soft);
+    background-image:repeating-linear-gradient(90deg, var(--blue) 0 1px, transparent 1px var(--gap));
+    background-size:100% 100%;}
+  .elapsed{position:absolute;left:0;top:13px;height:4px;border-radius:9999px;background:var(--blue);opacity:.9}
+  .now,.next{position:absolute;top:50%;transform:translate(-50%,-50%);border-radius:9999px}
+  .now{width:11px;height:11px;background:var(--blue);box-shadow:0 0 0 4px var(--blue-soft)}
+  .next{width:11px;height:11px;background:#fff;border:2px solid var(--blue);box-shadow:0 0 0 4px var(--blue-soft)}
+  .next .tag,.endtag{position:absolute;top:16px;left:50%;transform:translateX(-50%);font-size:.56rem;letter-spacing:.06em;color:var(--blue);font-weight:600;white-space:nowrap}
+  .endtag{color:var(--gray);font-weight:400}
+
+  .stats{display:flex;flex-wrap:wrap;gap:18px;font-size:.82rem;color:var(--gray);margin-top:30px;align-items:center}
+  .stats b{color:var(--ink);font-weight:600}
+  .controls{display:flex;align-items:center;gap:12px;margin-top:22px}
+  .btn-pill{border:1px solid var(--hairline);background:transparent;color:var(--ink);border-radius:9999px;padding:9px 22px;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;font-family:var(--body)}
+  .btn-pill.accent{border-color:var(--blue);color:var(--blue)}
+  .dock{margin-left:auto;display:flex;gap:8px}
+  .dock button{width:38px;height:38px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .dock button.danger{color:var(--red)}
+  .dock svg{width:15px;height:15px}
+
+  /* ── Launcher strip BELOW the monitoring card ──────────────────────── */
+  .below{margin-top:16px;border:1px dashed var(--hairline);border-radius:14px;padding:18px 24px;display:flex;align-items:center;gap:14px;color:var(--gray);font-size:.85rem}
+  .below .lbl{font-size:.6rem;letter-spacing:.22em;text-transform:uppercase}
+  .below .newbtn{margin-left:auto;background:#0a0a0a;color:var(--gold);border:0;border-radius:9999px;padding:10px 20px;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;font-family:var(--body)}
+  .note{max-width:1040px;margin:22px auto 0;font-size:.8rem;color:var(--gray);line-height:1.6;border-left:2px solid var(--hairline);padding-left:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Monitoring — Variant C · timeline</h1>
+  <div class="sub">Blue accent. The ruler density = your check interval. Monitoring card on top; launcher collapsed below.</div>
+
+  <div class="toolbar">
+    <span>Check interval:</span>
+    <span class="seg" id="seg">
+      <button data-min="15">15 min</button>
+      <button data-min="30">30 min</button>
+      <button data-min="60" class="on">1 hour</button>
+      <button data-min="360">6 hours</button>
+    </span>
+    <span id="cadenceNote"></span>
+  </div>
+
+  <!-- MONITORING CARD -->
+  <div class="card">
+    <div class="eyebrow"><span class="dot"></span><span id="ebrow">Monitoring · every 1h</span></div>
+    <div class="glyph">C+D</div>
+    <div class="name">TEST CC+DM (RERUN)</div>
+    <div class="tl-head"><span>Sending done · <b>6</b> sent</span><span id="endLabel">Window ends <b>Fri 5 Jun · 18:00</b></span></div>
+    <div class="track">
+      <div class="ruler" id="ruler"></div>
+      <div class="elapsed" id="elapsed" style="width:3%"></div>
+      <div class="now" id="now" style="left:3%"></div>
+      <div class="next" id="next" style="left:4%"><span class="tag" id="nextTag">next · 41m</span></div>
+      <div class="endtag" style="right:-4px;left:auto;transform:none">7d</div>
+    </div>
+    <div class="stats">
+      <span><b>3</b> accounts</span><span><b>0</b> accepted</span><span><b>0</b> messaged</span><span><b>0</b> replies</span>
+      <span>· checks <b id="cadenceLbl">every 1h</b></span>
+    </div>
+    <div class="controls">
+      <button class="btn-pill">Open</button>
+      <button class="btn-pill accent">Check now</button>
+      <div class="dock">
+        <button class="danger" title="Stop monitoring"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LAUNCHER BELOW (collapsed; no campaign running) -->
+  <div class="below">
+    <span class="lbl">No campaign running</span>
+    <span>— monitoring continues in the background</span>
+    <button class="newbtn">+ New campaign</button>
+  </div>
+
+  <div class="note">
+    <b>Concurrency note (read me):</b> running a fresh CC campaign from "+ New campaign" while this is monitoring is NOT possible on the current architecture — they share one campaign slot, and launching wipes the monitoring. The launcher below is shown for layout; the real behavior (queue vs. pause-monitoring vs. true parallel) is the decision still open.
+  </div>
+</div>
+
+<script>
+  const WINDOW_MIN = 7*24*60;     // 7-day watch window
+  const seg = document.getElementById('seg');
+  const ruler = document.getElementById('ruler');
+  function fmtCadence(min){ return min>=60 ? (min/60)+'h' : min+' min'; }
+  function apply(min){
+    // ruler tick spacing as a fraction of the full window → density = cadence
+    const gapPct = (min / WINDOW_MIN) * 100;
+    // clamp the rendered gap so very dense cadences still show as a fine ruler
+    ruler.style.setProperty('--gap', Math.max(gapPct, 0.45) + '%');
+    const lbl = 'every ' + fmtCadence(min);
+    document.getElementById('cadenceLbl').textContent = lbl;
+    document.getElementById('ebrow').textContent = 'Monitoring · ' + lbl;
+    document.getElementById('nextTag').textContent = 'next · ' + (min>=60 ? Math.round(min*0.7)+'m' : min+'m');
+    document.getElementById('cadenceNote').textContent = '→ ' + Math.round(WINDOW_MIN/min) + ' checks across 7 days';
+    [...seg.children].forEach(b=>b.classList.toggle('on', +b.dataset.min===min));
+  }
+  seg.addEventListener('click', e=>{ if(e.target.dataset.min) apply(+e.target.dataset.min); });
+  apply(60);
+</script>
+</body>
+</html>

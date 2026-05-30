@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Launch pill + Console right-lip · v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --ink: #fafafa;
+    --gray: #8a8a8a;
+    --gray-faint: #4d4d4d;
+    --hairline: rgba(255,255,255,0.14);
+    --hairline-soft: rgba(255,255,255,0.06);
+    --gold: #F7BE68;
+    --gold-soft: rgba(247,190,104,0.45);
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    --body: 'Hanken Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--body); background: var(--bg); color: var(--ink); padding: 32px 48px 80px; }
+  h1 { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; margin-bottom: 6px; }
+  .lead { color: var(--gray); font-size: 0.85rem; margin-bottom: 28px; max-width: 720px; }
+  .note { color: var(--gray-faint); font-size: 0.7rem; font-style: italic; margin-bottom: 36px; max-width: 720px; }
+
+  .stage { position: relative; border: 1px solid var(--hairline); background: #0c0c0c; height: 480px; overflow: hidden; margin-bottom: 48px; }
+  .stage-inner { padding: 24px 28px; padding-right: 60px; padding-bottom: 80px; color: var(--gray); }
+  .stage-h { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.02em; color: var(--ink); margin-bottom: 4px; }
+  .stage-sub { font-size: 0.65rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; margin-bottom: 18px; }
+  .stage-body { font-size: 0.82rem; max-width: 520px; }
+
+  .v-label { font-size: 0.55rem; letter-spacing: 0.22em; color: var(--gold); text-transform: uppercase; margin-bottom: 4px; }
+  .v-title { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.02em; margin-bottom: 14px; }
+
+  /* ── Launch pill (bottom-left) ─────────────────────────────────────── */
+  .launch-pill {
+    position: absolute; bottom: 18px; left: 18px;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 16px 9px 12px;
+    background: var(--ink); color: var(--bg);
+    border: 1px solid var(--ink); border-radius: 9999px;
+    font-family: inherit; font-size: 0.62rem; letter-spacing: 0.22em; text-transform: uppercase;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    z-index: 6;
+  }
+  .launch-pill:hover { background: var(--gold); border-color: var(--gold); }
+  .launch-pill .plus { font-size: 0.95rem; line-height: 0.5; }
+  .launch-pill .chev { color: var(--bg); opacity: 0.5; margin-left: 2px; }
+
+  /* Expanded launch menu */
+  .launch-menu {
+    position: absolute; bottom: 62px; left: 18px;
+    width: 240px;
+    background: rgba(13,13,13,0.97); border: 1px solid var(--hairline);
+    border-radius: 8px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.7);
+    backdrop-filter: blur(10px);
+    z-index: 7;
+    overflow: hidden;
+  }
+  .launch-menu__item {
+    display: grid; grid-template-columns: 22px 1fr auto;
+    align-items: center; gap: 10px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--hairline-soft);
+    cursor: pointer;
+  }
+  .launch-menu__item:last-child { border-bottom: none; }
+  .launch-menu__item:hover { background: rgba(255,255,255,0.04); }
+  .launch-menu__icon { color: var(--gold); font-family: var(--display); font-size: 0.85rem; text-align: center; }
+  .launch-menu__name { font-size: 0.74rem; color: var(--ink); }
+  .launch-menu__name .sub { display: block; font-size: 0.58rem; color: var(--gray); letter-spacing: 0.04em; margin-top: 1px; }
+  .launch-menu__hint { font-family: var(--mono); font-size: 0.58rem; color: var(--gray-faint); }
+
+  /* ── Console right-lip (right edge tab) ─────────────────────────────── */
+  .right-lip {
+    position: absolute; top: 50%; right: 0;
+    transform: translateY(-50%);
+    background: rgba(19,19,19,0.95);
+    border: 1px solid var(--hairline);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    padding: 14px 9px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    cursor: pointer;
+    z-index: 6;
+  }
+  .right-lip:hover { border-color: var(--gold); }
+  .right-lip .dot {
+    width: 8px; height: 8px; border-radius: 9999px; background: var(--green);
+    box-shadow: 0 0 0 0 rgba(63,185,80,0.55);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(63,185,80,0.55); }
+    70% { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
+    100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+  }
+  .right-lip .lbl {
+    font-family: var(--display); font-size: 0.7rem; letter-spacing: 0.22em;
+    color: var(--ink); writing-mode: vertical-rl; transform: rotate(180deg);
+    text-transform: uppercase;
+  }
+  .right-lip .num {
+    font-family: var(--mono); font-size: 0.6rem;
+    color: var(--gold); font-variant-numeric: tabular-nums;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+  }
+
+  /* Drawer (expanded console state) */
+  .drawer {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: 340px;
+    background: rgba(11,11,11,0.97);
+    border-left: 1px solid var(--hairline);
+    backdrop-filter: blur(10px);
+    display: flex; flex-direction: column;
+    z-index: 6;
+  }
+  .drawer__head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--hairline-soft); }
+  .drawer__head .ttl { font-family: var(--display); font-size: 1rem; letter-spacing: 0.05em; text-transform: uppercase; }
+  .drawer__head .sub { font-size: 0.52rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; }
+  .drawer__head .x { margin-left: auto; width: 20px; height: 20px; border-radius: 9999px; background: transparent; border: 1px solid var(--hairline); color: var(--gray); font-size: 0.85rem; line-height: 1; cursor: pointer; }
+  .drawer__chips { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--hairline-soft); }
+  .chip { background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; font-family: inherit; font-size: 0.58rem; letter-spacing: 0.06em; color: var(--gray); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .chip:hover { color: var(--ink); }
+  .chip.on { color: var(--ink); border-color: var(--ink); background: rgba(255,255,255,0.05); }
+  .chip .ct { font-family: var(--display); font-size: 0.64rem; color: var(--gold); }
+  .drawer__body { flex: 1; overflow-y: auto; }
+  .drawer__sec { padding: 12px 14px; border-bottom: 1px solid var(--hairline-soft); }
+  .drawer__sec .lbl { font-size: 0.5rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; margin-bottom: 8px; }
+
+  .lc { border: 1px solid var(--hairline-soft); border-radius: 4px; padding: 10px 12px; background: rgba(255,255,255,0.02); }
+  .lc .top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 0.5rem; letter-spacing: 0.22em; color: var(--green); text-transform: uppercase; }
+  .lc .top .mode { margin-left: auto; color: var(--gold); }
+  .lc .name { font-family: var(--display); font-size: 1rem; margin-bottom: 4px; }
+  .lc .prog { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+  .lc .prog .ink { color: var(--ink); }
+  .lc .bar { height: 2px; background: var(--hairline-soft); margin-bottom: 8px; position: relative; }
+  .lc .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gold); }
+  .lc .grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 0.68rem; margin-bottom: 8px; }
+  .lc .grid .k { font-size: 0.5rem; letter-spacing: 0.22em; color: var(--gray-faint); align-self: center; text-transform: uppercase; }
+  .lc .grid .v { font-family: var(--mono); font-size: 0.66rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .lc .acts { display: flex; gap: 4px; }
+  .lc .acts .mini { flex: 1; padding: 4px 0; background: transparent; border: 1px solid var(--hairline); color: var(--gray); border-radius: 9999px; font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; cursor: pointer; }
+  .lc .acts .mini.danger { color: var(--red); border-color: rgba(248,81,73,0.4); }
+  .lc .acts .mini.primary { color: var(--gold); border-color: var(--gold-soft); }
+
+  .log-feed { font-family: var(--mono); font-size: 0.64rem; line-height: 1.7; }
+  .log-feed .row { display: grid; grid-template-columns: 38px 1fr; gap: 6px; padding: 2px 0; color: var(--gray); }
+  .log-feed .row .t { color: var(--gray-faint); }
+  .log-feed .row.ink .msg { color: var(--ink); }
+
+  .up-item { display: grid; grid-template-columns: 1fr auto; padding: 6px 0; border-bottom: 1px solid var(--hairline-soft); font-size: 0.72rem; }
+  .up-item:last-child { border-bottom: none; }
+  .up-item .name { color: var(--ink); }
+  .up-item .when { font-size: 0.58rem; color: var(--gray); }
+
+  .drawer__foot { padding: 10px 14px; border-top: 1px solid var(--hairline-soft); display: flex; justify-content: space-between; align-items: center; font-size: 0.55rem; letter-spacing: 0.22em; color: var(--gray-faint); text-transform: uppercase; }
+  .drawer__foot a { color: var(--gold); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>Launch pill + Console right-lip — v1</h1>
+<div class="lead">
+  Two floating elements, no bottom bar. The rest of the app (dashboard, wizard, sidebar)
+  stays exactly as it is today.
+</div>
+<div class="note">
+  Real-data only — all menu items map to existing endpoints
+  (<code>/api/campaign/start</code>, <code>/api/queue</code>, scheduled, <code>/api/drafts</code>).
+  Console drawer fields are the same ones in <code>/api/campaign/status</code> that the
+  current cockpit reads.
+</div>
+
+<!-- ── Stage 1 — both elements collapsed ─────────────────────────────── -->
+<div class="v-label">State 1 · Both collapsed (default)</div>
+<div class="v-title">Launch pill bottom-left, Console lip right edge</div>
+<div class="stage">
+  <div class="stage-inner">
+    <div class="stage-h">CAMPAIGNS</div>
+    <div class="stage-sub">Dashboard · untouched</div>
+    <div class="stage-body">
+      The current app stays exactly as it is. Two affordances float on top of every page:
+      a launch pill in the bottom-left for starting/queuing/scheduling new campaigns, and
+      a thin console lip on the right edge that surfaces live campaign state.
+    </div>
+  </div>
+
+  <!-- Launch pill (collapsed) -->
+  <button class="launch-pill">
+    <span class="plus">+</span>
+    Launch
+    <span class="chev">▴</span>
+  </button>
+
+  <!-- Console right-lip (collapsed) -->
+  <div class="right-lip">
+    <span class="dot"></span>
+    <span class="lbl">Console</span>
+    <span class="num">47/280</span>
+  </div>
+</div>
+
+
+<!-- ── Stage 2 — launch menu open ────────────────────────────────────── -->
+<div class="v-label">State 2 · Launch pill expanded</div>
+<div class="v-title">Click "+ Launch" → 4-option menu (same as wizard's launch panel)</div>
+<div class="stage">
+  <div class="stage-inner">
+    <div class="stage-h">SECTION III · ACCOUNTS</div>
+    <div class="stage-sub">Wizard · untouched</div>
+    <div class="stage-body">
+      Operator is anywhere in the app, clicks "+ Launch" in the bottom-left pill. The menu
+      surfaces the 4 launch options that today live inside the wizard's <code>wiz-launch-trigger</code>:
+      Start now, Add to queue, Schedule, Save as draft.
+    </div>
+  </div>
+
+  <!-- Launch menu (expanded) -->
+  <div class="launch-menu">
+    <div class="launch-menu__item">
+      <span class="launch-menu__icon">▶</span>
+      <span class="launch-menu__name">Start now<span class="sub">launch immediately</span></span>
+      <span class="launch-menu__hint">↵</span>
+    </div>
+    <div class="launch-menu__item">
+      <span class="launch-menu__icon">+</span>
+      <span class="launch-menu__name">Add to queue<span class="sub">runs after the current one</span></span>
+      <span class="launch-menu__hint">Q</span>
+    </div>
+    <div class="launch-menu__item">
+      <span class="launch-menu__icon">⏱</span>
+      <span class="launch-menu__name">Schedule<span class="sub">pick date + time</span></span>
+      <span class="launch-menu__hint">S</span>
+    </div>
+    <div class="launch-menu__item">
+      <span class="launch-menu__icon">○</span>
+      <span class="launch-menu__name">Save as draft<span class="sub">finish later</span></span>
+      <span class="launch-menu__hint">D</span>
+    </div>
+  </div>
+
+  <button class="launch-pill" style="background: var(--gold); border-color: var(--gold);">
+    <span class="plus">+</span>
+    Launch
+    <span class="chev">▾</span>
+  </button>
+
+  <!-- Console right-lip (still collapsed) -->
+  <div class="right-lip">
+    <span class="dot"></span>
+    <span class="lbl">Console</span>
+    <span class="num">47/280</span>
+  </div>
+</div>
+
+
+<!-- ── Stage 3 — console drawer open ─────────────────────────────────── -->
+<div class="v-label">State 3 · Console drawer open</div>
+<div class="v-title">Click right lip → drawer slides in with chip tabs (Now / Log / Up next)</div>
+<div class="stage">
+  <div class="stage-inner" style="padding-right: 360px;">
+    <div class="stage-h">SECTION V · TEMPLATES</div>
+    <div class="stage-sub">Wizard · untouched</div>
+    <div class="stage-body">
+      Clicking the right lip slides in the drawer. Chip-row at top: Now · Log · Up next.
+      All data is what's already in <code>/api/campaign/status</code> + <code>/api/queue</code>
+      + scheduled.
+    </div>
+  </div>
+
+  <!-- Launch pill (still collapsed, sits over the page) -->
+  <button class="launch-pill">
+    <span class="plus">+</span>
+    Launch
+    <span class="chev">▴</span>
+  </button>
+
+  <!-- Drawer (expanded) -->
+  <div class="drawer">
+    <div class="drawer__head">
+      <span class="dot" style="width:8px; height:8px; border-radius:9999px; background:var(--green); display:inline-block;"></span>
+      <div>
+        <div class="ttl">Console</div>
+        <div class="sub">live · 1 active</div>
+      </div>
+      <button class="x">×</button>
+    </div>
+    <div class="drawer__chips">
+      <button class="chip on">Now <span class="ct">1</span></button>
+      <button class="chip">Log <span class="ct">100</span></button>
+      <button class="chip">Up next <span class="ct">2</span></button>
+    </div>
+    <div class="drawer__body">
+      <div class="drawer__sec">
+        <div class="lc">
+          <div class="top"><span style="width:6px;height:6px;border-radius:9999px;background:var(--green);display:inline-block;"></span>Running<span class="mode">CC+IC</span></div>
+          <div class="name">Q2 SaaS Founders</div>
+          <div class="prog"><span class="ink">47</span> / 280 · 0 err · 0 parked</div>
+          <div class="bar"><div class="fill" style="width: 17%"></div></div>
+          <div class="grid">
+            <div class="k">Lead</div><div class="v">Priya Sharma</div>
+            <div class="k">Acct</div><div class="v">Marlon</div>
+            <div class="k">Action</div><div class="v">Sending intro DM</div>
+          </div>
+          <div class="acts">
+            <button class="mini">Pause</button>
+            <button class="mini danger">Stop</button>
+            <button class="mini primary">Open ›</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="drawer__sec">
+        <div class="lbl">Recent activity · last 5</div>
+        <div class="log-feed">
+          <div class="row"><span class="t">14:02</span><span class="msg">Marlon · opened conversation</span></div>
+          <div class="row ink"><span class="t">14:02</span><span class="msg">Marlon · sent intro DM</span></div>
+          <div class="row"><span class="t">14:02</span><span class="msg">cooldown 90s · next: Anika V.</span></div>
+        </div>
+      </div>
+
+      <div class="drawer__sec">
+        <div class="lbl">Up next · queued + scheduled</div>
+        <div class="up-item">
+          <div class="name">VC Partners — cold intro</div>
+          <div class="when">↳ after this</div>
+        </div>
+        <div class="up-item">
+          <div class="name">Morning outreach</div>
+          <div class="when">daily 09:00</div>
+        </div>
+      </div>
+    </div>
+    <div class="drawer__foot">
+      <span>state · sending</span>
+      <a href="#">Open Live Status ›</a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

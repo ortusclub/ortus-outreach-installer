@@ -536,3 +536,121 @@ test('live-fallback contract: account-less conn does NOT mark a sender-scoped ro
   const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
   assert.notEqual(jane && jane.cc, 'Connected', 'account-less conn must not produce a Connected stamp on a scoped row');
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// v2.6x — CC+DM already-DM'd guard (Issue 2). Mirrors the introductionStatus
+// guard for CC+IC: when this campaign's phase-2 action is the 1:1 auto-DM
+// (opts.dmSentTerminal), a matched row whose DM Status already reads
+// 'DM Sent' is terminal and must NOT be re-queued into connectedUrls — else
+// every monitoring sweep re-DMs it and the content-dedup overwrites 'DM Sent'
+// with 'Skipped — DM already sent'.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('dmSentTerminal: matched row already DM Sent is NOT re-queued into connectedUrls', () => {
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'DM Status': 'DM Sent',
+  })];
+  const { connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, dmSentTerminal: true }
+  );
+  assert.equal(connectedUrls.length, 0, 'already-DM\'d row must not be re-queued for auto-DM');
+});
+
+test('dmSentTerminal OFF (default): DM Sent row is still queued (CC+IC / other modes unaffected)', () => {
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'DM Status': 'DM Sent',
+  })];
+  const { connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false } // no dmSentTerminal → guard off
+  );
+  assert.equal(connectedUrls.length, 1, 'with the guard off, behavior is unchanged (mode-safe)');
+});
+
+test('dmSentTerminal: a BLANK DM Status row is still queued for the auto-DM', () => {
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'DM Status': '',
+  })];
+  const { connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, dmSentTerminal: true }
+  );
+  assert.equal(connectedUrls.length, 1, 'not-yet-DM\'d connections must still be queued');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// v2.6x — heal stale 'Closed - Not Connected' (Issue 1). Operator rule:
+// Connection Request Status must never read 'Closed - Not Connected'. The
+// stamp was written by an older stop-monitoring build; the invite was never
+// withdrawn, so on re-encounter we heal the cell back to 'Connection Request
+// Sent' and treat the lead as invited (so a later acceptance reads
+// 'Connected', not 'Already connected').
+// ─────────────────────────────────────────────────────────────────────────
+
+test('heal: matched Closed-Not-Connected row → connectionStatus rewritten to Connection Request Sent + stamped Connected (wasInvited)', () => {
+  const rows = [baseRow({
+    'Connection Request Status': 'Closed - Not Connected',
+    'Connection Accepted Status': '',
+    'Connected Status': '',
+  })];
+  const conns = [{ firstName: 'Jane', lastName: 'Doe', publicId: 'jane-doe', urn: 'ACoAAaaa', memberNumber: '111', account: 'kenya5@ortus.solutions' }];
+  const { updates } = computeBulkCheckUpdates(
+    rows, conns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  const heal = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe' && u.connectionStatus);
+  assert.ok(heal, 'a heal update rewriting connectionStatus must be present');
+  assert.equal(heal.connectionStatus, 'Connection Request Sent');
+  const ccStamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe' && u.cc);
+  assert.ok(ccStamp, 'a cc stamp must be present');
+  assert.equal(ccStamp.cc, 'Connected', 'closed-then-accepted is treated as a normal acceptance (not Already connected)');
+});
+
+test('heal: NOT-matched Closed-Not-Connected row → only the connectionStatus heal, no Still Pending churn', () => {
+  const rows = [baseRow({
+    'Connection Request Status': 'Closed - Not Connected',
+    'Connection Accepted Status': '',
+    'Connected Status': '',
+  })];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, [], linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
+  );
+  assert.equal(connectedUrls.length, 0, 'not connected → not queued');
+  const heal = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.ok(heal, 'closed row gets a heal update even when not matched');
+  assert.equal(heal.connectionStatus, 'Connection Request Sent');
+  assert.equal(heal.cc, undefined, 'no Still Pending stamp written to the accepted column');
+});
+
+test('heal runs BEFORE the DM-Sent guard: a Closed + DM Sent row is healed even though it is skipped from connectedUrls', () => {
+  const rows = [baseRow({
+    'Connection Request Status': 'Closed - Not Connected',
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'DM Status': 'DM Sent',
+  })];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, dmSentTerminal: true }
+  );
+  assert.equal(connectedUrls.length, 0, 'already-DM\'d → not re-queued');
+  const heal = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe' && u.connectionStatus);
+  assert.ok(heal, 'closed cell still healed before the DM-Sent short-circuit');
+  assert.equal(heal.connectionStatus, 'Connection Request Sent');
+});
+
+test('no heal for a normal Connection Request Sent row (no connectionStatus key added)', () => {
+  const rows = [baseRow({ 'Connection Request Status': 'Connection Request Sent' })];
+  const { updates } = computeBulkCheckUpdates(
+    rows, baseConns, linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
+  );
+  const withConnStatus = updates.find((u) => u.connectionStatus);
+  assert.equal(withConnStatus, undefined, 'normal rows must not get a connectionStatus heal write');
+});

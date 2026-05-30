@@ -36,7 +36,6 @@ import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
-import { computeStillPendingUrls, buildClosedNotConnectedUpdate } from './stop-monitoring.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
@@ -412,6 +411,25 @@ export function isDmIbEligible(row) {
       row['Connected Status']            || row['connected status'] || ''
     ).toString().trim();
     return cc === 'Connected' || cc === 'Already connected';
+  }
+  return false;
+}
+
+// v2.59.x: Does this (action, mode) represent a pending invite worth
+// monitoring for acceptance? A NEW invite (connection_sent) always does. A
+// lead ALREADY invited in a prior campaign returns already_processed
+// (stamped "Connect Pending") in the connect-then-followup modes — that is
+// still an outstanding invite the monitoring phase must watch (catch the
+// acceptance → fire auto-DM / auto-intro). Counting only connection_sent
+// meant a re-run on already-pending leads ended "0 sent → no monitoring", so
+// "Stop sending, keep monitoring" had nothing to start even with real pending
+// invites out there. Used to populate profilesThatSentAtLeastOne, which gates
+// the running→monitoring transition.
+export function countsAsMonitorableInvite(action, mode) {
+  if (action === 'connection_sent') return true;
+  if (action === 'already_processed' &&
+      (mode === 'connect_and_introduce' || mode === 'connect_and_message')) {
+    return true;
   }
   return false;
 }
@@ -1024,18 +1042,26 @@ export function buildSheetDataForAction({
 
     case 'message_sent':
       if (mode === 'introduce_back') {
-        // v2.59: Introduction Campaign tabs are separate from connection
-        // tabs and may not have Stage / Status columns at all. Write ONLY
-        // to Introduction Status so IC tabs don't depend on Stage. Filter
-        // also reads from Introduction Status (campaign.js:~1442).
+        // Introduction Status is the per-mode source of truth — IC dedup reads
+        // it (candidate filter L1475-1482), NOT Stage. v2.13.x: also mirror to
+        // Status + Stage for visual consistency with every other mode. IC tabs
+        // are separate and may lack Stage/Status columns; the Apps Script
+        // FIELD_MAP silently ignores writes to absent columns, so this is safe.
         out.introStatus = 'IC Sent';
+        out.status      = 'IC Sent';
+        out.stage       = 'IC Sent';
       } else if (mode === 'message_only') {
-        // v2.61: Direct Messages mirrors IC — write ONLY DM Status.
-        // (workflow A — full IC symmetry). Dropping the legacy
-        // stage / status writes since the new filter reads only from
-        // DM Status. Sheets that previously gated on Stage = 'DM Sent'
-        // need to migrate to gating on DM Status = 'DM Sent'.
+        // DM Status is the per-mode source of truth (the "all connected"
+        // dedup path reads it — candidate filter L1486-1495). But Direct
+        // Messages run on the MAIN connection tabs, which have a Stage
+        // column, and the Stage-schema dedup path (candidate filter L1499
+        // + isDmIbEligible) treats Stage='DM Sent' as terminal. So Stage is
+        // the re-send guard on that path, not just a summary — write all
+        // three. (IC differs: separate tabs, dedup reads Introduction
+        // Status, so the introduce_back branch above stays column-only.)
         out.dmStatus = 'DM Sent';
+        out.status   = 'DM Sent';
+        out.stage    = 'DM Sent';
       } else {
         out.status   = 'DM Sent';
         out.dmStatus = 'DM Sent';
@@ -1098,10 +1124,21 @@ export function buildSheetDataForAction({
         out.connectionStatus = 'Connection Request Sent';
       }
       else if (mode === 'message_only')     {
-        // v2.61: Mirror IC — write only DM Status. See message_sent above.
+        // Mirror the message_sent branch: DM Status (per-mode) + Status +
+        // Stage. DM runs on connection tabs whose Stage-schema dedup reads
+        // Stage='DM Sent' as terminal, so an empty-Stage row must not stay
+        // empty after a re-run.
         out.dmStatus = 'DM Sent';
+        out.status   = 'DM Sent';
+        out.stage    = 'DM Sent';
       }
-      else if (mode === 'introduce_back')   { out.introStatus = 'IC Sent'; /* v2.59: IC writes only Introduction Status — see message_sent above */ }
+      else if (mode === 'introduce_back')   {
+        // Mirror the message_sent branch: Introduction Status (per-mode) +
+        // Status + Stage. See message_sent above for the FIELD_MAP safety note.
+        out.introStatus = 'IC Sent';
+        out.status      = 'IC Sent';
+        out.stage       = 'IC Sent';
+      }
       else if (mode === 'inmail_only')      { out.stage = 'InM Sent'; out.status = 'InM Sent'; out.inmStatus = 'InM Sent'; }
       else if (mode === 'open_profile_only') { out.stage = 'OP Sent'; out.status = 'OP Sent'; out.opStatus = 'OP Sent'; }
       return out;
@@ -2576,8 +2613,14 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             }));
 
             // Per-action side effects the pure helper can't capture.
-            if (result.action === 'connection_sent') {
+            // Count profiles with a monitorable pending invite this run — new
+            // (connection_sent) OR pre-existing (already_processed in CC+DM /
+            // CC+IC) — so a re-run on already-invited leads still transitions
+            // to monitoring instead of "0 sent → nothing to monitor".
+            if (countsAsMonitorableInvite(result.action, mode)) {
               profilesThatSentAtLeastOne.add(profileId);
+            }
+            if (result.action === 'connection_sent') {
               try {
                 const meta = await captureProfileMeta(page);
                 if (meta.memberId)     sheetData.linkedinUrn       = meta.memberId;
@@ -2700,6 +2743,26 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                 }
               } catch (err) {
                 log(`  ⚠ [${pName}] Bulk check threw: ${err.message}`);
+              }
+            }
+
+            // v2.59.x: CC+DM — leads found ALREADY connected at send time never
+            // went through the acceptance→bulk-check→auto-DM chain (they were
+            // never "pending"), so they were never messaged. Route them
+            // straight to the auto-DM here. The content-dedup inside runAutoDms
+            // prevents re-sending an identical message across reruns, and the
+            // existing "DM Sent" terminal skip keeps already-messaged rows out.
+            if (mode === 'connect_and_message' && result.action === 'already_connected') {
+              const ccBody = ((templates && templates.ccDmBody) || '').trim();
+              if (ccBody) {
+                try {
+                  await runAutoDms({
+                    page, profileId, profileName: pName, sheetUrl, linkedinColumn,
+                    connectedUrls: [url], templates, senderFirstNames, log,
+                  });
+                } catch (err) {
+                  log(`  ⚠ [${pName}] Auto-DM (already-connected) threw: ${err.message}`);
+                }
               }
             }
             // Record end reason when an account completes its per-run quota.
@@ -3279,6 +3342,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
             primaryIntroBody: (templates && templates.primaryIntroBody) || '',
             primaryUrl: (templates && templates.primaryUrl) || '',
             introTitle: (templates && templates.introTitle) || '',
+            // v2.59.x: persist the CC+DM body so the post-campaign sweep can
+            // fire the 1:1 auto-DM (shouldFirePostCampaignDm + runAutoDms).
+            ccDmBody: (templates && templates.ccDmBody) || '',
           });
         }
       }
@@ -3624,37 +3690,21 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // resume monitoring on a stopped campaign.
   try { await clearMonitoringState(); } catch { /* */ }
 
-  // ── Sheet stamping (single batch call) ──────────────────────────────
-  // Replaces the previous serial updateSheetRow loop (one HTTP round-trip
-  // per pending lead). With ~50 pending leads, the serial path took
-  // 2-5 minutes — long enough that the watcher tick fired a fresh check
-  // mid-stop. Batch path is one HTTP call regardless of count: ~5-10s.
-  let stampedCount = 0;
-  try {
-    const rows = await fetchSheetRows(sheetUrl);
-    const pendingUrls = computeStillPendingUrls(rows, linkedinColumn);
-    if (pendingUrls.length > 0) {
-      const updates = pendingUrls.map((url) => ({
-        linkedinUrl: url,
-        ...buildClosedNotConnectedUpdate(),
-      }));
-      const ok = await batchUpdateSheet(sheetUrl, updates);
-      if (ok) {
-        stampedCount = pendingUrls.length;
-      } else {
-        console.warn(`[stopMonitoring] batchUpdateSheet returned false for ${pendingUrls.length} pending lead(s)`);
-      }
-    }
-  } catch (err) {
-    console.warn(`[stopMonitoring] sheet stamp failed: ${err.message}`);
-  }
-
-  console.log(`[stopMonitoring] stamp batch done: stamped=${stampedCount} pending lead(s)`);
+  // ── No sheet stamping on stop ───────────────────────────────────────
+  // v2.6x (operator rule 2026-05): monitoring-stop no longer stamps
+  // 'Closed - Not Connected'. Stopping monitoring does NOT withdraw the
+  // LinkedIn invitation — it just stops us watching — so a still-pending lead
+  // must keep reading 'Connection Request Sent'. They may still accept later,
+  // at which point a fresh bulk-check flips them to 'Connected'. (Any legacy
+  // 'Closed - Not Connected' cells written by older builds are healed back to
+  // 'Connection Request Sent' by the next bulk-check pass — see
+  // computeBulkCheckUpdates in bulk-check-connections.js.)
+  const stampedCount = 0;
 
   // Append a final log line.
   const ts = `[${new Date().toISOString()}]`;
   campaign.logs = campaign.logs || [];
-  campaign.logs.push(`${ts} 🛏 Monitoring ended (reason: ${reason}) · ${stampedCount} still-pending lead(s) stamped Closed - Not Connected`);
+  campaign.logs.push(`${ts} 🛏 Monitoring ended (reason: ${reason}) · still-pending leads kept as "Connection Request Sent"`);
 
   console.log(`[stopMonitoring] return ok=true, stampedCount=${stampedCount}, reason=${reason}`);
   return { ok: true, stampedCount, reason };
@@ -3674,6 +3724,19 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
  */
 let _monitoringWatcherTimer = null;
 let _checkInProgress = false;
+
+/**
+ * v2.59.15 — let the MANUAL bulk-check (/api/bulk-check-now) report the same
+ * "a check is running" state the scheduled auto-check already does. The
+ * dashboard monitoring hero reads getCampaignStatus().monitoringCheckInProgress
+ * (= _checkInProgress) and flips to the gold pulsing "CHECKING / now" while
+ * it's true. server.js wraps its sweep loop in try/finally around this so a
+ * manual sweep shows CHECKING (collapsed or open) AND can't collide with a
+ * scheduled tick (tickMonitoringNow early-returns when _checkInProgress).
+ */
+export function setBulkCheckInProgress(on) {
+  _checkInProgress = !!on;
+}
 // v2.14.x: pre-fire heads-up. 15 s before each auto-check, fire a
 // desktop notification + cockpit log line so the operator can context-
 // switch out of LinkedIn before the bulk-check tab opens.

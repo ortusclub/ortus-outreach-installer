@@ -47,6 +47,23 @@ export function computePillState(s) {
     if (isMonitoring) labelSuffix = 'monitoring';
   }
 
+  // Footer/state label. The server sends raw campaign.state, which is null
+  // (→ 'idle') during ACTIVE sending — only flipping to 'monitoring'/'done'
+  // later. Derive a truthful display state so the console never reads
+  // "STATE · IDLE" while a campaign is actually running.
+  const displayState = isPaused ? 'paused'
+    : isMonitoring ? 'monitoring'
+    : s.running ? 'running'
+    : (s.state || 'idle');
+
+  // Selected GoLogin account roster for this run. Sent by the server as
+  // profileNames (campaign.js:1755) and present before/during/after a run —
+  // this is "who we selected", distinct from currentProfile (who's acting now).
+  const current = s.currentProfile || '';
+  const accounts = (Array.isArray(s.profileNames) ? s.profileNames : [])
+    .filter((n) => typeof n === 'string' && n.length)
+    .map((n) => ({ name: n, active: !!current && n === current }));
+
   return {
     dot,
     pulse,
@@ -57,9 +74,10 @@ export function computePillState(s) {
     total: Number(s.totalTargets) || 0,
     lead: (s.currentAction && s.currentAction.lead) || '—',
     account: s.currentProfile || '—',
+    accounts,
     action: (s.currentAction && s.currentAction.label) || '—',
-    state: s.state || 'idle',
-    logs: Array.isArray(s.logs) ? s.logs.slice(-3) : [],
+    state: displayState,
+    logs: Array.isArray(s.logs) ? s.logs.slice(-8) : [],
     errSegment: errCount > 0 ? `· ${errCount} err` : null,
     parkedSegment: parkedCount > 0 ? `· ${parkedCount} parked` : null,
     throttleReason: throttleActive ? (s.throttle.reason || null) : null,
@@ -69,14 +87,22 @@ export function computePillState(s) {
 function _emptyState() {
   return {
     dot: 'gray', pulse: false, label: '—', name: '—', mode: '—',
-    processed: 0, total: 0, lead: '—', account: '—', action: '—',
+    processed: 0, total: 0, lead: '—', account: '—', accounts: [], action: '—',
     state: 'idle', logs: [],
     errSegment: null, parkedSegment: null, throttleReason: null,
   };
 }
 
-export function shouldShowConsole({ running, hash }) {
-  if (!running) return false;
-  const onDashboard = hash === '#/' || hash === '' || hash == null;
-  return !onDashboard;
+// Persistent visibility. The console is a first-class monitor, NOT a
+// dashboard-only-when-away widget: it stays available whenever there is
+// campaign context to show — running, paused, monitoring, or just a selected
+// account roster staged before a run / left over after one ends. Route is
+// irrelevant (the old logic hid it on the dashboard, which is exactly where
+// the operator watches a run — hence "console showed nothing while running").
+// `hash` is accepted but ignored for back-compat with existing callers.
+export function shouldShowConsole({ running, paused, state, hasRoster } = {}) {
+  if (running || paused) return true;
+  if (state === 'monitoring') return true;
+  if (hasRoster) return true;
+  return false;
 }
