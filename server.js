@@ -1253,17 +1253,54 @@ app.get('/api/post-campaign-tracking', async (_req, res) => {
   }
 });
 
-// Manual bulk-check trigger from the wizard. Bypasses the 6h cooldown so
-// the operator can on-demand sweep their sheet for newly-accepted invites.
-// Refuses to run while a campaign is active to avoid GoLogin contention.
+// Manual bulk-check trigger. Bypasses the 60-min cooldown so the operator
+// can on-demand sweep their sheet for newly-accepted invites.
+//
+// v2.71: works mid-campaign. If a campaign is running and not already
+// paused, this endpoint pauses it, waits for the worker(s) to reach a
+// lead boundary (so browsers go idle), runs the sweep + auto-intros, then
+// resumes the campaign. Pause already triggered by the operator is left
+// in place after the sweep (we only auto-resume what we auto-paused).
 app.post('/api/bulk-check-now', async (req, res) => {
+  // v2.71: pause-if-running coordination. Captured before mutating campaign
+  // state so the finally block knows whether to resume.
+  const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
   try {
-    if (campaign.running) {
-      return res.status(409).json({ error: 'A campaign is currently running. Wait for it to finish or stop it first.' });
+    let { sheetUrl, linkedinColumn, profileId, profileIds,
+          primaryName, primaryIntroBody, primaryUrl, introTitle } = req.body || {};
+    // v2.71: if running, default to the campaign's own selected profiles so
+    // the sweep covers every account, not just the one the operator was
+    // looking at. Operator-provided profileIds in req.body still wins.
+    if (campaign.running && !(Array.isArray(profileIds) && profileIds.length > 0) && !profileId) {
+      profileIds = Array.isArray(campaign.profileIds) ? campaign.profileIds.slice() : [];
     }
-    const { sheetUrl, linkedinColumn, profileId, profileIds,
-            primaryName, primaryIntroBody, primaryUrl, introTitle } = req.body || {};
+    // v2.71: fall back to the campaign's sheetUrl too — the live "Run check
+    // now" button doesn't always re-post the sheet URL with the click.
+    if (!sheetUrl && campaign.running && campaign.sheetUrl) {
+      sheetUrl = campaign.sheetUrl;
+      linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
+    }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    // v2.71: pause the running campaign if it's actively sending. Pause is
+    // a flag-only request; workers acknowledge at the next lead boundary.
+    // We wait up to 90s for _paused to flip true — a normal lead completes
+    // in 10-60s, so 90s covers the slowest legitimate boundary plus margin.
+    if (_weShouldAutoResume) {
+      campaignLog('⏸ Manual bulk check — pausing campaign so browsers can run the sweep…');
+      pauseCampaign();
+      const deadline = Date.now() + 90_000;
+      while (!campaign._paused && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      if (!campaign._paused) {
+        // Pause didn't acknowledge in time — bail rather than risk
+        // browser contention with active workers. Operator can retry.
+        campaignLog('⚠ Manual bulk check — pause did not acknowledge in 90s; sweep aborted.');
+        return res.status(503).json({ error: 'Pause did not take effect within 90s. Wait for the current lead to finish, then retry.' });
+      }
+      campaignLog('✓ Campaign paused — starting sweep.');
+    }
 
     const token = process.env.GOLOGIN_API_TOKEN;
     const { bulkCheckConnections } = await import('./src/linkedin/bulk-check-connections.js');
@@ -1481,9 +1518,21 @@ app.post('/api/bulk-check-now', async (req, res) => {
         fetched: totalFetched,
       },
       perProfile,
+      autoPaused: _weShouldAutoResume,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  } finally {
+    // v2.71: ALWAYS resume if we were the ones who paused, even on error.
+    // Operator-initiated pauses are left in place — we only undo our own.
+    if (_weShouldAutoResume && campaign.running) {
+      try {
+        resumeCampaign();
+        campaignLog('▶ Manual bulk check done — campaign resumed.');
+      } catch (resumeErr) {
+        campaignLog(`⚠ Manual bulk check — resume failed: ${resumeErr.message}`);
+      }
+    }
   }
 });
 

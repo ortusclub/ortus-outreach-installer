@@ -428,6 +428,17 @@
        redundant (the campaign-name field + the launch rail already convey the
        draft). updateEditingBanner / updateSavePip null-guard the missing nodes. -->
 </div>
+      <!-- v2.71 — shown when the operator clicked the Edit pencil on a
+           STOPPED-EARLY past campaign. The wizard is prefilled with that
+           campaign's settings; clicking Save edits & resume persists any
+           changes and resumes the campaign from its prior totalProcessed
+           count (not from scratch). Banner + flags cleared on success
+           via submitStartCampaign's cleanup block. -->
+      <div id="wizard-resume-banner" class="wizard-queue-banner" style="display:none">
+        <strong>Editing a stopped campaign.</strong>
+        <span>Tweak any field below, then click <b>Save edits &amp; resume</b> to pick up where this campaign stopped.</span>
+        <button type="button" class="btn btn-primary" id="btn-save-edits-resume" onclick="saveEditsAndResume()" style="margin-left:12px">Save edits &amp; resume</button>
+      </div>
       <!-- Visible only when a campaign is already running. Tells the operator
            the new build will be queued (not edit the running one). -->
       <div id="wizard-queue-banner" class="wizard-queue-banner" style="display:none">

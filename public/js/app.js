@@ -3225,6 +3225,25 @@ async function submitStartCampaign(body, opts = {}) {
       }
       clearActiveDraft();
       localStorage.removeItem('wizardStoppedFromContext');
+      // v2.71: if we entered via Edit pencil on a stopped past row, that
+      // source row is now superseded by the freshly-launched resume — drop
+      // it from history so the dashboard doesn't accumulate duplicates.
+      // Matches resumeWithSameSettings's same-FIFO behaviour.
+      try {
+        const srcRaw = localStorage.getItem('editResumeSourceIdx');
+        const srcIdx = srcRaw != null ? parseInt(srcRaw, 10) : NaN;
+        if (Number.isInteger(srcIdx) && srcIdx >= 0) {
+          await fetch('/api/history/delete-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ indexes: [srcIdx] }),
+          }).catch(() => {});
+        }
+        localStorage.removeItem('editResumeSourceIdx');
+      } catch {}
+      // Hide the edit-resume banner now that the resume has launched.
+      const banner = document.getElementById('wizard-resume-banner');
+      if (banner) banner.style.display = 'none';
     } catch {}
     wizardDirty = false;
     _runningEditWarningShown = false;
@@ -10671,6 +10690,17 @@ window.dashBulkCheck = async function() {
       if (typeof showCampaignToast === 'function') showCampaignToast('No sheet URL');
       return;
     }
+    // v2.71: this request can take 1-5 min when the campaign is running
+    // (pause + per-profile sweep + auto-intros). Surface an immediate toast
+    // so the operator knows the click registered, then a final one on
+    // completion. The Live Log shows pause/resume + per-profile lines in
+    // the meantime.
+    const willPause = !!(s.running && !s.paused);
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(willPause
+        ? 'Pausing campaign + running bulk check…'
+        : 'Running bulk check…');
+    }
     const r = await fetch('/api/bulk-check-now', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -10682,7 +10712,12 @@ window.dashBulkCheck = async function() {
     });
     const body = await r.json().catch(() => ({}));
     if (body.ok) {
-      if (typeof showCampaignToast === 'function') showCampaignToast('Bulk check running…');
+      const result = body.result || {};
+      const matched = result.matched || 0;
+      const msg = body.autoPaused
+        ? `Bulk check done — ${matched} newly accepted. Campaign resumed.`
+        : `Bulk check done — ${matched} newly accepted.`;
+      if (typeof showCampaignToast === 'function') showCampaignToast(msg);
     } else {
       if (typeof showCampaignToast === 'function') showCampaignToast('Bulk check failed: ' + (body.error || 'unknown'));
     }
@@ -11500,9 +11535,11 @@ function v3RenderPastRow(p, displayIdx, safe) {
       <div class="pa-stats"><b>${sent}</b> sent</div>
       ${rateHtml}
       <div class="dock" id="${dockId}" role="toolbar" aria-label="${safe(p.name || '')} actions">
+        ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Resume" aria-label="Resume" onclick="window.dashResumePast(${oIdx})">${V3_SVG_PLAY}</button>` : ''}
         <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx})">${V3_SVG_RESTART}</button>
         <div class="dock-actions">
           <button class="dock-btn" data-tip="Open log" aria-label="Open log" onclick="window.dashOpenPastLog(${oIdx})">${V3_SVG_DOC}</button>
+          ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Edit &amp; resume" aria-label="Edit and resume" onclick="window.dashEditResumePast(${oIdx})">${V3_SVG_PENCIL}</button>` : ''}
           <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue" onclick="window.dashCopyPastToQueue(${oIdx})">${V3_SVG_COPY}</button>
           <button class="dock-btn" data-tip="Export CSV" aria-label="Export CSV" onclick="window.dashExportPast(${oIdx})">${V3_SVG_DOWNLOAD}</button>
           <button class="dock-btn danger" data-tip="Delete" aria-label="Delete" onclick="window.dashArchivePast(${oIdx})">${V3_SVG_ARCHIVE}</button>
@@ -11525,6 +11562,86 @@ window.togglePastExpanded = function() {
   const isExpanded = frame.classList.toggle('is-expanded');
   if (btn) btn.textContent = isExpanded ? 'Collapse' : 'Show all';
   if (header) header.setAttribute('aria-expanded', String(isExpanded));
+};
+
+// v2.71: Resume a stopped past campaign from where it stopped (no edits).
+// Wires the dock's Resume icon to the existing resumeFromPastRow flow.
+// The `_originalIdx` from v3 = the on-disk history idx, which matches
+// `pastCampaignsCache[i].idx` in the legacy renderer too — both paths
+// resolve to the same /api/campaign/start with resumeContext.
+window.dashResumePast = async function(originalIdx) {
+  // Build the legacy pastCampaignsCache shape so resumeWithSameSettings can
+  // look up the entry. v3 caches in _v3PastEntries by _originalIdx; the
+  // legacy code expects { idx, c } entries in pastCampaignsCache.
+  const entry = (_v3PastEntries || []).find(p => p._originalIdx === originalIdx);
+  if (!entry) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Past entry not found');
+    return;
+  }
+  pastCampaignsCache = (pastCampaignsCache || []);
+  if (!pastCampaignsCache.find(e => e.idx === originalIdx)) {
+    pastCampaignsCache.push({ idx: originalIdx, c: entry });
+  }
+  if (typeof resumeFromPastRow === 'function') resumeFromPastRow(originalIdx);
+};
+
+// v2.71: Edit + resume flow. Prefill the wizard with the past campaign's
+// settings, set localStorage hooks so:
+//   • the existing startCampaign auto-attaches resumeContext.totalProcessed
+//     (via the wizardStoppedFromContext mechanism — name-match required)
+//   • submitStartCampaign's success block knows which source past entry to
+//     delete after the resume launches (editResumeSourceIdx)
+// Then shows the wizard's resume banner with the "Save edits & resume"
+// button so the operator has a clearly-labelled commit action.
+window.dashEditResumePast = async function(originalIdx) {
+  const entry = (_v3PastEntries || []).find(p => p._originalIdx === originalIdx);
+  if (!entry || !entry.settings) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('No saved settings on this row');
+    return;
+  }
+  const s = entry.settings;
+  const config = {
+    mode: entry.mode,
+    sheetUrl: s.sheetUrl || '',
+    dailyLimit: s.dailyLimit ?? 50,
+    delayMin: s.delayMin ?? 15,
+    delayMax: s.delayMax ?? 45,
+    linkedinColumn: s.linkedinColumn || '',
+    messageOpenProfiles: !!s.messageOpenProfiles,
+    addNote: !!(s.templates && s.templates.connectionNote),
+    templates: s.templates || {},
+    profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+    concurrency: s.concurrency ?? 1,
+    senderFirstNames: s.senderFirstNames || {},
+  };
+  // Seed the resume hooks BEFORE navigation so the wizard view picks them up.
+  try {
+    localStorage.setItem('wizardStoppedFromContext', JSON.stringify({
+      name: entry.name || '',
+      totalProcessed: Number(entry.totalProcessed) || Number(entry.successCount) || 0,
+    }));
+    localStorage.setItem('editResumeSourceIdx', String(originalIdx));
+  } catch {}
+  if (typeof goCreateCampaign === 'function') goCreateCampaign();
+  setTimeout(() => {
+    if (typeof applyPresetConfig === 'function') applyPresetConfig(config);
+    // Restore the original name UNMODIFIED — resume requires name match.
+    const nameInput = document.getElementById('campaign-name-input');
+    if (nameInput) nameInput.value = (entry.name || '').trim();
+    // Show the resume banner with the labelled commit button.
+    const banner = document.getElementById('wizard-resume-banner');
+    if (banner) banner.style.display = '';
+  }, 100);
+};
+
+// v2.71: explicit commit button for the edit-resume flow. Functionally the
+// same as the wizard Start button (resumeContext is auto-attached from
+// wizardStoppedFromContext), just labelled clearly so the operator knows
+// this is the persist-changes-and-resume action vs. a fresh launch.
+window.saveEditsAndResume = async function() {
+  if (typeof startCampaign === 'function') {
+    await startCampaign({});
+  }
 };
 
 window.dashRerunPast = async function(originalIdx) {
