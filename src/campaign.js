@@ -1294,6 +1294,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   // tickMonitoringNow (reschedule after each fire). Persisted via
   // monitoring-persistence so post-restart rehydration honors it.
   campaign.checkIntervalMinutes = checkIntervalMinutes;
+  campaign.dailyLimit = dailyLimit;
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
   _resetSampleCache();           // clear module-level cache so first sample() is fresh
@@ -3589,6 +3590,8 @@ export function getCampaignStatus() {
     sheetUrl: campaign.sheetUrl || '',
     profileNames: campaign.profileNames || [],
     profileIds: campaign.profileIds || [],
+    dailyLimit: campaign.dailyLimit || 0,
+    campaignCounts: { ...campaignCounts },
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),

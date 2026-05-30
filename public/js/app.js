@@ -10230,6 +10230,67 @@ function v3FmtClock(d) {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
+// v2.70.1: per-profile rows on the active card. Matches the chip set used by
+// renderAccountQueue (#account-queue in the legacy Live Status section) but
+// in a compact one-line-per-profile layout. Shows: name · status chip ·
+// "X / Y today" (per-profile sent count from campaignCounts vs dailyLimit).
+// Hidden when there's nothing to render (no campaign / no profile names).
+function _activeProfileChip(name, status) {
+  const findIn = (arr) => Array.isArray(arr)
+    ? arr.find(x => x?.profileName === name || x?.pName === name || x?.name === name || x?.account === name) || null
+    : null;
+  const parkedHit = findIn(status.parked || status.parkedProfiles);
+  const warningHit = findIn(status.softWarnings);
+  const endHit = findIn(status.profileEndReasons);
+  const isActive = status.currentProfile && name === status.currentProfile;
+  if (isActive) return { label: 'Sending', cls: 'is-sending' };
+  if (parkedHit) {
+    const r = parkedHit.reason;
+    if (r === 'session_expired')  return { label: 'Needs login',         cls: 'is-warn' };
+    if (r === 'weekly_limit_429') return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
+    if (r === 'consecutive_skips') return { label: 'Parked·skips',       cls: 'is-warn' };
+    return { label: 'Parked', cls: 'is-warn' };
+  }
+  if (warningHit) {
+    if (warningHit.kind === 'weekly_limit') return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
+    if (warningHit.kind === 'rate_limited') return { label: 'Rate limited', cls: 'is-warn' };
+    return { label: 'Action needed', cls: 'is-warn' };
+  }
+  if (endHit) {
+    const r = String(endHit.reason || '');
+    if (/InMail/i.test(r))          return { label: 'LinkedIn cap·InMail', cls: 'is-warn' };
+    if (/weekly|429/i.test(r))      return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
+    if (/session expired/i.test(r)) return { label: 'Needs login', cls: 'is-warn' };
+    return { label: 'Batch done', cls: 'is-done' };
+  }
+  return { label: 'Queued', cls: 'is-idle' };
+}
+
+function renderActiveProfiles(status) {
+  const el = document.getElementById('active-profiles');
+  if (!el) return;
+  const names = Array.isArray(status?.profileNames) ? status.profileNames : [];
+  const ids   = Array.isArray(status?.profileIds)   ? status.profileIds   : [];
+  if (!names.length) { el.hidden = true; el.innerHTML = ''; return; }
+  const counts = status.campaignCounts || {};
+  const cap    = Number(status.dailyLimit) || 0;
+  const rows = names.map((name, i) => {
+    const id = ids[i] || '';
+    const chip = _activeProfileChip(name, status);
+    const sent = id ? (Number(counts[id]) || 0) : 0;
+    const todayCell = cap > 0 ? `${sent}/${cap} today` : `${sent} today`;
+    return `
+      <div class="vj-prof-row ${chip.cls}">
+        <span class="vj-prof-name" title="${escHtml(name)}">${escHtml(name)}</span>
+        <span class="vj-prof-chip">${escHtml(chip.label)}</span>
+        <span class="vj-prof-today">${escHtml(todayCell)}</span>
+      </div>
+    `;
+  }).join('');
+  el.innerHTML = rows;
+  el.hidden = false;
+}
+
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
@@ -10262,6 +10323,8 @@ window.renderActiveCard = function(status) {
     window.__activeCardActive = false;
     const liveEl0 = document.getElementById('active-live');
     if (liveEl0) liveEl0.hidden = true;
+    const profEl0 = document.getElementById('active-profiles');
+    if (profEl0) { profEl0.hidden = true; profEl0.innerHTML = ''; }
     return;
   }
   card.classList.remove('is-empty');
@@ -10299,6 +10362,7 @@ window.renderActiveCard = function(status) {
   v3SetText('activeTotal', String(total));
   v3SetText('activeAccounts', String(((isMonitoring ? status.participatingProfileIds : status.profileIds) || status.profileIds || []).length));
   v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
+  try { renderActiveProfiles(status); } catch (err) { console.warn('[active-profiles] render failed:', err.message); }
   const isPaused = !!(status._paused || status.paused);
   v3SetText('sendingLbl', isMonitoring
     ? (status.monitoringCheckInProgress ? 'Checking now…' : 'Monitoring')
