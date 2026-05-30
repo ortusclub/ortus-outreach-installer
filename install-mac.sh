@@ -5,7 +5,7 @@
 # quarantine attribute (so macOS Gatekeeper does not block it), and launches.
 #
 # Usage (paste into Terminal):
-#   curl -fsSL https://raw.githubusercontent.com/ortusclub/ortus-outreach-installer/main/install-mac.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ortusclub/ortus-outreach-installer/main/install.sh | bash
 
 set -eo pipefail
 
