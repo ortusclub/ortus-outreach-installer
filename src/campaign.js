@@ -34,6 +34,7 @@ import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
+import { registerReplySchedule as registerReplyTracking } from './post-campaign-reply-check.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
@@ -84,6 +85,17 @@ const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent
 
 /** Hard cap — 5 leads per batch per profile, for ALL modes (D-01). Not configurable. */
 export const BATCH_SIZE = 5;
+
+/** Pure helper — human-readable label for a parked-profile reason code.
+ *  Used by the end-of-run "why did it stop" notice (v2.72). */
+export function prettyParkReason(reason) {
+  switch (reason) {
+    case 'session_expired':   return 'logged out / session expired';
+    case 'weekly_limit_429':  return 'weekly invite limit reached';
+    case 'consecutive_skips': return 'too many consecutive skips / failures';
+    default:                  return reason || 'parked';
+  }
+}
 
 /** Phase 2.8.20 (W2-A1) — per-lead watchdog timeout. Catches Puppeteer hangs
  *  that the protocol-level 120s timeout would otherwise paper over. Default
@@ -1238,6 +1250,10 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   // the cockpit stays IDLE instead of flipping to Monitoring.
   campaign.state = null;
   campaign.sendingEndedAt = null;
+  // v2.72: one-shot "no more rows to process" notice for the dashboard popup.
+  // Cleared on each new run; set in the finally block when a campaign ends
+  // naturally (ran out of rows) rather than via operator-Stop or an error.
+  campaign._endNotice = null;
   campaign.monitoringUntil = null;
   campaign.nextCheckAt = null;
   campaign.participatingProfileIds = [];
@@ -1345,6 +1361,12 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     },
     openProfileSubject: templates.openProfileSubject || templates.opSubject || '',
     openProfileBody: templates.openProfileBody || templates.opBody || '',
+    // v2.72: Open Profile send channel + InMail fallback. opChannel is one of
+    // sn_first (default) | sn_only | ln_first | ln_only; opSpendInMail gates
+    // whether non-Open-Profile leads cost an InMail credit. Read in
+    // outreach.js force_open_profile branch.
+    opChannel: templates.opChannel || 'sn_first',
+    opSpendInMail: !!templates.opSpendInMail,
     // 2.8.50: Introduction Messages — when introMode is true, sendMessage
     // routes to sendIntroMessage which adds introName as a second recipient
     // and sets a group title. Sheet stamp becomes "sent IC".
@@ -3192,6 +3214,46 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // Stop, mark accordingly. campaign._abort is set by stopCampaign().
     if (endReason !== 'errored' && campaign._abort) endReason = 'stopped';
 
+    // v2.72: build a one-shot "why did it stop" notice the dashboard turns into
+    // a popup. Covers every end reason — errored, operator-stopped, all accounts
+    // parked (self-stop), or simply no more rows to process. The frontend
+    // decides which to surface (it skips the operator-Stop case as redundant).
+    {
+      const _profileCount = (campaign.profileIds || []).length || 0;
+      const _parked = campaign.parkedProfiles || [];
+      const _parkedCount = _parked.length;
+      let _reason, _detail = '';
+      if (endReason === 'errored') {
+        _reason = 'error';
+        const _lastErr = (campaign.errors || [])[campaign.errors.length - 1];
+        _detail = (_lastErr && _lastErr.message) ? String(_lastErr.message) : 'An unexpected error stopped the campaign.';
+      } else if (endReason === 'stopped') {
+        _reason = 'operator_stopped';
+        _detail = 'You stopped the campaign.';
+      } else if (_parkedCount > 0 && _parkedCount >= _profileCount) {
+        // Every account was parked (weekly limit, logged out, out of credits) —
+        // the campaign couldn't continue even if rows remain.
+        _reason = 'all_parked';
+        _detail = _parked
+          .map((p) => `${p.pName || p.profileId || 'Account'}: ${prettyParkReason(p.reason)}`)
+          .slice(0, 6).join(' · ');
+      } else {
+        _reason = 'no_more_rows';
+      }
+      campaign._endNotice = {
+        reason: _reason,
+        detail: _detail,
+        endReason,
+        mode,
+        name: campaign.name || '',
+        sheetUrl: sheetUrl || '',
+        processed: campaign.totalProcessed || 0,
+        targets: campaign.totalTargets || 0,
+        parkedCount: _parkedCount,
+        ts: Date.now(),
+      };
+    }
+
     // Save campaign history (D-10)
     try {
       await appendHistory({
@@ -3357,6 +3419,39 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       }
     } catch (regErr) {
       console.error('Failed to register post-campaign tracking:', regErr.message);
+    }
+
+    // v2.72: Register an hourly reply-tracking window for every profile that
+    // sent at least one message. Applies to the message-sending modes (the
+    // unified Message Campaign + Introduction + the Connect+message variants).
+    // Independent of acceptanceTrackingDays — defaults to a 7-day window so
+    // replies are still caught even when the operator didn't set a tracking
+    // window. Skipped on the explicit "Stop everything" opt-out.
+    try {
+      const _REPLY_MODES = new Set(['open_profile_only', 'introduce_back', 'message_only', 'connect_and_introduce', 'connect_and_message']);
+      if (!campaign._skipCleanup && _REPLY_MODES.has(mode)) {
+        const _sheetId = _extractSheetIdFromUrl(sheetUrl);
+        const _replyDays = acceptanceTrackingDays > 0 ? acceptanceTrackingDays : 7;
+        // Scan back to the campaign's first send-out minus a 12h safety buffer.
+        const _startMs = campaign.startedAt ? Date.parse(campaign.startedAt) : Date.now();
+        const _scanSinceMs = (Number.isFinite(_startMs) ? _startMs : Date.now()) - 12 * 60 * 60 * 1000;
+        for (let i = 0; i < (campaign.profileIds || []).length; i++) {
+          const pid = campaign.profileIds[i];
+          const pName = (campaign.profileNames || [])[i] || pid;
+          await registerReplyTracking({
+            sheetId: _sheetId,
+            sheetUrl,
+            profileId: pid,
+            profileName: pName,
+            linkedinColumn,
+            days: _replyDays,
+            operatorEmail: campaign.createdBy,
+            scanSinceMs: _scanSinceMs,
+          });
+        }
+      }
+    } catch (regErr) {
+      console.error('Failed to register reply tracking:', regErr.message);
     }
 
     campaign.running = false;
@@ -3594,6 +3689,8 @@ export function getCampaignStatus() {
     mode: campaign.mode || '',
     name: campaign.name || '',
     sheetUrl: campaign.sheetUrl || '',
+    // v2.72: one-shot end-of-run notice (no more rows) for the dashboard popup.
+    endNotice: campaign._endNotice || null,
     profileNames: campaign.profileNames || [],
     profileIds: campaign.profileIds || [],
     dailyLimit: campaign.dailyLimit || 0,

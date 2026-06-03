@@ -404,6 +404,9 @@ function doPost(e) {
       case 'clearRecentConnections':
         return handleClearRecentConnections(spreadsheet, data);
 
+      case 'writeRecentMessages':
+        return handleWriteRecentMessages(spreadsheet, data);
+
       case 'getRowStatus':
         return handleGetRowStatus(sheet, data);
     }
@@ -1611,4 +1614,87 @@ function handleClearRecentConnections(spreadsheet, data) {
     sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
   }
   return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: cleared });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: writeRecentMessages — sidecar tab dump of inbound replies (v2.72)
+// ═══════════════════════════════════════════════════════════════════════════
+// The reply-check counterpart of writeRecentConnections. The bot sends
+// `data.messages` (array of {account, name, lastMessage, receivedAt, matched})
+// — INBOUND replies only, from 1:1 conversations only (group threads are
+// filtered out bot-side), last message only. ONE shared "Recent Messages" tab
+// holds every account's replies, distinguished by the leading 'Account' column.
+// Each call refreshes only THIS account's rows (so the latest last-message per
+// person wins) and leaves other accounts' rows untouched.
+var RECENT_MSG_TAB_NAME = 'Recent Messages';
+var RECENT_MSG_HEADERS = ['Account', 'Name', 'Last Message', 'Received At', 'Matched Lead', 'Fetched At'];
+
+function handleWriteRecentMessages(spreadsheet, data) {
+  var messages = Array.isArray(data.messages) ? data.messages : [];
+  var sender = (data.sender || '').toString().trim();
+  var senderLower = sender.toLowerCase();
+
+  var sheet = spreadsheet.getSheetByName(RECENT_MSG_TAB_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(RECENT_MSG_TAB_NAME);
+  }
+
+  // Header row — write/refresh defensively in case columns drift.
+  var firstRow = sheet.getRange(1, 1, 1, RECENT_MSG_HEADERS.length).getValues()[0];
+  var headerNeedsWrite = false;
+  for (var h = 0; h < RECENT_MSG_HEADERS.length; h++) {
+    if (firstRow[h] !== RECENT_MSG_HEADERS[h]) { headerNeedsWrite = true; break; }
+  }
+  if (headerNeedsWrite) {
+    sheet.getRange(1, 1, 1, RECENT_MSG_HEADERS.length)
+      .setValues([RECENT_MSG_HEADERS])
+      .setFontWeight('bold')
+      .setBackground('#f1f3f4');
+    sheet.setFrozenRows(1);
+  }
+
+  // Read existing rows once.
+  var lastRow = sheet.getLastRow();
+  var existing = [];
+  if (lastRow >= 2) {
+    existing = sheet.getRange(2, 1, lastRow - 1, RECENT_MSG_HEADERS.length).getValues();
+  }
+
+  // Keep every OTHER account's rows; this account's rows are fully refreshed
+  // from `messages` (the latest last-message per person).
+  var keptRows = [];
+  for (var r = 0; r < existing.length; r++) {
+    var rowAccount = (existing[r][0] || '').toString().trim().toLowerCase();
+    if (rowAccount !== senderLower) keptRows.push(existing[r]);
+  }
+
+  var fetchedAt = new Date().toISOString();
+  var seenNames = {};
+  var appended = 0;
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
+    var nm = (m.name || '').toString().trim();
+    var dedupKey = nm.toLowerCase() + '|' + (m.lastMessage || '').toString().trim().toLowerCase();
+    if (seenNames[dedupKey]) continue;       // same person + same last message
+    seenNames[dedupKey] = true;
+    keptRows.push([
+      m.account || sender,
+      nm,
+      (m.lastMessage || '').toString(),
+      m.receivedAt ? new Date(m.receivedAt).toISOString() : '',
+      m.matched ? 'Yes' : 'No',
+      fetchedAt,
+    ]);
+    appended++;
+  }
+
+  // Rewrite the data area with the combined set.
+  if (lastRow >= 2) {
+    sheet.getRange(2, 1, lastRow - 1, RECENT_MSG_HEADERS.length).clearContent();
+  }
+  if (keptRows.length > 0) {
+    sheet.getRange(2, 1, keptRows.length, RECENT_MSG_HEADERS.length).setValues(keptRows);
+  }
+
+  return jsonResponse({ ok: true, tab: RECENT_MSG_TAB_NAME, rows: appended });
 }

@@ -100,9 +100,9 @@ function _emptyState() {
 // irrelevant (the old logic hid it on the dashboard, which is exactly where
 // the operator watches a run — hence "console showed nothing while running").
 // `hash` is accepted but ignored for back-compat with existing callers.
-export function shouldShowConsole({ running, paused, state, hasRoster } = {}) {
-  if (running || paused) return true;
-  if (state === 'monitoring') return true;
-  if (hasRoster) return true;
-  return false;
+export function shouldShowConsole(/* { running, paused, state, hasRoster } = {} */) {
+  // v2.72: the operator wants the log ALWAYS available — on the dashboard, while
+  // building a new campaign, idle, running, or monitoring. Always show the
+  // console (it collapses to the right-edge "Console" lip when not expanded).
+  return true;
 }

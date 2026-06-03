@@ -398,6 +398,37 @@ export async function clearRecentConnectionsTab(sheetUrl) {
   }
 }
 
+/**
+ * v2.72: Dump inbound replies (1:1 threads only, last message only) into a
+ * shared "Recent Messages" sidecar tab — the reply-check counterpart of
+ * writeRecentConnectionsTab. Each call refreshes only THIS account's rows so
+ * the latest last-message wins. `messages` items: { account, name,
+ * lastMessage, receivedAt, matched }. Requires the Apps Script's
+ * `writeRecentMessages` handler (redeploy needed). Best-effort.
+ */
+export async function writeRecentMessagesTab(sheetUrl, sender, messages, activeSenders) {
+  if (!getWebAppUrl()) return null;
+  const sheetId = extractSheetId(sheetUrl);
+  try {
+    const result = await postToWebApp({
+      action: 'writeRecentMessages',
+      sheetId,
+      sender: sender || '',
+      messages: messages || [],
+      activeSenders: Array.isArray(activeSenders) ? activeSenders : [],
+    });
+    if (result?.ok) {
+      console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}"`);
+      return true;
+    }
+    if (result?.error) console.warn(`[sheets-writer] writeRecentMessages failed: ${result.error}`);
+    return null;
+  } catch (err) {
+    console.warn(`[sheets-writer] writeRecentMessages threw: ${err.message}`);
+    return null;
+  }
+}
+
 export async function batchUpdateSheet(sheetUrl, updates) {
   if (!getWebAppUrl() || !updates.length) return false;
 

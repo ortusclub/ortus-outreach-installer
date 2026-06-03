@@ -209,15 +209,26 @@ export async function performWriteBack(sheetUrl, linkedinUrl, reply, linkedinCol
  *   newWatermark?: number   // undefined on failure → caller must NOT advance
  * }
  */
-export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, linkedinColumn }) {
+export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, linkedinColumn, page = null, pName = null }) {
   const startTime = Date.now();
   const replies = [];
   const ambiguous = [];
   const errors = [];
+  // v2.72: inbound replies in 1:1 threads (groups ignored), last message only —
+  // dumped to the "Recent Messages" sidecar tab by the caller.
+  const recentMessages = [];
 
+  // v2.72: optional pre-opened page (mid-campaign reply check reusing a paused
+  // profile's browser). When supplied we reuse it and must NOT close it.
   let session = null;
+  let _ownSession = false;
   try {
-    session = await _deps.ensureOpen(profileId);
+    if (page) {
+      session = { page, profileId, pName: pName || profileId };
+    } else {
+      session = await _deps.ensureOpen(profileId);
+      _ownSession = true;
+    }
     if (!session || !session.page) {
       return { replies, ambiguous, errors: ['ensureOpen returned no session'] };
     }
@@ -238,17 +249,32 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
       } catch (e) {
         return { replies, ambiguous, errors: [`navigation to /messaging/ failed: ${e.message}`] };
       }
-      // Give the messenger XHR up to ~8s to fire. Re-poll the performance
-      // entries until we see one, then proceed. If it never fires,
-      // getConversationsPage will return null and we surface a clean error.
+      // v2.72: LinkedIn loads the inbox lazily, so the messengerConversations
+      // XHR doesn't always fire on plain navigation — give it time AND nudge it
+      // by scrolling the conversation list, then poll the performance entries
+      // for up to ~20s (was 8s, which was timing out and yielding 0 results).
       if (typeof session.page.waitForFunction === 'function') {
+        await new Promise(r => setTimeout(r, 2500));
+        try {
+          await session.page.evaluate(() => {
+            const list = document.querySelector(
+              '.msg-conversations-container__conversations-list, ' +
+              'ul[class*="conversations-list"], .scaffold-layout__list-detail, .scaffold-layout__list'
+            );
+            if (list) {
+              list.scrollTop = list.scrollHeight;
+              list.dispatchEvent(new Event('scroll', { bubbles: true }));
+            }
+            window.scrollTo(0, document.body.scrollHeight);
+          });
+        } catch { /* best-effort nudge */ }
         try {
           await session.page.waitForFunction(
             () => performance.getEntriesByType('resource')
               .some(e => typeof e.name === 'string' && e.name.includes('queryId=messengerConversations')),
-            { timeout: 8000 },
+            { timeout: 20000 },
           );
-        } catch { /* fall through — getConversationsPage will return null */ }
+        } catch { /* fall through — getConversationsPage will return null and we surface a clean error */ }
       }
     }
 
@@ -296,10 +322,43 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
 
     for (const conv of convs) {
       const lastMessage = conv.lastMessage || null;
+      // v2.72: did the LEAD send the last message (inbound reply) or did we?
+      const _leadP = (Array.isArray(conv.participants) && conv.participants[0]) || null;
+      let _inbound = false;
+      if (lastMessage) {
+        const _actor = lastMessage.actor || {};
+        const _sameUrl = _leadP?.profileUrl && _actor?.profileUrl && _leadP.profileUrl === _actor.profileUrl;
+        const _sameName = _leadP?.firstName && _actor?.firstName
+          && normName(_leadP.firstName) === normName(_actor.firstName)
+          && normName(_leadP.lastName || '') === normName(_actor.lastName || '');
+        _inbound = !!(_sameUrl || _sameName);
+      }
+      const _convName = [_leadP?.firstName, _leadP?.lastName].filter(Boolean).join(' ').trim();
       const match = matchConversationToSheet(conv, candidateRows);
 
+      // v2.72: Recent Messages dump — inbound replies in 1:1 threads only
+      // (participants holds just the other person; >1 means a group → skip),
+      // last message only. Captured regardless of whether it matched a lead.
+      const _participantCount = Array.isArray(conv.participants) ? conv.participants.length : 1;
+      if (_inbound && _participantCount === 1 && lastMessage) {
+        recentMessages.push({
+          account: session.pName || profileId,
+          name: _convName,
+          lastMessage: lastMessage.text || '',
+          receivedAt: lastMessage.deliveredAt ? new Date(lastMessage.deliveredAt).toISOString() : '',
+          matched: !!(match && match.match),
+        });
+      }
+
       if (match.reason === 'ambiguous') {
-        ambiguous.push({ conv, candidates: match.candidates });
+        // v2.72: same-name leads → can't attribute uniquely. Flag as a suspected
+        // reply for manual review instead of stamping the wrong campaign row.
+        ambiguous.push({
+          conv, candidates: match.candidates,
+          inbound: _inbound, name: _convName,
+          snippet: lastMessage?.text || '',
+          timestamp: lastMessage?.deliveredAt || conv.lastActivityAt,
+        });
         continue;
       }
       if (match.reason === 'unmatched') continue;
@@ -358,14 +417,17 @@ export async function checkProfileDms(profileId, { watermark = 0, sheetUrl, link
         snippet: lastMessage?.text || '',
         threadId: conv.threadId,
         timestamp: lastMessage?.deliveredAt || conv.lastActivityAt,
+        inbound: _inbound,
+        leadUrl: linkedinUrl,
+        name: _convName,
       });
     }
 
-    return { replies, ambiguous, errors, newWatermark: startTime };
+    return { replies, ambiguous, errors, recentMessages, newWatermark: startTime };
   } catch (e) {
-    return { replies, ambiguous, errors: [`checkProfileDms threw: ${e.message}`] };
+    return { replies, ambiguous, errors: [`checkProfileDms threw: ${e.message}`], recentMessages };
   } finally {
-    if (session) {
+    if (session && _ownSession) {
       try { await _deps.closeSession(profileId); } catch { /* best-effort */ }
     }
   }
@@ -624,7 +686,7 @@ export async function extractDmThreadFromPage(page, leadPublicId) {
  * Returns the same shape as checkProfileDms: { replies, ambiguous, errors,
  * newWatermark }. `replies[i].messages` holds the full scraped thread.
  */
-export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn, shouldAbort, log }) {
+export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linkedinColumn, shouldAbort, log, page = null }) {
   const startTime = Date.now();
   const replies = [];
   const ambiguous = [];
@@ -635,9 +697,19 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
     if (typeof log === 'function') { try { log(msg); } catch { /* */ } }
   };
 
+  // v2.72: when the caller supplies a pre-opened `page` (e.g. /api/reply-check-now
+  // running mid-campaign on a paused profile's browser), reuse it and DO NOT
+  // close it — the caller owns the session lifecycle. Otherwise manage our own
+  // session as before (open on entry, close in finally).
   let session = null;
+  let _ownSession = false;
   try {
-    session = await _deps.ensureOpen(profileId);
+    if (page) {
+      session = { page, profileId };
+    } else {
+      session = await _deps.ensureOpen(profileId);
+      _ownSession = true;
+    }
     if (!session || !session.page) {
       return { replies, ambiguous, errors: ['ensureOpen returned no session'] };
     }
@@ -875,7 +947,7 @@ export async function checkProfileDmsPerLead(profileId, leads, { sheetUrl, linke
   } catch (e) {
     return { replies, ambiguous, errors: [`checkProfileDmsPerLead threw: ${e.message}`] };
   } finally {
-    if (session) {
+    if (session && _ownSession) {
       try { await _deps.closeSession(profileId); } catch { /* best-effort */ }
     }
   }

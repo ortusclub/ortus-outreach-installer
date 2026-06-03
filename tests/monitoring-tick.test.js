@@ -34,8 +34,10 @@ test('tickMonitoringNow fires when nextCheckAt is overdue and reschedules', asyn
   assert.equal(fired, true);
   const s = getCampaignState();
   const nextMs = new Date(s.nextCheckAt).getTime();
-  assert.ok(nextMs > Date.now() + 29 * 60_000, 'nextCheckAt should be ~30 min in the future');
-  assert.ok(nextMs <= Date.now() + 31 * 60_000, 'nextCheckAt should not exceed 30 min + slack');
+  // v2.71: monitoring cadence has a 60-min floor (once-per-hour rule), so a
+  // 30-min checkIntervalMinutes is clamped up to ~60 min.
+  assert.ok(nextMs > Date.now() + 59 * 60_000, 'nextCheckAt should be ~60 min in the future (60-min floor)');
+  assert.ok(nextMs <= Date.now() + 61 * 60_000, 'nextCheckAt should not exceed 60 min + slack');
 });
 
 test('tickMonitoringNow does not reschedule when state changes during fire', async () => {

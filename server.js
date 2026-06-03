@@ -23,6 +23,8 @@ import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updat
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
+import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule } from './src/post-campaign-reply-check.js';
+import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
@@ -1253,6 +1255,32 @@ app.get('/api/post-campaign-tracking', async (_req, res) => {
   }
 });
 
+// v2.72: Replies panel — inbound replies found by the hourly reply-check (and
+// the manual Check DMs flow), newest first, plus the active reply-tracking
+// windows. The dashboard polls this to show who replied + the message text.
+app.get('/api/replies', async (_req, res) => {
+  try {
+    const [replies, unseen, windows] = await Promise.all([
+      listReplies({ limit: 100 }),
+      unseenReplyCount(),
+      listReplyCheckSchedule(),
+    ]);
+    res.json({ replies, unseen, windows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mark all recorded replies as acknowledged (clears the panel's unseen badge).
+app.post('/api/replies/seen', async (_req, res) => {
+  try {
+    await markRepliesSeen();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Manual bulk-check trigger. Bypasses the 60-min cooldown so the operator
 // can on-demand sweep their sheet for newly-accepted invites.
 //
@@ -1532,6 +1560,152 @@ app.post('/api/bulk-check-now', async (req, res) => {
       } catch (resumeErr) {
         campaignLog(`⚠ Manual bulk check — resume failed: ${resumeErr.message}`);
       }
+    }
+  }
+});
+
+// v2.72: Manual "Run reply check now" — the messaging-campaign counterpart of
+// /api/bulk-check-now. Instead of sweeping connection acceptances, it scrapes
+// each sent lead's thread for inbound replies (writes Reply/ReplyAt/Stage to
+// the sheet + Replies tab via checkProfileDmsPerLead, and records them to the
+// in-app replies panel). Works mid-campaign with the same pause/resume +
+// idempotent-launch pattern as bulk-check-now, so the paused campaign's own
+// browser is reused and never closed out from under it.
+app.post('/api/reply-check-now', async (req, res) => {
+  const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
+  try {
+    let { sheetUrl, linkedinColumn, profileIds } = req.body || {};
+    if (campaign.running && !(Array.isArray(profileIds) && profileIds.length > 0)) {
+      profileIds = Array.isArray(campaign.profileIds) ? campaign.profileIds.slice() : [];
+    }
+    if (!sheetUrl && campaign.running && campaign.sheetUrl) {
+      sheetUrl = campaign.sheetUrl;
+      linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
+    }
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    if (_weShouldAutoResume) {
+      campaignLog('⏸ Manual reply check — pausing campaign so the browser can scan threads…');
+      pauseCampaign();
+      const deadline = Date.now() + 90_000;
+      while (!campaign._paused && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      if (!campaign._paused) {
+        campaignLog('⚠ Manual reply check — pause did not acknowledge in 90s; aborted.');
+        return res.status(503).json({ error: 'Pause did not take effect within 90s. Wait for the current lead to finish, then retry.' });
+      }
+      campaignLog('✓ Campaign paused — starting reply check.');
+    }
+
+    const token = process.env.GOLOGIN_API_TOKEN;
+    const { checkProfileDms } = await import('./src/linkedin/check-dms.js');
+    const { appendReplies } = await import('./src/replies-log.js');
+    const { scanRepliesForProfile } = await import('./src/post-campaign-reply-check.js');
+    const { writeRecentMessagesTab } = await import('./src/sheets-writer.js');
+    const { closeProfile: _closeProfile } = await import('./src/gologin-launcher.js');
+
+    // Scan window: back to the campaign's first send-out minus a 12h buffer.
+    const _startMs = campaign.startedAt ? Date.parse(campaign.startedAt) : NaN;
+    const _replyWatermark = (Number.isFinite(_startMs) ? _startMs : (Date.now() - 14 * 86400000)) - 12 * 60 * 60 * 1000;
+
+    // Load the sheet once, resolve profile names, group sent rows by sender.
+    let rows;
+    try { rows = await fetchSheet(sheetUrl); }
+    catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}` }); }
+
+    let nameByProfileId = new Map();
+    let nameToId = {};
+    try {
+      const allProfiles = await getProfiles(token);
+      nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
+      for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
+    } catch { /* fall back to id-as-name */ }
+
+    const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
+    const candidateRows = rows.filter((row) => {
+      if (hasStageSchema) return CHECK_DMS_STAGE_FILTER.has(String(row.Stage || '').trim());
+      return String(row.Message || '').trim().toLowerCase() === 'sent';
+    });
+
+    // Which profiles to check: explicit > campaign's > everyone with sent rows.
+    let targetProfileIds = Array.isArray(profileIds) && profileIds.length
+      ? profileIds.slice()
+      : null;
+
+    const leadsByProfile = new Map();
+    for (const row of candidateRows) {
+      const acct = String(row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').trim();
+      if (!acct) continue;
+      const pid = nameToId[acct.toLowerCase()] || acct;
+      if (targetProfileIds && !targetProfileIds.includes(pid)) continue;
+      if (!leadsByProfile.has(pid)) leadsByProfile.set(pid, []);
+      leadsByProfile.get(pid).push(row);
+    }
+
+    if (leadsByProfile.size === 0) {
+      return res.json({ ok: true, profilesChecked: 0, repliesFound: 0, perProfile: [], autoPaused: _weShouldAutoResume });
+    }
+
+    const perProfile = [];
+    let totalReplies = 0;
+    setBulkCheckInProgress(true);
+    campaignLog(`📬 Manual reply check — scanning ${leadsByProfile.size} account(s) for replies…`);
+    try {
+      for (const [pid, leads] of leadsByProfile.entries()) {
+        const pName = nameByProfileId.get(pid) || pid;
+        const wasAlreadyRunning = !!getProfilePid(pid);
+        let launched;
+        try {
+          launched = await launchProfile(pid, token);
+        } catch (err) {
+          campaignLog(`⚠ [${pName}] Launch failed: ${err.message}`);
+          perProfile.push({ profileId: pid, profileName: pName, error: `Launch failed: ${err.message}` });
+          continue;
+        }
+        try {
+          campaignLog(`📬 [${pName}] Scanning inbox for replies…`);
+          // v2.72: bulk inbox fetch first (fast), reusing this (paused) profile's
+          // own browser; falls back to per-lead thread scrape if the inbox API
+          // can't be read. Back to the campaign's first send-out − 12h.
+          const result = await scanRepliesForProfile({
+            profileId: pid,
+            profileName: pName,
+            leads,
+            sheetUrl,
+            linkedinColumn: linkedinColumn || 'Linkedin URL',
+            watermark: _replyWatermark,
+            page: launched.page, // reuse this session; do NOT let it self-close
+          });
+          if (Array.isArray(result.errors) && result.errors.length) {
+            campaignLog(`⚠ [${pName}] reply scan: ${result.errors.join('; ')}`);
+          }
+          totalReplies += result.inboundCount;
+          await appendReplies(result.logEntries || []);
+          // v2.72: dump inbound 1:1 replies to the shared "Recent Messages" tab.
+          try { await writeRecentMessagesTab(sheetUrl, pName, result.recentMessages || [], []); }
+          catch (e) { campaignLog(`⚠ [${pName}] Recent Messages write failed: ${e.message}`); }
+          campaignLog(`📬 [${pName}] ${result.inboundCount} reply(ies)${result.suspectedCount ? `, ${result.suspectedCount} suspected (ambiguous name)` : ''} found [${result.method}].`);
+          perProfile.push({ profileId: pid, profileName: pName, replies: result.inboundCount, suspected: result.suspectedCount });
+        } catch (err) {
+          campaignLog(`⚠ [${pName}] Reply check threw: ${err.message}`);
+          perProfile.push({ profileId: pid, profileName: pName, error: err.message });
+        } finally {
+          if (!wasAlreadyRunning) { try { await _closeProfile(pid); } catch { /* */ } }
+        }
+      }
+      campaignLog(`📬 Manual reply check complete — ${totalReplies} new reply(ies) across ${leadsByProfile.size} account(s).`);
+    } finally {
+      setBulkCheckInProgress(false);
+    }
+
+    res.json({ ok: true, profilesChecked: leadsByProfile.size, repliesFound: totalReplies, perProfile, autoPaused: _weShouldAutoResume });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    if (_weShouldAutoResume && campaign.running) {
+      try { resumeCampaign(); campaignLog('▶ Manual reply check done — campaign resumed.'); }
+      catch (resumeErr) { campaignLog(`⚠ Manual reply check — resume failed: ${resumeErr.message}`); }
     }
   }
 });
@@ -2736,6 +2910,10 @@ app.listen(PORT, async () => {
   // carry primaryName/primaryIntroBody, so Check Status-only entries are
   // bulk-checked but never DM'd.
   startPostCampaignScheduler();
+  // v2.72: hourly reply tracking for message-sending campaigns (never in the
+  // first hour, ≤1×/hour per account). Writes replies to the sheet + the
+  // in-app replies panel; desktop/email alerts are opt-in.
+  startReplyCheckScheduler();
 
   // Load and register saved schedules (D-05)
   loadSchedules().then(schedules => {

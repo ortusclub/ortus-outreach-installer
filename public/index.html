@@ -96,6 +96,13 @@
             <span class="notif-pref-slider"></span>
           </label>
         </div>
+        <div class="sb-line">
+          <span class="sb-line-k">Reply alerts</span>
+          <label class="notif-pref-toggle">
+            <input type="checkbox" id="notif-pref-reply-alerts" onchange="onNotifPrefChange('replyAlerts', this.checked)">
+            <span class="notif-pref-slider"></span>
+          </label>
+        </div>
       </div>
 
       <div class="sidebar-footer">
@@ -255,15 +262,26 @@
             <div class="vj-log" id="active-log"><!-- Phase 4 fills --></div>
           </div>
           <div class="vj-bulk">
-            <div class="vj-details-head">Bulk check connection</div>
-            <div class="vj-bulk-status">Last sweep · <b id="activeBulkLast">—</b> · <span id="activeBulkNew">0</span> newly accepted</div>
-            <button class="vj-bulk-btn" onclick="window.dashBulkCheck()">
+            <div class="vj-details-head" id="vj-bulk-head">Bulk check connection</div>
+            <div class="vj-bulk-status">Last sweep · <b id="activeBulkLast">—</b> · <span id="activeBulkNew">0</span> <span id="vj-bulk-status-suffix">newly accepted</span></div>
+            <button class="vj-bulk-btn" id="vj-bulk-btn" onclick="window.dashRunCheck()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
-              Run check now
+              <span id="vj-bulk-btn-label">Run check now</span>
             </button>
-            <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
+            <div class="vj-bulk-hint" id="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
           </div>
         </div>
+      </section>
+
+      <!-- ── Replies (v2.72) — inbound replies found by the hourly check ── -->
+      <section class="vj-card" id="replies-card" hidden aria-labelledby="sect-replies">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span>Replies</span>
+          <span class="vj-when"><a id="replies-mark-read" onclick="window.dashMarkRepliesSeen()" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px">Mark all read</a></span>
+        </div>
+        <h2 class="vj-name" id="sect-replies">Replies <span id="replies-badge" style="font-size:0.6em;vertical-align:middle;background:var(--gold,#caa24a);color:#1a1a1a;border-radius:9999px;padding:1px 8px;margin-left:6px;display:none"></span></h2>
+        <div id="replies-list" class="replies-list" style="display:flex;flex-direction:column;gap:10px;margin-top:6px"></div>
+        <div class="vj-bulk-hint" style="margin-top:10px">Checked automatically every hour (never in the first hour). Every reply is also written to your Google Sheet. Log into the listed account to reply to the person directly.</div>
       </section>
 
       <!-- ── MONITORING (Status Card · variant J) ─────────────────── -->
@@ -465,10 +483,10 @@
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="connect_and_introduce">Connect + Introduce Back</option>
         <option value="connect_and_message">Connect + DM</option>
-        <option value="message_only">Direct Messages</option>
+        <option value="message_only" disabled>Direct Messages (use Message Campaign)</option>
         <option value="introduce_back">Introduction Campaign (3-way intro DM)</option>
-        <option value="inmail_only">InMail Only</option>
-        <option value="open_profile_only">Open Profile Message (free)</option>
+        <option value="inmail_only" disabled>InMail Only (use Message Campaign)</option>
+        <option value="open_profile_only">Message Campaign</option>
         <option value="check_dms">Check DMs (scan inboxes for replies)</option>
         <option value="post_amplification">Post Amplification</option>
       </select>
@@ -1079,6 +1097,22 @@
       <label for="tpl-op-body">Body</label>
       <textarea id="tpl-op-body" rows="4" placeholder="Hi {firstName}, I came across your profile and wanted to connect because…"></textarea>
       <div class="placeholder-tags" data-target="tpl-op-body"></div>
+
+      <!-- v2.72: Open Profile send channel + InMail fallback -->
+      <label for="tpl-op-channel" style="margin-top:16px">Sending method</label>
+      <select id="tpl-op-channel">
+        <option value="sn_first">Sales Navigator first, then LinkedIn (recommended)</option>
+        <option value="sn_only">Sales Navigator only</option>
+        <option value="ln_first">LinkedIn first, then Sales Navigator</option>
+        <option value="ln_only">LinkedIn only</option>
+      </select>
+      <div style="font-size:0.75em; color:#8b949e; margin-top:4px">
+        Plain profile links (linkedin.com/in/name) are resolved automatically — the bot opens the profile, then opens Sales Navigator before sending.
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400; cursor:pointer">
+        <input type="checkbox" id="tpl-op-spend-inmail" style="width:auto; margin:0" />
+        <span>Spend an InMail credit if the lead is <strong>not</strong> an Open Profile member</span>
+      </label>
     </div>
       </div><!-- /.collapsible-body (templates) -->
     </div><!-- /#nav-templates -->
@@ -1574,6 +1608,21 @@
       </div>
       <div style="text-align:center; margin-top: 12px;">
         <button type="button" class="modal-cancel-link" onclick="closeIcPreflightModal()">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.72 — Campaign finished: no more rows could be processed. -->
+  <div id="campaign-done-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCampaignDoneModal()">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="campaign-done-title">
+      <span class="ptm-pill">CAMPAIGN STOPPED</span>
+      <h3 id="campaign-done-title" class="modal-title">No more rows to process</h3>
+      <div id="campaign-done-body" class="modal-body"></div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-secondary" id="campaign-done-log-btn" onclick="closeCampaignDoneModal(); scrollToSection('nav-status');">View the log</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" onclick="closeCampaignDoneModal()">Dismiss</button>
       </div>
     </div>
   </div>

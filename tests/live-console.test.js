@@ -126,7 +126,7 @@ test('shouldShowConsole: visible when a roster is staged (before/after a run)', 
   assert.equal(shouldShowConsole({ running: false, hasRoster: true }), true);
 });
 
-test('shouldShowConsole: hidden only when fully idle with no roster', () => {
-  assert.equal(shouldShowConsole({ running: false, paused: false, state: 'idle', hasRoster: false }), false);
-  assert.equal(shouldShowConsole({}), false);
+test('shouldShowConsole: always visible (v2.72 — log always on display)', () => {
+  assert.equal(shouldShowConsole({ running: false, paused: false, state: 'idle', hasRoster: false }), true);
+  assert.equal(shouldShowConsole({}), true);
 });

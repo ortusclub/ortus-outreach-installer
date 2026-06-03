@@ -12,6 +12,9 @@ const PREFS_FILE = dataPath('notification-prefs.json');
 
 const DEFAULTS = Object.freeze({
   connectionCheckReminders: false,
+  // v2.72: desktop + email alerts when the hourly reply-check finds new
+  // inbound replies. Off by default (operator opts in) per the auto-send rule.
+  replyAlerts: false,
 });
 
 async function readAll() {

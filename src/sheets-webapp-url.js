@@ -19,6 +19,10 @@
 
 // Apps Script web app deployment — the single endpoint every operator's app
 // POSTs to for sheet reads/writes. Deployed under Antonio's Google account.
+// NOTE: v2.72 adds a `writeRecentMessages` action (Recent Messages tab). For
+// that tab to populate in production, Antonio must redeploy the updated
+// google-apps-script.js on this centralized deployment. Connections and all
+// existing sheet writes work regardless.
 export const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwZu0ormMlS2IfC7yarIZDBz0XJj_FbOcp5omJTWQPCGsQ8YO3_npqGUQojNc1fmHyXCg/exec';
 
 // State of Operations sheet — the team-wide dashboard of which LinkedIn

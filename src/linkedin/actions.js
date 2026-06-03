@@ -1421,6 +1421,109 @@ export async function sendMessage(page, message, explicitPublicId = null) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// sendOpenProfileViaProfileButton — v2.72
+// ═════════════════════════════════════════════════════════════════════════════
+// For accounts WITHOUT Sales Navigator: message an Open Profile member by
+// clicking the "Message" button on their /in/ profile page (the Open Profile
+// affordance), which opens a free compose overlay. Works for OP members and
+// 1st-degree connections; for everyone else the Message button is absent (or
+// only "More" → InMail), so we throw and the caller skips/falls back. The
+// /messaging/compose URL (sendMessage) does NOT surface this for OP
+// non-connections — hence this profile-page path.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export async function sendOpenProfileViaProfileButton(page, publicId, body) {
+  const url = `https://www.linkedin.com/in/${encodeURIComponent(publicId)}/`;
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  } catch (e) {
+    console.warn(`[actions] OP profile nav warning: ${e.message}`);
+  }
+  await new Promise(r => setTimeout(r, 3000));
+
+  // Click the primary "Message" button in the profile top card. The OP/connect
+  // free-message button has aria-label "Message <Name>" (or text "Message").
+  // We avoid "More"/overflow buttons (those route to InMail upsell).
+  const clicked = await page.evaluate(() => {
+    const isVisible = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden';
+    };
+    const btns = Array.from(document.querySelectorAll('button, a'));
+    for (const b of btns) {
+      const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+      const txt = (b.textContent || '').trim().toLowerCase();
+      if ((aria.startsWith('message') || txt === 'message') && isVisible(b)) {
+        b.scrollIntoView({ block: 'center' });
+        b.click();
+        return true;
+      }
+    }
+    return false;
+  });
+  if (!clicked) {
+    throw new Error('OP_MSG_BUTTON_NOT_FOUND: no free Message button on profile (not Open Profile / not connected)');
+  }
+
+  // Wait for the compose overlay textbox.
+  await new Promise(r => setTimeout(r, 2500));
+  const composeSelectors = [
+    'div[role="textbox"][aria-label*="Write a message" i]',
+    '.msg-form__contenteditable',
+    '.msg-overlay-conversation-bubble div[contenteditable="true"]',
+    'div[contenteditable="true"][aria-label*="message" i]',
+  ];
+  let ready = false;
+  for (const sel of composeSelectors) {
+    try { await page.waitForSelector(sel, { timeout: 5000 }); ready = true; break; } catch { /* try next */ }
+  }
+  if (!ready) {
+    throw new Error('OP_MSG_COMPOSE_NOT_FOUND: Message overlay did not open (likely not Open Profile)');
+  }
+
+  const typed = await typeIntoField(page, body);
+  if (!typed) throw new Error('OP_MSG_TYPE_FAILED: could not type message');
+  await new Promise(r => setTimeout(r, 700));
+
+  // Send: Send button → plain Enter fallback (Ortus accounts have Enter-to-send).
+  const sentByButton = await page.evaluate(() => {
+    const isVisible = (el) => {
+      if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const tiers = [
+      'button.msg-form__send-button',
+      'button[type="submit"][class*="msg-form"]',
+      'button[aria-label="Send" i]',
+      'button[aria-label="Send message" i]',
+    ];
+    for (const sel of tiers) {
+      for (const b of document.querySelectorAll(sel)) {
+        if (isVisible(b)) { b.click(); return true; }
+      }
+    }
+    for (const b of document.querySelectorAll('button, [role="button"]')) {
+      const t = (b.textContent || '').trim();
+      if ((t === 'Send' || t === 'Send message') && isVisible(b)) { b.click(); return true; }
+    }
+    return false;
+  });
+  if (!sentByButton) {
+    try {
+      await page.focus('div[role="textbox"][aria-label*="Write a message" i], .msg-form__contenteditable');
+      await page.keyboard.press('Enter');
+    } catch { /* best-effort */ }
+  }
+  await new Promise(r => setTimeout(r, 2500));
+  console.log('[actions] ✓ Open Profile message sent via profile Message button');
+  return true;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // sendIntroMessage — 2.8.50
 // ═════════════════════════════════════════════════════════════════════════════
 // Mirrors LinkedIn DM Assistant's Option+I flow. Same /messaging/compose/
@@ -2632,13 +2735,13 @@ async function clickSalesNavMessageButton(page) {
 async function readSalesNavComposerState(page) {
   return await page.evaluate(() => {
     const text = document.body?.innerText || '';
-    const isFree = /free message/i.test(text);
-    // Positive Open Profile signal — LinkedIn renders the literal badge text
-    // "Free to Open Profile" in the Sales Nav message panel for free-send
-    // targets. Using the presence of this badge (instead of the absence of
-    // a credit counter) avoids false-positives when the panel renders without
-    // a credit counter for non-OP reasons (slow render, A/B variant, etc.).
+    // v2.72: positive "this send is free" signals. LinkedIn shows distinct copy
+    // per free path: "Free to Open Profile", "Free to TeamLink, which means you
+    // can send them a message", or a plain "free message" (e.g. existing
+    // connections). Any of these confirms a no-credit send.
+    const isFreeToTeamLink = /free to teamlink/i.test(text);
     const isFreeToOpenProfile = /free to open profile/i.test(text);
+    const isFree = /free message/i.test(text) || isFreeToTeamLink || isFreeToOpenProfile;
     const creditMatch = text.match(/Use\s+\d+\s+of\s+(\d+)\s+credits?/i);
     const hasCreditCounter = !!creditMatch;
     const creditsAvailable = creditMatch ? parseInt(creditMatch[1], 10) : null;
@@ -2659,7 +2762,7 @@ async function readSalesNavComposerState(page) {
     const noInMailCredits =
       /sorry,?\s*you'?ve used up all your inmail credits/i.test(text) ||
       /no inmail credits left/i.test(text);
-    return { isFree, isFreeToOpenProfile, hasCreditCounter, creditsAvailable, hasSubject, hasCompose, noInMailCredits };
+    return { isFree, isFreeToOpenProfile, isFreeToTeamLink, hasCreditCounter, creditsAvailable, hasSubject, hasCompose, noInMailCredits };
   });
 }
 
@@ -2744,24 +2847,31 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
   }
 
   if (mode === 'force_open_profile') {
-    // Positive-signal gating: only send if the "Free to Open Profile" badge
-    // is present. "No credit counter" is not proof of Open Profile — the
-    // panel can render without a counter for transient/non-OP reasons.
-    if (!panel.isFreeToOpenProfile) {
+    // v2.72: "free to send" is broader than the literal "Free to Open Profile"
+    // badge — TeamLink and existing 1st-degree connections also compose for
+    // free. The reliable "this costs a credit" signal is the "Use X of Y
+    // credits" counter (panel.hasCreditCounter). So when the compose box is
+    // present (guaranteed above) with NO credit counter, the send is free
+    // regardless of why. A visible credit counter means a paid InMail —
+    // force_open_profile never spends credits, so skip it (the InMail-tickbox
+    // path routes through force_inmail instead).
+    if (panel.hasCreditCounter) {
       return { ok: false, reason: 'not_open_profile' };
     }
     const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
     if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
-    console.log('[actions] ✓ Sales Nav Open Profile message sent');
+    console.log('[actions] ✓ Sales Nav free message sent (Open Profile / TeamLink / connected)');
     return { ok: true, kind: 'op_message_sent' };
   }
 
   if (mode === 'force_inmail') {
-    if (panel.isFreeToOpenProfile) {
-      // Explicit OP badge — send free via the OP template.
+    if (!panel.hasCreditCounter) {
+      // v2.72: free to send (Open Profile, TeamLink, or already connected) —
+      // no credit counter means no credit cost, so send free via the OP
+      // template even though the operator opted into spending credits.
       const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
       if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
-      console.log('[actions] ✓ Sales Nav free message sent (InMail mode, OP path)');
+      console.log('[actions] ✓ Sales Nav free message sent (InMail mode, free path)');
       return { ok: true, kind: 'op_message_sent' };
     }
     if (panel.creditsAvailable === 0) {
@@ -2779,10 +2889,13 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
     // "Free to Open Profile" badge is present, send OP; otherwise close
     // and fall through to "..." → Connect.
     if (clicked) {
-      if (panel.hasCompose && panel.isFreeToOpenProfile) {
+      // v2.72: free to send whenever the compose box is present with no credit
+      // counter (Open Profile, TeamLink, or connected) — not just the literal
+      // OP badge. Paid InMail (credit counter shown) falls through to Connect.
+      if (panel.hasCompose && !panel.hasCreditCounter) {
         const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
         if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
-        console.log('[actions] ✓ Sales Nav OP message sent (connect-with-OP-fallback)');
+        console.log('[actions] ✓ Sales Nav free message sent (connect-with-OP-fallback)');
         return { ok: true, kind: 'op_message_sent' };
       }
       // Paid InMail panel, no composer, or not OP — close before trying Connect.

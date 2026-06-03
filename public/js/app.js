@@ -172,6 +172,8 @@ function gatherCampaignFormState() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    opChannel: document.getElementById('tpl-op-channel')?.value || 'sn_first',
+    opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
     // 2.8.50: Introduction Messages sub-mode of message_only
     // v2.11.13: read from introModeActive (in-memory) instead of localStorage
     // because Chrome enterprise/privacy enforcement can block storage reads.
@@ -2168,6 +2170,10 @@ const MODE_LIST = [
     // saved drafts/schedules/history rows keep working.
     value: 'message_only',
     name: 'Direct Messages',
+    // v2.72: folded into the unified "Message Campaign" (open_profile_only),
+    // which now routes via LinkedIn / Sales Nav / InMail. Greyed out.
+    disabled: true,
+    disabledReason: 'Use Message Campaign instead — it covers direct messages.',
     bullets: [
       '1:1 direct messages to your connections',
       'Adds no intro person — sender messages the lead directly',
@@ -2177,6 +2183,10 @@ const MODE_LIST = [
   {
     value: 'inmail_only',
     name: 'InMail Only',
+    // v2.72: folded into "Message Campaign" via the "Spend an InMail credit"
+    // option on that campaign. Greyed out.
+    disabled: true,
+    disabledReason: 'Use Message Campaign instead — tick "Spend an InMail credit" there.',
     bullets: [
       'Premium InMail to non-connected targets',
       'Consumes InMail credits per send',
@@ -2185,11 +2195,11 @@ const MODE_LIST = [
   },
   {
     value: 'open_profile_only',
-    name: 'Open Profile Message',
+    name: 'Message Campaign',
     bullets: [
-      'Free direct message to Open Profile members',
-      'No connection required, no credits used',
-      'Experimental — needs Sales Nav · limited test coverage',
+      'Messages leads via LinkedIn or Sales Navigator',
+      'Free for Open Profile members — optional InMail fallback',
+      'Resolves plain profile links automatically',
     ],
   },
   {
@@ -2230,9 +2240,10 @@ function renderModeSelector() {
     const bullets = m.bullets
       .map((b) => `<li>${escHtml(b)}</li>`)
       .join('');
-    const isActive = i === activeIdx && !m.comingSoon;
-    const stateClass = m.comingSoon ? 'is-coming-soon' : (isActive ? 'active' : '');
-    const badge = m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>' : '';
+    const isActive = i === activeIdx && !m.comingSoon && !m.disabled;
+    const stateClass = (m.comingSoon || m.disabled) ? 'is-coming-soon' : (isActive ? 'active' : '');
+    const badge = m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>'
+      : (m.disabled ? '<span class="mode-card-badge">Unavailable</span>' : '');
     return `
       <button type="button"
         class="mode-card ${stateClass}"
@@ -2250,6 +2261,10 @@ function setModeByIndex(i) {
   const mode = MODE_LIST[(i + MODE_LIST.length) % MODE_LIST.length];
   if (mode.comingSoon) {
     showCampaignToast(`${mode.name} — coming soon.`, 3000);
+    return;
+  }
+  if (mode.disabled) {
+    showCampaignToast(mode.disabledReason || `${mode.name} is unavailable.`, 3500);
     return;
   }
   const select = document.getElementById('campaign-mode');
@@ -2978,6 +2993,8 @@ async function startCampaign(opts = {}) {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    opChannel: document.getElementById('tpl-op-channel')?.value || 'sn_first',
+    opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
     // 2.8.50: Introduction Messages sub-mode (active only when mode is message_only)
     // v2.11.13: in-memory state instead of localStorage (storage may be blocked).
     introMode: mode === 'introduce_back',
@@ -3795,6 +3812,10 @@ function updateCockpit(s) {
   __cockpit.profileIds = s.profileIds || [];
   __cockpit.profileNames = s.profileNames || [];
   __cockpit.sheetUrl = s.sheetUrl || '';
+  // v2.72: track the "finished" state so the wizard keeps the Live Status card
+  // (log + Run reply check) visible after a campaign ends, not just while it runs.
+  __cockpit.endNotice = s.endNotice || null;
+  __cockpit.hasLogs = Array.isArray(s.logs) && s.logs.length > 0;
   _refreshOpenSheetButtons();
   renderCockpit();
   // Sidebar tips card lives in the Live Status right column. Re-render on
@@ -4531,6 +4552,7 @@ async function pollStatus() {
     // until the renderers are defined (and survives partial reloads).
     if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
     if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
+    if (typeof maybeShowCampaignDoneModal === 'function') maybeShowCampaignDoneModal(s);
 
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {
@@ -4581,7 +4603,12 @@ async function pollStatus() {
       // freeze on the previous check's timestamp (operator saw "16:30 · 0s"
       // while Schedules card correctly showed 17:30 — same `campaign.nextCheckAt`
       // value, but the cockpit-fed endpoint stopped being polled).
-      if (s.logs?.length > 0 && !s.running && s.state !== 'monitoring') stopPolling();
+      // v2.72: keep polling while the operator is on the wizard so the finished
+      // Live Status card (log + Run reply check) stays rendered there. Stop only
+      // when they're off the wizard (the dashboard has its own poll).
+      const _onWizardRoute = (typeof document !== 'undefined' && document.body.classList.contains('route-wizard'))
+        || (typeof location !== 'undefined' && location.hash === '#/new');
+      if (s.logs?.length > 0 && !s.running && s.state !== 'monitoring' && !_onWizardRoute) stopPolling();
     }
 
     const profEl = document.getElementById('st-profile');
@@ -4700,7 +4727,15 @@ function syncLiveStatusVisibility() {
   const editingDraft = (typeof isOnNewCampaignView === 'function') && isOnNewCampaignView();
   const running = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.running);
   const monitoring = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.state === 'monitoring');
-  const show = onNew && (running || monitoring) && !editingDraft;
+  // v2.72: also keep the section visible once a campaign has FINISHED (not
+  // running, not monitoring, but it ran this session — endNotice/logs present)
+  // so the operator can still read the log and hit "Run reply check now".
+  const finished = !!(typeof __cockpit !== 'undefined' && __cockpit && !__cockpit.running
+    && __cockpit.state !== 'monitoring' && (__cockpit.endNotice || __cockpit.hasLogs));
+  // Running/monitoring are hidden while editing an unrelated draft; a FINISHED
+  // campaign's log is shown regardless (the wizard resets to a fresh draft on
+  // finish, so editingDraft is true — but the operator still wants the log).
+  const show = onNew && (((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   const navBtn = document.querySelector('[data-nav="nav-status"]');
   if (navBtn) navBtn.style.display = show ? '' : 'none';
@@ -4877,6 +4912,11 @@ async function loadSelectedTemplate() {
     const opBody = document.getElementById('tpl-op-body');
     if (opSubj) opSubj.value = tpl.openProfileSubject || '';
     if (opBody) opBody.value = tpl.openProfileBody || '';
+    // v2.72: restore Open Profile send channel + InMail fallback
+    const opChannel = document.getElementById('tpl-op-channel');
+    if (opChannel) opChannel.value = tpl.opChannel || 'sn_first';
+    const opSpendInMail = document.getElementById('tpl-op-spend-inmail');
+    if (opSpendInMail) opSpendInMail.checked = !!tpl.opSpendInMail;
     const introBody = document.getElementById('primary-intro-body');
     if (introBody) {
       introBody.value = tpl.primaryIntroBody || '';
@@ -4901,6 +4941,8 @@ async function saveExistingTemplate() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    opChannel: document.getElementById('tpl-op-channel')?.value || 'sn_first',
+    opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
     primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
     ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
@@ -4933,6 +4975,8 @@ async function saveCurrentTemplate() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    opChannel: document.getElementById('tpl-op-channel')?.value || 'sn_first',
+    opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
     primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
     ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
@@ -5156,6 +5200,8 @@ async function saveQuickSchedule() {
     inmailBody: document.getElementById('tpl-inmail-body').value,
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    opChannel: document.getElementById('tpl-op-channel')?.value || 'sn_first',
+    opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
   };
 
   try {
@@ -5903,6 +5949,8 @@ async function loadNotificationPrefs() {
     const prefs = data?.prefs || {};
     const cb = document.getElementById('notif-pref-conn-check');
     if (cb) cb.checked = !!prefs.connectionCheckReminders;
+    const rcb = document.getElementById('notif-pref-reply-alerts');
+    if (rcb) rcb.checked = !!prefs.replyAlerts;
   } catch { /* */ }
 }
 async function onNotifPrefChange(key, value) {
@@ -7220,10 +7268,14 @@ function startDashboardPolling() {
         const s = await fetch('/api/campaign/status').then(r => r.json());
         if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
         if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
+        maybeShowCampaignDoneModal(s);
+        // v2.72: keep the floating Console (log) live on the dashboard too.
+        try { renderLiveConsole(s); } catch (_) { /* */ }
       } catch { /* best-effort; refreshActiveCampaign covers the legacy path */ }
       if (typeof window.renderUpNextDeck === 'function') window.renderUpNextDeck();
       if (typeof window.renderPastSection === 'function') window.renderPastSection();
       if (typeof window.renderCalendarGrid === 'function') window.renderCalendarGrid();
+      if (typeof window.renderReplies === 'function') window.renderReplies();
     } else {
       stopDashboardPolling();
     }
@@ -7235,6 +7287,154 @@ function stopDashboardPolling() {
     _dashboardPollTimer = null;
   }
 }
+
+// v2.72: Replies panel. Polls /api/replies (populated by the hourly
+// reply-check) and renders the newest inbound messages with the account to
+// log into, so the operator can reply to each person manually.
+let _repliesInFlight = false;
+async function renderReplies() {
+  const card = document.getElementById('replies-card');
+  const list = document.getElementById('replies-list');
+  if (!card || !list || _repliesInFlight) return;
+  _repliesInFlight = true;
+  try {
+    const data = await fetch('/api/replies').then(r => r.json());
+    const replies = Array.isArray(data?.replies) ? data.replies : [];
+    if (replies.length === 0) { card.hidden = true; return; }
+    card.hidden = false;
+
+    const badge = document.getElementById('replies-badge');
+    const unseen = Number(data?.unseen || 0);
+    if (badge) {
+      if (unseen > 0) { badge.textContent = `${unseen} new`; badge.style.display = 'inline-block'; }
+      else { badge.style.display = 'none'; }
+    }
+
+    list.innerHTML = replies.slice(0, 25).map((r) => {
+      const who = escHtml(r.leadName || r.linkedinUrl || 'Lead');
+      const acct = escHtml(r.profileName || r.profileId || '—');
+      const when = r.recordedAt ? fmtRelTime(r.recordedAt) : '';
+      const msg = escHtml(String(r.text || '').slice(0, 300));
+      const url = r.linkedinUrl ? escHtml(r.linkedinUrl) : '';
+      const nameEl = url
+        ? `<a href="${url}" target="_blank" rel="noopener" style="text-decoration:underline;text-decoration-color:var(--hairline);text-underline-offset:3px">${who}</a>`
+        : who;
+      const suspected = !!r.suspected;
+      const badge = suspected
+        ? ' <span style="font-size:0.65em;background:#8b6d1a;color:#fff;border-radius:9999px;padding:1px 7px;vertical-align:middle">SUSPECTED · same name</span>'
+        : '';
+      const subline = suspected
+        ? `Possible reply on <strong>${acct}</strong> — name matches more than one lead, verify manually.`
+        : `Reply to this from <strong>${acct}</strong>.`;
+      return `
+        <div class="reply-item ${r.seen ? '' : 'reply-unseen'}" style="border:1px solid var(--hairline);border-radius:10px;padding:10px 12px;${suspected ? 'border-left:3px solid #8b6d1a;' : (r.seen ? '' : 'border-left:3px solid var(--gold,#caa24a);')}">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">
+            <strong>${nameEl}${badge}</strong>
+            <span style="font-size:0.75em;color:#8b949e;white-space:nowrap">${when}</span>
+          </div>
+          <div style="font-size:0.8em;color:#8b949e;margin:2px 0 6px">${subline}</div>
+          <div style="white-space:pre-wrap">${msg || '<em style="color:#8b949e">(no preview)</em>'}</div>
+        </div>`;
+    }).join('');
+  } catch { /* best-effort */ }
+  finally { _repliesInFlight = false; }
+}
+window.renderReplies = renderReplies;
+
+async function dashMarkRepliesSeen() {
+  try {
+    await fetch('/api/replies/seen', { method: 'POST' });
+    await renderReplies();
+  } catch { /* */ }
+}
+window.dashMarkRepliesSeen = dashMarkRepliesSeen;
+
+// Lightweight relative-time formatter for the replies panel.
+function fmtRelTime(ms) {
+  const diff = Date.now() - Number(ms || 0);
+  if (!Number.isFinite(diff) || diff < 0) return '';
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+// v2.72: "No more rows to process" popup. The backend sets status.endNotice
+// (with a unique ts) when a campaign ends naturally — we show the modal once
+// per ts and remember the last-shown ts so it doesn't re-fire on every poll.
+let _lastEndNoticeTs = (() => {
+  try { return Number(localStorage.getItem('ortus-last-endnotice-ts') || 0); } catch { return 0; }
+})();
+function maybeShowCampaignDoneModal(status) {
+  try {
+    const n = status && status.endNotice;
+    if (!n || !n.ts || status.running) return;
+    if (status.state === 'monitoring') return;       // still watching — not "stopped"
+    if (n.reason === 'operator_stopped') return;     // you stopped it on purpose — log stays, no nag popup
+    if (n.ts <= _lastEndNoticeTs) return;            // already shown this one
+    _lastEndNoticeTs = n.ts;
+    try { localStorage.setItem('ortus-last-endnotice-ts', String(n.ts)); } catch { /* */ }
+    showCampaignDoneModal(n);
+  } catch { /* best-effort */ }
+}
+window.maybeShowCampaignDoneModal = maybeShowCampaignDoneModal;
+
+function showCampaignDoneModal(n) {
+  const modal = document.getElementById('campaign-done-modal');
+  const body = document.getElementById('campaign-done-body');
+  const titleEl = document.getElementById('campaign-done-title');
+  const pill = modal ? modal.querySelector('.ptm-pill') : null;
+  if (!modal || !body) return;
+  const processed = Number(n.processed || 0);
+  const targets = Number(n.targets || 0);
+  const nm = n.name ? `"${escHtml(n.name)}"` : 'The campaign';
+  let title, pillText, html;
+  switch (n.reason) {
+    case 'error':
+      title = 'Campaign stopped — error';
+      pillText = 'ERROR';
+      html = `<p>${nm} stopped because of an error.</p>
+        <p style="color:#c0392b">${escHtml(n.detail || 'Unexpected error.')}</p>
+        <p>Processed <strong>${processed}</strong> of <strong>${targets || '—'}</strong> row(s) before stopping. The log below has the details.</p>`;
+      break;
+    case 'all_parked':
+      title = 'Campaign stopped — all accounts paused';
+      pillText = 'ACCOUNTS PAUSED';
+      html = `<p>${nm} stopped because every account was paused before the leads ran out.</p>
+        ${n.detail ? `<p>${escHtml(n.detail)}</p>` : ''}
+        <p>Processed <strong>${processed}</strong> of <strong>${targets}</strong> row(s). Fix the account(s) — log back in, wait for the weekly invite limit to reset, or top up credits — then resume.</p>`;
+      break;
+    case 'no_more_rows':
+    default: {
+      const lowYield = targets === 0 || processed === 0;
+      title = 'No more rows to process';
+      pillText = 'CAMPAIGN FINISHED';
+      const counts = targets > 0
+        ? `Processed <strong>${processed}</strong> of <strong>${targets}</strong> eligible row(s).`
+        : `No eligible rows were found.`;
+      const hint = lowYield
+        ? `This usually means the wrong sheet tab is selected, or every row has already been processed. Double-check the selected tab and that your leads are in it.`
+        : `This usually means the campaign has finished — every eligible row was processed. If you expected more, check the selected sheet tab.`;
+      html = `<p>${nm} stopped because no more rows to process could be detected.</p>
+        <p>${counts}</p>
+        <p>${hint}</p>`;
+      break;
+    }
+  }
+  if (titleEl) titleEl.textContent = title;
+  if (pill) pill.textContent = pillText;
+  body.innerHTML = html;
+  modal.classList.remove('hidden');
+}
+
+function closeCampaignDoneModal() {
+  const modal = document.getElementById('campaign-done-modal');
+  if (modal) modal.classList.add('hidden');
+}
+window.closeCampaignDoneModal = closeCampaignDoneModal;
 
 // While the wizard is open, poll campaign status so the Add to Queue /
 // Start Campaign label flips the moment the running campaign finishes
@@ -9856,6 +10056,8 @@ window.launchScheduleIt = async function () {
     inmailBody: document.getElementById('tpl-inmail-body')?.value || '',
     openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
     openProfileBody: document.getElementById('tpl-op-body')?.value || '',
+    opChannel: document.getElementById('tpl-op-channel')?.value || 'sn_first',
+    opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
   };
 
   try { await flushAutosaveImmediate(); } catch {}
@@ -10318,6 +10520,51 @@ window.renderActiveCard = function(status) {
   // to "No campaign running" (the dashboard's half of the CC+IC/CC+DM
   // monitoring story; the cockpit ring already handled this state).
   const isMonitoring = !!(status && !status.running && status.state === 'monitoring');
+  // v2.72: a campaign that ran this session and has now ended (completed,
+  // stopped, or errored) — keep the log + details visible so the operator can
+  // review what happened, instead of wiping straight to "No campaign running".
+  // Detected by: not running, not monitoring, but logs exist from this session.
+  const isFinished = !!(status && !status.running && !isMonitoring
+    && Array.isArray(status.logs) && status.logs.length > 0);
+  if (isFinished) {
+    card.classList.remove('is-empty', 'is-monitor');
+    const total = Number(status.totalTargets) || 0;
+    const done = Number(status.totalProcessed) || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    v3SetText('activeName', status.name || '(unnamed)');
+    v3SetText('activeEyebrow', 'Finished');
+    v3SetText('activePct', String(pct));
+    v3SetText('activeSent', String(done));
+    v3SetText('activeTotal', String(total));
+    v3SetText('activeAccounts', String((status.profileIds || []).length));
+    v3SetText('activeAccepted', String(status.acceptedCount ?? '—'));
+    v3SetText('sendingLbl', 'Finished');
+    v3SetText('batchEta', '—');
+    const glyph = document.getElementById('activeGlyph');
+    if (glyph) glyph.textContent = (typeof v3ModeBadge === 'function') ? v3ModeBadge(status.mode) : '';
+    const bar = card.querySelector('.vj-hbar > i');
+    if (bar) bar.style.width = pct + '%';
+    const liveEl = document.getElementById('active-live');
+    if (liveEl) liveEl.hidden = true;
+    const profEl = document.getElementById('active-profiles');
+    if (profEl) { profEl.hidden = true; profEl.innerHTML = ''; }
+    try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
+    // Keep the live log on screen + the details panel open.
+    _setActiveDetails(true);
+    const logEl = document.getElementById('active-log');
+    if (logEl && Array.isArray(status.logs)) {
+      const lastN = status.logs.slice(-100);
+      logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
+      const head = card.querySelector('.vj-log-head .vj-details-head');
+      if (head) head.textContent = `Live log · ${lastN.length} events (finished)`;
+      const moreBtn = document.getElementById('wiz-log-more');
+      if (moreBtn) moreBtn.hidden = true;
+    }
+    window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
+    // Reset the auto-open latch so the NEXT launch re-opens the panel cleanly.
+    window.__activeCardActive = false;
+    return;
+  }
   if (!status || (!status.running && !isMonitoring)) {
     card.classList.add('is-empty');
     card.classList.remove('is-monitor');
@@ -10348,6 +10595,7 @@ window.renderActiveCard = function(status) {
   }
   card.classList.remove('is-empty');
   card.classList.toggle('is-monitor', isMonitoring);
+  try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
   // v2.59.19: live activity line — what the campaign is doing right now.
   try {
     const la = buildLiveActivity(status);
@@ -10722,6 +10970,67 @@ window.dashBulkCheck = async function() {
       if (typeof showCampaignToast === 'function') showCampaignToast('Bulk check failed: ' + (body.error || 'unknown'));
     }
   } catch (err) { console.error('[v3] dashBulkCheck:', err); }
+};
+
+// v2.72: messaging campaigns don't send connection requests, so the check
+// section becomes a REPLY check (scan sent threads for replies) instead of a
+// connection-acceptance sweep. These modes message leads directly.
+const _REPLY_CHECK_MODES = new Set(['open_profile_only', 'inmail_only', 'message_only', 'introduce_back']);
+function isReplyCheckMode(mode) { return _REPLY_CHECK_MODES.has(String(mode || '')); }
+
+// Re-label the active-card check section based on the running campaign's mode.
+function applyCheckSectionMode(mode) {
+  window.__activeCheckMode = mode || '';
+  const reply = isReplyCheckMode(mode);
+  const head = document.getElementById('vj-bulk-head');
+  const suffix = document.getElementById('vj-bulk-status-suffix');
+  const label = document.getElementById('vj-bulk-btn-label');
+  const hint = document.getElementById('vj-bulk-hint');
+  if (head) head.textContent = reply ? 'Reply check' : 'Bulk check connection';
+  if (suffix) suffix.textContent = reply ? 'new replies' : 'newly accepted';
+  if (label) label.textContent = reply ? 'Run reply check now' : 'Run check now';
+  if (hint) hint.textContent = reply
+    ? 'Scans the messages you sent for replies and writes them to your sheet. Doesn’t affect throughput.'
+    : 'Checks all pending connect requests via Voyager. Doesn’t affect throughput.';
+}
+window.applyCheckSectionMode = applyCheckSectionMode;
+
+// Single button dispatcher — routes to the reply check or the connection
+// bulk-check depending on the active campaign's mode.
+window.dashRunCheck = function() {
+  if (isReplyCheckMode(window.__activeCheckMode)) return window.dashReplyCheck();
+  return window.dashBulkCheck();
+};
+
+window.dashReplyCheck = async function() {
+  try {
+    const sr = await fetch('/api/campaign/status');
+    const s = await sr.json();
+    if (!s.sheetUrl) {
+      if (typeof showCampaignToast === 'function') showCampaignToast('No sheet URL');
+      return;
+    }
+    const willPause = !!(s.running && !s.paused);
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(willPause ? 'Pausing campaign + checking for replies…' : 'Checking for replies…');
+    }
+    const r = await fetch('/api/reply-check-now', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheetUrl: s.sheetUrl, profileIds: s.profileIds, linkedinColumn: s.linkedinColumn }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (body.ok) {
+      const n = body.repliesFound || 0;
+      const msg = body.autoPaused
+        ? `Reply check done — ${n} new repl${n === 1 ? 'y' : 'ies'}. Campaign resumed.`
+        : `Reply check done — ${n} new repl${n === 1 ? 'y' : 'ies'}.`;
+      if (typeof showCampaignToast === 'function') showCampaignToast(msg);
+      if (typeof window.renderReplies === 'function') window.renderReplies();
+    } else {
+      if (typeof showCampaignToast === 'function') showCampaignToast('Reply check failed: ' + (body.error || 'unknown'));
+    }
+  } catch (err) { console.error('[v3] dashReplyCheck:', err); }
 };
 
 window.dashOpenActive = async function() {

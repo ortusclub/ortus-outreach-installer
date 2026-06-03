@@ -9,7 +9,7 @@
  */
 
 import { randomDelay, getConnectionStatus, getVoyagerDegree, getDegreeBadge, personalizeTemplate } from './helpers.js';
-import { sendConnectionRequest, sendMessage, sendIntroMessage, sendIntroViaCleanCompose, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
+import { sendConnectionRequest, sendMessage, sendIntroMessage, sendIntroViaCleanCompose, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile, sendOpenProfileViaProfileButton } from './actions.js';
 import { dataPath } from '../paths.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 
@@ -191,7 +191,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     // "Free to Open Profile" signal) straight to the Sales Nav lead page, so
     // we never load /in/ at all. Vanity slugs (/in/john-smith) can't be
     // transformed — those skip with a clear reason.
-    if (modeHint === 'force_open_profile' || modeHint === 'force_inmail') {
+    // force_inmail always needs the Sales Nav composer — vanity slugs that
+    // can't be transformed still skip with a clear reason (unchanged).
+    if (modeHint === 'force_inmail') {
       if (!SALES_NAV_URL_RE.test(url)) {
         const m = url.match(IN_MEMBER_URN_RE);
         if (!m) {
@@ -200,6 +202,40 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         }
         url = `https://www.linkedin.com/sales/lead/${m[1]}`;
         console.log(`[outreach] Transformed /in/ → Sales Nav: ${url}`);
+      }
+    }
+
+    // ── v2.72: Open Profile is channel-aware — never skip vanity slugs ──
+    // The operator picks a sending channel in the wizard:
+    //   sn_only / sn_first  → prefer Sales Nav   (default sn_first)
+    //   ln_only / ln_first  → prefer plain LinkedIn
+    // Here we only pick the LANDING url. For Sales-Nav-preferred channels with
+    // an encoded member-URN we fast-path straight to the Sales Nav lead page;
+    // a vanity slug (linkedin.com/in/name) stays on /in/ and the branch below
+    // opens the profile, then resolves "View in Sales Navigator" before
+    // sending — exactly the "open the profile then open Sales Nav" behavior.
+    if (modeHint === 'force_open_profile') {
+      const _opChannel = (templates && templates.opChannel) || 'sn_first';
+      const _preferLinkedIn = (_opChannel === 'ln_only' || _opChannel === 'ln_first');
+      if (_preferLinkedIn) {
+        // Land on /in/ for the native LinkedIn composer. Convert a Sales Nav
+        // URL back to /in/ when the encoded URN is available.
+        if (SALES_NAV_URL_RE.test(url)) {
+          const m = url.match(SALES_MEMBER_URN_RE);
+          if (m) {
+            url = `https://www.linkedin.com/in/${m[1]}`;
+            console.log(`[outreach] OP channel=${_opChannel}: Sales Nav → /in/: ${url}`);
+          }
+        }
+      } else if (!SALES_NAV_URL_RE.test(url)) {
+        // Sales-Nav-preferred. Fast-path encoded member-URN /in/ → Sales Nav.
+        const m = url.match(IN_MEMBER_URN_RE);
+        if (m) {
+          url = `https://www.linkedin.com/sales/lead/${m[1]}`;
+          console.log(`[outreach] OP channel=${_opChannel}: /in/ → Sales Nav: ${url}`);
+        } else {
+          console.log(`[outreach] OP channel=${_opChannel}: vanity slug — will resolve Sales Nav after the profile loads`);
+        }
       }
     }
 
@@ -467,22 +503,126 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
       return { action: 'skipped', error: 'Sales Nav: unknown result' };
     } else if (modeHint === 'force_open_profile') {
-      // Upfront conversion guaranteed we're on a Sales Nav URL. Delegate to
-      // sendViaSalesNav; it uses isFreeToOpenProfile to gate free-vs-paid.
+      // ── v2.72: channel-aware Open Profile send ──
+      // page is loaded on either a Sales Nav URL (fast-path) or an /in/ page
+      // (vanity slug / LinkedIn-preferred). Two primitives, ordered by the
+      // operator's chosen channel. The "Spend an InMail credit" tickbox
+      // (templates.opSpendInMail) decides what happens when the lead is NOT
+      // a free Open Profile member: skip (off) or burn one InMail credit (on).
       if (!templates.openProfileBody) return { action: 'skipped', error: 'No Open Profile template' };
       const d = templates.data || {};
-      const result = await sendViaSalesNav(page, {
-        mode: 'force_open_profile',
-        opSubject: personalizeTemplate(templates.openProfileSubject || '', d),
-        opBody:    personalizeTemplate(templates.openProfileBody    || '', d),
-      });
-      if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
-      if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
-      if (result.reason === 'not_open_profile')           return { action: 'skipped', error: 'NOT_OPEN_PROFILE: Free to Open Profile badge not present on Sales Nav panel' };
+      const opSubject   = personalizeTemplate(templates.openProfileSubject || '', d);
+      const opBody      = personalizeTemplate(templates.openProfileBody    || '', d);
+      const channel     = templates.opChannel || 'sn_first';
+      const spendInMail = !!templates.opSpendInMail;
+
+      // v2.72: capture the lead's handle from the ORIGINAL target URL up front.
+      // trySalesNav navigates the page to a Sales Nav URL (or a paywall redirect
+      // when the account has no Sales Nav), after which the current page URL no
+      // longer carries the /in/ handle — so the LinkedIn fallback must rely on
+      // this, not page.url(), or it can't recover who to message.
+      const _origPublicId = url.match(/\/in\/([^/?#]+)/)?.[1]
+        || url.match(SALES_MEMBER_URN_RE)?.[1]
+        || null;
+
+      // Channel: Sales Navigator. Resolves the Sales Nav URL from /in/ first
+      // when needed (opens the profile → "View in Sales Navigator"). With the
+      // InMail tickbox on, force_inmail sends free if OP else spends 1 credit;
+      // otherwise force_open_profile sends only when the OP badge is present.
+      const trySalesNav = async () => {
+        if (!SALES_NAV_URL_RE.test(page.url())) {
+          const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
+          if (!salesNavUrl) return { ok: false, reason: 'sales_nav_unresolvable' };
+          try {
+            await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          } catch (e) {
+            console.warn(`[outreach] OP Sales Nav navigation issue: ${e.message}`);
+          }
+          await new Promise(r => setTimeout(r, 5000));
+        }
+        const r = spendInMail
+          ? await sendViaSalesNav(page, { mode: 'force_inmail', opSubject, opBody, inmailSubject: opSubject, inmailBody: opBody })
+          : await sendViaSalesNav(page, { mode: 'force_open_profile', opSubject, opBody });
+        if (r.ok && (r.kind === 'op_message_sent' || r.kind === 'inmail_sent')) {
+          return { ok: true, action: { action: 'op_message_sent' } };
+        }
+        return { ok: false, reason: r.reason || 'sales_nav_failed', error: r.error };
+      };
+
+      // Channel: plain LinkedIn. Open Profile members can be messaged for free
+      // on the /in/ compose page. sendMessage throws if the compose box never
+      // appears (not messageable for free) — when the tickbox is on, fall back
+      // to an InMail; otherwise treat as not-Open-Profile.
+      const tryLinkedIn = async () => {
+        // Prefer the original /in/ handle (page may now be on a Sales Nav URL).
+        let publicId = _origPublicId
+          || page.url().match(/\/in\/([^/?#]+)/)?.[1]
+          || page.url().match(SALES_MEMBER_URN_RE)?.[1]
+          || null;
+        if (!publicId) return { ok: false, reason: 'no_public_id' };
+        try {
+          // v2.72: Open Profile members are messaged for free by clicking the
+          // "Message" button on their /in/ profile (works without Sales Nav).
+          // The /messaging/compose URL only opens a free box for existing
+          // connections — so try the profile button first, then compose as a
+          // fallback for 1st-degree connections.
+          try {
+            await sendOpenProfileViaProfileButton(page, publicId, opBody);
+            return { ok: true, action: { action: 'op_message_sent' } };
+          } catch (eProfile) {
+            console.warn(`[outreach] LinkedIn OP profile-button send failed: ${eProfile.message}`);
+            await sendMessage(page, opBody, publicId);
+            console.log('[outreach] ✓ Open Profile message sent via LinkedIn compose');
+            return { ok: true, action: { action: 'op_message_sent' } };
+          }
+        } catch (e) {
+          console.warn(`[outreach] LinkedIn OP send failed: ${e.message}`);
+          if (!spendInMail) return { ok: false, reason: 'not_open_profile' };
+          // InMail fallback needs an /in/ page for the Sales Nav resolve.
+          if (!/\/in\//.test(page.url())) {
+            try {
+              await page.goto(`https://www.linkedin.com/in/${publicId}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+              await new Promise(r => setTimeout(r, 3000));
+            } catch { /* best-effort */ }
+          }
+          try {
+            await sendInMail(page, opSubject, opBody);
+            return { ok: true, action: { action: 'op_message_sent' } };
+          } catch (e2) {
+            const msg = String(e2.message || '');
+            if (/NO_CREDITS/.test(msg)) return { ok: false, reason: 'no_credits', error: msg };
+            return { ok: false, reason: 'inmail_failed', error: msg };
+          }
+        }
+      };
+
+      let result;
+      if (channel === 'sn_only') {
+        result = await trySalesNav();
+      } else if (channel === 'ln_only') {
+        result = await tryLinkedIn();
+      } else if (channel === 'ln_first') {
+        result = await tryLinkedIn();
+        if (!result.ok) {
+          console.log(`[outreach] OP ln_first: LinkedIn failed (${result.reason}) → trying Sales Nav`);
+          result = await trySalesNav();
+        }
+      } else { // sn_first (default)
+        result = await trySalesNav();
+        if (!result.ok) {
+          console.log(`[outreach] OP sn_first: Sales Nav failed (${result.reason}) → trying LinkedIn`);
+          result = await tryLinkedIn();
+        }
+      }
+
+      if (result.ok) return result.action;
+      if (result.reason === 'not_open_profile')            return { action: 'skipped', error: 'NOT_OPEN_PROFILE: lead is not Open Profile (tick "Spend an InMail credit" to message anyway)' };
+      if (result.reason === 'no_credits')                  return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
       if (result.reason === 'inmail_no_credits_lead_not_op') return { action: 'skipped', error: 'INMAIL_NO_CREDITS_NOT_OP: account has 0 InMail credits and lead is not Open Profile' };
-      if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
-      if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
-      return { action: 'skipped', error: 'Sales Nav: unknown result' };
+      if (result.reason === 'sales_nav_unresolvable')      return { action: 'skipped', error: 'Could not resolve Sales Navigator link from the profile' };
+      if (result.reason === 'message_button_not_found')    return { action: 'skipped', error: 'Sales Nav Message button not found' };
+      if (result.reason === 'no_compose_textbox')          return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
+      return { action: 'skipped', error: result.error ? `Open Profile send failed: ${result.error}` : 'Open Profile send failed' };
     } else if (modeHint === 'force_connect_op_fallback') {
       // "Message Open Profiles Directly" in Connect campaign — try OP first,
       // fall back to Connect if the lead isn't OP-enabled.
