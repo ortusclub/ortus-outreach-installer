@@ -6701,11 +6701,24 @@ async function onUpdateClick(e) {
       if (!d || !d.ok) throw new Error('start failed');
       const res = await _pollDownloadProgress();
       if (res.done) {
-        pill.innerHTML = '<span class="update-pill-arrow">✓</span> Installer opened — drag to Applications';
-        const text = document.getElementById('update-status-text');
-        if (text) text.textContent = 'Download complete.';
         const fill = document.getElementById('update-bar-fill');
         if (fill) fill.style.width = '100%';
+        const text = document.getElementById('update-status-text');
+        // Hand off to the installer: auto-swap + relaunch (packaged) or open
+        // the DMG for a manual drag (dev/fallback).
+        pill.innerHTML = '<span class="update-pill-arrow">⟳</span> Installing…';
+        if (text) text.textContent = 'Installing the update…';
+        let inst = {};
+        try { inst = await (await fetch('/api/update-install', { method: 'POST' })).json(); }
+        catch { inst = {}; }
+        if (inst.relaunching) {
+          pill.innerHTML = '<span class="update-pill-arrow">✓</span> Updating — the app will reopen…';
+          if (text) text.textContent = 'The app will close and reopen on the new version.';
+        } else {
+          // Fallback: DMG opened for a manual drag.
+          pill.innerHTML = '<span class="update-pill-arrow">✓</span> Installer opened — drag to Applications';
+          if (text) text.textContent = 'Download complete.';
+        }
       } else {
         pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
         pill.disabled = false;

@@ -14,7 +14,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { appendFileSync, createWriteStream, existsSync } from 'node:fs';
+import { appendFileSync, createWriteStream, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
@@ -308,10 +308,9 @@ app.post('/api/update-download', (_req, res) => {
       nodeStream.on('data', (chunk) => { _downloadState.received += chunk.length; });
       await pipeline(nodeStream, createWriteStream(dest));
       _downloadState.done = true;
-      // Open the DMG so Finder mounts it and shows the drag-to-Applications window.
-      if (process.platform === 'darwin') {
-        spawn('open', [dest], { detached: true, stdio: 'ignore' }).unref();
-      }
+      // NB: the DMG is NOT opened here anymore. The client calls
+      // /api/update-install next, which either auto-swaps + relaunches
+      // (packaged) or opens the DMG for a manual drag (dev/fallback).
     } catch (err) {
       _downloadState.error = err.message;
     } finally {
@@ -323,6 +322,97 @@ app.post('/api/update-download', (_req, res) => {
 });
 
 app.get('/api/update-progress', (_req, res) => res.json(_downloadState));
+
+// v2.77: one-click auto-install. After the DMG has downloaded, swap the new
+// build into /Applications and relaunch — no manual quit/drag. Works on the
+// unsigned build because we strip the quarantine flag exactly like
+// install-mac.sh does, so Gatekeeper doesn't block. Only runs when the app is
+// launched from a packaged .app bundle; otherwise the caller falls back to
+// opening the DMG.
+function _packagedAppBundlePath() {
+  // process.execPath in a packaged build:
+  //   /Applications/The Ortus Outreach.app/Contents/MacOS/The Ortus Outreach
+  const m = String(process.execPath || '').match(/^(.*\.app)\/Contents\/MacOS\//);
+  if (!m) return null;
+  // In dev (`electron .`) execPath points at node_modules/.../Electron.app —
+  // never swap that. Only the real installed bundle qualifies.
+  if (!m[1].endsWith('/The Ortus Outreach.app')) return null;
+  return m[1];
+}
+
+app.post('/api/update-install', (_req, res) => {
+  const appBundle = _packagedAppBundlePath();
+  const dmg = _downloadState.path;
+  // Not packaged (dev) or no downloaded DMG → open the DMG for a manual
+  // drag-install and tell the UI to show the drag hint.
+  if (process.platform !== 'darwin' || !appBundle || !dmg || !existsSync(dmg)) {
+    if (process.platform === 'darwin' && dmg && existsSync(dmg)) {
+      spawn('open', [dmg], { detached: true, stdio: 'ignore' }).unref();
+    }
+    return res.json({ ok: true, fallback: true });
+  }
+
+  // A detached helper survives this app quitting: it waits for the process to
+  // exit, swaps the bundle (with a backup for rollback), strips quarantine,
+  // and relaunches. Keeps the DMG so the curl installer is always a fallback.
+  const logPath = join(tmpdir(), 'ortus-update.log');
+  const scriptPath = join(tmpdir(), 'ortus-update.sh');
+  const script = `#!/bin/bash
+DMG="$1"; APP="$2"; LOG="$3"
+exec >"$LOG" 2>&1
+echo "[updater] waiting for app to quit…"
+for i in $(seq 1 120); do
+  pgrep -f "$APP/Contents/MacOS/" >/dev/null || break
+  sleep 0.5
+done
+sleep 1
+MNT="$(mktemp -d /tmp/ortus-mnt.XXXXXX)"
+if ! hdiutil attach "$DMG" -nobrowse -noautoopen -mountpoint "$MNT" >/dev/null 2>&1; then
+  echo "[updater] mount failed — opening DMG for manual install"; open "$DMG"; exit 1
+fi
+SRC="$(/bin/ls -d "$MNT/"*.app 2>/dev/null | head -1)"
+if [ -z "$SRC" ]; then
+  echo "[updater] no .app in DMG"; hdiutil detach "$MNT" >/dev/null 2>&1; open "$DMG"; exit 1
+fi
+PARENT="$(dirname "$APP")"
+STAGE="$PARENT/.ortus-update-stage.app"
+BK="$PARENT/.ortus-update-backup.app"
+rm -rf "$STAGE" "$BK"
+echo "[updater] staging copy…"
+if ! cp -R "$SRC" "$STAGE"; then
+  echo "[updater] copy failed — opening DMG for manual install"
+  rm -rf "$STAGE"; hdiutil detach "$MNT" >/dev/null 2>&1; open "$DMG"; exit 1
+fi
+hdiutil detach "$MNT" >/dev/null 2>&1
+echo "[updater] swapping bundle…"
+mv "$APP" "$BK" && mv "$STAGE" "$APP"
+if [ ! -d "$APP" ]; then
+  echo "[updater] swap failed — restoring backup"
+  [ -d "$BK" ] && mv "$BK" "$APP"
+  open "$DMG"; exit 1
+fi
+rm -rf "$BK"
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null
+echo "[updater] relaunching"
+open "$APP"
+`;
+  try {
+    writeFileSync(scriptPath, script, 'utf8');
+    chmodSync(scriptPath, 0o755);
+    spawn('bash', [scriptPath, dmg, appBundle, logPath], { detached: true, stdio: 'ignore' }).unref();
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+
+  // Respond first, then quit so the helper can swap + relaunch. Quitting needs
+  // app.isQuitting=true to bypass the tray "hide on close" behavior.
+  res.json({ ok: true, relaunching: true });
+  if (process.versions && process.versions.electron) {
+    import('electron')
+      .then(({ app }) => { app.isQuitting = true; setTimeout(() => app.quit(), 400); })
+      .catch(() => {});
+  }
+});
 
 app.get('/api/server-log', (_req, res) => {
   res.json(serverLogs.slice(-200));
