@@ -18,6 +18,9 @@
       <div class="sidebar-brand">
         <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
         <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar"></span></div>
+        <!-- Shown only when a newer release exists on GitHub. Wired by
+             checkForUpdate() / onUpdateClick() in public/js/app.js. -->
+        <button type="button" id="update-pill" class="update-pill hidden" onclick="onUpdateClick(event)"></button>
       </div>
 
       <nav class="sidebar-nav">

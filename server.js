@@ -14,9 +14,13 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { appendFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { appendFileSync, createWriteStream, existsSync } from 'node:fs';
+import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homedir, tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
@@ -40,6 +44,7 @@ import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs } from './sr
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { checkDiskFree } from './src/disk-check.js';
+import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, latestDownloadUrl, latestReleaseUrl } from './src/updater.js';
 import {
   createUser, verifyCredentials, userExists,
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
@@ -229,6 +234,69 @@ console.error = (...args) => { captureLog('ERR', args); origError.apply(console,
 // ---------------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, time: new Date().toISOString(), version: APP_VERSION });
+});
+
+// ---------------------------------------------------------------------------
+// In-app updater — check GitHub Releases, download + open the matching DMG.
+// Unsigned builds can't silently self-update, so "update" = fetch the newest
+// DMG and open it for the operator to drag into /Applications.
+// ---------------------------------------------------------------------------
+let _updateCheckCache = null; // { ts, payload }
+const UPDATE_CHECK_TTL_MS = 5 * 60 * 1000;
+
+app.get('/api/update-check', async (_req, res) => {
+  // Serve a recent cached result to avoid hammering GitHub's unauthenticated
+  // 60-req/hr limit when the UI re-checks on every dashboard load.
+  if (_updateCheckCache && Date.now() - _updateCheckCache.ts < UPDATE_CHECK_TTL_MS) {
+    return res.json(_updateCheckCache.payload);
+  }
+  const arch = archLabel(process.arch);
+  try {
+    const resp = await fetch(LATEST_RELEASE_API, {
+      headers: { 'User-Agent': 'ortus-outreach-app', Accept: 'application/vnd.github+json' },
+    });
+    if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
+    const rel = await resp.json();
+    const latest = parseVersion(rel.tag_name);
+    const payload = {
+      ok: true,
+      current: APP_VERSION,
+      latest,
+      behind: isBehind(APP_VERSION, latest),
+      arch,
+      asset: dmgAssetName(arch),
+      downloadUrl: latestDownloadUrl(arch),
+      releaseUrl: latestReleaseUrl(),
+    };
+    _updateCheckCache = { ts: Date.now(), payload };
+    res.json(payload);
+  } catch (err) {
+    // Network/API failure → tell the UI we couldn't check; it just hides the
+    // pill rather than showing a false "up to date".
+    res.json({ ok: false, current: APP_VERSION, arch, error: err.message });
+  }
+});
+
+app.post('/api/update-download', async (_req, res) => {
+  const arch = archLabel(process.arch);
+  const asset = dmgAssetName(arch);
+  const url = latestDownloadUrl(arch);
+  // Prefer ~/Downloads so the operator can find the DMG; fall back to a temp dir.
+  const downloads = join(homedir(), 'Downloads');
+  const destDir = existsSync(downloads) ? downloads : tmpdir();
+  const dest = join(destDir, asset);
+  try {
+    const resp = await fetch(url, { headers: { 'User-Agent': 'ortus-outreach-app' } });
+    if (!resp.ok || !resp.body) throw new Error(`download failed: HTTP ${resp.status}`);
+    await pipeline(Readable.fromWeb(resp.body), createWriteStream(dest));
+    // Open the DMG so Finder mounts it and shows the drag-to-Applications window.
+    if (process.platform === 'darwin') {
+      spawn('open', [dest], { detached: true, stdio: 'ignore' }).unref();
+    }
+    res.json({ ok: true, path: dest, opened: process.platform === 'darwin' });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message, downloadUrl: url });
+  }
 });
 
 app.get('/api/server-log', (_req, res) => {

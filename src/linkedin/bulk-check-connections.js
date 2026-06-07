@@ -102,7 +102,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     const acctRaw = (c.account || '').toString().trim();
     const acct = acctRaw.toLowerCase();
     if (acct && !accountDisplay.has(acct)) accountDisplay.set(acct, acctRaw);
-    if (c.publicId) _addAcct(slugToAccounts, c.publicId.toLowerCase(), acct);
+    const pubId = (c.publicId == null ? '' : String(c.publicId)).trim();
+    if (pubId) _addAcct(slugToAccounts, pubId.toLowerCase(), acct);
     const mid = memberIdFromAny(c.urn) || memberIdFromAny(c.publicId);
     if (mid) _addAcct(memberIdToAccounts, mid, acct);
     const nameKey = `${(c.firstName || '').toLowerCase().trim()} ${(c.lastName || '').toLowerCase().trim()}`.trim();
@@ -515,7 +516,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     const sidecarRows = conns.map((c) => ({
       firstName: c.firstName || '',
       lastName: c.lastName || '',
-      publicId: c.publicId || '',
+      publicId: (c.publicId == null ? '' : String(c.publicId)),
       urn: memberIdFromAny(c.urn) || memberIdFromAny(c.publicId) || '',
       memberNumber: c.memberNumber || '',
       connectedAt: c.connectedAt || 0,
@@ -531,7 +532,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     matchSet = conns.map((c) => ({
       firstName: c.firstName || '',
       lastName: c.lastName || '',
-      publicId: c.publicId || '',
+      publicId: (c.publicId == null ? '' : String(c.publicId)),
       urn: memberIdFromAny(c.urn) || memberIdFromAny(c.publicId) || '',
       memberNumber: c.memberNumber || '',
       account: pName || '',

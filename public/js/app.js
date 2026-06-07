@@ -6612,6 +6612,55 @@ window.savePostAmpTemplate = savePostAmpTemplate;
 window.deletePostAmpTemplate = deletePostAmpTemplate;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// v2.73 — in-app update check. On load, /api/update-check compares the running
+// version against the latest GitHub release. If behind, the sidebar update pill
+// is revealed; clicking it downloads the matching DMG and opens it (the operator
+// drags the new build into /Applications and relaunches). Unsigned builds can't
+// self-update silently, so this is the safe, reliable path.
+// ─────────────────────────────────────────────────────────────────────────────
+let _updateInfo = null;
+
+async function checkForUpdate() {
+  const pill = document.getElementById('update-pill');
+  if (!pill) return;
+  try {
+    const r = await fetch('/api/update-check');
+    const d = await r.json();
+    if (!d || !d.ok || !d.behind) { pill.classList.add('hidden'); return; }
+    _updateInfo = d;
+    pill.innerHTML = '<span class="update-pill-arrow">↑</span> Update to v' + d.latest;
+    pill.disabled = false;
+    pill.classList.remove('hidden');
+  } catch {
+    pill.classList.add('hidden');
+  }
+}
+
+async function onUpdateClick(e) {
+  if (e) e.preventDefault();
+  const pill = document.getElementById('update-pill');
+  if (!pill) return;
+  pill.disabled = true;
+  pill.innerHTML = '<span class="update-pill-arrow">↓</span> Downloading…';
+  try {
+    const r = await fetch('/api/update-download', { method: 'POST' });
+    const d = await r.json();
+    if (d && d.ok) {
+      pill.innerHTML = '<span class="update-pill-arrow">✓</span> Installer opened';
+    } else {
+      pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
+      pill.disabled = false;
+    }
+  } catch {
+    pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
+    pill.disabled = false;
+  }
+}
+
+window.onUpdateClick = onUpdateClick;
+document.addEventListener('DOMContentLoaded', () => { setTimeout(checkForUpdate, 800); });
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 2.8.19 (A2/A3) — section readiness, summaries, and sidebar glyphs
 // ─────────────────────────────────────────────────────────────────────────────
 

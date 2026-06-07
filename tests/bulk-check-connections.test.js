@@ -655,3 +655,23 @@ test('no heal for a normal Connection Request Sent row (no connectionStatus key 
   const withConnStatus = updates.find((u) => u.connectionStatus);
   assert.equal(withConnStatus, undefined, 'normal rows must not get a connectionStatus heal write');
 });
+
+// v2.72.1 — numeric publicId regression. Google Sheets returns an all-digits
+// connection slug as a Number when read back from the sidecar tab. The loop
+// used to call c.publicId.toLowerCase() directly, which threw
+// "c.publicId.toLowerCase is not a function" and aborted the WHOLE account's
+// bulk-check. computeBulkCheckUpdates must coerce publicId to a string.
+test('v2.72.1: numeric publicId in conns does not throw and still matches by name', () => {
+  const rows = [baseRow()];
+  const numericConns = [
+    { firstName: 'Jane', lastName: 'Doe', publicId: 123456789, urn: 'ACoAAaaa', memberNumber: '111', account: 'eryca.bilazon@ortus.solutions' },
+  ];
+  assert.doesNotThrow(() => {
+    const { connectedUrls } = computeBulkCheckUpdates(
+      rows, numericConns, linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
+    );
+    // name match still works even though publicId was numeric
+    assert.equal(connectedUrls.length, 1);
+    assert.equal(connectedUrls[0], 'https://linkedin.com/in/jane-doe');
+  });
+});

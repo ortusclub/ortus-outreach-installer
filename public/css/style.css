@@ -129,6 +129,30 @@ body {
   margin-top: 14px;
 }
 
+/* v2.73 — in-app update pill. Hidden unless a newer GitHub release exists.
+   Uses the same gold-tint emphasis as the active nav item so it reads as
+   "actionable" without competing with the Start CTA. */
+.update-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 6px 12px;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--gold-tint-bg);
+  border: 1px solid var(--gold);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.update-pill:hover { opacity: 0.8; }
+.update-pill:disabled { cursor: default; opacity: 0.6; }
+.update-pill .update-pill-arrow { color: var(--gold); font-weight: 700; }
+
 /* v2.59.12 — nav restyled to the card language: container holds the horizontal
    inset (12px) so each item is an inset rounded row; items are buttons/cards
    with a clear hover surface; the active step gets the selected-card treatment
