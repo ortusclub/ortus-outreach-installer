@@ -8715,7 +8715,8 @@ async function togglePastMonitoring(idx, on, btn) {
         ? 'Monitoring turned on — reply/accept checks will run for 7 days.'
         : 'Monitoring stopped — browsers will no longer reopen for this campaign.', 4000);
     }
-    if (typeof refreshPastCampaigns === 'function') refreshPastCampaigns();
+    if (typeof window.renderPastSection === 'function') window.renderPastSection();
+    else if (typeof refreshPastCampaigns === 'function') refreshPastCampaigns();
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not change monitoring: ' + e.message, 5000);
     if (btn) btn.disabled = false;
@@ -12021,6 +12022,7 @@ function v3RenderPastRow(p, displayIdx, safe) {
       <div class="pa-when">${safe(ago)}</div>
       <div class="pa-stats"><b>${sent}</b> sent</div>
       ${rateHtml}
+      ${monitoringChipHtml(oIdx, p)}
       <div class="dock" id="${dockId}" role="toolbar" aria-label="${safe(p.name || '')} actions">
         ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Resume" aria-label="Resume" onclick="window.dashResumePast(${oIdx})">${V3_SVG_PLAY}</button>` : ''}
         <button class="dock-btn" data-tip="Rerun" aria-label="Rerun" onclick="window.dashRerunPast(${oIdx})">${V3_SVG_RESTART}</button>
