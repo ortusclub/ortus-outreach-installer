@@ -68,7 +68,10 @@ const HISTORY_PATH = dataPath('history.json');
 // The in-batch trigger also enforces FIRST_HOUR_BLACKOUT_MS explicitly
 // against campaign.startedAt so the very first profile turn doesn't fire
 // at minute 1 just because the cooldown file shows "never checked".
-const IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+// v2.79: while SENDING, acceptance checks run at most every 6h per account so
+// they barely disturb the connect phase. Outside the send phase (monitoring),
+// checks run every ~1h via the operator's checkIntervalMinutes cadence.
+const IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FIRST_HOUR_BLACKOUT_MS = 60 * 60 * 1000;
 // Same 60-min floor as the cooldown — the idle trigger already double-
 // counted as the first-hour gate, this keeps them in sync.
@@ -85,7 +88,7 @@ const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Hard cap — 5 leads per batch per profile, for ALL modes (D-01). Not configurable. */
-export const BATCH_SIZE = 5;
+export const BATCH_SIZE = 8; // v2.79: 5→8 — fewer browser re-opens/health-checks per turn
 
 /** Pure helper — human-readable label for a parked-profile reason code.
  *  Used by the end-of-run "why did it stop" notice (v2.72). */
@@ -3102,9 +3105,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               }
             }
 
-            // ~30% chance: browse the feed organically during the wait (looks like a real user).
-            // Skip entirely in message mode AND check_status mode — both should move fast.
-            if (!isFastMode && mode !== 'check_status' && Math.random() < 0.3 && !campaign._abort) {
+            // v2.79: ~10% chance (was 30%) to browse the feed during the wait —
+            // cheap realism cover, kept light so the connect phase moves faster.
+            // Skip entirely in message mode AND check_status mode.
+            if (!isFastMode && mode !== 'check_status' && Math.random() < 0.1 && !campaign._abort) {
               setAction('Organic browsing', { account: pName });
               await browseFeedOrganically(page, pName);
             }

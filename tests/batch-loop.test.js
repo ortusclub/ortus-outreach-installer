@@ -23,9 +23,10 @@ test('shouldCloseBetweenBatches: explicit threshold overrides default', () => {
   assert.equal(shouldCloseBetweenBatches({ waitMs: 31 * 60_000, closeGapMin: 30 }), true);
 });
 
-test('campaign.js declares BATCH_SIZE = 5 as a module-level constant', () => {
+test('campaign.js declares BATCH_SIZE = 8 as a module-level constant', () => {
   const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
-  assert.match(src, /const\s+BATCH_SIZE\s*=\s*5\s*;/);
+  // v2.79: raised 5→8 to cut per-turn browser re-open/health-check overhead.
+  assert.match(src, /BATCH_SIZE\s*=\s*8\s*;/);
 });
 
 test('campaign.js no longer contains the session-break branch (D-04 deletion)', () => {
