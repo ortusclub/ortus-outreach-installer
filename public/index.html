@@ -517,12 +517,13 @@
             <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()">
             <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
           </div>
-          <!-- v2.52.0: visual hidden per operator request. Input element kept
-               alive so the existing primaryUrl flow keeps working. -->
-          <div class="intro-config-field" style="display:none;">
+          <!-- v2.78: re-shown per operator request — the primary's profile URL
+               is needed for the "is the account connected to the primary?" check
+               and for the {primary url} placeholder. -->
+          <div class="intro-config-field">
             <label for="primary-person-url" class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
             <input type="text" id="primary-person-url" class="intro-config-input" placeholder="https://www.linkedin.com/in/..." oninput="savePrimaryPersonFields()">
-            <div class="intro-config-hint">If included, the intro DM will mention/link this profile via <code>{primary url}</code>.</div>
+            <div class="intro-config-hint">The primary person's profile. Used to check each account is connected to them, and for the <code>{primary url}</code> placeholder.</div>
           </div>
         </div>
 
@@ -1747,6 +1748,30 @@
       </div>
       <div class="stop-choice-cancel-row">
         <button type="button" class="modal-cancel-link" onclick="closeStopChoiceModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.78: solo-check scope choice — check this campaign's accounts, or every
+       sender in the sheet's Sender column. Driven by openSoloCheckModal(idx). -->
+  <div id="solo-check-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeSoloCheckModal()">
+    <div class="modal-card stop-choice-card" role="dialog" aria-modal="true" aria-labelledby="solo-check-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeSoloCheckModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Run a solo check</div>
+      <h3 id="solo-check-title" class="modal-title stop-choice-headline">Check which accounts?</h3>
+      <p class="stop-choice-sub">One connection check now — stamps newly Connected, and for Connect + Introduce fires the intro where Introduction Status is blank.</p>
+      <div class="stop-choice-row">
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('campaign')">
+          <div class="stop-choice-pill-headline">This campaign's<br>accounts</div>
+          <div class="stop-choice-pill-sub">Checks only the accounts this campaign used.</div>
+        </button>
+        <button type="button" class="stop-choice-pill is-monitor" onclick="runSoloCheck('sheet')">
+          <div class="stop-choice-pill-headline">All senders<br>in the sheet</div>
+          <div class="stop-choice-pill-sub">Checks every account in the sheet's Sender column.</div>
+        </button>
+      </div>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="modal-cancel-link" onclick="closeSoloCheckModal()">Cancel</button>
       </div>
     </div>
   </div>

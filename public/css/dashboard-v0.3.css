@@ -576,6 +576,11 @@
     border-bottom: 1px solid var(--hairline-soft);
     transition: background 0.12s;
   }
+  /* v2.78: right-side action cluster (solo + monitoring chips + dock) kept in
+     a single grid cell so they never wrap to a second row. */
+  body[data-dashboard='v3'] .pa-actions {
+    display: inline-flex; align-items: center; gap: 8px; justify-self: end;
+  }
   body[data-dashboard='v3'] .pa-row:last-child { border-bottom: none; }
   body[data-dashboard='v3'] .pa-row:hover { background: rgba(0,0,0,0.02); }
   body[data-dashboard='v3'].theme-dark .pa-row:hover { background: rgba(255,255,255,0.03); }
@@ -613,6 +618,12 @@
     font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase;
     color: var(--red); border: 1px solid var(--red); border-radius: 9999px;
     padding: 3px 9px; min-width: 64px; justify-content: center;
+  }
+  /* v2.78: monitoring/solo chips — v3-scoped so the `body[data-dashboard='v3']
+     button { font: inherit }` rule doesn't blow up their font. Matches the
+     .pa-stopped badge sizing exactly. */
+  body[data-dashboard='v3'] .mon-chip {
+    font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.16em;
   }
   /* Past dock — same compact treatment as the queue dock */
   body[data-dashboard='v3'] .pa-row .dock {
@@ -726,13 +737,51 @@
   body[data-dashboard='v3'] .vj-card.is-mini .vj-profiles { display: none; }
   body[data-dashboard='v3'] .vj-prof-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
     align-items: center;
     gap: 14px;
     padding: 6px 0;
     font-family: var(--mono);
     font-size: 0.72rem;
   }
+  /* v2.78: pre-launch bench toggle in the Selected Accounts list. */
+  body[data-dashboard='v3'] .bench-btn {
+    font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink); background: transparent; border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 3px 10px; cursor: pointer; white-space: nowrap; margin-left: 10px;
+  }
+  body[data-dashboard='v3'] .bench-btn:hover { border-color: var(--ink); }
+  body[data-dashboard='v3'] .bench-btn.is-benched { color: var(--red); border-color: var(--red); background: rgba(248,81,73,0.08); }
+  body[data-dashboard='v3'] .selected-item.is-benched .name { color: var(--gray); text-decoration: line-through; }
+
+  /* v2.78: connection-to-primary label (CC+IC). */
+  body[data-dashboard='v3'] .prof-primary-tag {
+    font-size: 0.5rem; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--hairline);
+    white-space: nowrap;
+  }
+  body[data-dashboard='v3'] .prof-primary-tag.is-yes { color: var(--ink); border-color: var(--green, #00a854); background: rgba(0,168,84,0.08); }
+  body[data-dashboard='v3'] .prof-primary-tag.is-no { color: var(--ink); border-color: #d97706; background: rgba(217,119,6,0.08); }
+  /* v2.78: per-account skip toggle (bench from the rotation this run). */
+  body[data-dashboard='v3'] .vj-prof-row.is-skipped .vj-prof-name { color: var(--gray); text-decoration: line-through; }
+  body[data-dashboard='v3'] .prof-open-btn {
+    font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink); background: transparent; border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 3px 10px; cursor: pointer; white-space: nowrap;
+  }
+  body[data-dashboard='v3'] .prof-open-btn:hover { border-color: var(--ink); }
+  body[data-dashboard='v3'] .prof-skip-toggle { position: relative; display: inline-block; width: 28px; height: 16px; flex-shrink: 0; }
+  body[data-dashboard='v3'] .prof-skip-toggle input { opacity: 0; width: 0; height: 0; }
+  body[data-dashboard='v3'] .prof-skip-slider {
+    position: absolute; inset: 0; cursor: pointer; border-radius: 9999px;
+    background: var(--hairline); transition: background 0.15s;
+  }
+  body[data-dashboard='v3'] .prof-skip-slider::before {
+    content: ''; position: absolute; height: 12px; width: 12px; left: 2px; top: 2px;
+    background: #fff; border-radius: 50%; transition: transform 0.15s;
+  }
+  body[data-dashboard='v3'] .prof-skip-toggle input:checked + .prof-skip-slider { background: var(--green, #00a854); }
+  body[data-dashboard='v3'] .prof-skip-toggle input:checked + .prof-skip-slider::before { transform: translateX(12px); }
   body[data-dashboard='v3'] .vj-prof-name {
     color: var(--ink);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -796,14 +845,16 @@
   }
   body[data-dashboard='v3'].theme-dark .vj-log { background: rgba(255,255,255,0.03); }
   body[data-dashboard='v3'] .vj-log:empty::after { content: 'No events yet'; color: var(--gray-faint); font-style: italic; }
-  body[data-dashboard='v3'] .vj-log-line { display: grid; grid-template-columns: 64px 70px 1fr; gap: 12px; padding: 3px 6px; margin: 0 -6px; border-radius: 4px; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-log-line { display: grid; grid-template-columns: 64px 70px 1fr; gap: 12px; padding: 3px 6px; margin: 0 -6px; border-radius: 4px; color: var(--gray); align-items: start; }
   body[data-dashboard='v3'] .vj-log-line:hover { background: var(--hairline-soft); }
   body[data-dashboard='v3'] .vj-log-line .time { color: var(--gray-faint); }
   body[data-dashboard='v3'] .vj-log-line .evt { color: var(--ink); text-transform: uppercase; font-size: 0.62rem; letter-spacing: 0.06em; }
   body[data-dashboard='v3'] .vj-log-line.is-ok .evt { color: var(--green); }
   body[data-dashboard='v3'] .vj-log-line.is-warn .evt { color: var(--gold); }
   body[data-dashboard='v3'] .vj-log-line.is-err .evt { color: var(--red); }
-  body[data-dashboard='v3'] .vj-log-line .what { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* v2.78: wrap long log lines (URLs, column lists) onto the next row instead
+     of truncating with an ellipsis, so the operator can read the full message. */
+  body[data-dashboard='v3'] .vj-log-line .what { color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 
   body[data-dashboard='v3'] .vj-bulk {
     display: flex; flex-direction: column; gap: 10px;

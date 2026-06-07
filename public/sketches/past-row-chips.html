@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- v2.78 styling harness: renders a v3 Past row with the solo/monitoring chips
+     using the REAL css so the chip sizing can be verified in a headless shot. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="../css/style.css" />
+  <link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+  <style> body { padding: 40px; } #pastList { max-width: 1180px; } </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+  <div id="pastList">
+    <div class="pa-row">
+      <input type="checkbox" class="pa-check" />
+      <div class="glyph">C+I</div>
+      <div class="pa-name">Poo</div>
+      <div class="pa-when">2m ago</div>
+      <div class="pa-stats"><b>0</b> sent</div>
+      <div class="pa-stopped">Stopped early</div>
+      <div class="pa-actions">
+        <button class="mon-chip is-solo">Run a solo check</button>
+        <button class="mon-chip is-off">Monitoring off</button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- second row showing the ON + STOP states -->
+    <div class="pa-row">
+      <input type="checkbox" class="pa-check" />
+      <div class="glyph">C+I</div>
+      <div class="pa-name">Poo</div>
+      <div class="pa-when">2m ago</div>
+      <div class="pa-stats"><b>0</b> sent</div>
+      <div class="pa-stopped">Stopped early</div>
+      <div class="pa-actions">
+        <button class="mon-chip is-stop-solo">■ Stop solo check</button>
+        <button class="mon-chip is-on">● Monitoring · 7 days</button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="7,4 20,12 7,20"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

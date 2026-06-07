@@ -186,14 +186,19 @@ body {
 }
 
 /* v2.76 — per-Past-campaign monitoring on/off chip. */
+/* Matches the compact STOPPED EARLY badge (.pa-stopped) so the row's pills are
+   visually consistent. */
 .mon-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 4px 10px;
+  padding: 3px 9px;
+  box-sizing: border-box;
+  width: 168px;          /* fixed so every action pill is the same size */
   font-family: var(--mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.1em;
+  font-size: 0.55rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   border-radius: 9999px;
   border: 1px solid var(--hairline);
@@ -208,6 +213,12 @@ body {
 .mon-chip.is-on { color: var(--ink); border-color: var(--gold); background: var(--gold-tint-bg); }
 /* Off = muted. */
 .mon-chip.is-off { color: var(--gray); }
+/* Solo = a one-off check action; neutral ink outline. */
+.mon-chip.is-solo { color: var(--ink); border-color: var(--hairline); }
+.mon-chip.is-solo:hover { border-color: var(--ink); opacity: 1; }
+/* Stop-solo = halt the running solo check; red to read as a stop action. */
+.mon-chip.is-stop-solo { color: var(--red); border-color: var(--red); }
+.mon-chip.is-stop-solo:hover { background: rgba(248, 81, 73, 0.08); opacity: 1; }
 
 /* v2.59.12 — nav restyled to the card language: container holds the horizontal
    inset (12px) so each item is an inset rounded row; items are buttons/cards

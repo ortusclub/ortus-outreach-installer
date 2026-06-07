@@ -34,6 +34,9 @@ let _lcWriteCache = {};
 let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
+// v2.78: accounts pre-benched in the wizard — selected but start the campaign
+// out of the rotation (translated to campaign._skippedProfiles on launch).
+let benchedProfileIds = new Set();
 
 // ─────────────────────────────────────────────────────────────────────────
 // Draft state: activeDraftId is the single source of truth for which draft
@@ -233,6 +236,7 @@ function gatherCampaignFormState() {
     linkedinColumn,
     templates,
     profileIds: [...selectedProfileIds],
+    benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     senderFirstNames,
     mode,
     senderColumn,
@@ -981,10 +985,15 @@ function renderSelectedPanel() {
     const senderTag = first
       ? `<span class="sender-first" style="color:#3fb950;font-size:11px;margin-left:6px">→ "${escHtml(first)}"</span>`
       : `<span class="sender-first" style="color:#f85149;font-size:11px;margin-left:6px">⚠ no first name</span>`;
-    return `<div class="selected-item">
+    // v2.78: bench toggle — a benched account is still selected but starts the
+    // campaign out of the rotation (you can un-bench it live mid-run).
+    const benched = benchedProfileIds.has(id);
+    const benchBtn = `<button type="button" class="bench-btn ${benched ? 'is-benched' : ''}" onclick="toggleBenchProfile('${id}')" title="${benched ? 'Benched — will start out of the rotation. Click to include.' : 'Active — click to bench (start this account out of the rotation).'}">${benched ? 'Benched' : 'Active'}</button>`;
+    return `<div class="selected-item${benched ? ' is-benched' : ''}">
       <span class="order">${i + 1}</span>
       <span class="name">${escHtml(name)}</span>
       ${senderTag}
+      ${benchBtn}
       <button class="btn-remove" onclick="removeProfile('${id}')" title="Remove">&times;</button>
     </div>`;
   }).join('');
@@ -995,9 +1004,17 @@ function renderSelectedPanel() {
   }
 }
 
+function toggleBenchProfile(id) {
+  if (benchedProfileIds.has(id)) benchedProfileIds.delete(id);
+  else benchedProfileIds.add(id);
+  renderSelectedPanel();
+}
+window.toggleBenchProfile = toggleBenchProfile;
+
 function removeProfile(id) {
   selectedProfileIds = selectedProfileIds.filter(pid => pid !== id);
   delete selectedProfileNames[id];
+  benchedProfileIds.delete(id);
   const cb = document.querySelector(`#profiles-grid input[value="${id}"]`);
   if (cb) { cb.checked = false; cb.closest('.profile-item')?.classList.remove('selected'); }
   renderSelectedPanel();
@@ -3020,6 +3037,8 @@ async function startCampaign(opts = {}) {
 
   const body = {
     profileIds: selectedProfileIds,
+    // v2.78: accounts to start benched (out of the rotation).
+    benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     sheetUrl,
     templates,
     dailyLimit,
@@ -8704,7 +8723,7 @@ function monitoringChipHtml(idx, c) {
   const mon = c.monitoring || {};
   if (mon.active) {
     const daysLeft = mon.expiresAt ? Math.max(0, Math.ceil((mon.expiresAt - Date.now()) / 86400000)) : 0;
-    const label = '● Monitoring' + (daysLeft ? ' · ' + daysLeft + 'd' : '');
+    const label = '● Monitoring' + (daysLeft ? ' · ' + daysLeft + (daysLeft === 1 ? ' day' : ' days') : '');
     return `<button type="button" class="mon-chip is-on" title="Background reply/accept checks are running for this campaign (reopens browsers periodically). Click to turn off." onclick="event.stopPropagation(); togglePastMonitoring(${idx}, false, this)">${label}</button>`;
   }
   if (PAST_REPLY_MODES.has(c.mode)) {
@@ -8736,6 +8755,145 @@ async function togglePastMonitoring(idx, on, btn) {
   }
 }
 window.togglePastMonitoring = togglePastMonitoring;
+
+// v2.78: "Run a solo check" — a one-off connection check for a past campaign.
+// Clicking opens a choice modal: this campaign's accounts, or every sender in
+// the sheet's Sender column. Distinct from the monitoring chip (which is the
+// recurring 7-day background tracking).
+let _soloCheckIdx = null;
+let _soloCheckRunning = false;
+let _soloCheckRunningIdx = null;
+function soloCheckChipHtml(idx, c) {
+  if (!c.settings || !c.settings.sheetUrl) return '';
+  // While this row's solo check runs, swap the button for a Stop control.
+  if (_soloCheckRunning && _soloCheckRunningIdx === idx) {
+    return `<button type="button" class="mon-chip is-stop-solo" title="Stop the running solo check." onclick="event.stopPropagation(); stopSoloCheck(this)">■ Stop solo check</button>`;
+  }
+  return `<button type="button" class="mon-chip is-solo" title="Run one connection check now — choose this campaign's accounts or all senders in the sheet." onclick="event.stopPropagation(); openSoloCheckModal(${idx})">Run a solo check</button>`;
+}
+// The scope-choice modal is shared: a handler is set when it's opened, and the
+// two buttons dispatch the chosen mode ('campaign' | 'sheet') to it.
+let _soloCheckHandler = null;
+function _showSoloCheckModal() {
+  const m = document.getElementById('solo-check-modal');
+  if (m) m.classList.remove('hidden');
+}
+function openSoloCheckModal(idx) {            // Past-row "Run a solo check"
+  _soloCheckIdx = idx;
+  _soloCheckHandler = (mode) => _runSoloCheckPast(idx, mode);
+  _showSoloCheckModal();
+}
+function openActiveBulkCheckModal() {          // active "Run check now"
+  _soloCheckHandler = (mode) => _runActiveBulkCheck(mode);
+  _showSoloCheckModal();
+}
+function closeSoloCheckModal() {
+  const m = document.getElementById('solo-check-modal');
+  if (m) m.classList.add('hidden');
+}
+function runSoloCheck(mode) {                   // modal buttons → dispatch
+  closeSoloCheckModal();
+  const h = _soloCheckHandler;
+  _soloCheckHandler = null;
+  if (typeof h === 'function') h(mode);
+}
+
+// Active running/monitoring campaign: bulk connection check, scoped to the
+// campaign's accounts or all senders in the sheet (allSenders → server derives
+// from the Sender column even mid-run).
+async function _runActiveBulkCheck(mode) {
+  let s = {};
+  try { s = await (await fetch('/api/campaign/status')).json(); } catch { /* */ }
+  if (!s.sheetUrl) { if (typeof showCampaignToast === 'function') showCampaignToast('No sheet URL'); return; }
+  const body = { sheetUrl: s.sheetUrl, linkedinColumn: s.linkedinColumn };
+  if (mode === 'sheet') body.allSenders = true;
+  else body.profileIds = s.profileIds;
+  const willPause = !!(s.running && !s.paused);
+  if (typeof showCampaignToast === 'function') {
+    showCampaignToast(mode === 'sheet'
+      ? (willPause ? 'Pausing + checking all senders in the sheet…' : 'Checking all senders in the sheet…')
+      : (willPause ? 'Pausing campaign + running bulk check…' : 'Running bulk check…'));
+  }
+  try {
+    const r = await fetch('/api/bulk-check-now', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) {
+      const res = d.result || {};
+      if (typeof showCampaignToast === 'function') showCampaignToast(`Bulk check done — ${res.matched || 0} newly accepted${d.autoPaused ? '. Campaign resumed.' : ''}.`);
+    } else if (typeof showCampaignToast === 'function') {
+      showCampaignToast('Bulk check failed: ' + (d.error || 'unknown'));
+    }
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Bulk check failed: ' + e.message);
+  }
+}
+
+async function _runSoloCheckPast(idx, mode) {
+  if (idx == null) return;
+  const entry = Array.isArray(_v3PastEntries) ? _v3PastEntries.find((e) => e._originalIdx === idx) : null;
+  const s = entry && entry.settings;
+  if (!s || !s.sheetUrl) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('No saved settings for this campaign.');
+    return;
+  }
+  const t = s.templates || {};
+  const body = {
+    sheetUrl: s.sheetUrl,
+    linkedinColumn: s.linkedinColumn || '',
+    primaryName: t.primaryName || '',
+    primaryIntroBody: t.primaryIntroBody || '',
+    primaryUrl: t.primaryUrl || '',
+    introTitle: t.introTitle || '',
+  };
+  // 'campaign' → pass the saved accounts. 'sheet' → omit profileIds so the
+  // server derives every account from the sheet's Sender column.
+  if (mode === 'campaign') body.profileIds = Array.isArray(s.profileIds) ? s.profileIds : [];
+  if (typeof showCampaignToast === 'function') {
+    showCampaignToast(mode === 'sheet'
+      ? 'Solo check started — sweeping all senders in the sheet… watch the log.'
+      : 'Solo check started — sweeping this campaign’s accounts… watch the log.', 5000);
+  }
+  // Flip to the Stop button while the sweep runs.
+  _soloCheckRunning = true;
+  _soloCheckRunningIdx = idx;
+  if (typeof window.renderPastSection === 'function') window.renderPastSection();
+  try {
+    const r = await fetch('/api/bulk-check-now', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || 'failed');
+    const res = d.result || {};
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(`Solo check done — ${res.matched || 0} Connected, ${res.stamped || 0} still pending across ${d.profilesSweep || 0} account(s).`, 7000);
+    }
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Solo check failed: ' + e.message, 7000);
+  } finally {
+    _soloCheckRunning = false;
+    _soloCheckRunningIdx = null;
+    if (typeof window.renderPastSection === 'function') window.renderPastSection();
+  }
+}
+async function stopSoloCheck(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+  try {
+    await fetch('/api/bulk-check/stop', { method: 'POST' });
+    if (typeof showCampaignToast === 'function') showCampaignToast('Stopping solo check…', 3000);
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not stop: ' + e.message, 4000);
+    if (btn) { btn.disabled = false; btn.textContent = '■ Stop solo check'; }
+  }
+  // The in-flight runSoloCheck fetch resolves once the sweep breaks; its
+  // finally clears the running state and re-renders the Run button.
+}
+window.openSoloCheckModal = openSoloCheckModal;
+window.openActiveBulkCheckModal = openActiveBulkCheckModal;
+window.closeSoloCheckModal = closeSoloCheckModal;
+window.runSoloCheck = runSoloCheck;
+window.stopSoloCheck = stopSoloCheck;
 
 function buildPastRowHtml({ idx, c }) {
   const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
@@ -10679,6 +10837,24 @@ function _activeProfileChip(name, status) {
   return { label: 'Queued', cls: 'is-idle' };
 }
 
+// v2.78: bench/un-bench an account in the live rotation. checked = active (in
+// rotation); we send skip = !checked. The next status poll re-renders state.
+async function toggleProfileSkip(id, checked, event) {
+  if (event) event.stopPropagation();
+  try {
+    await fetch('/api/campaign/profile-skip', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: id, skip: !checked }),
+    });
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(checked ? 'Account back in the rotation.' : 'Account benched for this run.', 3000);
+    }
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not change account: ' + e.message, 4000);
+  }
+}
+window.toggleProfileSkip = toggleProfileSkip;
+
 function renderActiveProfiles(status) {
   const el = document.getElementById('active-profiles');
   if (!el) return;
@@ -10687,16 +10863,44 @@ function renderActiveProfiles(status) {
   if (!names.length) { el.hidden = true; el.innerHTML = ''; return; }
   const counts = status.campaignCounts || {};
   const cap    = Number(status.dailyLimit) || 0;
+  const skippedList = Array.isArray(status.skippedProfiles) ? status.skippedProfiles : [];
   const rows = names.map((name, i) => {
     const id = ids[i] || '';
     const chip = _activeProfileChip(name, status);
     const sent = id ? (Number(counts[id]) || 0) : 0;
     const todayCell = cap > 0 ? `${sent}/${cap} today` : `${sent} today`;
+    // v2.78: skip toggle. "Active" (checked) = in the rotation. An account is
+    // off when manually skipped OR auto-parked/capped (is-warn). Flipping a
+    // parked account on retries it; flipping an active one off benches it.
+    const isSkipped = !!(id && skippedList.includes(id));
+    const isWarn = chip.cls === 'is-warn';
+    const active = !isSkipped && !isWarn;
+    const toggleTitle = active
+      ? 'In rotation — turn off to skip this account for the rest of the run'
+      : (isWarn ? 'Parked — turn on to retry this account' : 'Skipped — turn on to put it back in the rotation');
+    const toggle = id ? `<label class="prof-skip-toggle" title="${escHtml(toggleTitle)}">
+          <input type="checkbox" ${active ? 'checked' : ''} onchange="toggleProfileSkip('${escHtml(id)}', this.checked, event)" />
+          <span class="prof-skip-slider"></span>
+        </label>` : '<span></span>';
+    // v2.78: open the account's browser to fix issues (e.g. "needs login").
+    const openBtn = id
+      ? `<button type="button" class="prof-open-btn" title="Open this account's browser to log in / fix issues" onclick="event.stopPropagation(); openProfileBrowser('${escHtml(id)}')">Open</button>`
+      : '<span></span>';
+    // v2.78: CC+IC connection-to-primary label.
+    const pc = (status.primaryConn && id) ? status.primaryConn[id] : null;
+    const primaryTag = pc === 'connected'
+      ? '<span class="prof-primary-tag is-yes" title="Connected to the primary person (1st-degree)">Primary ✓</span>'
+      : pc === 'pending'
+        ? '<span class="prof-primary-tag is-no" title="Not connected to the primary — a connect request was sent; this account’s intros are held until it’s accepted">No primary</span>'
+        : '<span></span>';
     return `
-      <div class="vj-prof-row ${chip.cls}">
+      <div class="vj-prof-row ${chip.cls}${isSkipped ? ' is-skipped' : ''}">
         <span class="vj-prof-name" title="${escHtml(name)}">${escHtml(name)}</span>
-        <span class="vj-prof-chip">${escHtml(chip.label)}</span>
+        ${primaryTag}
+        <span class="vj-prof-chip">${escHtml(isSkipped ? 'Skipped' : chip.label)}</span>
         <span class="vj-prof-today">${escHtml(todayCell)}</span>
+        ${openBtn}
+        ${toggle}
       </div>
     `;
   }).join('');
@@ -11122,47 +11326,9 @@ window.dashCopyActiveToQueue = async function() {
   } catch (err) { console.error('[v3] dashCopyActiveToQueue:', err); }
 };
 
-window.dashBulkCheck = async function() {
-  try {
-    const sr = await fetch('/api/campaign/status');
-    const s = await sr.json();
-    if (!s.sheetUrl) {
-      if (typeof showCampaignToast === 'function') showCampaignToast('No sheet URL');
-      return;
-    }
-    // v2.71: this request can take 1-5 min when the campaign is running
-    // (pause + per-profile sweep + auto-intros). Surface an immediate toast
-    // so the operator knows the click registered, then a final one on
-    // completion. The Live Log shows pause/resume + per-profile lines in
-    // the meantime.
-    const willPause = !!(s.running && !s.paused);
-    if (typeof showCampaignToast === 'function') {
-      showCampaignToast(willPause
-        ? 'Pausing campaign + running bulk check…'
-        : 'Running bulk check…');
-    }
-    const r = await fetch('/api/bulk-check-now', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sheetUrl: s.sheetUrl,
-        profileIds: s.profileIds,
-        linkedinColumn: s.linkedinColumn,
-      }),
-    });
-    const body = await r.json().catch(() => ({}));
-    if (body.ok) {
-      const result = body.result || {};
-      const matched = result.matched || 0;
-      const msg = body.autoPaused
-        ? `Bulk check done — ${matched} newly accepted. Campaign resumed.`
-        : `Bulk check done — ${matched} newly accepted.`;
-      if (typeof showCampaignToast === 'function') showCampaignToast(msg);
-    } else {
-      if (typeof showCampaignToast === 'function') showCampaignToast('Bulk check failed: ' + (body.error || 'unknown'));
-    }
-  } catch (err) { console.error('[v3] dashBulkCheck:', err); }
-};
+// v2.78: Run check now → ask scope (this campaign's accounts vs all senders in
+// the sheet), then run via _runActiveBulkCheck. Same modal as "Run a solo check".
+window.dashBulkCheck = function() { openActiveBulkCheckModal(); };
 
 // v2.72: messaging campaigns don't send connection requests, so the check
 // section becomes a REPLY check (scan sent threads for replies) instead of a
@@ -12035,6 +12201,8 @@ function v3RenderPastRow(p, displayIdx, safe) {
       <div class="pa-when">${safe(ago)}</div>
       <div class="pa-stats"><b>${sent}</b> sent</div>
       ${rateHtml}
+      <div class="pa-actions">
+      ${soloCheckChipHtml(oIdx, p)}
       ${monitoringChipHtml(oIdx, p)}
       <div class="dock" id="${dockId}" role="toolbar" aria-label="${safe(p.name || '')} actions">
         ${isStopped && p.settings ? `<button class="dock-btn" data-tip="Resume" aria-label="Resume" onclick="window.dashResumePast(${oIdx})">${V3_SVG_PLAY}</button>` : ''}
@@ -12046,6 +12214,7 @@ function v3RenderPastRow(p, displayIdx, safe) {
           <button class="dock-btn" data-tip="Export CSV" aria-label="Export CSV" onclick="window.dashExportPast(${oIdx})">${V3_SVG_DOWNLOAD}</button>
           <button class="dock-btn danger" data-tip="Delete" aria-label="Delete" onclick="window.dashArchivePast(${oIdx})">${V3_SVG_ARCHIVE}</button>
         </div>
+      </div>
       </div>
     </div>
   `;

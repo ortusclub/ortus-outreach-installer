@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="../css/style.css" />
+  <link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+  <style> body { padding: 30px; } .wrap { max-width: 760px; } h4 { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray); } </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+  <div class="wrap">
+    <h4>Account roster</h4>
+    <div id="active-profiles">
+      <div class="vj-prof-row is-sending">
+        <span class="vj-prof-name">jaimie.copo@ortus.solutions</span>
+        <span class="prof-primary-tag is-yes">Primary ✓</span>
+        <span class="vj-prof-chip">Sending</span>
+        <span class="vj-prof-today">3/50 today</span>
+        <button class="prof-open-btn">Open</button>
+        <label class="prof-skip-toggle"><input type="checkbox" checked><span class="prof-skip-slider"></span></label>
+      </div>
+      <div class="vj-prof-row is-warn">
+        <span class="vj-prof-name">sophie.pascua@ortus.solutions</span>
+        <span class="prof-primary-tag is-no">No primary</span>
+        <span class="vj-prof-chip">Needs login</span>
+        <span class="vj-prof-today">0/50 today</span>
+        <button class="prof-open-btn">Open</button>
+        <label class="prof-skip-toggle"><input type="checkbox"><span class="prof-skip-slider"></span></label>
+      </div>
+      <div class="vj-prof-row is-idle is-skipped">
+        <span class="vj-prof-name">marion.besada@ortus.solutions</span>
+        <span></span>
+        <span class="vj-prof-chip">Skipped</span>
+        <span class="vj-prof-today">0/50 today</span>
+        <button class="prof-open-btn">Open</button>
+        <label class="prof-skip-toggle"><input type="checkbox"><span class="prof-skip-slider"></span></label>
+      </div>
+    </div>
+
+    <h4 style="margin-top:28px;">Log (long lines wrap)</h4>
+    <div class="vj-log">
+      <div class="vj-log-line is-ok"><span class="time">18:06:06</span><span class="evt">ok</span><span class="what">2439 row(s). Columns: First Name, Last Name, Linkedin Membership ID, Linkedin Bio, CC Account, Slug, UTM, Clicked, Date, Notes, Responded, Stage, Last Action, Sender, Connection Request Status, Connection Accepted Status, Introduction Status</span></div>
+      <div class="vj-log-line"><span class="time">18:06:23</span><span class="evt">log</span><span class="what">→ [jaimie.copo@ortus.solutions] http://www.linkedin.com/in/ACwAADSj5UwBn195CDEXG1ubgJcG9QJ5nO2g6w0 (Ingmar) [force_connect]</span></div>
+      <div class="vj-log-line is-warn"><span class="time">18:07:14</span><span class="evt">warn</span><span class="what">Skipped: Weekly invitation limit reached</span></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -32,6 +32,7 @@ import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
+import { checkAndConnectPrimary } from './linkedin/primary-connection.js';
 import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep, removeSchedulesForSheet as removeBulkSchedules } from './post-campaign-bulk-check.js';
 import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet as removeReplySchedules } from './post-campaign-reply-check.js';
@@ -328,15 +329,14 @@ function normalizeSkipReason(msg) {
   if (lower.includes('connect_modal_wrong_person')) return 'Skipped: Connect modal opened for wrong person';
   if (lower.includes('send not confirmed') || lower.includes('send_not_confirmed')) return 'Skipped: Send not confirmed';
   // v2.10.0 — VOYAGER_REJECTED carries the HTTP status + LinkedIn's own error reason.
-  // v2.14.x — 429 is overwhelmingly the weekly invitation cap (see the
-  // consecutive-429 park logic in startCampaign at ~line 1705). Surface the
-  // operator-friendly cause for 429s directly so the first 1-2 attempts
-  // before the account auto-parks don't read as cryptic "HTTP 429" lines.
-  // Other statuses (400/403/etc.) are rare — keep the code visible for
-  // diagnostics.
+  // v2.78 — a bare 429 is ambiguous: it's USUALLY the weekly invitation cap, but
+  // can also be a transient throttle. We don't claim the weekly cap until it's
+  // confirmed (HTTP_429_PARK_THRESHOLD consecutive 429s → park). So the per-
+  // attempt line reads "rate-limited, confirming"; the park line states the cap.
+  // Other statuses (400/403/etc.) are rare — keep the code visible for diagnostics.
   if (lower.includes('voyager_rejected')) {
     const statusMatch = s.match(/HTTP\s+(\d+)/i);
-    if (statusMatch && statusMatch[1] === '429') return 'Skipped: Weekly invitation limit reached';
+    if (statusMatch && statusMatch[1] === '429') return 'Skipped: Rate-limited (HTTP 429) — confirming…';
     return statusMatch ? `Skipped: LinkedIn rejected (HTTP ${statusMatch[1]})` : 'Skipped: LinkedIn rejected';
   }
   if (lower.includes('weekly invitation limit') || lower.includes('weekly_limit')) return 'Skipped: Weekly limit reached';
@@ -485,11 +485,34 @@ function _forceCloseActiveBulkChecks() {
     (pid === 'local-browser' ? closeLocalBrowser() : closeProfile(pid)).catch(() => {});
   }
 }
+// v2.78: let other modules (server.js's manual /api/bulk-check-now sweep)
+// register their in-flight check browser so stopCampaign() force-closes it too.
+export function addActiveBulkCheck(pid) { if (pid) activeBulkChecks.add(pid); }
+export function removeActiveBulkCheck(pid) { if (pid) activeBulkChecks.delete(pid); }
+// v2.78: force-close in-flight check browsers on demand (manual "Stop solo
+// check" when no campaign is running, so stopCampaign isn't the right hook).
+export function forceCloseActiveBulkChecks() { _forceCloseActiveBulkChecks(); }
+
+// v2.78: may this account's CC+IC intros fire? Held while the account is known
+// to be NOT connected to the primary ('pending'). Unknown (no entry — e.g. a
+// monitoring sweep after restart) fails open so intros aren't blocked forever.
+function _primaryIntroAllowed(profileId) {
+  return (campaign._primaryConn && campaign._primaryConn.get(profileId)) !== 'pending';
+}
 
 export const campaign = {
   id: SINGLETON_CAMPAIGN_ID,
   running: false,
   _abort: false,
+  // v2.78: profileIds the operator has benched from the sending rotation for
+  // the rest of THIS run. pickNextProfile skips them; reset each startCampaign
+  // so a new campaign starts with every account active. (A Set — never
+  // persisted; JSON.stringify drops it, which is fine since it's per-run.)
+  _skippedProfiles: new Set(),
+  // v2.78: CC+IC per-account connection-to-primary status. profileId →
+  // 'connected' | 'pending' (connect request sent, not yet accepted). Drives the
+  // Live Status label and gates that account's intros. Reset each run.
+  _primaryConn: new Map(),
   // v2.52.0: monotonic generation counter for orphan-loop detection.
   // startCampaign increments this and each loop captures its own myGen
   // closure. If restoreCampaign re-launches before the prior loop has
@@ -1213,7 +1236,7 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
-export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
@@ -1247,6 +1270,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._skipCleanup = false;
+  // v2.78: seed the rotation benches from any accounts pre-benched in the wizard.
+  campaign._skippedProfiles = new Set(Array.isArray(benchedProfileIds) ? benchedProfileIds : []);
+  campaign._primaryConn = new Map();      // v2.78: fresh per-run primary-connection status
   // v2.52.0: capture this loop's generation. Any prior loop still in flight
   // (e.g. after restoreCampaign re-launched without waiting for the old loop
   // to fully unwind) will see campaign._generation !== myGen on its next
@@ -2048,7 +2074,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         log(`  📡 [${pName}] Idle bulk-check — briefly reopening profile…`);
         launched = await launchProfile(profileId, token);
 
-        const willAutoIntro = mode === 'connect_and_introduce' && !!(
+        const willAutoIntro = mode === 'connect_and_introduce' && _primaryIntroAllowed(profileId) && !!(
           templates && templates.primaryName && templates.primaryName.trim() &&
           templates.primaryIntroBody && templates.primaryIntroBody.trim()
         );
@@ -2141,10 +2167,11 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
     // 429-specific consecutive counter. LinkedIn's Voyager API returns HTTP
     // 429 overwhelmingly for the weekly invitation cap (rather than transient
     // throttle, which the 6-min per-profile turn floor already prevents).
-    // Three strikes is treated as weekly-limit-reached — park the profile and
-    // rotate to the next.
+    // v2.78: two strikes is treated as weekly-limit-reached — park the profile
+    // and rotate to the next. (One 429 can be a fluke throttle; two consecutive
+    // is the cap. A wrong park is one click to undo via the re-enable toggle.)
     const consecutive429s = new Map();
-    const HTTP_429_PARK_THRESHOLD = 3;
+    const HTTP_429_PARK_THRESHOLD = 2;
     // Expose a closure that retryParkedProfile() can call to clear all the
     // local skip counters + drop the profile from weeklyLimited so the next
     // rotation considers it again. Cleared in the finally block at end-of-run.
@@ -2205,6 +2232,8 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       for (let i = 0; i < profileQueue.length; i++) {
         const candidate = profileQueue[i];
         if (profilesBeingRun.has(candidate)) continue;
+        // v2.78: operator benched this account for the rest of the run.
+        if (campaign._skippedProfiles && campaign._skippedProfiles.has(candidate)) continue;
         if (weeklyLimited.has(candidate)) continue;
         if (!skipsDailyLimit && getCampaignCount(candidate) >= dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
@@ -2242,6 +2271,36 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
         const { pName, browser } = session;
         let { page } = session;
         campaign.currentProfile = pName;
+
+        // v2.78: CC+IC primary-connection gate. Verify this account is a
+        // 1st-degree connection of the primary before its intros can fire.
+        // First turn: read degree + (if not connected) send ONE connect request
+        // to the primary. Later turns while 'pending': re-read degree only (no
+        // re-send) and flip to 'connected' once accepted. Held intros release
+        // automatically (willAutoIntro gate below reads campaign._primaryConn).
+        if (mode === 'connect_and_introduce' && profileId !== 'local-browser') {
+          const _primaryUrl = (templates && templates.primaryUrl || '').trim();
+          if (!_primaryUrl) {
+            // Diagnostic: no primary URL saved → the connection-to-primary check
+            // can't run, so no Primary label appears. Logged once per account.
+            if (!campaign._primaryConn.has(profileId)) {
+              campaign._primaryConn.set(profileId, 'no_url');
+              log(`  ⚠ [${pName}] No primary LinkedIn URL set — skipping the connected-to-primary check. Add the URL in the wizard and relaunch to enable it.`);
+            }
+          } else {
+            const _prev = campaign._primaryConn.get(profileId);
+            if (_prev !== 'connected') {
+              try {
+                const _res = await checkAndConnectPrimary(page, _primaryUrl, {
+                  log, pName, attemptConnect: (_prev === undefined || _prev === 'no_url'),
+                });
+                campaign._primaryConn.set(profileId, _res.connected ? 'connected' : 'pending');
+              } catch (e) {
+                log(`  ⚠ [${pName}] Primary check error: ${e.message}`);
+              }
+            }
+          }
+        }
 
         const batchStart = Date.now();
 
@@ -2739,7 +2798,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
                   // Connected rows, suppress the Connection Accepted Status
                   // stamp for those so the phase-2 status column (Introduction
                   // Status / DM Status) is the single source of truth.
-                  const willAutoIntro = mode === 'connect_and_introduce' && !!(
+                  const willAutoIntro = mode === 'connect_and_introduce' && _primaryIntroAllowed(profileId) && !!(
                     templates && templates.primaryName && templates.primaryName.trim() &&
                     templates.primaryIntroBody && templates.primaryIntroBody.trim()
                   );
@@ -3528,6 +3587,32 @@ export function retryParkedProfile(profileId) {
   return { ok: true, profileName: pName };
 }
 
+/**
+ * v2.78: bench / un-bench an account in the sending rotation for the rest of
+ * THIS run. skip=true removes it from rotation; skip=false re-includes it AND
+ * clears any auto-park (weekly cap / "no invites left" / consecutive skips) via
+ * retryParkedProfile, so the same toggle re-enables a parked account too. Reset
+ * each startCampaign, so a new campaign starts with every account active.
+ */
+export function setProfileSkip(profileId, skip) {
+  if (!profileId) return { ok: false, reason: 'no-profile' };
+  if (!campaign._skippedProfiles) campaign._skippedProfiles = new Set();
+  const idx = (campaign.profileIds || []).indexOf(profileId);
+  const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : profileId;
+  if (skip) {
+    campaign._skippedProfiles.add(profileId);
+    log(`⏭ ${pName} benched — skipped for the rest of this campaign.`);
+  } else {
+    campaign._skippedProfiles.delete(profileId);
+    // If it was auto-parked (weekly cap / no invites / skips), clear that too
+    // so the same toggle forces it back into rotation.
+    const wasParked = (campaign.parkedProfiles || []).some((p) => p.profileId === profileId);
+    if (wasParked && campaign.running) retryParkedProfile(profileId);
+    else log(`▶ ${pName} re-enabled — back in the rotation.`);
+  }
+  return { ok: true, skipped: [...campaign._skippedProfiles] };
+}
+
 export function stopCampaign({ full = false } = {}) {
   campaign._abort = true;
   // Distinguish operator-initiated stop from natural completion so the
@@ -3707,6 +3792,10 @@ export function getCampaignStatus() {
     running: campaign.running,
     paused: campaign._paused,
     pauseRequested: campaign._pauseRequested,
+    // v2.78: accounts the operator has benched from the rotation this run.
+    skippedProfiles: [...(campaign._skippedProfiles || [])],
+    // v2.78: CC+IC per-account connection-to-primary status for Live Status.
+    primaryConn: Object.fromEntries(campaign._primaryConn || []),
     // v2.13.14: surface monitoring fields so the cockpit + run-bar can
     // reflect post-campaign monitoring state without a second poll.
     state: campaign.state || 'idle',
@@ -4131,7 +4220,7 @@ export async function runMonitoringCheck(profileId, profileName) {
     // runAutoDms. campaign.mode is persisted in monitoring state so this
     // works on resume after restart.
     const _campaignMode = campaign.mode || '';
-    const willAutoIntro = _campaignMode === 'connect_and_introduce' && !!(
+    const willAutoIntro = _campaignMode === 'connect_and_introduce' && _primaryIntroAllowed(profileId) && !!(
       templates.primaryName && templates.primaryName.trim() &&
       templates.primaryIntroBody && templates.primaryIntroBody.trim()
     );

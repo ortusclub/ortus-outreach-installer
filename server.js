@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
@@ -797,6 +797,8 @@ function buildCampaignConfig(body) {
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
           delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
           acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes,
+          // v2.78: accounts to start benched (out of the rotation).
+          benchedProfileIds,
           // v2.58.x — Introduction Campaign (introduce_back) sheet-mapping overrides.
           // Read for every campaign but only honored downstream when mode === 'introduce_back'.
           senderColumn, allLeadsConnected,
@@ -811,6 +813,7 @@ function buildCampaignConfig(body) {
   }
   return {
     profileIds,
+    benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.filter((x) => typeof x === 'string') : [],
     sheetUrl,
     templates: templates || {},
     dailyLimit: Number(dailyLimit),
@@ -1264,6 +1267,20 @@ app.post('/api/monitoring/wake', async (_req, res) => {
   }
 });
 
+// v2.78: guards for the manual /api/bulk-check-now sweep. _manualSweepRunning
+// blocks overlapping sweeps; _manualSweepAbort lets Stop halt one in flight.
+let _manualSweepRunning = false;
+let _manualSweepAbort = false;
+
+// v2.78: bench / un-bench an account in the live sending rotation. Body:
+// { profileId, skip }. skip=false also retries an auto-parked account.
+app.post('/api/campaign/profile-skip', (req, res) => {
+  const { profileId, skip } = req.body || {};
+  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  const result = setProfileSkip(profileId, !!skip);
+  res.json(result);
+});
+
 app.post('/api/campaign/stop', async (req, res) => {
   // v2.14.x: optional `{ full: true }` body opts out of the
   // connect_and_introduce post-campaign sweep + auto-intros. Default
@@ -1282,6 +1299,10 @@ app.post('/api/campaign/stop', async (req, res) => {
   // shape. Flipping both flags here makes Stop actually mean Stop.
   checkDms._abort = true;
   postAmp._abort = true;
+  // v2.78: also halt a manual /api/bulk-check-now sweep in flight — its
+  // per-account loop checks this flag and breaks. stopCampaign() already
+  // force-closes the in-flight check browser via activeBulkChecks.
+  _manualSweepAbort = true;
   // v2.14.x: respond to the UI immediately so the dashboard flips to
   // 'stopping' without waiting for the browser-close round-trip. The actual
   // browser kill runs after a short drain window — see comment block below.
@@ -1473,16 +1494,30 @@ app.post('/api/replies/seen', async (_req, res) => {
 // resumes the campaign. Pause already triggered by the operator is left
 // in place after the sweep (we only auto-resume what we auto-paused).
 app.post('/api/bulk-check-now', async (req, res) => {
+  // v2.78: refuse overlapping sweeps. A second click used to launch a parallel
+  // 53-account sweep that fought the first for GoLogin browsers (see the
+  // duplicate "sweeping 53 account(s)" lines in the field log).
+  if (_manualSweepRunning) {
+    return res.status(409).json({ error: 'A bulk check is already running. Wait for it to finish, or press Stop.' });
+  }
+  _manualSweepRunning = true;
+  _manualSweepAbort = false;
   // v2.71: pause-if-running coordination. Captured before mutating campaign
   // state so the finally block knows whether to resume.
   const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
   try {
     let { sheetUrl, linkedinColumn, profileId, profileIds,
-          primaryName, primaryIntroBody, primaryUrl, introTitle } = req.body || {};
-    // v2.71: if running, default to the campaign's own selected profiles so
-    // the sweep covers every account, not just the one the operator was
-    // looking at. Operator-provided profileIds in req.body still wins.
-    if (campaign.running && !(Array.isArray(profileIds) && profileIds.length > 0) && !profileId) {
+          primaryName, primaryIntroBody, primaryUrl, introTitle, allSenders } = req.body || {};
+    // v2.78: "all senders in the sheet" — ignore any campaign/explicit accounts
+    // and derive every account from the sheet's Sender column (below), even
+    // while a campaign is running.
+    if (allSenders) {
+      profileIds = undefined;
+      profileId = undefined;
+    } else if (campaign.running && !(Array.isArray(profileIds) && profileIds.length > 0) && !profileId) {
+      // v2.71: if running, default to the campaign's own selected profiles so
+      // the sweep covers every account, not just the one the operator was
+      // looking at. Operator-provided profileIds in req.body still wins.
       profileIds = Array.isArray(campaign.profileIds) ? campaign.profileIds.slice() : [];
     }
     // v2.71: fall back to the campaign's sheetUrl too — the live "Run check
@@ -1534,7 +1569,9 @@ app.post('/api/bulk-check-now', async (req, res) => {
         const rows = await fetchSheet(sheetUrl);
         const accountEmails = new Set();
         for (const row of rows) {
-          const v = (row['Account Used'] || row['account used'] || '').toString().trim();
+          // v2.78: prefer the canonical Sender column (the "all senders in the
+          // sheet" solo check), falling back to Account Used for older sheets.
+          const v = (row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').toString().trim();
           if (v && v.includes('@')) accountEmails.add(v.toLowerCase());
         }
         if (accountEmails.size === 0) {
@@ -1608,6 +1645,12 @@ app.post('/api/bulk-check-now', async (req, res) => {
     setBulkCheckInProgress(true);
     try {
     for (const pid of profileIdsToSweep) {
+      // v2.78: stop the sweep the instant the operator hits Stop, instead of
+      // grinding through every remaining account.
+      if (_manualSweepAbort || campaign._abort) {
+        campaignLog('■ Stop detected — halting bulk check sweep.');
+        break;
+      }
       const pName = nameByProfileId.get(pid) || pid;
       const wasAlreadyRunning = !!getProfilePid(pid);
       campaignLog(`📡 [${pName}] Launching browser…`);
@@ -1620,6 +1663,10 @@ app.post('/api/bulk-check-now', async (req, res) => {
         perProfile.push({ profileId: pid, profileName: pName, error: msg });
         continue;
       }
+      // v2.78: register the in-flight check so Stop (stopCampaign /
+      // _forceCloseActiveBulkChecks) force-closes this browser and interrupts
+      // a sweep already mid-flight.
+      addActiveBulkCheck(pid);
       let r;
       try {
         campaignLog(`📡 [${pName}] Sweeping recent connections…`);
@@ -1695,6 +1742,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
       } catch (err) {
         r = { error: `Sweep threw: ${err.message}` };
       } finally {
+        removeActiveBulkCheck(pid);
         if (!wasAlreadyRunning) {
           try { await _closeProfile(pid); } catch { /* */ }
         }
@@ -1734,6 +1782,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   } finally {
+    _manualSweepRunning = false;
     // v2.71: ALWAYS resume if we were the ones who paused, even on error.
     // Operator-initiated pauses are left in place — we only undo our own.
     if (_weShouldAutoResume && campaign.running) {
@@ -1745,6 +1794,18 @@ app.post('/api/bulk-check-now', async (req, res) => {
       }
     }
   }
+});
+
+// v2.78: stop a running manual/solo bulk-check sweep (the "Stop solo check"
+// button). Sets the abort flag and force-closes the in-flight check browser so
+// the sweep breaks within ~1-2s, then unwinds and resolves the original
+// /api/bulk-check-now request.
+app.post('/api/bulk-check/stop', (_req, res) => {
+  const wasRunning = _manualSweepRunning;
+  _manualSweepAbort = true;
+  forceCloseActiveBulkChecks();
+  if (wasRunning) campaignLog('■ Stop solo check requested — halting sweep.');
+  res.json({ ok: true, wasRunning });
 });
 
 // v2.72: Manual "Run reply check now" — the messaging-campaign counterpart of

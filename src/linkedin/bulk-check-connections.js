@@ -390,6 +390,13 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     // even though the lead IS still a connection. Operator screenshot
     // 2026-05-16: Cindy (intro'd 14:48) shown as "Still Pending (17:07)".
     if (cs === 'Connected' || cs === 'Already connected') continue;
+    // v2.78 interim speedup: don't re-stamp a row already marked "Still Pending".
+    // The marker was written on the first sweep; refreshing its timestamp every
+    // sweep is what made each account's write ~155 rows (minutes via the
+    // cell-by-cell Apps Script). Skipping already-pending rows shrinks later
+    // sweeps to just the newly-pending/newly-connected → seconds. (The Apps
+    // Script batch-write optimisation restores per-sweep refresh once deployed.)
+    if (/^still pending/i.test(cs)) continue;
     // v2.71: any non-empty Intro Status blocks the Still-Pending downgrade
     // too — same one-shot semantics as the connectedUrls gate above.
     const _introStatusForGuard = (
