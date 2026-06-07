@@ -473,6 +473,19 @@ setInterval(_refreshDiskStatus, 30000).unref?.();
 export const SINGLETON_CAMPAIGN_ID = 'legacy-singleton';
 export const registry = new CampaignRegistry();
 
+// v2.74 — profileIds with a bulk/idle connection-check browser open RIGHT NOW.
+// Populated by runIdleBulkCheck / runMonitoringCheck while their browser is
+// live, cleared in their finally. stopCampaign() / stopMonitoring() force-close
+// these so "Stop everything" halts checking within a second or two instead of
+// grinding through every remaining account. Module-level (not on `campaign`) so
+// it never gets serialized into persisted monitoring state.
+const activeBulkChecks = new Set();
+function _forceCloseActiveBulkChecks() {
+  for (const pid of activeBulkChecks) {
+    (pid === 'local-browser' ? closeLocalBrowser() : closeProfile(pid)).catch(() => {});
+  }
+}
+
 export const campaign = {
   id: SINGLETON_CAMPAIGN_ID,
   running: false,
@@ -2024,7 +2037,13 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
      */
     async function runIdleBulkCheck(profileId, pName) {
       await browserSemaphore.acquire();
+      // v2.74: if Stop landed while we waited for a semaphore slot, don't even
+      // open the browser.
+      if (campaign._abort) { browserSemaphore.release(); return; }
       let launched;
+      // v2.74: register the in-flight check so stopCampaign() can force-close
+      // this browser and interrupt a check already mid-flight.
+      activeBulkChecks.add(profileId);
       try {
         log(`  📡 [${pName}] Idle bulk-check — briefly reopening profile…`);
         launched = await launchProfile(profileId, token);
@@ -2087,6 +2106,7 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
       } catch (err) {
         log(`  ⚠ [${pName}] Idle bulk-check failed: ${err.message}`);
       } finally {
+        activeBulkChecks.delete(profileId);
         try {
           if (profileId === 'local-browser') await closeLocalBrowser();
           else await closeProfile(profileId);
@@ -3098,6 +3118,9 @@ export async function startCampaign({ profileIds, sheetUrl, templates, dailyLimi
           const _semStatus = browserSemaphore.getStatus();
           const _semAvailable = _semStatus.max - _semStatus.count - _semStatus.waiting;
           for (const _profileId of profileIds) {
+            // v2.74: bail the instant the operator hits Stop, instead of
+            // grinding through every remaining account's bulk-check first.
+            if (campaign._abort) break;
             const _pName = profileNameCache[_profileId] || (_profileId === 'local-browser' ? 'You' : _profileId);
             const _lastBulkCheckAt = _idleCooldown[bulkCheckKey(_idleSheetId, _profileId)] || 0;
             const _fire = shouldFireIdleBulkCheck({
@@ -3520,6 +3543,12 @@ export function stopCampaign({ full = false } = {}) {
   // Wake any in-flight awaitUnpause() so the loop can exit cleanly.
   campaign._paused = false;
   campaign._pauseRequested = false;
+  // v2.74: force-close any connection-check browser open right now so checking
+  // stops within a second or two. Without this the in-flight bulk-check runs to
+  // completion (a page fetch can't be cancelled), so Stop felt like it grinded
+  // through every remaining account. Closing the browser makes the in-flight
+  // check throw → its loop sees _abort and breaks.
+  _forceCloseActiveBulkChecks();
   log(full
     ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
     : '■ Stop requested.');
@@ -3772,6 +3801,10 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // and the cockpit + dashboard show "monitoring" until the stamp finishes.
   campaign.state = 'done';
   console.log(`[stopMonitoring] state set to 'done'`);
+  // v2.74: force-close any in-flight monitoring-check browser so a running
+  // sweep stops within a second or two rather than finishing the current
+  // account. The state flip above already stops the NEXT account from opening.
+  _forceCloseActiveBulkChecks();
   _ops('INFO', `Monitoring ended (${reason})`);
 
   // v2.52.0: kick a "stopping…" line into the user-facing log immediately,
@@ -4069,7 +4102,12 @@ export async function runMonitoringCheck(profileId, profileName) {
   const token = process.env.GOLOGIN_API_TOKEN;
 
   await browserSemaphore.acquire();
+  // v2.74: Stop landed while we queued for a slot — don't open the browser.
+  if (campaign._abort) { browserSemaphore.release(); return { ok: false, aborted: true }; }
   let launched;
+  // v2.74: register so stopMonitoring()/stopCampaign() can force-close this
+  // in-flight check's browser.
+  activeBulkChecks.add(profileId);
   try {
     const ts = `[${new Date().toISOString()}]`;
     const msg = `📡 [${profileName}] Check now — bulk check pass starting…`;
@@ -4151,6 +4189,7 @@ export async function runMonitoringCheck(profileId, profileName) {
     campaign.logs.push(`${ts4} ⚠ [${profileName}] Check now failed: ${err.message}`);
     return { ok: false, error: err.message };
   } finally {
+    activeBulkChecks.delete(profileId);
     try {
       if (profileId === 'local-browser') await closeLocalBrowser();
       else await closeProfile(profileId);
@@ -4169,6 +4208,10 @@ export async function runMonitoringCheckAll() {
   }
   const results = [];
   for (const pid of (campaign.participatingProfileIds || [])) {
+    // v2.74: stop sweeping the moment the operator stops monitoring (state
+    // flips off 'monitoring') or hits Stop (_abort), instead of walking every
+    // remaining account.
+    if (campaign._abort || campaign.state !== 'monitoring') break;
     const idx = (campaign.profileIds || []).indexOf(pid);
     const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
     const r = await runMonitoringCheck(pid, pName || pid);
