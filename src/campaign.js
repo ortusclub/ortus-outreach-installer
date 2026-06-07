@@ -33,8 +33,8 @@ import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { runAutoDms } from './linkedin/auto-dm.js';
-import { registerSchedule as registerPostCampaignSweep } from './post-campaign-bulk-check.js';
-import { registerReplySchedule as registerReplyTracking } from './post-campaign-reply-check.js';
+import { registerSchedule as registerPostCampaignSweep, removeSchedulesForSheet as removeBulkSchedules } from './post-campaign-bulk-check.js';
+import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet as removeReplySchedules } from './post-campaign-reply-check.js';
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
@@ -3549,6 +3549,17 @@ export function stopCampaign({ full = false } = {}) {
   // through every remaining account. Closing the browser makes the in-flight
   // check throw → its loop sees _abort and breaks.
   _forceCloseActiveBulkChecks();
+  // v2.76: "Stop everything" (full) is a true full halt — also cancel this
+  // campaign's background reply/accept tracking so the schedulers stop
+  // reopening browsers for the next 7 days. Fire-and-forget (this fn is sync).
+  if (full) {
+    const _sid = _extractSheetIdFromUrl(campaign.sheetUrl);
+    const _pids = (campaign.profileIds || []).slice();
+    if (_sid) {
+      removeReplySchedules(_sid, _pids).catch(() => {});
+      removeBulkSchedules(_sid, _pids).catch(() => {});
+    }
+  }
   log(full
     ? '■ Stop requested (full halt — no monitoring, no auto-intros).'
     : '■ Stop requested.');

@@ -321,3 +321,30 @@ export async function listSchedule() {
   const sched = await readSchedule();
   return Object.values(sched);
 }
+
+/**
+ * v2.76: remove reply-tracking entries for a sheet (optionally limited to a
+ * set of profileIds). Used by "Stop everything" and the Past-view monitoring
+ * toggle to actually halt the background browser checks. Returns the count
+ * removed.
+ */
+export async function removeSchedulesForSheet(sheetId, profileIds = null) {
+  if (!sheetId) return 0;
+  const sched = await readSchedule();
+  const pidSet = Array.isArray(profileIds) && profileIds.length ? new Set(profileIds) : null;
+  let removed = 0;
+  for (const k of Object.keys(sched)) {
+    const e = sched[k];
+    if (e.sheetId !== sheetId) continue;
+    if (pidSet && !pidSet.has(e.profileId)) continue;
+    delete sched[k];
+    removed++;
+  }
+  if (removed) await writeSchedule(sched);
+  return removed;
+}
+
+/** v2.76: wipe ALL reply-tracking entries (operator "clear backlog"). */
+export async function clearAllSchedules() {
+  await writeSchedule({});
+}

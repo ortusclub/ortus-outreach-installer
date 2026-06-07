@@ -6619,46 +6619,130 @@ window.deletePostAmpTemplate = deletePostAmpTemplate;
 // self-update silently, so this is the safe, reliable path.
 // ─────────────────────────────────────────────────────────────────────────────
 let _updateInfo = null;
+let _updateChecking = false;
+const UPDATE_POLL_MS = 30 * 60 * 1000; // re-check every 30 min while app is open
 
-async function checkForUpdate() {
+// Render the pill as a gold "Update to vX" prompt (behind) or a muted
+// "Check for updates" button (current / check failed).
+function _renderUpdatePill() {
   const pill = document.getElementById('update-pill');
   if (!pill) return;
-  try {
-    const r = await fetch('/api/update-check');
-    const d = await r.json();
-    if (!d || !d.ok || !d.behind) { pill.classList.add('hidden'); return; }
-    _updateInfo = d;
-    pill.innerHTML = '<span class="update-pill-arrow">↑</span> Update to v' + d.latest;
-    pill.disabled = false;
-    pill.classList.remove('hidden');
-  } catch {
-    pill.classList.add('hidden');
+  if (_updateInfo && _updateInfo.ok && _updateInfo.behind) {
+    pill.className = 'update-pill';
+    pill.innerHTML = '<span class="update-pill-arrow">↑</span> Update to v' + _updateInfo.latest;
+  } else {
+    pill.className = 'update-pill update-pill-muted';
+    pill.textContent = 'Check for updates';
   }
+  pill.disabled = false;
+  pill.classList.remove('hidden');
+}
+
+async function checkForUpdate(force) {
+  try {
+    const r = await fetch('/api/update-check' + (force ? '?force=1' : ''));
+    _updateInfo = await r.json();
+  } catch {
+    _updateInfo = { ok: false };
+  }
+  _renderUpdatePill();
+}
+
+function _setUpdateStatus(pct, received, total) {
+  const wrap = document.getElementById('update-status');
+  const fill = document.getElementById('update-bar-fill');
+  const text = document.getElementById('update-status-text');
+  if (!wrap) return;
+  wrap.classList.remove('hidden');
+  if (fill) fill.style.width = (pct || 0) + '%';
+  if (text) {
+    const mb = (n) => (n / 1048576).toFixed(0);
+    text.textContent = total
+      ? `Downloading… ${pct}%  ·  ${mb(received)} / ${mb(total)} MB`
+      : `Downloading… ${mb(received)} MB`;
+  }
+}
+function _hideUpdateStatus() {
+  const wrap = document.getElementById('update-status');
+  if (wrap) wrap.classList.add('hidden');
+}
+
+// Poll the server's download progress until done/error.
+function _pollDownloadProgress() {
+  return new Promise((resolve) => {
+    const tick = async () => {
+      let s = null;
+      try { s = await (await fetch('/api/update-progress')).json(); } catch { /* */ }
+      if (s) {
+        const pct = s.total ? Math.round((s.received / s.total) * 100) : 0;
+        _setUpdateStatus(pct, s.received || 0, s.total || 0);
+        if (s.done) return resolve({ done: true });
+        if (s.error) return resolve({ error: s.error });
+      }
+      setTimeout(tick, 500);
+    };
+    tick();
+  });
 }
 
 async function onUpdateClick(e) {
   if (e) e.preventDefault();
   const pill = document.getElementById('update-pill');
   if (!pill) return;
-  pill.disabled = true;
-  pill.innerHTML = '<span class="update-pill-arrow">↓</span> Downloading…';
-  try {
-    const r = await fetch('/api/update-download', { method: 'POST' });
-    const d = await r.json();
-    if (d && d.ok) {
-      pill.innerHTML = '<span class="update-pill-arrow">✓</span> Installer opened';
-    } else {
+
+  // Behind → download + open, with a live progress bar under the button.
+  if (_updateInfo && _updateInfo.ok && _updateInfo.behind) {
+    pill.disabled = true;
+    pill.innerHTML = '<span class="update-pill-arrow">↓</span> Downloading…';
+    _setUpdateStatus(0, 0, 0);
+    try {
+      const r = await fetch('/api/update-download', { method: 'POST' });
+      const d = await r.json();
+      if (!d || !d.ok) throw new Error('start failed');
+      const res = await _pollDownloadProgress();
+      if (res.done) {
+        pill.innerHTML = '<span class="update-pill-arrow">✓</span> Installer opened — drag to Applications';
+        const text = document.getElementById('update-status-text');
+        if (text) text.textContent = 'Download complete.';
+        const fill = document.getElementById('update-bar-fill');
+        if (fill) fill.style.width = '100%';
+      } else {
+        pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
+        pill.disabled = false;
+        _hideUpdateStatus();
+      }
+    } catch {
       pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
       pill.disabled = false;
+      _hideUpdateStatus();
     }
-  } catch {
-    pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
-    pill.disabled = false;
+    return;
+  }
+
+  // Current → manual "Check for updates": force a fresh check.
+  if (_updateChecking) return;
+  _updateChecking = true;
+  pill.disabled = true;
+  pill.textContent = 'Checking…';
+  await checkForUpdate(true);
+  _updateChecking = false;
+  // If still current after a forced check, flash "Up to date" then revert.
+  if (!(_updateInfo && _updateInfo.ok && _updateInfo.behind)) {
+    pill.className = 'update-pill update-pill-muted';
+    pill.textContent = 'Up to date ✓';
+    setTimeout(() => {
+      if (!(_updateInfo && _updateInfo.behind)) _renderUpdatePill();
+    }, 2500);
   }
 }
 
 window.onUpdateClick = onUpdateClick;
-document.addEventListener('DOMContentLoaded', () => { setTimeout(checkForUpdate, 800); });
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => checkForUpdate(false), 800);
+  // Auto re-check every 30 min so an already-open app notices a new release
+  // without needing a restart.
+  setInterval(() => checkForUpdate(false), UPDATE_POLL_MS);
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 2.8.19 (A2/A3) — section readiness, summaries, and sidebar glyphs
@@ -8595,6 +8679,50 @@ function formatDurationSeconds(s) {
 // stopped subset now living in the Drafts & Stops tab). Was previously
 // inline inside refreshPastCampaigns — extracted so refreshDashboardDrafts
 // can render stopped rows in the same layout without duplicating markup.
+// v2.76: modes that register post-campaign reply tracking (so a "turn on"
+// affordance makes sense even when currently off). Mirrors _REPLY_MODES in
+// campaign.js.
+const PAST_REPLY_MODES = new Set(['open_profile_only', 'introduce_back', 'message_only', 'connect_and_introduce', 'connect_and_message']);
+
+// v2.76: monitoring on/off chip for a Past row. Shows "● Monitoring · Nd"
+// (background reply/accept checks running) with a click to turn it off, or
+// "Monitoring off" → click to turn on (reply-capable modes only).
+function monitoringChipHtml(idx, c) {
+  const mon = c.monitoring || {};
+  if (mon.active) {
+    const daysLeft = mon.expiresAt ? Math.max(0, Math.ceil((mon.expiresAt - Date.now()) / 86400000)) : 0;
+    const label = '● Monitoring' + (daysLeft ? ' · ' + daysLeft + 'd' : '');
+    return `<button type="button" class="mon-chip is-on" title="Background reply/accept checks are running for this campaign (reopens browsers periodically). Click to turn off." onclick="event.stopPropagation(); togglePastMonitoring(${idx}, false, this)">${label}</button>`;
+  }
+  if (PAST_REPLY_MODES.has(c.mode)) {
+    return `<button type="button" class="mon-chip is-off" title="Background reply/accept checks are off. Click to turn on (runs for 7 days)." onclick="event.stopPropagation(); togglePastMonitoring(${idx}, true, this)">Monitoring off</button>`;
+  }
+  return '';
+}
+
+async function togglePastMonitoring(idx, on, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = on ? 'Starting…' : 'Stopping…'; }
+  try {
+    const r = await fetch(`/api/history/${idx}/monitoring`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on }),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || 'failed');
+    if (typeof showCampaignToast === 'function') {
+      showCampaignToast(on
+        ? 'Monitoring turned on — reply/accept checks will run for 7 days.'
+        : 'Monitoring stopped — browsers will no longer reopen for this campaign.', 4000);
+    }
+    if (typeof refreshPastCampaigns === 'function') refreshPastCampaigns();
+  } catch (e) {
+    if (typeof showCampaignToast === 'function') showCampaignToast('Could not change monitoring: ' + e.message, 5000);
+    if (btn) btn.disabled = false;
+  }
+}
+window.togglePastMonitoring = togglePastMonitoring;
+
 function buildPastRowHtml({ idx, c }) {
   const dateStr = dashboardFormatDate(c.startedAt || c.date) || '—';
   const subtitle = `${dashboardModeLabel(c.mode)} · ${dateStr}`;
@@ -8623,6 +8751,7 @@ function buildPastRowHtml({ idx, c }) {
       <span class="campaign-row-type">${escHtml(subtitle)}</span>
       <span class="campaign-row-progress">${escHtml(processed + ' processed')}</span>
       <span class="campaign-row-status ${statusClasses}" ${statusAttrs}>${reasonLabel}</span>
+      ${monitoringChipHtml(idx, c)}
       <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the campaign page">Edit</button>
       <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
     </div>

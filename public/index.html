@@ -18,9 +18,15 @@
       <div class="sidebar-brand">
         <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
         <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar"></span></div>
-        <!-- Shown only when a newer release exists on GitHub. Wired by
+        <!-- Shown only when a newer release exists on GitHub (gold pill) or,
+             when up to date, as a subtle "Check for updates" button. Wired by
              checkForUpdate() / onUpdateClick() in public/js/app.js. -->
         <button type="button" id="update-pill" class="update-pill hidden" onclick="onUpdateClick(event)"></button>
+        <!-- Download progress, shown under the button while the DMG downloads. -->
+        <div id="update-status" class="update-status hidden">
+          <div class="update-bar"><div id="update-bar-fill" class="update-bar-fill"></div></div>
+          <div id="update-status-text" class="update-status-text"></div>
+        </div>
       </div>
 
       <nav class="sidebar-nav">

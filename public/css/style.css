@@ -153,6 +153,62 @@ body {
 .update-pill:disabled { cursor: default; opacity: 0.6; }
 .update-pill .update-pill-arrow { color: var(--gold); font-weight: 700; }
 
+/* Muted variant — the "Check for updates" button shown when already current.
+   Monochrome (no gold) so it doesn't compete with a real update prompt. */
+.update-pill.update-pill-muted {
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--gray);
+}
+.update-pill.update-pill-muted:hover { opacity: 1; color: var(--ink); border-color: var(--ink); }
+
+/* Download progress under the button. */
+.update-status { margin-top: 8px; }
+.update-bar {
+  height: 3px;
+  background: var(--hairline);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.update-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--gold);
+  transition: width 0.3s ease;
+}
+.update-status-text {
+  margin-top: 5px;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+
+/* v2.76 — per-Past-campaign monitoring on/off chip. */
+.mon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 9999px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+.mon-chip:hover { opacity: 0.75; }
+.mon-chip:disabled { cursor: default; opacity: 0.6; }
+/* On = actively reopening browsers → gold-tint emphasis so it stands out. */
+.mon-chip.is-on { color: var(--ink); border-color: var(--gold); background: var(--gold-tint-bg); }
+/* Off = muted. */
+.mon-chip.is-off { color: var(--gray); }
+
 /* v2.59.12 — nav restyled to the card language: container holds the horizontal
    inset (12px) so each item is an inset rounded row; items are buttons/cards
    with a clear hover surface; the active step gets the selected-card treatment

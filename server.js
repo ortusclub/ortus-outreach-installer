@@ -26,8 +26,8 @@ import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCamp
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
-import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule } from './src/post-campaign-bulk-check.js';
-import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule } from './src/post-campaign-reply-check.js';
+import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
+import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
@@ -244,10 +244,13 @@ app.get('/api/health', (_req, res) => {
 let _updateCheckCache = null; // { ts, payload }
 const UPDATE_CHECK_TTL_MS = 5 * 60 * 1000;
 
-app.get('/api/update-check', async (_req, res) => {
+app.get('/api/update-check', async (req, res) => {
   // Serve a recent cached result to avoid hammering GitHub's unauthenticated
-  // 60-req/hr limit when the UI re-checks on every dashboard load.
-  if (_updateCheckCache && Date.now() - _updateCheckCache.ts < UPDATE_CHECK_TTL_MS) {
+  // 60-req/hr limit when the UI re-checks on every dashboard load / 30-min
+  // poll. ?force=1 (the manual "Check for updates" button) bypasses the cache
+  // so the operator gets an up-to-the-second answer.
+  const force = req.query.force === '1' || req.query.force === 'true';
+  if (!force && _updateCheckCache && Date.now() - _updateCheckCache.ts < UPDATE_CHECK_TTL_MS) {
     return res.json(_updateCheckCache.payload);
   }
   const arch = archLabel(process.arch);
@@ -277,7 +280,14 @@ app.get('/api/update-check', async (_req, res) => {
   }
 });
 
-app.post('/api/update-download', async (_req, res) => {
+// Live download state so the UI can show a progress bar under the button.
+// The DMG is ~108 MB; a full download takes a while on slow connections and
+// the operator otherwise can't tell how long it'll take. The POST kicks the
+// download off and returns immediately; the UI polls GET /api/update-progress.
+let _downloadState = { active: false, received: 0, total: 0, done: false, error: null, path: null };
+
+app.post('/api/update-download', (_req, res) => {
+  if (_downloadState.active) return res.json({ ok: true, alreadyRunning: true });
   const arch = archLabel(process.arch);
   const asset = dmgAssetName(arch);
   const url = latestDownloadUrl(arch);
@@ -285,19 +295,34 @@ app.post('/api/update-download', async (_req, res) => {
   const downloads = join(homedir(), 'Downloads');
   const destDir = existsSync(downloads) ? downloads : tmpdir();
   const dest = join(destDir, asset);
-  try {
-    const resp = await fetch(url, { headers: { 'User-Agent': 'ortus-outreach-app' } });
-    if (!resp.ok || !resp.body) throw new Error(`download failed: HTTP ${resp.status}`);
-    await pipeline(Readable.fromWeb(resp.body), createWriteStream(dest));
-    // Open the DMG so Finder mounts it and shows the drag-to-Applications window.
-    if (process.platform === 'darwin') {
-      spawn('open', [dest], { detached: true, stdio: 'ignore' }).unref();
+  _downloadState = { active: true, received: 0, total: 0, done: false, error: null, path: dest };
+
+  // Run the download in the background, streaming chunk counts into
+  // _downloadState. Not awaited — the response returns right away.
+  (async () => {
+    try {
+      const resp = await fetch(url, { headers: { 'User-Agent': 'ortus-outreach-app' } });
+      if (!resp.ok || !resp.body) throw new Error(`download failed: HTTP ${resp.status}`);
+      _downloadState.total = Number(resp.headers.get('content-length')) || 0;
+      const nodeStream = Readable.fromWeb(resp.body);
+      nodeStream.on('data', (chunk) => { _downloadState.received += chunk.length; });
+      await pipeline(nodeStream, createWriteStream(dest));
+      _downloadState.done = true;
+      // Open the DMG so Finder mounts it and shows the drag-to-Applications window.
+      if (process.platform === 'darwin') {
+        spawn('open', [dest], { detached: true, stdio: 'ignore' }).unref();
+      }
+    } catch (err) {
+      _downloadState.error = err.message;
+    } finally {
+      _downloadState.active = false;
     }
-    res.json({ ok: true, path: dest, opened: process.platform === 'darwin' });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message, downloadUrl: url });
-  }
+  })();
+
+  res.json({ ok: true, started: true });
 });
+
+app.get('/api/update-progress', (_req, res) => res.json(_downloadState));
 
 app.get('/api/server-log', (_req, res) => {
   res.json(serverLogs.slice(-200));
@@ -2742,13 +2767,94 @@ const HISTORY_PATH = dataPath('history.json');
 // v2.60.0 — Added optional ?includeArchived=false to hide soft-archived
 // entries. Default behaviour (no query param) is unchanged: returns ALL
 // entries, including archived, so existing callers keep working.
+// v2.76: extract a Google Sheet id from its URL (…/spreadsheets/d/<id>/…).
+function _sheetIdFromUrl(url) {
+  const m = String(url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+
+// v2.76: collect every still-active background schedule (reply + bulk) and
+// attach a `monitoring` summary to each history entry so the Past view can show
+// "still monitoring · Nd left" and offer an on/off toggle.
+async function _activeScheduleEntries() {
+  const now = Date.now();
+  let reply = [], bulk = [];
+  try { reply = await listReplyCheckSchedule(); } catch { /* */ }
+  try { bulk = await listPostCampaignSchedule(); } catch { /* */ }
+  return [...reply, ...bulk].filter((e) => e && (!e.expiresAt || now < e.expiresAt));
+}
+
+function _monitoringForEntry(entry, active) {
+  const sid = _sheetIdFromUrl(entry?.settings?.sheetUrl);
+  const pids = entry?.settings?.profileIds || [];
+  if (!sid || pids.length === 0) return { active: false, count: 0, expiresAt: null };
+  const pidSet = new Set(pids);
+  const matches = active.filter((e) => e.sheetId === sid && pidSet.has(e.profileId));
+  const maxExp = matches.reduce((m, e) => Math.max(m, e.expiresAt || 0), 0);
+  return { active: matches.length > 0, count: matches.length, expiresAt: maxExp || null };
+}
+
 app.get('/api/history', async (req, res) => {
   try {
     const includeArchived = req.query.includeArchived !== 'false';
     const list = await listHistory({ includeArchived });
+    const active = await _activeScheduleEntries();
+    for (const entry of list) {
+      try { entry.monitoring = _monitoringForEntry(entry, active); }
+      catch { entry.monitoring = { active: false, count: 0, expiresAt: null }; }
+    }
     res.json(list);
   } catch {
     res.json([]);
+  }
+});
+
+// v2.76: turn a Past campaign's background tracking (reply + accept checks)
+// on or off from the Past view. off → remove the schedule entries (browsers
+// stop reopening). on → re-register reply tracking for its accounts.
+app.post('/api/history/:idx/monitoring', async (req, res) => {
+  try {
+    const idx = Number(req.params.idx);
+    const on = !!(req.body && req.body.on);
+    if (!Number.isInteger(idx) || idx < 0) return res.status(400).json({ error: 'Invalid idx' });
+    const list = await listHistory({ includeArchived: true });
+    const entry = list[idx];
+    if (!entry) return res.status(404).json({ error: 'No such history entry' });
+    const sheetUrl = entry?.settings?.sheetUrl || '';
+    const sheetId = _sheetIdFromUrl(sheetUrl);
+    const profileIds = entry?.settings?.profileIds || [];
+    if (!sheetId || profileIds.length === 0) {
+      return res.status(400).json({ error: 'Campaign has no sheet/accounts to track' });
+    }
+
+    if (!on) {
+      const removed = (await removeReplySchedules(sheetId, profileIds))
+                    + (await removeBulkSchedules(sheetId, profileIds));
+      return res.json({ ok: true, on: false, removed });
+    }
+
+    // Re-enable: register reply tracking for each account. Resolve names so the
+    // scheduler's name→id step works; best-effort if GoLogin is unreachable.
+    let idToName = {};
+    try {
+      const profiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+      for (const p of profiles) idToName[p.id] = p.name;
+    } catch { /* names optional */ }
+    const linkedinColumn = entry?.settings?.linkedinColumn || '';
+    const days = entry?.settings?.acceptanceTrackingDays || 7;
+    const operatorEmail = (await readSessionFromRequest(req)) || null;
+    let added = 0;
+    for (const pid of profileIds) {
+      await registerReplySchedule({
+        sheetId, sheetUrl, profileId: pid,
+        profileName: idToName[pid] || pid,
+        linkedinColumn, days, operatorEmail,
+      });
+      added++;
+    }
+    return res.json({ ok: true, on: true, added });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

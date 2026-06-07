@@ -346,3 +346,29 @@ export async function listSchedule() {
   const sched = await readSchedule();
   return Object.values(sched);
 }
+
+/**
+ * v2.76: remove post-campaign bulk-check entries for a sheet (optionally
+ * limited to profileIds). Mirrors the reply-check scheduler so "Stop
+ * everything" / the Past-view toggle can halt background browser sweeps.
+ */
+export async function removeSchedulesForSheet(sheetId, profileIds = null) {
+  if (!sheetId) return 0;
+  const sched = await readSchedule();
+  const pidSet = Array.isArray(profileIds) && profileIds.length ? new Set(profileIds) : null;
+  let removed = 0;
+  for (const k of Object.keys(sched)) {
+    const e = sched[k];
+    if (e.sheetId !== sheetId) continue;
+    if (pidSet && !pidSet.has(e.profileId)) continue;
+    delete sched[k];
+    removed++;
+  }
+  if (removed) await writeSchedule(sched);
+  return removed;
+}
+
+/** v2.76: wipe ALL post-campaign bulk-check entries. */
+export async function clearAllSchedules() {
+  await writeSchedule({});
+}
