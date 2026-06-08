@@ -11395,18 +11395,53 @@ window.dashOpenActive = async function() {
   // "Open" enters the RUNNING/MONITORING campaign's editor. It MUST clear the
   // active draft first — otherwise it just navigates to #/new and shows
   // whatever draft was last open (a new campaign, or another campaign you
-  // touched), NOT the live one. viewRunningCampaign() is the same path the
-  // past-list "Edit" button uses: flush autosave → clearActiveDraft →
-  // goCreateCampaign. Without the clear, "Open" was opening the wrong campaign.
+  // touched), NOT the live one. viewRunningCampaign() flushes autosave →
+  // clearActiveDraft → goCreateCampaign.
   if (typeof viewRunningCampaign === 'function') {
     try { await viewRunningCampaign(); } catch (_) { window.location.hash = '#/new'; }
   } else {
     clearActiveDraft();
     window.location.hash = '#/new';
   }
+
+  // v2.83: clearing the draft left every field blank — the operator saw an
+  // empty wizard even though a campaign was live (sheet URL, primary contact,
+  // templates all missing). Pre-fill from the live settings snapshot the same
+  // way the past "Edit & resume" flow does, so Open lands on a fully-populated
+  // wizard. Fetch is best-effort: on any failure we still navigate (old
+  // behaviour) rather than block the operator.
+  let config = null;
+  try {
+    const r = await fetch('/api/campaign/active-settings');
+    const data = await r.json();
+    if (data && data.ok && data.settings) {
+      const s = data.settings;
+      config = {
+        mode: s.mode,
+        sheetUrl: s.sheetUrl || '',
+        dailyLimit: s.dailyLimit ?? 50,
+        delayMin: s.delayMin ?? 15,
+        delayMax: s.delayMax ?? 45,
+        linkedinColumn: s.linkedinColumn || '',
+        messageOpenProfiles: !!s.messageOpenProfiles,
+        addNote: !!(s.templates && s.templates.connectionNote),
+        templates: s.templates || {},
+        profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+        concurrency: s.concurrency ?? 1,
+        senderFirstNames: s.senderFirstNames || {},
+        _campaignName: s.name || '',
+      };
+    }
+  } catch (_) { /* best-effort — navigate without prefill */ }
+
   // Then scroll to Section 5 (Message Templates / Campaign Settings) so the
   // operator lands where the post-acceptance DM body + other message fields are.
   setTimeout(() => {
+    if (config && typeof applyPresetConfig === 'function') {
+      applyPresetConfig(config);
+      const nameInput = document.getElementById('campaign-name-input');
+      if (nameInput && config._campaignName) nameInput.value = config._campaignName;
+    }
     const target = document.getElementById('nav-templates');
     if (target && typeof target.scrollIntoView === 'function') {
       target.scrollIntoView({ behavior: 'smooth' });

@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
@@ -1393,6 +1393,21 @@ app.get('/api/campaign/status', (_req, res) => {
     });
   }
   res.json(base);
+});
+
+// v2.83: live settings snapshot for the dashboard "Open" button. Returns the
+// running/last campaign's full config (templates incl. primary contact,
+// concurrency, delays, linkedinColumn, senderFirstNames) so the wizard can be
+// pre-filled exactly like the past "Edit & resume" flow. { ok:false } when no
+// campaign has run this process lifetime (nothing to open).
+app.get('/api/campaign/active-settings', (_req, res) => {
+  try {
+    const settings = getLastRunSettings();
+    if (!settings) return res.json({ ok: false, settings: null });
+    res.json({ ok: true, settings });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // Rename the active campaign. No-op if nothing is running — front-end disables

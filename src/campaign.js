@@ -3794,6 +3794,17 @@ async function awaitUnpause(myGen) {
   campaign._pauseRequested = false;
 }
 
+// v2.83: expose the live settings snapshot of the running/last campaign so
+// the dashboard "Open" button can pre-fill the wizard the same way the past
+// "Edit & resume" flow does (which reads a history entry's .settings). This
+// is the in-memory snapshot captured at startCampaign — it carries templates
+// (primary name/url, intro body, connection note), concurrency, delays,
+// linkedinColumn and senderFirstNames, none of which getCampaignStatus emits.
+// Returns null when no campaign has run this process lifetime.
+export function getLastRunSettings() {
+  return _lastRunSettings ? { ..._lastRunSettings } : null;
+}
+
 export function getCampaignStatus() {
   // Prefer campaign-loop samples (include browser PIDs) but fall back to the
   // ambient sampler so tiles populate the moment the server starts.
