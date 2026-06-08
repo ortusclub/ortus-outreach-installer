@@ -1212,7 +1212,7 @@ export async function sendConnectionRequest(page, noteArg) {
 // sendMessage
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendMessage(page, message, explicitPublicId = null) {
+export async function sendMessage(page, message, explicitPublicId = null, freeOnly = false) {
   // ── 2.8.48 — Compose-page navigation + plain Enter to send ──────────
   // History: tried injecting the LinkedIn DM Assistant content.js into the
   // page via a <script> tag — LinkedIn's CSP blocks inline scripts, so the
@@ -1269,6 +1269,27 @@ export async function sendMessage(page, message, explicitPublicId = null) {
   }
   if (!composerReady) {
     throw new Error('MESSAGE_SEND_FAILED: compose textbox did not appear');
+  }
+
+  // v2.86.4: free-send guard. The /messaging/compose box for an Open-Profile
+  // member is labelled "Free message"; for a non-OP non-connection LinkedIn
+  // renders the IDENTICAL subject+body box as a PAID InMail (a "Use X of Y
+  // credits" counter). With freeOnly set (the Message Campaign LinkedIn door),
+  // only send when LinkedIn confirms it's free — otherwise abort WITHOUT sending
+  // so we never silently burn an InMail credit. (The intentional InMail path
+  // goes through sendInMail / the "Spend an InMail credit" tickbox, not here.)
+  if (freeOnly) {
+    const billing = await page.evaluate(() => {
+      const text = document.body?.innerText || '';
+      return {
+        saysFree: /free message/i.test(text) || /free to (open profile|teamlink)/i.test(text),
+        hasCreditCounter: /use\s+\d+\s+of\s+\d+\s+credits?/i.test(text),
+      };
+    });
+    if (billing.hasCreditCounter || !billing.saysFree) {
+      throw new Error('NOT_FREE_MESSAGE: compose is not a confirmed free message (would cost an InMail credit) — aborting without sending');
+    }
+    console.log('[actions] sendMessage: "Free message" confirmed — sending free (no credit cost)');
   }
 
   await randomDelay(150, 300);

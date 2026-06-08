@@ -609,8 +609,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           // question: does /messaging/compose open a box for an Open-Profile
           // NON-connection? If yes → OP works here. If no → it fails cleanly and
           // Sales Nav (under sn_first) or a clean skip covers it — never a mis-send.
-          await sendMessage(page, opBody, publicId);
-          console.log('[outreach] ✓ LinkedIn message sent via recipient-pinned compose');
+          await sendMessage(page, opBody, publicId, /* freeOnly */ true);
+          console.log('[outreach] ✓ LinkedIn message sent via recipient-pinned compose (free)');
           return { ok: true, action: { action: 'op_message_sent' } };
         } catch (e) {
           console.warn(`[outreach] LinkedIn OP send failed: ${e.message}`);
