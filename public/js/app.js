@@ -2213,6 +2213,12 @@ const MODE_LIST = [
   {
     value: 'open_profile_only',
     name: 'Message Campaign',
+    // v2.85: temporarily disabled per operator request — greyed "Unavailable"
+    // like the other parked modes. Server still supports it, so existing
+    // drafts/schedules/history using open_profile_only keep working; it's just
+    // not newly selectable until re-enabled (delete these two lines).
+    disabled: true,
+    disabledReason: 'Message Campaign is temporarily unavailable.',
     bullets: [
       'Messages leads via LinkedIn or Sales Navigator',
       'Free for Open Profile members — optional InMail fallback',
