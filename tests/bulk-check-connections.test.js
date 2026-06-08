@@ -303,7 +303,7 @@ test('v2.62: cross-sender match → Stage="Already connected to X", no CC stamp,
   assert.equal(diag.skippedNotActiveSender, 1, 'caller-not-active-sender defense fired');
 });
 
-test('v2.62: cross-sender match (both senders active) → "Already connected to X" Stage, no CC stamp', () => {
+test('v2.79: cross-sender match → reassign Sender to connected account + green "Already Connected", no intro from wrong account', () => {
   const rows = [
     rowWithSender('carmella.s@ortus.solutions'),
     rowWithSender('eryca.bilazon@ortus.solutions', {
@@ -319,12 +319,13 @@ test('v2.62: cross-sender match (both senders active) → "Already connected to 
   // Jane is in eryca's connections (baseConns). Eryca's bulk-check runs.
   // Jane's row has Sender=carmella. → cross-sender match.
   const janeUpdate = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
-  assert.ok(janeUpdate, 'jane gets an informational stage stamp');
-  assert.equal(janeUpdate.stage, 'Already connected to eryca.bilazon@ortus.solutions');
-  assert.equal(janeUpdate.cc, undefined, 'cc NOT stamped — would be false positive for carmella');
-  assert.equal(janeUpdate.checkStatus, undefined, 'checkStatus NOT stamped either');
+  assert.ok(janeUpdate, 'jane gets reassigned + stamped');
+  assert.equal(janeUpdate.stage, 'Already Connected');
+  assert.equal(janeUpdate.cc, 'Already Connected', 'green Already Connected stamp');
+  assert.equal(janeUpdate.connectionStatus, 'Already Connected', 'Connection Request Status reads Already Connected');
+  assert.equal(janeUpdate.sender, 'eryca.bilazon@ortus.solutions', 'Sender reassigned to the connected account');
   assert.ok(!connectedUrls.includes('https://linkedin.com/in/jane-doe'),
-    'jane NOT in connectedUrls — eryca shouldn\'t fire auto-DM on carmella\'s row');
+    'no intro pushed from this branch — fires on the connected account\'s own sweep after reassignment');
   assert.equal(diag.crossSender, 1);
 });
 
@@ -443,10 +444,14 @@ test('accumulation: lead owned by the row\'s assigned sender → Connected (even
   const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
   assert.ok(jane, 'jane gets stamped');
   assert.equal(jane.cc, 'Connected', 'assigned-sender ownership → Connected');
-  assert.ok(connectedUrls.includes('https://linkedin.com/in/jane-doe'));
+  // v2.79: eryca is sweeping but jane is connected via CARMELLA — eryca must NOT
+  // push the intro (it'd fire from eryca's non-1st-degree browser). The intro
+  // fires on carmella's own sweep (sweepingConnected gate).
+  assert.ok(!connectedUrls.includes('https://linkedin.com/in/jane-doe'),
+    'intro not fired from the non-connected sweeping account');
 });
 
-test('attribution: lead owned ONLY by a different campaign sender → "Already connected to <that account>"', () => {
+test('v2.79 attribution: lead owned ONLY by a different campaign sender → reassign Sender + green Already Connected', () => {
   const rows = [
     rowWithSender('carmella.s@ortus.solutions'),
     rowWithSender('eryca.bilazon@ortus.solutions', {
@@ -462,9 +467,10 @@ test('attribution: lead owned ONLY by a different campaign sender → "Already c
   );
   const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
   assert.ok(jane);
-  assert.equal(jane.stage, 'Already connected to eryca.bilazon@ortus.solutions');
-  assert.equal(jane.cc, undefined, 'no Connected stamp on another sender\'s row');
-  assert.ok(!connectedUrls.includes('https://linkedin.com/in/jane-doe'));
+  assert.equal(jane.stage, 'Already Connected');
+  assert.equal(jane.cc, 'Already Connected');
+  assert.equal(jane.sender, 'eryca.bilazon@ortus.solutions', 'reassigned to the connected account');
+  assert.ok(!connectedUrls.includes('https://linkedin.com/in/jane-doe'), 'intro fires on the reassigned account\'s own sweep, not here');
 });
 
 test('attribution: lead owned by BOTH assigned sender and another → Connected wins', () => {

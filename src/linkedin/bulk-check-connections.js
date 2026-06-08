@@ -208,6 +208,13 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       ? _matchedAccounts.has(rowSenderNorm)
       : isMatch;
 
+    // v2.79: is the account RUNNING this sweep the one actually connected to the
+    // lead? Intros fire from the sweeping account's browser, so ONLY that account
+    // may push the lead into connectedUrls — otherwise we'd try to intro from a
+    // browser that isn't 1st-degree. When no sweeping-account context is given
+    // (unit tests / legacy callers), fall back to the old behaviour (no gate).
+    const sweepingConnected = !profileNameNorm || (isMatch && _matchedAccounts.has(profileNameNorm));
+
     // v2.14.x: extract requestStatus BEFORE the isMatch branch so we can
     // distinguish two match cases:
     //   - wasInvited: bot sent a connect request in a prior run, recipient
@@ -309,14 +316,35 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       // account already has this person.
       if (!_assignedConnected) {
         dbgCrossSender++;
+        // v2.79: the lead is a 1st-degree connection of a DIFFERENT campaign
+        // account than the row's assigned Sender. Reassign the row to the
+        // connected account (prefer the sweeping one if it's the connected one)
+        // and stamp the green "Already Connected" so it reads + colours like a
+        // real connection. The CC+IC intro then fires from the connected
+        // account's own sweep (sweepingConnected) — never from a non-1st-degree
+        // browser. On that account's next sweep the row is _assignedConnected
+        // and flows through the normal intro path above.
         if (suppressAcceptedStamp) continue;
-        if (cs === 'Connected' || cs.startsWith('Already connected')) continue;
-        let _other = '';
-        for (const a of _matchedAccounts) { if (a) { _other = accountDisplay.get(a) || a; break; } }
+        // Idempotency: never overwrite a row already confirmed connected (by the
+        // assigned sender or a prior cross-account pass).
+        if (cs === 'Connected' || cs === 'Already Connected' || cs.startsWith('Already connected')) continue;
+        // Pick the connected account: the sweeping one if it's the connected
+        // account, else the first connected account from the accumulated tab.
+        let _connectedAcct = '';
+        if (sweepingConnected && profileName) _connectedAcct = profileName;
+        else for (const a of _matchedAccounts) { if (a) { _connectedAcct = accountDisplay.get(a) || a; break; } }
         updates.push({
           linkedinUrl: url,
-          stage: `Already connected to ${_other}`,
+          sender: _connectedAcct,             // reassign to the connected account
+          connectionStatus: 'Already Connected', // green + reads "Already Connected"
+          cc: 'Already Connected',
+          stage: 'Already Connected',
+          connectedAlready: 'Yes',
+          checkStatus: 'Already Connected',
         });
+        // Intro is NOT fired here — once Sender is reassigned, the connected
+        // account's own sweep flows through the normal path above and fires it
+        // from a genuine 1st-degree browser (sweepingConnected gate).
         continue;
       }
 
@@ -325,9 +353,11 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       // intro still needs to fire — this is the path that lets
       // 'Skipped — Stop pressed' / 'Skipped — browser closed' / 'Failed'
       // leads recover on the next bulk-check round.
-      const ccAlreadyStamped = (cs === 'Connected' || cs === 'Already connected');
+      const ccAlreadyStamped = (cs === 'Connected' || cs === 'Already connected' || cs === 'Already Connected');
       if (ccAlreadyStamped) dbgAlreadyConnected++;
-      connectedUrls.push(url);
+      // v2.79: only the account actually connected (= the sweeping account) may
+      // fire the intro, so it runs from a 1st-degree browser.
+      if (sweepingConnected) connectedUrls.push(url);
 
       // Only stamp the CC column when it's not already at its target
       // value — avoids redundant Apps Script writes for rows we're just
