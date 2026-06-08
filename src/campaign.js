@@ -2312,7 +2312,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // 2.8.34: message_only does the same — open the browser, send to all
         // accepted connections back-to-back, close. No batching, no rotation.
         const innerLimit = (mode === 'check_status' || mode === 'message_only' || mode === 'introduce_back') ? Infinity : BATCH_SIZE;
-        for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort && !isOrphan(); leadInBatch++) {
+        // v2.81: stop the batch the instant the account is parked mid-turn
+        // (e.g. the 2nd consecutive HTTP 429 → weekly-limit park). Without this
+        // guard the loop kept firing all BATCH_SIZE leads at an account that had
+        // already hit its cap, so "confirming…" repeated 8× before rotating.
+        for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort && !isOrphan() && !weeklyLimited.has(profileId); leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause(myGen);
         if (campaign._abort || isOrphan()) break;
@@ -3066,7 +3070,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // Phase 11.2 (D-04): session-break branch removed — between-batch
           // gap is handled after the inner BATCH_SIZE loop, derived from
           // batchesPerHour.
-          if (!campaign._abort) {
+          // v2.81: if this lead just parked the account (e.g. 2nd HTTP 429 →
+          // weekly-limit park), skip the delay entirely and let the inner-loop
+          // guard rotate to the next account immediately — no point waiting
+          // 15-45s for a lead the parked account will never get.
+          if (!campaign._abort && !weeklyLimited.has(profileId)) {
             // Messaging existing 1st-degree connections is much lower risk than
             // sending new connection requests, so use a faster cadence and skip
             // the single-account slowdown.
