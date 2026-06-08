@@ -9,7 +9,7 @@
  */
 
 import { randomDelay, getConnectionStatus, getVoyagerDegree, getDegreeBadge, personalizeTemplate } from './helpers.js';
-import { sendConnectionRequest, sendMessage, sendIntroMessage, sendIntroViaCleanCompose, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile, sendOpenProfileViaProfileButton } from './actions.js';
+import { sendConnectionRequest, sendMessage, sendIntroMessage, sendIntroViaCleanCompose, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
 import { dataPath } from '../paths.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 
@@ -599,20 +599,19 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           || null;
         if (!publicId) return { ok: false, reason: 'no_public_id' };
         try {
-          // v2.72: Open Profile members are messaged for free by clicking the
-          // "Message" button on their /in/ profile (works without Sales Nav).
-          // The /messaging/compose URL only opens a free box for existing
-          // connections — so try the profile button first, then compose as a
-          // fallback for 1st-degree connections.
-          try {
-            await sendOpenProfileViaProfileButton(page, publicId, opBody);
-            return { ok: true, action: { action: 'op_message_sent' } };
-          } catch (eProfile) {
-            console.warn(`[outreach] LinkedIn OP profile-button send failed: ${eProfile.message}`);
-            await sendMessage(page, opBody, publicId);
-            console.log('[outreach] ✓ Open Profile message sent via LinkedIn compose');
-            return { ok: true, action: { action: 'op_message_sent' } };
-          }
+          // v2.86.3: recipient-SAFE only. /messaging/compose/?recipient=<publicId>
+          // pins the recipient in the URL — so this can message ONLY this person,
+          // or fail cleanly (no compose box → throws). It can NEVER send to the
+          // wrong person. REMOVED: sendOpenProfileViaProfileButton, which clicked
+          // the first "Message" element anywhere on the page with no recipient
+          // check and mis-sent when the lead had no native Message button — that
+          // was the wrong-person bug. This also lets us safely answer the open
+          // question: does /messaging/compose open a box for an Open-Profile
+          // NON-connection? If yes → OP works here. If no → it fails cleanly and
+          // Sales Nav (under sn_first) or a clean skip covers it — never a mis-send.
+          await sendMessage(page, opBody, publicId);
+          console.log('[outreach] ✓ LinkedIn message sent via recipient-pinned compose');
+          return { ok: true, action: { action: 'op_message_sent' } };
         } catch (e) {
           console.warn(`[outreach] LinkedIn OP send failed: ${e.message}`);
           if (!spendInMail) return { ok: false, reason: 'not_open_profile' };
