@@ -406,6 +406,38 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
 
     // Not in recent connections — stamp "Still Pending" if the bot invited.
     if (sampleCRSValues.size < 5 && requestStatus) sampleCRSValues.add(requestStatus);
+
+    // v2.82: trust-the-sheet phase-2 retry for connections that have aged off
+    // LinkedIn's ~80-most-recent window. This lead is NOT in the current
+    // sweep's recent-connections fetch (isMatch=false), but the SHEET already
+    // records it as Connected and (when scoping is on) assigned to THIS
+    // sweeping account. Operator rule 2026-06-08: trust that audit trail —
+    // re-queue the lead for its phase-2 action whenever the terminal column is
+    // still blank, so a connection whose intro/DM never landed keeps retrying
+    // on every sweep instead of being silently skipped once it leaves the
+    // recent window. The caller's willAutoIntro / willAutoDm gate still decides
+    // whether the action actually fires for this mode, and the terminal-column
+    // check below preserves the one-shot semantics (any value = never retry).
+    // Only the row's assigned sender (this sweeping account) may fire, so the
+    // intro/DM still originates from the genuinely-connected account.
+    if (cs === 'Connected' || cs === 'Already connected' || cs === 'Already Connected') {
+      if (!rowSenderMismatch && !(introducedInRun && introducedInRun.has(url))) {
+        if (dmSentTerminal) {
+          const _dmStatus = (
+            row['DM Status'] || row['dm status'] || row['DM status'] ||
+            row['Direct Message Status'] || row['dmStatus'] || ''
+          ).toString().trim();
+          if (_dmStatus === '') connectedUrls.push(url);
+        } else {
+          const _introBlank = (
+            row['Introduction Status'] || row['introduction status'] || ''
+          ).toString().trim() === '';
+          if (_introBlank) connectedUrls.push(url);
+        }
+      }
+      continue;
+    }
+
     if (requestStatus !== 'Connection Request Sent') continue;
     // v2.62: don't let other accounts' bulk-checks downgrade a row to
     // Still Pending. Only the assigned Sender should refresh its own

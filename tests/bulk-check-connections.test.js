@@ -94,6 +94,57 @@ test('SB-2 fix: row with CC=Connected but BLANK introductionStatus is re-pushed 
   assert.equal(stamp, undefined, 'no CC re-stamp when already Connected');
 });
 
+test('v2.82: aged-off connection (NOT in recent conns) + blank intro IS re-pushed (trust the sheet)', () => {
+  // The lead accepted long ago and has fallen off LinkedIn's ~80-most-recent
+  // window, so it is absent from `conns` (isMatch=false). The sheet records it
+  // Connected + assigned to the sweeping account, intro never landed. Operator
+  // rule 2026-06-08: trust the sheet — re-queue for the intro retry.
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'Sender': 'kenya5@ortus.solutions',
+    // No Introduction Status — intro never landed.
+  })];
+  const { connectedUrls, updates } = computeBulkCheckUpdates(
+    rows, [], linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 1, 'aged-off Connected + blank intro re-queued for retry');
+  assert.equal(connectedUrls[0], 'https://linkedin.com/in/jane-doe');
+  // Trust-the-sheet retry must NOT downgrade the row to Still Pending.
+  const stamp = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-doe');
+  assert.equal(stamp, undefined, 'no Still-Pending downgrade for an aged-off Connected row');
+});
+
+test('v2.82: aged-off connection + ANY intro status is NOT re-pushed (one-shot honored)', () => {
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'Sender': 'kenya5@ortus.solutions',
+    'Introduction Status': 'Failed — compose box not found',
+  })];
+  const { connectedUrls } = computeBulkCheckUpdates(
+    rows, [], linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 0, 'non-blank Intro Status blocks the aged-off retry');
+});
+
+test('v2.82: aged-off connection assigned to a DIFFERENT account is NOT re-pushed by this sweep', () => {
+  // Sender-scoping: only the row's assigned account may fire the intro, so the
+  // retry never originates from a non-connected browser.
+  const rows = [baseRow({
+    'Connection Accepted Status': 'Connected',
+    'Connected Status': '',
+    'Sender': 'someone-else@ortus.solutions',
+  })];
+  const { connectedUrls } = computeBulkCheckUpdates(
+    rows, [], linkedinColumn, stillPendingLabel,
+    { suppressAcceptedStamp: false, profileName: 'kenya5@ortus.solutions' }
+  );
+  assert.equal(connectedUrls.length, 0, 'a different account does not retry another sender\'s row');
+});
+
 test('v2.71: row with CC=Connected + Skipped — Stop pressed is NOT re-pushed (Intro Status one-shot)', () => {
   // v2.71 spec change: Intro Status is one-shot. ANY non-empty value blocks
   // a retry — 'Skipped — Stop pressed', 'Skipped — browser closed',
