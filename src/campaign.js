@@ -292,6 +292,27 @@ function getSenderName(row, senderColumn) {
   return (row?.Sender || row?.sender || '').toString().trim();
 }
 
+// v2.84: pure helper — build the batch-update payload that flags ('Y') or
+// clears ('') the "Needs Login" SoO column for every row assigned to one
+// account. An account that needs re-login can't touch any of its leads, so we
+// flag them all; cleared on the account's next success. The Apps Script routes
+// `needsLogin` to the column by HEADER NAME (writeFields), so it survives the
+// column moving position. Exported for unit testing; the campaign loop wraps
+// this with the network write + per-run dedup.
+export function buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedinColumn, value) {
+  const acctNorm = (accountName == null ? '' : accountName.toString().toLowerCase().trim());
+  if (!acctNorm) return [];
+  const updates = [];
+  for (const r of (rows || [])) {
+    const rowAcct = (getSenderName(r, senderColumn) || '').toString().toLowerCase().trim();
+    if (rowAcct !== acctNorm) continue;
+    const url = extractLinkedInUrl(r, linkedinColumn);
+    if (!url) continue;
+    updates.push({ linkedinUrl: url, needsLogin: value });
+  }
+  return updates;
+}
+
 // Campaign-scoped counters — reset every time a campaign starts
 const campaignCounts = {};
 
@@ -1477,6 +1498,34 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     const rows = await fetchSheetRows(sheetUrl);
     log(`${rows.length} row(s). Columns: ${Object.keys(rows[0] || {}).join(', ')}`);
 
+    // v2.84: "Needs Login" SoO flag. When an account's session expires it can't
+    // act on any of its leads, so flag every row assigned to that account
+    // (Sender column) with 'Y' so the operator can filter the sheet to all
+    // stalled leads. Cleared on the account's next successful action. Per-run
+    // dedup so we don't re-write on every repeated park. Best-effort — failures
+    // are logged, never thrown into the campaign loop.
+    const _needsLoginAccounts = new Set();  // accountNorm currently flagged this run
+    async function setAccountNeedsLogin(accountName, flagged) {
+      try {
+        const acctNorm = (accountName == null ? '' : accountName.toString().toLowerCase().trim());
+        if (!acctNorm) return;
+        if (flagged) {
+          if (_needsLoginAccounts.has(acctNorm)) return;   // already flagged this run
+          _needsLoginAccounts.add(acctNorm);
+        } else {
+          if (!_needsLoginAccounts.has(acctNorm)) return;  // nothing to clear
+          _needsLoginAccounts.delete(acctNorm);
+        }
+        const updates = buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedinColumn, flagged ? 'Y' : '');
+        if (updates.length) {
+          await batchUpdateSheet(sheetUrl, updates);
+          log(`  ${flagged ? '⚑' : '✓'} Needs Login ${flagged ? 'flagged' : 'cleared'} — ${accountName} (${updates.length} row(s)).`);
+        }
+      } catch (err) {
+        log(`  ⚠ Needs Login ${flagged ? 'flag' : 'clear'} failed for ${accountName}: ${err.message}`);
+      }
+    }
+
     // v2 schema: prepareSheet provisions only this mode's columns and hides
     // every other mode's columns. Apps Script returns BAD_MODE only on
     // unknown modes — known modes always provision/hide. Fall back to the
@@ -1940,6 +1989,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             parkedAt: Date.now(),
             reason: 'session_expired',
           });
+          // v2.84: flag every SoO row owned by this account as Needs Login = Y.
+          await setAccountNeedsLogin(pName, true);
           // Close the now-unusable session immediately to free RAM
           try {
             if (profileId === 'local-browser') await closeLocalBrowser();
@@ -2778,6 +2829,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
+            // v2.84: a successful action proves this account is logged in again —
+            // clear any Needs Login = Y flag it carried (no-op unless flagged).
+            await setAccountNeedsLogin(pName, false);
 
             // Connect + Introduce Back / Connect + DM: piggy-back a bulk
             // acceptance sweep on this profile's turn, but with two gates:
@@ -2904,6 +2958,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 parkedAt: Date.now(),
                 reason: 'session_expired',
               });
+              // v2.84: flag every SoO row owned by this account as Needs Login = Y.
+              await setAccountNeedsLogin(pName, true);
             }
             // 429-specific tracker. Three strikes = treat as weekly cap and
             // park the profile, well before the generic SKIP_PARK_THRESHOLD

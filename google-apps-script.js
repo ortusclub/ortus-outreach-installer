@@ -1207,6 +1207,21 @@ function writeFields(sheet, headers, row, data) {
     });
   }
 
+  // v2.84: "Needs Login" account flag. Special-cased (NOT in FIELD_MAP) for two
+  // reasons: (1) the generic loop skips '' so it could never CLEAR a cell, and
+  // we clear the flag on the account's next success; (2) a needsLogin-only write
+  // must not trigger the action-column dash-fill below. Targeted by header name
+  // so the column can move position. Writes only when the column already exists.
+  var wroteNeedsLoginOnly = false;
+  if (data.needsLogin !== undefined && data.needsLogin !== null) {
+    var nlIdx = headers.indexOf('Needs Login');
+    if (nlIdx !== -1) {
+      sheet.getRange(row, nlIdx + 1).setValue(data.needsLogin);  // 'Y' to flag, '' to clear
+      updated.push('Needs Login');
+    }
+    wroteNeedsLoginOnly = true;  // provisional — cleared below if any real field writes
+  }
+
   // Track which column indices FIELD_MAP wrote this call, so the dash-fill can
   // tell "still blank?" from preVals + this set without re-reading each cell.
   var wroteIdx = {};
@@ -1242,6 +1257,7 @@ function writeFields(sheet, headers, row, data) {
         cell.setValue(value);
       }
       wroteIdx[colIndex] = true;
+      wroteNeedsLoginOnly = false;  // a real field wrote → not a flag-only call
       updated.push(colName);
     }
   }
@@ -1251,7 +1267,9 @@ function writeFields(sheet, headers, row, data) {
   // the old post-write getValue() check: a cell ends blank iff it was blank
   // before AND FIELD_MAP didn't write it this call. No reads here → the writes
   // above stay batched. The `(x || '')` coercion matches the old check exactly.
-  ACTION_COLUMNS.forEach(function(col) {
+  // v2.84: skip entirely for a needsLogin-only write — flagging an account's
+  // rows must not stamp '—' into their OP/Message/InMail action cells.
+  if (!wroteNeedsLoginOnly) ACTION_COLUMNS.forEach(function(col) {
     var idx = headers.indexOf(col);
     if (idx === -1) return;
     if (wroteIdx[idx]) return; // FIELD_MAP filled it this call
