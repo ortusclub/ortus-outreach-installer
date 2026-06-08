@@ -33,3 +33,4 @@ dist/
 
 # Parallel-work worktrees (per-developer, not source)
 .worktrees/
+apps-script/
