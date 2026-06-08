@@ -525,6 +525,44 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         || url.match(SALES_MEMBER_URN_RE)?.[1]
         || null;
 
+      // ── v2.86.2: connection short-circuit ──
+      // A 1st-degree connection should just get a plain DM (exactly how the
+      // Direct Messages mode sends), NOT the Open-Profile / Sales-Nav / InMail
+      // machinery. Detect degree with the same check the connect/status paths
+      // use: Voyager API first (reuse the value already read at Step 3 when it's
+      // valid), then the DOM "1st" badge. The Voyager read is URL-bound to /in/,
+      // so for Sales-Nav-preferred channels (which landed on a /sales/ URL)
+      // voyagerDegree is null here — re-check on the /in/ profile in that case.
+      //   degree === 1   → native DM, recorded as "DM Sent".
+      //   2nd / 3rd / undetermined → fall through to the channel logic unchanged
+      //   (operator decision: default to the Open-Profile path, which also
+      //    messages connections free anyway — we never skip on an unsure read).
+      if (_origPublicId) {
+        try {
+          let degree = voyagerDegree;
+          if (degree == null) {
+            if (!/\/in\//.test(page.url())) {
+              await page.goto(`https://www.linkedin.com/in/${_origPublicId}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+              await waitForDomSettle(page, { settleMs: 1200, maxWait: 8000 });
+            }
+            degree = await getVoyagerDegree(page);
+            if (degree == null) {
+              const badge = await getDegreeBadge(page);   // '1st' | '2nd' | '3rd' | null
+              if (badge === '1st') degree = 1;
+            }
+          }
+          if (degree === 1) {
+            console.log(`[outreach] OP: lead is a 1st-degree connection → plain DM (publicId="${_origPublicId}")`);
+            await sendMessage(page, opBody, _origPublicId);
+            console.log('[outreach] ✓ Direct message sent to connection (Message Campaign → "DM Sent")');
+            return { action: 'message_sent' };
+          }
+          console.log(`[outreach] OP: degree=${degree ?? 'undetermined'} → not a 1st connection, using the Open-Profile path`);
+        } catch (e) {
+          console.warn(`[outreach] OP connection pre-check failed (${e.message}) → Open-Profile path`);
+        }
+      }
+
       // Channel: Sales Navigator. Resolves the Sales Nav URL from /in/ first
       // when needed (opens the profile → "View in Sales Navigator"). With the
       // InMail tickbox on, force_inmail sends free if OP else spends 1 credit;
