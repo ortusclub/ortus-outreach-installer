@@ -519,6 +519,11 @@ function promptModal({ label = 'Enter value:', defaultValue = '' } = {}) {
 // #server-log-panel was deleted; the sidebar "Open log" button now scrolls to
 // Live Status and expands it.
 function openUnifiedLog() {
+  // v2.86.1 (port): explicit request to see the log — reveal Live Status even
+  // when idle, then scroll to it. Without forcing, scrollToSection targets a
+  // display:none element and nothing happens.
+  liveStatusForcedOpen = true;
+  try { syncLiveStatusVisibility(); } catch (_) { /* */ }
   // Re-uses scrollToSection so the dashboard → wizard route swap happens
   // automatically when the operator clicks "Open log" from outside the wizard.
   scrollToSection('nav-status');
@@ -1592,6 +1597,12 @@ function onModeChange() {
       const showExtras = (mode === 'introduce_back' || mode === 'message_only');
       icExtras.style.display = showExtras ? '' : 'none';
     }
+    // v2.86.1 (port): Direct Messages shares #ic-extras for the sender-column
+    // picker, but must NOT ask for an "Intro person" — that's an Introduction
+    // Campaign concept. Hide just the intro-person card for everything except IC;
+    // the sender column (rest of #ic-extras) stays for message_only.
+    const introModeBlock = document.getElementById('intro-mode-block');
+    if (introModeBlock) introModeBlock.style.display = (mode === 'introduce_back') ? '' : 'none';
   } catch (_) {}
 
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
@@ -2187,10 +2198,8 @@ const MODE_LIST = [
     // saved drafts/schedules/history rows keep working.
     value: 'message_only',
     name: 'Direct Messages',
-    // v2.72: folded into the unified "Message Campaign" (open_profile_only),
-    // which now routes via LinkedIn / Sales Nav / InMail. Greyed out.
-    disabled: true,
-    disabledReason: 'Use Message Campaign instead — it covers direct messages.',
+    // v2.86.1 (port): re-enabled for operator testing. (Was greyed in v2.72 when
+    // folded into Message Campaign.)
     bullets: [
       '1:1 direct messages to your connections',
       'Adds no intro person — sender messages the lead directly',
@@ -2200,10 +2209,7 @@ const MODE_LIST = [
   {
     value: 'inmail_only',
     name: 'InMail Only',
-    // v2.72: folded into "Message Campaign" via the "Spend an InMail credit"
-    // option on that campaign. Greyed out.
-    disabled: true,
-    disabledReason: 'Use Message Campaign instead — tick "Spend an InMail credit" there.',
+    // v2.86.1 (port): re-enabled for operator testing. (Was greyed in v2.72.)
     bullets: [
       'Premium InMail to non-connected targets',
       'Consumes InMail credits per send',
@@ -2213,12 +2219,9 @@ const MODE_LIST = [
   {
     value: 'open_profile_only',
     name: 'Message Campaign',
-    // v2.85: temporarily disabled per operator request — greyed "Unavailable"
-    // like the other parked modes. Server still supports it, so existing
-    // drafts/schedules/history using open_profile_only keep working; it's just
-    // not newly selectable until re-enabled (delete these two lines).
-    disabled: true,
-    disabledReason: 'Message Campaign is temporarily unavailable.',
+    // v2.85 parked this per operator request; v2.86.1 (port) re-enables it for
+    // operator testing. NOTE: the OP-channel send path (Sales Nav ↔ LinkedIn
+    // fallback) is the one with limited real-world proof — test deliberately.
     bullets: [
       'Messages leads via LinkedIn or Sales Navigator',
       'Free for Open Profile members — optional InMail fallback',
@@ -4745,6 +4748,11 @@ async function pollStatus() {
 // The "editing a draft" check leverages the existing heuristic: clicking
 // "View running" from the dashboard clears activeDraftId, so navigating
 // into a running campaign satisfies the third condition.
+// v2.86.1 (port): set true when the operator clicks the sidebar "Open log" so
+// the Live Status section is revealed even when idle (no campaign ran this
+// session). Without it, "Open log" was a no-op when nothing was running — it
+// scrolled to a display:none element. Reset on leaving the wizard (applyRoute).
+let liveStatusForcedOpen = false;
 function syncLiveStatusVisibility() {
   const sec = document.getElementById('nav-status');
   if (!sec) return;
@@ -4760,7 +4768,7 @@ function syncLiveStatusVisibility() {
   // Running/monitoring are hidden while editing an unrelated draft; a FINISHED
   // campaign's log is shown regardless (the wizard resets to a fresh draft on
   // finish, so editingDraft is true — but the operator still wants the log).
-  const show = onNew && (((running || monitoring) && !editingDraft) || finished);
+  const show = onNew && (liveStatusForcedOpen || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   const navBtn = document.querySelector('[data-nav="nav-status"]');
   if (navBtn) navBtn.style.display = show ? '' : 'none';
@@ -4785,7 +4793,11 @@ function placeLiveCard() {
   }
   const onWizard = document.body.classList.contains('route-wizard');
   const liveVisible = !!sec && sec.style.display !== 'none';
-  const wantWizard = onWizard && liveVisible && !card.classList.contains('is-empty');
+  // v2.86.1 (port): follow the section's visibility even when the card is empty.
+  // When "Open log" forces the section open while idle, the dashboard card's
+  // "No campaign running" empty state is exactly what should show — instead of
+  // falling back to the legacy cockpit panel. (Was: && !is-empty.)
+  const wantWizard = onWizard && liveVisible;
   if (wantWizard && slot) {
     if (card.parentElement !== slot) {
       slot.appendChild(card);
@@ -7633,6 +7645,9 @@ function applyRoute() {
   document.body.classList.toggle('route-wizard', isWizard);
   document.body.classList.toggle('route-dashboard', !isWizard);
   if (!isWizard) {
+    // v2.86.1 (port): leaving the wizard clears the "Open log" override so the
+    // next idle visit starts hidden again (auto-show still applies when live).
+    liveStatusForcedOpen = false;
     refreshDashboard();
     startDashboardPolling();
     stopWizardPolling();
@@ -7647,6 +7662,19 @@ function applyRoute() {
     // operator lands on the wizard — covers Cmd+R, back-button, and the
     // resume-pill click path.
     if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
+    // v2.86.1 (port): render the "Editing a stopped campaign" banner as a pure
+    // function of the edit-resume context (editResumeSourceIdx). Only
+    // dashEditResumePast sets that key, so every other wizard entry ("+ New
+    // campaign", draft, Open) lands here with it absent and the banner stays
+    // hidden — instead of leaking in from a previous edit-resume session.
+    try {
+      const _rb = document.getElementById('wizard-resume-banner');
+      if (_rb) {
+        let _idx = null;
+        try { _idx = localStorage.getItem('editResumeSourceIdx'); } catch {}
+        _rb.style.display = (_idx != null && String(_idx).trim() !== '') ? '' : 'none';
+      }
+    } catch (_) { /* */ }
     startWizardPolling();
   }
   // v2.59.22: re-evaluate the Live Status card placement on every route change
@@ -9354,6 +9382,12 @@ async function startNewCampaign() {
   } catch { /* fall through; wizard still works without a draft id */ }
   try { localStorage.removeItem('campaignName'); } catch {}
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
+  // v2.86.1 (port): a brand-new campaign is NOT an edit-resume. Drop the
+  // edit-resume context and hide the "Editing a stopped campaign" banner so it
+  // can't leak in from a previous edit-resume session. (Also stops a stale
+  // editResumeSourceIdx from later deleting the wrong history row.)
+  try { localStorage.removeItem('editResumeSourceIdx'); } catch {}
+  { const _rb = document.getElementById('wizard-resume-banner'); if (_rb) _rb.style.display = 'none'; }
   wizardDirty = false;
   _runningEditWarningShown = false;
   const input = document.getElementById('campaign-name-input');

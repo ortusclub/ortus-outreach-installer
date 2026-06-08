@@ -492,10 +492,10 @@
         <option value="check_status">Check Status (verify acceptances)</option>
         <option value="connect_and_introduce">Connect + Introduce Back</option>
         <option value="connect_and_message">Connect + DM</option>
-        <option value="message_only" disabled>Direct Messages (use Message Campaign)</option>
+        <option value="message_only">Direct Messages</option>
         <option value="introduce_back">Introduction Campaign (3-way intro DM)</option>
-        <option value="inmail_only" disabled>InMail Only (use Message Campaign)</option>
-        <option value="open_profile_only" disabled>Message Campaign (temporarily unavailable)</option>
+        <option value="inmail_only">InMail Only</option>
+        <option value="open_profile_only">Message Campaign</option>
         <option value="check_dms">Check DMs (scan inboxes for replies)</option>
         <option value="post_amplification">Post Amplification</option>
       </select>
@@ -1055,9 +1055,9 @@
       <div class="placeholder-tags" data-target="tpl-note"></div>
     </div>
 
-    <!-- ── Follow-up Message (message_only, introduce_back) ── -->
+    <!-- ── Direct message (message_only) — introduce_back keeps this hidden ── -->
     <div class="section tpl-section" id="tpl-message-section" style="display:none">
-      <h2 data-edit="h2-followup">Follow-up Message</h2>
+      <h2><span data-edit="h2-followup">Direct message</span> <small>sent to each connected lead</small></h2>
       <textarea id="tpl-followup" rows="3" placeholder="Thanks for connecting, {firstName}! I wanted to reach out because…"></textarea>
       <div class="placeholder-tags" data-target="tpl-followup"></div>
     </div>
@@ -1094,7 +1094,7 @@
          DM template — no primary person, no group title. Visibility gated
          by onModeChange to mode === 'connect_and_message'. -->
     <div class="section tpl-section" id="tpl-cc-dm-section" style="display:none">
-      <h2 data-edit="h2-cc-dm">Post-acceptance DM</h2>
+      <h2><span data-edit="h2-cc-dm">Direct message</span> <small>sent after they accept</small></h2>
       <textarea id="tpl-cc-dm-body" rows="5" placeholder="Hi {firstName}, thanks for connecting! I wanted to reach out because…" oninput="saveCcDmFields()"></textarea>
       <div class="placeholder-tags" data-target="tpl-cc-dm-body"></div>
     </div>

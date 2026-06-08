@@ -1083,22 +1083,73 @@ export async function getConnectionStatus(page) {
   }
 }
 
-// P-03 fix (2.8.18): escape regex metachars in keys before building a RegExp.
-// Sheet column headers like "Job Title (Current)" or "Company (HQ)" contain
-// `(` `)` etc. — without escaping, `new RegExp("\\{Job Title (Current)\\}")`
-// throws SyntaxError, the loop crashes, and the lead skips with a cryptic
-// auditAction ("Invalid regular expression…").
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Normalize a token / column header to a canonical key so that {first name},
+// {First Name}, {firstName}, {first_name}, {first-name} and a non-English
+// {Nome} all match whatever the sheet's header actually is. Names are not
+// special-cased — they are matched exactly like any other column.
+//   - case-insensitive
+//   - all whitespace / underscores / hyphens are removed, so spaced,
+//     snake_case and camelCase spellings of the same token converge
+//     ("First Name", "first_name", "firstName" → "firstname").
+function normalizeToken(s) {
+  return String(s == null ? '' : s)
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+    .trim();
 }
 
+// Build a normalized {canonical key → value} lookup from the data object.
+// Insertion order is preserved, so the real sheet header (spread first via
+// data = { ...row }) wins over any alias added afterwards on a collision.
+// First non-empty value for a given canonical key is kept.
+function buildTokenLookup(data) {
+  const lookup = new Map();
+  for (const [key, value] of Object.entries(data || {})) {
+    const nk = normalizeToken(key);
+    if (!nk) continue;
+    const v = value == null ? '' : String(value);
+    if (!lookup.has(nk) || (lookup.get(nk) === '' && v !== '')) {
+      lookup.set(nk, v);
+    }
+  }
+  return lookup;
+}
+
+// Replace every {token} in the template with its resolved value. A token is
+// resolved by matching its normalized form against the data's normalized keys
+// (see normalizeToken). Unresolved tokens are stripped so a lead never sees a
+// raw {placeholder}. Scanning the template once (rather than building a RegExp
+// per key) means column headers with regex metachars — "Job Title (Current)",
+// "Company (HQ)" — are matched safely without escaping (was the P-03 / 2.8.18
+// crash class).
 export function personalizeTemplate(template, data = {}) {
   if (!template) return '';
-  let result = template;
-  for (const [key, value] of Object.entries(data)) {
-    result = result.replace(new RegExp(`\\{${escapeRegex(key)}\\}`, 'g'), value || '');
+  const lookup = buildTokenLookup(data);
+  return template
+    .replace(/\{([^{}]+)\}/g, (_whole, token) => {
+      const nk = normalizeToken(token);
+      return lookup.has(nk) ? lookup.get(nk) : '';
+    })
+    .trim();
+}
+
+// Return the raw token names in `template` that would render empty against
+// `data` — either no matching column/alias, or the matched value is blank.
+// Drives the template-preview's "{x} not resolved" warnings.
+export function findUnresolvedPlaceholders(template, data = {}) {
+  if (!template) return [];
+  const lookup = buildTokenLookup(data);
+  const unresolved = [];
+  const seen = new Set();
+  const matches = template.match(/\{([^{}]+)\}/g) || [];
+  for (const m of matches) {
+    const raw = m.slice(1, -1);
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    const v = lookup.get(normalizeToken(raw));
+    if (v === undefined || v === '') unresolved.push(raw);
   }
-  return result.replace(/\{[a-zA-Z0-9_ ]+\}/g, '').trim();
+  return unresolved;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
