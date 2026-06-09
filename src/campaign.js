@@ -34,6 +34,7 @@ import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { checkAndConnectPrimary } from './linkedin/primary-connection.js';
+import { clampCadenceMinutes } from '../public/js/campaign-modes.mjs';
 import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep, removeSchedulesForSheet as removeBulkSchedules } from './post-campaign-bulk-check.js';
 import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet as removeReplySchedules } from './post-campaign-reply-check.js';
@@ -58,21 +59,13 @@ import * as browserSemaphore from './browser-semaphore.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
-// v2.71 — first-hour blackout + 1/hr-per-account cap on automatic
-// bulk-checks. No bulk-check fires in the first 60 min of a campaign;
-// after that, each (sheet, profile) pair is capped at one bulk-check
-// per hour. Manual /api/bulk-check-now bypasses both rules.
-//
-// The single 60-min constant below serves as both:
-//   • per-(sheet, profile) cooldown (in-batch trigger + idle trigger)
-//   • idle-trigger first-hour campaign-age gate (IDLE_CAMPAIGN_MIN_DURATION_MS)
-// The in-batch trigger also enforces FIRST_HOUR_BLACKOUT_MS explicitly
-// against campaign.startedAt so the very first profile turn doesn't fire
-// at minute 1 just because the cooldown file shows "never checked".
-// v2.79: while SENDING, acceptance checks run at most every 6h per account so
-// they barely disturb the connect phase. Outside the send phase (monitoring),
-// checks run every ~1h via the operator's checkIntervalMinutes cadence.
-const IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+// Acceptance-check timing:
+//   • First check is gated by FIRST_HOUR_BLACKOUT_MS (in-batch) and
+//     IDLE_CAMPAIGN_MIN_DURATION_MS (idle) — always ~1h after campaign start,
+//     regardless of cadence. (Gives LinkedIn time to start accepting.)
+//   • After that, the gap between checks is the operator's cadence
+//     (checkIntervalMinutes), honored identically during sending and
+//     monitoring. Manual /api/bulk-check-now bypasses both rules.
 const FIRST_HOUR_BLACKOUT_MS = 60 * 60 * 1000;
 // Same 60-min floor as the cooldown — the idle trigger already double-
 // counted as the first-hour gate, this keeps them in sync.
@@ -1383,6 +1376,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // Read by transitionToMonitoring (initial nextCheckAt) and by
   // tickMonitoringNow (reschedule after each fire). Persisted via
   // monitoring-persistence so post-restart rehydration honors it.
+  // Backstop clamp (defense in depth — the server already clamps, but other
+  // callers like restore/resume must not slip an out-of-range value through).
+  checkIntervalMinutes = clampCadenceMinutes(checkIntervalMinutes);
   campaign.checkIntervalMinutes = checkIntervalMinutes;
   campaign.dailyLimit = dailyLimit;
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
@@ -2903,8 +2899,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 const last = cooldown[_key] || 0;
                 if (_campaignAgeMs < FIRST_HOUR_BLACKOUT_MS) {
                   // first-hour blackout — skip silently to avoid log spam
-                } else if (Date.now() - last >= IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS) {
-                  log(`  📡 [${pName}] In-batch bulk Connection Status check (60-min cooldown elapsed)…`);
+                } else if (Date.now() - last >= checkIntervalMinutes * 60_000) {
+                  log(`  📡 [${pName}] In-batch bulk Connection Status check (${checkIntervalMinutes}-min cadence elapsed)…`);
 
                   // Dual-stamp avoidance: when phase-2 will fire for newly-
                   // Connected rows, suppress the Connection Accepted Status
