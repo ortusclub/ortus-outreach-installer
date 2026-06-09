@@ -17,10 +17,12 @@
  */
 
 import { withWriteRetry } from './sheets-writer.js';
+import { SCRAPER_ENGINE_URL, SCRAPER_ENGINE_TOKEN } from './scraper-engine-url.js';
 
-// Trailing slashes stripped so `${base}${path}` never doubles up.
-const engineUrl = () => (process.env.SCRAPER_ENGINE_URL || '').replace(/\/+$/, '');
-const engineToken = () => process.env.SCRAPER_ENGINE_TOKEN || '';
+// Cloud engine is the centralized default (scraper-engine-url.js); a local
+// SCRAPER_ENGINE_URL / SCRAPER_ENGINE_TOKEN env var overrides it for dev.
+const engineUrl = () => (process.env.SCRAPER_ENGINE_URL || SCRAPER_ENGINE_URL).replace(/\/+$/, '');
+const engineToken = () => process.env.SCRAPER_ENGINE_TOKEN || SCRAPER_ENGINE_TOKEN;
 
 // Scrape control calls are quick; the engine does the long-running work async
 // and we poll /api/jobs for progress. 20s is generous for a control round-trip.

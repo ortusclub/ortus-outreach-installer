@@ -42,16 +42,20 @@ afterEach(() => {
   else process.env.SCRAPER_ENGINE_TOKEN = ENV_TOKEN;
 });
 
-test('isScraperConfigured reflects SCRAPER_ENGINE_URL', () => {
+test('always configured — cloud engine is the baked-in default', () => {
   assert.equal(isScraperConfigured(), true);
-  delete process.env.SCRAPER_ENGINE_URL;
-  assert.equal(isScraperConfigured(), false);
+  delete process.env.SCRAPER_ENGINE_URL; // no env → still configured via default
+  assert.equal(isScraperConfigured(), true);
 });
 
-test('calls fail cleanly (no throw) when engine not configured', async () => {
+test('falls back to the cloud engine when no env override', async () => {
   delete process.env.SCRAPER_ENGINE_URL;
-  const res = await getJobs();
-  assert.match(res.error, /not configured/i);
+  delete process.env.SCRAPER_ENGINE_TOKEN;
+  const calls = mockFetch(() => ({ ok: true, body: '{"jobs":[]}' }));
+  await getJobs();
+  assert.match(calls[0].url, /^https:\/\/scraper\.ortusclub\.com\/api\/jobs/);
+  // the baked-in bearer token is sent automatically
+  assert.ok(calls[0].opts.headers['Authorization'].startsWith('Bearer '));
 });
 
 test('startScrape validates required fields without hitting the network', async () => {
