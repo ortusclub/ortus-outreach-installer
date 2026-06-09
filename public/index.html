@@ -497,6 +497,7 @@
         <option value="inmail_only" disabled>InMail Only (use Message Campaign)</option>
         <option value="open_profile_only">Message Campaign</option>
         <option value="check_dms">Check DMs (scan inboxes for replies)</option>
+        <option value="sales_nav_scrape">Sales Nav Scrape</option>
         <option value="post_amplification">Post Amplification</option>
       </select>
 
@@ -782,6 +783,45 @@
           No invites to check in this sheet (no rows with an Account Used). Send some connection requests first.
         </div>
         <div id="cs-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
+      </div>
+    </div>
+
+    <!-- ── Sales Nav Scrape (2026-06) — visible only when mode = sales_nav_scrape. ──
+         Control panel for the GKE scraper engine. Dispatches a scrape job
+         (search URL → Google Sheet via a GoLogin profile) to /api/scrape/*; the
+         engine runs the GoLogin profile + scraping on GKE. No local browser, no
+         campaign loop — so the campaign apparatus (accounts/pace/templates/
+         sheet/daily-limit) is hidden by onModeChange when this mode is active. -->
+    <div class="section" id="nav-scrape" style="display:none">
+      <h2 class="section-toggle"><span data-edit="h2-scrape">2b. Sales Nav Scrape</span></h2>
+      <div style="padding: 0 0 8px;">
+        <div id="scrape-unconfigured" style="display:none; margin:8px 0 16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--red,#dc2626); color:var(--gray); font-size:12px;">
+          <strong style="color:var(--gray)">Scraper engine not connected.</strong> Set <code>SCRAPER_ENGINE_URL</code> to point at the GKE engine, then reopen the app.
+        </div>
+
+        <label for="scrape-urls" style="display:block; font-size:12px; color:var(--gray); margin-bottom:6px;">Sales Navigator search URL(s) — one per line. Each URL is scraped by one selected GoLogin account, in parallel.</label>
+        <textarea id="scrape-urls" rows="3" placeholder="https://www.linkedin.com/sales/search/people?..." style="width:100%" oninput="updateScrapePairing()"></textarea>
+
+        <div id="scrape-pairing" style="margin-top:10px; padding:12px 14px; background:var(--hairline-soft); border-left:2px solid var(--hairline); font-size:12px; color:var(--gray);"></div>
+
+        <div style="margin-top:6px; font-size:12px; color:var(--gray);">↓ Pick the GoLogin accounts (one per URL) in <strong>section 3 · Select GoLogin Accounts</strong> below — each needs a Sales Nav seat.</div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+          <div>
+            <label for="scrape-tab" style="display:block; font-size:12px; color:var(--gray); margin-bottom:6px;">Destination tab name</label>
+            <input type="text" id="scrape-tab" value="Results" style="width:100%" />
+          </div>
+          <div>
+            <label for="scrape-sheet" style="display:block; font-size:12px; color:var(--gray); margin-bottom:6px;">Destination Google Sheet URL</label>
+            <input type="text" id="scrape-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%" />
+          </div>
+        </div>
+
+        <label style="display:flex; gap:8px; align-items:center; margin-top:14px; cursor:pointer; font-size:13px;">
+          <input type="checkbox" id="scrape-slow" /> Slow mode (larger delays between pages)
+        </label>
+
+        <div style="margin-top:14px; font-size:12px; color:var(--gray);">↓ Launch this scrape from <strong>section 6 · Launch</strong> below — Start / Pause / Stop.</div>
       </div>
     </div>
 
@@ -1128,6 +1168,52 @@
     </div><!-- /#nav-templates -->
 
     <!-- ── Launch ── -->
+    <!-- Sales Nav Scrape launch card — mirrors section 6's layout but with
+         scrape controls (Start Scrape / Pause / Stop). Shown ONLY in scrape
+         mode; the real #nav-launch stays hidden then. -->
+    <div class="section collapsible" id="nav-scrape-launch" style="display:none">
+      <style>
+        .scrape-tabs { display:flex; gap:4px; margin:18px 0 0; border-bottom:1px solid var(--hairline); }
+        .scrape-tab { font-size:12px; letter-spacing:0.04em; text-transform:uppercase; padding:9px 18px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--gray); cursor:pointer; }
+        .scrape-tab.active { color:var(--ink,#111); border-bottom-color:var(--ink,#111); }
+        .scrape-log-head { display:flex; justify-content:space-between; align-items:center; margin-top:14px; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); }
+        .scrape-log { margin-top:8px; background:#0d1117; color:#c9d1d9; font-family:ui-monospace,Menlo,Monaco,monospace; font-size:12px; line-height:1.7; padding:14px 16px; max-height:340px; overflow-y:auto; border:1px solid var(--hairline); white-space:pre-wrap; word-break:break-word; }
+        .scrape-log .t { color:#6e7681; }
+        .scrape-log .ok { color:#3fb950; }
+        .scrape-log .err { color:#f85149; }
+        .scrape-log-empty { color:#6e7681; }
+      </style>
+      <h2 class="section-toggle"><span data-edit="h2-scrape-launch">6. Launch — Sales Nav Scrape</span></h2>
+      <div class="collapsible-body">
+        <div class="launch-hero">
+          <div>
+            <div class="launch-number" id="scrape-launch-number">—</div>
+            <div class="launch-caption" id="scrape-launch-caption">URLs × accounts → parallel scrape jobs</div>
+          </div>
+          <div class="launch-right">
+            <div class="launch-actions launch-actions--four">
+              <button type="button" id="btn-scrape-start" class="btn btn-start" onclick="startScrapeJob()">Start Scrape</button>
+              <button type="button" id="btn-scrape-pause" class="btn btn-secondary" onclick="pauseScrapeJob()">Pause</button>
+              <button type="button" id="btn-scrape-stop" class="btn btn-secondary" onclick="stopScrapeJob()">Stop</button>
+            </div>
+          </div>
+        </div>
+        <div id="scrape-status" style="margin-top:18px; font-size:12px; color:var(--gray);"></div>
+
+        <div class="scrape-tabs">
+          <button type="button" class="scrape-tab active" data-stab="jobs" onclick="setScrapeTab('jobs')">Jobs</button>
+          <button type="button" class="scrape-tab" data-stab="logs" onclick="setScrapeTab('logs')">Logs</button>
+        </div>
+        <div id="scrape-tab-jobs">
+          <div id="scrape-jobs" style="margin-top:12px;"></div>
+        </div>
+        <div id="scrape-tab-logs" style="display:none">
+          <div class="scrape-log-head"><span>Activity Log</span><button type="button" class="btn btn-sm" onclick="clearScrapeLog()">Clear</button></div>
+          <div id="scrape-log" class="scrape-log"><span class="scrape-log-empty">No activity yet.</span></div>
+        </div>
+      </div>
+    </div>
+
     <div class="section collapsible" id="nav-launch">
       <h2 class="section-toggle" onclick="toggleSection('nav-launch')"><span class="caret">▾</span> <span data-edit="h2-launch">6. Launch</span> <span class="section-summary" id="summary-launch"></span></h2>
       <div class="collapsible-body">

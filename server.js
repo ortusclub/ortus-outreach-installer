@@ -24,6 +24,9 @@ import { pipeline } from 'node:stream/promises';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
+// Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
+// dispatches scrape jobs here; it never launches a scraper browser locally.
+import { isScraperConfigured, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs } from './src/scraper-client.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
@@ -233,7 +236,9 @@ console.error = (...args) => { captureLog('ERR', args); origError.apply(console,
 // Health check
 // ---------------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, time: new Date().toISOString(), version: APP_VERSION });
+  // scraperConfigured lets the dashboard gate the "Sales Nav Scrape" mode —
+  // it's enabled only when SCRAPER_ENGINE_URL points at a GKE engine.
+  res.json({ ok: true, time: new Date().toISOString(), version: APP_VERSION, scraperConfigured: isScraperConfigured() });
 });
 
 // ---------------------------------------------------------------------------
@@ -1345,6 +1350,41 @@ app.post('/api/campaign/pause', (_req, res) => {
 
 app.post('/api/campaign/resume', (_req, res) => {
   res.json(resumeCampaign());
+});
+
+// ---------------------------------------------------------------------------
+// Sales Nav Scrape — control-panel proxy to the GKE scraper engine.
+//
+// These routes do NOT run a campaign or launch a local browser. They forward
+// to the engine (src/scraper-client.js) and relay its JSON. The engine runs
+// the GoLogin profile + scraping on GKE and writes results to the sheet. When
+// SCRAPER_ENGINE_URL is unset every call returns { error } (never throws), so
+// the UI can show "engine not configured" instead of failing.
+// ---------------------------------------------------------------------------
+app.post('/api/scrape/start', async (req, res) => {
+  const { searchUrls, sheetUrl, tabName, profileId, slowMode } = req.body || {};
+  const result = await startScrape({ searchUrls, sheetUrl, tabName, profileId, slowMode });
+  res.status(result && result.error ? 400 : 200).json(result);
+});
+
+app.post('/api/scrape/pause', async (req, res) => {
+  res.json(await pauseScrape((req.body || {}).profileId));
+});
+
+app.post('/api/scrape/resume', async (req, res) => {
+  res.json(await resumeScrape((req.body || {}).profileId));
+});
+
+app.post('/api/scrape/stop', async (req, res) => {
+  res.json(await stopScrape((req.body || {}).profileId));
+});
+
+app.get('/api/scrape/jobs', async (_req, res) => {
+  res.json(await getScrapeJobs());
+});
+
+app.get('/api/scrape/logs', async (req, res) => {
+  res.json(await getScrapeLogs(req.query.since));
 });
 
 // v2.14.x: Restore — "panic button" recovery endpoint. Force-kills
