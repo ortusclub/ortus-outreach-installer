@@ -82,7 +82,9 @@ export async function launchLocalBrowser() {
 
   await page.setViewport({ width: 1600, height: 1000 });
   page.setDefaultNavigationTimeout(30000);
-  page.setDefaultTimeout(15000);
+  // v2.86: 15s → 30s default action timeout (match gologin-launcher) — slow
+  // operator machines were timing out clicks / waitForSelector too early.
+  page.setDefaultTimeout(30000);
 
   // Stealth: hide automation indicators from page JS
   await page.evaluateOnNewDocument(() => {

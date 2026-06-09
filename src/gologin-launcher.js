@@ -177,7 +177,9 @@ export async function launchProfile(profileId, token) {
 
   await page.setViewport({ width: 1366, height: 900 });
   page.setDefaultNavigationTimeout(30000);
-  page.setDefaultTimeout(15000);
+  // v2.86: 15s → 30s default action timeout — slow operator machines were
+  // timing out clicks / waitForSelector before the page settled.
+  page.setDefaultTimeout(30000);
 
   // v2.14.x: enable focus emulation on the initial page. Callers that
   // re-acquire `page` from browser.pages() later (campaign.js:792-798,
