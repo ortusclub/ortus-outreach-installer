@@ -4196,10 +4196,6 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
     } finally {
       // Reschedule ONLY if still in monitoring state (operator may have stopped mid-fire)
       if (campaign.state === 'monitoring') {
-        // v2.71: enforce 1/hr-per-account cap on monitoring sweeps too.
-        // Floor the operator-chosen cadence at 60 min — anything tighter
-        // would breach the global rule. Wizard UI still lets them pick
-        // smaller values; this is the runtime safety net.
         // Honor the operator cadence exactly — no floor here. The value was
         // clamped to >= MIN_CADENCE_MINUTES at startCampaign intake.
         const cadenceMin = campaign.checkIntervalMinutes || 60;
