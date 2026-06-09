@@ -166,6 +166,7 @@ export function shouldCloseBetweenBatches({ waitMs, closeGapMin }) {
  * @param {boolean} ctx.profileWeeklyLimited  - is this profile parked permanently?
  * @param {number}  ctx.semaphoreAvailable    - remaining browserSemaphore slots (0 = full)
  * @param {number}  ctx.lastBulkCheckAt       - epoch ms of last bulk-check for this (sheet, profile); 0 if never
+ * @param {number}  ctx.intervalMs            - operator cadence between checks, in ms (defaults to 1h if absent)
  * @param {number}  ctx.now                   - epoch ms (current time — injected for testability)
  * @returns {boolean}
  */
@@ -177,7 +178,10 @@ export function shouldFireIdleBulkCheck(ctx) {
   if (ctx.profileBrowserOpen) return false;
   if (ctx.profileWeeklyLimited) return false;
   if (ctx.semaphoreAvailable <= 0) return false;
-  if (ctx.now - ctx.lastBulkCheckAt < IN_CAMPAIGN_BULK_CHECK_INTERVAL_MS) return false;
+  // Between-checks interval is the operator cadence (ms), passed in by the
+  // caller. Defaults to 1h if a caller forgets it (matches the picker minimum).
+  const intervalMs = Number.isFinite(ctx.intervalMs) ? ctx.intervalMs : 60 * 60 * 1000;
+  if (ctx.now - ctx.lastBulkCheckAt < intervalMs) return false;
   return true;
 }
 
@@ -3304,6 +3308,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               profileWeeklyLimited: weeklyLimited.has(_profileId),
               semaphoreAvailable: _semAvailable,
               lastBulkCheckAt: _lastBulkCheckAt,
+              intervalMs: checkIntervalMinutes * 60_000,
               now: Date.now(),
             });
             if (!_fire) continue;

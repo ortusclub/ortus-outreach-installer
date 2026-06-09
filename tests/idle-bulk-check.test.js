@@ -2,15 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { shouldFireIdleBulkCheck } from '../src/campaign.js';
 
-// v2.79: first-hour blackout stays 60 min; per-account cooldown is now 6h
-// (acceptance checks throttled during the send phase).
+// The between-checks interval is now the operator cadence, passed in as
+// intervalMs. The first-hour age gate (campaignStartTime) is unchanged.
+const ONE_HOUR = 60 * 60 * 1000;
 const baseInput = () => ({
   mode: 'connect_and_introduce',
-  campaignStartTime: Date.now() - (75 * 60 * 1000), // 75 min ago — past 60-min gate
+  campaignStartTime: Date.now() - (75 * 60 * 1000), // 75 min ago — past 60-min age gate
   profileBrowserOpen: false,
   profileWeeklyLimited: false,
   semaphoreAvailable: 1,
-  lastBulkCheckAt: Date.now() - (7 * 60 * 60 * 1000), // 7h ago — past 6h cooldown
+  lastBulkCheckAt: Date.now() - (2 * ONE_HOUR), // 2h ago — past a 1h cadence
+  intervalMs: ONE_HOUR,                          // operator picked "every hour"
   now: Date.now(),
 });
 
@@ -24,8 +26,6 @@ test('skips when mode is not a connect-then-followup mode', () => {
   assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'introduce_back' }), false);
 });
 
-// v2.62: connect_and_message (CC+DM) shares the connect-then-followup
-// loop with connect_and_introduce — idle bulk-checks apply equally.
 test('fires when mode is connect_and_message', () => {
   assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'connect_and_message' }), true);
 });
@@ -47,13 +47,19 @@ test('skips when semaphore has no available slot', () => {
   assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), semaphoreAvailable: 0 }), false);
 });
 
-test('skips when cooldown not elapsed (6h floor)', () => {
-  const input = { ...baseInput(), lastBulkCheckAt: Date.now() - (3 * 60 * 60 * 1000) }; // 3h ago
+test('HONORS the operator cadence: skips when interval not yet elapsed', () => {
+  // 30 min since last check, but operator picked every hour → not due yet.
+  const input = { ...baseInput(), lastBulkCheckAt: Date.now() - (30 * 60 * 1000) };
   assert.equal(shouldFireIdleBulkCheck(input), false);
 });
 
-test('fires when cooldown elapsed by exactly the floor (boundary)', () => {
+test('HONORS the operator cadence: a 6h pick is NOT due at 2h', () => {
+  const input = { ...baseInput(), intervalMs: 6 * ONE_HOUR, lastBulkCheckAt: Date.now() - (2 * ONE_HOUR) };
+  assert.equal(shouldFireIdleBulkCheck(input), false);
+});
+
+test('fires when the operator interval elapses exactly (boundary)', () => {
   const t = Date.now();
-  const input = { ...baseInput(), now: t, lastBulkCheckAt: t - (6 * 60 * 60 * 1000) }; // exactly 6h
+  const input = { ...baseInput(), now: t, intervalMs: ONE_HOUR, lastBulkCheckAt: t - ONE_HOUR };
   assert.equal(shouldFireIdleBulkCheck(input), true);
 });
