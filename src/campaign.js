@@ -30,6 +30,7 @@ import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
 import { opsLogEvent, campaignLogAppendRun } from './log-writer.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
+import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { checkAndConnectPrimary } from './linkedin/primary-connection.js';
@@ -2724,6 +2725,37 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // not the UTC ISO timestamp logs use.
           const now = formatLocalDate(new Date());
 
+          // v2.86.9 — connect-time identity guard (src/profile-identity.js;
+          // 2026-06-08 CC+IC incident). A /in/ACwAA… lead URL that fails to load
+          // (rate-limit / session degradation) makes the connect flow read a
+          // stray fallback profile as "already connected" and capture someone
+          // else's URN. The stamp below would then write "Already Connected" +
+          // that wrong URN, bulk-check would match the lead to a stranger's
+          // acceptance, and CC+IC would fire a doomed intro. Verify the captured
+          // identity is THIS lead first; on failure, downgrade to a retryable
+          // skip so the row is re-attempted on a healthy pass instead of being
+          // falsely stamped. The fingerprint of the bad case: no numeric member
+          // id was resolvable off the loaded page.
+          if (result.action === 'already_connected') {
+            let _idMeta = result._meta || {};
+            if (!_idMeta.memberNumber) {
+              try { _idMeta = await captureProfileMeta(page); }
+              catch { _idMeta = result._meta || {}; }
+            }
+            const _idCheck = verifyConnectIdentity({
+              capturedMemberNumber: _idMeta.memberNumber,
+              capturedUrn: _idMeta.memberId,
+              leadUrl: url,
+              sourceMemberId: readSourceMemberId(row),
+            });
+            if (!_idCheck.ok) {
+              log(`  ⚠ ${pName}: "${data.firstName || '?'}" — loaded profile is not this lead (${_idCheck.reason}); NOT stamping connected, will retry.`);
+              result = { action: 'skipped', error: `identity-unverified: ${_idCheck.reason}` };
+            } else {
+              result._meta = _idMeta; // hand the verified meta to the stamp below
+            }
+          }
+
           if (SUCCESS_ACTIONS.has(result.action)) {
             // v2.10.0: stash the invitationUrn returned by Approach A's network
             // listener so the start-of-run reconcile pass can match this row
@@ -2783,10 +2815,25 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             if (result.action === 'connection_sent') {
               try {
                 const meta = await captureProfileMeta(page);
-                if (meta.memberId)     sheetData.linkedinUrn       = meta.memberId;
-                if (meta.memberNumber) sheetData.linkedinMemberId  = meta.memberNumber;
-                if (meta.isOpenProfile !== null) sheetData.openProfile     = meta.isOpenProfile ? 'Yes' : 'No';
-                if (meta.connectionDegree !== null) sheetData.connectedAlready = meta.connectionDegree === 1 ? 'Yes' : 'No';
+                // v2.86.9 — only stamp the captured URN when it provably belongs
+                // to this lead. A mis-loaded /in/ACwAA… profile yields a stray
+                // URN that would poison future bulk-check matching. An invite DID
+                // go out, so we keep the connection_sent stamp — we just withhold
+                // the unreliable URN/member-id rather than write a wrong one.
+                const _v = verifyConnectIdentity({
+                  capturedMemberNumber: meta.memberNumber,
+                  capturedUrn: meta.memberId,
+                  leadUrl: url,
+                  sourceMemberId: readSourceMemberId(row),
+                });
+                if (_v.ok) {
+                  if (meta.memberId)     sheetData.linkedinUrn       = meta.memberId;
+                  if (meta.memberNumber) sheetData.linkedinMemberId  = meta.memberNumber;
+                  if (meta.isOpenProfile !== null) sheetData.openProfile     = meta.isOpenProfile ? 'Yes' : 'No';
+                  if (meta.connectionDegree !== null) sheetData.connectedAlready = meta.connectionDegree === 1 ? 'Yes' : 'No';
+                } else {
+                  log(`  ⚠ ${pName}: connect sent but profile identity unverified (${_v.reason}) — withholding URN.`);
+                }
               } catch { /* best-effort */ }
             } else if (result.action === 'already_connected') {
               const meta = result._meta || {};
@@ -3578,7 +3625,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // replies are still caught even when the operator didn't set a tracking
     // window. Skipped on the explicit "Stop everything" opt-out.
     try {
-      const _REPLY_MODES = new Set(['open_profile_only', 'introduce_back', 'message_only', 'connect_and_introduce', 'connect_and_message']);
+      // 2026-06-08: reply-tracking disabled for the Message Campaign
+      // (open_profile_only) ONLY, at operator request — its post-campaign reply
+      // sweep was reopening profile browsers unprompted. Every OTHER mode keeps
+      // its original v2.72 reply-tracking untouched: Direct Messages
+      // (message_only), Introduction (introduce_back), CC+IC and CC+DM. To
+      // restore the Message Campaign's reply sweep, add 'open_profile_only' back.
+      const _REPLY_MODES = new Set(['introduce_back', 'message_only', 'connect_and_introduce', 'connect_and_message']);
       if (!campaign._skipCleanup && _REPLY_MODES.has(mode)) {
         const _sheetId = _extractSheetIdFromUrl(sheetUrl);
         const _replyDays = acceptanceTrackingDays > 0 ? acceptanceTrackingDays : 7;
