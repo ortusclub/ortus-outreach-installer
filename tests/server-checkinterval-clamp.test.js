@@ -1,15 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
+// The server intake MUST use the shared policy clamp — no inline duplicate.
+import { clampCadenceMinutes } from '../public/js/campaign-modes.mjs';
 
-// Reproduce the clamp inline so we test the exact rule we wire into server.js.
-function clampCadence(v) {
-  return Math.max(15, Math.min(360, Number(v) || 60));
-}
-
-test('clamp accepts 60 (default)', () => assert.equal(clampCadence(60), 60));
-test('clamp accepts 15 (floor)', () => assert.equal(clampCadence(15), 15));
-test('clamp accepts 360 (ceiling)', () => assert.equal(clampCadence(360), 360));
-test('clamp raises 5 to 15', () => assert.equal(clampCadence(5), 15));
-test('clamp lowers 9999 to 360', () => assert.equal(clampCadence(9999), 360));
-test('clamp falls back to 60 on garbage', () => assert.equal(clampCadence('banana'), 60));
-test('clamp falls back to 60 on undefined', () => assert.equal(clampCadence(undefined), 60));
+test('server clamp accepts 1 hour (default/floor)', () => assert.equal(clampCadenceMinutes(60), 60));
+test('server clamp accepts 12 hours (ceiling)', () => assert.equal(clampCadenceMinutes(720), 720));
+test('server clamp raises old 15-min setting to 60', () => assert.equal(clampCadenceMinutes(15), 60));
+test('server clamp raises old 30-min setting to 60', () => assert.equal(clampCadenceMinutes(30), 60));
+test('server clamp lowers 9999 to 720', () => assert.equal(clampCadenceMinutes(9999), 720));
+test('server clamp falls back to 60 on garbage', () => assert.equal(clampCadenceMinutes('banana'), 60));

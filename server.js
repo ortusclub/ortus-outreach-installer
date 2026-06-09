@@ -36,6 +36,7 @@ import { runAmplification as runPostAmplification } from './src/linkedin/post-am
 import { fetchSheet } from './src/sheets.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
+import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
@@ -836,7 +837,7 @@ function buildCampaignConfig(body) {
     concurrency: concurrencyClean,
     name: typeof name === 'string' ? name : '',
     acceptanceTrackingDays: Math.max(0, Math.min(30, Number(acceptanceTrackingDays) || 0)),
-    checkIntervalMinutes: Math.max(15, Math.min(360, Number(checkIntervalMinutes) || 60)),
+    checkIntervalMinutes: clampCadenceMinutes(checkIntervalMinutes),
     // Honoured only when mode is message_only or introduce_back. campaign.js
     // gates further so other modes silently ignore the flag.
     preflightCheckStatus: !!preflightCheckStatus,
