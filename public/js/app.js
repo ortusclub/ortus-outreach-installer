@@ -3096,7 +3096,7 @@ async function startCampaign(opts = {}) {
     // same usesMonitoringCadence() predicate that shows the dropdown, so the
     // two can never drift. (Previously this read only fired for CC+IC, so the
     // CC+DM dropdown was shown but its value silently dropped → default 60.)
-    // Server clamps to [15, 360] and ignores the field for other modes.
+    // Server clamps to [60, 720] (shared clampCadenceMinutes) and ignores the field for other modes.
     checkIntervalMinutes: (() => {
       if (!usesMonitoringCadence(mode)) return undefined;
       const v = parseInt(document.getElementById('check-cadence-select')?.value, 10);

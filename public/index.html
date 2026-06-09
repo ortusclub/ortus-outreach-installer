@@ -527,7 +527,7 @@
           </div>
         </div>
 
-        <!-- v2.14.x: Auto-check cadence (CC+IC only). -->
+        <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
         <div id="check-cadence-block" class="intro-config-card" style="display:none;">
           <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
           <div class="intro-config-field">
@@ -535,16 +535,14 @@
             <div class="intro-config-inline">
               <span class="intro-config-prefix">Every</span>
               <select id="check-cadence-select" class="intro-config-select">
-                <option value="15">15 minutes</option>
-                <option value="30">30 minutes</option>
                 <option value="60" selected>1 hour</option>
-                <option value="90">1.5 hours</option>
                 <option value="120">2 hours</option>
-                <option value="180">3 hours</option>
+                <option value="240">4 hours</option>
                 <option value="360">6 hours</option>
+                <option value="720">12 hours</option>
               </select>
             </div>
-            <div class="intro-config-hint">How often the app re-checks for new acceptances and fires the intro DM during the 7-day monitoring window. Faster cadences increase LinkedIn API load.</div>
+            <div class="intro-config-hint">How often we check each account for new acceptances and fire the follow-up — during sending and after. The first check is always ~1 hour in; after that it follows this interval. A little later if all browsers are busy sending.</div>
           </div>
         </div>
       </div>
