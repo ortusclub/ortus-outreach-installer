@@ -1501,8 +1501,8 @@ app.post('/api/replies/seen', async (_req, res) => {
   }
 });
 
-// Manual bulk-check trigger. Bypasses the 60-min cooldown so the operator
-// can on-demand sweep their sheet for newly-accepted invites.
+// Manual bulk-check trigger. Bypasses the per-account cadence cooldown so the
+// operator can on-demand sweep their sheet for newly-accepted invites.
 //
 // v2.71: works mid-campaign. If a campaign is running and not already
 // paused, this endpoint pauses it, waits for the worker(s) to reach a
