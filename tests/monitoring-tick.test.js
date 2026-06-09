@@ -20,13 +20,13 @@ test('tickMonitoringNow does nothing when nextCheckAt is in the future', async (
   assert.equal(fired, false);
 });
 
-test('tickMonitoringNow fires when nextCheckAt is overdue and reschedules', async () => {
+test('tickMonitoringNow fires when overdue and reschedules by the EXACT cadence (no floor)', async () => {
   const past = new Date(Date.now() - 1000);
   _setTestState({
     state: 'monitoring',
     nextCheckAt: past.toISOString(),
     monitoringUntil: new Date(Date.now() + 86400_000).toISOString(),
-    checkIntervalMinutes: 30,
+    checkIntervalMinutes: 30, // set directly (bypasses intake clamp) to prove the reschedule does NOT floor
     logs: [],
   });
   let fired = false;
@@ -34,10 +34,9 @@ test('tickMonitoringNow fires when nextCheckAt is overdue and reschedules', asyn
   assert.equal(fired, true);
   const s = getCampaignState();
   const nextMs = new Date(s.nextCheckAt).getTime();
-  // v2.71: monitoring cadence has a 60-min floor (once-per-hour rule), so a
-  // 30-min checkIntervalMinutes is clamped up to ~60 min.
-  assert.ok(nextMs > Date.now() + 59 * 60_000, 'nextCheckAt should be ~60 min in the future (60-min floor)');
-  assert.ok(nextMs <= Date.now() + 61 * 60_000, 'nextCheckAt should not exceed 60 min + slack');
+  // No 60-min floor anymore: a 30-min value reschedules ~30 min out, not ~60.
+  assert.ok(nextMs > Date.now() + 29 * 60_000, 'nextCheckAt should be ~30 min out');
+  assert.ok(nextMs <= Date.now() + 31 * 60_000, 'nextCheckAt should not exceed 30 min + slack');
 });
 
 test('tickMonitoringNow does not reschedule when state changes during fire', async () => {

@@ -4200,7 +4200,9 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
         // Floor the operator-chosen cadence at 60 min — anything tighter
         // would breach the global rule. Wizard UI still lets them pick
         // smaller values; this is the runtime safety net.
-        const cadenceMin = Math.max(60, campaign.checkIntervalMinutes || 60);
+        // Honor the operator cadence exactly — no floor here. The value was
+        // clamped to >= MIN_CADENCE_MINUTES at startCampaign intake.
+        const cadenceMin = campaign.checkIntervalMinutes || 60;
         const ms = cadenceMin * 60_000;
         // v2.14.x: schedule the next tick from the PREVIOUS nextCheckAt
         // boundary, not from "now" (which is whenever the bulk-check
