@@ -33,6 +33,11 @@ export function isScraperConfigured() {
   return !!engineUrl();
 }
 
+/** The engine base URL — used by the UI to build the live-browser (noVNC) link. */
+export function getEngineUrl() {
+  return engineUrl();
+}
+
 function authHeaders() {
   const headers = { 'Content-Type': 'application/json' };
   const token = engineToken();

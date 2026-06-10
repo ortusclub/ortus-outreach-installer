@@ -1835,16 +1835,27 @@ function updateScrapePairing() {
   el.textContent = desc;
 }
 
+let _scrapeEngineUrl = '';
+
 async function refreshScrapeConfigured() {
   try {
     const r = await fetch('/api/health');
     const h = await r.json();
     const ok = !!h.scraperConfigured;
+    _scrapeEngineUrl = (h.scraperEngineUrl || '').replace(/\/+$/, '');
     const note = document.getElementById('scrape-unconfigured');
     const startBtn = document.getElementById('btn-scrape-start');
     if (note) note.style.display = ok ? 'none' : '';
     if (startBtn) startBtn.disabled = !ok;
   } catch (_) { /* leave as-is */ }
+}
+
+// Open the live noVNC view of the cloud scraper browser (opens in the system
+// browser via Electron's external-link handler).
+function openScrapeLiveBrowser() {
+  if (!_scrapeEngineUrl) { setScrapeStatus('Engine not connected — can’t open the live browser yet.'); return; }
+  const url = `${_scrapeEngineUrl}/novnc/vnc.html?autoconnect=true&resize=scale&path=novnc/websockify`;
+  window.open(url, 'scraper-live-browser');
 }
 
 async function startScrapeJob() {
@@ -2026,6 +2037,7 @@ window.stopScrapeJob = stopScrapeJob;
 window.updateScrapePairing = updateScrapePairing;
 window.setScrapeTab = setScrapeTab;
 window.clearScrapeLog = clearScrapeLog;
+window.openScrapeLiveBrowser = openScrapeLiveBrowser;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // v3.0: Post Amplification (UI shell — Phase 1)

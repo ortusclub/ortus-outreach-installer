@@ -26,7 +26,7 @@ import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCamp
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
-import { isScraperConfigured, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs } from './src/scraper-client.js';
+import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs } from './src/scraper-client.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
@@ -238,7 +238,7 @@ console.error = (...args) => { captureLog('ERR', args); origError.apply(console,
 app.get('/api/health', (_req, res) => {
   // scraperConfigured lets the dashboard gate the "Sales Nav Scrape" mode —
   // it's enabled only when SCRAPER_ENGINE_URL points at a GKE engine.
-  res.json({ ok: true, time: new Date().toISOString(), version: APP_VERSION, scraperConfigured: isScraperConfigured() });
+  res.json({ ok: true, time: new Date().toISOString(), version: APP_VERSION, scraperConfigured: isScraperConfigured(), scraperEngineUrl: getScrapeEngineUrl() });
 });
 
 // ---------------------------------------------------------------------------
