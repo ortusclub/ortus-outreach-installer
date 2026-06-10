@@ -1735,6 +1735,37 @@ function onModeChange() {
     if (startMain) startMain.textContent = 'Start Campaign';
   }
 
+  // Sales Nav Scrape — dispatched to the GKE engine, so it hides the entire
+  // campaign apparatus (accounts, pace, templates, sheet, daily limit) and
+  // shows its own self-contained panel wired to /api/scrape/*.
+  const isScrape = (mode === 'sales_nav_scrape');
+  const scrapePanel = document.getElementById('nav-scrape');
+  const scrapeLaunch = document.getElementById('nav-scrape-launch');
+  const navLaunch = document.getElementById('nav-launch');
+  const runBar = document.getElementById('run-bar');
+  if (scrapePanel) scrapePanel.style.display = isScrape ? '' : 'none';
+  if (scrapeLaunch) scrapeLaunch.style.display = isScrape ? '' : 'none';
+  if (isScrape) {
+    // Scrape REUSES the standard multi-select account picker (section 3) — each
+    // selected account scrapes one URL, in parallel. So keep nav-accounts
+    // visible; hide only the campaign-loop apparatus.
+    if (navAccounts) navAccounts.style.display = '';
+    if (navPace) navPace.style.display = 'none';
+    if (navTemplates) navTemplates.style.display = 'none';
+    if (navSheet) navSheet.style.display = 'none';
+    if (dailyKnob) dailyKnob.style.display = 'none';
+    // A scrape isn't a campaign — hide the standard Launch block + run bar so
+    // the dedicated Start Scrape controls are the only run path.
+    if (navLaunch) navLaunch.style.display = 'none';
+    if (runBar) runBar.style.display = 'none';
+    // Live-refresh jobs + logs while viewing scrape mode.
+    try { updateScrapePairing(); refreshScrapeConfigured(); startScrapePolling(); } catch (_) {}
+  } else {
+    if (navLaunch) navLaunch.style.display = '';
+    if (runBar) runBar.style.display = '';
+    try { stopScrapePolling(); } catch (_) {}
+  }
+
   // Persist last-used mode
   try { localStorage.setItem('ortus-last-mode', mode); } catch (_) {}
 
@@ -1753,6 +1784,271 @@ function onModeChange() {
     try { window.updateEditingBanner(); } catch (_) {}
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sales Nav Scrape — control panel for the GKE scraper engine.
+// Dispatches jobs to /api/scrape/* (which proxy to the engine) and polls
+// /api/scrape/jobs for live progress. No local browser, no campaign loop.
+// ═══════════════════════════════════════════════════════════════════════════
+let _scrapePollTimer = null;
+
+// Sales-Nav status for a profile from the SoO, normalized to a CSS class.
+// Scrape uses the SAME multi-select account picker as campaigns (section 3).
+// The selected GoLogin accounts come from selectedProfileIds; we exclude the
+// Local Browser (the engine drives GoLogin profiles only).
+function scrapeSelectedAccounts() {
+  return (selectedProfileIds || []).filter((id) => id && id !== 'local-browser');
+}
+
+function setScrapeStatus(msg) {
+  const el = document.getElementById('scrape-status');
+  if (el) el.textContent = msg;
+}
+
+// Live "N URLs × M accounts → N jobs" summary. Each URL is scraped by one
+// account; when counts differ, accounts are assigned round-robin.
+function updateScrapePairing() {
+  const el = document.getElementById('scrape-pairing');
+  const urls = (document.getElementById('scrape-urls')?.value || '')
+    .split('\n').map((s) => s.trim()).filter(Boolean);
+  const accts = scrapeSelectedAccounts();
+  const n = urls.length, m = accts.length;
+  // Short word for the launch-card caption: sequential (1 account), parallel
+  // (≥1 account each), or parallel + queue (more URLs than accounts).
+  const mode = m <= 1 ? 'sequential' : (n <= m ? 'parallel' : 'parallel + queue');
+  // Mirror the count into the launch card's big number + caption.
+  const numEl = document.getElementById('scrape-launch-number');
+  const capEl = document.getElementById('scrape-launch-caption');
+  if (numEl) numEl.textContent = String(n || 0);
+  if (capEl) capEl.textContent = `${n} URL${n === 1 ? '' : 's'} · ${m} account${m === 1 ? '' : 's'} · ${mode}`;
+  if (!el) return;
+  if (!n && !m) {
+    el.textContent = 'Add Sales Nav URL(s) above, then select GoLogin accounts in section 3 below — one account per URL runs them in parallel.';
+    return;
+  }
+  if (!m) {
+    el.textContent = `${n} URL${n === 1 ? '' : 's'} · now select GoLogin accounts in section 3 below (one account per URL to run them in parallel).`;
+    return;
+  }
+  if (!n) {
+    el.textContent = `${m} account${m === 1 ? '' : 's'} selected · add Sales Nav URL(s) above.`;
+    return;
+  }
+  // Accurate run description based on the URL : account ratio.
+  let desc;
+  if (m === 1) {
+    desc = `${n} URL${n === 1 ? '' : 's'} → ${n} job${n === 1 ? '' : 's'} on 1 account, run back-to-back (sequential).`;
+  } else if (n <= m) {
+    desc = `${n} URL${n === 1 ? '' : 's'} × ${m} accounts → ${n} job${n === 1 ? '' : 's'}, run in parallel (1 account each).`;
+  } else {
+    desc = `${n} URLs × ${m} accounts → ${n} jobs: ${m} run in parallel, the rest queue back-to-back per account.`;
+  }
+  el.textContent = desc;
+}
+
+let _scrapeEngineUrl = '';
+
+async function refreshScrapeConfigured() {
+  try {
+    const r = await fetch('/api/health');
+    const h = await r.json();
+    const ok = !!h.scraperConfigured;
+    _scrapeEngineUrl = (h.scraperEngineUrl || '').replace(/\/+$/, '');
+    const note = document.getElementById('scrape-unconfigured');
+    const startBtn = document.getElementById('btn-scrape-start');
+    if (note) note.style.display = ok ? 'none' : '';
+    if (startBtn) startBtn.disabled = !ok;
+  } catch (_) { /* leave as-is */ }
+}
+
+// Open the live noVNC view of the cloud scraper browser (opens in the system
+// browser via Electron's external-link handler).
+function openScrapeLiveBrowser() {
+  if (!_scrapeEngineUrl) { setScrapeStatus('Engine not connected — can’t open the live browser yet.'); return; }
+  const url = `${_scrapeEngineUrl}/novnc/vnc.html?autoconnect=true&resize=scale&path=novnc/websockify`;
+  window.open(url, 'scraper-live-browser');
+}
+
+async function startScrapeJob() {
+  const urlsEl = document.getElementById('scrape-urls');
+  const sheetEl = document.getElementById('scrape-sheet');
+  const urls = (urlsEl?.value || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  const sheetUrl = (sheetEl?.value || '').trim();
+  const accts = scrapeSelectedAccounts();
+  const baseTab = (document.getElementById('scrape-tab')?.value || 'Results').trim();
+  const slowMode = !!document.getElementById('scrape-slow')?.checked;
+  // Diagnostic — shows in the in-app CONSOLE so we can see exactly what's missing.
+  console.log('[scrape] Start clicked →', { urls: urls.length, hasSheet: !!sheetUrl, accounts: accts.length, urlsFieldFound: !!urlsEl, sheetFieldFound: !!sheetEl });
+  const toast = (m) => { try { showCampaignToast(m, 4000); } catch (_) { try { alert(m); } catch (_) {} } };
+  if (!urls.length) { setScrapeStatus('Paste at least one Sales Nav search URL.'); toast('Scrape: paste at least one Sales Nav search URL in section 2b.'); return; }
+  if (!sheetUrl) { setScrapeStatus('Enter a destination Google Sheet URL.'); toast('Scrape: enter a destination Google Sheet URL in section 2b.'); return; }
+  if (!accts.length) {
+    setScrapeStatus('⚠ No GoLogin accounts selected. Pick at least one in section 3 below — each URL is scraped by one account.');
+    toast('Scrape: select at least one GoLogin account in section 3.');
+    // Make the requirement impossible to miss: expand + scroll to the picker.
+    const acc = document.getElementById('nav-accounts');
+    if (acc) {
+      acc.classList.remove('collapsed');
+      acc.style.display = '';
+      acc.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
+
+  setScrapeStatus(`Starting ${urls.length} scrape job${urls.length === 1 ? '' : 's'}…`);
+  toast(`Scrape: starting ${urls.length} job${urls.length === 1 ? '' : 's'} on ${accts.length} account${accts.length === 1 ? '' : 's'}…`);
+
+  // Pair each URL with an account (round-robin when counts differ); each pair
+  // is its own single-URL job so the engine runs them concurrently — one
+  // browser per profile.
+  let started = 0;
+  const errors = [];
+  for (let i = 0; i < urls.length; i++) {
+    const profileId = accts[i % accts.length];
+    const tabName = urls.length > 1 ? `${baseTab} ${i + 1}` : baseTab;
+    try {
+      const r = await fetch('/api/scrape/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode }),
+      });
+      const res = await r.json();
+      if (res && res.error) errors.push(`URL ${i + 1}: ${res.error}`);
+      else started++;
+    } catch (e) {
+      errors.push(`URL ${i + 1}: ${e.message}`);
+    }
+  }
+  setScrapeStatus(errors.length
+    ? `Started ${started}/${urls.length}. First error — ${errors[0]}`
+    : `Started ${started} scrape job${started === 1 ? '' : 's'} on the engine.`);
+  startScrapePolling();
+}
+
+async function pauseScrapeJob() { await _scrapeControlAll('/api/scrape/pause'); }
+
+async function stopScrapeJob() {
+  await _scrapeControlAll('/api/scrape/stop');
+  stopScrapePolling();
+}
+
+// Apply a control action to every selected account's job (each is keyed by
+// profileId on the engine).
+async function _scrapeControlAll(path) {
+  const accts = scrapeSelectedAccounts();
+  if (!accts.length) return;
+  for (const profileId of accts) {
+    try {
+      await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId }),
+      });
+    } catch (_) { /* best-effort across accounts */ }
+  }
+}
+
+function startScrapePolling() {
+  stopScrapePolling();
+  pollScrapeJobs();
+  pollScrapeLogs();
+  _scrapePollTimer = setInterval(() => { pollScrapeJobs(); pollScrapeLogs(); }, 4000);
+}
+
+function stopScrapePolling() {
+  if (_scrapePollTimer) { clearInterval(_scrapePollTimer); _scrapePollTimer = null; }
+}
+
+// ── Jobs / Logs tabs ───────────────────────────────────────────────────────
+let scrapeLogLines = [];
+let scrapeLogSince = 0;
+
+function setScrapeTab(tab) {
+  document.querySelectorAll('#nav-scrape-launch .scrape-tab').forEach((b) => {
+    b.classList.toggle('active', b.dataset.stab === tab);
+  });
+  const jobsEl = document.getElementById('scrape-tab-jobs');
+  const logsEl = document.getElementById('scrape-tab-logs');
+  if (jobsEl) jobsEl.style.display = tab === 'jobs' ? '' : 'none';
+  if (logsEl) logsEl.style.display = tab === 'logs' ? '' : 'none';
+  if (tab === 'logs') pollScrapeLogs();
+}
+
+function clearScrapeLog() {
+  scrapeLogLines = [];
+  scrapeLogSince = Date.now(); // don't re-pull already-shown lines next poll
+  renderScrapeLogPanel();
+}
+
+function renderScrapeLogPanel() {
+  const el = document.getElementById('scrape-log');
+  if (!el) return;
+  if (!scrapeLogLines.length) { el.innerHTML = '<span class="scrape-log-empty">No activity yet.</span>'; return; }
+  const fmt = (ts) => { try { return new Date(ts).toLocaleTimeString(); } catch (_) { return ''; } };
+  const cls = (m) => /error|✗|fail|closed/i.test(m) ? 'err' : (/done|✓|success|complete/i.test(m) ? 'ok' : '');
+  el.innerHTML = scrapeLogLines.map((l) => {
+    const label = l.tabName ? `${l.tabName} — ` : '';
+    return `<div><span class="t">[${fmt(l.ts)}]</span> <span class="${cls(l.message)}">${escHtml(label + l.message)}</span></div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+async function pollScrapeLogs() {
+  try {
+    const r = await fetch(`/api/scrape/logs${scrapeLogSince ? `?since=${scrapeLogSince}` : ''}`);
+    const res = await r.json();
+    if (res && res.error) return;
+    const lines = Array.isArray(res) ? res : (res.logs || []);
+    if (lines.length) {
+      scrapeLogLines.push(...lines);
+      if (scrapeLogLines.length > 800) scrapeLogLines.splice(0, scrapeLogLines.length - 800);
+      scrapeLogSince = lines[lines.length - 1].ts;
+      renderScrapeLogPanel();
+    } else if (res && res.now && !scrapeLogSince) {
+      scrapeLogSince = res.now;
+    }
+  } catch (_) { /* keep last render */ }
+}
+
+async function pollScrapeJobs() {
+  const el = document.getElementById('scrape-jobs');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/scrape/jobs');
+    const res = await r.json();
+    if (res && res.error) {
+      el.innerHTML = `<div style="color:var(--gray);font-size:12px;padding:10px 0;">${escHtml(res.error)}</div>`;
+      return;
+    }
+    const jobs = Array.isArray(res) ? res : (res.jobs || []);
+    if (!jobs.length) {
+      el.innerHTML = '<div style="color:var(--gray);font-size:12px;padding:10px 0;">No scrape jobs yet.</div>';
+      return;
+    }
+    const stateColor = (s) => s === 'error' || s === 'cancelled' ? 'var(--red,#dc2626)'
+      : (s === 'done' ? '#16a34a' : 'var(--gray)');
+    el.innerHTML = jobs.map((j) => `
+      <div style="padding:8px 0;border-bottom:1px solid var(--hairline-soft);font-size:12px;">
+        <div style="display:flex;justify-content:space-between;gap:12px;">
+          <span>${escHtml(j.tabName || j.searchUrl || j.id || 'job')}</span>
+          <span style="color:${stateColor(j.state)}">${escHtml(j.state || '')} · ${j.pages || 0}p · ${j.profiles || 0} leads</span>
+        </div>
+        ${j.error ? `<div style="color:var(--red,#dc2626);margin-top:4px;">${escHtml(j.error)}</div>` : ''}
+      </div>`).join('');
+  } catch (_) { /* keep last render */ }
+}
+
+// app.js is loaded as a <script type="module">, so these are module-scoped and
+// invisible to inline onclick/oninput attributes unless exported to window —
+// same pattern as window.onModeChange etc. Without this, the Start/Pause/Stop
+// scrape buttons silently do nothing.
+window.startScrapeJob = startScrapeJob;
+window.pauseScrapeJob = pauseScrapeJob;
+window.stopScrapeJob = stopScrapeJob;
+window.updateScrapePairing = updateScrapePairing;
+window.setScrapeTab = setScrapeTab;
+window.clearScrapeLog = clearScrapeLog;
+window.openScrapeLiveBrowser = openScrapeLiveBrowser;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // v3.0: Post Amplification (UI shell — Phase 1)
@@ -2229,6 +2525,15 @@ const MODE_LIST = [
     ],
   },
   {
+    value: 'sales_nav_scrape',
+    name: 'Sales Nav Scrape',
+    bullets: [
+      'Scrape a Sales Navigator search into a Google Sheet',
+      'Runs in the cloud — close your laptop, it keeps going',
+      'Live page / profile progress',
+    ],
+  },
+  {
     value: 'check_dms',
     name: 'Check DMs',
     bullets: [
@@ -2682,6 +2987,9 @@ function updateCampaignSummary() {
   // it null-guards every element lookup.
   alphaRecalc();
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
+
+  // Keep the Sales Nav Scrape pairing summary live as accounts are toggled.
+  if (mode === 'sales_nav_scrape') { try { updateScrapePairing(); } catch (_) {} }
 
   // v2.11.0: vocabulary kept for hero copy. Rate/limit labels are gone from UI;
   // these strings only feed the summary block.
@@ -10373,6 +10681,18 @@ window.updateSavePip = updateSavePip;
 // button is hidden under the same refactor.
 // ─────────────────────────────────────────────────────────────────────────
 window.updateEditingBanner = function() {
+  // Sales Nav Scrape has its OWN launcher (the Start Scrape button in the
+  // section-6 scrape card). The campaign launch rail does not apply — its
+  // "Launch options" would start an outreach CAMPAIGN, not a scrape — so hide
+  // it entirely in scrape mode to remove the wrong launch path.
+  if (document.getElementById('campaign-mode')?.value === 'sales_nav_scrape') {
+    const rail = document.getElementById('wiz-launch-rail');
+    const inlineEl = document.getElementById('wiz-editing-inline');
+    if (rail) rail.style.display = 'none';
+    if (inlineEl) inlineEl.style.display = 'none';
+    document.body.classList.remove('has-launch-rail');
+    return;
+  }
   // The old #wiz-editing-banner was replaced by an inline indicator next
   // to the back link and a sticky launch rail at the bottom. Both
   // visibilities are mirrored on the active-draft state.
