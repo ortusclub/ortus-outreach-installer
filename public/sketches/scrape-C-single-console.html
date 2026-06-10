@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales Nav Scrape — C · Single console card</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fafafa;--ink:#0a0a0a;--gray:#8a8a8a;--hairline:rgba(0,0,0,0.15);--hairline-soft:rgba(0,0,0,0.06);
+  --card-bg:#fff;--card-border:rgba(0,0,0,0.12);--card-shadow:0 4px 16px rgba(0,0,0,0.10);
+  --gold:#F7BE68;--display:'Bebas Neue','Arial Narrow',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:40px 32px;}
+.wrap{max-width:1040px;margin:0 auto;}
+.tag{font:13px/1.4 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);}
+h1{font-family:var(--display);letter-spacing:.03em;font-weight:400;font-size:34px;margin:2px 0 22px;}
+.note{font-size:13px;color:var(--gray);line-height:1.6;margin-bottom:22px;}
+.console{background:var(--card-bg);border:1px solid var(--card-border);border-radius:16px;box-shadow:var(--card-shadow);overflow:hidden;margin-bottom:18px;}
+.block{padding:24px 26px;border-bottom:1px solid var(--hairline-soft);}
+.block:last-child{border-bottom:0;}
+.head{font-family:var(--display);letter-spacing:.08em;text-transform:uppercase;font-size:16px;color:var(--gray);margin:0 0 16px;}
+.label{display:block;font-size:12px;color:var(--gray);margin-bottom:7px;}
+input[type=text],textarea{width:100%;border:1px solid var(--hairline);border-radius:9px;padding:11px 13px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);}
+textarea{resize:vertical;min-height:70px;}
+.seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;overflow:hidden;margin-bottom:16px;}
+.seg button{border:0;background:transparent;color:var(--gray);font:12px inherit;letter-spacing:.05em;padding:8px 22px;cursor:pointer;}
+.seg button.active{background:var(--ink);color:#fff;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.hint{font-size:12px;color:var(--gray);margin-top:11px;line-height:1.5;}
+/* launch lives inside the same console, dark footer band for contrast */
+.foot{background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:22px 26px;}
+.big{font-family:var(--display);font-size:60px;line-height:.85;color:#fff;}
+.cap{font-size:12px;color:#9a9a9a;margin-top:6px;letter-spacing:.06em;}
+.cta{display:flex;gap:10px;align-items:center;}
+.start{background:var(--gold);color:#0a0a0a;border:0;border-radius:9999px;padding:14px 26px;font:15px var(--display);letter-spacing:.12em;cursor:pointer;}
+.sec{background:transparent;border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:9999px;padding:11px 18px;font-size:13px;font-family:inherit;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">Sketch · Variant C</div><h1>Sales Nav Scrape — single console</h1>
+  <div class="note"><b>Direction:</b> one elevated console card holds the whole flow; parts are separated by hairline dividers (not stacked boxes), and Launch is a dark footer band inside the same card for a strong end-to-end contrast. Most compact.</div>
+
+  <div class="console">
+    <div class="block">
+      <div class="head">Input · Sales Navigator searches</div>
+      <div class="seg"><button class="active">Type URLs</button><button>From a Sheet</button></div>
+      <label class="label">Sales Navigator search URL(s) — one per line. Each URL is scraped by one selected GoLogin account, in parallel.</label>
+      <textarea placeholder="https://www.linkedin.com/sales/search/people?...">https://www.linkedin.com/sales/search/people?keywords=events&amp;geo=UK</textarea>
+      <div class="hint">↓ Pick the GoLogin accounts (one per URL) in <b>section 3</b> — each needs a Sales Nav seat.</div>
+    </div>
+
+    <div class="block">
+      <div class="head">Destination · where results land</div>
+      <div class="row2">
+        <div><label class="label">Destination Google Sheet URL</label><input type="text" placeholder="https://docs.google.com/spreadsheets/d/..."></div>
+        <div><label class="label">New tab name — we create this tab for the results</label><input type="text" value="Results"></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="head">Options</div>
+      <label style="display:flex;gap:9px;align-items:center;font-size:14px;cursor:pointer;"><input type="checkbox"> Slow mode (larger delays between pages)</label>
+    </div>
+
+    <div class="foot">
+      <div><div class="big">0</div><div class="cap">1 URL · 1 ACCOUNT · SEQUENTIAL</div></div>
+      <div class="cta"><button class="sec">👁 View Browser</button><button class="sec">Stop</button><button class="sec">Pause</button><button class="start">START SCRAPE</button></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

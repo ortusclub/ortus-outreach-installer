@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales Nav Scrape — B · Stat header + sheet input</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fafafa;--ink:#0a0a0a;--gray:#8a8a8a;--hairline:rgba(0,0,0,0.15);--hairline-soft:rgba(0,0,0,0.06);
+  --card-bg:#fff;--card-border:rgba(0,0,0,0.12);--card-shadow:0 4px 16px rgba(0,0,0,0.10);
+  --gold:#F7BE68;--gold-tint:rgba(247,190,104,0.10);--display:'Bebas Neue','Arial Narrow',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:40px 32px;}
+.wrap{max-width:1040px;margin:0 auto;}
+.tag{font:13px/1.4 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);}
+h1{font-family:var(--display);letter-spacing:.03em;font-weight:400;font-size:34px;margin:2px 0 22px;}
+.note{font-size:13px;color:var(--gray);line-height:1.6;margin-bottom:22px;}
+/* stat header like the Browse Accounts top row */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:18px;}
+.stat{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);padding:18px 20px;}
+.stat.hi{border-color:var(--gold);background:var(--gold-tint);}
+.stat .k{font:12px var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--gray);}
+.stat .v{font-family:var(--display);font-size:46px;line-height:1;margin:6px 0 2px;}
+.stat.hi .v{color:#c9962f;}
+.stat .s{font:11px var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+.card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);padding:22px 24px;margin-bottom:18px;}
+.head{font-family:var(--display);letter-spacing:.08em;text-transform:uppercase;font-size:18px;margin:0 0 16px;}
+.label{display:block;font-size:12px;color:var(--gray);margin-bottom:7px;}
+input[type=text],textarea{width:100%;border:1px solid var(--hairline);border-radius:9px;padding:11px 13px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);}
+.seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;overflow:hidden;margin-bottom:16px;}
+.seg button{border:0;background:transparent;color:var(--gray);font:12px inherit;letter-spacing:.05em;padding:8px 22px;cursor:pointer;}
+.seg button.active{background:var(--ink);color:#fff;}
+.loadrow{display:flex;gap:10px;}
+.loadrow .btn{white-space:nowrap;background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:0 20px;font-size:13px;font-family:inherit;cursor:pointer;}
+.found{margin-top:10px;font-size:12px;color:#2e7d32;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.hint{font-size:12px;color:var(--gray);margin-top:11px;line-height:1.5;}
+.launch{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);padding:24px 26px;display:flex;align-items:center;justify-content:space-between;}
+.big{font-family:var(--display);font-size:66px;line-height:.85;}
+.cap{font-size:12px;color:var(--gray);margin-top:8px;}
+.cta{display:flex;flex-direction:column;gap:10px;min-width:236px;}
+.start{background:var(--ink);color:var(--gold);border:0;border-radius:9999px;padding:15px;font:15px var(--display);letter-spacing:.12em;cursor:pointer;}
+.sec{background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:11px;font-size:13px;font-family:inherit;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">Sketch · Variant B</div><h1>Sales Nav Scrape — dashboard header</h1>
+  <div class="note"><b>Direction:</b> mirrors the Browse Accounts composition — a stat-panel header up top (URLs / Accounts / Jobs, the live total gold-highlighted like “ALL 399”), then the input cards. Shown here with the <b>From a Sheet</b> input mode active.</div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Search URLs</div><div class="v">12</div><div class="s">from your sheet</div></div>
+    <div class="stat"><div class="k">Accounts</div><div class="v">4</div><div class="s">Sales Nav seats</div></div>
+    <div class="stat hi"><div class="k">Jobs</div><div class="v">12</div><div class="s">4 parallel · rest queue</div></div>
+  </div>
+
+  <div class="card">
+    <div class="head">Input · Sales Navigator searches</div>
+    <div class="seg"><button>Type URLs</button><button class="active">From a Sheet</button></div>
+    <label class="label">Paste a Google Sheet whose cells hold the search URLs — we read it and pull out every Sales Nav search.</label>
+    <div class="loadrow"><input type="text" value="https://docs.google.com/spreadsheets/d/1aZ.../edit"><button class="btn">Load URLs</button></div>
+    <div class="found">✓ Found 12 Sales Nav search URLs in this sheet.</div>
+    <div class="hint">↓ Pick the GoLogin accounts (one per URL) in <b>section 3</b> — each needs a Sales Nav seat.</div>
+  </div>
+
+  <div class="card">
+    <div class="head">Destination · where results land</div>
+    <div class="row2">
+      <div><label class="label">Destination Google Sheet URL</label><input type="text" placeholder="https://docs.google.com/spreadsheets/d/..."></div>
+      <div><label class="label">New tab name — we create this tab for the results</label><input type="text" value="Results"></div>
+    </div>
+  </div>
+
+  <div class="launch">
+    <div><div class="big">0</div><div class="cap">12 URLS · 4 ACCOUNTS · PARALLEL + QUEUE</div></div>
+    <div class="cta"><button class="start">START SCRAPE</button><button class="sec">Pause</button><button class="sec">Stop</button><button class="sec">👁 View Browser</button></div>
+  </div>
+</div>
+</body>
+</html>
