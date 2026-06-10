@@ -158,6 +158,13 @@ function _friendlyIntroFailure(errMsg) {
   if (m.includes('MESSAGE_SEND_FAILED: introName required')) {
     return 'Failed — Primary name missing in template';
   }
+  // Clean-compose (CC+IC note-branch) failures — IC_ prefixed.
+  if (m.includes('IC_INTRO_RECIPIENT_NOT_FOUND')) {
+    return 'Failed — Lead or primary not in your connections';
+  }
+  if (m.includes('IC_INTRO_FAILED')) {
+    return "Failed — Group compose didn't load";
+  }
   // Unknown error — preserve a truncated raw so info isn't lost on new variants.
   const trunc = m.length > 60 ? m.slice(0, 57) + '…' : m;
   return `Failed — ${trunc || 'unknown'}`;
