@@ -2260,7 +2260,7 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
 // Operator constraint 2026-05-19: do NOT touch CC+IC.
 // ═════════════════════════════════════════════════════════════════════════════
 
-export async function sendIntroViaCleanCompose(page, body, leadFullName, primaryName, groupTitle = '') {
+export async function sendIntroViaCleanCompose(page, body, leadFullName, primaryName, groupTitle = '', opts = {}) {
   if (!body) throw new Error('IC_INTRO_FAILED: body required');
   if (!leadFullName) throw new Error('IC_INTRO_FAILED: leadFullName required (combine First Name + Last Name from sheet)');
   if (!primaryName) throw new Error('IC_INTRO_FAILED: primaryName required (templates.introName)');
@@ -2495,6 +2495,26 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
   // field on the 2nd pill commit. The wait is operator-confirmed safety
   // margin for slow renderers.
   await new Promise(r => setTimeout(r, 1500));
+
+  // Gated dedupe probe (CC+IC note-branch only; IB passes no opts so this is
+  // skipped → IB behaviour byte-for-byte identical). With both pills committed,
+  // LinkedIn surfaces an existing lead+primary GROUP thread's history inline.
+  // Any message events ⇒ the trio already has an intro thread ⇒ abort with the
+  // SAME signal the URL path throws so runAutoIntros stamps "Introduction Already
+  // Made" and sends nothing. The connection note lives in the 1:1 chat (sender +
+  // lead only), which cannot appear in this lead+primary group compose — so the
+  // note can never false-trip this. See spec 2026-06-10-ccic-note-group-intro.
+  if (opts && opts.dedupeProbe) {
+    await new Promise(r => setTimeout(r, 800));
+    const eventCount = await page.evaluate(() => document.querySelectorAll(
+      '.msg-s-event-listitem, [class*="msg-s-event"], [class*="msg-event-listitem"], .msg-s-message-list-content li'
+    ).length);
+    if (eventCount > 0) {
+      console.log(`[actions:ic-clean] Existing group thread detected (${eventCount} msg events) — already introduced; aborting before send.`);
+      throw new Error('INTRO_ALREADY_EXISTS');
+    }
+    console.log('[actions:ic-clean] Group compose empty — proceeding to send.');
+  }
 
   // Step 3 — fill the Group name (conversation title) if provided.
   if (groupTitle) {
