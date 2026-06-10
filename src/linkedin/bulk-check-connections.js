@@ -24,6 +24,7 @@ import { getRecentConnections } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { batchUpdateSheet, writeRecentConnectionsTab } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign } from '../campaign.js';
+import { readSourceMemberId } from '../profile-identity.js';
 
 function publicIdFromUrl(url) {
   if (!url) return '';
@@ -90,6 +91,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   // profile (see bulk-check-connections.js fallback path).
   const slugToAccounts = new Map();
   const memberIdToAccounts = new Map();
+  const memberNumberToAccounts = new Map();
   const nameToAccounts = new Map();
   const accountDisplay = new Map(); // accountNorm → original-case (for stamps)
   const _addAcct = (map, key, acct) => {
@@ -106,8 +108,13 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     if (pubId) _addAcct(slugToAccounts, pubId.toLowerCase(), acct);
     const mid = memberIdFromAny(c.urn) || memberIdFromAny(c.publicId);
     if (mid) _addAcct(memberIdToAccounts, mid, acct);
+    // v2.86.12: nameToAccounts is still populated for diag continuity but is
+    // NO LONGER a match key — name matching caused cross-account false
+    // positives (e.g. Vito Mansueto stamped + introduced off a namesake).
     const nameKey = `${(c.firstName || '').toLowerCase().trim()} ${(c.lastName || '').toLowerCase().trim()}`.trim();
     if (nameKey && nameKey !== ' ') _addAcct(nameToAccounts, nameKey, acct);
+    const memberNumber = String(c.memberNumber == null ? '' : c.memberNumber).replace(/\D/g, '');
+    if (memberNumber) _addAcct(memberNumberToAccounts, memberNumber, acct);
   }
 
   // Snapshot a few extracted IDs for the diag eyeball-compare.
@@ -143,7 +150,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
         alreadyConnected: 0, alreadyDeclined: 0, alreadyIntroduced: 0,
         alreadyUnverified: 0, composeCapped: 0, pidMatched: 0,
         crossSender: 0, skippedNotActiveSender: dbgSkippedNotActiveSender,
-        slugs: slugToAccounts.size, memberIds: memberIdToAccounts.size, names: nameToAccounts.size,
+        slugs: slugToAccounts.size, memberIds: memberIdToAccounts.size,
+        memberNumbers: memberNumberToAccounts.size, names: nameToAccounts.size,
         sampleSheetSlugs: [], sampleSheetMemberIds: [],
         sampleConnectedSlugs, sampleConnectedMemberIds, sampleConnectedNames,
         sampleCRSValues: new Set(),
@@ -182,9 +190,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     if (sampleSheetSlugs.length < 3 && slug) sampleSheetSlugs.push(slug);
     if (sampleSheetMemberIds.length < 3 && memberId) sampleSheetMemberIds.push(memberId);
 
-    const firstName = (row['First Name'] || row['first name'] || row['firstName'] || '').toString().toLowerCase().trim();
-    const lastName  = (row['Last Name']  || row['last name']  || row['lastName']  || '').toString().toLowerCase().trim();
-    const nameKey = `${firstName} ${lastName}`.trim();
+    // v2.86.12: row First/Last name no longer read here — NAME was dropped as a
+    // match key (cross-account false positives). Strong identity only below.
 
     // Sender-scoping read — what account does this row's lead belong to?
     // Empty means "no one assigned yet" → legacy behavior. Otherwise we
@@ -199,7 +206,13 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     const _matchedAccounts = new Set();
     for (const a of (slugToAccounts.get(slug) || [])) _matchedAccounts.add(a);
     if (memberId) for (const a of (memberIdToAccounts.get(memberId) || [])) _matchedAccounts.add(a);
-    if (nameKey && nameKey !== ' ') for (const a of (nameToAccounts.get(nameKey) || [])) _matchedAccounts.add(a);
+    // v2.86.12: NAME is no longer a match key (cross-account false positives,
+    // e.g. Vito Mansueto stamped + introduced off a namesake on an unsent row).
+    // Strong identity only: slug (above), AC**AA token (above), or numeric
+    // Membership ID (below). readSourceMemberId reads the sheet's numeric id;
+    // memberNumberToAccounts holds the connections' numeric ids.
+    const rowMemberNumber = readSourceMemberId(row);
+    if (rowMemberNumber) for (const a of (memberNumberToAccounts.get(rowMemberNumber) || [])) _matchedAccounts.add(a);
     const isMatch = _matchedAccounts.size > 0;
 
     // Is the row's ASSIGNED sender among the accounts connected to this lead?
@@ -493,6 +506,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       skippedNotActiveSender: dbgSkippedNotActiveSender,
       slugs: slugToAccounts.size,
       memberIds: memberIdToAccounts.size,
+      memberNumbers: memberNumberToAccounts.size,
       names: nameToAccounts.size,
       sampleSheetSlugs,
       sampleSheetMemberIds,

@@ -544,10 +544,12 @@ test('attribution: lead owned by BOTH assigned sender and another → Connected 
   assert.equal(jane.cc, 'Connected', 'assigned sender owns it → Connected regardless of others');
 });
 
-test('attribution: name-only match (no slug/urn overlap) still attributes to the owning account', () => {
-  // The tab entry shares neither publicId nor urn with the row's URL — only
-  // the first+last name matches. Attribution must still flow through the
-  // nameToAccounts index so the assigned-sender decision is correct.
+test('v2.86.12: name-only overlap (no slug/urn/numeric-id) does NOT attribute or stamp Connected', () => {
+  // The tab entry shares neither publicId nor urn nor numeric Membership ID
+  // with the row — ONLY the first+last name matches. v2.86.12 drops NAME as a
+  // match key (cross-account false positives), so this must NOT produce a
+  // Connected stamp or an intro. The row is still 'Connection Request Sent', so
+  // it gets a Still Pending stamp instead (no strong-ID match).
   const rows = [rowWithSender('carmella.s@ortus.solutions', {
     'First Name': 'Jane', 'Last Name': 'Doe',
     'LinkedIn URL': 'https://linkedin.com/in/jane-d-99',
@@ -561,9 +563,13 @@ test('attribution: name-only match (no slug/urn overlap) still attributes to the
     { profileName: 'carmella.s@ortus.solutions' }
   );
   const jane = updates.find((u) => u.linkedinUrl === 'https://linkedin.com/in/jane-d-99');
-  assert.ok(jane, 'name-only match still produces a stamp');
-  assert.equal(jane.cc, 'Connected', 'name match attributed to assigned sender → Connected');
-  assert.ok(connectedUrls.includes('https://linkedin.com/in/jane-d-99'));
+  assert.ok(!connectedUrls.includes('https://linkedin.com/in/jane-d-99'),
+    'name-only overlap must NOT be queued for intro');
+  assert.notEqual(jane && jane.cc, 'Connected',
+    'name-only overlap must NOT stamp Connected (cross-account false positive)');
+  // Pending row with no strong-ID match → Still Pending stamp (not Connected).
+  assert.equal(jane && jane.cc, stillPendingLabel,
+    'no strong-ID match → Still Pending, not Connected');
 });
 
 test('live-fallback contract: conn attributed to sweeping profile → assigned-sender row reads Connected', () => {
@@ -713,13 +719,86 @@ test('no heal for a normal Connection Request Sent row (no connectionStatus key 
   assert.equal(withConnStatus, undefined, 'normal rows must not get a connectionStatus heal write');
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// v2.86.12 — ID-only matching (Issue #2). NAME is no longer a match key:
+// name matching caused cross-account false positives (a lead "Vito Mansueto"
+// got stamped Connected + introduced off a DIFFERENT account's namesake on an
+// unsent row). A lead is "connected" only on a strong identity hit: public
+// slug, AC**AA URN-token, or numeric Membership ID owned by an active sender.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('name-only match does NOT stamp or introduce (cross-account, unsent)', () => {
+  const rows = [{
+    'First Name': 'Vito', 'Last Name': 'Mansueto',
+    'Linkedin Bio': 'http://www.linkedin.com/in/ACwAAAZLmE8Bl3D54RBLDEXg2MwvxPE4JoIyLX8',
+    'Sender': '', 'Connection Request Status': '', 'Linkedin Membership ID': '',
+  }];
+  // A DIFFERENT account has a connection that only shares the NAME (different token, no slug, no numeric id).
+  const conns = [{ account: 'abhinay@x', firstName: 'Vito', lastName: 'Mansueto', urn: 'urn:li:fsd_profile:ACoAAAZLmE8Be4SdifferentXYZ', publicId: '', memberNumber: '' }];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(rows, conns, 'Linkedin Bio', 'Still Pending', { profileName: 'abhinay@x' });
+  assert.equal(connectedUrls.length, 0);
+  assert.ok(!updates.some(u => /connected/i.test(String(u.cc || '')) || /connected/i.test(String(u.stage || ''))));
+});
+
+test('numeric Membership ID match stamps Connected for the assigned sender', () => {
+  const rows = [{
+    'First Name': 'Real', 'Last Name': 'Lead',
+    'Linkedin Bio': 'http://www.linkedin.com/in/ACwAAReal',
+    'Sender': 'rilany@x', 'Connection Request Status': 'Connection Request Sent',
+    'Linkedin Membership ID': '105617487', 'LinkedIn URN': '',
+  }];
+  const conns = [{ account: 'rilany@x', firstName: 'Real', lastName: 'Lead', urn: '', publicId: '', memberNumber: '105617487' }];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(rows, conns, 'Linkedin Bio', 'Still Pending', { profileName: 'rilany@x' });
+  assert.equal(connectedUrls.length, 1);
+  assert.ok(updates.some(u => u.cc === 'Connected'));
+});
+
+test('G3 — v2.86.10 fingerprint at bulk layer: empty Membership ID + no token + matching name → NO stamp', () => {
+  // The v2.86.10 "Already Connected + empty Membership ID" fingerprint must be
+  // unmatchable at the bulk layer too: no numeric id, no shared token, only the
+  // name overlaps → no Connected/Already-connected write at all.
+  const rows = [{
+    'First Name': 'Vito', 'Last Name': 'Mansueto',
+    'Linkedin Bio': 'http://www.linkedin.com/in/ACwAAAZLmE8Bl3D54RBLDEXg2MwvxPE4JoIyLX8',
+    'Sender': '', 'Connection Request Status': '', 'Linkedin Membership ID': '',
+  }];
+  const conns = [{ account: 'abhinay@x', firstName: 'Vito', lastName: 'Mansueto', urn: 'urn:li:fsd_profile:ACoAAAZLmE8Be4SdifferentXYZ', publicId: '', memberNumber: '' }];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(rows, conns, 'Linkedin Bio', 'Still Pending', { profileName: 'abhinay@x' });
+  assert.equal(connectedUrls.length, 0, 'name-only fingerprint not queued for intro');
+  assert.ok(
+    !updates.some(u =>
+      /connected/i.test(String(u.cc || '')) ||
+      /connected/i.test(String(u.stage || '')) ||
+      /connected/i.test(String(u.checkStatus || ''))),
+    'no Connected/Already-connected stamp written off a name-only match'
+  );
+});
+
+test('token match still works (regression): URN token + assigned sender → Connected', () => {
+  const rows = [{
+    'First Name': 'Real', 'Last Name': 'Lead',
+    'Linkedin Bio': 'http://www.linkedin.com/in/ACwAAReal',
+    'Sender': 'rilany@x', 'Connection Request Status': 'Connection Request Sent',
+    'Linkedin Membership ID': '', 'LinkedIn URN': 'ACoAAReal',
+  }];
+  const conns = [{ account: 'rilany@x', firstName: 'Real', lastName: 'Lead', urn: 'urn:li:fsd_profile:ACoAAReal', publicId: '', memberNumber: '' }];
+  const { updates, connectedUrls } = computeBulkCheckUpdates(rows, conns, 'Linkedin Bio', 'Still Pending', { profileName: 'rilany@x' });
+  assert.equal(connectedUrls.length, 1);
+  assert.ok(updates.some(u => u.cc === 'Connected'));
+});
+
 // v2.72.1 — numeric publicId regression. Google Sheets returns an all-digits
 // connection slug as a Number when read back from the sidecar tab. The loop
 // used to call c.publicId.toLowerCase() directly, which threw
 // "c.publicId.toLowerCase is not a function" and aborted the WHOLE account's
 // bulk-check. computeBulkCheckUpdates must coerce publicId to a string.
-test('v2.72.1: numeric publicId in conns does not throw and still matches by name', () => {
-  const rows = [baseRow()];
+test('v2.72.1: numeric publicId in conns does not throw and still matches by strong ID', () => {
+  // The point of this regression guard is the crash: a numeric (Google-Sheets-
+  // coerced) publicId must not throw "c.publicId.toLowerCase is not a function".
+  // v2.86.12: NAME is no longer a match key, so the row carries a strong ID
+  // (AC**AA URN token) that matches the conn's urn — proving the numeric-
+  // publicId coercion still doesn't throw AND a real (non-name) match still fires.
+  const rows = [baseRow({ 'LinkedIn URN': 'ACoAAaaa' })];
   const numericConns = [
     { firstName: 'Jane', lastName: 'Doe', publicId: 123456789, urn: 'ACoAAaaa', memberNumber: '111', account: 'eryca.bilazon@ortus.solutions' },
   ];
@@ -727,7 +806,7 @@ test('v2.72.1: numeric publicId in conns does not throw and still matches by nam
     const { connectedUrls } = computeBulkCheckUpdates(
       rows, numericConns, linkedinColumn, stillPendingLabel, { suppressAcceptedStamp: false }
     );
-    // name match still works even though publicId was numeric
+    // strong-ID (URN token) match still works even though publicId was numeric
     assert.equal(connectedUrls.length, 1);
     assert.equal(connectedUrls[0], 'https://linkedin.com/in/jane-doe');
   });
