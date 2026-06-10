@@ -2082,20 +2082,32 @@ async function pollScrapeJobs() {
     }
     const jobs = Array.isArray(res) ? res : (res.jobs || []);
     if (!jobs.length) {
-      el.innerHTML = '<div style="color:var(--gray);font-size:12px;padding:10px 0;">No scrape jobs yet.</div>';
+      el.innerHTML = '<div class="scrape-job-empty">No scrape jobs yet.</div>';
+      _setScrapeFoot(0, 0, 0);
       return;
     }
-    const stateColor = (s) => s === 'error' || s === 'cancelled' ? 'var(--red,#dc2626)'
-      : (s === 'done' ? '#16a34a' : 'var(--gray)');
-    el.innerHTML = jobs.map((j) => `
-      <div style="padding:8px 0;border-bottom:1px solid var(--hairline-soft);font-size:12px;">
-        <div style="display:flex;justify-content:space-between;gap:12px;">
-          <span>${escHtml(j.tabName || j.searchUrl || j.id || 'job')}</span>
-          <span style="color:${stateColor(j.state)}">${escHtml(j.state || '')} · ${j.pages || 0}p · ${j.profiles || 0} leads</span>
-        </div>
-        ${j.error ? `<div style="color:var(--red,#dc2626);margin-top:4px;">${escHtml(j.error)}</div>` : ''}
-      </div>`).join('');
+    const statClass = (s) => (s === 'error' || s === 'cancelled') ? 'err'
+      : (s === 'done' ? 'done' : (s === 'running' ? 'running' : ''));
+    el.innerHTML = jobs.map((j) => {
+      const leads = j.profiles || 0;
+      const leadsHtml = leads > 0 ? `<span class="leads">${leads} lead${leads === 1 ? '' : 's'}</span>` : `${leads} leads`;
+      return `<div class="scrape-job-row">
+          <span class="scrape-job-name">${escHtml(j.tabName || j.searchUrl || j.id || 'job')}</span>
+          <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(j.state || '')} · ${j.pages || 0}p · ${leadsHtml}</span>
+        </div>${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
+    }).join('');
+    const totalLeads = jobs.reduce((a, j) => a + (j.profiles || 0), 0);
+    const doneCount = jobs.filter((j) => j.state === 'done').length;
+    _setScrapeFoot(totalLeads, doneCount, jobs.length);
   } catch (_) { /* keep last render */ }
+}
+
+// Footer summary on the scrape live-status card: total leads + done / total.
+function _setScrapeFoot(leads, done, total) {
+  const b = document.getElementById('scrape-foot-leads');
+  const c = document.getElementById('scrape-foot-cap');
+  if (b) b.textContent = String(leads);
+  if (c) c.textContent = total ? `leads scraped · ${done} of ${total} done` : 'leads scraped';
 }
 
 // app.js is loaded as a <script type="module">, so these are module-scoped and
