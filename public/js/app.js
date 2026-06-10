@@ -2642,6 +2642,9 @@ const MODE_LIST = [
     // saved drafts/schedules/history rows keep working.
     value: 'message_only',
     name: 'Direct Messages',
+    // Parked per operator request — greyed + non-clickable like Post Amplification.
+    disabled: true,
+    disabledReason: 'Direct Messages is unavailable.',
     // v2.86.1 (port): re-enabled for operator testing. (Was greyed in v2.72 when
     // folded into Message Campaign.)
     bullets: [
@@ -2653,6 +2656,9 @@ const MODE_LIST = [
   {
     value: 'inmail_only',
     name: 'InMail Only',
+    // Parked per operator request — greyed + non-clickable like Post Amplification.
+    disabled: true,
+    disabledReason: 'InMail Only is unavailable.',
     // v2.86.1 (port): re-enabled for operator testing. (Was greyed in v2.72.)
     bullets: [
       'Premium InMail to non-connected targets',
@@ -2684,6 +2690,9 @@ const MODE_LIST = [
   {
     value: 'check_dms',
     name: 'Check DMs',
+    // Parked per operator request — greyed + non-clickable like Post Amplification.
+    disabled: true,
+    disabledReason: 'Check DMs is unavailable.',
     bullets: [
       'Scan LinkedIn inboxes for new replies',
       'Append new messages to the Replies tab',
