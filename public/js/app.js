@@ -1955,6 +1955,22 @@ async function startScrapeJob() {
     return;
   }
 
+  // Fresh run — clear the previous run's logs and hide its jobs so the card
+  // reflects ONLY this campaign. startScrapeJob never reset these before, so old
+  // logs/jobs lingered across runs (operator-reported 2026-06-10).
+  scrapeLogLines = [];
+  scrapeLogSince = Date.now();
+  try { renderScrapeLogPanel(); } catch (_) {}
+  try {
+    const _jr = await fetch('/api/scrape/jobs');
+    const _jres = await _jr.json();
+    const _old = Array.isArray(_jres) ? _jres : (_jres.jobs || []);
+    scrapeBaselineJobIds = new Set(_old.map(_scrapeJobKey).filter(Boolean));
+  } catch (_) { scrapeBaselineJobIds = new Set(); }
+  const _jel = document.getElementById('scrape-jobs');
+  if (_jel) _jel.innerHTML = '<div class="scrape-job-empty">Starting…</div>';
+  _setScrapeFoot(0, 0, 0);
+
   setScrapeStatus(`Starting ${urls.length} scrape job${urls.length === 1 ? '' : 's'}…`);
   toast(`Scrape: starting ${urls.length} job${urls.length === 1 ? '' : 's'} on ${accts.length} account${accts.length === 1 ? '' : 's'}…`);
 
@@ -2022,6 +2038,14 @@ function stopScrapePolling() {
 // ── Jobs / Logs tabs ───────────────────────────────────────────────────────
 let scrapeLogLines = [];
 let scrapeLogSince = 0;
+// IDs of engine jobs that existed BEFORE the current run started — snapshotted at
+// Start and hidden from the jobs list so a new run shows only ITS jobs (the
+// engine's /api/jobs accumulates across runs). Only jobs with a stable engine id
+// are blacklisted; id-less jobs are always shown so current work is never hidden.
+let scrapeBaselineJobIds = new Set();
+function _scrapeJobKey(j) {
+  return (j && j.id != null && j.id !== '') ? String(j.id) : null;
+}
 
 function setScrapeTab(tab) {
   document.querySelectorAll('#nav-scrape-launch .scrape-tab').forEach((b) => {
@@ -2038,6 +2062,27 @@ function clearScrapeLog() {
   scrapeLogLines = [];
   scrapeLogSince = Date.now(); // don't re-pull already-shown lines next poll
   renderScrapeLogPanel();
+}
+
+// Copy the full activity log to the clipboard — for pasting into a bug report.
+async function copyScrapeLog() {
+  const fmt = (ts) => { try { return new Date(ts).toLocaleTimeString(); } catch (_) { return ''; } };
+  const text = scrapeLogLines
+    .map((l) => `[${fmt(l.ts)}] ${l.tabName ? l.tabName + ' — ' : ''}${l.message || ''}`)
+    .join('\n');
+  const ok = () => setScrapeStatus(`Copied ${scrapeLogLines.length} log line${scrapeLogLines.length === 1 ? '' : 's'} to clipboard.`);
+  try {
+    await navigator.clipboard.writeText(text || '(log empty)');
+    ok();
+  } catch (_) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      ok();
+    } catch (e) { setScrapeStatus('Could not copy log: ' + (e.message || e)); }
+  }
 }
 
 function renderScrapeLogPanel() {
@@ -2080,7 +2125,12 @@ async function pollScrapeJobs() {
       el.innerHTML = `<div style="color:var(--gray);font-size:12px;padding:10px 0;">${escHtml(res.error)}</div>`;
       return;
     }
-    const jobs = Array.isArray(res) ? res : (res.jobs || []);
+    let jobs = Array.isArray(res) ? res : (res.jobs || []);
+    // Hide jobs from a previous run (snapshotted at Start) so the card shows
+    // only the current campaign.
+    if (scrapeBaselineJobIds.size) {
+      jobs = jobs.filter((j) => { const k = _scrapeJobKey(j); return !(k && scrapeBaselineJobIds.has(k)); });
+    }
     if (!jobs.length) {
       el.innerHTML = '<div class="scrape-job-empty">No scrape jobs yet.</div>';
       _setScrapeFoot(0, 0, 0);
@@ -2122,6 +2172,7 @@ window.setScrapeInputMode = setScrapeInputMode;
 window.loadScrapeUrlsFromSheet = loadScrapeUrlsFromSheet;
 window.setScrapeTab = setScrapeTab;
 window.clearScrapeLog = clearScrapeLog;
+window.copyScrapeLog = copyScrapeLog;
 window.openScrapeLiveBrowser = openScrapeLiveBrowser;
 
 // ═══════════════════════════════════════════════════════════════════════════
