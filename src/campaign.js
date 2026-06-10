@@ -4062,6 +4062,15 @@ export async function stopMonitoring({ reason = 'operator-stopped' } = {}) {
   // resume monitoring on a stopped campaign.
   try { await clearMonitoringState(); } catch { /* */ }
 
+  // v2.86.13: also remove this campaign's persisted post-campaign reply/bulk
+  // schedules so the dashboard's "● Monitoring · N days" chip clears. The chip
+  // reads these schedule files (server.js _monitoringForEntry), NOT in-memory
+  // state — without this a stopped campaign keeps showing monitoring for ~7d.
+  if (sheetId) {
+    try { await removeReplySchedules(sheetId, participatingProfileIds); } catch { /* */ }
+    try { await removeBulkSchedules(sheetId, participatingProfileIds); } catch { /* */ }
+  }
+
   // ── No sheet stamping on stop ───────────────────────────────────────
   // v2.6x (operator rule 2026-05): monitoring-stop no longer stamps
   // 'Closed - Not Connected'. Stopping monitoring does NOT withdraw the
