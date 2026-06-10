@@ -24,6 +24,22 @@ import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
 
+// Note-aware intro routing (spec 2026-06-10-ccic-note-group-intro). Clean-compose
+// (typeahead BOTH pills into a blank /messaging/compose → real group) is used ONLY
+// when a connection note created a prior 1:1 thread AND we have the lead's full name
+// to typeahead. Otherwise the unchanged URL-routing path (sendIntroMessage), which
+// carries its own existing-thread guard. Pure for unit testing.
+export function _decideIntroPath({ hasConnectionNote, leadFullName }) {
+  if (hasConnectionNote && (leadFullName || '').toString().trim()) return 'clean-compose';
+  return 'url-routing';
+}
+
+// Dedupe probe decision: any rendered message event in the group compose means a
+// thread for this lead+primary already exists → already introduced.
+export function _groupHasHistory(eventCount) {
+  return Number(eventCount) > 0;
+}
+
 function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const day = d.getDate();
