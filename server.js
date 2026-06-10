@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
@@ -1279,6 +1279,36 @@ app.post('/api/campaign/profile-skip', (req, res) => {
   const { profileId, skip } = req.body || {};
   if (!profileId) return res.status(400).json({ error: 'profileId required' });
   const result = setProfileSkip(profileId, !!skip);
+  res.json(result);
+});
+
+// v2.86.15: edit-while-paused. Three live setters apply new values to the
+// running campaign object while it's paused; the send loop picks them up on
+// Resume. Each is gated inside the setter on campaign.running && _paused.
+app.post('/api/campaign/live/templates', (req, res) => {
+  const templates = req.body?.templates || req.body || {};
+  if (!templates || typeof templates !== 'object') {
+    return res.status(400).json({ error: 'templates required' });
+  }
+  const result = setLiveTemplates(templates);
+  res.json(result);
+});
+
+app.post('/api/campaign/live/daily-limit', (req, res) => {
+  const dailyLimit = req.body?.dailyLimit;
+  if (dailyLimit === undefined || dailyLimit === null) {
+    return res.status(400).json({ error: 'dailyLimit required' });
+  }
+  const result = setLiveDailyLimit(dailyLimit);
+  res.json(result);
+});
+
+app.post('/api/campaign/live/cadence', (req, res) => {
+  const checkIntervalMinutes = req.body?.checkIntervalMinutes;
+  if (checkIntervalMinutes === undefined || checkIntervalMinutes === null) {
+    return res.status(400).json({ error: 'checkIntervalMinutes required' });
+  }
+  const result = setLiveCadence(checkIntervalMinutes);
   res.json(result);
 });
 

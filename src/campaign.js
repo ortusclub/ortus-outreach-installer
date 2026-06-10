@@ -1258,6 +1258,92 @@ export function buildSkipSheetData(mode, normalizedReason, profileName = '') {
   return out;
 }
 
+// v2.86.15: extracted from startCampaign so the live template-edit setter can
+// rebuild the same normalized shape. Returns the canonical `tpl` object the send
+// loop reads. Body is identical to the literal previously inlined at startup.
+export function normalizeTemplates(templates = {}, mode = '') {
+  return {
+    connectionNote: templates.connectionNote || templates.note || '',
+    followUpMessage: templates.followUpMessage || templates.followUp1 || '',
+    inmail: {
+      subject: templates.inmail?.subject || templates.inmailSubject || '',
+      message: templates.inmail?.message || templates.inmailBody || '',
+    },
+    openProfileSubject: templates.openProfileSubject || templates.opSubject || '',
+    openProfileBody: templates.openProfileBody || templates.opBody || '',
+    // v2.72: Open Profile send channel + InMail fallback. opChannel is one of
+    // sn_first (default) | sn_only | ln_first | ln_only; opSpendInMail gates
+    // whether non-Open-Profile leads cost an InMail credit. Read in
+    // outreach.js force_open_profile branch.
+    opChannel: templates.opChannel || 'sn_first',
+    opSpendInMail: !!templates.opSpendInMail,
+    // 2.8.50: Introduction Messages — when introMode is true, sendMessage
+    // routes to sendIntroMessage which adds introName as a second recipient
+    // and sets a group title. Sheet stamp becomes "sent IC".
+    // v2.11.17: introMode is now implied by mode === 'introduce_back'
+    // (separate first-class mode); legacy presets that set introMode on
+    // message_only still work because the client auto-migrates them, but
+    // we OR the flag here as a final safety net.
+    introMode: !!templates.introMode || mode === 'introduce_back',
+    introName: (templates.introName || '').trim(),
+    introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+    // v2.62: CC+DM (connect_and_message) phase-2 body. Plain 1:1 DM sent
+    // after acceptance, no primary person involved. runAutoDms reads
+    // tpl.ccDmBody when mode === 'connect_and_message'.
+    ccDmBody: (templates.ccDmBody || '').trim(),
+    // primaryName / primaryUrl / primaryIntroBody passed through unchanged
+    // for CC+IC's runAutoIntros — auto-dm.js ignores these fields.
+    primaryName: templates.primaryName,
+    primaryUrl: templates.primaryUrl,
+    primaryIntroBody: templates.primaryIntroBody,
+  };
+}
+
+// v2.86.15: live template edit while paused. Mutates the SAME tpl object the
+// send loop already holds by reference, so no read-site changes are needed.
+export function setLiveTemplates(newTemplates = {}) {
+  if (!campaign.running) return { ok: false, reason: 'not-running' };
+  if (!campaign._paused) return { ok: false, reason: 'not-paused' };
+  if (!campaign._liveTpl) return { ok: false, reason: 'no-templates' };
+  Object.assign(campaign._liveTpl, normalizeTemplates(newTemplates, campaign._liveMode));
+  // Mutate the raw templates object IN PLACE (don't reassign). The send loop's
+  // auto-intro / auto-DM call sites pass the closure `templates` object (=== the
+  // same reference as campaign.templates, set at startup), and the monitoring
+  // path reads campaign.templates. Mutating in place makes the actual message
+  // BODY (primaryIntroBody / ccDmBody) go live too — not just the gating.
+  if (campaign.templates && typeof campaign.templates === 'object') {
+    Object.assign(campaign.templates, newTemplates);
+  } else {
+    campaign.templates = { ...newTemplates };
+  }
+  log('✎ Templates updated (live) while paused.');
+  return { ok: true };
+}
+
+// v2.86.15: live daily-limit edit while paused. The send loop's per-lead gates
+// read campaign.dailyLimit, so the new value takes effect on Resume.
+export function setLiveDailyLimit(n) {
+  if (!campaign.running) return { ok: false, reason: 'not-running' };
+  if (!campaign._paused) return { ok: false, reason: 'not-paused' };
+  const v = Math.max(1, Math.min(1000, Math.floor(Number(n) || 0)));
+  if (!v) return { ok: false, reason: 'invalid' };
+  campaign.dailyLimit = v;
+  log(`✎ Daily limit updated (live) → ${v}.`);
+  return { ok: true, dailyLimit: v };
+}
+
+// v2.86.15: live cadence edit while paused. The in-batch + idle bulk-check
+// gates read campaign.checkIntervalMinutes, so the new value takes effect on
+// Resume. clampCadenceMinutes is already imported at the top of this module.
+export function setLiveCadence(min) {
+  if (!campaign.running) return { ok: false, reason: 'not-running' };
+  if (!campaign._paused) return { ok: false, reason: 'not-paused' };
+  const v = clampCadenceMinutes(min);
+  campaign.checkIntervalMinutes = v;
+  log(`✎ Check cadence updated (live) → ${v} min.`);
+  return { ok: true, checkIntervalMinutes: v };
+}
+
 export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
@@ -1416,41 +1502,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   }
 
   // Normalize templates
-  const tpl = {
-    connectionNote: templates.connectionNote || templates.note || '',
-    followUpMessage: templates.followUpMessage || templates.followUp1 || '',
-    inmail: {
-      subject: templates.inmail?.subject || templates.inmailSubject || '',
-      message: templates.inmail?.message || templates.inmailBody || '',
-    },
-    openProfileSubject: templates.openProfileSubject || templates.opSubject || '',
-    openProfileBody: templates.openProfileBody || templates.opBody || '',
-    // v2.72: Open Profile send channel + InMail fallback. opChannel is one of
-    // sn_first (default) | sn_only | ln_first | ln_only; opSpendInMail gates
-    // whether non-Open-Profile leads cost an InMail credit. Read in
-    // outreach.js force_open_profile branch.
-    opChannel: templates.opChannel || 'sn_first',
-    opSpendInMail: !!templates.opSpendInMail,
-    // 2.8.50: Introduction Messages — when introMode is true, sendMessage
-    // routes to sendIntroMessage which adds introName as a second recipient
-    // and sets a group title. Sheet stamp becomes "sent IC".
-    // v2.11.17: introMode is now implied by mode === 'introduce_back'
-    // (separate first-class mode); legacy presets that set introMode on
-    // message_only still work because the client auto-migrates them, but
-    // we OR the flag here as a final safety net.
-    introMode: !!templates.introMode || mode === 'introduce_back',
-    introName: (templates.introName || '').trim(),
-    introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
-    // v2.62: CC+DM (connect_and_message) phase-2 body. Plain 1:1 DM sent
-    // after acceptance, no primary person involved. runAutoDms reads
-    // tpl.ccDmBody when mode === 'connect_and_message'.
-    ccDmBody: (templates.ccDmBody || '').trim(),
-    // primaryName / primaryUrl / primaryIntroBody passed through unchanged
-    // for CC+IC's runAutoIntros — auto-dm.js ignores these fields.
-    primaryName: templates.primaryName,
-    primaryUrl: templates.primaryUrl,
-    primaryIntroBody: templates.primaryIntroBody,
-  };
+  const tpl = normalizeTemplates(templates, mode);
+  // v2.86.15: expose the live tpl object + mode so setLiveTemplates can mutate
+  // this exact reference (the send loop reads tpl.*) while paused.
+  campaign._liveTpl = tpl;
+  campaign._liveMode = mode;
 
   const campaignStartTime = Date.now();
 
@@ -2130,14 +2186,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         launched = await launchProfile(profileId, token);
 
         const willAutoIntro = mode === 'connect_and_introduce' && _primaryIntroAllowed(profileId) && !!(
-          templates && templates.primaryName && templates.primaryName.trim() &&
-          templates.primaryIntroBody && templates.primaryIntroBody.trim()
+          tpl && tpl.primaryName && tpl.primaryName.trim() &&
+          tpl.primaryIntroBody && tpl.primaryIntroBody.trim()
         );
         // v2.62: CC+DM equivalent gate. Same shape — only fires when the
         // body template is non-empty (otherwise runAutoDms internal early-
         // return would skip every lead anyway).
         const willAutoDm = mode === 'connect_and_message' && !!(
-          templates && templates.ccDmBody && templates.ccDmBody.trim()
+          tpl && tpl.ccDmBody && tpl.ccDmBody.trim()
         );
         const r = await bulkCheckConnections(launched.page, sheetUrl, linkedinColumn, pName, {
           // v2.14.x: stamp Connection Accepted immediately at bulk-check detection
@@ -2290,7 +2346,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // v2.78: operator benched this account for the rest of the run.
         if (campaign._skippedProfiles && campaign._skippedProfiles.has(candidate)) continue;
         if (weeklyLimited.has(candidate)) continue;
-        if (!skipsDailyLimit && getCampaignCount(candidate) >= dailyLimit) continue;
+        if (!skipsDailyLimit && getCampaignCount(candidate) >= campaign.dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
         profileQueue.splice(i, 1);
         profilesBeingRun.add(candidate);
@@ -2307,7 +2363,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       if (profileQueue.length === 0) return true;
       return profileQueue.every(id =>
         weeklyLimited.has(id) ||
-        (!skipsDailyLimit && getCampaignCount(id) >= dailyLimit)
+        (!skipsDailyLimit && getCampaignCount(id) >= campaign.dailyLimit)
       );
     }
 
@@ -2334,7 +2390,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // re-send) and flip to 'connected' once accepted. Held intros release
         // automatically (willAutoIntro gate below reads campaign._primaryConn).
         if (mode === 'connect_and_introduce' && profileId !== 'local-browser') {
-          const _primaryUrl = (templates && templates.primaryUrl || '').trim();
+          const _primaryUrl = (tpl && tpl.primaryUrl || '').trim();
           if (!_primaryUrl) {
             // Diagnostic: no primary URL saved → the connection-to-primary check
             // can't run, so no Primary label appears. Logged once per account.
@@ -2873,7 +2929,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // status_unknown: no connected field — leave CC text alone
             await updateSheetRow(sheetUrl, url, sheetData, linkedinColumn).catch(() => {});
 
-            log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${dailyLimit})`);
+            log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
             // v2.84: a successful action proves this account is logged in again —
@@ -2899,19 +2955,19 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 const last = cooldown[_key] || 0;
                 if (_campaignAgeMs < FIRST_HOUR_BLACKOUT_MS) {
                   // first-hour blackout — skip silently to avoid log spam
-                } else if (Date.now() - last >= checkIntervalMinutes * 60_000) {
-                  log(`  📡 [${pName}] In-batch bulk Connection Status check (${checkIntervalMinutes}-min cadence elapsed)…`);
+                } else if (Date.now() - last >= campaign.checkIntervalMinutes * 60_000) {
+                  log(`  📡 [${pName}] In-batch bulk Connection Status check (${campaign.checkIntervalMinutes}-min cadence elapsed)…`);
 
                   // Dual-stamp avoidance: when phase-2 will fire for newly-
                   // Connected rows, suppress the Connection Accepted Status
                   // stamp for those so the phase-2 status column (Introduction
                   // Status / DM Status) is the single source of truth.
                   const willAutoIntro = mode === 'connect_and_introduce' && _primaryIntroAllowed(profileId) && !!(
-                    templates && templates.primaryName && templates.primaryName.trim() &&
-                    templates.primaryIntroBody && templates.primaryIntroBody.trim()
+                    tpl && tpl.primaryName && tpl.primaryName.trim() &&
+                    tpl.primaryIntroBody && tpl.primaryIntroBody.trim()
                   );
                   const willAutoDm = mode === 'connect_and_message' && !!(
-                    templates && templates.ccDmBody && templates.ccDmBody.trim()
+                    tpl && tpl.ccDmBody && tpl.ccDmBody.trim()
                   );
 
                   const r = await bulkCheckConnections(page, sheetUrl, linkedinColumn, pName, {
@@ -2969,7 +3025,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // prevents re-sending an identical message across reruns, and the
             // existing "DM Sent" terminal skip keeps already-messaged rows out.
             if (mode === 'connect_and_message' && result.action === 'already_connected') {
-              const ccBody = ((templates && templates.ccDmBody) || '').trim();
+              const ccBody = ((tpl && tpl.ccDmBody) || '').trim();
               if (ccBody) {
                 try {
                   await runAutoDms({
@@ -2985,8 +3041,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // The candidate filter at line ~1289 will silently exclude it
             // from the next round; this gives operators a visible "why" on
             // the dashboard's Done row.
-            if (!skipsDailyLimit && getCampaignCount(profileId) >= dailyLimit) {
-              recordProfileEnd(profileId, pName, `Reached campaign limit (${dailyLimit})`);
+            if (!skipsDailyLimit && getCampaignCount(profileId) >= campaign.dailyLimit) {
+              recordProfileEnd(profileId, pName, `Reached campaign limit (${campaign.dailyLimit})`);
             }
           } else {
             const errorMsg = result.error || result.action || '';
@@ -3304,7 +3360,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               profileWeeklyLimited: weeklyLimited.has(_profileId),
               semaphoreAvailable: _semAvailable,
               lastBulkCheckAt: _lastBulkCheckAt,
-              intervalMs: checkIntervalMinutes * 60_000,
+              intervalMs: campaign.checkIntervalMinutes * 60_000,
               now: Date.now(),
             });
             if (!_fire) continue;
