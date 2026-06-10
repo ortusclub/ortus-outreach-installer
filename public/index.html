@@ -1222,6 +1222,39 @@
           <div class="cockpit-stat-bar"><div class="cockpit-stat-bar-fill" id="st-bar" style="width:0%"></div></div>
         </div>
       </div>
+      <!-- Issue #5 Part B: edit-while-paused panel. Isolated from the cockpit
+           panel above — shown only while a running campaign is fully paused,
+           toggled by renderPauseEditPanel() in app.js. Inline display:none so
+           it stays hidden at first paint (the .cockpit-panel flex rule would
+           otherwise override the native [hidden] UA style). -->
+      <div id="pause-edit-panel" class="cockpit-panel" hidden style="display:none">
+        <div class="intro-config-eyebrow">Edit while paused</div>
+        <div class="intro-config-hint" style="margin-top:0; margin-bottom:18px">Changes apply when you Resume.</div>
+        <div class="intro-config-field">
+          <label for="pe-daily-limit" class="intro-config-label">Daily limit (per account)</label>
+          <input type="number" id="pe-daily-limit" class="intro-config-input" min="1" max="1000" step="1">
+        </div>
+        <div class="intro-config-field" style="margin-top:14px">
+          <label for="pe-cadence" class="intro-config-label">Check cadence</label>
+          <div class="intro-config-inline">
+            <span class="intro-config-prefix">Every</span>
+            <select id="pe-cadence" class="intro-config-select">
+              <option value="60">1 hour</option>
+              <option value="120">2 hours</option>
+              <option value="240">4 hours</option>
+              <option value="360">6 hours</option>
+              <option value="720">12 hours</option>
+            </select>
+          </div>
+        </div>
+        <div class="intro-config-field" style="margin-top:14px">
+          <label for="pe-template-body" id="pe-template-label" class="intro-config-label">Connection note</label>
+          <textarea id="pe-template-body" rows="5"></textarea>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:14px">
+          <button type="button" id="pe-apply" class="btn btn-secondary btn-sm">Apply changes</button>
+        </div>
+      </div>
       <div id="account-queue" class="account-queue hidden"></div>
       <div class="live-bulk-check-row" style="display:flex; align-items:center; gap:12px; margin: 12px 0;">
         <button type="button" id="btn-bulk-check-live" class="btn btn-secondary btn-sm" onclick="bulkCheckNow()">Bulk check connections</button>

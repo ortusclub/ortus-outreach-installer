@@ -3712,6 +3712,196 @@ function showCampaignToast(msg, duration = 6000) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Issue #5 Part B — Edit-while-paused panel.
+// Backend (Part A) accepts edits via three POST routes, but ONLY while the
+// campaign is running AND fully paused (__cockpit.paused === true). This
+// panel surfaces those three knobs (daily limit, check cadence, and the one
+// mode-relevant message body) and posts them on "Apply changes".
+//
+// Pre-fill happens once on the hidden→shown transition (so the 250ms render
+// tick never stomps the operator's typing). The message-body source is
+// /api/campaign/active-settings (status doesn't carry templates); daily
+// limit + cadence come straight from __cockpit.
+// ─────────────────────────────────────────────────────────────────────────
+let _peFilled = false;   // true while pre-filled & shown — gate re-fill per pause
+let _peWired = false;    // guard so the Apply handler binds exactly once
+
+// Decide which template body field this campaign's mode edits.
+// Returns { field, label }. Mirrors the wizard's field spellings so the
+// backend's normalizeTemplates understands the payload.
+function _pePickBodyField(mode) {
+  if (mode === 'connect_and_introduce') return { field: 'primaryIntroBody', label: 'Introduction message' };
+  if (mode === 'connect_and_message')   return { field: 'ccDmBody',         label: 'DM message' };
+  return { field: 'connectionNote', label: 'Connection note' };
+}
+
+// Read the mode-appropriate body out of a templates object, tolerating the
+// connectionNote/note alias the wizard uses interchangeably.
+function _peReadBody(templates, field) {
+  const t = templates || {};
+  if (field === 'connectionNote') return t.connectionNote || t.note || '';
+  return t[field] || '';
+}
+
+function renderPauseEditPanel() {
+  const panel = document.getElementById('pause-edit-panel');
+  if (!panel) return;
+
+  // Not (fully) paused → hide and reset the pre-fill gate so the next pause
+  // re-fills fresh from the live values.
+  if (!__cockpit || __cockpit.paused !== true) {
+    panel.hidden = true;
+    panel.style.display = 'none';
+    _peFilled = false;
+    return;
+  }
+
+  // Wire the Apply button once (idempotent across ticks).
+  if (!_peWired) {
+    const applyBtn = document.getElementById('pe-apply');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', _peApplyChanges);
+      _peWired = true;
+    }
+  }
+
+  // First tick of this pause: pre-fill once, then unhide.
+  if (!_peFilled) {
+    _peFilled = true;
+    _pePrefillFields();
+    panel.hidden = false;
+    panel.style.display = 'flex';
+    return;
+  }
+
+  // Already filled + shown — ensure it's visible (no re-fill: don't stomp typing).
+  if (panel.hidden) {
+    panel.hidden = false;
+    panel.style.display = 'flex';
+  }
+}
+
+function _pePrefillFields() {
+  const { field, label } = _pePickBodyField(__cockpit.mode);
+
+  // Label reflects the mode-relevant body.
+  const labelEl = document.getElementById('pe-template-label');
+  if (labelEl) labelEl.textContent = label;
+
+  // Daily limit — from the live status mirror; min 1.
+  const dlEl = document.getElementById('pe-daily-limit');
+  if (dlEl) {
+    const dl = Number(__cockpit.dailyLimit);
+    dlEl.value = Number.isFinite(dl) && dl > 0 ? String(dl) : '';
+  }
+
+  // Cadence — match the live value to one of the select options.
+  const cadEl = document.getElementById('pe-cadence');
+  if (cadEl) {
+    const cad = Number(__cockpit.checkIntervalMinutes);
+    cadEl.value = [60, 120, 240, 360, 720].includes(cad) ? String(cad) : '60';
+  }
+
+  // Message body — prefer the live templates snapshot already on __cockpit;
+  // otherwise fetch the active-settings snapshot (best-effort, async). Guard
+  // the async fill so it doesn't overwrite the operator if they've started
+  // typing or the pause already ended by the time the fetch resolves.
+  const bodyEl = document.getElementById('pe-template-body');
+  if (bodyEl) {
+    const fromCockpit = _peReadBody(__cockpit.templates, field);
+    bodyEl.value = fromCockpit;
+    if (!fromCockpit) {
+      fetch('/api/campaign/active-settings')
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.ok || !data.settings) return;
+          // Only apply if we're still mid pre-fill and the operator hasn't typed.
+          if (!_peFilled || __cockpit.paused !== true) return;
+          if (bodyEl.value) return;
+          bodyEl.value = _peReadBody(data.settings.templates, field);
+        })
+        .catch(() => { /* best-effort — operator can type the body */ });
+    }
+  }
+}
+
+async function _peApplyChanges() {
+  if (!__cockpit || __cockpit.paused !== true) {
+    showCampaignToast('Pause the campaign first — edits only apply while paused.', 4000);
+    return;
+  }
+
+  const { field } = _pePickBodyField(__cockpit.mode);
+  const dlEl = document.getElementById('pe-daily-limit');
+  const cadEl = document.getElementById('pe-cadence');
+  const bodyEl = document.getElementById('pe-template-body');
+
+  const calls = [];   // [{ url, body, name }]
+
+  // Daily limit — send only when it's a valid number that differs from live.
+  const dl = parseInt(dlEl ? dlEl.value : '', 10);
+  if (Number.isFinite(dl) && dl >= 1 && dl <= 1000 && dl !== Number(__cockpit.dailyLimit)) {
+    calls.push({ url: '/api/campaign/live/daily-limit', body: { dailyLimit: dl }, name: 'Daily limit' });
+  }
+
+  // Cadence — send only when changed.
+  const cad = parseInt(cadEl ? cadEl.value : '', 10);
+  if (Number.isFinite(cad) && cad !== Number(__cockpit.checkIntervalMinutes)) {
+    calls.push({ url: '/api/campaign/live/cadence', body: { checkIntervalMinutes: cad }, name: 'Cadence' });
+  }
+
+  // Message body — send the full templates object with the one edited field
+  // overwritten, so the backend's normalizeTemplates sees the same shape the
+  // wizard sends. Only send when non-empty and actually changed.
+  const newBody = bodyEl ? bodyEl.value : '';
+  const liveBody = _peReadBody(__cockpit.templates, field);
+  if (newBody.trim() && newBody !== liveBody) {
+    const templates = { ...(__cockpit.templates || {}) };
+    templates[field] = newBody;
+    // Keep the connectionNote/note alias consistent for the connect_only path.
+    if (field === 'connectionNote') templates.note = newBody;
+    calls.push({ url: '/api/campaign/live/templates', body: { templates }, name: 'Message' });
+  }
+
+  if (calls.length === 0) {
+    showCampaignToast('No changes to apply.', 2500);
+    return;
+  }
+
+  const applied = [];
+  const failed = [];
+  for (const c of calls) {
+    try {
+      const r = await fetch(c.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(c.body),
+      });
+      let data = {};
+      try { data = await r.json(); } catch { /* non-JSON → treat as failure below */ }
+      if (data && data.ok) {
+        applied.push(c.name);
+        // Mirror the accepted value back onto __cockpit so the "changed?"
+        // checks above don't re-fire it on the next Apply.
+        if (c.url.endsWith('/daily-limit')) __cockpit.dailyLimit = c.body.dailyLimit;
+        else if (c.url.endsWith('/cadence')) __cockpit.checkIntervalMinutes = c.body.checkIntervalMinutes;
+        else if (c.url.endsWith('/templates')) __cockpit.templates = c.body.templates;
+      } else {
+        failed.push(`${c.name}: ${(data && data.reason) || 'failed'}`);
+      }
+    } catch (err) {
+      failed.push(`${c.name}: ${err.message}`);
+    }
+  }
+
+  if (failed.length) {
+    showCampaignToast(`Couldn't apply — ${failed.join('; ')}`, 6000);
+  } else {
+    showCampaignToast(`Saved ${applied.join(' + ')} — applies on Resume.`, 4000);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Phase 2.8.12 — Live Cockpit panel (Concept B from sketches).
 // pollStatus saves the latest snapshot into __cockpit; a 250ms tick reads
 // it and computes the smooth countdown without re-hitting the network.
@@ -3840,12 +4030,20 @@ function updateCockpit(s) {
   __cockpit.profileIds = s.profileIds || [];
   __cockpit.profileNames = s.profileNames || [];
   __cockpit.sheetUrl = s.sheetUrl || '';
+  // Issue #5 Part B: mirror the live-editable settings so renderPauseEditPanel
+  // can pre-fill the daily-limit + cadence fields. (templates aren't on the
+  // status payload — the pause panel fetches /api/campaign/active-settings for
+  // the message body instead.)
+  if (s.dailyLimit != null) __cockpit.dailyLimit = s.dailyLimit;
+  if (s.checkIntervalMinutes != null) __cockpit.checkIntervalMinutes = s.checkIntervalMinutes;
   // v2.72: track the "finished" state so the wizard keeps the Live Status card
   // (log + Run reply check) visible after a campaign ends, not just while it runs.
   __cockpit.endNotice = s.endNotice || null;
   __cockpit.hasLogs = Array.isArray(s.logs) && s.logs.length > 0;
   _refreshOpenSheetButtons();
   renderCockpit();
+  // Issue #5 Part B: keep the edit-while-paused panel in sync with paused state.
+  if (typeof renderPauseEditPanel === 'function') renderPauseEditPanel();
   // Sidebar tips card lives in the Live Status right column. Re-render on
   // every poll so mode/state transitions (idle → running → monitoring → idle)
   // flip visibility + title without extra plumbing.
