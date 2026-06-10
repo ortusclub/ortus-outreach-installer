@@ -18,7 +18,7 @@
  * rather than the GoLogin email.
  */
 
-import { sendIntroMessage } from './actions.js';
+import { sendIntroMessage, sendIntroViaCleanCompose } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
@@ -219,6 +219,11 @@ export async function runAutoIntros({
     introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
   };
 
+  // Campaign-level: did this campaign send a connection note? If so the lead has a
+  // prior 1:1 thread and URL-routing would collapse the intro into it (spec
+  // 2026-06-10). Note campaigns route through clean-compose (group) instead.
+  const hasConnectionNote = (templates.connectionNote || templates.note || '').toString().trim() !== '';
+
   // Re-fetch sheet to map URLs → row data for placeholder substitution.
   // Cheap (single CSV read) and necessary because outreach.js merges the
   // row data into templates so {first name}, {primary name}, etc. resolve.
@@ -405,7 +410,19 @@ export async function runAutoIntros({
     while (attempt < 2) {
       attempt++;
       try {
-        await sendIntroMessage(page, body, primaryName, title, '', url);
+        // Note-aware fork (spec 2026-06-10). Note campaign + lead name → reuse the
+        // IB clean-compose group path with the dedupe probe ON. Otherwise the
+        // unchanged URL-routing path. leadFirstName/leadLastName resolved above.
+        const leadFullName = `${leadFirstName} ${leadLastName}`.trim();
+        const introPath = _decideIntroPath({ hasConnectionNote, leadFullName });
+        if (hasConnectionNote && introPath === 'url-routing') {
+          log(`  ⚠ [${profileName}] ${url}: note campaign but lead name missing — using URL-routing (add First/Last Name to enable group compose).`);
+        }
+        if (introPath === 'clean-compose') {
+          await sendIntroViaCleanCompose(page, body, leadFullName, primaryName, title, { dedupeProbe: true });
+        } else {
+          await sendIntroMessage(page, body, primaryName, title, '', url);
+        }
         ok = true;
         break;
       } catch (err) {
@@ -419,7 +436,7 @@ export async function runAutoIntros({
           alreadyMade = true;
           break;
         }
-        if (attempt < 2 && errMsg.includes('INTRO_RECIPIENT_NOT_FOUND')) {
+        if (attempt < 2 && (errMsg.includes('INTRO_RECIPIENT_NOT_FOUND') || errMsg.includes('IC_INTRO_RECIPIENT_NOT_FOUND'))) {
           log(`  ↻ [${profileName}] ${url}: typeahead miss, retrying once…`);
           await new Promise(r => setTimeout(r, 2000));
           continue;
