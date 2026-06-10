@@ -793,33 +793,60 @@
     <div class="section" id="nav-scrape" style="display:none">
       <h2 class="section-toggle"><span data-edit="h2-scrape">2b. Sales Nav Scrape</span></h2>
       <div style="padding: 0 0 8px;">
-        <div id="scrape-unconfigured" style="display:none; margin:8px 0 16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--red,#dc2626); color:var(--gray); font-size:12px;">
+        <div id="scrape-unconfigured" style="display:none; margin:8px 0 16px; padding:14px 16px; background:var(--hairline-soft); border-left:2px solid var(--red); color:var(--gray); font-size:12px;">
           <strong style="color:var(--gray)">Scraper engine not connected.</strong> Set <code>SCRAPER_ENGINE_URL</code> to point at the GKE engine, then reopen the app.
         </div>
 
-        <label for="scrape-urls" style="display:block; font-size:12px; color:var(--gray); margin-bottom:6px;">Sales Navigator search URL(s) — one per line. Each URL is scraped by one selected GoLogin account, in parallel.</label>
-        <textarea id="scrape-urls" rows="3" placeholder="https://www.linkedin.com/sales/search/people?..." style="width:100%" oninput="updateScrapePairing()"></textarea>
+        <!-- INPUT panel -->
+        <div class="scrape-panel">
+          <div class="scrape-panel-head">Input · Sales Navigator searches</div>
 
-        <div id="scrape-pairing" style="margin-top:10px; padding:12px 14px; background:var(--hairline-soft); border-left:2px solid var(--hairline); font-size:12px; color:var(--gray);"></div>
-
-        <div style="margin-top:6px; font-size:12px; color:var(--gray);">↓ Pick the GoLogin accounts (one per URL) in <strong>section 3 · Select GoLogin Accounts</strong> below — each needs a Sales Nav seat.</div>
-
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
-          <div>
-            <label for="scrape-tab" style="display:block; font-size:12px; color:var(--gray); margin-bottom:6px;">Destination tab name</label>
-            <input type="text" id="scrape-tab" value="Results" style="width:100%" />
+          <div class="scrape-seg" role="tablist">
+            <button type="button" id="scrape-seg-type" class="scrape-seg-btn is-active" onclick="setScrapeInputMode('type')">Type URLs</button>
+            <button type="button" id="scrape-seg-sheet" class="scrape-seg-btn" onclick="setScrapeInputMode('sheet')">From a Sheet</button>
           </div>
-          <div>
-            <label for="scrape-sheet" style="display:block; font-size:12px; color:var(--gray); margin-bottom:6px;">Destination Google Sheet URL</label>
-            <input type="text" id="scrape-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%" />
+
+          <div id="scrape-input-type">
+            <label for="scrape-urls" class="scrape-label">Sales Navigator search URL(s) — one per line. Each URL is scraped by one selected GoLogin account, in parallel.</label>
+            <textarea id="scrape-urls" rows="3" placeholder="https://www.linkedin.com/sales/search/people?..." style="width:100%" oninput="updateScrapePairing()"></textarea>
+          </div>
+
+          <div id="scrape-input-sheet" style="display:none">
+            <label for="scrape-src-sheet" class="scrape-label">Paste a Google Sheet whose cells hold the search URLs — we read it and pull out every Sales Nav search.</label>
+            <div style="display:flex; gap:10px; align-items:stretch;">
+              <input type="text" id="scrape-src-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1" />
+              <button type="button" class="btn btn-secondary btn-sm" onclick="loadScrapeUrlsFromSheet()">Load URLs</button>
+            </div>
+            <div id="scrape-src-status" class="scrape-hint" style="margin-top:8px;"></div>
+          </div>
+
+          <div id="scrape-pairing" class="scrape-hint" style="margin-top:12px; padding:12px 14px; background:var(--hairline-soft); border-left:2px solid var(--hairline);"></div>
+          <div class="scrape-hint" style="margin-top:8px;">↓ Pick the GoLogin accounts (one per URL) in <strong>section 3 · Select GoLogin Accounts</strong> below — each needs a Sales Nav seat.</div>
+        </div>
+
+        <!-- DESTINATION panel -->
+        <div class="scrape-panel">
+          <div class="scrape-panel-head">Destination · where results land</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <label for="scrape-sheet" class="scrape-label">Destination Google Sheet URL</label>
+              <input type="text" id="scrape-sheet" placeholder="https://docs.google.com/spreadsheets/d/..." style="width:100%" />
+            </div>
+            <div>
+              <label for="scrape-tab" class="scrape-label">New tab name — we create this tab for the results</label>
+              <input type="text" id="scrape-tab" value="Results" style="width:100%" />
+            </div>
           </div>
         </div>
 
-        <label style="display:flex; gap:8px; align-items:center; margin-top:14px; cursor:pointer; font-size:13px;">
-          <input type="checkbox" id="scrape-slow" /> Slow mode (larger delays between pages)
-        </label>
-
-        <div style="margin-top:14px; font-size:12px; color:var(--gray);">↓ Launch this scrape from <strong>section 6 · Launch</strong> below — Start / Pause / Stop.</div>
+        <!-- OPTIONS panel -->
+        <div class="scrape-panel">
+          <div class="scrape-panel-head">Options</div>
+          <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:13px;">
+            <input type="checkbox" id="scrape-slow" /> Slow mode (larger delays between pages)
+          </label>
+          <div class="scrape-hint" style="margin-top:10px;">↓ Launch this scrape from <strong>section 6 · Launch</strong> below — Start / Pause / Stop.</div>
+        </div>
       </div>
     </div>
 

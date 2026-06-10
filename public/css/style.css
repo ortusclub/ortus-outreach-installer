@@ -6783,3 +6783,46 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   .alpha-headline-eq { margin-left: 0; min-width: 0; width: 100%; }
 }
 
+/* ── Sales Nav Scrape (2026-06) — command-deck panels for section 2b.
+   Bordered hairline panels give the clear part-to-part contrast the rest of
+   the app has; display-font block heads; monochrome (gold stays on Start CTA). */
+.scrape-panel {
+  border: 1px solid var(--hairline);
+  background: var(--bg-soft);
+  padding: 18px 20px;
+  margin-top: 16px;
+}
+.scrape-panel:first-of-type { margin-top: 8px; }
+.scrape-panel-head {
+  font-family: var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 14px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.scrape-label { display: block; font-size: 12px; color: var(--gray); margin-bottom: 6px; }
+.scrape-hint { font-size: 12px; color: var(--gray); line-height: 1.5; }
+.scrape-seg {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.scrape-seg-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--gray);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 7px 18px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.scrape-seg-btn.is-active { background: var(--ink); color: var(--bg); }
+

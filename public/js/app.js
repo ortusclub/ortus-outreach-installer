@@ -1805,12 +1805,59 @@ function setScrapeStatus(msg) {
   if (el) el.textContent = msg;
 }
 
+// ── Dual input: type URLs, or load them from a pasted Google Sheet ──
+// In 'sheet' mode the app reads the sheet and extracts the Sales Nav search
+// URLs, then dispatches them as the SAME `searchUrls` — the engine is unchanged.
+let scrapeInputMode = 'type';
+let scrapeSheetUrls = [];
+
+function getScrapeInputUrls() {
+  if (scrapeInputMode === 'sheet') return scrapeSheetUrls.slice();
+  return (document.getElementById('scrape-urls')?.value || '')
+    .split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+function setScrapeInputMode(mode) {
+  scrapeInputMode = (mode === 'sheet') ? 'sheet' : 'type';
+  const typeBox = document.getElementById('scrape-input-type');
+  const sheetBox = document.getElementById('scrape-input-sheet');
+  if (typeBox) typeBox.style.display = scrapeInputMode === 'type' ? '' : 'none';
+  if (sheetBox) sheetBox.style.display = scrapeInputMode === 'sheet' ? '' : 'none';
+  const tBtn = document.getElementById('scrape-seg-type');
+  const sBtn = document.getElementById('scrape-seg-sheet');
+  if (tBtn) tBtn.classList.toggle('is-active', scrapeInputMode === 'type');
+  if (sBtn) sBtn.classList.toggle('is-active', scrapeInputMode === 'sheet');
+  try { updateScrapePairing(); } catch (_) {}
+}
+
+async function loadScrapeUrlsFromSheet() {
+  const sheetUrl = (document.getElementById('scrape-src-sheet')?.value || '').trim();
+  const status = document.getElementById('scrape-src-status');
+  const setS = (m) => { if (status) status.textContent = m; };
+  if (!sheetUrl) { setS('Paste a Google Sheet URL above, then click Load URLs.'); return; }
+  setS('Reading sheet…');
+  try {
+    const r = await fetch('/api/scrape/extract-urls?sheetUrl=' + encodeURIComponent(sheetUrl));
+    const res = await r.json();
+    if (res && res.error) { scrapeSheetUrls = []; setS('Could not read sheet — ' + res.error); }
+    else {
+      scrapeSheetUrls = Array.isArray(res.urls) ? res.urls : [];
+      setS(scrapeSheetUrls.length
+        ? `✓ Found ${scrapeSheetUrls.length} Sales Nav search URL${scrapeSheetUrls.length === 1 ? '' : 's'} in this sheet.`
+        : 'No Sales Nav search URLs found (looking for linkedin.com/sales/search/… in any cell).');
+    }
+  } catch (e) {
+    scrapeSheetUrls = [];
+    setS('Could not read sheet — ' + e.message);
+  }
+  try { updateScrapePairing(); } catch (_) {}
+}
+
 // Live "N URLs × M accounts → N jobs" summary. Each URL is scraped by one
 // account; when counts differ, accounts are assigned round-robin.
 function updateScrapePairing() {
   const el = document.getElementById('scrape-pairing');
-  const urls = (document.getElementById('scrape-urls')?.value || '')
-    .split('\n').map((s) => s.trim()).filter(Boolean);
+  const urls = getScrapeInputUrls();
   const accts = scrapeSelectedAccounts();
   const n = urls.length, m = accts.length;
   // Short word for the launch-card caption: sequential (1 account), parallel
@@ -1870,17 +1917,21 @@ function openScrapeLiveBrowser() {
 }
 
 async function startScrapeJob() {
-  const urlsEl = document.getElementById('scrape-urls');
   const sheetEl = document.getElementById('scrape-sheet');
-  const urls = (urlsEl?.value || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  const urls = getScrapeInputUrls();
   const sheetUrl = (sheetEl?.value || '').trim();
   const accts = scrapeSelectedAccounts();
   const baseTab = (document.getElementById('scrape-tab')?.value || 'Results').trim();
   const slowMode = !!document.getElementById('scrape-slow')?.checked;
   // Diagnostic — shows in the in-app CONSOLE so we can see exactly what's missing.
-  console.log('[scrape] Start clicked →', { urls: urls.length, hasSheet: !!sheetUrl, accounts: accts.length, urlsFieldFound: !!urlsEl, sheetFieldFound: !!sheetEl });
+  console.log('[scrape] Start clicked →', { mode: scrapeInputMode, urls: urls.length, hasSheet: !!sheetUrl, accounts: accts.length, sheetFieldFound: !!sheetEl });
   const toast = (m) => { try { showCampaignToast(m, 4000); } catch (_) { try { alert(m); } catch (_) {} } };
-  if (!urls.length) { setScrapeStatus('Paste at least one Sales Nav search URL.'); toast('Scrape: paste at least one Sales Nav search URL in section 2b.'); return; }
+  if (!urls.length) {
+    const msg = scrapeInputMode === 'sheet'
+      ? 'Load a Google Sheet with Sales Nav search URLs (click Load URLs in section 2b).'
+      : 'Paste at least one Sales Nav search URL.';
+    setScrapeStatus(msg); toast('Scrape: ' + msg); return;
+  }
   if (!sheetUrl) { setScrapeStatus('Enter a destination Google Sheet URL.'); toast('Scrape: enter a destination Google Sheet URL in section 2b.'); return; }
   if (!accts.length) {
     setScrapeStatus('⚠ No GoLogin accounts selected. Pick at least one in section 3 below — each URL is scraped by one account.');
