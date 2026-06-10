@@ -1760,6 +1760,9 @@ function onModeChange() {
     if (runBar) runBar.style.display = 'none';
     // Live-refresh jobs + logs while viewing scrape mode.
     try { updateScrapePairing(); refreshScrapeConfigured(); startScrapePolling(); } catch (_) {}
+    // First scrape view this session/draft: hide the engine's pre-existing jobs
+    // (terminal ones) so a fresh draft starts clean. Re-armed by startNewCampaign.
+    if (!_scrapeBaselineDone) { _scrapeBaselineDone = true; try { scrapeHidePriorJobs(true); } catch (_) {} }
   } else {
     if (navLaunch) navLaunch.style.display = '';
     if (runBar) runBar.style.display = '';
@@ -1955,21 +1958,15 @@ async function startScrapeJob() {
     return;
   }
 
-  // Fresh run — clear the previous run's logs and hide its jobs so the card
-  // reflects ONLY this campaign. startScrapeJob never reset these before, so old
-  // logs/jobs lingered across runs (operator-reported 2026-06-10).
+  // Fresh run — clear the previous run's logs and hide ALL prior jobs (every
+  // state) so the card reflects ONLY this campaign.
   scrapeLogLines = [];
   scrapeLogSince = Date.now();
   try { renderScrapeLogPanel(); } catch (_) {}
-  try {
-    const _jr = await fetch('/api/scrape/jobs');
-    const _jres = await _jr.json();
-    const _old = Array.isArray(_jres) ? _jres : (_jres.jobs || []);
-    scrapeBaselineJobIds = new Set(_old.map(_scrapeJobKey).filter(Boolean));
-  } catch (_) { scrapeBaselineJobIds = new Set(); }
+  _scrapeBaselineDone = true;
+  await scrapeHidePriorJobs(false);
   const _jel = document.getElementById('scrape-jobs');
   if (_jel) _jel.innerHTML = '<div class="scrape-job-empty">Starting…</div>';
-  _setScrapeFoot(0, 0, 0);
 
   setScrapeStatus(`Starting ${urls.length} scrape job${urls.length === 1 ? '' : 's'}…`);
   toast(`Scrape: starting ${urls.length} job${urls.length === 1 ? '' : 's'} on ${accts.length} account${accts.length === 1 ? '' : 's'}…`);
@@ -2043,8 +2040,34 @@ let scrapeLogSince = 0;
 // engine's /api/jobs accumulates across runs). Only jobs with a stable engine id
 // are blacklisted; id-less jobs are always shown so current work is never hidden.
 let scrapeBaselineJobIds = new Set();
+let _scrapeBaselineDone = false; // hide prior jobs once per fresh scrape view
 function _scrapeJobKey(j) {
-  return (j && j.id != null && j.id !== '') ? String(j.id) : null;
+  if (!j) return null;
+  if (j.id != null && j.id !== '') return 'id:' + String(j.id);
+  const t = j.tabName || '', u = j.searchUrl || '';
+  return (t || u) ? `tu:${t}|${u}` : null;
+}
+// Hide jobs the engine already has — its /api/jobs is a GLOBAL accumulating list
+// with no per-draft scoping, so a fresh draft / new run would otherwise show
+// prior runs' jobs. terminalOnly=true (fresh-view) keeps a genuinely-running
+// scrape visible after an app reload; false (on Start) hides everything before
+// this run. App-side only; the engine is untouched.
+async function scrapeHidePriorJobs(terminalOnly) {
+  const TERMINAL = new Set(['done', 'cancelled', 'canceled', 'error', 'failed', 'stopped']);
+  try {
+    const r = await fetch('/api/scrape/jobs');
+    const res = await r.json();
+    const jobs = Array.isArray(res) ? res : (res.jobs || []);
+    for (const j of jobs) {
+      const k = _scrapeJobKey(j);
+      if (!k) continue;
+      if (!terminalOnly || TERMINAL.has(String(j.state || '').toLowerCase())) scrapeBaselineJobIds.add(k);
+    }
+  } catch (_) { /* best-effort */ }
+  const el = document.getElementById('scrape-jobs');
+  if (el) el.innerHTML = '<div class="scrape-job-empty">No scrape jobs yet.</div>';
+  _setScrapeFoot(0, 0, 0);
+  try { pollScrapeJobs(); } catch (_) {}
 }
 
 function setScrapeTab(tab) {
@@ -9998,6 +10021,9 @@ window.resumeWithEditFirst = resumeWithEditFirst;
 // in the Dashboard's Drafts section), so the operator can stage multiple
 // campaigns in parallel without losing any.
 async function startNewCampaign() {
+  // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
+  // prior run's jobs (the engine's job list is global, not per-draft).
+  _scrapeBaselineDone = false;
   // Spawn a fresh draft on the server; remember its id so saveDraftName
   // updates this specific entry rather than colliding with an existing one.
   try {
