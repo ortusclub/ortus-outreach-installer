@@ -797,6 +797,26 @@
           <strong style="color:var(--gray)">Scraper engine not connected.</strong> Set <code>SCRAPER_ENGINE_URL</code> to point at the GKE engine, then reopen the app.
         </div>
 
+        <!-- STAT header — live counts (Jobs highlighted). Accounts mirrors the
+             section 3 picker below; it does NOT replace it. -->
+        <div class="scrape-stats">
+          <div class="scrape-stat">
+            <div class="k">Search URLs</div>
+            <div class="v" id="scrape-stat-urls">0</div>
+            <div class="s" id="scrape-stat-urls-sub">typed or from a sheet</div>
+          </div>
+          <div class="scrape-stat">
+            <div class="k">Accounts</div>
+            <div class="v" id="scrape-stat-accounts">0</div>
+            <div class="s">picked in section 3 · Sales Nav seats</div>
+          </div>
+          <div class="scrape-stat hi">
+            <div class="k">Jobs</div>
+            <div class="v" id="scrape-stat-jobs">0</div>
+            <div class="s" id="scrape-stat-jobs-sub">one job per URL</div>
+          </div>
+        </div>
+
         <!-- INPUT panel -->
         <div class="scrape-panel">
           <div class="scrape-panel-head">Input · Sales Navigator searches</div>

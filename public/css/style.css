@@ -6787,12 +6787,52 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
    Bordered hairline panels give the clear part-to-part contrast the rest of
    the app has; display-font block heads; monochrome (gold stays on Start CTA). */
 .scrape-panel {
-  border: 1px solid var(--hairline);
-  background: var(--bg-soft);
-  padding: 18px 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  padding: 22px 24px;
   margin-top: 16px;
 }
-.scrape-panel:first-of-type { margin-top: 8px; }
+
+/* Stat header (Variant B) — live counts in elevated cards; Jobs highlighted
+   like the Browse Accounts "ALL 399" panel. Accounts mirrors section 3. */
+.scrape-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 8px 0 4px;
+}
+.scrape-stat {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--card-shadow);
+  padding: 16px 20px;
+}
+.scrape-stat.hi { border-color: var(--gold); background: var(--gold-tint-bg); }
+.scrape-stat .k {
+  font-family: var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--gray);
+}
+.scrape-stat .v {
+  font-family: var(--display);
+  font-size: 44px;
+  line-height: 1;
+  margin: 6px 0 3px;
+  color: var(--ink);
+}
+.scrape-stat.hi .v { color: #c9962f; }
+.scrape-stat .s {
+  font-family: var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--gray);
+}
 .scrape-panel-head {
   font-family: var(--display);
   letter-spacing: 0.08em;

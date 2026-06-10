@@ -1868,6 +1868,15 @@ function updateScrapePairing() {
   const capEl = document.getElementById('scrape-launch-caption');
   if (numEl) numEl.textContent = String(n || 0);
   if (capEl) capEl.textContent = `${n} URL${n === 1 ? '' : 's'} · ${m} account${m === 1 ? '' : 's'} · ${mode}`;
+  // Variant B stat header — live URLs / Accounts / Jobs.
+  const setStat = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = String(v); };
+  setStat('scrape-stat-urls', n);
+  setStat('scrape-stat-accounts', m);
+  setStat('scrape-stat-jobs', n);
+  const urlsSub = document.getElementById('scrape-stat-urls-sub');
+  if (urlsSub) urlsSub.textContent = scrapeInputMode === 'sheet' ? 'from a sheet' : 'typed in';
+  const jobsSub = document.getElementById('scrape-stat-jobs-sub');
+  if (jobsSub) jobsSub.textContent = (n && m) ? mode : 'one job per URL';
   if (!el) return;
   if (!n && !m) {
     el.textContent = 'Add Sales Nav URL(s) above, then select GoLogin accounts in section 3 below — one account per URL runs them in parallel.';
