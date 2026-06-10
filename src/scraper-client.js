@@ -33,6 +33,29 @@ export function isScraperConfigured() {
   return !!engineUrl();
 }
 
+// Pure: pull Sales Nav SEARCH URLs out of parsed sheet rows (the shape fetchSheet
+// returns). Lets the operator feed input URLs from a Google Sheet instead of
+// pasting them — the app extracts them here and dispatches the SAME `searchUrls`
+// to the engine, so the engine contract is unchanged. Scans every cell, keeps
+// only Sales Nav search URLs, trims, dedupes, preserves first-seen order.
+const SALES_NAV_SEARCH_RE = /linkedin\.com\/sales\/search\//i;
+export function extractSalesNavUrls(rows) {
+  if (!Array.isArray(rows)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    for (const value of Object.values(row)) {
+      const v = (value == null ? '' : String(value)).trim();
+      if (!v || !SALES_NAV_SEARCH_RE.test(v)) continue;
+      if (seen.has(v)) continue;
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
 /** The engine base URL — used by the UI to build the live-browser (noVNC) link. */
 export function getEngineUrl() {
   return engineUrl();

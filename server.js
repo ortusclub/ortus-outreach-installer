@@ -26,7 +26,7 @@ import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCamp
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
-import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs } from './src/scraper-client.js';
+import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls } from './src/scraper-client.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
@@ -1396,6 +1396,21 @@ app.post('/api/scrape/start', async (req, res) => {
   const { searchUrls, sheetUrl, tabName, profileId, slowMode } = req.body || {};
   const result = await startScrape({ searchUrls, sheetUrl, tabName, profileId, slowMode });
   res.status(result && result.error ? 400 : 200).json(result);
+});
+
+// Read input Sales Nav search URLs from a pasted Google Sheet (app-side only —
+// the extracted URLs are dispatched as the same `searchUrls`, so the engine is
+// unchanged). Never throws; returns { urls, count } or { error }.
+app.get('/api/scrape/extract-urls', async (req, res) => {
+  const sheetUrl = (req.query.sheetUrl || '').toString().trim();
+  if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+  try {
+    const rows = await fetchSheet(sheetUrl);
+    const urls = extractSalesNavUrls(rows);
+    res.json({ urls, count: urls.length });
+  } catch (err) {
+    res.status(400).json({ error: err && err.message ? err.message : 'could not read sheet' });
+  }
 });
 
 app.post('/api/scrape/pause', async (req, res) => {
