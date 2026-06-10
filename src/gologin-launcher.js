@@ -4,6 +4,23 @@ import { hideByPid } from './mac-window.js';
 import { checkDiskFree, formatBytes } from './disk-check.js';
 
 const activeProfiles = new Map();
+const spawnedPids = new Map(); // profileId → Orbita pid (every spawn, even failed launches)
+
+/**
+ * Pick PIDs we spawned that are still alive but no longer tracked as active
+ * (escaped activeProfiles — e.g. a failed launch, or a close that didn't take).
+ * Pure + exported for unit testing; closeAllProfiles wires it to real signals.
+ */
+export function selectOrphanPids({ spawned, activePids, isAlive }) {
+  const out = [];
+  for (const pid of spawned.values()) {
+    if (typeof pid !== 'number') continue;
+    if (activePids.has(pid)) continue;
+    if (!isAlive(pid)) continue;
+    out.push(pid);
+  }
+  return out;
+}
 
 // Profile list cache — loaded once, reused across the entire campaign
 let profileCache = null;
@@ -144,8 +161,15 @@ export async function launchProfile(profileId, token) {
 
   const { status, wsUrl } = await GL.start();
 
+  const _spawnedPid = GL?.processSpawned?.pid;
+  if (_spawnedPid) spawnedPids.set(profileId, _spawnedPid);
+
   if (status !== 'success') {
-    await GL.stop().catch(() => {});
+    console.warn(`[gologin] start failed for ${profileId} (status="${status}") — force-killing any spawned process`);
+    try { GL.killBrowser(); } catch { /* */ }
+    if (_spawnedPid) { try { process.kill(_spawnedPid, 'SIGKILL'); } catch { /* already dead */ } }
+    spawnedPids.delete(profileId);
+    await GL.stop().catch(() => {});   // cloud-commit only; kill already done
     throw new Error(`GoLogin start failed: status="${status}"`);
   }
 
@@ -214,6 +238,9 @@ export async function closeProfile(profileId) {
   const GL = activeProfiles.get(profileId);
   if (!GL) return;
 
+  const _proc = GL?.processSpawned;
+  console.log(`[gologin] closeProfile ${profileId}: pid=${_proc?.pid ?? 'NONE'} killed=${_proc?.killed ?? '?'}${_proc?.pid ? '' : ' (no process handle — orphan risk)'}`);
+
   // Phase 2.8.11 root-cause fix: GL.stop() does NOT kill the Orbita Chromium
   // process — it only uploads cookies + commits profile state to GoLogin's
   // cloud (see node_modules/gologin/src/gologin.js stopAndCommit, line 1045).
@@ -248,6 +275,7 @@ export async function closeProfile(profileId) {
   });
 
   activeProfiles.delete(profileId);
+  spawnedPids.delete(profileId);
 }
 
 export async function closeAllProfiles() {
@@ -257,6 +285,21 @@ export async function closeAllProfiles() {
   // closeProfile already swallows its own errors so Promise.all won't reject.
   const ids = [...activeProfiles.keys()];
   await Promise.all(ids.map(id => closeProfile(id)));
+
+  // v2.86.14: safety net — SIGKILL any browser WE spawned that escaped
+  // activeProfiles (failed launch / close that didn't take). Only PIDs we
+  // recorded in spawnedPids — never a name-matched or operator-opened browser.
+  const activePids = new Set(getActiveBrowserPids());
+  const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const orphans = selectOrphanPids({ spawned: spawnedPids, activePids, isAlive });
+  for (const pid of orphans) {
+    console.warn(`[gologin] orphan Orbita pid ${pid} survived close — SIGKILL`);
+    try { process.kill(pid, 'SIGKILL'); } catch { /* */ }
+  }
+  for (const [pidProfile, pid] of [...spawnedPids.entries()]) {
+    if (orphans.includes(pid) || !isAlive(pid)) spawnedPids.delete(pidProfile);
+  }
+
   return ids.length;
 }
 
