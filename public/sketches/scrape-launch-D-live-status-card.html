@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sales Nav Scrape — Launch/Jobs as dashboard Live Status card</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fafafa;--ink:#0a0a0a;--gray:#8a8a8a;--hairline:rgba(0,0,0,0.13);--hairline-soft:rgba(0,0,0,0.06);
+  --card-bg:#fff;--card-border:rgba(0,0,0,0.12);--card-shadow:0 4px 16px rgba(0,0,0,0.10);
+  --gold:#F7BE68;--green:#3fb950;--red:#f85149;--display:'Bebas Neue','Arial Narrow',sans-serif;
+  --mono:ui-monospace,Menlo,Monaco,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:40px 32px;}
+.wrap{max-width:1080px;margin:0 auto;}
+.tag{font:13px/1.4 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);}
+h1{font-family:var(--display);letter-spacing:.03em;font-weight:400;font-size:34px;margin:2px 0 8px;}
+.note{font-size:13px;color:var(--gray);line-height:1.6;margin-bottom:22px;}
+
+/* the dashboard live-status card look: elevated, rounded, GREEN left accent */
+.card{position:relative;background:var(--card-bg);border:1px solid var(--card-border);border-radius:16px;
+  box-shadow:var(--card-shadow);padding:26px 30px 22px;overflow:hidden;}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--green);}
+.c-head{display:flex;align-items:flex-start;justify-content:space-between;}
+.kicker{display:flex;align-items:center;gap:9px;font:12px var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--ink);}
+.dot{width:9px;height:9px;border-radius:9999px;background:var(--green);}
+.title{font-family:var(--display);font-size:38px;line-height:1;margin:8px 0 0;letter-spacing:.02em;}
+.sub{font-size:12px;color:var(--gray);margin-top:7px;}
+.avatar{width:42px;height:42px;border-radius:9999px;border:1px solid var(--hairline);}
+.divider{height:1px;background:var(--hairline-soft);margin:20px 0;}
+
+.loghead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.loglabel{font:12px var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+.logacts{display:flex;gap:8px;}
+.pill{background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:6px 14px;font-size:12px;color:var(--ink);cursor:pointer;}
+
+/* jobs rendered as the live-log box */
+.joblist{border:1px solid var(--hairline);border-radius:10px;background:#fbfbfa;max-height:300px;overflow:auto;}
+.jobrow{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;border-bottom:1px solid var(--hairline-soft);font-size:13px;}
+.jobrow:last-child{border-bottom:0;}
+.jobname{font-weight:500;}
+.jobstat{font-family:var(--mono);font-size:12px;color:var(--gray);}
+.jobstat .run{color:var(--ink);}
+.jobstat .done{color:var(--green);}
+.jobstat .leads{color:var(--green);}
+
+.foot{display:flex;align-items:center;justify-content:space-between;margin-top:20px;padding-top:18px;border-top:1px solid var(--hairline-soft);}
+.foot .big{font-family:var(--display);font-size:40px;line-height:.9;}
+.foot .cap{font-size:12px;color:var(--gray);margin-top:4px;letter-spacing:.04em;}
+.dock{display:flex;gap:10px;align-items:center;}
+.start{background:var(--ink);color:var(--gold);border:0;border-radius:9999px;padding:13px 24px;font:14px var(--display);letter-spacing:.1em;cursor:pointer;}
+.sec{background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:10px 16px;font-size:13px;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">Sketch · Variant D · Launch + Jobs</div>
+  <h1>Sales Nav Scrape — as the dashboard Live Status card</h1>
+  <div class="note"><b>Direction:</b> the flat Jobs list becomes the dashboard's green-accented Live Status card — status header, a "LIVE LOG · JOBS" box with the same row treatment as a running campaign, and the Start/Pause/Stop/View Browser controls docked in the footer.</div>
+
+  <div class="card">
+    <div class="c-head">
+      <div>
+        <div class="kicker"><span class="dot"></span> Sales Nav Scrape · Running</div>
+        <div class="title">18 jobs · 1 running</div>
+        <div class="sub">Started 18 scrape jobs on the engine · 4 accounts · parallel + queue</div>
+      </div>
+      <div class="avatar"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="loghead">
+      <div class="loglabel">Live log · Jobs</div>
+      <div class="logacts"><button class="pill">Copy all</button><button class="pill">Open sheet</button><button class="pill">👁 View Browser</button></div>
+    </div>
+
+    <div class="joblist">
+      <div class="jobrow"><span class="jobname">Sheet34</span><span class="jobstat"><span class="done">done</span> · 3p · <span class="leads">75 leads</span></span></div>
+      <div class="jobrow"><span class="jobname">Results 1</span><span class="jobstat"><span class="run">running</span> · 2p · <span class="leads">50 leads</span></span></div>
+      <div class="jobrow"><span class="jobname">Results 2</span><span class="jobstat">queued · 0p · 0 leads</span></div>
+      <div class="jobrow"><span class="jobname">Results 3</span><span class="jobstat">queued · 0p · 0 leads</span></div>
+      <div class="jobrow"><span class="jobname">Results 4</span><span class="jobstat">queued · 0p · 0 leads</span></div>
+      <div class="jobrow"><span class="jobname">Results 5</span><span class="jobstat">queued · 0p · 0 leads</span></div>
+    </div>
+
+    <div class="foot">
+      <div><div class="big">125</div><div class="cap">LEADS SCRAPED · 1 OF 18 DONE</div></div>
+      <div class="dock"><button class="sec">Pause</button><button class="sec">Stop</button><button class="start">START SCRAPE</button></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
