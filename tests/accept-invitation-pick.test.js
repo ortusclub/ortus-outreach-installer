@@ -9,6 +9,8 @@ test('isAcceptLabel matches accept verbs across locales', () => {
   assert.equal(isAcceptLabel('Accepter'), true);                                 // FR
   assert.equal(isAcceptLabel('Aceptar'), true);                                  // ES
   assert.equal(isAcceptLabel('Aceitar'), true);                                  // PT
+  assert.equal(isAcceptLabel('Tanggapin'), true);                                // TL (Tagalog/Filipino)
+  assert.equal(isAcceptLabel('Tanggapin ang imbitasyon ni Juan Dela Cruz'), true); // TL aria-label form
 });
 
 test('isAcceptLabel rejects ignore/decline verbs — never clicks Ignore', () => {
@@ -16,6 +18,9 @@ test('isAcceptLabel rejects ignore/decline verbs — never clicks Ignore', () =>
   assert.equal(isAcceptLabel('Ignore'), false);
   assert.equal(isAcceptLabel('Rifiuta'), false);                                 // IT decline
   assert.equal(isAcceptLabel('Rechazar'), false);                               // ES decline
+  assert.equal(isAcceptLabel('Huwag pansinin'), false);                          // TL ignore
+  assert.equal(isAcceptLabel('Balewalain'), false);                             // TL ignore (alt)
+  assert.equal(isAcceptLabel('Tanggihan'), false);                             // TL decline — must NEVER accept (look-alike of Tanggapin)
   assert.equal(isAcceptLabel(''), false);
   assert.equal(isAcceptLabel(null), false);
 });

@@ -37,6 +37,7 @@ export const ACCEPT_STEMS = [
   'przyjmij', // PL przyjmij
   'elfogad',  // HU
   'принять',  // RU
+  'tanggap',  // TL (Tagalog/Filipino) tanggapin — NOT a substring of the decline "tanggihan"
 ];
 export const IGNORE_STEMS = [
   'ignor',    // EN/DE/IT/ES ignore/ignorieren/ignora/ignorar
@@ -49,6 +50,9 @@ export const IGNORE_STEMS = [
   'hylkää',   // FI
   'elutasít', // HU
   'отклон',   // RU
+  'tanggih',  // TL decline (tanggihan) — vetoes the Tanggapin look-alike
+  'pansin',   // TL ignore (huwag pansinin)
+  'balewala', // TL ignore (balewalain)
 ];
 
 /**
