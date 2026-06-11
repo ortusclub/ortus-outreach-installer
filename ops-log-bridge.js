@@ -39,10 +39,15 @@ var EVENT_HEADERS = [
   'Phase', 'Outcome', 'Reason', 'Lead URL', 'Severity'
 ];
 
+var DASHBOARD_TAB = 'Dashboard';
+var DASHBOARD_HEADERS = [
+  'Status', 'Campaign', 'Operator', 'Doing now', 'Progress',
+  'Sent', 'Accepted', 'Issues', 'Top issue → why'
+];
 var ATTRIBUTION_TAB = 'Attribution';
 var LEAKS_TAB = "Where it's leaking";
 var HEALTH_TAB = 'Account health';
-var STRUCTURAL_TABS = [EVENTS_SHEET_NAME, ATTRIBUTION_TAB, LEAKS_TAB, HEALTH_TAB];
+var STRUCTURAL_TABS = [DASHBOARD_TAB, EVENTS_SHEET_NAME, ATTRIBUTION_TAB, LEAKS_TAB, HEALTH_TAB];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HTTP entry point
@@ -53,6 +58,7 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     switch (data.action) {
       case 'appendEvents': return handleAppendEvents(data);
+      case 'upsertDashboard': return handleUpsertDashboard(data);
       case 'deleteAllTabs': return handleDeleteAllTabs();
       default: return jsonResponse({ error: 'Unknown action: ' + data.action });
     }
@@ -156,6 +162,79 @@ function ensureFormulaTab(ss, name, formulaA1) {
   var sheet = ss.insertSheet(name);
   sheet.getRange(1, 1).setFormula(formulaA1);
   sheet.setFrozenRows(1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: upsertDashboard — one live row per campaign (the at-a-glance board)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function handleUpsertDashboard(data) {
+  var rows = Array.isArray(data.rows) ? data.rows : [];
+  if (rows.length === 0) return jsonResponse({ success: true, upserted: 0 });
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ensureDashboardTab(ss);
+  for (var i = 0; i < rows.length; i++) upsertDashboardRow(sheet, rows[i]);
+  return jsonResponse({ success: true, upserted: rows.length });
+}
+
+function progressBar(pct) {
+  var p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+  var filled = Math.round(p / 5); // 20-cell bar
+  var bar = '';
+  for (var i = 0; i < 20; i++) bar += (i < filled ? '█' : '░');
+  return bar + ' ' + p + '%';
+}
+
+function dashboardRowValues(r) {
+  var why = r.topIssue ? (r.topIssue + ' → ' + (r.why || ''))
+    : (r.status === 'done' ? '—' : '✓ No problems');
+  return [
+    r.statusLabel || '', r.campaign || '', r.operator || '', r.doingNow || '',
+    progressBar(r.progress), Number(r.sent || 0), Number(r.accepted || 0),
+    Number(r.issues || 0), why
+  ];
+}
+
+// Upsert by campaign name (column B): one live row per campaign, overwritten
+// in place as the run progresses.
+function upsertDashboardRow(sheet, r) {
+  var values = dashboardRowValues(r);
+  var lastRow = sheet.getLastRow();
+  var foundRow = -1;
+  if (lastRow >= 2) {
+    var names = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+    for (var i = 0; i < names.length; i++) {
+      if (names[i][0] === (r.campaign || '')) { foundRow = i + 2; break; }
+    }
+  }
+  var target = foundRow === -1 ? Math.max(lastRow + 1, 2) : foundRow;
+  sheet.getRange(target, 1, 1, DASHBOARD_HEADERS.length).setValues([values]);
+}
+
+function ensureDashboardTab(ss) {
+  var sheet = ss.getSheetByName(DASHBOARD_TAB);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(DASHBOARD_TAB, 0); // first tab — the landing view
+  sheet.getRange(1, 1, 1, DASHBOARD_HEADERS.length).setValues([DASHBOARD_HEADERS])
+    .setFontWeight('bold').setBackground('#f1f3f4');
+  sheet.setFrozenRows(1);
+  var widths = [110, 160, 110, 200, 175, 60, 80, 60, 360];
+  for (var i = 0; i < widths.length; i++) sheet.setColumnWidth(i + 1, widths[i]);
+  sheet.getRange('E:E').setFontFamily('Roboto Mono');
+
+  // Colour the Status cell by health (conditional formatting on column A).
+  var rng = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 500), 1);
+  function rule(txt, bg, fg) {
+    return SpreadsheetApp.newConditionalFormatRule()
+      .whenTextContains(txt).setBackground(bg).setFontColor(fg).setBold(true).setRanges([rng]).build();
+  }
+  sheet.setConditionalFormatRules([
+    rule('Needs you', '#f6cccf', '#a1252b'),
+    rule('Slowed', '#fce0c0', '#8a5a00'),
+    rule('Healthy', '#d3ecd9', '#1f6b3e'),
+    rule('Done', '#e6e6e6', '#5f6368')
+  ]);
+  return sheet;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

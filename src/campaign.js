@@ -27,9 +27,10 @@ import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
-import { opsLogEvent, campaignLogAppendRun } from './log-writer.js';
+import { opsLogEvent, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
 import { emptyTally, applyOutcome } from './campaign-tally.js';
+import { summariseCampaign } from './campaign-summary.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js';
@@ -667,6 +668,23 @@ export function _ops(severity, eventName, extra) {
       },
     );
   } catch (_) { /* fire-and-forget */ }
+}
+
+// v2.93 — push this campaign's at-a-glance Dashboard row to the Ops Log
+// "Dashboard" tab. Fire-and-forget; the caller throttles the cadence.
+function _pushDashboard(ended, endReason) {
+  try {
+    dashboardUpsert([summariseCampaign({
+      name: campaign.name || '',
+      operator: campaign.createdBy || '',
+      mode: campaign.mode || '',
+      ended: !!ended,
+      endReason: endReason || '',
+      totalTargets: campaign.totalTargets || 0,
+      processed: campaign.totalProcessed || 0,
+      tally: campaign.tally || emptyTally(),
+    })]).catch(() => {});
+  } catch (_) { /* never block the loop */ }
 }
 
 // 2.9.2: format a Date in the operator's local timezone (the Electron app
@@ -2876,6 +2894,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               { account: pName, leadUrl: url, details: _cls.reason,
                 phase: _cls.phase, outcome: _cls.outcome, reason: _cls.reason },
             );
+            // Refresh the live Dashboard row early (first lead) then every 15.
+            campaign._dashTick = (campaign._dashTick || 0) + 1;
+            if (campaign._dashTick === 1 || campaign._dashTick % 15 === 0) _pushDashboard(false);
           } catch (_) { /* telemetry never blocks the loop */ }
 
           if (SUCCESS_ACTIONS.has(result.action)) {
@@ -3707,6 +3728,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     } catch (logErr) {
       console.warn('[log-writer] campaign-end mirror threw:', logErr.message);
     }
+    _pushDashboard(true, endReason); // flip the campaign to ⚪ Done on the board
 
     // Register a post-campaign acceptance-tracking window for every profile
     // that actually sent at least one connect. Skipped when

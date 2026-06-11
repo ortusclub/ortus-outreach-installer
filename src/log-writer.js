@@ -192,6 +192,24 @@ export async function campaignLogAppendRun(entry) {
   }
 }
 
+/**
+ * Upsert one Dashboard row per campaign into the Ops Log "Dashboard" tab
+ * (lives in the same OPS spreadsheet as the Events tab). Fire-and-forget;
+ * never throws. Each row = the shape returned by summariseCampaign().
+ */
+export async function dashboardUpsert(rows) {
+  const url = _opsLogUrl();
+  if (!url || !Array.isArray(rows) || rows.length === 0) return { ok: true, skipped: true };
+  try {
+    const res = await _post(url, { action: 'upsertDashboard', rows });
+    if (res && res.success) return { ok: true };
+    return { ok: false, error: (res && res.error) || 'unknown' };
+  } catch (err) {
+    console.warn('[log-writer] dashboardUpsert threw:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────
 // Shared POST helper — mirrors src/sheets-writer.js's postToWebApp
 // pattern: handle 302 redirect manually, 15s per-leg timeout, swallow
