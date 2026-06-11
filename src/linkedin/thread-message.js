@@ -39,17 +39,41 @@ export async function sendInThread(page, threadUrl, body, { introTitle = '', lea
 
   await box.click();
   await page.keyboard.type(body, { delay: 12 });
-  await new Promise(r => setTimeout(r, 400));
+  // 700ms (matches actions.js) — slow/overloaded operator machines need time for
+  // React to process the input event and enable the send button.
+  await new Promise(r => setTimeout(r, 700));
 
-  const sent = await page.evaluate(() => {
-    const btn = document.querySelector('button.msg-form__send-button, button[type="submit"].msg-form__send-button');
+  const clicked = await page.evaluate(() => {
+    const btn = document.querySelector('button.msg-form__send-button');
     if (btn && !btn.disabled) { btn.click(); return true; }
     return false;
   });
-  if (!sent) {
+  if (!clicked) {
+    // Belt-and-suspenders keyboard fallback (mirrors actions.js): plain Enter
+    // (Ortus accounts have "press Enter to send"), then Cmd+Enter, then Ctrl+Enter.
+    await page.keyboard.press('Enter');
     await page.keyboard.down('Meta'); await page.keyboard.press('Enter'); await page.keyboard.up('Meta');
+    await page.keyboard.down('Control'); await page.keyboard.press('Enter'); await page.keyboard.up('Control');
   }
-  await new Promise(r => setTimeout(r, 1500));
+
+  // Verify the send actually landed before reporting success. Without this a
+  // no-op click (React not bound yet on a slow machine) would mark the task done
+  // and the follow-up would never be retried. Confirmed when the composer
+  // cleared OR the sent text echoes into the thread. If neither, throw so the
+  // runner retries (capped at 3 attempts).
+  await new Promise(r => setTimeout(r, 3000));
+  const confirmed = await page.evaluate((sentBody) => {
+    const composer = document.querySelector('div.msg-form__contenteditable[contenteditable="true"], div[role="textbox"][contenteditable="true"]');
+    const composerEmpty = !composer || !(composer.textContent || '').trim();
+    const snippet = (sentBody || '').trim().slice(0, 40).toLowerCase();
+    let echoed = false;
+    if (snippet) {
+      const bubbles = Array.from(document.querySelectorAll('.msg-s-event-listitem__body, .msg-s-event-listitem, p'));
+      echoed = bubbles.some(b => (b.textContent || '').toLowerCase().includes(snippet));
+    }
+    return composerEmpty || echoed;
+  }, body);
+  if (!confirmed) throw new Error('FOLLOWUP_SEND_UNCONFIRMED');
   log(`  ✓ Follow-up sent in the group thread${leadName ? ` (${leadName})` : ''}.`);
 }
 

@@ -11,4 +11,5 @@ test('isUsableThreadUrl rejects compose / feed / empty URLs', () => {
   assert.equal(isUsableThreadUrl('https://www.linkedin.com/feed/'), false);
   assert.equal(isUsableThreadUrl(''), false);
   assert.equal(isUsableThreadUrl(null), false);
+  assert.equal(isUsableThreadUrl(undefined), false);
 });
