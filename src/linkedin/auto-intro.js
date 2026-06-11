@@ -27,12 +27,14 @@ import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
 
 // Note-aware intro routing (spec 2026-06-10-ccic-note-group-intro). Clean-compose
-// (typeahead BOTH pills into a blank /messaging/compose → real group) is used ONLY
-// when a connection note created a prior 1:1 thread AND we have the lead's full name
-// to typeahead. Otherwise the unchanged URL-routing path (sendIntroMessage), which
-// carries its own existing-thread guard. Pure for unit testing.
-export function _decideIntroPath({ hasConnectionNote, leadFullName }) {
-  if (hasConnectionNote && (leadFullName || '').toString().trim()) return 'clean-compose';
+// (typeahead BOTH pills into a blank /messaging/compose → real group) is used when
+// the lead already has a prior 1:1 thread with this account AND we have the lead's
+// full name to typeahead. A prior thread comes from EITHER a connection note OR any
+// earlier message (v2.92) — both collapse a URL-routed intro into the 1:1 and drop
+// the primary pill, so both take the same clean-compose group path. Otherwise the
+// unchanged URL-routing path (sendIntroMessage). Pure for unit testing.
+export function _decideIntroPath({ hasConnectionNote, hasPriorThread, leadFullName }) {
+  if ((hasConnectionNote || hasPriorThread) && (leadFullName || '').toString().trim()) return 'clean-compose';
   return 'url-routing';
 }
 
@@ -40,6 +42,40 @@ export function _decideIntroPath({ hasConnectionNote, leadFullName }) {
 // thread for this lead+primary already exists → already introduced.
 export function _groupHasHistory(eventCount) {
   return Number(eventCount) > 0;
+}
+
+// The EXACT message-history selector the connection-note dedupe probe uses
+// (actions.js:2509), so "does a thread exist" is detected identically on both
+// paths. Kept in sync by hand — it is a copy, not an import (actions.js is off-
+// limits to modify, and the constant is not exported there).
+const _INTRO_THREAD_HISTORY_SELECTOR =
+  '.msg-s-event-listitem, [class*="msg-s-event"], [class*="msg-event-listitem"], .msg-s-message-list-content li';
+
+// Probe: does the lead already have a 1:1 thread with this account? Opens the same
+// /messaging/compose/?recipient=<lead> URL the URL-routing path uses; when a prior
+// 1:1 exists LinkedIn collapses it inline and renders its message history, which we
+// count with the shared selector. Any history ⇒ prior thread ⇒ route via clean-
+// compose (same as the note path). A probe failure returns false so the route
+// falls back to the unchanged URL-routing path — no behaviour change on error.
+// DOM-dependent; verified manually against LinkedIn.
+async function _leadHasPriorThread(page, leadUrl) {
+  try {
+    const m = String(leadUrl || '').match(/\/in\/([^/?#]+)/);
+    if (!m) return false;
+    const composeUrl = `https://www.linkedin.com/messaging/compose/?recipient=${encodeURIComponent(m[1])}`;
+    await page.goto(composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    // Mirror the note dedupe-probe settle (1500 + 800) so a slow renderer surfaces
+    // its history before we count it.
+    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 800));
+    const eventCount = await page.evaluate(
+      (sel) => document.querySelectorAll(sel).length,
+      _INTRO_THREAD_HISTORY_SELECTOR,
+    );
+    return _groupHasHistory(eventCount);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -446,14 +482,31 @@ export async function runAutoIntros({
     let alreadyMade = false;
     let errMsg = '';
     let attempt = 0;
+
+    // v2.92: prior-1:1-thread guard. If the lead already has a 1:1 thread with this
+    // account (ANY prior message, not only a connection note), URL-routing collapses
+    // the intro INTO that thread and silently drops the primary pill — the body
+    // ships as a 1:1 DM yet gets stamped "Introduction Made" (operator-confirmed,
+    // Pinky Salaria 2026-06-11). Reuse the exact clean-compose group path the
+    // connection-note case already uses. Probe ONCE per lead, and only when it can
+    // change the route (no note yet + a lead name to typeahead).
+    const leadFullName = `${leadFirstName} ${leadLastName}`.trim();
+    let hasPriorThread = false;
+    if (!hasConnectionNote && leadFullName && _browserAlive()) {
+      hasPriorThread = await _leadHasPriorThread(page, url);
+      if (hasPriorThread) {
+        log(`  ↳ [${profileName}] ${url}: existing 1:1 thread detected — routing via group clean-compose (same as note path).`);
+      }
+    }
+
     while (attempt < 2) {
       attempt++;
       try {
-        // Note-aware fork (spec 2026-06-10). Note campaign + lead name → reuse the
-        // IB clean-compose group path with the dedupe probe ON. Otherwise the
-        // unchanged URL-routing path. leadFirstName/leadLastName resolved above.
-        const leadFullName = `${leadFirstName} ${leadLastName}`.trim();
-        const introPath = _decideIntroPath({ hasConnectionNote, leadFullName });
+        // Note-aware fork (spec 2026-06-10) + prior-thread fork (v2.92). A connection
+        // note OR an existing 1:1 thread, plus a lead name → reuse the IB clean-
+        // compose group path with the dedupe probe ON. Otherwise the unchanged
+        // URL-routing path. leadFirstName/leadLastName/leadFullName resolved above.
+        const introPath = _decideIntroPath({ hasConnectionNote, hasPriorThread, leadFullName });
         if (hasConnectionNote && introPath === 'url-routing') {
           log(`  ⚠ [${profileName}] ${url}: note campaign but lead name missing — using URL-routing (add First/Last Name to enable group compose).`);
         }

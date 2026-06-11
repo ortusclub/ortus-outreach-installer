@@ -23,6 +23,29 @@ test('no note → url-routing (unchanged path) even with a name', () => {
   assert.equal(_decideIntroPath({ hasConnectionNote: false, leadFullName: 'Angelo Cruz' }), 'url-routing');
 });
 
+// ── Prior-1:1-thread routing (v2.92) ──
+// If the lead already has a 1:1 thread with this account (ANY prior message, not
+// only a connection note), URL-routing collapses the intro into it and drops the
+// primary pill — shipping a 1:1 DM falsely stamped "Introduction Made" (operator-
+// confirmed, Pinky Salaria 2026-06-11). Take the SAME clean-compose path the note
+// case uses.
+
+test('prior 1:1 thread + lead name → clean-compose (same as note path)', () => {
+  assert.equal(_decideIntroPath({ hasConnectionNote: false, hasPriorThread: true, leadFullName: 'Pinky Salaria' }), 'clean-compose');
+});
+
+test('prior 1:1 thread + missing lead name → url-routing fallback', () => {
+  assert.equal(_decideIntroPath({ hasConnectionNote: false, hasPriorThread: true, leadFullName: '' }), 'url-routing');
+});
+
+test('no note + no prior thread → url-routing (unchanged)', () => {
+  assert.equal(_decideIntroPath({ hasConnectionNote: false, hasPriorThread: false, leadFullName: 'Pinky Salaria' }), 'url-routing');
+});
+
+test('note alone still → clean-compose (prior-thread probe skipped)', () => {
+  assert.equal(_decideIntroPath({ hasConnectionNote: true, leadFullName: 'Angelo Cruz' }), 'clean-compose');
+});
+
 // ── Dedupe probe decision ──
 // Any rendered message event in the group compose means a thread for this
 // lead+primary already exists → already introduced.
