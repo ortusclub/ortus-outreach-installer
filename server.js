@@ -376,7 +376,18 @@ MNT="$(mktemp -d /tmp/ortus-mnt.XXXXXX)"
 if ! hdiutil attach "$DMG" -nobrowse -noautoopen -mountpoint "$MNT" >/dev/null 2>&1; then
   echo "[updater] mount failed — opening DMG for manual install"; open "$DMG"; exit 1
 fi
-SRC="$(/bin/ls -d "$MNT/"*.app 2>/dev/null | head -1)"
+# Pick the REAL app by explicit name — the DMG also contains
+# "Ortus Outreach Setup.app", which sorts BEFORE "The Ortus Outreach.app".
+# The old "ls *.app | head -1" grabbed that helper and clobbered the real app,
+# so the update installed the Setup helper instead (install-mac.sh always
+# copied by explicit name, which is why the terminal installer was immune).
+SRC="$MNT/The Ortus Outreach.app"
+if [ ! -d "$SRC" ]; then
+  SRC="$(/bin/ls -d "$MNT/"*.app 2>/dev/null | grep -vi 'Setup' | head -1)"
+fi
+if [ -z "$SRC" ] || [ ! -d "$SRC" ]; then
+  SRC="$(/bin/ls -d "$MNT/"*.app 2>/dev/null | head -1)"
+fi
 if [ -z "$SRC" ]; then
   echo "[updater] no .app in DMG"; hdiutil detach "$MNT" >/dev/null 2>&1; open "$DMG"; exit 1
 fi
