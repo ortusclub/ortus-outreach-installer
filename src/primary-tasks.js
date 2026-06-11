@@ -75,7 +75,10 @@ export async function loadTasks(file = PRIMARY_TASKS_FILE) {
     const raw = await readFile(file, 'utf8');
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (e) {
+    // Missing file is normal (empty queue). A corrupt file is worth a warning
+    // so a silent parse failure doesn't look like "no tasks" without a trace.
+    if (e && e.code !== 'ENOENT') console.warn(`[primary-tasks] load failed, starting empty: ${e.message}`);
     return [];
   }
 }

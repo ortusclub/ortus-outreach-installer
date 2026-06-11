@@ -58,6 +58,15 @@ test('selectDue returns only pending tasks at or before now', () => {
   assert.deepEqual(due.map(t => t.id), ['1']);
 });
 
+test('selectDue includes a task whose dueAt equals now (boundary)', () => {
+  const due = selectDue([{ id: 'x', status: 'pending', dueAt: 200 }], 200);
+  assert.deepEqual(due.map(t => t.id), ['x']);
+});
+
+test('partitionByBrowser of an empty list returns empty buckets', () => {
+  assert.deepEqual(partitionByBrowser([]), { local: [], byAccount: {} });
+});
+
 test('partitionByBrowser splits local vs per-account', () => {
   const due = [
     { id: 'a', type: 'accept', sender: undefined },
@@ -93,5 +102,12 @@ test('markTask updates status + patch; resetInProgress recovers stuck tasks', as
   const after = await loadTasks(file);
   assert.equal(after[0].status, 'failed');
   assert.equal(after[0].lastError, 'boom');
+  rmSync(file, { force: true });
+});
+
+test('markTask returns false when the id is not found', async () => {
+  const file = tmpFile();
+  await enqueuePrimaryTask(buildAcceptTask({ campaignProfileId: 'p3', now: 1 }), file);
+  assert.equal(await markTask('does-not-exist', 'done', {}, file), false);
   rmSync(file, { force: true });
 });
