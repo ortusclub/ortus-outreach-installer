@@ -26,7 +26,7 @@ import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCamp
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
-import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls } from './src/scraper-client.js';
+import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
@@ -37,7 +37,7 @@ import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
-import { fetchSheet } from './src/sheets.js';
+import { fetchSheet, fetchSheetWithRows } from './src/sheets.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
@@ -1417,9 +1417,12 @@ app.get('/api/scrape/extract-urls', async (req, res) => {
   const sheetUrl = (req.query.sheetUrl || '').toString().trim();
   if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
   try {
-    const rows = await fetchSheet(sheetUrl);
-    const urls = extractSalesNavUrls(rows);
-    res.json({ urls, count: urls.length });
+    // Row-aware read so the UI can offer a "scrape rows 2–10" picker. `items`
+    // carries the 1-based sheet row number per URL; `urls` is the flat list
+    // (back-compat / convenience).
+    const rowsWithNumbers = await fetchSheetWithRows(sheetUrl);
+    const items = extractSalesNavUrlsWithRows(rowsWithNumbers);
+    res.json({ items, urls: items.map((i) => i.url), count: items.length });
   } catch (err) {
     res.status(400).json({ error: err && err.message ? err.message : 'could not read sheet' });
   }
@@ -1443,6 +1446,30 @@ app.get('/api/scrape/jobs', async (_req, res) => {
 
 app.get('/api/scrape/logs', async (req, res) => {
   res.json(await getScrapeLogs(req.query.since));
+});
+
+// Per-job live View — proxies the engine's MJPEG screencast stream
+// (multipart/x-mixed-replace) straight through to the dashboard's <img>, which
+// renders it as live video. Long-lived stream: we pipe frames as they arrive
+// and abort the upstream when the viewer disconnects. 404 when not running.
+app.get('/api/scrape/view/:jobId', async (req, res) => {
+  const stream = await openScrapeJobViewStream(req.params.jobId);
+  if (!stream.ok) return res.status(stream.status || 502).json({ error: stream.error });
+
+  res.writeHead(200, {
+    'Content-Type': stream.contentType,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const nodeStream = Readable.fromWeb(stream.body);
+  const cleanup = () => {
+    try { stream.abort(); } catch { /* */ }
+    try { nodeStream.destroy(); } catch { /* */ }
+  };
+  req.on('close', cleanup);
+  nodeStream.on('error', () => { try { res.end(); } catch { /* */ } });
+  nodeStream.pipe(res);
 });
 
 // v2.14.x: Restore — "panic button" recovery endpoint. Force-kills

@@ -887,6 +887,11 @@
               <button type="button" class="btn btn-secondary btn-sm" onclick="loadScrapeUrlsFromSheet()">Load URLs</button>
             </div>
             <div id="scrape-src-status" class="scrape-hint" style="margin-top:8px;"></div>
+            <div id="scrape-row-pick" style="display:none; margin-top:12px;">
+              <label for="scrape-rows" class="scrape-label">Which rows to scrape? <span style="opacity:.7">(e.g. <code>2-10</code>, or <code>2,5,7</code> — blank = all)</span></label>
+              <input type="text" id="scrape-rows" placeholder="2-10" style="width:100%; margin-top:4px;" oninput="onScrapeRowSpecChange()" />
+              <div id="scrape-row-summary" class="scrape-hint" style="margin-top:6px;"></div>
+            </div>
           </div>
 
           <div id="scrape-pairing" class="scrape-hint" style="margin-top:12px; padding:12px 14px; background:var(--hairline-soft); border-left:2px solid var(--hairline);"></div>
@@ -1326,7 +1331,6 @@
               <div class="ssc-title" id="scrape-launch-number">—</div>
               <div class="ssc-sub" id="scrape-launch-caption">URLs × accounts → parallel scrape jobs</div>
             </div>
-            <button type="button" id="btn-scrape-view" class="ssc-pill" onclick="openScrapeLiveBrowser()" title="Watch the live scraper browser running in the cloud">👁 View Browser</button>
           </div>
 
           <div id="scrape-status" class="ssc-statusline"></div>
