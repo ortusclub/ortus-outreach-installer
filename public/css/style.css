@@ -1763,6 +1763,10 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   margin-top: 18px;
   align-items: start;
 }
+/* v2.91: each grid cell is now a flex column holding two stacked cards.
+   Stacking inside the column (instead of relying on grid row alignment)
+   removes the big gap a short card used to leave above the next row. */
+.intro-config-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 /* The left column of the IC variant holds two mutually-exclusive states
    (empty vs filled) — both stack here so the grid column only ever has
    one visible card. */

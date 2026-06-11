@@ -1582,8 +1582,19 @@ function onModeChange() {
   // and the follow-up fields' visibility against the current toggle state.
   if (_showCcIcCards) {
     try { if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate(); } catch (_) {}
-    try { if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields(); } catch (_) {}
   }
+  // v2.91: run toggleFollowUpFields on EVERY mode change (not only CC+IC) so
+  // the Section-5 message editor hides when leaving CC+IC. It reads the toggle
+  // + mode and hides appropriately, so it's safe in any mode.
+  try { if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields(); } catch (_) {}
+  // v2.91: two flex columns. Left (primary + follow-up) only for CC+IC; the
+  // right column spans full width when the left is hidden (e.g. CC+DM shows
+  // only the cadence card).
+  const _ccic = (mode === 'connect_and_introduce');
+  const _colLeft = document.getElementById('intro-config-col-left');
+  const _colRight = document.getElementById('intro-config-col-right');
+  if (_colLeft) _colLeft.style.display = _ccic ? '' : 'none';
+  if (_colRight) _colRight.style.gridColumn = _ccic ? '' : '1 / -1';
   const cadenceBlock = document.getElementById('check-cadence-block');
   // Cadence applies to every monitoring mode (CC+IC + CC+DM). Same predicate
   // drives the launch payload read so visibility and persistence stay in lockstep.
@@ -8068,9 +8079,14 @@ function savePrimaryPersonFields() {
 // v2.91: Automated first follow-up — reveal the message/delay/sender fields
 // only when the toggle is on.
 function toggleFollowUpFields() {
-  const on = document.getElementById('follow-up-toggle')?.checked;
+  const on = !!document.getElementById('follow-up-toggle')?.checked;
   const box = document.getElementById('follow-up-fields');
   if (box) box.style.display = on ? '' : 'none';
+  // The message editor lives in Section 5 and unlocks only while the toggle is
+  // on AND we're in CC+IC mode.
+  const mode = document.getElementById('campaign-mode')?.value;
+  const sec = document.getElementById('tpl-followup-section');
+  if (sec) sec.style.display = (on && mode === 'connect_and_introduce') ? '' : 'none';
 }
 window.toggleFollowUpFields = toggleFollowUpFields;
 

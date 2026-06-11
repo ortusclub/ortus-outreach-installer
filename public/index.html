@@ -509,85 +509,90 @@
            When neither mode shows them, the row collapses to display:none via
            JS toggling the inner blocks (existing logic, unchanged). -->
       <div class="intro-config-row" id="intro-config-row">
-        <!-- Connect + Introduce Back: primary person to introduce the lead to.
-             Visible only when connect_and_introduce is selected. -->
-        <div id="primary-person-block" class="intro-config-card" style="display:none;">
-          <div class="intro-config-eyebrow">Primary Person · who the lead gets introduced to</div>
-          <div class="intro-config-field">
-            <label for="primary-person-name" class="intro-config-label">Full name</label>
-            <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()">
-            <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
-          </div>
-          <!-- v2.78: re-shown per operator request — the primary's profile URL
-               is needed for the "is the account connected to the primary?" check
-               and for the {primary url} placeholder. -->
-          <div class="intro-config-field">
-            <label for="primary-person-url" class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
-            <input type="text" id="primary-person-url" class="intro-config-input" placeholder="https://www.linkedin.com/in/..." oninput="savePrimaryPersonFields()">
-            <div class="intro-config-hint">The primary person's profile. Used to check each account is connected to them, and for the <code>{primary url}</code> placeholder.</div>
-          </div>
-        </div>
-
-        <!-- v2.91: Auto-accept the primary connection — locked until a URL is set -->
-        <div id="auto-accept-block" class="intro-config-card" style="display:none;">
-          <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
-          <div class="intro-config-toggle-row">
-            <span id="auto-accept-label" class="intro-config-toggle-key">Accept via my local browser</span>
-            <label class="notif-pref-toggle" id="auto-accept-toggle-wrap">
-              <input type="checkbox" id="auto-accept-toggle" disabled onchange="savePrimaryPersonFields()">
-              <span class="notif-pref-slider"></span>
-            </label>
-          </div>
-          <div id="auto-accept-gate" class="intro-config-gate">
-            🔒 Add the primary person's LinkedIn URL above to switch this on — without the URL there's nothing to accept from.
-          </div>
-          <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and your local browser accepts that one invitation automatically — no manual step before the intro.</div>
-        </div>
-
-        <!-- v2.91: Automated first follow-up -->
-        <div id="follow-up-block" class="intro-config-card" style="display:none;">
-          <div class="intro-config-eyebrow">Automated first follow-up <span class="intro-config-newtag">NEW</span></div>
-          <div class="intro-config-toggle-row">
-            <span class="intro-config-toggle-key">Send a first follow-up after the intro</span>
-            <label class="notif-pref-toggle">
-              <input type="checkbox" id="follow-up-toggle" onchange="savePrimaryPersonFields(); toggleFollowUpFields();">
-              <span class="notif-pref-slider"></span>
-            </label>
-          </div>
-          <div id="follow-up-fields" style="display:none;">
+        <div class="intro-config-col" id="intro-config-col-left">
+          <!-- Connect + Introduce Back: primary person to introduce the lead to.
+               Visible only when connect_and_introduce is selected. -->
+          <div id="primary-person-block" class="intro-config-card" style="display:none;">
+            <div class="intro-config-eyebrow">Primary Person · who the lead gets introduced to</div>
             <div class="intro-config-field">
-              <label for="follow-up-body" class="intro-config-label">Follow-up message — posted in the same group thread</label>
-              <textarea id="follow-up-body" class="intro-config-input" rows="3" placeholder="Hi {first name}, great to be connected…" oninput="savePrimaryPersonFields()"></textarea>
-              <div class="intro-config-hint">Tokens: <code>{first name}</code>, <code>{company}</code>.</div>
+              <label for="primary-person-name" class="intro-config-label">Full name</label>
+              <input type="text" id="primary-person-name" class="intro-config-input" placeholder="e.g. Sam Adcock" oninput="savePrimaryPersonFields()">
+              <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
             </div>
-            <div class="intro-config-inline">
-              <span class="intro-config-prefix">Send</span>
-              <input type="number" id="follow-up-delay" class="intro-config-num" min="1" max="240" value="10" oninput="savePrimaryPersonFields()">
-              <span class="intro-config-prefix">min after the intro · from</span>
-              <select id="follow-up-sender" class="intro-config-select" onchange="savePrimaryPersonFields()">
-                <option value="local-browser">you (local browser)</option>
-                <option value="campaign-account">the campaign account</option>
-              </select>
+            <!-- v2.78: re-shown per operator request — the primary's profile URL
+                 is needed for the "is the account connected to the primary?" check
+                 and for the {primary url} placeholder. -->
+            <div class="intro-config-field">
+              <label for="primary-person-url" class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
+              <input type="text" id="primary-person-url" class="intro-config-input" placeholder="https://www.linkedin.com/in/..." oninput="savePrimaryPersonFields()">
+              <div class="intro-config-hint">The primary person's profile. Used to check each account is connected to them, and for the <code>{primary url}</code> placeholder.</div>
+            </div>
+          </div>
+
+          <!-- v2.91: Automated first follow-up -->
+          <div id="follow-up-block" class="intro-config-card" style="display:none;">
+            <div class="intro-config-eyebrow">Automated first follow-up <span class="intro-config-newtag">NEW</span></div>
+            <div class="intro-config-toggle-row">
+              <span class="intro-config-toggle-key">Send a first follow-up after the intro</span>
+              <label class="notif-pref-toggle">
+                <input type="checkbox" id="follow-up-toggle" onchange="savePrimaryPersonFields(); toggleFollowUpFields();">
+                <span class="notif-pref-slider"></span>
+              </label>
+            </div>
+            <div id="follow-up-fields" style="display:none;">
+              <div class="intro-config-field" style="margin-bottom:14px;">
+                <label class="intro-config-label" for="follow-up-delay">Send after</label>
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                  <input type="number" id="follow-up-delay" class="intro-config-num" min="1" max="240" value="10" oninput="savePrimaryPersonFields()">
+                  <span class="intro-config-prefix">minutes</span>
+                </div>
+              </div>
+              <div class="intro-config-field">
+                <label class="intro-config-label" for="follow-up-sender">Sent from</label>
+                <select id="follow-up-sender" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
+                  <option value="local-browser">You (local browser)</option>
+                  <option value="campaign-account">The campaign account</option>
+                </select>
+              </div>
+              <div class="intro-config-hint">Write the message in <b>Section 5 · Message Templates → First Follow-up Message</b> — it unlocks while this is on.</div>
             </div>
           </div>
         </div>
 
-        <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
-        <div id="check-cadence-block" class="intro-config-card" style="display:none;">
-          <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
-          <div class="intro-config-field">
-            <label for="check-cadence-select" class="intro-config-label">Cadence</label>
-            <div class="intro-config-inline">
-              <span class="intro-config-prefix">Every</span>
-              <select id="check-cadence-select" class="intro-config-select">
-                <option value="60" selected>1 hour</option>
-                <option value="120">2 hours</option>
-                <option value="240">4 hours</option>
-                <option value="360">6 hours</option>
-                <option value="720">12 hours</option>
-              </select>
+        <div class="intro-config-col" id="intro-config-col-right">
+          <!-- v2.91: Auto-accept the primary connection — locked until a URL is set -->
+          <div id="auto-accept-block" class="intro-config-card" style="display:none;">
+            <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
+            <div class="intro-config-toggle-row">
+              <span id="auto-accept-label" class="intro-config-toggle-key">Accept via my local browser</span>
+              <label class="notif-pref-toggle" id="auto-accept-toggle-wrap">
+                <input type="checkbox" id="auto-accept-toggle" disabled onchange="savePrimaryPersonFields()">
+                <span class="notif-pref-slider"></span>
+              </label>
             </div>
-            <div class="intro-config-hint">How often we check each account for new acceptances and fire the follow-up — during sending and after. The first check is always ~1 hour in; after that it follows this interval. A little later if all browsers are busy sending.</div>
+            <div id="auto-accept-gate" class="intro-config-gate">
+              🔒 Add the primary person's LinkedIn URL above to switch this on — without the URL there's nothing to accept from.
+            </div>
+            <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and your local browser accepts that one invitation automatically — no manual step before the intro.</div>
+          </div>
+
+          <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
+          <div id="check-cadence-block" class="intro-config-card" style="display:none;">
+            <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
+            <div class="intro-config-field">
+              <label for="check-cadence-select" class="intro-config-label">Cadence</label>
+              <div class="intro-config-inline">
+                <span class="intro-config-prefix">Every</span>
+                <select id="check-cadence-select" class="intro-config-select">
+                  <option value="60" selected>1 hour</option>
+                  <option value="120">2 hours</option>
+                  <option value="240">4 hours</option>
+                  <option value="360">6 hours</option>
+                  <option value="720">12 hours</option>
+                </select>
+              </div>
+              <div class="intro-config-hint">How often we check each account for new acceptances and fire the follow-up — during sending and after. The first check is always ~1 hour in; after that it follows this interval. A little later if all browsers are busy sending.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1217,6 +1222,15 @@
       <h2 data-edit="h2-intro-dm">Group Conversation Body</h2>
       <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="primary-intro-body"></div>
+    </div>
+
+    <!-- v2.91: CC+IC automated first follow-up body — sibling of the Group
+         Conversation Body. Visible only when CC+IC AND the follow-up toggle is on
+         (driven by onModeChange + toggleFollowUpFields). -->
+    <div class="section tpl-section" id="tpl-followup-section" style="display:none">
+      <h2 data-edit="h2-followup">First Follow-up Message <small>sent in the group thread, ~10 min after the intro</small></h2>
+      <textarea id="follow-up-body" rows="4" placeholder="Hi {first name}, great to be connected…" oninput="savePrimaryPersonFields()"></textarea>
+      <div class="placeholder-tags" data-target="follow-up-body"></div>
     </div>
 
     <!-- v2.62: CC+DM (connect_and_message) post-acceptance body. Plain 1:1
