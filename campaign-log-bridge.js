@@ -34,7 +34,10 @@ var TAB_NAME = 'Campaigns';
 var HEADERS = [
   'Started', 'Operator', 'Campaign Name', 'Mode', 'Profiles Used',
   'Total Leads', 'Processed', 'Errors', 'Duration', 'End Reason',
-  'Templates Used', 'Sheet URL'
+  'Templates Used', 'Sheet URL',
+  // v2.93 funnel + leaks — APPENDED (not inserted) so historical rows written
+  // with the original 12-column schema stay aligned under their headers.
+  'Requests Sent', 'Accepted', 'Intro/DM', 'Replied', 'Rate-limited', 'Parked', 'Skipped'
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -90,7 +93,15 @@ function handleAppendRun(data) {
     formatDuration(entry.durationSec || 0),
     entry.endReason || '',
     entry.templatePreview || '',
-    entry.sheetUrl || ''
+    entry.sheetUrl || '',
+    // v2.93 funnel + leaks (appended)
+    Number(entry.sent || 0),
+    Number(entry.accepted || 0),
+    Number(entry.intro || 0) + Number(entry.dm || 0),
+    Number(entry.replied || 0),
+    Number(entry.rateLimited || 0),
+    Number(entry.parked || 0),
+    Number(entry.skipped || 0)
   ];
 
   var nextRow = sheet.getLastRow() + 1;
@@ -109,28 +120,30 @@ function formatDuration(sec) {
 
 function ensureTab(ss) {
   var sheet = ss.getSheetByName(TAB_NAME);
-  if (sheet) return sheet;
-
-  // First-time setup. If the only sheet is the default 'Sheet1', rename
-  // it; otherwise insert a new one.
-  var sheets = ss.getSheets();
-  if (sheets.length === 1 && sheets[0].getName() === 'Sheet1') {
-    sheet = sheets[0];
-    sheet.setName(TAB_NAME);
-  } else {
-    sheet = ss.insertSheet(TAB_NAME);
+  if (!sheet) {
+    // First-time setup. If the only sheet is the default 'Sheet1', rename it;
+    // otherwise insert a new one.
+    var sheets = ss.getSheets();
+    if (sheets.length === 1 && sheets[0].getName() === 'Sheet1') {
+      sheet = sheets[0];
+      sheet.setName(TAB_NAME);
+    } else {
+      sheet = ss.insertSheet(TAB_NAME);
+    }
   }
 
-  sheet.getRange(1, 1, 1, HEADERS.length)
-    .setValues([HEADERS])
-    .setFontWeight('bold')
-    .setBackground('#f1f3f4');
-  sheet.setFrozenRows(1);
-
-  // Column widths matched to the central-logs sketch.
-  var widths = [120, 170, 180, 170, 200, 100, 100, 90, 100, 120, 300, 220];
-  for (var i = 0; i < widths.length; i++) {
-    sheet.setColumnWidth(i + 1, widths[i]);
+  // Idempotently (re)write the header row so an existing 12-column sheet picks
+  // up the widened v2 schema. Historical data rows keep their values (the new
+  // columns are appended, so columns 1–12 stay aligned).
+  var firstRow = sheet.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  var needsHeader = false;
+  for (var h = 0; h < HEADERS.length; h++) { if (firstRow[h] !== HEADERS[h]) { needsHeader = true; break; } }
+  if (needsHeader) {
+    sheet.getRange(1, 1, 1, HEADERS.length)
+      .setValues([HEADERS]).setFontWeight('bold').setBackground('#f1f3f4');
+    sheet.setFrozenRows(1);
+    var widths = [120, 170, 180, 150, 200, 90, 90, 80, 100, 120, 280, 200, 100, 80, 80, 70, 90, 70, 70];
+    for (var i = 0; i < widths.length; i++) sheet.setColumnWidth(i + 1, widths[i]);
   }
   return sheet;
 }
