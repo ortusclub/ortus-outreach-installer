@@ -20,6 +20,8 @@
 
 import { sendIntroMessage, sendIntroViaCleanCompose } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
+import { extractSheetId } from '../utils.js';
+import { buildFollowUpTask, enqueuePrimaryTask } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
@@ -38,6 +40,36 @@ export function _decideIntroPath({ hasConnectionNote, leadFullName }) {
 // thread for this lead+primary already exists → already introduced.
 export function _groupHasHistory(eventCount) {
   return Number(eventCount) > 0;
+}
+
+/**
+ * v2.91: build the follow-up task for one freshly-sent intro, or null when the
+ * follow-up is disabled / has no body. Pure — the enqueue side-effect happens
+ * at the call site. sender 'campaign-account' is resolved to this profileId so
+ * the runner opens the right browser.
+ */
+export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, sheetUrl, leadName, url, threadUrl, now }) {
+  if (!tpl || !tpl.followUpEnabled) return null;
+  const rawBody = (tpl.followUpBody || '').trim();
+  if (!rawBody) return null;
+  const body = personalizeTemplate(rawBody, introData);
+  const sender = tpl.followUpSender === 'campaign-account' ? profileId : 'local-browser';
+  return buildFollowUpTask({
+    campaignProfileId: profileId,
+    campaignProfileName: profileName,
+    sheetId: extractSheetId(sheetUrl) || '',
+    sheetUrl,
+    sender,
+    threadUrl,
+    introTitle: tpl.introTitle || '',
+    leadName,
+    leadUrl: url,
+    primaryName: tpl.primaryName || '',
+    primaryUrl: tpl.primaryUrl || '',
+    body,
+    delayMinutes: tpl.followUpDelayMinutes,
+    now: Number.isFinite(now) ? now : Date.now(),
+  });
 }
 
 function _formatLocalDate(d) {
@@ -508,6 +540,23 @@ export async function runAutoIntros({
       try { campaign.introducedInRun?.add(url); } catch { /* */ }
       result.sent++;
       log(`  🤝 [${profileName}] ${url}: Introduction Made`);
+      // v2.91: queue the automated first follow-up. page is still on the group
+      // thread here (compose redirected to /messaging/thread/...), so capture it.
+      try {
+        let _threadUrl = '';
+        try { _threadUrl = page.url(); } catch { /* */ }
+        const _fu = maybeBuildFollowUp({
+          tpl, introData, profileId, profileName, sheetUrl,
+          leadName: `${leadFirstName} ${leadLastName}`.trim() || url,
+          url, threadUrl: _threadUrl,
+        });
+        if (_fu) {
+          const stored = await enqueuePrimaryTask(_fu);
+          if (stored) log(`  ⏳ [${profileName}] ${url}: Follow-up queued · due ${new Date(stored.dueAt).toLocaleTimeString()} · from ${_fu.sender === 'local-browser' ? 'you' : profileName}`);
+        }
+      } catch (e) {
+        log(`  ⚠ [${profileName}] Follow-up queue warning: ${e.message}`);
+      }
     } else if (alreadyMade) {
       // Counted as a sent (the intro is effectively done — there's an
       // active thread) so result.sent reflects real coverage rather than
