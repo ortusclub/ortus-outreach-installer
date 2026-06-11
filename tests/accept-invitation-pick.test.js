@@ -33,3 +33,21 @@ test('pickInvitation prefers an exact profileUrl corroboration when present', ()
 test('pickInvitation accepts nothing on empty candidates', () => {
   assert.equal(pickInvitation([], { name: 'X' }).index, null);
 });
+
+test('SAFETY: a short-token name overlap must NOT accept a stranger', () => {
+  // "Al Smith" tokens both prefix "Alice Smith-Jones" — the old token-prefix
+  // tier would have falsely accepted. Exact-only must reject.
+  const r = pickInvitation([{ name: 'Alice Smith-Jones', profileUrl: '' }], { name: 'Al Smith', profileUrl: '' });
+  assert.equal(r.index, null);
+});
+
+test('SAFETY: a non-exact name with no URL is rejected', () => {
+  const r = pickInvitation([{ name: 'Patrick Smith Jr', profileUrl: '' }], { name: 'Patrick Smith', profileUrl: '' });
+  assert.equal(r.index, null);
+});
+
+test('reason is exact-name when matched purely by name', () => {
+  const r = pickInvitation([{ name: 'Patrick Smith', profileUrl: '' }], { name: 'Patrick Smith', profileUrl: '' });
+  assert.equal(r.index, 0);
+  assert.equal(r.reason, 'exact-name');
+});
