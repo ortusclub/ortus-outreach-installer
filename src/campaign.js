@@ -34,6 +34,8 @@ import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { checkAndConnectPrimary } from './linkedin/primary-connection.js';
+import { readSelfIdentity } from './linkedin/accept-invitation.js';
+import { buildAcceptTask, enqueuePrimaryTask } from './primary-tasks.js';
 import { clampCadenceMinutes } from '../public/js/campaign-modes.mjs';
 import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep, removeSchedulesForSheet as removeBulkSchedules } from './post-campaign-bulk-check.js';
@@ -2415,6 +2417,26 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   log, pName, attemptConnect: (_prev === undefined || _prev === 'no_url'),
                 });
                 campaign._primaryConn.set(profileId, _res.connected ? 'connected' : 'pending');
+                // v2.91: if we just sent a connect to the primary AND auto-accept
+                // is enabled, capture this account's own identity and queue the
+                // local browser to accept its invitation in the next idle gap.
+                if (tpl && tpl.autoAcceptPrimary && _res.connectAttempted && _res.connectResult === 'sent') {
+                  try {
+                    const _self = await readSelfIdentity(page);
+                    const _task = buildAcceptTask({
+                      campaignProfileId: profileId,
+                      campaignProfileName: pName,
+                      sheetId: _extractSheetIdFromUrl(sheetUrl) || '',
+                      sheetUrl,
+                      account: _self,
+                      primaryUrl: _primaryUrl,
+                    });
+                    const _stored = await enqueuePrimaryTask(_task);
+                    if (_stored) log(`  ⏳ [${pName}] Auto-accept queued — your local browser will accept this account's invite at the next idle moment.`);
+                  } catch (e) {
+                    log(`  ⚠ [${pName}] Auto-accept queue warning: ${e.message}`);
+                  }
+                }
               } catch (e) {
                 log(`  ⚠ [${pName}] Primary check error: ${e.message}`);
               }
