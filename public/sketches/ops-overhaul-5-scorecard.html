@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Campaign Activity — run scorecards</title>
+<style>
+  :root{
+    --ink:#181818; --muted:#6f6f6f; --faint:#a3a3a3; --line:#e4e2dd; --line2:#d2cfc7;
+    --paper:#f3f2ef; --card:#ffffff; --gold:#b8902e;
+    --ok:#2f7d4f; --amber:#cf9a26; --red:#c4474e; --slate:#5b7a90;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;padding:30px 22px 70px}
+  .page{max-width:1000px;margin:0 auto}
+  .ptitle{font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 16px}
+
+  .card{background:var(--card);border:1px solid var(--line2);border-radius:10px;margin:0 0 20px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:17px 22px;border-bottom:1px solid var(--line)}
+  .head .name{font-size:18px;font-weight:750;letter-spacing:-.2px;margin:0 0 3px}
+  .head .meta{font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+  .mode{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;border-radius:9999px;white-space:nowrap;background:#f3f1ec;border:1px solid var(--line2);color:#4a4a4a}
+  .end{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:5px 11px;border-radius:9999px}
+  .end.ok{background:#e7f4ec;color:var(--ok)}
+  .end.stop{background:#fdf2d4;color:#8a5a00}
+
+  .body{display:grid;grid-template-columns:1.5fr 1fr}
+  .pane{padding:20px 22px}
+  .pane.right{border-left:1px solid var(--line)}
+  .lbl{font-size:11px;font-weight:800;letter-spacing:.10em;text-transform:uppercase;color:var(--faint);margin:0 0 14px}
+
+  /* funnel */
+  .funnel{display:flex;flex-direction:column;gap:9px}
+  .frow{display:grid;grid-template-columns:96px 1fr 78px;align-items:center;gap:12px}
+  .frow .fl{font-size:12.5px;font-weight:600}
+  .ftrack{height:28px;background:#f0eee8;border-radius:4px;overflow:hidden}
+  .fbar{height:100%;display:flex;align-items:center;padding-left:11px;color:#fff;font-size:12.5px;font-weight:750;border-radius:4px;min-width:24px}
+  .s1{background:#2a2a2a}.s2{background:#456f88}.s3{background:#3a8159}.s4{background:#2f7d4f}.s5{background:var(--gold)}
+  .frow .pct{text-align:right;font-size:12px;color:var(--muted);font-family:var(--mono)}
+  .frow .pct b{color:var(--ink)}
+
+  /* leak */
+  .leakhero{display:flex;align-items:flex-end;gap:10px;margin-bottom:16px}
+  .leakhero .n{font-size:38px;font-weight:800;line-height:.85;color:var(--red)}
+  .leakhero .t{font-size:12px;color:var(--muted);padding-bottom:3px}
+  .leaks{display:flex;flex-direction:column;gap:11px}
+  .leak .top{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;margin-bottom:4px}
+  .leak .top .ct{font-weight:750;font-family:var(--mono)}
+  .leak .nm{display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:2px;flex:none}
+  .bar{height:6px;background:#f0eee8;border-radius:9999px;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:9999px}
+
+  /* account health */
+  .accts{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+  .acct{display:flex;align-items:center;gap:8px;border:1px solid var(--line2);border-radius:9999px;padding:5px 13px 5px 9px;font-size:12px;background:#fcfcfb}
+  .acct .d{width:8px;height:8px;border-radius:9999px;flex:none}
+  .acct .nm{font-family:var(--mono)}
+  .acct .x{color:var(--muted)}
+  .acct.ok .d{background:var(--ok)}
+  .acct.warn{border-color:#e7cd92;background:#fdf8ec}.acct.warn .d{background:var(--amber)}
+  .acct.park{border-color:#e3a8ac;background:#fcefef}.acct.park .d{background:var(--red)}
+
+  .clean{padding:30px 22px;color:var(--muted);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="ptitle">Campaign Activity</p>
+
+  <!-- RUN 1 — CC -->
+  <div class="card">
+    <div class="head">
+      <div>
+        <p class="name">NICE_SYD1 · CC batch 2</p>
+        <p class="meta">joshua · 4 accounts · Jun 10, 03:20 → 16:17 · 12h 57m</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="mode">connect only</span>
+        <span class="end ok">completed</span>
+      </div>
+    </div>
+    <div class="body">
+      <div class="pane">
+        <p class="lbl">Funnel</p>
+        <div class="funnel">
+          <div class="frow"><span class="fl">Leads</span><div class="ftrack"><div class="fbar s1" style="width:100%">871</div></div><span class="pct"><b>100%</b></span></div>
+          <div class="frow"><span class="fl">Requests</span><div class="ftrack"><div class="fbar s2" style="width:24%">212</div></div><span class="pct"><b>24%</b></span></div>
+          <div class="frow"><span class="fl">Accepted</span><div class="ftrack"><div class="fbar s3" style="width:9%">78</div></div><span class="pct"><b>37%</b></span></div>
+          <div class="frow"><span class="fl">Replied</span><div class="ftrack"><div class="fbar s5" style="width:3.5%">12</div></div><span class="pct"><b>15%</b></span></div>
+        </div>
+      </div>
+      <div class="pane right">
+        <p class="lbl">Where it leaked</p>
+        <div class="leakhero"><span class="n">659</span><span class="t">leads never<br>got a request</span></div>
+        <div class="leaks">
+          <div class="leak"><div class="top"><span class="nm"><span class="dot" style="background:#9a9a9a"></span>Window ended</span><span class="ct">470</span></div><div class="bar"><i style="width:71%;background:#9a9a9a"></i></div></div>
+          <div class="leak"><div class="top"><span class="nm"><span class="dot" style="background:var(--amber)"></span>Rate-limited (429)</span><span class="ct">96</span></div><div class="bar"><i style="width:15%;background:var(--amber)"></i></div></div>
+          <div class="leak"><div class="top"><span class="nm"><span class="dot" style="background:var(--red)"></span>Account parked</span><span class="ct">40</span></div><div class="bar"><i style="width:6%;background:var(--red)"></i></div></div>
+          <div class="leak"><div class="top"><span class="nm"><span class="dot" style="background:var(--slate)"></span>Bad / legacy URL</span><span class="ct">22</span></div><div class="bar"><i style="width:4%;background:var(--slate)"></i></div></div>
+          <div class="leak"><div class="top"><span class="nm"><span class="dot" style="background:var(--amber)"></span>Session expired</span><span class="ct">18</span></div><div class="bar"><i style="width:3%;background:var(--amber)"></i></div></div>
+          <div class="leak"><div class="top"><span class="nm"><span class="dot" style="background:var(--red)"></span>Errors</span><span class="ct">11</span></div><div class="bar"><i style="width:2%;background:var(--red)"></i></div></div>
+        </div>
+        <p class="lbl" style="margin:22px 0 12px">Accounts</p>
+        <div class="accts">
+          <span class="acct ok"><span class="d"></span><span class="nm">wenelynn</span><span class="x">58</span></span>
+          <span class="acct ok"><span class="d"></span><span class="nm">sandyc</span><span class="x">61</span></span>
+          <span class="acct warn"><span class="d"></span><span class="nm">pratik.pat</span><span class="x">1× 429</span></span>
+          <span class="acct park"><span class="d"></span><span class="nm">tau</span><span class="x">parked</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RUN 2 — CC+IC -->
+  <div class="card">
+    <div class="head">
+      <div>
+        <p class="name">JFROG_SIN · CC3 › IC</p>
+        <p class="meta">jeremiah · 1 account · Jun 10, 06:03 → 09:42 · 3h 39m</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="mode">connect + introduce</span>
+        <span class="end ok">completed</span>
+      </div>
+    </div>
+    <div class="body">
+      <div class="pane">
+        <p class="lbl">Funnel</p>
+        <div class="funnel">
+          <div class="frow"><span class="fl">Leads</span><div class="ftrack"><div class="fbar s1" style="width:100%">14</div></div><span class="pct"><b>100%</b></span></div>
+          <div class="frow"><span class="fl">Requests</span><div class="ftrack"><div class="fbar s2" style="width:93%">13</div></div><span class="pct"><b>93%</b></span></div>
+          <div class="frow"><span class="fl">Accepted</span><div class="ftrack"><div class="fbar s3" style="width:64%">9</div></div><span class="pct"><b>69%</b></span></div>
+          <div class="frow"><span class="fl">Intro made</span><div class="ftrack"><div class="fbar s4" style="width:50%">7</div></div><span class="pct"><b>78%</b></span></div>
+          <div class="frow"><span class="fl">Replied</span><div class="ftrack"><div class="fbar s5" style="width:14%">2</div></div><span class="pct"><b>29%</b></span></div>
+        </div>
+      </div>
+      <div class="pane right">
+        <p class="lbl">Where it leaked</p>
+        <div class="leakhero"><span class="n">1</span><span class="t">lead never<br>got a request</span></div>
+        <div class="leaks">
+          <div class="leak"><div class="top"><span class="nm"><span class="dot" style="background:var(--slate)"></span>Bad / legacy URL</span><span class="ct">1</span></div><div class="bar"><i style="width:100%;background:var(--slate)"></i></div></div>
+        </div>
+        <p class="lbl" style="margin:22px 0 12px">Accounts</p>
+        <div class="accts">
+          <span class="acct ok"><span class="d"></span><span class="nm">jeremiah</span><span class="x">13</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

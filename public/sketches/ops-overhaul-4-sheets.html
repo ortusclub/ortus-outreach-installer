@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Redesigned sheets</title>
+<style>
+  :root{
+    --grid:#e3e3e0; --hdr:#f8f9fa; --hdrtx:#5f6368; --sel:#1a73e8;
+    --txt:#202124; --tabbar:#f1f3f4; --green:#188038;
+    --c-conn:#d4edda; --c-sent:#e6f4ea; --c-pend:#fef7d6; --c-rate:#fce8cd; --c-err:#fad4d6; --c-grey:#ececed;
+    --mono:"Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:"Google Sans",Roboto,-apple-system,Segoe UI,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#dadce0;font-family:var(--sans);color:var(--txt);padding:26px 18px 70px}
+  .win{max-width:1080px;margin:0 auto 30px;background:#fff;border:1px solid #c4c7c9;border-radius:8px 8px 0 0;box-shadow:0 1px 3px rgba(0,0,0,.12);overflow:hidden}
+  .titlebar{display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid #e8eaed}
+  .titlebar .ic{width:17px;height:17px;background:var(--green);border-radius:3px;position:relative;flex:none}
+  .titlebar .ic:after{content:"";position:absolute;inset:4px 5px;border-left:2px solid #fff;border-bottom:0;box-shadow:3px 0 0 -1px #fff inset}
+  .titlebar .fn{font-size:14px;font-weight:600}
+  .titlebar .fn small{font-weight:400;color:#80868b}
+  .gridscroll{overflow-x:auto}
+  table.g{border-collapse:collapse;font-size:12px;table-layout:fixed;white-space:nowrap}
+  table.g td,table.g th{border:1px solid var(--grid);padding:0}
+  /* column-letter header row */
+  .colhdr td{background:var(--hdr);color:var(--hdrtx);text-align:center;height:21px;font-size:10.5px;font-weight:500;border-color:#dadce0}
+  .corner{width:34px;min-width:34px}
+  /* row-number gutter */
+  .rn{width:34px;min-width:34px;background:var(--hdr);color:var(--hdrtx);text-align:center;font-size:10.5px}
+  /* header (frozen) row */
+  .hrow td{background:#f1f3f4;font-weight:700;font-size:11.5px;color:#3c4043;padding:6px 8px;border-bottom:2px solid #c4c7c9}
+  /* data cells */
+  .g td.c{padding:5px 8px;font-size:12px;background:#fff;overflow:hidden;text-overflow:ellipsis}
+  .g td.c.m{color:#80868b;font-family:var(--mono);font-size:11px}
+  .g td.c.num{text-align:right;font-variant-numeric:tabular-nums}
+  .conn{background:var(--c-conn)!important}
+  .sent{background:var(--c-sent)!important}
+  .pend{background:var(--c-pend)!important}
+  .rate{background:var(--c-rate)!important}
+  .err{background:var(--c-err)!important}
+  .grey{background:var(--c-grey)!important;color:#5f6368}
+  .b{font-weight:600}
+  /* bottom tab strip */
+  .tabs{display:flex;align-items:center;gap:0;background:var(--tabbar);border-top:1px solid #c4c7c9;padding:0 8px;height:38px;overflow-x:auto}
+  .tabs .plus{color:#5f6368;font-size:19px;padding:0 12px}
+  .tab{font-size:12.5px;color:#5f6368;padding:0 16px;height:38px;display:flex;align-items:center;border-right:1px solid #e0e0e0;white-space:nowrap}
+  .tab.active{background:#fff;color:#188038;font-weight:600;border-top:3px solid #188038;height:38px}
+  h0{display:block;max-width:1080px;margin:0 auto 8px;font-size:12px;color:#5f6368;letter-spacing:.04em;text-transform:uppercase;font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- ===================== CAMPAIGN ACTIVITY ===================== -->
+<div class="win">
+  <div class="titlebar"><span class="ic"></span><span class="fn">CAMPAIGN ACTIVITY — ORTUS OUTREACH <small>· Google Sheets</small></span></div>
+  <div class="gridscroll">
+    <table class="g">
+      <tr class="colhdr">
+        <td class="corner"></td>
+        <td style="width:78px">A</td><td style="width:120px">B</td><td style="width:150px">C</td><td style="width:54px">D</td><td style="width:48px">E</td>
+        <td style="width:54px">F</td><td style="width:50px">G</td><td style="width:66px">H</td><td style="width:62px">I</td><td style="width:60px">J</td>
+        <td style="width:78px">K</td><td style="width:60px">L</td><td style="width:60px">M</td><td style="width:52px">N</td><td style="width:62px">O</td><td style="width:74px">P</td>
+      </tr>
+      <tr class="hrow">
+        <td class="rn">1</td>
+        <td>Started</td><td>Operator</td><td>Campaign</td><td>Mode</td><td>Accts</td>
+        <td>Leads</td><td>Sent</td><td>Accepted</td><td>Intro/DM</td><td>Replied</td>
+        <td>Rate-ltd</td><td>Parked</td><td>Skipped</td><td>Errors</td><td>Duration</td><td>End</td>
+      </tr>
+      <tr>
+        <td class="rn">2</td>
+        <td class="c m">Jun 10 03:20</td><td class="c">joshua</td><td class="c">NICE_SYD1 CC b2</td><td class="c">cc</td><td class="c num">4</td>
+        <td class="c num">871</td><td class="c num">212</td><td class="c num conn">78</td><td class="c num grey">—</td><td class="c num">12</td>
+        <td class="c num rate">96</td><td class="c num err">1</td><td class="c num">552</td><td class="c num err">11</td><td class="c m">12h57m</td><td class="c conn">completed</td>
+      </tr>
+      <tr>
+        <td class="rn">3</td>
+        <td class="c m">Jun 10 06:03</td><td class="c">jeremiah</td><td class="c">JFROG_SIN CC3&gt;IC</td><td class="c">cc+ic</td><td class="c num">1</td>
+        <td class="c num">14</td><td class="c num">13</td><td class="c num conn">9</td><td class="c num conn">7</td><td class="c num">2</td>
+        <td class="c num">0</td><td class="c num">0</td><td class="c num">1</td><td class="c num">0</td><td class="c m">3h39m</td><td class="c conn">completed</td>
+      </tr>
+      <tr>
+        <td class="rn">4</td>
+        <td class="c m">Jun 10 06:16</td><td class="c">jhan</td><td class="c">AUD_GUES_JKT3 CCI</td><td class="c">cc+ic</td><td class="c num">1</td>
+        <td class="c num">9</td><td class="c num">7</td><td class="c num conn">5</td><td class="c num conn">4</td><td class="c num">1</td>
+        <td class="c num">0</td><td class="c num">0</td><td class="c num">2</td><td class="c num err">1</td><td class="c m">2h18m</td><td class="c conn">completed</td>
+      </tr>
+      <tr>
+        <td class="rn">5</td>
+        <td class="c m">Jun 11 14:52</td><td class="c">antonio</td><td class="c">CC+IC test</td><td class="c">cc+ic</td><td class="c num">1</td>
+        <td class="c num">65</td><td class="c num">1</td><td class="c num conn">1</td><td class="c num conn">1</td><td class="c num grey">—</td>
+        <td class="c num">0</td><td class="c num">0</td><td class="c num">0</td><td class="c num">0</td><td class="c m">3m</td><td class="c pend">stopped</td>
+      </tr>
+      <tr>
+        <td class="rn">6</td>
+        <td class="c m">Jun 11 15:08</td><td class="c">reign.maitim</td><td class="c">SFLK_SIN5 IC</td><td class="c">introduce_back</td><td class="c num">1</td>
+        <td class="c num">13</td><td class="c num grey">—</td><td class="c num conn">10</td><td class="c num conn">10</td><td class="c num">3</td>
+        <td class="c num">0</td><td class="c num">0</td><td class="c num">3</td><td class="c num">0</td><td class="c m">2h33m</td><td class="c conn">completed</td>
+      </tr>
+    </table>
+  </div>
+  <div class="tabs"><span class="plus">+</span><span class="tab active">Campaigns</span></div>
+</div>
+
+<!-- ===================== OPS & LOGS — EVENTS ===================== -->
+<div class="win">
+  <div class="titlebar"><span class="ic"></span><span class="fn">OPS &amp; LOGS — ORTUS OUTREACH <small>· Google Sheets</small></span></div>
+  <div class="gridscroll">
+    <table class="g">
+      <tr class="colhdr">
+        <td class="corner"></td>
+        <td style="width:96px">A</td><td style="width:96px">B</td><td style="width:130px">C</td><td style="width:120px">D</td><td style="width:78px">E</td>
+        <td style="width:118px">F</td><td style="width:250px">G</td><td style="width:130px">H</td>
+      </tr>
+      <tr class="hrow">
+        <td class="rn">1</td>
+        <td>Timestamp</td><td>Operator</td><td>Ortus Account</td><td>Campaign</td><td>Phase</td><td>Outcome</td><td>Reason</td><td>Lead</td>
+      </tr>
+      <tr><td class="rn">2</td><td class="c m">06:35:15</td><td class="c">joshua</td><td class="c">wenelynn</td><td class="c">NICE_SYD1</td><td class="c">Request</td><td class="c sent b">✓ Sent</td><td class="c"></td><td class="c m">/in/derek-tan</td></tr>
+      <tr><td class="rn">3</td><td class="c m">06:35:48</td><td class="c">joshua</td><td class="c">pratik.pat</td><td class="c">NICE_SYD1</td><td class="c">Request</td><td class="c rate b">⚠ Rate-limited</td><td class="c rate">HTTP 429 — confirming</td><td class="c m">/in/aruna-k</td></tr>
+      <tr><td class="rn">4</td><td class="c m">06:36:04</td><td class="c">joshua</td><td class="c">tau</td><td class="c">NICE_SYD1</td><td class="c">Account</td><td class="c err b">⛔ Parked</td><td class="c err">2× 429 — weekly limit</td><td class="c m grey">—</td></tr>
+      <tr><td class="rn">5</td><td class="c m">15:18:27</td><td class="c">antonio</td><td class="c">tony.otto</td><td class="c">CC+IC test</td><td class="c">Intro</td><td class="c conn b">✓ Made</td><td class="c"></td><td class="c m">/in/kyra-dela…</td></tr>
+      <tr><td class="rn">6</td><td class="c m">17:19:02</td><td class="c b">maria</td><td class="c">Kyra Dela Cruz</td><td class="c">Mercer event</td><td class="c">DM</td><td class="c sent b">✓ Sent</td><td class="c"></td><td class="c m">/in/colleen-r</td></tr>
+      <tr><td class="rn">7</td><td class="c m">17:24:31</td><td class="c">antonio</td><td class="c">tony.otto</td><td class="c">CC+IC test</td><td class="c">Follow-up</td><td class="c sent b">✓ Sent</td><td class="c"></td><td class="c m">/in/kyra-dela…</td></tr>
+      <tr><td class="rn">8</td><td class="c m">17:41:10</td><td class="c">jeremiah</td><td class="c">jeremiah</td><td class="c">JFROG_SIN</td><td class="c">Connect</td><td class="c pend b">⤫ Skipped</td><td class="c pend">Connect modal opened for wrong person</td><td class="c m">/in/sam-lee</td></tr>
+      <tr><td class="rn">9</td><td class="c m">17:52:39</td><td class="c">jhan</td><td class="c">jhan</td><td class="c">AUD_JKT3</td><td class="c">Connect</td><td class="c pend b">⤫ Skipped</td><td class="c pend">Session expired</td><td class="c m">/in/budi-s</td></tr>
+      <tr><td class="rn">10</td><td class="c m">18:02:55</td><td class="c">jhan</td><td class="c">jhan</td><td class="c">AUD_JKT3</td><td class="c">Intro</td><td class="c err b">✕ Error</td><td class="c err">Failed — Primary not in your connections</td><td class="c m">/in/lev-m</td></tr>
+      <tr><td class="rn">11</td><td class="c m">18:14:20</td><td class="c">reign.maitim</td><td class="c">reign</td><td class="c">SFLK_SIN5</td><td class="c">DM</td><td class="c pend b">⤫ Skipped</td><td class="c pend">InMail credits exhausted</td><td class="c m">/in/nadia-p</td></tr>
+    </table>
+  </div>
+  <div class="tabs"><span class="plus">+</span>
+    <span class="tab active">Events</span>
+    <span class="tab">Attribution</span>
+    <span class="tab">Where it's leaking</span>
+    <span class="tab">Account health</span>
+  </div>
+</div>
+
+<!-- ===================== OPS & LOGS — ATTRIBUTION ===================== -->
+<div class="win">
+  <div class="titlebar"><span class="ic"></span><span class="fn">OPS &amp; LOGS — ORTUS OUTREACH <small>· Google Sheets</small></span></div>
+  <div class="gridscroll">
+    <table class="g">
+      <tr class="colhdr">
+        <td class="corner"></td>
+        <td style="width:160px">A</td><td style="width:120px">B</td><td style="width:70px">C</td><td style="width:70px">D</td><td style="width:64px">E</td><td style="width:110px">F</td>
+      </tr>
+      <tr class="hrow">
+        <td class="rn">1</td>
+        <td>Ortus Account</td><td>Operator</td><td>Sent</td><td>Errors</td><td>State</td><td>Last activity</td>
+      </tr>
+      <tr><td class="rn">2</td><td class="c">Kyra Dela Cruz</td><td class="c b">maria</td><td class="c num">14</td><td class="c num">0</td><td class="c sent">active</td><td class="c m">Jun 11 17:19</td></tr>
+      <tr><td class="rn">3</td><td class="c">tony.otto</td><td class="c">antonio</td><td class="c num">3</td><td class="c num">0</td><td class="c sent">active</td><td class="c m">Jun 11 17:24</td></tr>
+      <tr><td class="rn">4</td><td class="c">wenelynn</td><td class="c">joshua</td><td class="c num">58</td><td class="c num">0</td><td class="c conn">healthy</td><td class="c m">Jun 10 06:35</td></tr>
+      <tr><td class="rn">5</td><td class="c">pratik.pat</td><td class="c">joshua</td><td class="c num">44</td><td class="c num">0</td><td class="c pend">warned</td><td class="c m">Jun 10 06:35</td></tr>
+      <tr><td class="rn">6</td><td class="c">tau</td><td class="c">joshua</td><td class="c num">31</td><td class="c num">0</td><td class="c err">parked</td><td class="c m">Jun 10 06:36</td></tr>
+      <tr><td class="rn">7</td><td class="c">jhan</td><td class="c">jhan</td><td class="c num">7</td><td class="c num">1</td><td class="c sent">active</td><td class="c m">Jun 11 18:02</td></tr>
+    </table>
+  </div>
+  <div class="tabs"><span class="plus">+</span>
+    <span class="tab">Events</span>
+    <span class="tab active">Attribution</span>
+    <span class="tab">Where it's leaking</span>
+    <span class="tab">Account health</span>
+  </div>
+</div>
+
+</body>
+</html>

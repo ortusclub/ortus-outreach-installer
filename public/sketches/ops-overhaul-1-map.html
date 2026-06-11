@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Activity → Sheets · what everyone does &amp; where it lands</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#6b6b6b; --line:#d0d0d0; --paper:#f4f3f0; --card:#ffffff;
+    --head:#f1f3f4; --gold:#b8902e; --ok:#2f7d4f; --warn:#8a5a00; --warnbg:#fff4d6;
+    --err:#a1252b; --errbg:#fce4e4; --green:#e6f4ea; --blue:#e8f0fe;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 28px 80px}
+  h1{font-size:23px;font-weight:700;letter-spacing:-.2px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:13.5px}
+  h2{font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.10em;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:13.5px;font-weight:700;margin:0 0 8px}
+  .nav a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--gold);padding-bottom:1px}
+  /* status strip */
+  .strip{display:flex;gap:0;border:1px solid var(--line);background:var(--card);margin:0 0 6px}
+  .strip>div{flex:1;padding:12px 14px;border-right:1px solid var(--line)}
+  .strip>div:last-child{border-right:0}
+  .pill{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:9999px;text-transform:uppercase}
+  .pill.ok{background:var(--green);color:var(--ok)}
+  .pill.bad{background:var(--errbg);color:var(--err)}
+  .strip .name{font-weight:700;margin:6px 0 2px}
+  .strip .meta{color:var(--muted);font-size:12px;font-family:var(--mono)}
+  /* sheet cards */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .card{background:var(--card);border:1px solid var(--line)}
+  .card .top{padding:11px 13px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .card .top .t{font-weight:700;font-size:13px}
+  .card .body{padding:11px 13px}
+  .card .body p{margin:0 0 8px;color:var(--muted);font-size:12.5px}
+  /* realistic mini-sheet */
+  table.sheet{border-collapse:collapse;width:100%;font-size:11.5px;font-family:var(--mono)}
+  table.sheet th{background:var(--head);border:1px solid var(--line);padding:4px 6px;text-align:left;font-weight:700;white-space:nowrap}
+  table.sheet td{border:1px solid var(--line);padding:4px 6px;white-space:nowrap;background:#fff}
+  table.sheet td.muted{color:var(--muted)}
+  .v-conn{background:#fff7e6}     /* pending-ish */
+  .v-sent{background:var(--blue)}
+  .v-made{background:var(--green);color:var(--ok);font-weight:700}
+  .v-warn{background:var(--warnbg);color:var(--warn);font-weight:700}
+  .v-err{background:var(--errbg);color:var(--err);font-weight:700}
+  .scroll{overflow-x:auto;border:1px solid var(--line)}
+  /* matrix */
+  table.mx{border-collapse:collapse;width:100%;background:var(--card)}
+  table.mx th,table.mx td{border:1px solid var(--line);padding:9px 11px;vertical-align:top;font-size:12.5px}
+  table.mx thead th{background:#23231f;color:#fff;text-align:left;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase}
+  table.mx thead th.broken{background:#5a1f22}
+  table.mx td .act{font-weight:700;font-size:12.5px}
+  table.mx td.actcol{background:#faf9f6;width:210px}
+  table.mx code{font-family:var(--mono);font-size:11.5px;background:#f2f2ee;padding:1px 4px;border-radius:3px}
+  table.mx td.none{color:#b3b3b3;text-align:center}
+  .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:9999px;background:#eee;color:#555;margin-left:6px;vertical-align:middle}
+  .tag.new{background:var(--gold);color:#fff}
+  .note{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--gold);padding:13px 15px;margin:14px 0;font-size:13px}
+  .note b{color:var(--ink)}
+  .gap{background:#fff;border:1px solid var(--err);border-left:3px solid var(--err);padding:13px 15px;margin:14px 0}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .legend span{font-size:11.5px;padding:3px 9px;border:1px solid var(--line);font-family:var(--mono)}
+  .footlink{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>What everyone does &amp; where it lands</h1>
+  <p class="sub">Ortus Outreach → the three central Google Sheets. Every field below is real (read from <code>google-apps-script.js</code>, <code>ops-log-bridge.js</code>, <code>campaign-log-bridge.js</code>, <code>log-writer.js</code>). · Sketch 1 of 2 — <span class="nav"><a href="ops-overhaul-2-fix.html">go to the fix →</a></span></p>
+
+  <!-- live status -->
+  <div class="strip">
+    <div>
+      <span class="pill ok">live</span>
+      <div class="name">Leads Tracker</div>
+      <div class="meta">per campaign sheet · "Ortus LinkedIn Tracker"</div>
+    </div>
+    <div>
+      <span class="pill bad">frozen 33h</span>
+      <div class="name">Operations Log</div>
+      <div class="meta">last row 2026-06-10 06:36Z · "OPS AND LOGS …"</div>
+    </div>
+    <div>
+      <span class="pill ok">live</span>
+      <div class="name">Campaign Activity</div>
+      <div class="meta">last row 2026-06-11 15:08Z · "CAMPAIGN ACTIVITY …"</div>
+    </div>
+  </div>
+  <p class="sub" style="margin-top:8px">The <b>Operations Log</b> is the per-event attribution trail (who did what, from which account). It stopped writing on June 10 — which is why the Kyra→"Colleen" message can't be traced.</p>
+
+  <!-- the three sheets -->
+  <h2>The three central sheets</h2>
+  <div class="cards">
+
+    <div class="card">
+      <div class="top"><span class="t">① Leads Tracker</span><span class="pill ok">live</span></div>
+      <div class="body">
+        <p>One row per lead, per campaign. The bot stamps status columns as it works the row. Lives in each campaign's own Google Sheet.</p>
+        <div class="scroll"><table class="sheet">
+          <tr><th>Lead</th><th>Conn. Request</th><th>Conn. Accepted</th><th>Intro / DM</th><th>Reply</th></tr>
+          <tr><td>Pinky Salaria</td><td class="v-conn">Connection Request Sent</td><td class="v-made">Connected</td><td class="v-made">Introduction Made</td><td class="muted">—</td></tr>
+          <tr><td>Kyra De la Cruz</td><td class="v-conn">Connection Request Sent</td><td class="v-made">Connected</td><td class="v-made">Introduction Made</td><td class="muted">—</td></tr>
+        </table></div>
+        <p style="margin-top:8px">Columns vary by mode: <code>Connection Request Status</code>, <code>Connection Accepted Status</code>, <code>DM Status</code>, <code>Intro Status</code>, <code>Introduction Status</code>, <code>Reply / Reply At / Reply Preview</code>. Aux tabs: <code>Audit</code>, <code>Recent Connections</code>, <code>Recent Messages</code>, <code>SoO</code>.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="t">② Operations Log</span><span class="pill bad">frozen</span></div>
+      <div class="body">
+        <p>One row per <b>event</b> — the attribution trail. Carries <b>Operator</b> + <b>Ortus Account</b> on every row. Today: one tab per campaign + an Index.</p>
+        <div class="scroll"><table class="sheet">
+          <tr><th>Timestamp</th><th>Operator</th><th>Sev</th><th>Ortus Account</th><th>Event</th></tr>
+          <tr><td>06:35:15Z</td><td>joshua@…</td><td>INFO</td><td>wenelynn@…</td><td>Campaign started</td></tr>
+          <tr><td class="muted" colspan="5">— nothing after 2026-06-10 06:36Z —</td></tr>
+        </table></div>
+        <p style="margin-top:8px">Row fields: <code>Timestamp, Operator, Severity, Ortus Account, Event, Lead URL, Details</code>. Events seen in code: Campaign/Monitoring started &amp; ended, Soft warning, Error, Auto-intro skipped, Intro failed, Auto-DM skipped, CC+DM auto-DM failed.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top"><span class="t">③ Campaign Activity</span><span class="pill ok">live</span></div>
+      <div class="body">
+        <p>One row per finished run. Single tab ('Campaigns'), append-only — that's why it never broke.</p>
+        <div class="scroll"><table class="sheet">
+          <tr><th>Started</th><th>Operator</th><th>Mode</th><th>Leads</th><th>Done</th><th>End</th></tr>
+          <tr><td>14:52Z</td><td>antonio@…</td><td>cc+ic</td><td>65</td><td>1</td><td>stopped</td></tr>
+          <tr><td>15:08Z</td><td>joshua@…</td><td>cc</td><td>871</td><td>212</td><td>completed</td></tr>
+        </table></div>
+        <p style="margin-top:8px">Headers: <code>Started, Operator, Campaign Name, Mode, Profiles Used, Total Leads, Processed, Errors, Duration, End Reason, Templates Used, Sheet URL</code>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- matrix -->
+  <h2>Who does what → where it lands</h2>
+  <p class="sub" style="margin-top:-4px">Each operator action, and the exact rows it writes to each sheet. The middle column — your attribution trail — is the one that's dead.</p>
+  <table class="mx">
+    <thead>
+      <tr>
+        <th class="actcol">Operator action</th>
+        <th>① Leads Tracker</th>
+        <th class="broken">② Operations Log&nbsp;·&nbsp;FROZEN</th>
+        <th>③ Campaign Activity</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="actcol"><span class="act">Start a campaign</span><br><span class="muted">CC · CC+IC · CC+DM · IC · monitoring</span></td>
+        <td class="none">—</td>
+        <td><code>Campaign started</code> / <code>Monitoring started</code><br><span class="muted">INFO · Operator + Account</span></td>
+        <td class="none">— <span class="muted">(row written at end)</span></td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Send connection request</span></td>
+        <td><code>Connection Request Status</code> → "Connection Request Sent"</td>
+        <td><span class="muted">errors only:</span> <code>Error</code> (WARN/ERROR)</td>
+        <td class="none">—</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Detect acceptance</span><br><span class="muted">bulk-check / monitoring sweep</span></td>
+        <td><code>Connection Accepted Status</code> → "Connected" · writes <code>Recent Connections</code></td>
+        <td class="none">—</td>
+        <td class="none">—</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Send 3-way intro</span> <span class="muted">(CC+IC)</span></td>
+        <td><code>Introduction Status</code> → "Introduction Made"</td>
+        <td><span class="muted">on failure:</span> <code>Auto-intro skipped</code> (WARN) · <code>Intro failed</code> (ERROR)</td>
+        <td class="none">—</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Send auto-DM</span> <span class="muted">(CC+DM)</span></td>
+        <td><code>DM Status</code> → "DM Sent"</td>
+        <td><span class="muted">on failure:</span> <code>Auto-DM skipped</code> (WARN) · <code>CC+DM auto-DM failed</code> (ERROR)</td>
+        <td class="none">—</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Detect a reply</span></td>
+        <td><code>Reply / Reply At / Reply Preview</code> · writes <code>Recent Messages</code></td>
+        <td class="none">—</td>
+        <td class="none">—</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Stop / finish a campaign</span></td>
+        <td class="none">—</td>
+        <td><code>Campaign ended</code> / <code>Monitoring ended</code> (INFO)</td>
+        <td><b>1 row</b>: mode, accounts, leads, processed, errors, duration, end reason</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Accept incoming connect</span> <span class="tag new">new v2.9x</span><br><span class="muted">primary, local browser</span></td>
+        <td class="none">—</td>
+        <td class="none"><span class="muted">not logged yet →</span></td>
+        <td class="none">—</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Automated follow-up</span> <span class="tag new">new v2.9x</span><br><span class="muted">primary, in group thread</span></td>
+        <td class="none">—</td>
+        <td class="none"><span class="muted">not logged yet →</span></td>
+        <td class="none">—</td>
+      </tr>
+      <tr>
+        <td class="actcol"><span class="act">Scrape Sales Nav</span> <span class="muted">(Steven's engine)</span></td>
+        <td><span class="muted">scraped leads → destination sheet</span></td>
+        <td class="none">—</td>
+        <td class="none">—</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="legend">
+    <span class="v-conn">pending value</span>
+    <span class="v-sent">sent value</span>
+    <span class="v-made">connected / made</span>
+    <span class="v-warn">WARN row</span>
+    <span class="v-err">ERROR row</span>
+    <span class="tag new" style="color:#fff">new = not yet in central log</span>
+  </div>
+
+  <!-- attribution gap -->
+  <h2>The attribution gap (your Kyra → "Colleen" question)</h2>
+  <div class="gap">
+    <h3 style="color:var(--err)">Where that message <em>should</em> appear — and why it doesn't</h3>
+    <p style="margin:0 0 10px">If the "Hello Colleen…" message was sent by the automation, it would be one Operations Log row, on the tab for whoever ran Kyra's account:</p>
+    <div class="scroll" style="border-color:var(--err)"><table class="sheet">
+      <tr><th>Timestamp</th><th>Operator</th><th>Sev</th><th>Ortus Account</th><th>Event</th><th>Lead URL</th></tr>
+      <tr style="opacity:.55"><td>2026-06-11 17:19Z</td><td class="v-err">??? (this is what you want)</td><td>INFO</td><td>Kyra Dela Cruz</td><td>Auto-DM / Intro sent</td><td>/in/colleen-…</td></tr>
+    </table></div>
+    <p style="margin:10px 0 0"><b>It isn't there because the Operations Log froze on June 10.</b> The Operator column on that row is the answer to "who did it." Restore the log → every future send is attributable. (And the two <span class="tag new" style="color:#fff">new</span> primary-side actions above need to start writing to it too.)</p>
+  </div>
+
+  <div class="note">
+    <b>Takeaway for the overhaul:</b> the data model is already right — the Operations Log carries Operator + Account on every event. Two things are wrong: <b>(1)</b> the storage design ("one tab per campaign") collapses under scale and froze the log; <b>(2)</b> the new primary-side actions don't write to it yet. The fix sketch addresses both.
+  </div>
+
+  <div class="footlink nav">→ <a href="ops-overhaul-2-fix.html">Sketch 2 — the fix: root cause, immediate unblock, durability, and the redesigned log</a></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The fix · Operations Log freeze + attribution overhaul</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#6b6b6b; --line:#d0d0d0; --paper:#f4f3f0; --card:#ffffff;
+    --head:#f1f3f4; --gold:#b8902e; --ok:#2f7d4f; --warn:#8a5a00; --warnbg:#fff4d6;
+    --err:#a1252b; --errbg:#fce4e4; --green:#e6f4ea; --blue:#e8f0fe;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 28px 80px}
+  h1{font-size:23px;font-weight:700;letter-spacing:-.2px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:13.5px}
+  h2{font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.10em;margin:34px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:13.5px;font-weight:700;margin:0 0 8px}
+  code{font-family:var(--mono);font-size:12px;background:#f2f2ee;padding:1px 5px;border-radius:3px}
+  .nav a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--gold);padding-bottom:1px}
+  /* root cause flow */
+  .flow{display:flex;align-items:stretch;gap:0;border:1px solid var(--line);background:var(--card);margin:6px 0 4px}
+  .flow .step{flex:1;padding:15px 16px;border-right:1px solid var(--line);position:relative}
+  .flow .step:last-child{border-right:0}
+  .flow .n{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.08em}
+  .flow .step h3{margin:6px 0 5px;font-size:13px}
+  .flow .step p{margin:0;font-size:12.5px;color:var(--muted)}
+  .flow .step.bad{background:#fff6f6}
+  .flow .arrow{position:absolute;right:-7px;top:50%;transform:translateY(-50%);z-index:2;font-size:14px;color:var(--muted);background:var(--paper);padding:2px 0}
+  .tabsviz{display:flex;flex-wrap:wrap;gap:3px;margin-top:8px}
+  .tabsviz i{display:block;width:16px;height:11px;background:#dfe3df;border:1px solid #c2c7c2}
+  .tabsviz i.hot{background:#f3c9cb;border-color:#d99}
+  /* layered fix cards */
+  .layer{background:var(--card);border:1px solid var(--line);margin:12px 0;display:grid;grid-template-columns:54px 1fr}
+  .layer .rail{background:#23231f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px}
+  .layer.gold .rail{background:var(--gold)}
+  .layer .in{padding:14px 16px}
+  .layer h3{margin:0 0 6px;font-size:14px}
+  .layer .when{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-left:8px}
+  .layer ul{margin:8px 0 0;padding-left:18px}
+  .layer li{margin:3px 0;font-size:13px}
+  .kbd{font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);background:#faf9f6;border-radius:4px;padding:2px 7px;white-space:nowrap}
+  /* menu mock */
+  .menu{display:inline-block;border:1px solid var(--line);background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08);font-size:12.5px;min-width:240px;margin-top:8px}
+  .menu .mh{background:var(--head);padding:6px 12px;font-weight:700;border-bottom:1px solid var(--line)}
+  .menu .mi{padding:7px 12px;border-bottom:1px solid #eee}
+  .menu .mi:last-child{border-bottom:0}
+  .menu .mi.sel{background:#fff7e6}
+  /* variants */
+  .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .variant{background:var(--card);border:1px solid var(--line)}
+  .variant.rec{border:2px solid var(--gold)}
+  .variant .vt{padding:11px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .variant .vt .t{font-weight:700}
+  .variant .vb{padding:13px 14px}
+  .variant p{margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .badge{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:9999px}
+  .badge.rec{background:var(--gold);color:#fff}
+  .badge.alt{background:#eee;color:#555}
+  table.sheet{border-collapse:collapse;width:100%;font-size:11px;font-family:var(--mono)}
+  table.sheet th{background:var(--head);border:1px solid var(--line);padding:4px 6px;text-align:left;font-weight:700;white-space:nowrap}
+  table.sheet td{border:1px solid var(--line);padding:4px 6px;white-space:nowrap;background:#fff}
+  table.sheet td.muted{color:var(--muted)}
+  .v-made{background:var(--green);color:var(--ok);font-weight:700}
+  .v-warn{background:var(--warnbg);color:var(--warn);font-weight:700}
+  .v-err{background:var(--errbg);color:var(--err);font-weight:700}
+  .hit{background:#fff7e6;outline:2px solid var(--gold);outline-offset:-2px}
+  .scroll{overflow-x:auto;border:1px solid var(--line)}
+  .pivot td,.pivot th{font-family:var(--sans)}
+  .note{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--gold);padding:13px 15px;margin:16px 0;font-size:13px}
+  .scope{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
+  .scope .box{border:1px solid var(--line);background:var(--card);padding:13px 15px}
+  .scope .box.dont{border-left:3px solid var(--err)}
+  .scope .box.do{border-left:3px solid var(--ok)}
+  .scope h3{margin:0 0 8px}
+  .scope li{font-size:13px;margin:3px 0}
+  .footlink{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>The fix — restore the Operations Log &amp; make attribution bulletproof</h1>
+  <p class="sub">Sketch 2 of 2 · <span class="nav"><a href="ops-overhaul-1-map.html">← back to the map</a></span>. Root cause is confirmed from the bridge source; fixes are layered so you get an immediate unblock today and a permanent redesign after.</p>
+
+  <!-- root cause -->
+  <h2>Why it froze (confirmed from <code>ops-log-bridge.js</code>)</h2>
+  <div class="flow">
+    <div class="step"><div class="n">DESIGN</div><h3>One tab per campaign</h3><p><code>appendEvents</code> calls <code>insertSheet()</code> for every new run — each tab pre-formats 1000 rows of conditional formatting (~26k cells).<span class="arrow">→</span></p></div>
+    <div class="step"><div class="n">SCALE</div><h3>The team runs many/day</h3><p>joshua, jeremiah, reign, jhan, miggy, joaquin… plus reruns. Tabs pile up for weeks — nothing prunes them automatically.<div class="tabsviz"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="hot"></i><i class="hot"></i><i class="hot"></i><i class="hot"></i></div><span class="arrow">→</span></p></div>
+    <div class="step bad"><div class="n">CEILING</div><h3>10M-cell limit hit</h3><p>~380 tabs × 26k cells ≈ Google's hard cap. <code>insertSheet</code> / <code>setValues</code> starts throwing on <b>2026-06-10 06:36Z</b>.<span class="arrow">→</span></p></div>
+    <div class="step bad"><div class="n">SILENCE</div><h3>Failure swallowed</h3><p><code>flushOpsLog</code> gets the error envelope, re-queues, and <b>never warns</b>. Buffer dies on the next app relaunch. 33h dark, unnoticed.</p></div>
+  </div>
+  <p class="sub" style="margin-top:8px">Campaign Activity never broke because it's a <b>single append-only tab</b> — no <code>insertSheet</code>, no cell explosion. That's the blueprint for the redesign below.</p>
+
+  <!-- layered fixes -->
+  <h2>The fix, in three layers</h2>
+
+  <div class="layer gold">
+    <div class="rail">1</div>
+    <div class="in">
+      <h3>Unblock now — no code, no release <span class="when">do today · ~30 seconds</span></h3>
+      <p style="margin:0;font-size:13px">The bridge already ships an operator menu for exactly this. Open <b>“OPS AND LOGS — ORTUS OUTREACH — DO NOT DELETE”</b> → menu <b>Ortus Logs → Delete all log tabs</b>. It removes every per-campaign tab (keeps Index), frees the cells, and <code>appendEvents</code> starts writing again immediately.</p>
+      <div class="menu">
+        <div class="mh">Ortus Logs ▾</div>
+        <div class="mi sel">Delete all log tabs</div>
+        <div class="mi">Copy diagnostic snippet for Claude</div>
+      </div>
+      <p style="margin:9px 0 0;font-size:12px;color:var(--muted)">⚠ This deletes history. If you want the old tabs kept, export the spreadsheet first. Going forward, Layer 3 makes this cleanup unnecessary.</p>
+    </div>
+  </div>
+
+  <div class="layer">
+    <div class="rail">2</div>
+    <div class="in">
+      <h3>Durability — never silently lose events again <span class="when">small app change</span></h3>
+      <ul>
+        <li><b>Flush on shutdown.</b> <code>gracefulShutdown</code> (SIGINT/SIGTERM) and the Electron quit path call <code>flushOpsLog()</code> before exit — so our <code>pkill</code>+relaunch cycle and operator quits stop dropping the buffered 0–30s of events.</li>
+        <li><b>Stop swallowing failures.</b> When a flush keeps failing for &gt; N minutes, surface it: a desktop notification + a line in the in-app log (“Operations Log not writing — check the sheet”). A 33-hour blackout should be impossible to miss.</li>
+        <li><b>Files touched:</b> <code>log-writer.js</code>, <code>server.js</code>, <code>electron/main.js</code> — none off-limits. Unit-tested via the existing <code>_setFetchImpl</code> / <code>_peekBufferForTest</code> seams.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="layer">
+    <div class="rail">3</div>
+    <div class="in">
+      <h3>Redesign the log so it can’t overflow — and answers “who did it” in one glance <span class="when">bridge change + redeploy</span></h3>
+      <p style="margin:0 0 4px;font-size:13px">Replace “one tab per campaign” with a <b>single append-only Events tab</b>. Same row fields you already send — just one growing table you can filter and pivot. Two variants:</p>
+    </div>
+  </div>
+
+  <div class="vgrid">
+    <div class="variant rec">
+      <div class="vt"><span class="t">Variant A · Single Events tab</span><span class="badge rec">recommended</span></div>
+      <div class="vb">
+        <p>One tab, every event from every operator/account, newest at the bottom. Filter the <code>Ortus Account</code> column to trace anyone. No tabs created, no ceiling.</p>
+        <div class="scroll"><table class="sheet">
+          <tr><th>Timestamp</th><th>Operator</th><th>Ortus Account</th><th>Campaign</th><th>Sev</th><th>Event</th><th>Lead URL</th></tr>
+          <tr><td>17:18Z</td><td>antonio@…</td><td>tony.otto@…</td><td>cc+ic test</td><td>INFO</td><td class="v-made">Intro sent</td><td>/in/kyra-…</td></tr>
+          <tr class="hit"><td>17:19Z</td><td><b>(the colleague)</b></td><td>Kyra Dela Cruz</td><td>Mercer event</td><td>INFO</td><td>Auto-DM sent</td><td>/in/colleen-…</td></tr>
+          <tr><td>17:24Z</td><td>antonio@…</td><td>tony.otto@…</td><td>cc+ic test</td><td>INFO</td><td>Follow-up sent</td><td>/in/kyra-…</td></tr>
+        </table></div>
+        <p style="margin:9px 0 0">→ Filter <code>Ortus Account = Kyra Dela Cruz</code> and the Operator column names who sent the “Colleen” message.</p>
+      </div>
+    </div>
+
+    <div class="variant">
+      <div class="vt"><span class="t">Variant B · Events + live Attribution view</span><span class="badge alt">if you want a dashboard</span></div>
+      <div class="vb">
+        <p>Variant A, plus an auto-updating pivot tab: one row per <code>Account × Operator</code> with counts and last activity. “Who’s driving which account, and what have they done” at a glance — no filtering needed.</p>
+        <div class="scroll"><table class="sheet pivot">
+          <tr><th>Ortus Account</th><th>Operator</th><th>Sends</th><th>Errors</th><th>Last activity</th></tr>
+          <tr class="hit"><td>Kyra Dela Cruz</td><td><b>(the colleague)</b></td><td>14</td><td>0</td><td>17:19Z</td></tr>
+          <tr><td>tony.otto@…</td><td>antonio@…</td><td>3</td><td>0</td><td>17:24Z</td></tr>
+          <tr><td>wenelynn@…</td><td>joshua@…</td><td>212</td><td>11</td><td>Jun 10</td></tr>
+        </table></div>
+        <p style="margin:9px 0 0">Built from the Events tab with <code>QUERY()</code> — also doubles as your “SoO / who-has-which-account” live view.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>One more thing the redesign enables:</b> the two <b>new primary-side actions</b> (auto-accept &amp; automated follow-up) currently write nothing to the central log. With a flat Events tab they slot in trivially — <code>Connection accepted</code> and <code>Follow-up sent</code> become first-class, attributable rows. That closes the last gap from the map.
+  </div>
+
+  <!-- scope -->
+  <h2>Scope check before we build</h2>
+  <div class="scope">
+    <div class="box do">
+      <h3 style="color:var(--ok)">Done looks like</h3>
+      <ul>
+        <li>Ops Log writing again (Layer 1 today).</li>
+        <li>Every send from every operator/account is one durable, attributable row.</li>
+        <li>“Who did it?” = filter one column (Variant A) or read one pivot (Variant B).</li>
+        <li>A blackout can never again go unnoticed for 33h.</li>
+      </ul>
+    </div>
+    <div class="box dont">
+      <h3 style="color:var(--err)">Won’t do</h3>
+      <ul>
+        <li>Touch <code>outreach.js</code> / <code>actions.js</code>.</li>
+        <li>Change the Leads Tracker or Campaign Activity behavior.</li>
+        <li>Migrate old per-campaign tabs (export if you want them; otherwise they’re deleted in Layer 1).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footlink nav">Pick a path: <b>Layer 1 now</b> (I’ll walk you through the menu) · then <b>Variant A or B</b> for the redesign. ← <a href="ops-overhaul-1-map.html">back to the map</a></div>
+</div>
+</body>
+</html>

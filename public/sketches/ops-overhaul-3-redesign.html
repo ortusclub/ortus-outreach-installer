@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The redesign · Campaign Activity v2 + Ops &amp; Logs v2</title>
+<style>
+  :root{
+    --ink:#181818; --muted:#717171; --faint:#a6a6a6; --line:#e2e0db; --line2:#cfccc4;
+    --paper:#f5f4f1; --card:#ffffff; --head:#f6f5f2; --gold:#b8902e;
+    --ok:#2f7d4f; --okbg:#e7f4ec; --ok2bg:#d6ecdf;
+    --warn:#8a5a00; --warnbg:#fdf2d4;
+    --err:#a1252b; --errbg:#fbe3e4;
+    --grey:#5c5c5c; --greybg:#ececec;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.55}
+  .wrap{max-width:1060px;margin:0 auto;padding:34px 26px 90px}
+  .kicker{font-size:11.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 6px}
+  h1{font-size:25px;font-weight:750;letter-spacing:-.3px;margin:0 0 6px}
+  .lede{color:var(--muted);margin:0 0 18px;font-size:14px;max-width:760px}
+  .realnote{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--muted);border:1px solid var(--line);background:var(--card);padding:10px 14px;margin:0 0 8px}
+  .realnote b{color:var(--ink)}
+  .secnav{display:flex;gap:10px;margin:14px 0 0;font-size:13px}
+  .secnav a{flex:1;text-decoration:none;color:var(--ink);border:1px solid var(--line2);background:var(--card);padding:11px 14px;display:flex;gap:10px;align-items:center}
+  .secnav a .big{font-size:19px}
+  .secnav a:hover{border-color:var(--gold)}
+  h2{font-size:13px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;margin:42px 0 4px;color:var(--ink)}
+  .h2sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+  h3{font-size:12px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  code{font-family:var(--mono);font-size:12px;background:#f0efea;padding:1px 5px;border-radius:3px}
+
+  .scorecard{background:var(--card);border:1px solid var(--line2);border-top:3px solid var(--ink)}
+  .sc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .sc-head .name{font-size:17px;font-weight:750;margin:0 0 3px}
+  .sc-head .meta{font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+  .sc-head .mode{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:4px 10px;border:1px solid var(--line2);border-radius:9999px;white-space:nowrap}
+  .sc-body{display:grid;grid-template-columns:1.55fr 1fr;gap:0}
+  .pane{padding:18px 20px}
+  .pane+.pane{border-left:1px solid var(--line)}
+
+  /* funnel */
+  .funnel{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+  .frow{display:grid;grid-template-columns:118px 1fr 92px;align-items:center;gap:10px}
+  .frow .fl{font-size:12.5px;color:var(--ink);font-weight:600}
+  .ftrack{height:26px;background:#f1efe9;position:relative;border-radius:2px;overflow:hidden}
+  .fbar{height:100%;display:flex;align-items:center;padding-left:9px;color:#fff;font-size:12px;font-weight:700;border-radius:2px}
+  .fbar.s1{background:#2b2b2b}
+  .fbar.s2{background:#3f6f8f}
+  .fbar.s3{background:var(--ok)}
+  .fbar.s4{background:#2f7d4f}
+  .fbar.s5{background:var(--gold)}
+  .fmeta{font-size:11.5px;color:var(--muted);text-align:right;font-family:var(--mono)}
+  .fmeta b{color:var(--ink)}
+
+  /* leak panel */
+  .leakwrap{margin-top:2px}
+  .leaktotal{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
+  .leaktotal .num{font-size:30px;font-weight:780;color:var(--err);line-height:1}
+  .leaktotal .lbl{font-size:12px;color:var(--muted)}
+  .leaks{display:flex;flex-direction:column;gap:8px}
+  .leak{display:grid;grid-template-columns:1fr 38px;align-items:center;gap:8px}
+  .leak .lk{display:flex;align-items:center;gap:7px;font-size:12.5px}
+  .dot{width:9px;height:9px;border-radius:2px;flex:none}
+  .d-amber{background:#e0a82e}.d-red{background:#cf4b52}.d-grey{background:#9a9a9a}.d-blue{background:#5b86a6}
+  .leak .lbar{grid-column:1/3;height:6px;background:#f1efe9;border-radius:9999px;overflow:hidden;margin-top:-2px}
+  .leak .lbar i{display:block;height:100%;border-radius:9999px}
+  .leak .ct{text-align:right;font-size:12px;font-weight:700;font-family:var(--mono)}
+  .est{font-size:10.5px;color:var(--faint);font-style:italic;margin-left:5px}
+
+  /* account health strip */
+  .health{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+  .acct{border:1px solid var(--line2);border-radius:9999px;padding:4px 11px 4px 8px;font-size:11.5px;display:flex;align-items:center;gap:7px;background:#fcfcfb}
+  .acct .ad{width:8px;height:8px;border-radius:9999px}
+  .acct.okk .ad{background:var(--ok)}
+  .acct.warnn{border-color:#e6c98a;background:#fdf8ec}.acct.warnn .ad{background:#e0a82e}
+  .acct.parkk{border-color:#e3a3a7;background:#fcefef}.acct.parkk .ad{background:#cf4b52}
+  .acct .n{font-family:var(--mono)}
+  .acct .tag{color:var(--muted)}
+
+  /* schema tables */
+  table.sheet{border-collapse:collapse;width:100%;font-size:11.5px;font-family:var(--mono)}
+  table.sheet th{background:var(--head);border:1px solid var(--line2);padding:5px 8px;text-align:left;font-weight:700;white-space:nowrap;color:#444}
+  table.sheet td{border:1px solid var(--line2);padding:5px 8px;white-space:nowrap;background:#fff}
+  table.sheet td.mut{color:var(--muted)}
+  .scroll{overflow-x:auto;border:1px solid var(--line2);margin-top:4px}
+  .new{color:var(--gold);font-weight:700}
+  .newtag{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.04em;background:var(--gold);color:#fff;border-radius:9999px;padding:1px 6px;vertical-align:middle;margin-left:5px}
+
+  /* outcome chips in events */
+  .oc{display:inline-block;font-size:10.5px;font-weight:700;border-radius:4px;padding:1px 7px}
+  .oc.sent{background:var(--okbg);color:var(--ok)}
+  .oc.acc{background:var(--ok2bg);color:#1f6b3e}
+  .oc.skip{background:var(--warnbg);color:var(--warn)}
+  .oc.rate{background:#fbe8cf;color:#8a5a00}
+  .oc.err{background:var(--errbg);color:var(--err)}
+  .oc.park{background:#f4d3d5;color:var(--err)}
+
+  .viewgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  .vcard{background:var(--card);border:1px solid var(--line2)}
+  .vcard .vh{padding:10px 14px;border-bottom:1px solid var(--line);font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+  .vcard .vbody{padding:12px 14px}
+  .vcard p{margin:0 0 9px;font-size:12.5px;color:var(--muted)}
+  .pill{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:9999px;background:var(--greybg);color:var(--grey)}
+  .pill.gold{background:var(--gold);color:#fff}
+  table.pivot{border-collapse:collapse;width:100%;font-size:11.5px}
+  table.pivot th{background:var(--head);border:1px solid var(--line2);padding:5px 8px;text-align:left;color:#444;font-weight:700}
+  table.pivot td{border:1px solid var(--line2);padding:5px 8px}
+  .hit{background:#fdf6e3;outline:2px solid var(--gold);outline-offset:-2px}
+  .legend{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+  .legend .l{font-size:11px;border:1px solid var(--line2);padding:3px 9px;border-radius:9999px;display:flex;gap:6px;align-items:center;background:#fff}
+  .foot{margin-top:40px;padding-top:16px;border-top:1px solid var(--line2);font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">Ortus Outreach · logging redesign</p>
+  <h1>Two sheets, rebuilt to tell you everything — including where it leaks</h1>
+  <p class="lede">A clean redesign of <b>Campaign Activity</b> (one rich row per run) and <b>Ops &amp; Logs</b> (one flat, attributable event stream). Same data the bot already produces — finally surfaced. Every field, status and failure name below is real, pulled from the code.</p>
+  <div class="realnote">
+    <span><b>Real</b> — schema, statuses &amp; failure reasons (from <code>google-apps-script.js</code>, the bridges, <code>campaign.js</code>)</span>
+    <span><b>Real numbers</b> — joshua's Jun-10 run (871 / 212 / 11)</span>
+    <span><span class="new">↗ new</span> — telemetry the redesign starts capturing · per-reason splits marked <span class="est">est.</span></span>
+  </div>
+  <div class="secnav">
+    <a href="#activity"><span class="big">①</span><span><b>Campaign Activity v2</b><br><span style="color:var(--muted);font-size:12px">the run scorecard — funnel + leaks</span></span></a>
+    <a href="#opslog"><span class="big">②</span><span><b>Ops &amp; Logs v2</b><br><span style="color:var(--muted);font-size:12px">one event stream + 3 live views</span></span></a>
+  </div>
+
+  <!-- ============ CAMPAIGN ACTIVITY V2 ============ -->
+  <h2 id="activity">① Campaign Activity v2 — the run scorecard</h2>
+  <p class="h2sub">Still one row per finished run. But the row now carries the whole funnel and every leak — so a run reads as a scorecard, not a receipt.</p>
+
+  <div class="scorecard">
+    <div class="sc-head">
+      <div>
+        <p class="name">NICE_SYD1 · CC batch 2</p>
+        <p class="meta">joshua@ortusclub.com · 4 accounts · Jun 10, 03:20 → 16:17 · 12h 57m · ended: completed</p>
+      </div>
+      <span class="mode">connect&nbsp;only</span>
+    </div>
+    <div class="sc-body">
+      <!-- funnel -->
+      <div class="pane">
+        <h3>The funnel — what happened to 871 leads</h3>
+        <div class="funnel">
+          <div class="frow"><span class="fl">Leads loaded</span>
+            <div class="ftrack"><div class="fbar s1" style="width:100%">871</div></div>
+            <span class="fmeta"><b>100%</b></span></div>
+          <div class="frow"><span class="fl">Requests sent</span>
+            <div class="ftrack"><div class="fbar s2" style="width:24%">212</div></div>
+            <span class="fmeta"><b>24%</b> of leads</span></div>
+          <div class="frow"><span class="fl">Accepted <span class="newtag">new</span></span>
+            <div class="ftrack"><div class="fbar s3" style="width:9%">~78</div></div>
+            <span class="fmeta"><b>37%</b> <span class="est">est.</span></span></div>
+          <div class="frow"><span class="fl">Intro / DM <span class="newtag">new</span></span>
+            <div class="ftrack"><div class="fbar s4" style="width:0.5%"></div></div>
+            <span class="fmeta">n/a (CC only)</span></div>
+          <div class="frow"><span class="fl">Replied <span class="newtag">new</span></span>
+            <div class="ftrack"><div class="fbar s5" style="width:3%">~12</div></div>
+            <span class="fmeta"><b>15%</b> <span class="est">est.</span></span></div>
+        </div>
+        <h3 style="margin-top:20px">Account health <span class="newtag">new</span></h3>
+        <div class="health">
+          <span class="acct okk"><span class="ad"></span><span class="n">wenelynn</span><span class="tag">· 58 sent</span></span>
+          <span class="acct okk"><span class="ad"></span><span class="n">sandyc</span><span class="tag">· 61 sent</span></span>
+          <span class="acct warnn"><span class="ad"></span><span class="n">pratik.pat</span><span class="tag">· 1× 429</span></span>
+          <span class="acct parkk"><span class="ad"></span><span class="n">tau</span><span class="tag">· parked · weekly limit</span></span>
+        </div>
+      </div>
+      <!-- leaks -->
+      <div class="pane">
+        <h3>Where it leaked — “where they're pissing”</h3>
+        <div class="leakwrap">
+          <div class="leaktotal"><span class="num">659</span><span class="lbl">leads never got a request<br>(76% of the batch)</span></div>
+          <div class="leaks">
+            <div class="leak"><div class="lk"><span class="dot d-grey"></span>Window ended before reached</div><div class="ct">~470</div><div class="lbar"><i class="d-grey" style="width:71%;background:#9a9a9a"></i></div></div>
+            <div class="leak"><div class="lk"><span class="dot d-amber"></span>Rate-limited (HTTP 429)</div><div class="ct">~96</div><div class="lbar"><i style="width:15%;background:#e0a82e"></i></div></div>
+            <div class="leak"><div class="lk"><span class="dot d-red"></span>Account parked · weekly limit</div><div class="ct">~40</div><div class="lbar"><i style="width:6%;background:#cf4b52"></i></div></div>
+            <div class="leak"><div class="lk"><span class="dot d-blue"></span>Skipped · bad/legacy URL</div><div class="ct">~22</div><div class="lbar"><i style="width:4%;background:#5b86a6"></i></div></div>
+            <div class="leak"><div class="lk"><span class="dot d-amber"></span>Session expired</div><div class="ct">~18</div><div class="lbar"><i style="width:3%;background:#e0a82e"></i></div></div>
+            <div class="leak"><div class="lk"><span class="dot d-red"></span>Errors (crash/timeout)</div><div class="ct">11</div><div class="lbar"><i style="width:2%;background:#cf4b52"></i></div></div>
+          </div>
+          <p style="font-size:11px;color:var(--faint);margin:12px 0 0">Splits marked <span class="est">est.</span> — the redesign tallies these per-run from the event stream. Today you only see “Processed 212, Errors 11” and the other 648 are invisible.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin:18px 0 4px">…and the underlying row (still append-only, just wider)</h3>
+  <div class="scroll"><table class="sheet">
+    <tr>
+      <th>Started</th><th>Operator</th><th>Campaign</th><th>Mode</th><th>Accounts</th>
+      <th>Leads</th><th>Sent</th><th class="new">Accepted</th><th class="new">Intro/DM</th><th class="new">Replied</th>
+      <th class="new">Rate-limited</th><th class="new">Parked</th><th class="new">Skipped</th><th>Errors</th><th>Duration</th><th>End</th>
+    </tr>
+    <tr>
+      <td>Jun 10 03:20</td><td>joshua@…</td><td>NICE_SYD1 CC b2</td><td>cc</td><td>4</td>
+      <td>871</td><td>212</td><td class="mut">78</td><td class="mut">—</td><td class="mut">12</td>
+      <td class="mut">96</td><td class="mut">1</td><td class="mut">552</td><td>11</td><td>12h57m</td><td>completed</td>
+    </tr>
+  </table></div>
+  <p style="font-size:12px;color:var(--muted);margin-top:6px">Existing columns kept. <span class="new">Gold = new</span>. “Templates Used” &amp; “Sheet URL” stay (trimmed here for width).</p>
+
+  <!-- ============ OPS & LOGS V2 ============ -->
+  <h2 id="opslog" style="margin-top:48px">② Ops &amp; Logs v2 — one event stream, three views</h2>
+  <p class="h2sub">Kill “one tab per campaign” (it overflowed and froze on Jun 10). One flat, append-only <b>Events</b> tab carries Operator + Account on every row → filter/pivot for anything. Three live views sit on top.</p>
+
+  <h3 style="margin-bottom:6px">The Events tab — every action &amp; every failure, outcome-coded</h3>
+  <div class="scroll"><table class="sheet">
+    <tr><th>Timestamp</th><th>Operator</th><th>Ortus Account</th><th>Campaign</th><th>Phase</th><th>Outcome</th><th>Reason</th><th>Lead</th></tr>
+    <tr><td>06:35:15Z</td><td>joshua@…</td><td>wenelynn@…</td><td>NICE_SYD1</td><td>Request</td><td><span class="oc sent">✓ sent</span></td><td class="mut"></td><td>/in/derek-…</td></tr>
+    <tr><td>06:35:48Z</td><td>joshua@…</td><td>pratik.pat@…</td><td>NICE_SYD1</td><td>Request</td><td><span class="oc rate">⚠ rate-limited</span></td><td>HTTP 429 — confirming</td><td>/in/aruna-…</td></tr>
+    <tr><td>06:36:04Z</td><td>joshua@…</td><td>tau@…</td><td>NICE_SYD1</td><td>Account</td><td><span class="oc park">⛔ parked</span></td><td>2× 429 — weekly limit</td><td class="mut">—</td></tr>
+    <tr class="hit"><td>17:19:02Z</td><td><b>maria@…</b></td><td>Kyra Dela Cruz</td><td>Mercer event</td><td>DM</td><td><span class="oc sent">✓ sent</span></td><td class="mut"></td><td>/in/colleen-…</td></tr>
+    <tr><td>17:24:31Z</td><td>antonio@…</td><td>tony.otto@…</td><td>cc+ic test</td><td>Follow-up</td><td><span class="oc sent">✓ sent</span></td><td class="mut"></td><td>/in/kyra-…</td></tr>
+    <tr><td>17:41:10Z</td><td>jeremiah@…</td><td>—</td><td>JFROG_SIN</td><td>Connect</td><td><span class="oc skip">⤫ skipped</span></td><td>Connect modal opened for wrong person</td><td>/in/sam-…</td></tr>
+    <tr><td>18:02:55Z</td><td>jhan@…</td><td>—</td><td>AUD_JKT3</td><td>Intro</td><td><span class="oc err">✕ error</span></td><td>Failed — Primary not in your connections</td><td>/in/lev-…</td></tr>
+  </table></div>
+  <div class="legend">
+    <span class="l"><span class="oc sent">✓ sent</span> request / DM / intro / follow-up</span>
+    <span class="l"><span class="oc acc">✓ accepted</span> connection confirmed</span>
+    <span class="l"><span class="oc skip">⤫ skipped</span> 12 real reasons</span>
+    <span class="l"><span class="oc rate">⚠ rate-limited</span> HTTP 429</span>
+    <span class="l"><span class="oc park">⛔ parked</span> weekly limit</span>
+    <span class="l"><span class="oc err">✕ error</span> crash / timeout</span>
+  </div>
+  <p style="font-size:12px;color:var(--muted);margin-top:10px">Reasons come straight from the loop — real values include: <code>Connect modal opened for wrong person</code>, <code>InMail credits exhausted</code>, <code>Weekly limit reached</code>, <code>Session expired</code>, <code>Send not confirmed</code>, <code>Legacy Sales Nav URL</code>, <code>Lead timed out</code>, <code>Failed — Compose page didn't load</code>.</p>
+
+  <div class="viewgrid">
+    <div class="vcard">
+      <div class="vh"><span>View A · Attribution — “who did it”</span><span class="pill gold">answers Kyra</span></div>
+      <div class="vbody">
+        <p>Auto-pivot of Account × Operator. Filter the Account column, read the Operator. The “Colleen” message resolves in one row.</p>
+        <table class="pivot">
+          <tr><th>Ortus Account</th><th>Operator</th><th>Sent</th><th>Last</th></tr>
+          <tr class="hit"><td>Kyra Dela Cruz</td><td><b>maria@…</b></td><td>14</td><td>17:19Z</td></tr>
+          <tr><td>tony.otto@…</td><td>antonio@…</td><td>3</td><td>17:24Z</td></tr>
+          <tr><td>wenelynn@…</td><td>joshua@…</td><td>58</td><td>Jun 10</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vh"><span>View B · Where it's leaking</span><span class="pill">the “pissing” view</span></div>
+      <div class="vbody">
+        <p>Every failure across all operators, grouped by reason — sorted by how much it costs you. Your daily “what's bleeding” glance.</p>
+        <table class="pivot">
+          <tr><th>Reason</th><th>Count</th><th>Top account</th></tr>
+          <tr><td>Rate-limited (429)</td><td>96</td><td>pratik.pat@…</td></tr>
+          <tr><td>Window ended</td><td>470</td><td>—</td></tr>
+          <tr><td>Wrong-person modal</td><td>7</td><td>jeremiah@…</td></tr>
+          <tr><td>Session expired</td><td>18</td><td>jhan@…</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vh"><span>View C · Account health</span><span class="pill">capacity</span></div>
+      <div class="vbody">
+        <p>Per-account 429s, parks, and last-active — so you stop sending from a parked account and know who has headroom.</p>
+        <table class="pivot">
+          <tr><th>Account</th><th>State</th><th>429s</th><th>Last active</th></tr>
+          <tr><td>wenelynn@…</td><td style="color:var(--ok)">healthy</td><td>0</td><td>Jun 10</td></tr>
+          <tr><td>pratik.pat@…</td><td style="color:var(--warn)">warned</td><td>1</td><td>Jun 10</td></tr>
+          <tr><td>tau@…</td><td style="color:var(--err)">parked</td><td>2</td><td>Jun 10</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="vcard">
+      <div class="vh"><span>Now-impossible: silent blackout</span><span class="pill">durability</span></div>
+      <div class="vbody">
+        <p>A single flat tab can't hit the 10M-cell ceiling that froze the old log. And a failed flush now raises a desktop alert + in-app line instead of dying quietly for 33 hours.</p>
+        <table class="pivot">
+          <tr><th>Old</th><th>New</th></tr>
+          <tr><td class="mut">1 tab / campaign</td><td><b>1 Events tab</b></td></tr>
+          <tr><td class="mut">froze at ~380 tabs</td><td><b>no ceiling</b></td></tr>
+          <tr><td class="mut">failures swallowed</td><td><b>alerted</b></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Real schema &amp; failure names; per-reason splits are estimates the redesign would start measuring. Tell me what to add, cut, or reshape — then pick this as the target and I'll plan the build (bridge rewrite + the durability flush).
+  </div>
+</div>
+</body>
+</html>
