@@ -3706,6 +3706,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // v2.59.x: persist the CC+DM body so the post-campaign sweep can
             // fire the 1:1 auto-DM (shouldFirePostCampaignDm + runAutoDms).
             ccDmBody: (templates && templates.ccDmBody) || '',
+            // v2.91: primary-side automation — carry auto-accept + follow-up
+            // config so the post-campaign sweep can drive them post-acceptance.
+            autoAcceptPrimary: !!(templates && templates.autoAcceptPrimary),
+            followUpEnabled: !!(templates && templates.followUpEnabled),
+            followUpBody: (templates && templates.followUpBody) || '',
+            followUpDelayMinutes: (templates && templates.followUpDelayMinutes) || 10,
+            followUpSender: (templates && templates.followUpSender) || 'local-browser',
           });
         }
       }

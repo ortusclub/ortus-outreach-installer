@@ -27,6 +27,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { getProfiles } from './gologin-launcher.js';
+import * as browserSemaphore from './browser-semaphore.js';
 import { fetchSheet } from './sheets.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './linkedin/check-dms.js';
 import { writeRecentMessagesTab } from './sheets-writer.js';
@@ -260,6 +261,10 @@ async function tick() {
     console.log(`[reply-check] ${_msg}`);
     appendCampaignLog(entry.sheetId, entry.profileId, _msg);
 
+    // v2.91: the inbox scan opens a browser internally (checkProfileDms →
+    // launchProfile when no page is passed). Route it through the global
+    // browser-semaphore so the runner's "no browser open" gate stays accurate.
+    await browserSemaphore.acquire();
     try {
       // v2.72: build this profile's sent-lead list for the per-lead fallback.
       let leads = [];
@@ -291,6 +296,8 @@ async function tick() {
       }
     } catch (err) {
       console.warn(`[reply-check] ${entry.profileName} sweep threw: ${err.message}`);
+    } finally {
+      browserSemaphore.release();
     }
 
     entry.lastCheckedAt = now;

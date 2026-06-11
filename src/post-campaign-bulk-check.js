@@ -16,6 +16,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { dataPath } from './paths.js';
 import { launchProfile, closeProfile } from './gologin-launcher.js';
+import * as browserSemaphore from './browser-semaphore.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
 import { runAutoDms } from './linkedin/auto-dm.js';
@@ -96,7 +97,10 @@ async function isCampaignRunning() {
 export async function registerSchedule({ sheetId, sheetUrl, profileId, profileName, linkedinColumn, days,
                                           operatorEmail,
                                           mode = '', primaryName = '', primaryIntroBody = '',
-                                          primaryUrl = '', introTitle = '', ccDmBody = '' }) {
+                                          primaryUrl = '', introTitle = '', ccDmBody = '',
+                                          autoAcceptPrimary = false, followUpEnabled = false,
+                                          followUpBody = '', followUpDelayMinutes = 10,
+                                          followUpSender = 'local-browser' }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
@@ -120,6 +124,12 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     // 1:1 auto-DM (runAutoDms reads templates.ccDmBody). Was previously dropped,
     // so even with a DM dispatch the body wouldn't have survived to send time.
     ccDmBody: ccDmBody || '',
+    // v2.91: primary-side automation config carried into the post-campaign sweep
+    autoAcceptPrimary: !!autoAcceptPrimary,
+    followUpEnabled: !!followUpEnabled,
+    followUpBody: followUpBody || '',
+    followUpDelayMinutes: Number(followUpDelayMinutes) > 0 ? Number(followUpDelayMinutes) : 10,
+    followUpSender: followUpSender === 'campaign-account' ? 'campaign-account' : 'local-browser',
     registeredAt: (sched[k]?.registeredAt) || now,
     expiresAt: now + days * 86400000,
     // The campaign's own bulk-check just ran, so no need to immediately
@@ -217,10 +227,12 @@ async function tick() {
     console.log(`[post-campaign] ${_sweepMsg}`);
     appendCampaignLog(entry.sheetId, entry.profileId, _sweepMsg);
     let launched;
+    await browserSemaphore.acquire();
     try {
       launched = await launchProfile(entry.profileId, token);
     } catch (err) {
       console.warn(`[post-campaign] Launch failed for ${entry.profileName}: ${err.message}`);
+      browserSemaphore.release();
       // Don't update lastCheckedAt — try again on next tick.
       continue;
     }
@@ -263,6 +275,11 @@ async function tick() {
                 primaryIntroBody: entry.primaryIntroBody,
                 primaryUrl: entry.primaryUrl || '',
                 introTitle: entry.introTitle || 'Introduction: {first name} <> {intro name}',
+                autoAcceptPrimary: entry.autoAcceptPrimary,
+                followUpEnabled: entry.followUpEnabled,
+                followUpBody: entry.followUpBody,
+                followUpDelayMinutes: entry.followUpDelayMinutes,
+                followUpSender: entry.followUpSender,
               },
               log: (line) => {
                 console.log(`[post-campaign] ${line}`);
@@ -306,6 +323,7 @@ async function tick() {
       console.warn(`[post-campaign] ${entry.profileName} sweep threw: ${err.message}`);
     } finally {
       try { await closeProfile(entry.profileId); } catch { /* */ }
+      browserSemaphore.release();
     }
 
     entry.lastCheckedAt = now;
