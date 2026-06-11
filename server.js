@@ -31,6 +31,7 @@ import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
+import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
@@ -3368,6 +3369,10 @@ app.listen(PORT, async () => {
 
   // v2.14 — start the T+7d monitoring auto-end watcher
   startMonitoringWatcher();
+
+  // v2.91 — drain primary-side automation tasks (auto-accept + first follow-up)
+  // in idle gaps, one browser at a time, gated on the global browser semaphore.
+  startPrimaryTaskRunner();
 
   // Drain the campaign queue at startup. If the server crashed/restarted
   // while items were queued, this auto-promotes the next one to active so
