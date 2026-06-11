@@ -209,6 +209,13 @@ function gatherCampaignFormState() {
     primaryUrl:  (_isIc || _isCcDm)
       ? ''
       : (document.getElementById('primary-person-url')?.value?.trim() || ''),
+    // v2.91: CC+IC auto-accept + automated first follow-up. DOM-read, gated to
+    // intro flows so leftover CC+IC config can't leak into other modes.
+    autoAcceptPrimary: _isIntroFlow ? !!document.getElementById('auto-accept-toggle')?.checked : false,
+    followUpEnabled: _isIntroFlow ? !!document.getElementById('follow-up-toggle')?.checked : false,
+    followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
+    followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
+    followUpSender: _isIntroFlow ? (document.getElementById('follow-up-sender')?.value || 'local-browser') : 'local-browser',
     // v2.62: CC+DM post-acceptance body. Only meaningful when
     // mode === 'connect_and_message'; campaign.js reads templates.ccDmBody
     // from runAutoDms. Other modes ignore it.
@@ -1564,6 +1571,19 @@ function onModeChange() {
   // appears first, Body second — matching CC+IC's order exactly.
   if (intro) intro.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  // v2.91: Auto-accept + automated first follow-up cards are CC+IC-only —
+  // same predicate as the primary-person block so they appear/disappear together.
+  const _showCcIcCards = (mode === 'connect_and_introduce');
+  const autoAcceptBlock = document.getElementById('auto-accept-block');
+  if (autoAcceptBlock) autoAcceptBlock.style.display = _showCcIcCards ? '' : 'none';
+  const followUpBlock = document.getElementById('follow-up-block');
+  if (followUpBlock) followUpBlock.style.display = _showCcIcCards ? '' : 'none';
+  // When the CC+IC section becomes visible, sync the gate (URL may already be set)
+  // and the follow-up fields' visibility against the current toggle state.
+  if (_showCcIcCards) {
+    try { if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate(); } catch (_) {}
+    try { if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields(); } catch (_) {}
+  }
   const cadenceBlock = document.getElementById('check-cadence-block');
   // Cadence applies to every monitoring mode (CC+IC + CC+DM). Same predicate
   // drives the launch payload read so visibility and persistence stay in lockstep.
@@ -3502,6 +3522,13 @@ async function startCampaign(opts = {}) {
     primaryName: _isIntroFlow ? (document.getElementById('primary-person-name')?.value?.trim() || '') : '',
     primaryUrl:  _isIntroFlow ? (document.getElementById('primary-person-url')?.value?.trim() || '') : '',
     primaryIntroBody: _isIntroFlow ? (document.getElementById('primary-intro-body')?.value || '') : '',
+    // v2.91: CC+IC auto-accept + automated first follow-up. DOM-read at launch,
+    // gated to intro flows. Backend normalizeTemplates passes these through.
+    autoAcceptPrimary: _isIntroFlow ? !!document.getElementById('auto-accept-toggle')?.checked : false,
+    followUpEnabled: _isIntroFlow ? !!document.getElementById('follow-up-toggle')?.checked : false,
+    followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
+    followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
+    followUpSender: _isIntroFlow ? (document.getElementById('follow-up-sender')?.value || 'local-browser') : 'local-browser',
     // v2.62: CC+DM post-acceptance body — read at launch time too
     ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
@@ -6978,6 +7005,16 @@ function applyPresetConfig(config) {
   setV('primary-intro-body', t.primaryIntroBody || '');
   if (t.introTitle) setV('intro-title', t.introTitle);
 
+  // v2.91: restore CC+IC auto-accept + automated first follow-up. Without these
+  // a Re-run / preset load drops the toggles back to defaults.
+  if (document.getElementById('auto-accept-toggle')) document.getElementById('auto-accept-toggle').checked = !!t.autoAcceptPrimary;
+  if (document.getElementById('follow-up-toggle')) document.getElementById('follow-up-toggle').checked = !!t.followUpEnabled;
+  setV('follow-up-body', t.followUpBody || '');
+  if (t.followUpDelayMinutes) setV('follow-up-delay', t.followUpDelayMinutes);
+  if (t.followUpSender) setV('follow-up-sender', t.followUpSender);
+  if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields();
+  if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate();
+
   // v2.62: CC+DM post-acceptance body — symmetric with the primary-intro-body
   // restore above. Without it, Re-run dropped the DM body and relaunched a
   // CC+DM campaign with an empty ccDmBody → no auto-DMs ever fired. Persist to
@@ -8024,7 +8061,33 @@ function savePrimaryPersonFields() {
     localStorage.setItem('ortus-primary-url',  document.getElementById('primary-person-url')?.value  || '');
     localStorage.setItem('ortus-primary-body', document.getElementById('primary-intro-body')?.value  || '');
   } catch { /* storage blocked */ }
+  // v2.91: typing the primary URL unlocks the auto-accept toggle live.
+  try { if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate(); } catch (_) {}
 }
+
+// v2.91: Automated first follow-up — reveal the message/delay/sender fields
+// only when the toggle is on.
+function toggleFollowUpFields() {
+  const on = document.getElementById('follow-up-toggle')?.checked;
+  const box = document.getElementById('follow-up-fields');
+  if (box) box.style.display = on ? '' : 'none';
+}
+window.toggleFollowUpFields = toggleFollowUpFields;
+
+// v2.91: Lock auto-accept until a primary URL is present — without a profile
+// URL there's nothing to accept from.
+function refreshAutoAcceptGate() {
+  const url = (document.getElementById('primary-person-url')?.value || '').trim();
+  const toggle = document.getElementById('auto-accept-toggle');
+  const gate = document.getElementById('auto-accept-gate');
+  const hasUrl = /linkedin\.com\/in\//i.test(url);
+  if (toggle) {
+    toggle.disabled = !hasUrl;
+    if (!hasUrl) toggle.checked = false;
+  }
+  if (gate) gate.style.display = hasUrl ? 'none' : '';
+}
+window.refreshAutoAcceptGate = refreshAutoAcceptGate;
 function restorePrimaryPersonState() {
   try {
     const nameEl = document.getElementById('primary-person-name');

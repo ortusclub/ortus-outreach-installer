@@ -4209,6 +4209,13 @@ body.theme-light .sb-link { color: #6e520f; }
 .notif-pref-toggle input:checked + .notif-pref-slider { background: var(--green); }
 .notif-pref-toggle input:checked + .notif-pref-slider::before { transform: translateX(12px); }
 
+/* v2.91 — CC+IC config cards (auto-accept + automated first follow-up) */
+.intro-config-newtag{display:inline-block;font:10px var(--display);letter-spacing:.12em;color:#0a0a0a;background:var(--gold);border-radius:9999px;padding:2px 8px;vertical-align:middle;margin-left:6px;}
+.intro-config-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:4px 0 8px;}
+.intro-config-toggle-key{font-size:14px;}
+.intro-config-gate{display:flex;gap:8px;align-items:flex-start;margin:6px 0 8px;padding:9px 11px;border:1px dashed var(--gold);border-radius:10px;background:var(--gold-tint-bg);font-size:12px;line-height:1.5;}
+.intro-config-num{width:64px;border:1px solid var(--hairline);border-radius:8px;padding:7px;text-align:center;font-family:var(--mono);background:var(--card-bg);color:var(--ink);}
+
 /* Phase 2.8.20 (W1-B1) — right-pane Parked row (visible during runs) */
 .rp-parked-line {
   font-family: var(--body, 'Hanken Grotesk', sans-serif);
