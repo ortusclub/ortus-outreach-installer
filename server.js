@@ -44,6 +44,15 @@ import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
+import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
+
+// Surface a repeated Operations Log write failure instead of letting it die
+// silently (the 2026-06-10 → 06-11 blackout). Routed to the fatal-error log
+// the app already displays; no external auto-send.
+_setAlertImpl((msg) => {
+  console.error(`[log-writer][ALERT] ${msg}`);
+  try { appendFatalErrorSync({ at: new Date().toISOString(), source: 'log-writer', message: msg }); } catch (_) { /* */ }
+});
 import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
 import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs } from './src/operator-prefs.js';
 import { fetchSoOData } from './src/soo.js';
@@ -3766,6 +3775,12 @@ async function gracefulShutdown(signal) {
   const count = await closeAllProfiles();
   await closeLocalBrowser();
   console.log(`[shutdown] Closing ${count} profiles...`);
+  // Drain the central Operations Log buffer before exit — otherwise the last
+  // 0–30s of buffered events (the ones not yet auto-flushed) are lost on every
+  // quit/relaunch. Timeout-guarded so a dead network can't hang shutdown.
+  try {
+    await Promise.race([flushOpsLog(), new Promise((r) => setTimeout(r, 4000))]);
+  } catch (_) { /* fire-and-forget */ }
   console.log('[shutdown] Done.');
   process.exit(0);
 }

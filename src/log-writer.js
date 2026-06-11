@@ -38,15 +38,45 @@ let _fetchImpl = (...args) => globalThis.fetch(...args);
 // the stub overrides the constants for the duration of the test.
 let _envImpl = null; // null = use centralized constants (production)
 
+// Alert seam — invoked when ops flushes fail repeatedly so a logging outage
+// surfaces instead of dying silently (the 2026-06-10 → 06-11 blackout, where
+// the Ops Log was frozen 33h and nobody noticed). Fires once per outage.
+let _alertImpl = null;
+let _consecutiveFlushFailures = 0;
+let _flushAlerted = false;
+const FLUSH_FAILURE_ALERT_THRESHOLD = 3;
+
 export function _setFetchImpl(fn) { _fetchImpl = fn; }
 export function _setEnvImpl(fn) { _envImpl = fn; }
+export function _setAlertImpl(fn) { _alertImpl = fn; }
 export function _resetForTest() {
   _opsBuffer = [];
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
   _fetchImpl = (...args) => globalThis.fetch(...args);
   _envImpl = null;
+  _alertImpl = null;
+  _consecutiveFlushFailures = 0;
+  _flushAlerted = false;
 }
 export function _peekBufferForTest() { return _opsBuffer.slice(); }
+
+// Reset the failure streak after any successful flush.
+function _noteFlushSuccess() {
+  _consecutiveFlushFailures = 0;
+  _flushAlerted = false;
+}
+// Count a failed flush; raise the alert once the streak crosses the threshold.
+function _noteFlushFailure() {
+  _consecutiveFlushFailures++;
+  if (_consecutiveFlushFailures >= FLUSH_FAILURE_ALERT_THRESHOLD && !_flushAlerted) {
+    _flushAlerted = true;
+    try {
+      (_alertImpl || (() => {}))(
+        'Operations Log is not writing — check the "OPS AND LOGS" sheet (likely full or auth expired).'
+      );
+    } catch (_) { /* never let the alert itself throw */ }
+  }
+}
 
 function _opsLogUrl() {
   if (_envImpl) return _envImpl().OPS_LOG_WEBAPP_URL || '';
@@ -80,7 +110,13 @@ export function opsLogEvent(campaignKey, event) {
       account: evt.account || '',
       event: evt.event || '',
       leadUrl: evt.leadUrl || '',
-      details: evt.details || ''
+      details: evt.details || '',
+      // v2.93 — structured fields for the single-Events-tab Ops Log v2.
+      // Optional + backward-compatible: old bridges ignore them; the new
+      // bridge prefers them and falls back to event/severity when absent.
+      phase: evt.phase || '',
+      outcome: evt.outcome || '',
+      reason: evt.reason || ''
     });
 
     _scheduleFlush();
@@ -118,15 +154,18 @@ export async function flushOpsLog() {
   try {
     const res = await _post(url, { action: 'appendEvents', events: batch });
     if (res && res.success) {
+      _noteFlushSuccess();
       return { ok: true, sent: batch.length };
     }
     // Apps Script returned an error envelope — keep events for retry.
     _opsBuffer.unshift(...batch);
     _scheduleFlush();
+    _noteFlushFailure();
     return { ok: false, sent: 0, error: (res && res.error) || 'unknown' };
   } catch (err) {
     _opsBuffer.unshift(...batch);
     _scheduleFlush();
+    _noteFlushFailure();
     return { ok: false, sent: 0, error: err.message };
   }
 }

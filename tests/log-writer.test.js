@@ -6,6 +6,7 @@ import {
   campaignLogAppendRun,
   _setFetchImpl,
   _setEnvImpl,
+  _setAlertImpl,
   _resetForTest,
   _peekBufferForTest,
 } from '../src/log-writer.js';
@@ -208,6 +209,58 @@ test('campaignLogAppendRun returns ok:false on Apps Script error envelope', asyn
 // ─────────────────────────────────────────────────────────────────────────
 // 302 redirect handling — mirrors src/sheets-writer.js's pattern
 // ─────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────
+// v2.93 — structured payload + failure alert
+// ─────────────────────────────────────────────────────────────────────────
+
+test('opsLogEvent buffers structured phase/outcome/reason fields', () => {
+  _setEnvImpl(() => ({ OPS_LOG_WEBAPP_URL: 'https://example.com/ops' }));
+  opsLogEvent(
+    { name: 'C', startedAt: 't', operator: 'op' },
+    { event: 'Outcome', account: 'kyra', phase: 'DM', outcome: 'sent', reason: '', leadUrl: '/in/x' },
+  );
+  const row = _peekBufferForTest()[0];
+  assert.equal(row.phase, 'DM');
+  assert.equal(row.outcome, 'sent');
+  assert.equal(row.account, 'kyra');
+  assert.equal(row.leadUrl, '/in/x');
+});
+
+test('repeated flush failures invoke the alert hook once past the threshold', async () => {
+  _setEnvImpl(() => ({ OPS_LOG_WEBAPP_URL: 'https://example.com/ops' }));
+  const alerts = [];
+  _setAlertImpl((msg) => alerts.push(msg));
+  _setFetchImpl(makeFakeFetch(() => jsonResponse({ error: 'boom' })));
+  for (let i = 0; i < 4; i++) {
+    opsLogEvent({ name: 'C', startedAt: 't', operator: 'op' }, { event: 'X' });
+    await flushOpsLog();
+  }
+  assert.equal(alerts.length, 1, 'alert fires exactly once after the streak crosses the threshold');
+});
+
+test('a successful flush resets the failure streak', async () => {
+  _setEnvImpl(() => ({ OPS_LOG_WEBAPP_URL: 'https://example.com/ops' }));
+  const alerts = [];
+  _setAlertImpl((msg) => alerts.push(msg));
+  let ok = false;
+  _setFetchImpl(makeFakeFetch(() => ok ? jsonResponse({ success: true }) : jsonResponse({ error: 'boom' })));
+  // two failures (below threshold of 3)
+  for (let i = 0; i < 2; i++) {
+    opsLogEvent({ name: 'C' }, { event: 'X' });
+    await flushOpsLog();
+  }
+  // one success resets the streak
+  ok = true;
+  await flushOpsLog();
+  // two more failures — still below threshold because the streak reset
+  ok = false;
+  for (let i = 0; i < 2; i++) {
+    opsLogEvent({ name: 'C' }, { event: 'X' });
+    await flushOpsLog();
+  }
+  assert.equal(alerts.length, 0, 'no alert: the success reset the streak');
+});
 
 test('POST handles Apps Script 302 redirect chain', async () => {
   _setEnvImpl(() => ({ CAMPAIGN_LOG_WEBAPP_URL: 'https://example.com/campaigns' }));

@@ -17,6 +17,9 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
 import dotenv from 'dotenv';
+// Same in-process singleton the server uses — flush its ops buffer on quit so
+// the last buffered events aren't lost when the operator closes the app.
+import { flushOpsLog } from '../src/log-writer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -238,4 +241,15 @@ if (!gotLock) {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+// Drain the Operations Log buffer before the app actually terminates (Cmd+Q /
+// tray Quit). Timeout-guarded so a dead network can't block the quit.
+let _flushedOnQuit = false;
+app.on('before-quit', async (e) => {
+  if (_flushedOnQuit) return;
+  e.preventDefault();
+  _flushedOnQuit = true;
+  try { await Promise.race([flushOpsLog(), new Promise((r) => setTimeout(r, 4000))]); } catch (_) { /* */ }
+  app.quit();
 });
