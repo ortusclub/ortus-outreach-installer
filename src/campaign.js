@@ -2423,6 +2423,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 if (tpl && tpl.autoAcceptPrimary && _res.connectAttempted && _res.connectResult === 'sent') {
                   try {
                     const _self = await readSelfIdentity(page);
+                    // Don't enqueue a dead task: an empty identity (slow/cold
+                    // nav) would never match an invitation. Surface a warning
+                    // and skip — the connect was sent, so it can be accepted
+                    // manually, and the next run can re-capture.
+                    if (!_self.name && !_self.profileUrl) {
+                      throw new Error('could not read this account\'s identity (nav not ready) — skipping auto-accept queue');
+                    }
                     const _task = buildAcceptTask({
                       campaignProfileId: profileId,
                       campaignProfileName: pName,
