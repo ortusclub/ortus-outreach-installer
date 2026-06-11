@@ -18,6 +18,7 @@
 
 import { withWriteRetry } from './sheets-writer.js';
 import { SCRAPER_ENGINE_URL, SCRAPER_ENGINE_TOKEN } from './scraper-engine-url.js';
+import { getOperatorId } from './operator-id.js';
 
 // Cloud engine is the centralized default (scraper-engine-url.js); a local
 // SCRAPER_ENGINE_URL / SCRAPER_ENGINE_TOKEN env var overrides it for dev.
@@ -56,9 +57,73 @@ export function extractSalesNavUrls(rows) {
   return out;
 }
 
-/** The engine base URL — used by the UI to build the live-browser (noVNC) link. */
+/**
+ * Row-aware variant: pull the first Sales Nav search URL out of each sheet row,
+ * tagged with the 1-based sheet row number (the shape fetchSheetWithRows
+ * returns). Powers the "scrape rows 2–10" picker — the operator chooses which
+ * sheet rows run, so we keep ONE entry per row (no cross-row dedupe) and
+ * preserve the sheet's row numbers exactly. Rows with no Sales Nav URL are
+ * skipped.
+ * @param {{ rowNumber: number, row: Record<string, string> }[]} rowsWithNumbers
+ * @returns {{ row: number, url: string }[]}
+ */
+export function extractSalesNavUrlsWithRows(rowsWithNumbers) {
+  if (!Array.isArray(rowsWithNumbers)) return [];
+  const out = [];
+  for (const entry of rowsWithNumbers) {
+    if (!entry || typeof entry !== 'object' || !entry.row) continue;
+    for (const value of Object.values(entry.row)) {
+      const v = (value == null ? '' : String(value)).trim();
+      if (!v || !SALES_NAV_SEARCH_RE.test(v)) continue;
+      out.push({ row: entry.rowNumber, url: v });
+      break; // one search per sheet row
+    }
+  }
+  return out;
+}
+
+/** The engine base URL — exposed for the UI / health payload. */
 export function getEngineUrl() {
   return engineUrl();
+}
+
+/**
+ * Open the live MJPEG screencast stream for ONE running job (the per-job "View"
+ * button). The engine streams multipart/x-mixed-replace; this resolves to
+ * { ok: true, contentType, body, abort } where `body` is the web ReadableStream
+ * to pipe straight through to the browser, and `abort()` tears down the upstream
+ * connection. On failure resolves to { ok: false, status, error } — never throws.
+ *
+ * NOTE: no request timeout — this is a long-lived stream; the caller aborts when
+ * the viewer closes (see /api/scrape/view/:jobId in server.js).
+ */
+export async function openJobViewStream(jobId) {
+  const base = engineUrl();
+  if (!base) return { ok: false, status: 503, error: 'Scraper engine not configured' };
+  const controller = new AbortController();
+  try {
+    const headers = {};
+    const token = engineToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${base}/api/scrape/view/${encodeURIComponent(jobId)}`, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      controller.abort();
+      return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+    }
+    return {
+      ok: true,
+      contentType: res.headers.get('content-type') || 'multipart/x-mixed-replace',
+      body: res.body,
+      abort: () => { try { controller.abort(); } catch { /* */ } },
+    };
+  } catch (err) {
+    controller.abort();
+    return { ok: false, status: 502, error: err.message };
+  }
 }
 
 function authHeaders() {
@@ -138,6 +203,10 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
   if (!sheetUrl) return Promise.resolve({ error: 'sheetUrl required' });
   if (!profileId) return Promise.resolve({ error: 'profileId required' });
 
+  // Tag every job with this install's operator id so the engine can scope the
+  // jobs/logs views to just this operator (the engine is shared across the team).
+  const userId = getOperatorId();
+
   if (urls.length === 1) {
     return requestOnce('POST', '/api/scrape/single', {
       searchUrl: urls[0],
@@ -145,6 +214,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
       tabName: tabName || 'Results',
       profileId,
       slowMode,
+      userId,
     });
   }
   return requestOnce('POST', '/api/scrape/batch', {
@@ -152,6 +222,7 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
     sheetUrl,
     profileId,
     slowMode,
+    userId,
   });
 }
 
@@ -170,14 +241,16 @@ export function stopScrape(profileId) {
   return requestWithRetry('POST', '/api/scrape/stop', { profileId });
 }
 
-/** Current jobs (queued/running/done) with page/profile progress counters. */
+/** This operator's jobs (queued/running/done) with page/profile progress counters. */
 export function getJobs() {
-  return requestWithRetry('GET', '/api/jobs');
+  return requestWithRetry('GET', `/api/jobs?userId=${encodeURIComponent(getOperatorId())}`);
 }
 
-/** Recent engine activity log lines. `since` (ms epoch) fetches only newer. */
+/** This operator's recent engine activity log lines. `since` (ms epoch) fetches only newer. */
 export function getLogs(since) {
-  return requestWithRetry('GET', `/api/logs${since ? `?since=${since}` : ''}`);
+  const params = new URLSearchParams({ userId: getOperatorId() });
+  if (since) params.set('since', since);
+  return requestWithRetry('GET', `/api/logs?${params.toString()}`);
 }
 
 /** Engine health probe — single attempt, used to show connectivity in the UI. */

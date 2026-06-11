@@ -1812,10 +1812,46 @@ function setScrapeStatus(msg) {
 // In 'sheet' mode the app reads the sheet and extracts the Sales Nav search
 // URLs, then dispatches them as the SAME `searchUrls` — the engine is unchanged.
 let scrapeInputMode = 'type';
-let scrapeSheetUrls = [];
+// Sheet mode: [{ row, url }] for every sheet row that holds a Sales Nav search,
+// plus the operator's row-range pick (e.g. "2-10, 13"). Blank pick = all rows.
+let scrapeSheetItems = [];
+let scrapeRowSpec = '';
+
+// Parse a row spec like "2-10, 13, 15-17" into an ordered, de-duped list of row
+// numbers, intersected with the rows we actually found (so junk/out-of-range
+// numbers are ignored). Blank spec → every available row.
+function parseScrapeRowSpec(spec, availableRows) {
+  const available = new Set(availableRows);
+  const s = (spec || '').trim();
+  if (!s) return availableRows.slice();
+  const picked = new Set();
+  for (const tokenRaw of s.split(',')) {
+    const token = tokenRaw.trim();
+    if (!token) continue;
+    const m = token.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      let a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+      if (a > b) [a, b] = [b, a];
+      for (let r = a; r <= b; r++) if (available.has(r)) picked.add(r);
+    } else if (/^\d+$/.test(token)) {
+      const r = parseInt(token, 10);
+      if (available.has(r)) picked.add(r);
+    }
+  }
+  // Preserve found order.
+  return availableRows.filter((r) => picked.has(r));
+}
+
+// The rows currently selected by the spec (sheet mode).
+function selectedScrapeRows() {
+  return parseScrapeRowSpec(scrapeRowSpec, scrapeSheetItems.map((i) => i.row));
+}
 
 function getScrapeInputUrls() {
-  if (scrapeInputMode === 'sheet') return scrapeSheetUrls.slice();
+  if (scrapeInputMode === 'sheet') {
+    const rows = new Set(selectedScrapeRows());
+    return scrapeSheetItems.filter((i) => rows.has(i.row)).map((i) => i.url);
+  }
   return (document.getElementById('scrape-urls')?.value || '')
     .split('\n').map((s) => s.trim()).filter(Boolean);
 }
@@ -1836,22 +1872,54 @@ function setScrapeInputMode(mode) {
 async function loadScrapeUrlsFromSheet() {
   const sheetUrl = (document.getElementById('scrape-src-sheet')?.value || '').trim();
   const status = document.getElementById('scrape-src-status');
+  const pick = document.getElementById('scrape-row-pick');
+  const rowsInput = document.getElementById('scrape-rows');
   const setS = (m) => { if (status) status.textContent = m; };
-  if (!sheetUrl) { setS('Paste a Google Sheet URL above, then click Load URLs.'); return; }
+  const hidePicker = () => { if (pick) pick.style.display = 'none'; };
+  if (!sheetUrl) { setS('Paste a Google Sheet URL above, then click Load URLs.'); hidePicker(); return; }
   setS('Reading sheet…');
   try {
     const r = await fetch('/api/scrape/extract-urls?sheetUrl=' + encodeURIComponent(sheetUrl));
     const res = await r.json();
-    if (res && res.error) { scrapeSheetUrls = []; setS('Could not read sheet — ' + res.error); }
+    if (res && res.error) { scrapeSheetItems = []; setS('Could not read sheet — ' + res.error); hidePicker(); }
     else {
-      scrapeSheetUrls = Array.isArray(res.urls) ? res.urls : [];
-      setS(scrapeSheetUrls.length
-        ? `✓ Found ${scrapeSheetUrls.length} Sales Nav search URL${scrapeSheetUrls.length === 1 ? '' : 's'} in this sheet.`
-        : 'No Sales Nav search URLs found (looking for linkedin.com/sales/search/… in any cell).');
+      scrapeSheetItems = Array.isArray(res.items)
+        ? res.items.filter((i) => i && i.row && i.url)
+        : (Array.isArray(res.urls) ? res.urls.map((u, idx) => ({ row: idx + 2, url: u })) : []);
+      if (!scrapeSheetItems.length) {
+        setS('No Sales Nav search URLs found (looking for linkedin.com/sales/search/… in any cell).');
+        hidePicker();
+      } else {
+        const rowNums = scrapeSheetItems.map((i) => i.row);
+        const lo = Math.min(...rowNums), hi = Math.max(...rowNums);
+        const span = lo === hi ? `row ${lo}` : `rows ${lo}–${hi}`;
+        setS(`✓ Found ${scrapeSheetItems.length} Sales Nav search${scrapeSheetItems.length === 1 ? '' : 'es'} in ${span}.`);
+        // Reveal the row-range picker, pre-filled with the full span (explicit,
+        // editable — we don't silently assume all). Operator trims as needed.
+        scrapeRowSpec = lo === hi ? String(lo) : `${lo}-${hi}`;
+        if (rowsInput) rowsInput.value = scrapeRowSpec;
+        if (pick) pick.style.display = '';
+        onScrapeRowSpecChange();
+      }
     }
   } catch (e) {
-    scrapeSheetUrls = [];
+    scrapeSheetItems = [];
     setS('Could not read sheet — ' + e.message);
+    hidePicker();
+  }
+  try { updateScrapePairing(); } catch (_) {}
+}
+
+// Operator edited the "which rows" field — recompute selection + summary.
+function onScrapeRowSpecChange() {
+  scrapeRowSpec = (document.getElementById('scrape-rows')?.value || '').trim();
+  const summary = document.getElementById('scrape-row-summary');
+  if (summary) {
+    const sel = selectedScrapeRows().length;
+    const total = scrapeSheetItems.length;
+    summary.textContent = total
+      ? `Scraping ${sel} of ${total} search${total === 1 ? '' : 'es'}${sel === 0 ? ' — no rows match; nothing will run.' : ''}`
+      : '';
   }
   try { updateScrapePairing(); } catch (_) {}
 }
@@ -1920,12 +1988,41 @@ async function refreshScrapeConfigured() {
   } catch (_) { /* leave as-is */ }
 }
 
-// Open the live noVNC view of the cloud scraper browser (opens in the system
-// browser via Electron's external-link handler).
-function openScrapeLiveBrowser() {
-  if (!_scrapeEngineUrl) { setScrapeStatus('Engine not connected — can’t open the live browser yet.'); return; }
-  const url = `${_scrapeEngineUrl}/novnc/vnc.html?autoconnect=true&resize=scale&path=novnc/websockify`;
-  window.open(url, 'scraper-live-browser');
+// Per-job live View — opens a modal whose <img> points straight at
+// /api/scrape/view/:jobId, an MJPEG (multipart/x-mixed-replace) screencast the
+// engine streams via CDP. The browser renders it as live video natively — no
+// polling, no frame handling here. The request rides the dashboard's own
+// session (no token in the URL). Closing the modal clears src, which aborts the
+// stream (the engine then stops the screencast). One viewer open at a time.
+function openScrapeJobView(jobId, label) {
+  closeScrapeJobView();
+  const overlay = document.createElement('div');
+  overlay.id = 'scrape-job-viewer';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
+  const safeLabel = (label || jobId).replace(/</g, '&lt;');
+  overlay.innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1280px;margin-bottom:10px">' +
+      '<span style="color:#fff;font-size:14px">👁 Live · ' + safeLabel + '</span>' +
+      '<span id="scrape-jv-status" style="color:#9aa;font-size:12px">connecting…</span>' +
+      '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeScrapeJobView()">✕ Close</button>' +
+    '</div>' +
+    '<div style="max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
+      '<img id="scrape-jv-img" alt="live page" style="max-width:100%;max-height:78vh;display:block" />' +
+    '</div>';
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeScrapeJobView(); });
+  document.body.appendChild(overlay);
+
+  const img = document.getElementById('scrape-jv-img');
+  const status = document.getElementById('scrape-jv-status');
+  img.onload = () => { if (status) status.textContent = ''; };
+  img.onerror = () => { if (status) status.textContent = 'stream ended — the job may have finished.'; };
+  img.src = `/api/scrape/view/${encodeURIComponent(jobId)}`;
+}
+function closeScrapeJobView() {
+  const img = document.getElementById('scrape-jv-img');
+  if (img) img.src = ''; // aborts the MJPEG connection → engine stops the screencast
+  const el = document.getElementById('scrape-job-viewer');
+  if (el) el.remove();
 }
 
 async function startScrapeJob() {
@@ -2164,9 +2261,16 @@ async function pollScrapeJobs() {
     el.innerHTML = jobs.map((j) => {
       const leads = j.profiles || 0;
       const leadsHtml = leads > 0 ? `<span class="leads">${leads} lead${leads === 1 ? '' : 's'}</span>` : `${leads} leads`;
+      const label = (j.tabName || j.searchUrl || j.id || 'job');
+      const jLabel = String(label).replace(/'/g, '&#39;');
+      // Per-job live View — only while running (no live page otherwise).
+      const viewBtn = j.state === 'running'
+        ? `<button class="btn btn-ghost btn-sm scrape-job-view" onclick="openScrapeJobView('${escHtml(j.id)}','${jLabel}')" title="Watch this account's browser live">👁 View</button>`
+        : '';
       return `<div class="scrape-job-row">
-          <span class="scrape-job-name">${escHtml(j.tabName || j.searchUrl || j.id || 'job')}</span>
+          <span class="scrape-job-name">${escHtml(label)}</span>
           <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(j.state || '')} · ${j.pages || 0}p · ${leadsHtml}</span>
+          ${viewBtn}
         </div>${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
     }).join('');
     const totalLeads = jobs.reduce((a, j) => a + (j.profiles || 0), 0);
@@ -2193,10 +2297,12 @@ window.stopScrapeJob = stopScrapeJob;
 window.updateScrapePairing = updateScrapePairing;
 window.setScrapeInputMode = setScrapeInputMode;
 window.loadScrapeUrlsFromSheet = loadScrapeUrlsFromSheet;
+window.onScrapeRowSpecChange = onScrapeRowSpecChange;
 window.setScrapeTab = setScrapeTab;
 window.clearScrapeLog = clearScrapeLog;
 window.copyScrapeLog = copyScrapeLog;
-window.openScrapeLiveBrowser = openScrapeLiveBrowser;
+window.openScrapeJobView = openScrapeJobView;
+window.closeScrapeJobView = closeScrapeJobView;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // v3.0: Post Amplification (UI shell — Phase 1)

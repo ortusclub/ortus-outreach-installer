@@ -86,11 +86,54 @@ function splitCSVLine(line) {
 }
 
 /**
- * Fetches all rows from a public Google Sheet.
- * @param {string} sheetUrl - The Google Sheet URL
- * @returns {Promise<Record<string, string>[]>}
+ * Like parseCSV, but tags each non-empty data row with the 1-based sheet row
+ * number the operator sees in Google Sheets (header = row 1, first data row =
+ * row 2). Blank sheet rows are skipped but still advance the counter, so the
+ * numbers stay aligned with the actual spreadsheet — this is what lets the UI
+ * offer a "scrape rows 2–10" picker that matches what's on screen.
+ * @param {string} csv
+ * @returns {{ rowNumber: number, row: Record<string, string> }[]}
  */
-export async function fetchSheet(sheetUrl) {
+function parseCSVWithRowNumbers(csv) {
+  // Reuse parseCSV's line splitter via a throwaway: re-run the same char loop
+  // here so the two stay byte-identical. (parseCSV builds `lines` then objects;
+  // we need the line index, so we redo the split but keep position.)
+  const lines = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    if (ch === '"') {
+      if (inQuotes && csv[i + 1] === '"') { current += '""'; i++; }
+      else { inQuotes = !inQuotes; current += ch; }
+    } else if (ch === '\n' && !inQuotes) { lines.push(current); current = ''; }
+    else if (ch === '\r' && !inQuotes) { /* skip */ }
+    else { current += ch; }
+  }
+  if (current.trim()) lines.push(current);
+
+  if (lines.length < 2) return [];
+  const headers = splitCSVLine(lines[0]);
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = splitCSVLine(lines[i]);
+    if (values.every((v) => !v.trim())) continue; // skip blank rows (counter still advances)
+    const row = {};
+    for (let j = 0; j < headers.length; j++) {
+      row[headers[j].trim()] = (values[j] || '').trim();
+    }
+    out.push({ rowNumber: i + 1, row }); // line index i → sheet row i+1 (header is line 0 / row 1)
+  }
+  return out;
+}
+
+/**
+ * Fetches the raw CSV text for a public Google Sheet (URL build + timeout +
+ * one retry). Shared by fetchSheet and fetchSheetWithRows.
+ * @param {string} sheetUrl
+ * @returns {Promise<string>}
+ */
+async function fetchSheetCsv(sheetUrl) {
   const sheetId = extractSheetId(sheetUrl);
   // Honor the tab the operator pasted. Google's CSV export defaults to the
   // first sheet when no gid is given, which silently pulls the wrong data
@@ -122,11 +165,28 @@ export async function fetchSheet(sheetUrl) {
   if (!response.ok) {
     throw new Error(`Failed to fetch Google Sheet (HTTP ${response.status}). Is the sheet publicly viewable?`);
   }
+  return response.text();
+}
 
-  const csv = await response.text();
-  const rows = parseCSV(csv);
-
+/**
+ * Fetches all rows from a public Google Sheet.
+ * @param {string} sheetUrl - The Google Sheet URL
+ * @returns {Promise<Record<string, string>[]>}
+ */
+export async function fetchSheet(sheetUrl) {
+  const rows = parseCSV(await fetchSheetCsv(sheetUrl));
   console.log(`[sheets] Parsed ${rows.length} row(s). Columns: ${rows.length > 0 ? Object.keys(rows[0]).join(', ') : '(none)'}`);
+  return rows;
+}
 
+/**
+ * Fetches all rows AND their 1-based sheet row numbers from a public Google
+ * Sheet. Used by the Sales Nav Scrape "From a Sheet" row-range picker.
+ * @param {string} sheetUrl - The Google Sheet URL
+ * @returns {Promise<{ rowNumber: number, row: Record<string, string> }[]>}
+ */
+export async function fetchSheetWithRows(sheetUrl) {
+  const rows = parseCSVWithRowNumbers(await fetchSheetCsv(sheetUrl));
+  console.log(`[sheets] Parsed ${rows.length} non-empty row(s) with row numbers.`);
   return rows;
 }

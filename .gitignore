@@ -22,6 +22,7 @@ data/bulk-check-cooldown.json
 data/post-campaign-bulk-check.json
 data/errors.log.json
 data/test-mode.json
+data/operator-id.json
 
 # Build output
 dist/
