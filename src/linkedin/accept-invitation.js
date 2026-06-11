@@ -19,6 +19,50 @@ function urlKey(u) {
   return m ? m[1].toLowerCase() : '';
 }
 
+// LinkedIn's invitation cards use hashed/randomized CSS classes and the Accept
+// button's label is localized (the operator's UI language), so we identify the
+// Accept button by a language-stem match on its aria-label / text — and we
+// EXCLUDE ignore/decline stems so a stray match can never click "Ignore".
+// Stems are lowercase substrings covering the common operator locales.
+export const ACCEPT_STEMS = [
+  'accept',   // EN accept · FR accepter · NL accepteren · RO acceptă · DA acceptér
+  'annehm',   // DE annehmen
+  'accett',   // IT accetta / accettare
+  'acept',    // ES aceptar
+  'aceit',    // PT aceitar
+  'godkänn',  // SV
+  'godta',    // NO
+  'hyväksy',  // FI
+  'zaakcept', // PL zaakceptuj
+  'przyjmij', // PL przyjmij
+  'elfogad',  // HU
+  'принять',  // RU
+];
+export const IGNORE_STEMS = [
+  'ignor',    // EN/DE/IT/ES ignore/ignorieren/ignora/ignorar
+  'negeren',  // NL
+  'odrzuc',   // PL
+  'rifiut',   // IT rifiuta
+  'rechaz',   // ES rechazar
+  'refus',    // FR refuser
+  'avvis',    // NO/DA avvis
+  'hylkää',   // FI
+  'elutasít', // HU
+  'отклон',   // RU
+];
+
+/**
+ * Pure: is this button label an ACCEPT action (and not an ignore/decline)?
+ * Matches an accept stem AND no ignore stem. Locale-independent of CSS classes.
+ * @param {string} label  aria-label or visible text of a button
+ */
+export function isAcceptLabel(label, accept = ACCEPT_STEMS, ignore = IGNORE_STEMS) {
+  const s = (label || '').toLowerCase();
+  if (!s) return false;
+  if (ignore.some((v) => s.includes(v))) return false;
+  return accept.some((v) => s.includes(v));
+}
+
 /**
  * Pure decision: which received-invitation candidate (if any) belongs to the
  * target campaign account. Precision over recall — only a profile-URL match or
@@ -85,56 +129,97 @@ export async function acceptInvitationFrom(page, target, { log = () => {} } = {}
   await page.goto('https://www.linkedin.com/mynetwork/invitation-manager/received/', {
     waitUntil: 'domcontentloaded', timeout: 45000,
   });
-  await new Promise(r => setTimeout(r, 2500));
-
-  const candidates = await page.evaluate(() => {
-    const rows = Array.from(document.querySelectorAll(
-      '.invitation-card, li.mn-invitation-list__item, [data-view-name="pending-invitation"]',
-    ));
-    return rows.map((row) => {
-      const nameEl = row.querySelector('a[href*="/in/"] strong, .invitation-card__title, a[href*="/in/"]');
-      const link = row.querySelector('a[href*="/in/"]');
-      return {
-        name: (nameEl?.textContent || '').replace(/\s+/g, ' ').trim(),
-        profileUrl: link?.href || '',
+  // Wait for the received list to actually render an Accept button (the cards
+  // load async), or 12s if the list is genuinely empty. The cards use hashed
+  // CSS classes, so we anchor on the language-stem Accept label instead.
+  await page.waitForFunction(
+    (acc, ign) => {
+      const isAcc = (s) => {
+        s = (s || '').toLowerCase();
+        if (!s) return false;
+        if (ign.some((v) => s.includes(v))) return false;
+        return acc.some((v) => s.includes(v));
       };
-    });
-  });
+      return Array.from(document.querySelectorAll('button'))
+        .some((b) => isAcc(b.getAttribute('aria-label') || b.textContent || ''));
+    },
+    { timeout: 12000 },
+    ACCEPT_STEMS, IGNORE_STEMS,
+  ).catch(() => { /* empty list / slow — fall through and scrape what's there */ });
+  await new Promise((r) => setTimeout(r, 1500));
+
+  // Build candidates by walking each Accept button up to its card's profile
+  // link — class-independent. Each candidate ties a sender identity to its own
+  // Accept button.
+  const candidates = await page.evaluate((acc, ign) => {
+    const isAcc = (s) => {
+      s = (s || '').toLowerCase();
+      if (!s) return false;
+      if (ign.some((v) => s.includes(v))) return false;
+      return acc.some((v) => s.includes(v));
+    };
+    const out = [];
+    for (const btn of Array.from(document.querySelectorAll('button'))) {
+      if (!isAcc(btn.getAttribute('aria-label') || btn.textContent || '')) continue;
+      let el = btn, link = null;
+      for (let k = 0; k < 10 && el; k++) {
+        el = el.parentElement;
+        if (!el) break;
+        link = el.querySelector('a[href*="/in/"]');
+        if (link) break;
+      }
+      if (!link) continue; // an Accept-like button with no profile card — skip
+      const nameEl = el.querySelector('a[href*="/in/"] strong') || link;
+      out.push({
+        name: (nameEl.textContent || '').replace(/\s+/g, ' ').trim(),
+        profileUrl: link.href || '',
+      });
+    }
+    return out;
+  }, ACCEPT_STEMS, IGNORE_STEMS);
 
   const { index, reason } = pickInvitation(candidates, target);
   if (index == null) {
-    log(`  ⚠ Auto-accept: no pending invitation matches ${target?.name || 'the account'} (${reason}) — accepting nothing.`);
+    log(`  ⚠ Auto-accept: no pending invitation matches ${target?.name || 'the account'} (${reason}; ${candidates.length} pending) — accepting nothing.`);
     return { accepted: false, reason };
   }
 
-  // Click by IDENTITY, not by the stale index: re-find the matched person's row
-  // inside the same evaluate so a SPA re-render between scrape and click can
-  // never land us on a different (stranger's) card.
+  // Click by IDENTITY: re-find the matched person's Accept button inside the
+  // same evaluate (same anchor logic) so a SPA re-render can never land us on a
+  // different card, and so we click ONLY that person's Accept (never Ignore).
   const matched = candidates[index];
-  const clicked = await page.evaluate((want) => {
+  const clicked = await page.evaluate((want, acc, ign) => {
+    const isAcc = (s) => {
+      s = (s || '').toLowerCase();
+      if (!s) return false;
+      if (ign.some((v) => s.includes(v))) return false;
+      return acc.some((v) => s.includes(v));
+    };
     const slug = (u) => { const m = String(u || '').match(/\/in\/([^/?#]+)/i); return m ? m[1].toLowerCase() : ''; };
-    const rows = Array.from(document.querySelectorAll(
-      '.invitation-card, li.mn-invitation-list__item, [data-view-name="pending-invitation"]',
-    ));
     const wantSlug = slug(want.profileUrl);
     const wantName = (want.name || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const row = rows.find((r) => {
-      const a = r.querySelector('a[href*="/in/"]');
-      if (wantSlug && a && slug(a.href) === wantSlug) return true;
-      const nameEl = r.querySelector('a[href*="/in/"] strong, .invitation-card__title, a[href*="/in/"]');
-      const rn = (nameEl?.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-      return wantName && rn === wantName;
-    });
-    if (!row) return false;
-    const btn = Array.from(row.querySelectorAll('button'))
-      .find(b => /accept/i.test(b.textContent || '') || /accept/i.test(b.getAttribute('aria-label') || ''));
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, matched);
+    for (const btn of Array.from(document.querySelectorAll('button'))) {
+      if (!isAcc(btn.getAttribute('aria-label') || btn.textContent || '')) continue;
+      let el = btn, link = null;
+      for (let k = 0; k < 10 && el; k++) {
+        el = el.parentElement;
+        if (!el) break;
+        link = el.querySelector('a[href*="/in/"]');
+        if (link) break;
+      }
+      if (!link) continue;
+      const nameEl = el.querySelector('a[href*="/in/"] strong') || link;
+      const rn = (nameEl.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      if ((wantSlug && slug(link.href) === wantSlug) || (wantName && rn === wantName)) {
+        btn.click();
+        return true;
+      }
+    }
+    return false;
+  }, matched, ACCEPT_STEMS, IGNORE_STEMS);
 
   if (!clicked) return { accepted: false, reason: 'matched-row-not-found-at-click' };
-  await new Promise(r => setTimeout(r, 1500));
+  await new Promise((r) => setTimeout(r, 1500));
   log(`  ✓ Auto-accept: accepted the invitation from ${target?.name || 'the account'} (${reason}).`);
   return { accepted: true, reason };
 }

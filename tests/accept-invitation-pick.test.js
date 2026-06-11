@@ -1,6 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickInvitation } from '../src/linkedin/accept-invitation.js';
+import { pickInvitation, isAcceptLabel } from '../src/linkedin/accept-invitation.js';
+
+test('isAcceptLabel matches accept verbs across locales', () => {
+  assert.equal(isAcceptLabel('Accept'), true);                                   // EN
+  assert.equal(isAcceptLabel('Kontaktanfrage von Tony Otto annehmen'), true);    // DE (the live bug)
+  assert.equal(isAcceptLabel('Accetta'), true);                                  // IT
+  assert.equal(isAcceptLabel('Accepter'), true);                                 // FR
+  assert.equal(isAcceptLabel('Aceptar'), true);                                  // ES
+  assert.equal(isAcceptLabel('Aceitar'), true);                                  // PT
+});
+
+test('isAcceptLabel rejects ignore/decline verbs — never clicks Ignore', () => {
+  assert.equal(isAcceptLabel('Kontaktanfrage von Tony Otto ignorieren'), false); // DE ignore
+  assert.equal(isAcceptLabel('Ignore'), false);
+  assert.equal(isAcceptLabel('Rifiuta'), false);                                 // IT decline
+  assert.equal(isAcceptLabel('Rechazar'), false);                               // ES decline
+  assert.equal(isAcceptLabel(''), false);
+  assert.equal(isAcceptLabel(null), false);
+});
 
 test('pickInvitation matches the sender by name', () => {
   const candidates = [
