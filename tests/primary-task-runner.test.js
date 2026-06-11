@@ -13,7 +13,10 @@ function fakeSemaphore() {
   return { calls, async acquire() { calls.acquire++; }, release() { calls.release++; }, getStatus() { return { count: 0, max: 2 }; } };
 }
 
-test('runDueTasks accepts the matching invite and marks it done', async () => {
+// Terminal marks = everything except the 'in_progress' claim written before each action.
+const terminal = (marks) => marks.filter(m => m[1] !== 'in_progress');
+
+test('runDueTasks claims in_progress, accepts the matching invite, marks it done', async () => {
   const marks = [];
   const tasks = [{ id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 }];
   const sem = fakeSemaphore();
@@ -30,9 +33,27 @@ test('runDueTasks accepts the matching invite and marks it done', async () => {
     log: () => {},
   });
   assert.equal(res.ran, 1);
-  assert.deepEqual(marks, [['a1', 'done']]);
+  assert.ok(marks.some(m => m[0] === 'a1' && m[1] === 'in_progress'), 'claims in_progress first');
+  assert.deepEqual(terminal(marks), [['a1', 'done']]);
   assert.equal(sem.calls.acquire, 1);
   assert.equal(sem.calls.release, 1);
+});
+
+test('runDueTasks marks an unmatched accept as skipped', async () => {
+  const marks = [];
+  const tasks = [{ id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 }];
+  const res = await runDueTasks(10, {
+    loadTasks: async () => tasks,
+    markTask: async (id, status) => marks.push([id, status]),
+    launchLocal: async () => ({ page: {} }),
+    closeLocal: async () => {},
+    launchAccount: async () => ({ page: {} }), closeAccount: async () => {},
+    acceptInvitationFrom: async () => ({ accepted: false, reason: 'no-match' }),
+    sendInThread: async () => {},
+    semaphore: fakeSemaphore(), log: () => {},
+  });
+  assert.equal(res.ran, 1);
+  assert.deepEqual(terminal(marks), [['a1', 'skipped']]);
 });
 
 test('runDueTasks sends a campaign-account follow-up via launchAccount', async () => {
@@ -53,7 +74,7 @@ test('runDueTasks sends a campaign-account follow-up via launchAccount', async (
   });
   assert.equal(res.ran, 1);
   assert.deepEqual(opened, ['p9']);
-  assert.deepEqual(marks, [['f1', 'done']]);
+  assert.deepEqual(terminal(marks), [['f1', 'done']]);
 });
 
 test('runDueTasks retries (stays pending) up to 3 attempts then fails', async () => {
@@ -61,7 +82,7 @@ test('runDueTasks retries (stays pending) up to 3 attempts then fails', async ()
   const tasks = [{ id: 'f1', type: 'follow-up', sender: 'local-browser', status: 'pending', dueAt: 1, threadUrl: 't', body: 'hi', attempts: 2 }];
   await runDueTasks(10, {
     loadTasks: async () => tasks,
-    markTask: async (id, status, patch) => marks.push([id, status, patch.attempts]),
+    markTask: async (id, status, patch) => marks.push([id, status, patch?.attempts]),
     launchLocal: async () => ({ page: {} }),
     closeLocal: async () => {},
     launchAccount: async () => ({ page: {} }),
@@ -71,7 +92,70 @@ test('runDueTasks retries (stays pending) up to 3 attempts then fails', async ()
     semaphore: fakeSemaphore(),
     log: () => {},
   });
-  assert.deepEqual(marks, [['f1', 'failed', 3]]);
+  assert.deepEqual(terminal(marks), [['f1', 'failed', 3]]);
+});
+
+test('a launch failure settles every task in the bucket (caps infinite retry)', async () => {
+  const marks = [];
+  const tasks = [
+    { id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' }, attempts: 0 },
+    { id: 'a2', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Sam' }, attempts: 2 },
+  ];
+  const sem = fakeSemaphore();
+  await runDueTasks(10, {
+    loadTasks: async () => tasks,
+    markTask: async (id, status, patch) => marks.push([id, status, patch?.attempts]),
+    launchLocal: async () => { throw new Error('Chrome not found'); },
+    closeLocal: async () => {},
+    launchAccount: async () => ({ page: {} }), closeAccount: async () => {},
+    acceptInvitationFrom: async () => ({ accepted: true }), sendInThread: async () => {},
+    semaphore: sem, log: () => {},
+  });
+  // both tasks get an attempts++; a2 (was 2) tips over to failed, a1 stays pending
+  assert.deepEqual(marks, [['a1', 'pending', 1], ['a2', 'failed', 3]]);
+  assert.equal(sem.calls.acquire, 1);
+  assert.equal(sem.calls.release, 1); // released even though launch failed
+});
+
+test('a successful send whose terminal mark fails is NOT re-queued (no double-send)', async () => {
+  const statuses = [];
+  let sends = 0;
+  const tasks = [{ id: 'f1', type: 'follow-up', sender: 'local-browser', status: 'pending', dueAt: 1, threadUrl: 't', body: 'hi', attempts: 0 }];
+  await runDueTasks(10, {
+    loadTasks: async () => tasks,
+    markTask: async (id, status) => {
+      statuses.push(status);
+      if (status === 'done') throw new Error('ENOSPC');  // disk dies right after the send
+    },
+    launchLocal: async () => ({ page: {} }),
+    closeLocal: async () => {},
+    launchAccount: async () => ({ page: {} }), closeAccount: async () => {},
+    acceptInvitationFrom: async () => ({ accepted: true }),
+    sendInThread: async () => { sends++; },
+    semaphore: fakeSemaphore(), log: () => {},
+  });
+  assert.equal(sends, 1, 'sent exactly once');
+  // The terminal-mark failure must NOT settle it back to pending/failed.
+  assert.ok(!statuses.includes('pending') && !statuses.includes('failed'),
+    'task left in_progress, not re-queued');
+});
+
+test('guardIdle false defers work — no browser opened, nothing marked', async () => {
+  const sem = fakeSemaphore();
+  let launched = false;
+  const res = await runDueTasks(10, {
+    loadTasks: async () => [{ id: 'a1', type: 'accept', status: 'pending', dueAt: 1, account: { name: 'Pat' } }],
+    markTask: async () => { throw new Error('should not mark'); },
+    launchLocal: async () => { launched = true; return { page: {} }; },
+    closeLocal: async () => {},
+    launchAccount: async () => ({ page: {} }), closeAccount: async () => {},
+    acceptInvitationFrom: async () => ({ accepted: true }), sendInThread: async () => {},
+    semaphore: sem, log: () => {},
+    guardIdle: async () => false,
+  });
+  assert.equal(res.ran, 0);
+  assert.equal(launched, false);
+  assert.equal(sem.calls.acquire, 0);
 });
 
 test('runDueTasks does nothing when no tasks are due', async () => {
