@@ -28,6 +28,8 @@ import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
 import { opsLogEvent, campaignLogAppendRun } from './log-writer.js';
+import { classifyOutcome } from './linkedin/outcome-classify.js';
+import { emptyTally, applyOutcome } from './campaign-tally.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js';
@@ -658,6 +660,10 @@ export function _ops(severity, eventName, extra) {
         account: e.account || campaign.currentProfile || '',
         leadUrl: e.leadUrl || '',
         details: e.details || '',
+        // v2.93 — structured fields for the single-Events-tab Ops Log v2.
+        phase: e.phase || '',
+        outcome: e.outcome || '',
+        reason: e.reason || '',
       },
     );
   } catch (_) { /* fire-and-forget */ }
@@ -1452,6 +1458,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign.startedAt = new Date().toISOString();
   campaign.profileNames = [];
   campaign.errors = [];
+  campaign.tally = emptyTally(); // v2.93 — per-run funnel + leak counters
   campaign.parkedProfiles = [];
   campaign.softWarnings = [];
   campaign.profileEndReasons = [];
@@ -2850,6 +2857,27 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             }
           }
 
+          // v2.93 — mirror every attempted lead outcome into the central
+          // Operations Log as one structured, attributable event, and tally the
+          // run funnel/leaks. Pure classification + fire-and-forget; a telemetry
+          // failure must never affect the outreach loop.
+          try {
+            const _cls = classifyOutcome({
+              action: result.action,
+              reason: result.error || result.reason || result.message || '',
+              mode,
+            });
+            campaign.tally = applyOutcome(campaign.tally || emptyTally(), _cls);
+            _ops(
+              _cls.outcome === 'error' ? 'ERROR'
+                : (_cls.outcome === 'skipped' || _cls.outcome === 'rate_limited' || _cls.outcome === 'parked') ? 'WARN'
+                : 'INFO',
+              'Outcome',
+              { account: pName, leadUrl: url, details: _cls.reason,
+                phase: _cls.phase, outcome: _cls.outcome, reason: _cls.reason },
+            );
+          } catch (_) { /* telemetry never blocks the loop */ }
+
           if (SUCCESS_ACTIONS.has(result.action)) {
             // v2.10.0: stash the invitationUrn returned by Approach A's network
             // listener so the start-of-run reconcile pass can match this row
@@ -3662,6 +3690,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         totalLeads: campaign.totalTargets || 0,
         processed: campaign.totalProcessed || 0,
         errors: campaign.errors.length || 0,
+        // v2.93 — funnel + leak counters for Campaign Activity v2.
+        sent: campaign.tally?.sent || 0,
+        accepted: campaign.tally?.accepted || 0,
+        intro: campaign.tally?.intro || 0,
+        dm: campaign.tally?.dm || 0,
+        replied: campaign.tally?.replied || 0,
+        rateLimited: campaign.tally?.rateLimited || 0,
+        parked: campaign.tally?.parked || 0,
+        skipped: campaign.tally?.skipped || 0,
         durationSec: _durationSec,
         endReason,
         templatePreview: _templateBlocks.join('\n\n'),
