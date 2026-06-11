@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glance C — as a Google Sheet</title>
+<style>
+  :root{
+    --grid:#e3e3e0; --hdr:#f8f9fa; --hdrtx:#5f6368; --txt:#202124; --green:#188038;
+    --c-need:#f6cccf; --c-slow:#fce0c0; --c-ok:#d3ecd9; --c-done:#e6e6e6;
+    --c-sent:#e6f4ea; --c-made:#cfe9d6; --c-skip:#fef3cf; --c-rate:#fbe0c2; --c-err:#f7d2d4;
+    --mono:"Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:"Google Sans",Roboto,-apple-system,Segoe UI,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#dadce0;font-family:var(--sans);color:var(--txt);padding:24px 16px 70px}
+  .win{max-width:1080px;margin:0 auto 26px;background:#fff;border:1px solid #c4c7c9;border-radius:8px 8px 0 0;box-shadow:0 1px 3px rgba(0,0,0,.12);overflow:hidden}
+  .titlebar{display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid #e8eaed}
+  .ic{width:17px;height:17px;background:var(--green);border-radius:3px;flex:none}
+  .fn{font-size:14px;font-weight:600}.fn small{font-weight:400;color:#80868b}
+  /* fake menubar with Ortus Logs */
+  .menubar{display:flex;gap:16px;padding:5px 16px;border-bottom:1px solid #eef0f2;font-size:12.5px;color:#3c4043}
+  .menubar .m{position:relative}
+  .menubar .m.act{color:var(--green);font-weight:600}
+  .drop{position:absolute;top:20px;left:0;background:#fff;border:1px solid #dadce0;box-shadow:0 2px 10px rgba(0,0,0,.14);font-size:12.5px;min-width:250px;z-index:5;border-radius:4px;overflow:hidden}
+  .drop div{padding:7px 13px;border-bottom:1px solid #f1f1f1}.drop div:last-child{border-bottom:0}
+  .drop div.hi{background:#e8f0fe}
+  .gridscroll{overflow-x:auto}
+  table.g{border-collapse:collapse;font-size:12px;table-layout:fixed;white-space:nowrap}
+  table.g td,table.g th{border:1px solid var(--grid)}
+  .colhdr td{background:var(--hdr);color:var(--hdrtx);text-align:center;height:21px;font-size:10.5px;border-color:#dadce0;position:relative}
+  .colhdr td .fl{position:absolute;right:3px;top:3px;color:#188038;font-size:10px}
+  .corner,.rn{width:30px;min-width:30px;background:var(--hdr);color:var(--hdrtx);text-align:center;font-size:10.5px}
+  .hrow td{background:#f1f3f4;font-weight:700;font-size:11px;color:#3c4043;padding:6px 8px;border-bottom:2px solid #c4c7c9}
+  .g td.c{padding:5px 8px;font-size:12px;overflow:hidden;text-overflow:ellipsis;background:#fff}
+  .g td.c.m{font-family:var(--mono);font-size:11px;color:#5f6368}
+  .g td.c.bar{font-family:var(--mono);font-size:11px;letter-spacing:-1px;color:#3a6f8c}
+  .need{background:var(--c-need)!important;font-weight:700}.slow{background:var(--c-slow)!important;font-weight:700}
+  .ok{background:var(--c-ok)!important;font-weight:700}.done{background:var(--c-done)!important;color:#5f6368}
+  .sent{background:var(--c-sent)!important}.made{background:var(--c-made)!important;font-weight:600}
+  .skip{background:var(--c-skip)!important}.rate{background:var(--c-rate)!important}.err{background:var(--c-err)!important;font-weight:700}
+  .filtered td.c{background:#fffdf3}
+  .tabs{display:flex;align-items:center;background:#f1f3f4;border-top:1px solid #c4c7c9;padding:0 8px;height:36px;overflow-x:auto}
+  .tabs .plus{color:#5f6368;font-size:18px;padding:0 12px}
+  .tab{font-size:12.5px;color:#5f6368;padding:0 15px;height:36px;display:flex;align-items:center;border-right:1px solid #e0e0e0;white-space:nowrap}
+  .tab.active{background:#fff;color:#188038;font-weight:600;border-top:3px solid #188038}
+  .cap{max-width:1080px;margin:0 auto 6px;font-size:12px;color:#444;font-weight:600}
+  .note{max-width:1080px;margin:8px auto 24px;font-size:12.5px;color:#444;background:#fff;border:1px solid #dadce0;border-radius:6px;padding:10px 14px}
+</style>
+</head>
+<body>
+
+<!-- ===================== DASHBOARD TAB (the board) ===================== -->
+<p class="cap">① The “Dashboard” tab — one row per campaign, cells coloured by conditional formatting (status + outcome). Scan it, spot the red one.</p>
+<div class="win">
+  <div class="titlebar"><span class="ic"></span><span class="fn">OPS &amp; LOGS — ORTUS OUTREACH <small>· Google Sheets</small></span></div>
+  <div class="menubar"><span class="m">File</span><span class="m">Edit</span><span class="m">View</span><span class="m">Data</span><span class="m act">Ortus Logs ▾
+    <div class="drop"><div>Open campaign log (filter Events)</div><div class="hi">Copy diagnostic snippet for Claude</div><div>Delete all log tabs</div></div>
+  </span><span class="m">Extensions</span></div>
+  <div class="gridscroll">
+    <table class="g">
+      <tr class="colhdr"><td class="corner"></td>
+        <td style="width:96px">A</td><td style="width:150px">B</td><td style="width:96px">C</td><td style="width:190px">D</td>
+        <td style="width:150px">E</td><td style="width:54px">F</td><td style="width:64px">G</td><td style="width:48px">H<span class="fl">▾</span></td><td style="width:300px">I</td></tr>
+      <tr class="hrow"><td class="rn">1</td>
+        <td>Status</td><td>Campaign</td><td>Operator</td><td>Doing now</td><td>Progress</td><td>Sent</td><td>Accepted</td><td>Issues</td><td>Top issue → why</td></tr>
+
+      <tr><td class="rn">2</td>
+        <td class="c need">🔴 Needs you</td><td class="c">AUD_GUES_JKT3</td><td class="c m">jhan</td><td class="c">Stalled — 7 of 9</td>
+        <td class="c bar">████████████████░░░░ 78%</td><td class="c">7</td><td class="c">—</td><td class="c err">2</td>
+        <td class="c">Account logged out → jhan's session expired; 1 intro also failed (not connected to primary)</td></tr>
+
+      <tr><td class="rn">3</td>
+        <td class="c slow">🟡 Slowed</td><td class="c">NICE_SYD1</td><td class="c m">joshua +3</td><td class="c">Sending — 212 of 871</td>
+        <td class="c bar">█████░░░░░░░░░░░░░░░░ 24%</td><td class="c">212</td><td class="c">78</td><td class="c slow">3</td>
+        <td class="c">LinkedIn rate-limiting → slowed to stay safe; tau paused (weekly limit); 22 broken links</td></tr>
+
+      <tr><td class="rn">4</td>
+        <td class="c ok">🟢 Healthy</td><td class="c">JFROG_SIN</td><td class="c m">jeremiah</td><td class="c">Introducing — 7 of 14</td>
+        <td class="c bar">██████████████████░░ 93%</td><td class="c">13</td><td class="c">9</td><td class="c ok">0</td>
+        <td class="c">—</td></tr>
+
+      <tr><td class="rn">5</td>
+        <td class="c done">⚪ Done</td><td class="c">SFLK_SIN5</td><td class="c m">reign</td><td class="c">Finished — 2h 33m</td>
+        <td class="c bar">████████████████████ 100%</td><td class="c">13</td><td class="c">10</td><td class="c done">0</td>
+        <td class="c m">10 introduced · 3 replied · ended cleanly</td></tr>
+    </table>
+  </div>
+  <div class="tabs"><span class="plus">+</span><span class="tab active">Dashboard</span><span class="tab">Events</span><span class="tab">Attribution</span><span class="tab">Account health</span></div>
+</div>
+
+<!-- ===================== EVENTS TAB (the log, filtered) ===================== -->
+<p class="cap">② Click into it → the “Events” tab, native filter set to <b>Campaign = AUD_GUES_JKT3</b> (and you can add <b>Account = tau</b>). Outcome column colour-coded. This is where you diagnose.</p>
+<div class="win">
+  <div class="titlebar"><span class="ic"></span><span class="fn">OPS &amp; LOGS — ORTUS OUTREACH <small>· Events · Filtered</small></span></div>
+  <div class="gridscroll">
+    <table class="g">
+      <tr class="colhdr"><td class="corner"></td>
+        <td style="width:86px">A</td><td style="width:90px">B</td><td style="width:96px">C<span class="fl">▾</span></td><td style="width:140px">D<span class="fl">▾</span></td>
+        <td style="width:70px">E</td><td style="width:104px">F<span class="fl">▾</span></td><td style="width:300px">G</td><td style="width:120px">H</td></tr>
+      <tr class="hrow"><td class="rn">1</td>
+        <td>Timestamp</td><td>Operator</td><td>Ortus Account</td><td>Campaign</td><td>Phase</td><td>Outcome</td><td>Reason</td><td>Lead URL</td></tr>
+
+      <tr class="filtered"><td class="rn">18</td><td class="c m">18:14:20</td><td class="c m">jhan</td><td class="c m">jhan</td><td class="c">AUD_GUES_JKT3</td><td class="c">Account</td><td class="c err">parked</td><td class="c">Session expired — re-login required</td><td class="c m">—</td></tr>
+      <tr class="filtered"><td class="rn">31</td><td class="c m">18:02:55</td><td class="c m">jhan</td><td class="c m">jhan</td><td class="c">AUD_GUES_JKT3</td><td class="c">Intro</td><td class="c err">error</td><td class="c">Failed — Primary not in your connections</td><td class="c m">/in/lev-m</td></tr>
+      <tr class="filtered"><td class="rn">44</td><td class="c m">17:58:30</td><td class="c m">jhan</td><td class="c m">jhan</td><td class="c">AUD_GUES_JKT3</td><td class="c">Request</td><td class="c sent">sent</td><td class="c m">—</td><td class="c m">/in/budi-s</td></tr>
+      <tr class="filtered"><td class="rn">52</td><td class="c m">17:52:39</td><td class="c m">jhan</td><td class="c m">jhan</td><td class="c">AUD_GUES_JKT3</td><td class="c">Request</td><td class="c skip">skipped</td><td class="c">Connect modal opened for wrong person</td><td class="c m">/in/rina-w</td></tr>
+      <tr class="filtered"><td class="rn">63</td><td class="c m">17:45:10</td><td class="c m">jhan</td><td class="c m">jhan</td><td class="c">AUD_GUES_JKT3</td><td class="c">Request</td><td class="c sent">sent</td><td class="c m">—</td><td class="c m">/in/agus-p</td></tr>
+      <tr class="filtered"><td class="rn">70</td><td class="c m">17:40:02</td><td class="c m">jhan</td><td class="c m">jhan</td><td class="c">AUD_GUES_JKT3</td><td class="c">Intro</td><td class="c made">made</td><td class="c m">—</td><td class="c m">/in/sari-d</td></tr>
+      <tr class="filtered"><td class="rn">71</td><td class="c m">17:33:48</td><td class="c m">jhan</td><td class="c m">jhan</td><td class="c">AUD_GUES_JKT3</td><td class="c">Accept</td><td class="c made">accepted</td><td class="c m">—</td><td class="c m">/in/sari-d</td></tr>
+    </table>
+  </div>
+  <div class="tabs"><span class="plus">+</span><span class="tab">Dashboard</span><span class="tab active">Events</span><span class="tab">Attribution</span><span class="tab">Account health</span></div>
+</div>
+
+<div class="note">
+  <b>How it works as a real sheet:</b> the <b>Dashboard</b> tab is one QUERY/formula row per campaign with conditional-formatting fills (red/amber/green/grey). To diagnose, go to <b>Events</b> and use the column <b>▾ filter</b> on <b>Campaign</b> (and <b>Account</b>) — that's the drill-down. <b>Ortus Logs → Copy diagnostic snippet for Claude</b> grabs the flagged rows + context to paste to me. All native Google Sheets — nothing leaves the spreadsheet.
+</div>
+
+</body>
+</html>

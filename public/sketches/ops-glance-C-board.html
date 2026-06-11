@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glance · C — Status board</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#6f6f6f; --faint:#9a9a9a; --line:#e7e5e0; --paper:#f3f2ef; --card:#fff;
+    --green:#2f7d4f; --greenbg:#e9f5ee; --amber:#b07d12; --amberbg:#fdf3da; --red:#c0414a; --redbg:#fbe5e6;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;padding:26px 20px 70px}
+  .page{max-width:980px;margin:0 auto}
+  .top{font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+  .board{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .hdr{display:grid;grid-template-columns:18px 1.5fr 1.7fr 150px 2fr;gap:14px;padding:10px 18px;background:#faf9f7;border-bottom:1px solid var(--line);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+  .r{display:grid;grid-template-columns:18px 1.5fr 1.7fr 150px 2fr;gap:14px;padding:15px 18px;border-bottom:1px solid var(--line);align-items:center}
+  .r:last-child{border-bottom:0}
+  .r.warn{background:#fffdf6} .r.bad{background:#fffafa}
+  .dot{width:12px;height:12px;border-radius:50%;margin-top:3px}
+  .dot.ok{background:var(--green)} .dot.warn{background:var(--amber)} .dot.bad{background:var(--red)} .dot.done{background:#b9b7b1}
+  .nm{font-weight:750;font-size:14.5px}
+  .who{font-size:12px;color:var(--muted);font-family:var(--mono)}
+  .doing{font-size:13.5px}
+  .doing .s{font-weight:700}
+  /* mini funnel */
+  .mini{display:flex;height:9px;border-radius:5px;overflow:hidden;background:#eeece6;margin-top:7px;max-width:200px}
+  .mini i{height:100%}
+  .mini .a{background:#3a6f8c}.mini .b{background:var(--green)}.mini .c{background:#e7c98a}
+  .nums{font-size:11.5px;color:var(--muted);font-family:var(--mono);margin-top:4px}
+  /* issue cell */
+  .iss{display:flex;gap:9px;align-items:flex-start}
+  .iss .ic{font-size:15px;flex:none}
+  .iss .t{font-weight:700;font-size:13px}
+  .iss .why{font-size:12px;color:var(--muted)}
+  .iss.none{color:var(--green);font-weight:700;font-size:13px}
+  .pill{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:9999px;display:inline-block}
+  .pill.ok{background:var(--greenbg);color:var(--green)} .pill.warn{background:var(--amberbg);color:var(--amber)} .pill.bad{background:var(--redbg);color:var(--red)} .pill.done{background:#ececea;color:#6a6a6a}
+  .filterbar{display:flex;gap:8px;margin:0 0 12px}
+  .fb{font-size:12.5px;font-weight:700;padding:6px 13px;border-radius:9999px;border:1px solid var(--line);background:#fff;color:var(--muted)}
+  .fb.on{background:#23231f;color:#fff;border-color:#23231f}
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="top">Campaigns · live · option C — status board</p>
+  <div class="filterbar">
+    <span class="fb on">All 4</span>
+    <span class="fb">⚠️ Needs attention 2</span>
+    <span class="fb">Running 3</span>
+    <span class="fb">Done 1</span>
+  </div>
+
+  <div class="board">
+    <div class="hdr">
+      <div></div><div>Campaign</div><div>Doing now</div><div>Status</div><div>Top issue &amp; why</div>
+    </div>
+
+    <!-- needs you -->
+    <div class="r bad">
+      <div class="dot bad"></div>
+      <div><div class="nm">AUD_GUES_JKT3</div><div class="who">jhan</div></div>
+      <div><div class="doing"><span class="s">Stalled</span> — 7 of 9 handled</div>
+        <div class="mini"><i class="a" style="width:78%"></i><i class="c" style="width:22%"></i></div>
+        <div class="nums">7 sent · 2 skipped</div></div>
+      <div><span class="pill bad">Needs you</span></div>
+      <div class="iss"><span class="ic">🚪</span><div><div class="t">Account logged out</div><div class="why">jhan's session expired — log back in. (1 intro also failed: not connected to the primary.)</div></div></div>
+    </div>
+
+    <!-- slowed -->
+    <div class="r warn">
+      <div class="dot warn"></div>
+      <div><div class="nm">NICE_SYD1</div><div class="who">joshua · 4 accts</div></div>
+      <div><div class="doing"><span class="s">Sending requests</span> — 212 of 871</div>
+        <div class="mini"><i class="a" style="width:24%"></i><i class="b" style="width:9%"></i><i class="c" style="width:30%"></i></div>
+        <div class="nums">212 sent · 78 accepted · 659 not reached</div></div>
+      <div><span class="pill warn">Slowed</span></div>
+      <div class="iss"><span class="ic">⚠️</span><div><div class="t">LinkedIn rate-limiting</div><div class="why">Slowing sends to stay safe — that's why most leads aren't reached. (tau also paused: weekly limit.)</div></div></div>
+    </div>
+
+    <!-- healthy -->
+    <div class="r">
+      <div class="dot ok"></div>
+      <div><div class="nm">JFROG_SIN</div><div class="who">jeremiah</div></div>
+      <div><div class="doing"><span class="s">Introducing</span> — 7 of 14</div>
+        <div class="mini"><i class="a" style="width:93%"></i><i class="b" style="width:64%"></i></div>
+        <div class="nums">13 sent · 9 accepted · 7 introduced</div></div>
+      <div><span class="pill ok">Healthy</span></div>
+      <div class="iss none">✓ No problems</div>
+    </div>
+
+    <!-- done -->
+    <div class="r">
+      <div class="dot done"></div>
+      <div><div class="nm">SFLK_SIN5</div><div class="who">reign</div></div>
+      <div><div class="doing"><span class="s">Finished</span> — ran 2h 33m</div>
+        <div class="nums">10 introduced · 3 replied</div></div>
+      <div><span class="pill done">Done</span></div>
+      <div class="iss none">✓ Ended cleanly</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

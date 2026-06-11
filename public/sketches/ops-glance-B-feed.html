@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glance · B — Plain-English feed</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#6f6f6f; --faint:#9a9a9a; --line:#e7e5e0; --paper:#f3f2ef; --card:#fff;
+    --green:#2f7d4f; --amber:#b07d12; --red:#c0414a;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;padding:26px 20px 70px}
+  .page{max-width:680px;margin:0 auto}
+  .top{font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+  /* summary banner */
+  .sum{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:0 0 18px;display:flex;align-items:center;gap:18px}
+  .sum .big{font-size:30px;font-weight:800;line-height:1}
+  .sum .lead{font-size:15px;font-weight:700}
+  .sum .lead small{display:block;font-weight:400;color:var(--muted);font-size:12.5px;margin-top:2px}
+  .chips{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  .chip{font-size:12px;font-weight:700;padding:5px 11px;border-radius:9999px}
+  .chip.ok{background:#e9f5ee;color:var(--green)} .chip.warn{background:#fdf3da;color:var(--amber)} .chip.bad{background:#fbe5e6;color:var(--red)}
+  /* feed */
+  .feed{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .day{padding:8px 20px;background:#faf9f7;border-bottom:1px solid var(--line);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .row{display:flex;gap:13px;align-items:flex-start;padding:13px 20px;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  .ic{font-size:18px;width:24px;text-align:center;flex:none;line-height:1.2}
+  .body .t{font-size:14px}
+  .body .t b{font-weight:750}
+  .body .why{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .body .tag{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .time{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--faint);white-space:nowrap;padding-top:2px}
+  .row.bad{background:#fffafa} .row.warn{background:#fffdf6}
+  .accent-l{border-left:3px solid transparent}
+  .row.bad{border-left:3px solid var(--red)} .row.warn{border-left:3px solid var(--amber)} .row.ok{border-left:3px solid transparent}
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="top">Campaigns · live · option B — plain-English feed</p>
+
+  <div class="sum">
+    <div class="big" style="color:var(--amber)">3</div>
+    <div class="lead">campaigns running, 1 needs you
+      <small>1,949 leads in play · 232 sent today · 2 issues to look at</small>
+    </div>
+    <div class="chips">
+      <span class="chip ok">2 healthy</span>
+      <span class="chip warn">1 slowed</span>
+      <span class="chip bad">1 needs you</span>
+    </div>
+  </div>
+
+  <div class="feed">
+    <div class="day">Just now → a few minutes ago</div>
+
+    <div class="row bad accent-l">
+      <span class="ic">🚪</span>
+      <div class="body">
+        <div class="t"><b>jhan</b> got logged out of LinkedIn</div>
+        <div class="why">Its session expired, so <b>AUD_GUES_JKT3</b> is stalled. Log back in to continue.</div>
+      </div>
+      <span class="time">now</span>
+    </div>
+
+    <div class="row warn accent-l">
+      <span class="ic">⚠️</span>
+      <div class="body">
+        <div class="t">LinkedIn started rate-limiting <b>NICE_SYD1</b></div>
+        <div class="why">It's slowing requests down to stay safe — that's why most of the 871 leads aren't reached yet.</div>
+        <div class="tag">96 leads affected</div>
+      </div>
+      <span class="time">3m</span>
+    </div>
+
+    <div class="row bad accent-l">
+      <span class="ic">❌</span>
+      <div class="body">
+        <div class="t">An introduction couldn't be sent</div>
+        <div class="why"><b>jhan</b> isn't connected to the primary person yet, so it can't introduce this lead.</div>
+        <div class="tag">/in/lev-m · AUD_GUES_JKT3</div>
+      </div>
+      <span class="time">8m</span>
+    </div>
+
+    <div class="row warn accent-l">
+      <span class="ic">⛔</span>
+      <div class="body">
+        <div class="t">Paused account <b>tau</b></div>
+        <div class="why">It hit this week's LinkedIn invite limit. It resumes automatically next week — nothing to do.</div>
+      </div>
+      <span class="time">22m</span>
+    </div>
+
+    <div class="day">Earlier today</div>
+
+    <div class="row ok accent-l">
+      <span class="ic">🤝</span>
+      <div class="body">
+        <div class="t"><b>jeremiah</b> introduced 7 leads to Antonio</div>
+        <div class="why">JFROG_SIN is healthy — 9 of 14 accepted, 2 already replied.</div>
+      </div>
+      <span class="time">1h</span>
+    </div>
+
+    <div class="row ok accent-l">
+      <span class="ic">✅</span>
+      <div class="body">
+        <div class="t"><b>joshua</b> sent 212 connection requests</div>
+        <div class="why">Across wenelynn, sandyc, pratik &amp; tau for NICE_SYD1.</div>
+      </div>
+      <span class="time">2h</span>
+    </div>
+
+    <div class="row ok accent-l">
+      <span class="ic">🏁</span>
+      <div class="body">
+        <div class="t"><b>reign</b> finished SFLK_SIN5</div>
+        <div class="why">10 introduced, 3 replied. Ended cleanly.</div>
+      </div>
+      <span class="time">3h</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glance · A — Live status cards</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#6f6f6f; --faint:#9a9a9a; --line:#e7e5e0; --paper:#f3f2ef; --card:#fff;
+    --green:#2f7d4f; --greenbg:#e9f5ee; --amber:#b07d12; --amberbg:#fdf3da; --red:#c0414a; --redbg:#fbe5e6;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;padding:26px 20px 70px}
+  .page{max-width:760px;margin:0 auto}
+  .top{font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:0 0 16px;overflow:hidden}
+  .strip{height:5px}
+  .strip.ok{background:var(--green)} .strip.warn{background:var(--amber)} .strip.bad{background:var(--red)} .strip.done{background:#b9b7b1}
+  .hd{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 20px 6px}
+  .hd .nm{font-size:17px;font-weight:750}
+  .hd .who{font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+  .state{display:flex;align-items:center;gap:8px;font-weight:750;font-size:13px;white-space:nowrap}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .dot.ok{background:var(--green)} .dot.warn{background:var(--amber)} .dot.bad{background:var(--red)} .dot.done{background:#b9b7b1}
+  .doing{padding:2px 20px 14px;font-size:15px}
+  .doing b{font-weight:750}
+  /* progress */
+  .prog{padding:0 20px 14px}
+  .bar{height:14px;border-radius:7px;background:#eeece6;overflow:hidden;display:flex}
+  .bar i{height:100%}
+  .bar .b-sent{background:#3a6f8c} .bar .b-acc{background:var(--green)} .bar .b-leak{background:#e7c98a}
+  .legend{display:flex;gap:16px;margin-top:7px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .sw{width:10px;height:10px;border-radius:2px}
+  /* issues */
+  .issues{border-top:1px solid var(--line);padding:12px 20px 16px;background:#fbfaf8}
+  .issues .h{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  .issue{display:flex;gap:11px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .issue:last-child{border-bottom:0}
+  .ic{font-size:16px;line-height:1.3;width:20px;text-align:center;flex:none}
+  .issue .t{font-weight:700;font-size:13.5px}
+  .issue .why{color:var(--muted);font-size:12.5px}
+  .issue .ct{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
+  .allgood{padding:14px 20px;color:var(--green);font-weight:700;display:flex;align-items:center;gap:8px;background:var(--greenbg)}
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="top">Campaigns · live · option A — status cards</p>
+
+  <!-- HEALTHY, RUNNING -->
+  <div class="card">
+    <div class="strip ok"></div>
+    <div class="hd">
+      <div><div class="nm">JFROG_SIN · CC3 › IC</div><div class="who">jeremiah · 1 account</div></div>
+      <div class="state"><span class="dot ok"></span>Running — healthy</div>
+    </div>
+    <div class="doing">Introducing accepted leads to <b>Antonio</b>. <b>7 of 14</b> introduced so far.</div>
+    <div class="prog">
+      <div class="bar"><i class="b-sent" style="width:14%"></i><i class="b-acc" style="width:50%"></i><i class="b-leak" style="width:7%"></i></div>
+      <div class="legend">
+        <span><span class="sw" style="background:#3a6f8c"></span>13 requests</span>
+        <span><span class="sw" style="background:#2f7d4f"></span>9 accepted</span>
+        <span><span class="sw" style="background:#2f7d4f"></span>7 introduced</span>
+        <span><span class="sw" style="background:#e7c98a"></span>1 skipped</span>
+      </div>
+    </div>
+    <div class="allgood">✓ No problems — everything's flowing.</div>
+  </div>
+
+  <!-- WARNING, RUNNING but slowing -->
+  <div class="card">
+    <div class="strip warn"></div>
+    <div class="hd">
+      <div><div class="nm">NICE_SYD1 · CC batch 2</div><div class="who">joshua · 4 accounts</div></div>
+      <div class="state"><span class="dot warn"></span>Running — slowed down</div>
+    </div>
+    <div class="doing">Sending connection requests. <b>212 of 871</b> sent — but it's being throttled.</div>
+    <div class="prog">
+      <div class="bar"><i class="b-sent" style="width:24%"></i><i class="b-acc" style="width:9%"></i><i class="b-leak" style="width:30%"></i></div>
+      <div class="legend">
+        <span><span class="sw" style="background:#3a6f8c"></span>212 sent</span>
+        <span><span class="sw" style="background:#2f7d4f"></span>78 accepted</span>
+        <span><span class="sw" style="background:#e7c98a"></span>659 not reached</span>
+      </div>
+    </div>
+    <div class="issues">
+      <div class="h">Needs attention</div>
+      <div class="issue"><span class="ic">⚠️</span><div><div class="t">LinkedIn is rate-limiting</div><div class="why">It slowed sends to stay safe — that's why most leads aren't reached yet.</div></div><span class="ct">96 leads</span></div>
+      <div class="issue"><span class="ic">⛔</span><div><div class="t">Account “tau” paused</div><div class="why">Hit this week's LinkedIn invite limit. It resumes automatically next week.</div></div><span class="ct">1 account</span></div>
+      <div class="issue"><span class="ic">🔗</span><div><div class="t">Some leads have broken links</div><div class="why">Old Sales Navigator URLs that don't open — skipped.</div></div><span class="ct">22 leads</span></div>
+    </div>
+  </div>
+
+  <!-- PROBLEM -->
+  <div class="card">
+    <div class="strip bad"></div>
+    <div class="hd">
+      <div><div class="nm">AUD_GUES_JKT3 · CCI</div><div class="who">jhan · 1 account</div></div>
+      <div class="state"><span class="dot bad"></span>Needs you</div>
+    </div>
+    <div class="doing">Mostly stalled. <b>7 of 9</b> handled, but the account keeps dropping.</div>
+    <div class="prog">
+      <div class="bar"><i class="b-sent" style="width:78%"></i><i class="b-acc" style="width:0"></i><i class="b-leak" style="width:22%"></i></div>
+      <div class="legend">
+        <span><span class="sw" style="background:#3a6f8c"></span>7 sent</span>
+        <span><span class="sw" style="background:#e7c98a"></span>2 skipped</span>
+      </div>
+    </div>
+    <div class="issues">
+      <div class="h">Needs attention</div>
+      <div class="issue"><span class="ic">🚪</span><div><div class="t">Account got logged out</div><div class="why">“jhan” lost its LinkedIn session — log back in to continue.</div></div><span class="ct">now</span></div>
+      <div class="issue"><span class="ic">❌</span><div><div class="t">An introduction failed</div><div class="why">This account isn't connected to the primary person yet, so it can't introduce.</div></div><span class="ct">1 lead</span></div>
+    </div>
+  </div>
+
+  <!-- DONE -->
+  <div class="card">
+    <div class="strip done"></div>
+    <div class="hd">
+      <div><div class="nm">SFLK_SIN5 · IC</div><div class="who">reign · 1 account</div></div>
+      <div class="state"><span class="dot done"></span>Finished</div>
+    </div>
+    <div class="doing"><b>10 introduced</b>, 3 replied. Ended cleanly after 2h 33m.</div>
+  </div>
+</div>
+</body>
+</html>
