@@ -1296,6 +1296,15 @@ export function normalizeTemplates(templates = {}, mode = '') {
     primaryName: templates.primaryName,
     primaryUrl: templates.primaryUrl,
     primaryIntroBody: templates.primaryIntroBody,
+    // v2.91: primary-side automation config (see primary-side-automation spec).
+    // autoAcceptPrimary — local browser auto-accepts the primary's incoming
+    // invite from a campaign account. followUp* — automated first follow-up in
+    // the intro's group thread. followUpSender: 'local-browser' (you) | 'campaign-account'.
+    autoAcceptPrimary: !!templates.autoAcceptPrimary,
+    followUpEnabled: !!templates.followUpEnabled,
+    followUpBody: (templates.followUpBody || '').trim(),
+    followUpDelayMinutes: Number(templates.followUpDelayMinutes) > 0 ? Number(templates.followUpDelayMinutes) : 10,
+    followUpSender: templates.followUpSender === 'campaign-account' ? 'campaign-account' : 'local-browser',
   };
 }
 
