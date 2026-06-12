@@ -48,6 +48,7 @@ import { registerAppender, buildAppendLogger, unregisterAppender } from './campa
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
+import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO } from './soo-writer.js';
 import { dataPath } from './paths.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
@@ -1625,6 +1626,50 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       }
     }
 
+    // v2.95: SoO board write-back (companion to the lead-sheet Needs Login
+    // above). Both wrappers are best-effort, one-way, per-run de-duped, and
+    // never throw into the loop. They write to the team SoO "LinkedIn Accounts"
+    // board, matched by Email == the account's GoLogin profile name.
+    const _sooFlipped = new Set();      // accountNorm already flipped to In Use this run
+    const _sooNeedsLogin = new Set();   // accountNorm already flagged Needs Login this run
+
+    async function flipSoOInUse(accountName, action) {
+      try {
+        const target = resolveSoOTarget(mode, action);
+        if (!target) return;
+        const acctNorm = (accountName || '').toString().toLowerCase().trim();
+        if (!acctNorm || _sooFlipped.has(acctNorm)) return;
+        _sooFlipped.add(acctNorm);
+        const res = await flipAccountInUse({
+          email: accountName,
+          creditHeader: target.creditHeader,
+          userHeader: target.userHeader,
+          operatorEmail: campaign.createdBy || '',
+        });
+        if (res && res.ok && res.matched && res.written && res.written.length) {
+          log(`  ⚑ SoO: ${accountName} → ${target.creditHeader} = In Use (${campaign.createdBy || '—'}).`);
+        } else if (res && res.ok && res.matched) {
+          log(`  · SoO: ${accountName} ${target.creditHeader} not Available — left as-is.`);
+        }
+      } catch (err) {
+        log(`  ⚠ SoO flip failed for ${accountName}: ${err.message}`);
+      }
+    }
+
+    async function markSoONeedsLogin(accountName) {
+      try {
+        const acctNorm = (accountName || '').toString().toLowerCase().trim();
+        if (!acctNorm || _sooNeedsLogin.has(acctNorm)) return;
+        _sooNeedsLogin.add(acctNorm);
+        const res = await markAccountNeedsLoginSoO({ email: accountName });
+        if (res && res.ok && res.matched) {
+          log(`  ⚑ SoO: ${accountName} → Needs Login = Y.`);
+        }
+      } catch (err) {
+        log(`  ⚠ SoO Needs Login failed for ${accountName}: ${err.message}`);
+      }
+    }
+
     // v2 schema: prepareSheet provisions only this mode's columns and hides
     // every other mode's columns. Apps Script returns BAD_MODE only on
     // unknown modes — known modes always provision/hide. Fall back to the
@@ -2088,8 +2133,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             parkedAt: Date.now(),
             reason: 'session_expired',
           });
-          // v2.84: flag every SoO row owned by this account as Needs Login = Y.
+          // v2.84: flag every LEAD row handled by this account (Sender column)
+          // as Needs Login = Y in the campaign sheet, so the operator can filter
+          // to the stalled leads.
           await setAccountNeedsLogin(pName, true);
+          // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
+          // (matched by Email == profile name) so the LinkedIn team re-logs it.
+          // Never auto-cleared. Best-effort — cannot affect the loop.
+          await markSoONeedsLogin(pName);
           // Close the now-unusable session immediately to free RAM
           try {
             if (profileId === 'local-browser') await closeLocalBrowser();
@@ -2927,6 +2978,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             campaign.processedToday++;
             campaign.totalProcessed = campaign.processedToday;
             await saveState(state);
+            // v2.95: SoO write-back — on the account's first credit-consuming
+            // send (connection_sent / inmail_sent per mode), flip its SoO credit
+            // cell to In Use + stamp the operator. No-op for every other action.
+            await flipSoOInUse(pName, result.action);
 
             // 2.8.28: For check_status, do NOT overwrite Sender — preserving
             // the original sender attribution is essential. The audit log
@@ -3160,8 +3215,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 parkedAt: Date.now(),
                 reason: 'session_expired',
               });
-              // v2.84: flag every SoO row owned by this account as Needs Login = Y.
+              // v2.84: flag every LEAD row handled by this account (Sender column)
+              // as Needs Login = Y in the campaign sheet, so the operator can filter
+              // to the stalled leads.
               await setAccountNeedsLogin(pName, true);
+              // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
+              // (matched by Email == profile name) so the LinkedIn team re-logs it.
+              // Never auto-cleared. Best-effort — cannot affect the loop.
+              await markSoONeedsLogin(pName);
             }
             // 429-specific tracker. Three strikes = treat as weekly cap and
             // park the profile, well before the generic SKIP_PARK_THRESHOLD
