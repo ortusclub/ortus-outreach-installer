@@ -1330,12 +1330,11 @@ export function normalizeTemplates(templates = {}, mode = '') {
     followUpEnabled: !!templates.followUpEnabled,
     followUpBody: (templates.followUpBody || '').trim(),
     followUpDelayMinutes: Number(templates.followUpDelayMinutes) > 0 ? Number(templates.followUpDelayMinutes) : 10,
-    followUpSender: templates.followUpSender === 'campaign-account' ? 'campaign-account' : 'local-browser',
-    // autoAcceptSender — where the primary accepts: 'local-browser' (you) or a
-    // GoLogin profileId chosen in the UI. Concrete id, not an enum, so pass it
-    // through; anything empty/falsey degrades to local-browser.
-    autoAcceptSender: (() => {
-      const v = (templates.autoAcceptSender || '').toString().trim();
+    // primarySource — the primary's ONE identity, used by BOTH auto-accept and
+    // the automated follow-up: 'local-browser' (you) or a GoLogin profileId.
+    // Concrete id, not an enum, so pass it through; empty/falsey → local-browser.
+    primarySource: (() => {
+      const v = (templates.primarySource || '').toString().trim();
       return v && v !== 'local-browser' ? v : 'local-browser';
     })(),
   };
