@@ -549,6 +549,10 @@
                   <div id="primary-source-picker" style="display:none;">
                     <input type="text" id="primary-source-search" class="aa-acct-search"
                            placeholder="Search by name or email…" oninput="filterPrimarySourcePicker()">
+                    <div class="aa-soo-toolbar">
+                      <button type="button" id="primary-source-soo-reload" class="aa-soo-reload" onclick="reloadPrimarySourceSoO()">⟳ Reload SoO</button>
+                      <span id="primary-source-soo-status" class="aa-soo-status"></span>
+                    </div>
                     <div id="primary-source-grid" class="aa-acct-grid"></div>
                   </div>
                   <input type="hidden" id="primary-source-profile-id" value="">

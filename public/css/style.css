@@ -4246,6 +4246,13 @@ body.theme-light .sb-link { color: #6e520f; }
 .uses-primary .dot{width:7px;height:7px;border-radius:9999px;background:var(--green);flex-shrink:0;}
 .uses-primary .nm{font-weight:600;}
 .uses-primary .edit{margin-left:auto;font-family:var(--mono);font-size:.55rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);border:1px solid var(--hairline);border-radius:9999px;padding:5px 10px;white-space:nowrap;}
+/* v2.94.x — Reload-SoO control inside the primary GoLogin picker (SoO can be down) */
+.aa-soo-toolbar{display:flex;align-items:center;gap:10px;margin:0 0 8px;}
+.aa-soo-reload{font-family:var(--mono);font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:6px 12px;cursor:pointer;transition:color .15s ease, border-color .15s ease, opacity .15s ease;white-space:nowrap;}
+.aa-soo-reload:hover{color:var(--ink);border-color:var(--ink);}
+.aa-soo-reload:disabled{opacity:.5;cursor:default;}
+.aa-soo-status{font-size:.7rem;color:var(--gray);}
+.aa-soo-status.err{color:var(--red);}
 
 /* Phase 2.8.20 (W1-B1) — right-pane Parked row (visible during runs) */
 .rp-parked-line {

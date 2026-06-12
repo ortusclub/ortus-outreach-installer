@@ -841,6 +841,10 @@ async function loadProfiles() {
     // SoO loads in background — re-render profiles + refresh counts when it arrives
     loadSoOStatus().then(() => {
       if (Object.keys(sooData).length > 0) renderProfiles(allProfilesData);
+      // v2.94.x: also refresh the primary-source picker + read-only labels so a
+      // restored GoLogin primary shows its badges/name once SoO arrives.
+      if (typeof renderPrimarySourcePicker === 'function') renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
+      if (typeof refreshPrimarySourceLabels === 'function') refreshPrimarySourceLabels();
       updateChipCounts();
       // Refresh greeting now that we can look up the GD's real first
       // name from the First Name column of the State of Operations sheet.
@@ -8293,6 +8297,35 @@ function filterPrimarySourcePicker() {
   renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
 }
 window.filterPrimarySourcePicker = filterPrimarySourcePicker;
+
+// v2.94.x: SoO can be down when the picker opens (no credit badges). This
+// re-pulls SoO and re-renders the picker + the main accounts grid + labels.
+async function reloadPrimarySourceSoO() {
+  const btn = document.getElementById('primary-source-soo-reload');
+  const status = document.getElementById('primary-source-soo-status');
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Reloading…'; }
+  if (status) { status.textContent = ''; status.classList.remove('err'); }
+  try {
+    await loadSoOStatus();
+    if (allProfilesData && allProfilesData.length) renderProfiles(allProfilesData);
+    renderPrimarySourcePicker(document.getElementById('primary-source-search')?.value || '');
+    refreshPrimarySourceLabels();
+    if (status) {
+      if (sooLoadState === 'ok') {
+        status.textContent = `Loaded ${Object.keys(sooData).length} statuses`;
+      } else {
+        status.textContent = 'SoO unavailable — try again';
+        status.classList.add('err');
+      }
+    }
+  } catch (_) {
+    if (status) { status.textContent = 'SoO unavailable — try again'; status.classList.add('err'); }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig || '⟳ Reload SoO'; }
+  }
+}
+window.reloadPrimarySourceSoO = reloadPrimarySourceSoO;
 
 // v2.94.x: resolve the primary's identity for the templates payload.
 // '' when GoLogin is selected but no profile picked yet — the launch guard
