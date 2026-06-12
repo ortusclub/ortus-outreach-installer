@@ -398,6 +398,9 @@ function doPost(e) {
       case 'getSoO':
         return handleGetSoO(data);
 
+      case 'setSoO':
+        return handleSetSoO(sheet, data);
+
       case 'writeRecentConnections':
         return handleWriteRecentConnections(spreadsheet, data);
 
@@ -1483,6 +1486,85 @@ function handleGetSoO(data) {
   }
 
   return jsonResponse({ accounts: accounts, headers: headers, total: accounts.length });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: Set SoO — write account status back to the SoO "LinkedIn Accounts"
+// board. Locates the row by Email (case-insensitive), writes each field by
+// header name. Headers in guardAvailableFor are written ONLY if the current
+// cell reads exactly "Available" (case-insensitive) — so an auto-flip can never
+// clobber a colleague's "In Use", an "NA"/"Used", or a (NN) count. Serialized
+// with a script lock so two operators can't race the read-then-write guard.
+// ═══════════════════════════════════════════════════════════════════════════
+function handleSetSoO(sheet, data) {
+  if (!data.email) {
+    return jsonResponse({ error: 'email is required', errorCode: 'BAD_REQUEST' });
+  }
+  if (!data.fields || typeof data.fields !== 'object') {
+    return jsonResponse({ error: 'fields object is required', errorCode: 'BAD_REQUEST' });
+  }
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return jsonResponse({ error: 'could not acquire lock', errorCode: 'LOCKED' });
+  }
+
+  try {
+    var headers = getHeaders(sheet);
+
+    function headerIndex(name) {
+      var want = (name || '').toString().toLowerCase().trim();
+      for (var i = 0; i < headers.length; i++) {
+        if ((headers[i] || '').toString().toLowerCase().trim() === want) return i;
+      }
+      return -1;
+    }
+
+    var emailCol = headerIndex('Email');
+    if (emailCol === -1) {
+      return jsonResponse({ error: 'Email column not found', errorCode: 'MISSING_EMAIL_HEADER' });
+    }
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return jsonResponse({ success: true, matched: false });
+
+    var wantEmail = data.email.toString().toLowerCase().trim();
+    var emailVals = sheet.getRange(2, emailCol + 1, lastRow - 1, 1).getValues();
+    var targetRow = -1;
+    for (var r = 0; r < emailVals.length; r++) {
+      if ((emailVals[r][0] || '').toString().toLowerCase().trim() === wantEmail) {
+        targetRow = r + 2;
+        break;
+      }
+    }
+    if (targetRow === -1) return jsonResponse({ success: true, matched: false });
+
+    var guard = {};
+    (data.guardAvailableFor || []).forEach(function (h) {
+      guard[(h || '').toString().toLowerCase().trim()] = true;
+    });
+
+    var written = [];
+    var skipped = [];
+    Object.keys(data.fields).forEach(function (header) {
+      var col = headerIndex(header);
+      if (col === -1) { skipped.push(header + ' (no column)'); return; }
+      if (guard[(header || '').toString().toLowerCase().trim()]) {
+        var cur = (sheet.getRange(targetRow, col + 1).getValue() || '').toString().toLowerCase().trim();
+        if (cur !== 'available') { skipped.push(header + ' (not Available: "' + cur + '")'); return; }
+      }
+      sheet.getRange(targetRow, col + 1).setValue(data.fields[header]);
+      written.push(header);
+    });
+
+    return jsonResponse({ success: true, matched: true, row: targetRow, written: written, skipped: skipped });
+  } catch (err) {
+    return jsonResponse({ error: err.message, errorCode: 'WRITE_FAILED' });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function jsonResponse(obj) {
