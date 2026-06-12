@@ -36,3 +36,20 @@ test('flip rejects a blank email before any network call', async () => {
     if (orig !== undefined) process.env.ORTUS_SOO_WRITEBACK = orig;
   }
 });
+
+test('flip rejects missing credit/user headers before any network call', async () => {
+  const orig = process.env.ORTUS_SOO_WRITEBACK;
+  delete process.env.ORTUS_SOO_WRITEBACK; // enabled
+  try {
+    assert.deepEqual(
+      await flipAccountInUse({ email: 'a@x', creditHeader: '', userHeader: 'CC User', operatorEmail: 'o@x' }),
+      { ok: false, error: 'no headers' },
+    );
+    assert.deepEqual(
+      await flipAccountInUse({ email: 'a@x', creditHeader: 'CC (Credits)', userHeader: '', operatorEmail: 'o@x' }),
+      { ok: false, error: 'no headers' },
+    );
+  } finally {
+    if (orig !== undefined) process.env.ORTUS_SOO_WRITEBACK = orig;
+  }
+});

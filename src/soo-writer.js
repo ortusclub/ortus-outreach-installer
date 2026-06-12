@@ -84,9 +84,13 @@ async function postSetSoO(payload) {
     redirect: 'manual',
     signal,
   });
-  const response = (initial.status >= 300 && initial.status < 400)
-    ? await fetch(initial.headers.get('location'), { signal })
-    : initial;
+  let response = initial;
+  if (initial.status >= 300 && initial.status < 400) {
+    const location = initial.headers.get('location');
+    if (!location) throw new Error('redirect with no Location header');
+    response = await fetch(location, { signal });
+  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
 }
 
@@ -98,6 +102,7 @@ async function postSetSoO(payload) {
 export async function flipAccountInUse({ email, creditHeader, userHeader, operatorEmail }) {
   if (!sooWritebackEnabled()) return { ok: false, disabled: true };
   if (!email) return { ok: false, error: 'no email' };
+  if (!creditHeader || !userHeader) return { ok: false, error: 'no headers' };
   try {
     const data = await postSetSoO(buildFlipPayload({ email, creditHeader, userHeader, operatorEmail }));
     if (data && data.error) return { ok: false, error: data.error };
