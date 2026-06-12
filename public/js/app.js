@@ -216,6 +216,7 @@ function gatherCampaignFormState() {
     followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
     followUpSender: _isIntroFlow ? (document.getElementById('follow-up-sender')?.value || 'local-browser') : 'local-browser',
+    autoAcceptSender: _isIntroFlow ? readAutoAcceptSender() : 'local-browser',
     // v2.62: CC+DM post-acceptance body. Only meaningful when
     // mode === 'connect_and_message'; campaign.js reads templates.ccDmBody
     // from runAutoDms. Other modes ignore it.
@@ -3646,9 +3647,22 @@ async function startCampaign(opts = {}) {
     followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
     followUpSender: _isIntroFlow ? (document.getElementById('follow-up-sender')?.value || 'local-browser') : 'local-browser',
+    autoAcceptSender: _isIntroFlow ? readAutoAcceptSender() : 'local-browser',
     // v2.62: CC+DM post-acceptance body — read at launch time too
     ccDmBody: document.getElementById('tpl-cc-dm-body')?.value || '',
   };
+
+  // v2.94.x: if auto-accept is on and set to a GoLogin account, a profile must
+  // be chosen — otherwise there is no browser to launch for the acceptance.
+  if (_isIntroFlow && document.getElementById('auto-accept-toggle')?.checked) {
+    const _aaSrc = document.querySelector('input[name="auto-accept-source"]:checked')?.value;
+    if (_aaSrc === 'gologin' && !(document.getElementById('auto-accept-profile-id')?.value || '')) {
+      if (typeof showCampaignToast === 'function') {
+        showCampaignToast('Pick which GoLogin account is the primary, or switch auto-accept to your local browser.');
+      }
+      return;
+    }
+  }
 
   // Show account queue
   renderAccountQueue(selectedProfileIds.map(id => selectedProfileNames[id] || id), null);
@@ -7129,6 +7143,19 @@ function applyPresetConfig(config) {
   setV('follow-up-body', t.followUpBody || '');
   if (t.followUpDelayMinutes) setV('follow-up-delay', t.followUpDelayMinutes);
   if (t.followUpSender) setV('follow-up-sender', t.followUpSender);
+  // v2.94.x: restore the auto-accept source + chosen profile. A profileId means
+  // the GoLogin source; 'local-browser'/absent means local. refreshAutoAcceptGate()
+  // below reveals the cards + re-renders the picker selection.
+  {
+    const sender = t.autoAcceptSender || 'local-browser';
+    const isGo = !!sender && sender !== 'local-browser';
+    const hidden = document.getElementById('auto-accept-profile-id');
+    if (hidden) hidden.value = isGo ? sender : '';
+    const localR = document.querySelector('input[name="auto-accept-source"][value="local-browser"]');
+    const goR = document.querySelector('input[name="auto-accept-source"][value="gologin"]');
+    if (localR) localR.checked = !isGo;
+    if (goR) goR.checked = isGo;
+  }
   if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields();
   if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate();
 
@@ -8198,18 +8225,87 @@ window.toggleFollowUpFields = toggleFollowUpFields;
 
 // v2.91: Lock auto-accept until a primary URL is present — without a profile
 // URL there's nothing to accept from.
+// v2.91/2.94.x: Lock auto-accept until a primary URL is present, and reveal the
+// source cards (local vs GoLogin) only while the feature is on.
 function refreshAutoAcceptGate() {
   const url = (document.getElementById('primary-person-url')?.value || '').trim();
   const toggle = document.getElementById('auto-accept-toggle');
   const gate = document.getElementById('auto-accept-gate');
+  const source = document.getElementById('auto-accept-source');
   const hasUrl = /linkedin\.com\/in\//i.test(url);
   if (toggle) {
     toggle.disabled = !hasUrl;
     if (!hasUrl) toggle.checked = false;
   }
   if (gate) gate.style.display = hasUrl ? 'none' : '';
+  const showSource = hasUrl && !!toggle?.checked;
+  if (source) source.style.display = showSource ? '' : 'none';
+  if (showSource) toggleAutoAcceptSource();
 }
 window.refreshAutoAcceptGate = refreshAutoAcceptGate;
+
+// v2.94.x: show the profile picker only when the GoLogin source is selected.
+function toggleAutoAcceptSource() {
+  const src = document.querySelector('input[name="auto-accept-source"]:checked')?.value;
+  const picker = document.getElementById('auto-accept-picker');
+  if (picker) picker.style.display = src === 'gologin' ? '' : 'none';
+  if (src === 'gologin') renderAutoAcceptPicker(document.getElementById('auto-accept-search')?.value || '');
+}
+window.toggleAutoAcceptSource = toggleAutoAcceptSource;
+
+// v2.94.x: single-select profile picker for the primary's GoLogin account.
+// Reuses allProfilesData + findSoOForProfile + renderSoOBadges so fields and
+// badges match the Browse Accounts grid exactly. Selection is stored in the
+// hidden #auto-accept-profile-id input.
+function renderAutoAcceptPicker(filter = '') {
+  const grid = document.getElementById('auto-accept-grid');
+  if (!grid) return;
+  const sel = document.getElementById('auto-accept-profile-id')?.value || '';
+  const q = (filter || '').trim().toLowerCase();
+  const rows = (allProfilesData || []).filter(p =>
+    !q || (p.name || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
+  grid.innerHTML = '';
+  if (rows.length === 0) {
+    grid.innerHTML = '<div class="aa-acct-empty">No profiles match.</div>';
+    return;
+  }
+  rows.forEach((p) => {
+    const soo = findSoOForProfile(p.name);
+    const isSel = p.id === sel;
+    const row = document.createElement('div');
+    row.className = 'aa-acct-row' + (isSel ? ' sel' : '');
+    row.dataset.profileId = p.id;
+    row.innerHTML = `
+      <input type="radio" name="auto-accept-profile" ${isSel ? 'checked' : ''}>
+      <div class="body">
+        <div class="name">${escHtml(p.name)}</div>
+        ${!soo ? `<div class="id">${p.id.substring(0, 12)}…</div>` : ''}
+        ${renderSoOBadges(soo)}
+      </div>`;
+    row.addEventListener('click', () => {
+      const hidden = document.getElementById('auto-accept-profile-id');
+      if (hidden) hidden.value = p.id;
+      renderAutoAcceptPicker(document.getElementById('auto-accept-search')?.value || '');
+      savePrimaryPersonFields();
+    });
+    grid.appendChild(row);
+  });
+}
+function filterAutoAcceptPicker() {
+  renderAutoAcceptPicker(document.getElementById('auto-accept-search')?.value || '');
+}
+window.filterAutoAcceptPicker = filterAutoAcceptPicker;
+
+// v2.94.x: resolve the configured accept source for the templates payload.
+// '' when GoLogin is chosen but no profile picked yet — the launch guard catches
+// that; normalizeTemplates also degrades '' to 'local-browser' as a backstop.
+function readAutoAcceptSender() {
+  if (!document.getElementById('auto-accept-toggle')?.checked) return 'local-browser';
+  const src = document.querySelector('input[name="auto-accept-source"]:checked')?.value;
+  if (src === 'gologin') return document.getElementById('auto-accept-profile-id')?.value || '';
+  return 'local-browser';
+}
+window.readAutoAcceptSender = readAutoAcceptSender;
 function restorePrimaryPersonState() {
   try {
     const nameEl = document.getElementById('primary-person-name');
