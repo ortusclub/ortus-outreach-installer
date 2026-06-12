@@ -30,7 +30,7 @@ test('maybeBuildFollowUp returns null when body is blank', () => {
   assert.equal(maybeBuildFollowUp({ ...base, tpl: { ...base.tpl, followUpBody: '   ' } }), null);
 });
 
-test('maybeBuildFollowUp resolves campaign-account sender to the profileId', () => {
-  const t = maybeBuildFollowUp({ ...base, tpl: { ...base.tpl, followUpSender: 'campaign-account' } });
+test('maybeBuildFollowUp sender = primarySource when set', () => {
+  const t = maybeBuildFollowUp({ ...base, tpl: { ...base.tpl, primarySource: 'p1' } });
   assert.equal(t.sender, 'p1');
 });

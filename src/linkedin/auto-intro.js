@@ -89,7 +89,10 @@ export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, she
   const rawBody = (tpl.followUpBody || '').trim();
   if (!rawBody) return null;
   const body = personalizeTemplate(rawBody, introData);
-  const sender = tpl.followUpSender === 'campaign-account' ? profileId : 'local-browser';
+  // Posting identity = the primary (a participant in every intro thread). The
+  // message body above is already personalized from introData, so token
+  // resolution ({sender first name} = campaign account) is unaffected.
+  const sender = tpl.primarySource || 'local-browser';
   return buildFollowUpTask({
     campaignProfileId: profileId,
     campaignProfileName: profileName,

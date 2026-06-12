@@ -1325,7 +1325,7 @@ export function normalizeTemplates(templates = {}, mode = '') {
     // v2.91: primary-side automation config (see primary-side-automation spec).
     // autoAcceptPrimary — local browser auto-accepts the primary's incoming
     // invite from a campaign account. followUp* — automated first follow-up in
-    // the intro's group thread. followUpSender: 'local-browser' (you) | 'campaign-account'.
+    // the intro's group thread. Posting identity is tpl.primarySource.
     autoAcceptPrimary: !!templates.autoAcceptPrimary,
     followUpEnabled: !!templates.followUpEnabled,
     followUpBody: (templates.followUpBody || '').trim(),
@@ -2468,12 +2468,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                       sheetUrl,
                       account: _self,
                       primaryUrl: _primaryUrl,
-                      sender: tpl.autoAcceptSender,
+                      sender: tpl.primarySource,
                     });
                     const _stored = await enqueuePrimaryTask(_task);
                     if (_stored) {
-                      const _where = (tpl.autoAcceptSender && tpl.autoAcceptSender !== 'local-browser')
-                        ? 'the chosen GoLogin profile'
+                      const _where = (tpl.primarySource && tpl.primarySource !== 'local-browser')
+                        ? 'the primary\'s GoLogin profile'
                         : 'your local browser';
                       log(`  ⏳ [${pName}] Auto-accept queued — ${_where} will accept this account's invite at the next idle moment.`);
                     }
@@ -3783,8 +3783,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             followUpEnabled: !!(templates && templates.followUpEnabled),
             followUpBody: (templates && templates.followUpBody) || '',
             followUpDelayMinutes: (templates && templates.followUpDelayMinutes) || 10,
-            followUpSender: (templates && templates.followUpSender) || 'local-browser',
-            autoAcceptSender: (templates && templates.autoAcceptSender) || 'local-browser',
+            primarySource: (templates && templates.primarySource) || 'local-browser',
           });
         }
       }
