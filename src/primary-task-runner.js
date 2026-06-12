@@ -1,10 +1,10 @@
 /**
  * src/primary-task-runner.js — the safe-window runner. Every 60s, when nothing
  * else has a browser open (browser-semaphore count 0) and no campaign is
- * running, it drains due primary tasks ONE browser at a time: the local browser
- * for accepts + your-side follow-ups; the specific gologin account for
- * campaign-account follow-ups. runDueTasks takes injected deps so it's testable
- * without a real browser.
+ * running, it drains due primary tasks ONE browser at a time, routed by each
+ * task's `sender`: the local browser when sender is 'local-browser', or the
+ * primary's specific gologin profile when sender is a profileId. runDueTasks
+ * takes injected deps so it's testable without a real browser.
  *
  * Safety properties:
  *  - Hard cap: every browser open routes through browser-semaphore (≤ max).

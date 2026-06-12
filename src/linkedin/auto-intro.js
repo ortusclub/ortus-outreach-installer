@@ -81,8 +81,10 @@ async function _leadHasPriorThread(page, leadUrl) {
 /**
  * v2.91: build the follow-up task for one freshly-sent intro, or null when the
  * follow-up is disabled / has no body. Pure — the enqueue side-effect happens
- * at the call site. sender 'campaign-account' is resolved to this profileId so
- * the runner opens the right browser.
+ * at the call site. The follow-up is posted AS the primary, so sender is
+ * tpl.primarySource ('local-browser' or the primary's GoLogin profileId) — the
+ * runner opens that browser. The body is already personalized above, so the
+ * posting identity does not affect {sender first name} / {primary name}.
  */
 export function maybeBuildFollowUp({ tpl, introData, profileId, profileName, sheetUrl, leadName, url, threadUrl, now }) {
   if (!tpl || !tpl.followUpEnabled) return null;
@@ -608,7 +610,7 @@ export async function runAutoIntros({
         });
         if (_fu) {
           const stored = await enqueuePrimaryTask(_fu);
-          if (stored) log(`  ⏳ [${profileName}] ${url}: Follow-up queued · due ${new Date(stored.dueAt).toLocaleTimeString()} · from ${_fu.sender === 'local-browser' ? 'you' : profileName}`);
+          if (stored) log(`  ⏳ [${profileName}] ${url}: Follow-up queued · due ${new Date(stored.dueAt).toLocaleTimeString()} · from ${_fu.sender === 'local-browser' ? 'you' : 'the primary'}`);
         }
       } catch (e) {
         log(`  ⚠ [${profileName}] Follow-up queue warning: ${e.message}`);
