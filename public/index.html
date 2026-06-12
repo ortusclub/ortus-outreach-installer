@@ -564,16 +564,44 @@
           <div id="auto-accept-block" class="intro-config-card" style="display:none;">
             <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
             <div class="intro-config-toggle-row">
-              <span id="auto-accept-label" class="intro-config-toggle-key">Accept via my local browser</span>
+              <span id="auto-accept-label" class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
               <label class="notif-pref-toggle" id="auto-accept-toggle-wrap">
-                <input type="checkbox" id="auto-accept-toggle" disabled onchange="savePrimaryPersonFields()">
+                <input type="checkbox" id="auto-accept-toggle" disabled onchange="savePrimaryPersonFields(); refreshAutoAcceptGate();">
                 <span class="notif-pref-slider"></span>
               </label>
             </div>
             <div id="auto-accept-gate" class="intro-config-gate">
               🔒 Add the primary person's LinkedIn URL above to switch this on — without the URL there's nothing to accept from.
             </div>
-            <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and your local browser accepts that one invitation automatically — no manual step before the intro.</div>
+            <!-- v2.94.x: where the primary accepts — local browser (default) or a GoLogin profile -->
+            <div id="auto-accept-source" style="display:none;">
+              <div class="aa-src-cards">
+                <div class="aa-src-card">
+                  <label class="aa-src-head">
+                    <input type="radio" name="auto-accept-source" value="local-browser" checked
+                           onchange="toggleAutoAcceptSource(); savePrimaryPersonFields();">
+                    <span class="aa-src-title">Accept via my local browser</span>
+                  </label>
+                  <div class="aa-src-desc">You're logged into LinkedIn as the primary in your own Chrome.</div>
+                </div>
+                <div class="aa-src-card">
+                  <label class="aa-src-head">
+                    <input type="radio" name="auto-accept-source" value="gologin"
+                           onchange="toggleAutoAcceptSource(); savePrimaryPersonFields();">
+                    <span class="aa-src-title">Accept via a GoLogin account</span>
+                  </label>
+                  <div class="aa-src-desc">The primary is one of your GoLogin profiles — pick which one.</div>
+                  <div id="auto-accept-picker" style="display:none;">
+                    <input type="text" id="auto-accept-search" class="aa-acct-search"
+                           placeholder="Search by name or email…" oninput="filterAutoAcceptPicker()">
+                    <div id="auto-accept-grid" class="aa-acct-grid"></div>
+                    <div class="intro-config-hint" style="margin-top:6px">This profile must be logged into LinkedIn as the primary.</div>
+                  </div>
+                  <input type="hidden" id="auto-accept-profile-id" value="">
+                </div>
+              </div>
+            </div>
+            <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and the chosen browser accepts that one invitation automatically — no manual step before the intro.</div>
           </div>
 
           <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
