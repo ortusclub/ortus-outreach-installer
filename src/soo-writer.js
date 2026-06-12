@@ -71,3 +71,55 @@ export function buildNeedsLoginPayload({ email }) {
     guardAvailableFor: [],
   };
 }
+
+// POST a setSoO payload to the central Apps Script. Mirrors src/soo.js: Apps
+// Script answers POST with a 302 that node fetch would downgrade to GET, so we
+// stop on the redirect and re-fetch the Location.
+async function postSetSoO(payload) {
+  const signal = AbortSignal.timeout(SOO_WRITE_TIMEOUT_MS);
+  const initial = await fetch(SHEETS_WEBAPP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    redirect: 'manual',
+    signal,
+  });
+  const response = (initial.status >= 300 && initial.status < 400)
+    ? await fetch(initial.headers.get('location'), { signal })
+    : initial;
+  return response.json();
+}
+
+/**
+ * Flip an account's credit cell to "In Use" (server-side guarded to Available)
+ * and stamp the operator email into the paired User cell. Best-effort.
+ * @returns {Promise<object>} { ok, matched, written, skipped } or { ok:false, ... }
+ */
+export async function flipAccountInUse({ email, creditHeader, userHeader, operatorEmail }) {
+  if (!sooWritebackEnabled()) return { ok: false, disabled: true };
+  if (!email) return { ok: false, error: 'no email' };
+  try {
+    const data = await postSetSoO(buildFlipPayload({ email, creditHeader, userHeader, operatorEmail }));
+    if (data && data.error) return { ok: false, error: data.error };
+    return { ok: true, ...data };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Set the account's "Needs Login" SoO cell to 'Y'. Best-effort. Never cleared
+ * by the app (manual clear by the LinkedIn team).
+ * @returns {Promise<object>} { ok, matched, written } or { ok:false, ... }
+ */
+export async function markAccountNeedsLoginSoO({ email }) {
+  if (!sooWritebackEnabled()) return { ok: false, disabled: true };
+  if (!email) return { ok: false, error: 'no email' };
+  try {
+    const data = await postSetSoO(buildNeedsLoginPayload({ email }));
+    if (data && data.error) return { ok: false, error: data.error };
+    return { ok: true, ...data };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
