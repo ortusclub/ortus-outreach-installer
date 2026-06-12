@@ -100,8 +100,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
                                           primaryUrl = '', introTitle = '', ccDmBody = '',
                                           autoAcceptPrimary = false, followUpEnabled = false,
                                           followUpBody = '', followUpDelayMinutes = 10,
-                                          followUpSender = 'local-browser',
-                                          autoAcceptSender = 'local-browser' }) {
+                                          primarySource = 'local-browser' }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
@@ -130,8 +129,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     followUpEnabled: !!followUpEnabled,
     followUpBody: followUpBody || '',
     followUpDelayMinutes: Number(followUpDelayMinutes) > 0 ? Number(followUpDelayMinutes) : 10,
-    followUpSender: followUpSender === 'campaign-account' ? 'campaign-account' : 'local-browser',
-    autoAcceptSender: (autoAcceptSender && autoAcceptSender !== 'local-browser') ? autoAcceptSender : 'local-browser',
+    primarySource: (primarySource && primarySource !== 'local-browser') ? primarySource : 'local-browser',
     registeredAt: (sched[k]?.registeredAt) || now,
     expiresAt: now + days * 86400000,
     // The campaign's own bulk-check just ran, so no need to immediately
@@ -281,8 +279,7 @@ async function tick() {
                 followUpEnabled: entry.followUpEnabled,
                 followUpBody: entry.followUpBody,
                 followUpDelayMinutes: entry.followUpDelayMinutes,
-                followUpSender: entry.followUpSender,
-                autoAcceptSender: entry.autoAcceptSender,
+                primarySource: entry.primarySource,
               },
               log: (line) => {
                 console.log(`[post-campaign] ${line}`);
