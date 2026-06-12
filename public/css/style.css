@@ -4241,6 +4241,12 @@ body.theme-light .sb-link { color: #6e520f; }
 .aa-acct-empty{font-size:.72rem;color:var(--gray);padding:8px 4px;margin-left:25px;}
 @media(max-width:1100px){.aa-acct-grid{grid-template-columns:1fr;}}
 
+/* v2.94.x — read-only "acts as your primary — [name]" line on the auto-accept + follow-up cards */
+.uses-primary{display:flex;align-items:center;gap:8px;margin:8px 0 0;padding:9px 11px;border:1px solid var(--hairline);border-radius:10px;background:var(--hairline-soft);font-size:.82rem;color:var(--ink);}
+.uses-primary .dot{width:7px;height:7px;border-radius:9999px;background:var(--green);flex-shrink:0;}
+.uses-primary .nm{font-weight:600;}
+.uses-primary .edit{margin-left:auto;font-family:var(--mono);font-size:.55rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);border:1px solid var(--hairline);border-radius:9999px;padding:5px 10px;white-space:nowrap;}
+
 /* Phase 2.8.20 (W1-B1) — right-pane Parked row (visible during runs) */
 .rp-parked-line {
   font-family: var(--body, 'Hanken Grotesk', sans-serif);
