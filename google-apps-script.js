@@ -1497,6 +1497,10 @@ function handleGetSoO(data) {
 // with a script lock so two operators can't race the read-then-write guard.
 // ═══════════════════════════════════════════════════════════════════════════
 function handleSetSoO(sheet, data) {
+  // NOTE: `sheet` is resolved by the router from data.sheetId + data.gid, so the
+  // caller must point those at the SoO sheet/tab directly (the soo-writer.js
+  // payload sends sheetId=SOO_SHEET_ID, gid=SOO_SHEET_GID) — unlike getSoO,
+  // which opens its own sheet via data.sooSheetId.
   if (!data.email) {
     return jsonResponse({ error: 'email is required', errorCode: 'BAD_REQUEST' });
   }
@@ -1514,13 +1518,13 @@ function handleSetSoO(sheet, data) {
   try {
     var headers = getHeaders(sheet);
 
-    function headerIndex(name) {
+    var headerIndex = function (name) {
       var want = (name || '').toString().toLowerCase().trim();
       for (var i = 0; i < headers.length; i++) {
         if ((headers[i] || '').toString().toLowerCase().trim() === want) return i;
       }
       return -1;
-    }
+    };
 
     var emailCol = headerIndex('Email');
     if (emailCol === -1) {
