@@ -8303,8 +8303,7 @@ window.filterPrimarySourcePicker = filterPrimarySourcePicker;
 async function reloadPrimarySourceSoO() {
   const btn = document.getElementById('primary-source-soo-reload');
   const status = document.getElementById('primary-source-soo-status');
-  const orig = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Reloading…'; }
+  if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
   if (status) { status.textContent = ''; status.classList.remove('err'); }
   try {
     await loadSoOStatus();
@@ -8322,7 +8321,7 @@ async function reloadPrimarySourceSoO() {
   } catch (_) {
     if (status) { status.textContent = 'SoO unavailable — try again'; status.classList.add('err'); }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = orig || '⟳ Reload SoO'; }
+    if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
   }
 }
 window.reloadPrimarySourceSoO = reloadPrimarySourceSoO;
