@@ -65,8 +65,11 @@ async function _processOne(t, page, deps) {
     if (t.type === 'accept') {
       const r = await acceptFn(page, t.account, { log });
       await _safeMark(markTask, t.id, r.accepted ? 'done' : 'skipped', { lastError: r.reason || null }, log);
+      // The accepting browser is the local one unless an auto-accept sender
+      // (a GoLogin profileId) was configured — keep the log truthful either way.
+      const _via = (t.sender && t.sender !== 'local-browser') ? 'via a GoLogin profile' : 'via your local browser';
       emit(t, r.accepted
-        ? `✓ Connection accepted — ${t.campaignProfileName || 'account'} (via your local browser)`
+        ? `✓ Connection accepted — ${t.campaignProfileName || 'account'} (${_via})`
         : `⚠ Auto-accept: no matching invitation for ${t.campaignProfileName || 'account'} — skipped`);
     } else {
       await sendFn(page, t.threadUrl, t.body, { introTitle: t.introTitle, leadName: t.leadName, log });
