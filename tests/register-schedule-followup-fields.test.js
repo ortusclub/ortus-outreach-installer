@@ -16,6 +16,7 @@ test('registerSchedule persists the follow-up + auto-accept config', async () =>
     primaryName: 'You', primaryIntroBody: 'intro', primaryUrl: 'https://lnkd/in/you',
     autoAcceptPrimary: true, followUpEnabled: true, followUpBody: 'Hi {first name}',
     followUpDelayMinutes: 15, followUpSender: 'campaign-account',
+    autoAcceptSender: 'profile-sched1',
   });
   const sched = await mod.listSchedule();
   const entry = Object.values(sched).find(e => e.profileId === 'p1');
@@ -24,4 +25,5 @@ test('registerSchedule persists the follow-up + auto-accept config', async () =>
   assert.equal(entry.followUpBody, 'Hi {first name}');
   assert.equal(entry.followUpDelayMinutes, 15);
   assert.equal(entry.followUpSender, 'campaign-account');
+  assert.equal(entry.autoAcceptSender, 'profile-sched1');
 });
