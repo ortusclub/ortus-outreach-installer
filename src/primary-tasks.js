@@ -39,7 +39,7 @@ export function buildFollowUpTask({
 
 export function buildAcceptTask({
   campaignProfileId, campaignProfileName = '', sheetId = '', sheetUrl = '',
-  account = { name: '', profileUrl: '' }, primaryUrl = '', now,
+  account = { name: '', profileUrl: '' }, primaryUrl = '', sender = 'local-browser', now,
 }) {
   const created = Number.isFinite(now) ? now : Date.now();
   return {
@@ -47,7 +47,7 @@ export function buildAcceptTask({
     type: 'accept', status: 'pending', attempts: 0, lastError: null,
     createdAt: created, dueAt: created,
     campaignProfileId, campaignProfileName, sheetId, sheetUrl,
-    account, primaryUrl,
+    account, primaryUrl, sender,
   };
 }
 
@@ -56,15 +56,19 @@ export function selectDue(tasks, now) {
   return (tasks || []).filter(t => t && t.status === 'pending' && t.dueAt <= now);
 }
 
-/** Pure: split due tasks into the local-browser bucket and per-account buckets. */
+/** Pure: split due tasks into the local-browser bucket and per-account buckets.
+ *  Routing is by `sender` for ALL task types. Accept tasks built before the
+ *  auto-accept-sender change have no `sender` field → treated as local-browser,
+ *  preserving the old "accept always runs locally" behaviour. */
 export function partitionByBrowser(due) {
   const local = [];
   const byAccount = {};
   for (const t of due) {
-    if (t.type === 'accept' || t.sender === 'local-browser') {
+    const sender = t.sender || 'local-browser';
+    if (sender === 'local-browser') {
       local.push(t);
     } else {
-      (byAccount[t.sender] ||= []).push(t);
+      (byAccount[sender] ||= []).push(t);
     }
   }
   return { local, byAccount };
