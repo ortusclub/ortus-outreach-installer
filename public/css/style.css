@@ -4220,6 +4220,27 @@ body.theme-light .sb-link { color: #6e520f; }
 .intro-config-gate{display:flex;gap:8px;align-items:flex-start;margin:6px 0 8px;padding:9px 11px;border:1px dashed var(--gold);border-radius:10px;background:var(--gold-tint-bg);font-size:12px;line-height:1.5;}
 .intro-config-num{width:64px;border:1px solid var(--hairline);border-radius:8px;padding:7px;text-align:center;font-family:var(--mono);background:var(--card-bg);color:var(--ink);}
 
+/* v2.94.x — Auto-accept source cards (Variant B) + single-select profile picker */
+.aa-src-cards{display:flex;flex-direction:column;gap:10px;margin:8px 0 4px;}
+.aa-src-card{border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;transition:border-color .15s ease, background .15s ease;}
+.aa-src-card:has(input[type="radio"]:checked){border-color:var(--ink);background:var(--hairline-soft);}
+.aa-src-head{display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;}
+.aa-src-head input[type="radio"]{accent-color:var(--ink);width:15px;height:15px;flex-shrink:0;}
+.aa-src-title{font-size:.9rem;font-weight:600;color:var(--ink);}
+.aa-src-desc{font-size:.76rem;color:var(--gray);margin:6px 0 0 25px;line-height:1.45;}
+.aa-acct-search{width:calc(100% - 25px);margin:12px 0 8px 25px;font-family:var(--mono);font-size:.76rem;padding:7px 12px;border:1px solid var(--hairline);border-radius:9999px;background:var(--card-bg);color:var(--ink);outline:none;}
+.aa-acct-search::placeholder{color:var(--gray);}
+.aa-acct-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-left:25px;max-height:240px;overflow:auto;}
+.aa-acct-row{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--hairline);border-radius:8px;padding:8px 10px;cursor:pointer;transition:opacity .15s ease, border-color .15s ease, background .15s ease;}
+.aa-acct-row:hover{opacity:.8;}
+.aa-acct-row.sel{border-color:var(--ink);background:var(--card-bg);}
+.aa-acct-row input[type="radio"]{accent-color:var(--ink);width:13px;height:13px;margin-top:2px;flex-shrink:0;}
+.aa-acct-row .body{min-width:0;flex:1;}
+.aa-acct-row .name{font-size:.72rem;font-weight:500;color:var(--ink);word-break:break-all;}
+.aa-acct-row .id{font-size:.54rem;color:var(--gray);font-family:ui-monospace,monospace;margin-top:2px;}
+.aa-acct-empty{font-size:.72rem;color:var(--gray);padding:8px 4px;margin-left:25px;}
+@media(max-width:1100px){.aa-acct-grid{grid-template-columns:1fr;}}
+
 /* Phase 2.8.20 (W1-B1) — right-pane Parked row (visible during runs) */
 .rp-parked-line {
   font-family: var(--body, 'Hanken Grotesk', sans-serif);
