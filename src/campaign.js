@@ -2469,9 +2469,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                       sheetUrl,
                       account: _self,
                       primaryUrl: _primaryUrl,
+                      sender: tpl.autoAcceptSender,
                     });
                     const _stored = await enqueuePrimaryTask(_task);
-                    if (_stored) log(`  ⏳ [${pName}] Auto-accept queued — your local browser will accept this account's invite at the next idle moment.`);
+                    if (_stored) {
+                      const _where = (tpl.autoAcceptSender && tpl.autoAcceptSender !== 'local-browser')
+                        ? 'the chosen GoLogin profile'
+                        : 'your local browser';
+                      log(`  ⏳ [${pName}] Auto-accept queued — ${_where} will accept this account's invite at the next idle moment.`);
+                    }
                   } catch (e) {
                     log(`  ⚠ [${pName}] Auto-accept queue warning: ${e.message}`);
                   }
