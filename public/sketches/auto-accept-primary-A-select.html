@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Auto-accept · Variant A — Sender select</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* light-theme tokens, lifted from public/css/style.css */
+  :root{
+    --bg:#fafafa; --ink:#0a0a0a; --gray:#999; --hairline:rgba(0,0,0,.15);
+    --hairline-soft:rgba(0,0,0,.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68;
+    --card-bg:#fff; --card-border:rgba(0,0,0,.18); --card-shadow:0 4px 16px rgba(0,0,0,.10);
+    --gold-tint-bg:rgba(247,190,104,.16);
+    --display:'Bebas Neue',sans-serif; --mono:'Hanken Grotesk',sans-serif; --body:'Hanken Grotesk',sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#ececec;color:var(--ink);font-family:var(--body);padding:48px 32px;line-height:1.5;}
+  .pagewrap{max-width:1040px;margin:0 auto;}
+  .pagehead{margin-bottom:8px;}
+  .pagehead h1{font-family:var(--display);font-weight:400;letter-spacing:.02em;font-size:2rem;margin:0;text-transform:uppercase;}
+  .pagehead .tag{display:inline-block;font:11px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .note{background:#fff;border:1px solid var(--hairline);border-left:3px solid var(--gold);border-radius:10px;padding:14px 18px;margin:18px 0 30px;font-size:.86rem;color:#333;max-width:760px;}
+  .note b{color:#0a0a0a;}
+  .note code{font-family:ui-monospace,monospace;font-size:.78rem;background:var(--hairline-soft);padding:1px 5px;border-radius:3px;}
+  .states{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start;}
+  .state-cap{font:11px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--gray);margin:0 0 10px 2px;}
+  .frame{background:var(--bg);border:1px solid var(--hairline);border-radius:14px;padding:22px;}
+
+  /* ── real component CSS (from style.css) ── */
+  .intro-config-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);padding:18px 22px;}
+  .intro-config-eyebrow{font-family:var(--mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:var(--ink);margin-bottom:14px;}
+  .intro-config-newtag{display:inline-block;font:10px var(--display);letter-spacing:.12em;color:#0a0a0a;background:var(--gold);border-radius:9999px;padding:2px 8px;vertical-align:middle;margin-left:6px;}
+  .intro-config-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:4px 0 8px;}
+  .intro-config-toggle-key{font-size:14px;}
+  .intro-config-label{display:block;font-family:var(--mono);font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;font-weight:500;color:var(--gray);margin-bottom:6px;}
+  .intro-config-hint{font-size:.82rem;color:var(--gray);margin-top:10px;line-height:1.5;}
+  .intro-config-hint code{font-family:ui-monospace,monospace;font-size:.7rem;background:var(--hairline-soft);padding:1px 5px;border-radius:3px;}
+  .intro-config-select-wide{width:100%;padding:10px 14px;background:var(--card-bg);border:1px solid var(--hairline);border-radius:8px;font-family:var(--body);font-size:.95rem;color:var(--ink);font-weight:500;outline:none;cursor:pointer;appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23999' stroke-width='1.5' d='M1 1.5l5 5 5-5'/></svg>");
+    background-repeat:no-repeat;background-position:right 14px center;}
+  .notif-pref-toggle{position:relative;display:inline-block;width:28px;height:16px;flex-shrink:0;}
+  .notif-pref-toggle input{opacity:0;width:0;height:0;}
+  .notif-pref-slider{position:absolute;cursor:pointer;inset:0;background:var(--gray);border-radius:16px;transition:background .15s;}
+  .notif-pref-slider::before{content:'';position:absolute;height:12px;width:12px;left:2px;top:2px;background:#fff;border-radius:50%;transition:transform .15s;}
+  .notif-pref-toggle input:checked + .notif-pref-slider{background:var(--green);}
+  .notif-pref-toggle input:checked + .notif-pref-slider::before{transform:translateX(12px);}
+  /* status bar (from style.css) */
+  .status-bar{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px;height:5px;margin-top:6px;}
+  .status-seg{height:100%;background:var(--hairline);border-radius:2px;}
+  .status-seg.available{background:var(--green);}
+  .status-seg.in-use,.status-seg.used{background:var(--gold);}
+  .status-seg.na{background:var(--red);opacity:.5;}
+  .status-legend{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px;margin-top:3px;}
+  .status-legend span{font:8px var(--mono);letter-spacing:.06em;color:var(--gray);text-transform:uppercase;}
+
+  /* ── NEW bits for this variant: searchable single-select account list ── */
+  .acct-block{margin-top:12px;}
+  .acct-search{width:100%;font-family:var(--mono);font-size:.78rem;padding:8px 12px;border:1px solid var(--hairline);border-radius:9999px;background:#fff;color:var(--ink);outline:none;margin-bottom:8px;}
+  .acct-search::placeholder{color:var(--gray);}
+  .acct-list{display:flex;flex-direction:column;gap:6px;max-height:230px;overflow:auto;padding-right:2px;}
+  .acct-row{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--hairline);border-radius:8px;padding:9px 11px;cursor:pointer;transition:opacity .15s,background .15s,border-color .15s;}
+  .acct-row:hover{opacity:.78;}
+  .acct-row.sel{border-color:var(--ink);background:var(--hairline-soft);}
+  .acct-row input{accent-color:var(--ink);width:14px;height:14px;margin-top:2px;flex-shrink:0;}
+  .acct-row .body{min-width:0;flex:1;}
+  .acct-row .name{font-size:.78rem;font-weight:500;color:var(--ink);word-break:break-all;}
+  .acct-row .id{font-size:.56rem;color:var(--gray);font-family:ui-monospace,monospace;margin-top:2px;}
+  .acct-row .soo-user{font-family:var(--mono);font-size:.55rem;letter-spacing:.1em;color:var(--gray);margin-top:4px;text-transform:uppercase;}
+  @media(max-width:880px){.states{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="pagewrap">
+  <div class="pagehead">
+    <h1>Auto-accept · Variant A</h1>
+    <span class="tag">Sender select — mirrors the follow-up "Sent from" pattern</span>
+  </div>
+
+  <div class="note">
+    <b>The idea:</b> keep one on/off toggle for the feature, then add an <b>"Accept from"</b> dropdown that re-uses the
+    exact <code>Sent from</code> select already shipping on the follow-up card. Picking <b>"A GoLogin account"</b> reveals
+    a searchable, single-select list of your real profiles.<br>
+    <b>Backend reality:</b> the accept task is currently hardwired to the local browser, but the
+    <code>followUpSender → profileId → launchAccount()</code> routing already exists for follow-ups — auto-accept just
+    needs to carry the chosen profile id the same way. Account fields shown are the real ones (email name, truncated id,
+    assignee, the OP/InM/SN/CC credit bar).
+  </div>
+
+  <div class="states">
+    <!-- ── STATE 1: local browser (today) ── -->
+    <div>
+      <p class="state-cap">State 1 · You (local browser) — today's behaviour</p>
+      <div class="frame">
+        <div class="intro-config-card">
+          <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
+          <div class="intro-config-toggle-row">
+            <span class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
+            <label class="notif-pref-toggle"><input type="checkbox" checked><span class="notif-pref-slider"></span></label>
+          </div>
+          <div style="margin-top:12px">
+            <label class="intro-config-label">Accept from</label>
+            <select class="intro-config-select-wide">
+              <option selected>You (local browser)</option>
+              <option>A GoLogin account…</option>
+            </select>
+          </div>
+          <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and
+            <b>your local browser</b> accepts that one invitation automatically — no manual step before the intro.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STATE 2: gologin account picked ── -->
+    <div>
+      <p class="state-cap">State 2 · A GoLogin account — picker revealed</p>
+      <div class="frame">
+        <div class="intro-config-card">
+          <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
+          <div class="intro-config-toggle-row">
+            <span class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
+            <label class="notif-pref-toggle"><input type="checkbox" checked><span class="notif-pref-slider"></span></label>
+          </div>
+          <div style="margin-top:12px">
+            <label class="intro-config-label">Accept from</label>
+            <select class="intro-config-select-wide">
+              <option>You (local browser)</option>
+              <option selected>A GoLogin account…</option>
+            </select>
+          </div>
+
+          <div class="acct-block">
+            <label class="intro-config-label" style="margin-top:4px">Which account is the primary?</label>
+            <input class="acct-search" placeholder="Search by name or email…">
+            <div class="acct-list">
+              <label class="acct-row sel">
+                <input type="radio" name="primAcctA" checked>
+                <div class="body">
+                  <div class="name">alecx@ortus.solutions</div>
+                  <div class="id">69772393aefd…</div>
+                  <div class="soo-user">Assigned · Antonio</div>
+                  <div class="status-bar"><div class="status-seg available"></div><div class="status-seg in-use"></div><div class="status-seg available"></div><div class="status-seg available"></div></div>
+                  <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+                </div>
+              </label>
+              <label class="acct-row">
+                <input type="radio" name="primAcctA">
+                <div class="body">
+                  <div class="name">mariap@ortus.solutions</div>
+                  <div class="id">7b1c20f8d3a1…</div>
+                  <div class="soo-user">Assigned · Antonio</div>
+                  <div class="status-bar"><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg used"></div><div class="status-seg available"></div></div>
+                  <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+                </div>
+              </label>
+              <label class="acct-row">
+                <input type="radio" name="primAcctA">
+                <div class="body">
+                  <div class="name">jrose@ortus.solutions</div>
+                  <div class="id">3f8b77a1029c…</div>
+                  <div class="soo-user">Assigned · Sam</div>
+                  <div class="status-bar"><div class="status-seg in-use"></div><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div></div>
+                  <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="intro-config-hint">The primary is logged into LinkedIn inside <b>that GoLogin profile</b> — it
+            accepts the one invitation automatically, then the intro fires. <code>{primary url}</code> still drives the
+            "is it connected?" check.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

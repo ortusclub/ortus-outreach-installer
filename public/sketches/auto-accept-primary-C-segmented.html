@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Auto-accept · Variant C — Segmented + dropdown</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fafafa; --ink:#0a0a0a; --gray:#999; --hairline:rgba(0,0,0,.15);
+    --hairline-soft:rgba(0,0,0,.06); --green:#3fb950; --red:#f85149; --gold:#F7BE68;
+    --card-bg:#fff; --card-border:rgba(0,0,0,.18); --card-shadow:0 4px 16px rgba(0,0,0,.10);
+    --gold-tint-bg:rgba(247,190,104,.16);
+    --display:'Bebas Neue',sans-serif; --mono:'Hanken Grotesk',sans-serif; --body:'Hanken Grotesk',sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#ececec;color:var(--ink);font-family:var(--body);padding:48px 32px;line-height:1.5;}
+  .pagewrap{max-width:1040px;margin:0 auto;}
+  .pagehead h1{font-family:var(--display);font-weight:400;letter-spacing:.02em;font-size:2rem;margin:0;text-transform:uppercase;}
+  .pagehead .tag{display:inline-block;font:11px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .note{background:#fff;border:1px solid var(--hairline);border-left:3px solid var(--gold);border-radius:10px;padding:14px 18px;margin:18px 0 30px;font-size:.86rem;color:#333;max-width:760px;}
+  .note b{color:#0a0a0a;}
+  .note code{font-family:ui-monospace,monospace;font-size:.78rem;background:var(--hairline-soft);padding:1px 5px;border-radius:3px;}
+  .states{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start;}
+  .state-cap{font:11px var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--gray);margin:0 0 10px 2px;}
+  .frame{background:var(--bg);border:1px solid var(--hairline);border-radius:14px;padding:22px;}
+
+  .intro-config-card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:14px;box-shadow:var(--card-shadow);padding:18px 22px;}
+  .intro-config-eyebrow{font-family:var(--mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;font-weight:600;color:var(--ink);margin-bottom:14px;}
+  .intro-config-newtag{display:inline-block;font:10px var(--display);letter-spacing:.12em;color:#0a0a0a;background:var(--gold);border-radius:9999px;padding:2px 8px;vertical-align:middle;margin-left:6px;}
+  .intro-config-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:4px 0 8px;}
+  .intro-config-toggle-key{font-size:14px;}
+  .intro-config-label{display:block;font-family:var(--mono);font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;font-weight:500;color:var(--gray);margin-bottom:6px;}
+  .intro-config-hint{font-size:.82rem;color:var(--gray);margin-top:10px;line-height:1.5;}
+  .intro-config-hint code{font-family:ui-monospace,monospace;font-size:.7rem;background:var(--hairline-soft);padding:1px 5px;border-radius:3px;}
+  .notif-pref-toggle{position:relative;display:inline-block;width:28px;height:16px;flex-shrink:0;}
+  .notif-pref-toggle input{opacity:0;width:0;height:0;}
+  .notif-pref-slider{position:absolute;cursor:pointer;inset:0;background:var(--gray);border-radius:16px;transition:background .15s;}
+  .notif-pref-slider::before{content:'';position:absolute;height:12px;width:12px;left:2px;top:2px;background:#fff;border-radius:50%;transition:transform .15s;}
+  .notif-pref-toggle input:checked + .notif-pref-slider{background:var(--green);}
+  .notif-pref-toggle input:checked + .notif-pref-slider::before{transform:translateX(12px);}
+  .status-bar{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px;height:5px;margin-top:6px;}
+  .status-seg{height:100%;background:var(--hairline);border-radius:2px;}
+  .status-seg.available{background:var(--green);}
+  .status-seg.in-use,.status-seg.used{background:var(--gold);}
+  .status-seg.na{background:var(--red);opacity:.5;}
+  .status-legend{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px;margin-top:3px;}
+  .status-legend span{font:8px var(--mono);letter-spacing:.06em;color:var(--gray);text-transform:uppercase;}
+
+  /* ── NEW: segmented pill control (radii 9999, Bugatti) ── */
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--hairline);border-radius:9999px;padding:3px;margin-top:6px;}
+  .seg button{border:none;background:transparent;font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);padding:9px 10px;border-radius:9999px;cursor:pointer;transition:all .15s;}
+  .seg button.on{background:var(--ink);color:#fff;}
+
+  /* selected-account summary chip + dropdown */
+  .acct-summary{display:flex;align-items:center;gap:10px;margin-top:12px;border:1px solid var(--ink);border-radius:10px;padding:10px 12px;background:var(--hairline-soft);}
+  .acct-avatar{width:30px;height:30px;border-radius:9999px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:.95rem;flex-shrink:0;}
+  .acct-summary .meta{flex:1;min-width:0;}
+  .acct-summary .meta .name{font-size:.82rem;font-weight:600;word-break:break-all;}
+  .acct-summary .meta .sub{font-size:.6rem;color:var(--gray);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+  .acct-change{font-family:var(--mono);font-size:.58rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);border:1px solid var(--hairline);border-radius:9999px;padding:6px 12px;background:transparent;cursor:pointer;}
+  .acct-change:hover{color:var(--ink);border-color:var(--ink);}
+
+  .dropdown{margin-top:8px;border:1px solid var(--hairline);border-radius:10px;background:#fff;overflow:hidden;}
+  .acct-search{width:100%;font-family:var(--mono);font-size:.76rem;padding:9px 12px;border:none;border-bottom:1px solid var(--hairline);background:#fff;color:var(--ink);outline:none;}
+  .acct-search::placeholder{color:var(--gray);}
+  .acct-list{max-height:220px;overflow:auto;}
+  .acct-row{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--hairline-soft);transition:background .12s;}
+  .acct-row:last-child{border-bottom:none;}
+  .acct-row:hover{background:var(--hairline-soft);}
+  .acct-row.sel{background:var(--hairline-soft);}
+  .acct-row .avatar{width:26px;height:26px;border-radius:9999px;background:var(--hairline);color:var(--ink);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:.8rem;flex-shrink:0;}
+  .acct-row.sel .avatar{background:var(--ink);color:#fff;}
+  .acct-row .body{min-width:0;flex:1;}
+  .acct-row .name{font-size:.74rem;font-weight:500;color:var(--ink);word-break:break-all;}
+  .acct-row .id{font-size:.54rem;color:var(--gray);font-family:ui-monospace,monospace;margin-top:1px;}
+  .acct-row .soo-user{font-family:var(--mono);font-size:.52rem;letter-spacing:.08em;color:var(--gray);margin-top:3px;text-transform:uppercase;}
+  @media(max-width:880px){.states{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="pagewrap">
+  <div class="pagehead">
+    <h1>Auto-accept · Variant C</h1>
+    <span class="tag">Segmented pill + dropdown — compact, "accepting as" summary chip</span>
+  </div>
+
+  <div class="note">
+    <b>The idea:</b> a two-segment pill ( <b>Local browser</b> / <b>GoLogin account</b> ) in the Bugatti pill style.
+    Pick GoLogin and a compact <b>dropdown</b> opens; once you choose, it collapses to a single <b>"accepting as"</b>
+    summary chip with a small <b>Change</b> button — so the resting card stays tidy. Most compact of the three.<br>
+    <b>Backend reality:</b> identical wiring to the others — the selected profile id travels on the accept task and
+    <code>launchAccount(profileId)</code> runs the acceptance, mirroring the shipped <code>followUpSender</code> path.
+  </div>
+
+  <div class="states">
+    <!-- STATE 1 -->
+    <div>
+      <p class="state-cap">State 1 · Local browser (today)</p>
+      <div class="frame">
+        <div class="intro-config-card">
+          <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
+          <div class="intro-config-toggle-row">
+            <span class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
+            <label class="notif-pref-toggle"><input type="checkbox" checked><span class="notif-pref-slider"></span></label>
+          </div>
+          <label class="intro-config-label" style="margin-top:10px">Accept from</label>
+          <div class="seg">
+            <button class="on" type="button">Local browser</button>
+            <button type="button">GoLogin account</button>
+          </div>
+          <div class="intro-config-hint"><b>Your local browser</b> accepts the one invitation automatically — no manual step before the intro.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATE 2 -->
+    <div>
+      <p class="state-cap">State 2 · GoLogin → dropdown open</p>
+      <div class="frame">
+        <div class="intro-config-card">
+          <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
+          <div class="intro-config-toggle-row">
+            <span class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
+            <label class="notif-pref-toggle"><input type="checkbox" checked><span class="notif-pref-slider"></span></label>
+          </div>
+          <label class="intro-config-label" style="margin-top:10px">Accept from</label>
+          <div class="seg">
+            <button type="button">Local browser</button>
+            <button class="on" type="button">GoLogin account</button>
+          </div>
+
+          <div class="dropdown">
+            <input class="acct-search" placeholder="Search by name or email…">
+            <div class="acct-list">
+              <div class="acct-row sel">
+                <div class="avatar">A</div>
+                <div class="body">
+                  <div class="name">alecx@ortus.solutions</div>
+                  <div class="id">69772393aefd…</div>
+                  <div class="soo-user">Assigned · Antonio</div>
+                  <div class="status-bar"><div class="status-seg available"></div><div class="status-seg in-use"></div><div class="status-seg available"></div><div class="status-seg available"></div></div>
+                  <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+                </div>
+              </div>
+              <div class="acct-row">
+                <div class="avatar">M</div>
+                <div class="body">
+                  <div class="name">mariap@ortus.solutions</div>
+                  <div class="id">7b1c20f8d3a1…</div>
+                  <div class="soo-user">Assigned · Antonio</div>
+                  <div class="status-bar"><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg used"></div><div class="status-seg available"></div></div>
+                  <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+                </div>
+              </div>
+              <div class="acct-row">
+                <div class="avatar">J</div>
+                <div class="body">
+                  <div class="name">jrose@ortus.solutions</div>
+                  <div class="id">3f8b77a1029c…</div>
+                  <div class="soo-user">Assigned · Sam</div>
+                  <div class="status-bar"><div class="status-seg in-use"></div><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div></div>
+                  <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="intro-config-hint">Pick the profile the primary is logged into — it collapses to a summary chip once chosen (below).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESTING STATE after a pick -->
+  <p class="state-cap" style="margin-top:34px">State 3 · Resting card after a pick — collapsed "accepting as" chip</p>
+  <div class="frame" style="max-width:480px">
+    <div class="intro-config-card">
+      <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
+      <div class="intro-config-toggle-row">
+        <span class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
+        <label class="notif-pref-toggle"><input type="checkbox" checked><span class="notif-pref-slider"></span></label>
+      </div>
+      <label class="intro-config-label" style="margin-top:10px">Accept from</label>
+      <div class="seg">
+        <button type="button">Local browser</button>
+        <button class="on" type="button">GoLogin account</button>
+      </div>
+      <div class="acct-summary">
+        <div class="acct-avatar">A</div>
+        <div class="meta">
+          <div class="name">alecx@ortus.solutions</div>
+          <div class="sub">Accepting as · Assigned Antonio</div>
+        </div>
+        <button class="acct-change" type="button">Change</button>
+      </div>
+      <div class="intro-config-hint">The acceptance runs inside this profile, then the intro fires.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
