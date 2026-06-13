@@ -22,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence } from './src/campaign.js';
+import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
@@ -1654,9 +1654,18 @@ app.post('/api/bulk-check-now', async (req, res) => {
   // v2.71: pause-if-running coordination. Captured before mutating campaign
   // state so the finally block knows whether to resume.
   const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
+
+  // v2.97: fire-and-forget. Respond immediately; the sweep runs in the
+  // background and streams progress to the dashboard live log, so the button
+  // never hangs or throws the old "pause did not take effect within 90s" error.
+  // A solo check PREEMPTS the running campaign's current lead (below) so it
+  // takes precedence within ~1s.
+  res.status(202).json({ ok: true, started: true, background: true, autoPaused: _weShouldAutoResume });
+
   try {
     let { sheetUrl, linkedinColumn, profileId, profileIds,
-          primaryName, primaryIntroBody, primaryUrl, introTitle, allSenders } = req.body || {};
+          primaryName, primaryIntroBody, primaryUrl, introTitle,
+          autoAcceptPrimary, primarySource, allSenders } = req.body || {};
     // v2.78: "all senders in the sheet" — ignore any campaign/explicit accounts
     // and derive every account from the sheet's Sender column (below), even
     // while a campaign is running.
@@ -1675,26 +1684,29 @@ app.post('/api/bulk-check-now', async (req, res) => {
       sheetUrl = campaign.sheetUrl;
       linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
     }
-    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    if (!sheetUrl) { campaignLog('⚠ Manual bulk check aborted — no sheet URL provided.'); return; }
 
-    // v2.71: pause the running campaign if it's actively sending. Pause is
-    // a flag-only request; workers acknowledge at the next lead boundary.
-    // We wait up to 90s for _paused to flip true — a normal lead completes
-    // in 10-60s, so 90s covers the slowest legitimate boundary plus margin.
+    // v2.97: take precedence over a running campaign. Instead of waiting up to
+    // 90s for a cooperative pause boundary (and failing if a slow lead — e.g. a
+    // ~50s intro attempt — blew past it), we PREEMPT the in-flight lead so the
+    // pause lands within ~1s. The preempted lead is left unstamped and is
+    // re-attempted when the campaign resumes after the sweep.
     if (_weShouldAutoResume) {
-      campaignLog('⏸ Manual bulk check — pausing campaign so browsers can run the sweep…');
+      campaignLog('⏸ Manual bulk check — pausing campaign (taking precedence over the current lead)…');
       pauseCampaign();
-      const deadline = Date.now() + 90_000;
+      const preempted = preemptCurrentLead();
+      campaignLog(preempted
+        ? '⏭ Current lead preempted — it will be retried on resume.'
+        : 'ℹ No lead in flight — pausing at the next boundary.');
+      // Short wait for the pause to acknowledge. With preempt this is ~1s; allow
+      // generous margin for a lead mid-cleanup, but never the old 90s hang.
+      const deadline = Date.now() + 30_000;
       while (!campaign._paused && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 250));
       }
-      if (!campaign._paused) {
-        // Pause didn't acknowledge in time — bail rather than risk
-        // browser contention with active workers. Operator can retry.
-        campaignLog('⚠ Manual bulk check — pause did not acknowledge in 90s; sweep aborted.');
-        return res.status(503).json({ error: 'Pause did not take effect within 90s. Wait for the current lead to finish, then retry.' });
-      }
-      campaignLog('✓ Campaign paused — starting sweep.');
+      campaignLog(campaign._paused
+        ? '✓ Campaign paused — starting sweep.'
+        : '⚠ Campaign did not pause in 30s — sweeping anyway (browsers may contend briefly).');
     }
 
     const token = process.env.GOLOGIN_API_TOKEN;
@@ -1724,7 +1736,8 @@ app.post('/api/bulk-check-now', async (req, res) => {
           if (v && v.includes('@')) accountEmails.add(v.toLowerCase());
         }
         if (accountEmails.size === 0) {
-          return res.status(400).json({ error: 'No accounts selected and no Account Used values found on the sheet to derive from.' });
+          campaignLog('⚠ Manual bulk check aborted — no accounts selected and no Account Used values on the sheet to derive from.');
+          return;
         }
         const allProfiles = await getProfiles(token);
         const byName = new Map(allProfiles.map((p) => [String(p.name || '').toLowerCase(), p.id]));
@@ -1734,10 +1747,12 @@ app.post('/api/bulk-check-now', async (req, res) => {
         }
         derivedFromSheet = true;
         if (profileIdsToSweep.length === 0) {
-          return res.status(400).json({ error: `Found ${accountEmails.size} account email(s) on the sheet but none matched a GoLogin profile.` });
+          campaignLog(`⚠ Manual bulk check aborted — found ${accountEmails.size} account email(s) on the sheet but none matched a GoLogin profile.`);
+          return;
         }
       } catch (err) {
-        return res.status(500).json({ error: `Could not derive accounts from sheet: ${err.message}` });
+        campaignLog(`⚠ Manual bulk check aborted — could not derive accounts from sheet: ${err.message}`);
+        return;
       }
     }
 
@@ -1770,14 +1785,8 @@ app.post('/api/bulk-check-now', async (req, res) => {
       return true;
     });
     if (profileIdsToSweep.length === 0) {
-      return res.json({
-        ok: true,
-        derivedFromSheet,
-        profilesSweep: 0,
-        skippedParked,
-        result: { matched: 0, stamped: 0, fetched: 0 },
-        perProfile: [],
-      });
+      campaignLog('ℹ Manual bulk check — no accounts left to sweep after filtering parked ones.');
+      return;
     }
 
     // Sweep each profile sequentially. Sequential because GoLogin browsers
@@ -1834,6 +1843,15 @@ app.post('/api/bulk-check-now', async (req, res) => {
           primaryIntroBody: String(primaryIntroBody || '').trim(),
           primaryUrl:       String(primaryUrl       || '').trim(),
           introTitle:       introTitle || '',
+          // v2.97: carry the auto-accept config so the v2.96 connect-to-primary
+          // self-heal can fire from the solo check too (fall back to the live
+          // campaign's templates when the request didn't include them).
+          autoAcceptPrimary: (autoAcceptPrimary !== undefined)
+            ? autoAcceptPrimary
+            : (campaign.templates && campaign.templates.autoAcceptPrimary),
+          primarySource: (primarySource !== undefined)
+            ? primarySource
+            : (campaign.templates && campaign.templates.primarySource),
         };
         const _effectiveTemplates = (_reqTemplates.primaryName && _reqTemplates.primaryIntroBody)
           ? _reqTemplates
@@ -1914,22 +1932,9 @@ app.post('/api/bulk-check-now', async (req, res) => {
     } finally {
       setBulkCheckInProgress(false);
     }
-
-    res.json({
-      ok: true,
-      derivedFromSheet,
-      profilesSweep: profileIdsToSweep.length,
-      skippedParked,
-      result: {
-        matched: totalMatched,
-        stamped: totalStamped,
-        fetched: totalFetched,
-      },
-      perProfile,
-      autoPaused: _weShouldAutoResume,
-    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // v2.97: response was already sent (202) — surface failures in the live log.
+    campaignLog(`⚠ Manual bulk check failed: ${err.message}`);
   } finally {
     _manualSweepRunning = false;
     // v2.71: ALWAYS resume if we were the ones who paused, even on error.

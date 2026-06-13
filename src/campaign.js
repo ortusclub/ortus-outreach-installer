@@ -132,6 +132,24 @@ export function withWatchdog(promise, timeoutMs, profileId) {
   return Promise.race([promise, watchdog]).finally(() => clearTimeout(timer));
 }
 
+// v2.97 — solo-check lead preempt. A manual bulk check ("Run a solo check")
+// takes precedence over the running campaign: instead of waiting up to the 180s
+// lead watchdog for a cooperative pause boundary, preemptCurrentLead() abandons
+// the in-flight lead immediately so the loop reaches its pause boundary within
+// ~1s. The abandoned lead is left UNSTAMPED → re-attempted on resume (the only
+// risk is a single in-flight action finishing in the background, which the
+// operator opted into). Armed per-lead at the watchdog race; null between leads,
+// in which case preempt is a no-op and the pause still lands at the next
+// boundary.
+let _leadPreemptReject = null;
+export function preemptCurrentLead() {
+  if (_leadPreemptReject) {
+    _leadPreemptReject(Object.assign(new Error('lead_preempted'), { kind: 'preempt' }));
+    return true;
+  }
+  return false;
+}
+
 /** Minimum between-batch wait — floor for the derived-from-bph math (D-03). */
 const MIN_BETWEEN_BATCHES_MS = 60 * 1000;
 
@@ -2788,6 +2806,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
           // performOutreach with retry
           let result;
+          let _preempted = false;
           const MAX_RETRIES = 3;
           for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             // Phase 2.8.20 (W2-A1): wrap with watchdog so a Puppeteer hang
@@ -2795,14 +2814,31 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // skipped result with the lead_timeout_watchdog signal which
             // the existing TRANSIENT_SIGNALS allow-list (extended below)
             // routes through the normal 3-retry/backoff flow.
+            // v2.97: also race a preempt promise so a manual "solo check" can
+            // abandon this lead immediately (preemptCurrentLead) and let the
+            // campaign hit its pause boundary within ~1s.
             try {
-              result = await withWatchdog(
-                performOutreach(page, url, { ...tpl, data }, { profileId }, hint),
-                LEAD_TIMEOUT_MS,
-                profileId,
-              );
+              const _preemptP = new Promise((_, reject) => { _leadPreemptReject = reject; });
+              try {
+                result = await Promise.race([
+                  withWatchdog(
+                    performOutreach(page, url, { ...tpl, data }, { profileId }, hint),
+                    LEAD_TIMEOUT_MS,
+                    profileId,
+                  ),
+                  _preemptP,
+                ]);
+              } finally {
+                _leadPreemptReject = null;
+              }
             } catch (err) {
-              if (err && err.kind === 'watchdog') {
+              if (err && err.kind === 'preempt') {
+                // Solo check is taking over. Leave the lead unstamped (no result
+                // handling below) so the next pass re-attempts it on resume.
+                log(`  ⏭ ${pName}: lead preempted for a solo bulk check — will retry on resume — ${url}`);
+                _preempted = true;
+                break;
+              } else if (err && err.kind === 'watchdog') {
                 log(`  ⏱ ${pName}: lead timed out after ${LEAD_TIMEOUT_MS / 1000}s — ${url}`);
                 result = { action: 'skipped', error: 'lead_timeout_watchdog' };
               } else {
@@ -2871,6 +2907,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               await applyFocusEmulation(page, profileId);
             } catch { /* */ }
           }
+          // v2.97: preempted by a solo bulk check — skip ALL result handling
+          // (stamping, already-connected probe, the inter-lead delay) and let
+          // the inner loop fall through to awaitUnpause() at the next iteration,
+          // which flips _paused=true so the sweep can run. The lead stays
+          // unstamped and is re-attempted on resume.
+          if (_preempted) continue;
+
           // 2.9.8: surface a normalized "Skipped: <reason>" in the dashboard
           // log too, so the operator sees the same wording the Audit Log uses.
           if (result.action === 'skipped' && result.error) {
@@ -3393,7 +3436,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // weekly-limit park), skip the delay entirely and let the inner-loop
           // guard rotate to the next account immediately — no point waiting
           // 15-45s for a lead the parked account will never get.
-          if (!campaign._abort && !weeklyLimited.has(profileId)) {
+          // v2.97: also skip the delay when a pause has been requested (e.g. a
+          // solo bulk check is taking precedence) so the loop reaches its pause
+          // boundary within ~1s instead of sleeping 15-45s first.
+          if (!campaign._abort && !campaign._pauseRequested && !weeklyLimited.has(profileId)) {
             // Messaging existing 1st-degree connections is much lower risk than
             // sending new connection requests, so use a faster cadence and skip
             // the single-account slowdown.
