@@ -13,43 +13,45 @@
  * modify the off-limits action/outreach files.
  */
 import { sendConnectionRequest } from './actions.js';
+import { getVoyagerDegree, getDegreeBadge } from './helpers.js';
 
 /**
- * Read the connection degree from a profile's top card.
- * Returns '1st' | '2nd' | '3rd' | 'self' | 'unknown'. Several selector
- * fallbacks because LinkedIn renders the distance badge a few different ways.
+ * Read the connection degree to the profile at `primaryUrl`.
+ * Returns '1st' | '2nd' | '3rd' | 'unknown'.
+ *
+ * v2.99: the old implementation scraped "1st"/"2nd"/"3rd" out of broad page
+ * containers ('main section', the top-card panel, the header region). Those
+ * containers also hold "People also viewed" / "More profiles for you" cards
+ * whose entries carry the VIEWER's degree to *those* people — so a non-
+ * connection routinely false-positived as '1st', the connect-to-primary gate
+ * thought the account was already connected and skipped the connect, and the
+ * intro then failed with INTRO_RECIPIENT_NOT_FOUND. We now use LinkedIn's
+ * authoritative Voyager /networkinfo distance (viewer ↔ this exact profile),
+ * with the careful slug-matched DOM badge as a fallback only when Voyager
+ * returns nothing.
  */
 export async function readPrimaryDegree(page, primaryUrl) {
   await page.goto(primaryUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  await new Promise((r) => setTimeout(r, 2500)); // let the top card hydrate
-  return await page.evaluate(() => {
-    const norm = (el) => (el && el.textContent ? el.textContent : '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const degreeFrom = (s) => {
-      if (!s) return null;
-      if (/\b1st\b|1st degree/.test(s)) return '1st';
-      if (/\b2nd\b|2nd degree/.test(s)) return '2nd';
-      if (/\b3rd\b|3rd degree/.test(s)) return '3rd';
-      return null;
-    };
-    // 1) explicit distance badge
-    const badge = document.querySelector('.dist-value, .distance-badge .dist-value, span.distance-badge, .pvs-profile-actions ~ * .dist-value');
-    let d = degreeFrom(norm(badge));
-    if (d) return d;
-    // 2) top-card panel near the name
-    const panel = document.querySelector('.pv-text-details__left-panel, .ph5.pb5, section.artdeco-card.pv-top-card, main section');
-    d = degreeFrom(norm(panel));
-    if (d) return d;
-    // 3) header region around the <h1>
-    const h1 = document.querySelector('h1');
-    if (h1) {
-      const around = norm(h1.closest('section') || h1.parentElement || h1);
-      d = degreeFrom(around);
-      if (d) return d;
-      // "You" on your own profile → treat as self (no intro needed)
-      if (/\byou\b/.test(around) && !/connect/.test(around)) return 'self';
-    }
-    return 'unknown';
-  });
+  await new Promise((r) => setTimeout(r, 2500)); // let the page hydrate
+
+  // 1) Authoritative: Voyager networkinfo distance for the profile in the URL.
+  try {
+    const deg = await getVoyagerDegree(page);
+    if (deg === 1) return '1st';
+    if (deg === 2) return '2nd';
+    if (deg === 3) return '3rd';
+  } catch { /* fall through to DOM badge */ }
+
+  // 2) Fallback: the slug-matched degree badge (rejects sidebar/recommendation
+  //    matches), only consulted when Voyager gave us nothing.
+  try {
+    const badge = await getDegreeBadge(page);
+    if (badge === '1st') return '1st';
+    if (badge === '2nd') return '2nd';
+    if (badge === '3rd' || badge === '3rd+') return '3rd';
+  } catch { /* fall through */ }
+
+  return 'unknown';
 }
 
 /**
