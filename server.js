@@ -1680,7 +1680,8 @@ async function _findReconnectableIntroFailures(sheetUrl, linkedinColumn, account
 // re-POSTs /api/bulk-check-now with reviveFailedIntros:true.
 app.post('/api/intro-failures/preview', async (req, res) => {
   try {
-    let { sheetUrl, linkedinColumn, profileId, profileIds, allSenders, primaryName } = req.body || {};
+    let { sheetUrl, linkedinColumn, profileId, profileIds, allSenders,
+          primaryName, primarySource, autoAcceptPrimary } = req.body || {};
     if (!sheetUrl && campaign.running && campaign.sheetUrl) {
       sheetUrl = campaign.sheetUrl;
       linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
@@ -1692,7 +1693,30 @@ app.post('/api/intro-failures/preview', async (req, res) => {
     const accounts = [...new Set(failures.map((f) => f.sender).filter(Boolean))];
     const effPrimary = (primaryName && String(primaryName).trim())
       || (campaign.templates && campaign.templates.primaryName) || '';
-    res.json({ ok: true, count: failures.length, accounts, primaryName: effPrimary });
+
+    // v2.98.1: resolve HOW the auto-accept will run so the confirm can spell it
+    // out. Effective values fall back to the live campaign's templates when the
+    // request didn't carry them (active-campaign solo check).
+    const effSource = (primarySource !== undefined && primarySource !== null && primarySource !== '')
+      ? primarySource
+      : ((campaign.templates && campaign.templates.primarySource) || '');
+    const effAutoAccept = (autoAcceptPrimary !== undefined)
+      ? !!autoAcceptPrimary
+      : !!(campaign.templates && campaign.templates.autoAcceptPrimary);
+    let acceptVia = 'local';     // 'gologin' | 'local'
+    let acceptViaName = '';
+    if (effSource && effSource !== 'local-browser') {
+      acceptVia = 'gologin';
+      try {
+        const all = await getProfiles(token);
+        const p = all.find((x) => x.id === effSource);
+        acceptViaName = (p && p.name) || effSource;
+      } catch { acceptViaName = effSource; }
+    }
+    res.json({
+      ok: true, count: failures.length, accounts, primaryName: effPrimary,
+      autoAccept: effAutoAccept, acceptVia, acceptViaName,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

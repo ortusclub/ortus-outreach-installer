@@ -9834,8 +9834,12 @@ async function _runActiveBulkCheck(mode) {
   if (mode === 'sheet') body.allSenders = true;
   else body.profileIds = s.profileIds;
   // v2.98: offer to reconnect & retry previously-failed intros first. The server
-  // falls back to the live campaign's primary name when the status omits it.
-  await _maybeConfirmReviveIntros(body, (s.templates && s.templates.primaryName) || '');
+  // falls back to the live campaign's templates when the status omits them.
+  await _maybeConfirmReviveIntros(body, {
+    primaryName: (s.templates && s.templates.primaryName) || '',
+    primarySource: s.templates && s.templates.primarySource,
+    autoAcceptPrimary: s.templates && s.templates.autoAcceptPrimary,
+  });
   const willPause = !!(s.running && !s.paused);
   if (typeof showCampaignToast === 'function') {
     showCampaignToast(mode === 'sheet'
@@ -9864,7 +9868,8 @@ async function _runActiveBulkCheck(mode) {
 // on OK set body.reviveFailedIntros so the server reconnects to the primary,
 // auto-accepts, and retries those intros. Best-effort: any error just proceeds
 // with a normal check. Mutates + returns body.
-async function _maybeConfirmReviveIntros(body, primaryName) {
+async function _maybeConfirmReviveIntros(body, opts) {
+  opts = opts || {};
   try {
     const r = await fetch('/api/intro-failures/preview', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -9874,19 +9879,30 @@ async function _maybeConfirmReviveIntros(body, primaryName) {
         profileId: body.profileId,
         profileIds: body.profileIds,
         allSenders: body.allSenders,
-        primaryName: primaryName || '',
+        primaryName: opts.primaryName || '',
+        primarySource: opts.primarySource,
+        autoAcceptPrimary: opts.autoAcceptPrimary,
       }),
     });
     if (!r.ok) return body;
     const d = await r.json().catch(() => ({}));
     const count = (d && d.count) || 0;
     if (count > 0) {
-      const who = ((d.primaryName || primaryName || '').trim()) || 'the primary';
+      const who = ((d.primaryName || opts.primaryName || '').trim()) || 'the primary';
+      // Spell out HOW the accept will happen so there's no ambiguity.
+      let acceptLine;
+      if (!d.autoAccept) {
+        acceptLine = `• auto-accept is OFF — you'll need to accept the request as ${who} yourself`;
+      } else if (d.acceptVia === 'gologin') {
+        acceptLine = `• it will be auto-accepted from ${who}'s GoLogin profile${d.acceptViaName ? ` ("${d.acceptViaName}")` : ''}`;
+      } else {
+        acceptLine = `• it will be auto-accepted from your LOCAL browser (which must be signed in to LinkedIn as ${who})`;
+      }
       const msg =
         `${count} introduction(s) previously failed because ${who} isn't a 1st-degree connection of the sending account(s).\n\n` +
         `Reconnect & retry these?\n` +
         `• the affected account(s) will send ${who} a connection request\n` +
-        `• ${who}'s own account will auto-accept it\n` +
+        `${acceptLine}\n` +
         `• the introductions then retry automatically on the next check\n\n` +
         `OK = reconnect & retry   ·   Cancel = just run a normal check`;
       if (typeof confirm === 'function' && confirm(msg)) {
@@ -9919,7 +9935,11 @@ async function _runSoloCheckPast(idx, mode) {
   if (mode === 'campaign') body.profileIds = Array.isArray(s.profileIds) ? s.profileIds : [];
   if (mode === 'sheet') body.allSenders = true;
   // v2.98: offer to reconnect & retry previously-failed intros first.
-  await _maybeConfirmReviveIntros(body, t.primaryName || '');
+  await _maybeConfirmReviveIntros(body, {
+    primaryName: t.primaryName || '',
+    primarySource: t.primarySource,
+    autoAcceptPrimary: t.autoAcceptPrimary,
+  });
   if (typeof showCampaignToast === 'function') {
     showCampaignToast(mode === 'sheet'
       ? 'Solo check started — sweeping all senders in the sheet… watch the log.'
