@@ -20,8 +20,10 @@
 
 import { sendIntroMessage, sendIntroViaCleanCompose } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
+import { checkAndConnectPrimary } from './primary-connection.js';
+import { readSelfIdentity } from './accept-invitation.js';
 import { extractSheetId } from '../utils.js';
-import { buildFollowUpTask, enqueuePrimaryTask } from '../primary-tasks.js';
+import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
@@ -42,6 +44,26 @@ export function _decideIntroPath({ hasConnectionNote, hasPriorThread, leadFullNa
 // thread for this lead+primary already exists → already introduced.
 export function _groupHasHistory(eventCount) {
   return Number(eventCount) > 0;
+}
+
+// v2.96 — connect-to-primary self-heal (spec: every intro to JULIA failed with
+// INTRO_RECIPIENT_NOT_FOUND because the sending account wasn't a 1st-degree
+// connection of the primary). Pure decision helpers for the gate below.
+//
+// Should this account's intros be HELD this sweep? True when the primary-
+// connection check came back not-connected — we leave Introduction Status blank
+// so the next bulk-check re-detects the leads and retries once the primary has
+// accepted (bulk-check treats ANY non-blank Introduction Status as terminal, so
+// held leads must not be stamped).
+export function _shouldHoldIntros(primaryConnResult) {
+  return !!primaryConnResult && primaryConnResult.connected === false;
+}
+
+// Should we queue the auto-accept task (the primary's own account accepts the
+// invite we just sent)? Only when auto-accept is enabled AND we actually sent a
+// fresh connect request this sweep.
+export function _shouldQueueAutoAccept({ autoAcceptPrimary, connectAttempted, connectResult } = {}) {
+  return !!autoAcceptPrimary && !!connectAttempted && connectResult === 'sent';
 }
 
 // The EXACT message-history selector the connection-note dedupe probe uses
@@ -282,6 +304,82 @@ export async function runAutoIntros({
       details: `${connectedUrls.length} lead(s) — primaryName="${primaryName}" primaryIntroBody set=${!!primaryIntroBody}`,
     });
     return result;
+  }
+
+  // v2.96 — connect-to-primary gate for the bulk-check / monitoring intro path.
+  //
+  // A 3-way intro can only add a 1st-degree connection of THIS account to the
+  // group, so if the sending account isn't connected to the primary every intro
+  // fails with INTRO_RECIPIENT_NOT_FOUND ("dropdown never opened"). The live
+  // campaign loop already has this gate (campaign.js v2.78/v2.91), but the
+  // bulk-check / post-campaign sweep — which calls runAutoIntros directly — did
+  // not, so once sending ended any account not yet connected to the primary
+  // failed its intros permanently (the failure stamp is terminal, never retried).
+  //
+  // Here we run the SAME machinery: read the degree to the primary, send ONE
+  // connect request if not connected, queue the auto-accept so the primary's own
+  // account accepts it in the next idle window, and HOLD this account's intros
+  // for the sweep — leaving Introduction Status BLANK so the next bulk-check
+  // re-detects the leads and re-fires the intro once the primary has accepted.
+  // Dedupe across sweeps via the shared campaign._primaryConn map (same one the
+  // v2.78 gate uses), so the connect request is only sent once per account.
+  // All four runAutoIntros callers gate on mode === 'connect_and_introduce', and
+  // we additionally require a primaryUrl + a real GoLogin profile, so this can
+  // never fire on plain Introduce-Back or the local browser.
+  if (primaryUrl && profileId && profileId !== 'local-browser') {
+    if (!campaign._primaryConn) campaign._primaryConn = new Map();
+    const _prevConn = campaign._primaryConn.get(profileId);
+    if (_prevConn !== 'connected') {
+      try {
+        const _res = await checkAndConnectPrimary(page, primaryUrl, {
+          log,
+          pName: profileName,
+          attemptConnect: (_prevConn === undefined || _prevConn === 'no_url'),
+        });
+        campaign._primaryConn.set(profileId, _res.connected ? 'connected' : 'pending');
+
+        if (_shouldQueueAutoAccept({
+          autoAcceptPrimary: templates.autoAcceptPrimary,
+          connectAttempted: _res.connectAttempted,
+          connectResult: _res.connectResult,
+        })) {
+          try {
+            const _self = await readSelfIdentity(page);
+            if (_self.name || _self.profileUrl) {
+              const _stored = await enqueuePrimaryTask(buildAcceptTask({
+                campaignProfileId: profileId,
+                campaignProfileName: profileName,
+                sheetId: extractSheetId(sheetUrl) || '',
+                sheetUrl,
+                account: _self,
+                primaryUrl,
+                sender: templates.primarySource,
+              }));
+              if (_stored) {
+                const _where = (templates.primarySource && templates.primarySource !== 'local-browser')
+                  ? "the primary's GoLogin profile"
+                  : 'your local browser';
+                log(`  ⏳ [${profileName}] Auto-accept queued — ${_where} will accept this account's invite at the next idle moment.`);
+              }
+            } else {
+              log(`  ⚠ [${profileName}] Could not read this account's identity (nav not ready) — skipping auto-accept queue; the connect was still sent.`);
+            }
+          } catch (e) {
+            log(`  ⚠ [${profileName}] Auto-accept queue warning: ${e.message}`);
+          }
+        }
+
+        if (_shouldHoldIntros(_res)) {
+          log(`  ⏸ [${profileName}] Not yet connected to ${primaryName} — holding ${connectedUrls.length} intro(s) until the connection is accepted (will retry on the next check).`);
+          result.skipped = connectedUrls.length;
+          return result; // leave Introduction Status blank → next sweep retries
+        }
+      } catch (e) {
+        // Gate failure must never block intros — if the degree read throws,
+        // fall through and attempt the intros as before.
+        log(`  ⚠ [${profileName}] Primary-connection gate error: ${e.message} — proceeding with intros.`);
+      }
+    }
   }
 
   // Build the templates object the way campaign.js does for Introduce Back —
