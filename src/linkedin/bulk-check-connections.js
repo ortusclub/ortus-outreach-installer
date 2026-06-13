@@ -25,6 +25,7 @@ import { fetchSheet } from '../sheets.js';
 import { batchUpdateSheet, writeRecentConnectionsTab } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign } from '../campaign.js';
 import { readSourceMemberId } from '../profile-identity.js';
+import { isIntroSlotOpen } from './intro-constants.js';
 
 function publicIdFromUrl(url) {
   if (!url) return '';
@@ -285,7 +286,10 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       // retry an intro automatically; manual reset (clear the cell) is the
       // explicit re-enable signal. Previously only the two success strings
       // blocked, so failed/skipped rows looped on every bulk-check sweep.
-      if (introductionStatus !== '') {
+      // v2.98: the "reconnect & retry" revive sentinel is the ONE non-blank
+      // value treated as open (isIntroSlotOpen) — it's an explicit operator
+      // opt-in to retry, so it re-queues until the intro lands or it's cleared.
+      if (!isIntroSlotOpen(introductionStatus)) {
         dbgAlreadyIntroduced++;
         continue;
       }
@@ -442,10 +446,11 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
           ).toString().trim();
           if (_dmStatus === '') connectedUrls.push(url);
         } else {
-          const _introBlank = (
+          // v2.98: open slot = genuinely blank OR the reconnect-retry sentinel.
+          const _introOpen = isIntroSlotOpen(
             row['Introduction Status'] || row['introduction status'] || ''
-          ).toString().trim() === '';
-          if (_introBlank) connectedUrls.push(url);
+          );
+          if (_introOpen) connectedUrls.push(url);
         }
       }
       continue;

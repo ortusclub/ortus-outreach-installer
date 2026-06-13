@@ -22,6 +22,7 @@ import { sendIntroMessage, sendIntroViaCleanCompose } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
 import { checkAndConnectPrimary } from './primary-connection.js';
 import { readSelfIdentity } from './accept-invitation.js';
+import { INTRO_FAILED_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
 import { extractSheetId } from '../utils.js';
 import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
@@ -227,7 +228,7 @@ function _friendlyIntroFailure(errMsg) {
     if (/\d+ suggestions but no match/.test(m)) {
       return "Failed — Primary name didn't match suggestions";
     }
-    return 'Failed — Primary not in your connections';
+    return INTRO_FAILED_PRIMARY_NOT_CONNECTED;
   }
   if (m.includes('INTRO_RECIPIENT_NOT_FOUND: recipient-input-not-found')) {
     return 'Failed — Compose page missing recipient field';

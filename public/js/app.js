@@ -9833,6 +9833,9 @@ async function _runActiveBulkCheck(mode) {
   const body = { sheetUrl: s.sheetUrl, linkedinColumn: s.linkedinColumn };
   if (mode === 'sheet') body.allSenders = true;
   else body.profileIds = s.profileIds;
+  // v2.98: offer to reconnect & retry previously-failed intros first. The server
+  // falls back to the live campaign's primary name when the status omits it.
+  await _maybeConfirmReviveIntros(body, (s.templates && s.templates.primaryName) || '');
   const willPause = !!(s.running && !s.paused);
   if (typeof showCampaignToast === 'function') {
     showCampaignToast(mode === 'sheet'
@@ -9855,6 +9858,45 @@ async function _runActiveBulkCheck(mode) {
   }
 }
 
+// v2.98 — before a solo check runs, pre-scan the sheet for terminal
+// "Failed — Primary not in your connections" rows (scoped to the accounts this
+// check will sweep). If any exist, ask the operator — naming the primary — and
+// on OK set body.reviveFailedIntros so the server reconnects to the primary,
+// auto-accepts, and retries those intros. Best-effort: any error just proceeds
+// with a normal check. Mutates + returns body.
+async function _maybeConfirmReviveIntros(body, primaryName) {
+  try {
+    const r = await fetch('/api/intro-failures/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sheetUrl: body.sheetUrl,
+        linkedinColumn: body.linkedinColumn || '',
+        profileId: body.profileId,
+        profileIds: body.profileIds,
+        allSenders: body.allSenders,
+        primaryName: primaryName || '',
+      }),
+    });
+    if (!r.ok) return body;
+    const d = await r.json().catch(() => ({}));
+    const count = (d && d.count) || 0;
+    if (count > 0) {
+      const who = ((d.primaryName || primaryName || '').trim()) || 'the primary';
+      const msg =
+        `${count} introduction(s) previously failed because ${who} isn't a 1st-degree connection of the sending account(s).\n\n` +
+        `Reconnect & retry these?\n` +
+        `• the affected account(s) will send ${who} a connection request\n` +
+        `• ${who}'s own account will auto-accept it\n` +
+        `• the introductions then retry automatically on the next check\n\n` +
+        `OK = reconnect & retry   ·   Cancel = just run a normal check`;
+      if (typeof confirm === 'function' && confirm(msg)) {
+        body.reviveFailedIntros = true;
+      }
+    }
+  } catch { /* best-effort — proceed without revive */ }
+  return body;
+}
+
 async function _runSoloCheckPast(idx, mode) {
   if (idx == null) return;
   const entry = Array.isArray(_v3PastEntries) ? _v3PastEntries.find((e) => e._originalIdx === idx) : null;
@@ -9875,6 +9917,9 @@ async function _runSoloCheckPast(idx, mode) {
   // 'campaign' → pass the saved accounts. 'sheet' → omit profileIds so the
   // server derives every account from the sheet's Sender column.
   if (mode === 'campaign') body.profileIds = Array.isArray(s.profileIds) ? s.profileIds : [];
+  if (mode === 'sheet') body.allSenders = true;
+  // v2.98: offer to reconnect & retry previously-failed intros first.
+  await _maybeConfirmReviveIntros(body, t.primaryName || '');
   if (typeof showCampaignToast === 'function') {
     showCampaignToast(mode === 'sheet'
       ? 'Solo check started — sweeping all senders in the sheet… watch the log.'

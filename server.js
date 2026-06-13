@@ -38,6 +38,7 @@ import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows } from './src/sheets.js';
+import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
@@ -1634,6 +1635,69 @@ app.post('/api/replies/seen', async (_req, res) => {
   }
 });
 
+// v2.98 — resolve the swept-account NAMES (lowercased, for matching the sheet's
+// Sender column) for a solo-check request. Returns null for "all senders".
+// Mirrors the account resolution inside /api/bulk-check-now.
+async function _resolveSweptAccountNames({ profileId, profileIds, allSenders }, token) {
+  if (allSenders) return null;
+  let ids = [];
+  if (Array.isArray(profileIds) && profileIds.length) {
+    ids = profileIds.filter((p) => typeof p === 'string' && p.length);
+  } else if (profileId) {
+    ids = [profileId];
+  }
+  if (!ids.length) return null;
+  let nameById = new Map();
+  try {
+    const all = await getProfiles(token);
+    nameById = new Map(all.map((p) => [p.id, String(p.name || '').toLowerCase()]));
+  } catch { /* fall back to no names → treat as all */ }
+  const names = new Set();
+  for (const id of ids) { const n = nameById.get(id); if (n) names.add(n); }
+  return names.size ? names : null;
+}
+
+// v2.98 — find rows stamped with the terminal "Failed — Primary not in your
+// connections" intro failure, scoped to a set of sender names (null = all
+// senders). Returns [{ linkedinUrl, sender }].
+async function _findReconnectableIntroFailures(sheetUrl, linkedinColumn, accountNamesLower) {
+  const rows = await fetchSheet(sheetUrl);
+  const out = [];
+  for (const row of rows) {
+    const intro = (row['Introduction Status'] || row['introduction status'] || '').toString().trim();
+    if (intro !== INTRO_FAILED_PRIMARY_NOT_CONNECTED) continue;
+    const sender = (row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').toString().trim();
+    if (accountNamesLower && !accountNamesLower.has(sender.toLowerCase())) continue;
+    const url = extractLinkedInUrl(row, linkedinColumn);
+    if (!url) continue;
+    out.push({ linkedinUrl: url, sender });
+  }
+  return out;
+}
+
+// v2.98 — pre-scan for the "reconnect & retry" confirm. The solo-check UI calls
+// this before sweeping; if count > 0 it shows a confirm naming the primary, then
+// re-POSTs /api/bulk-check-now with reviveFailedIntros:true.
+app.post('/api/intro-failures/preview', async (req, res) => {
+  try {
+    let { sheetUrl, linkedinColumn, profileId, profileIds, allSenders, primaryName } = req.body || {};
+    if (!sheetUrl && campaign.running && campaign.sheetUrl) {
+      sheetUrl = campaign.sheetUrl;
+      linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
+    }
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    const token = process.env.GOLOGIN_API_TOKEN;
+    const names = await _resolveSweptAccountNames({ profileId, profileIds, allSenders }, token);
+    const failures = await _findReconnectableIntroFailures(sheetUrl, linkedinColumn || '', names);
+    const accounts = [...new Set(failures.map((f) => f.sender).filter(Boolean))];
+    const effPrimary = (primaryName && String(primaryName).trim())
+      || (campaign.templates && campaign.templates.primaryName) || '';
+    res.json({ ok: true, count: failures.length, accounts, primaryName: effPrimary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Manual bulk-check trigger. Bypasses the per-account cadence cooldown so the
 // operator can on-demand sweep their sheet for newly-accepted invites.
 //
@@ -1657,7 +1721,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
   try {
     let { sheetUrl, linkedinColumn, profileId, profileIds,
           primaryName, primaryIntroBody, primaryUrl, introTitle,
-          autoAcceptPrimary, primarySource, allSenders } = req.body || {};
+          autoAcceptPrimary, primarySource, allSenders, reviveFailedIntros } = req.body || {};
     // v2.78: "all senders in the sheet" — ignore any campaign/explicit accounts
     // and derive every account from the sheet's Sender column (below), even
     // while a campaign is running.
@@ -1786,6 +1850,42 @@ app.post('/api/bulk-check-now', async (req, res) => {
       });
     }
 
+    // v2.98 — "reconnect & retry" revive (operator confirmed in the UI). For
+    // each swept account, overwrite its terminal "Failed — Primary not in your
+    // connections" rows with the non-terminal retry sentinel and remember their
+    // URLs. Folding those URLs into connectedUrls below makes runAutoIntros'
+    // connect-to-primary gate fire this run (send the connect + queue the
+    // auto-accept); the sentinel makes future checks keep retrying until the
+    // intro lands. We can't clear the cell to blank — the shared Apps Script
+    // skips empty-string writes — so the sentinel doubles as the visible status.
+    const reviveByAccount = new Map(); // pName.toLowerCase() -> Set(urls)
+    if (reviveFailedIntros) {
+      try {
+        const sweptNames = new Set(
+          profileIdsToSweep.map((pid) => (nameByProfileId.get(pid) || '').toLowerCase()).filter(Boolean)
+        );
+        const failures = await _findReconnectableIntroFailures(
+          sheetUrl, linkedinColumn || '', sweptNames.size ? sweptNames : null
+        );
+        const { updateSheetRow } = await import('./src/sheets-writer.js');
+        for (const f of failures) {
+          const key = (f.sender || '').toLowerCase();
+          if (!reviveByAccount.has(key)) reviveByAccount.set(key, new Set());
+          reviveByAccount.get(key).add(f.linkedinUrl);
+          try {
+            await updateSheetRow(sheetUrl, f.linkedinUrl, { introductionStatus: INTRO_RETRY_RECONNECT }, linkedinColumn || '');
+          } catch (e) {
+            campaignLog(`⚠ Reconnect & retry — could not mark ${f.linkedinUrl}: ${e.message}`);
+          }
+        }
+        if (failures.length) {
+          campaignLog(`↻ Reconnect & retry — re-queued ${failures.length} failed intro(s) across ${reviveByAccount.size} account(s); they will reconnect to the primary and retry.`);
+        }
+      } catch (e) {
+        campaignLog(`⚠ Reconnect & retry preflight failed: ${e.message}`);
+      }
+    }
+
     // Sweep each profile sequentially. Sequential because GoLogin browsers
     // are RAM-heavy and parallel launches can OOM the laptop on weak hosts.
     const perProfile = [];
@@ -1862,6 +1962,16 @@ app.post('/api/bulk-check-now', async (req, res) => {
         // Varlese" during a connect_and_message campaign). Gate by mode:
         // CC+DM → runAutoDms (plain DM only, never an IC), everything else →
         // the existing intro path.
+        // v2.98: fold this account's revived failed-intro URLs into the set so
+        // the connect-to-primary gate runs even when nobody newly accepted.
+        // CSV-export lag means bulkCheckConnections may not have re-picked the
+        // just-written sentinel rows yet; this guarantees they're processed now.
+        const _revive = reviveByAccount.get((pName || '').toLowerCase());
+        if (_revive && _revive.size) {
+          if (!Array.isArray(r.connectedUrls)) r.connectedUrls = [];
+          const _seen = new Set(r.connectedUrls);
+          for (const u of _revive) if (!_seen.has(u)) r.connectedUrls.push(u);
+        }
         const _phaseMode = campaign.mode || '';
         if (!r.error && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           if (_phaseMode === 'connect_and_message') {
