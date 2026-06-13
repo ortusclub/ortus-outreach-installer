@@ -1654,14 +1654,6 @@ app.post('/api/bulk-check-now', async (req, res) => {
   // v2.71: pause-if-running coordination. Captured before mutating campaign
   // state so the finally block knows whether to resume.
   const _weShouldAutoResume = campaign.running && !campaign._paused && !campaign._pauseRequested;
-
-  // v2.97: fire-and-forget. Respond immediately; the sweep runs in the
-  // background and streams progress to the dashboard live log, so the button
-  // never hangs or throws the old "pause did not take effect within 90s" error.
-  // A solo check PREEMPTS the running campaign's current lead (below) so it
-  // takes precedence within ~1s.
-  res.status(202).json({ ok: true, started: true, background: true, autoPaused: _weShouldAutoResume });
-
   try {
     let { sheetUrl, linkedinColumn, profileId, profileIds,
           primaryName, primaryIntroBody, primaryUrl, introTitle,
@@ -1684,7 +1676,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
       sheetUrl = campaign.sheetUrl;
       linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
     }
-    if (!sheetUrl) { campaignLog('⚠ Manual bulk check aborted — no sheet URL provided.'); return; }
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
 
     // v2.97: take precedence over a running campaign. Instead of waiting up to
     // 90s for a cooperative pause boundary (and failing if a slow lead — e.g. a
@@ -1704,9 +1696,11 @@ app.post('/api/bulk-check-now', async (req, res) => {
       while (!campaign._paused && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 250));
       }
-      campaignLog(campaign._paused
-        ? '✓ Campaign paused — starting sweep.'
-        : '⚠ Campaign did not pause in 30s — sweeping anyway (browsers may contend briefly).');
+      if (!campaign._paused) {
+        campaignLog('⚠ Manual bulk check — pause did not acknowledge in 30s; sweeping anyway (browsers may contend briefly).');
+      } else {
+        campaignLog('✓ Campaign paused — starting sweep.');
+      }
     }
 
     const token = process.env.GOLOGIN_API_TOKEN;
@@ -1736,8 +1730,7 @@ app.post('/api/bulk-check-now', async (req, res) => {
           if (v && v.includes('@')) accountEmails.add(v.toLowerCase());
         }
         if (accountEmails.size === 0) {
-          campaignLog('⚠ Manual bulk check aborted — no accounts selected and no Account Used values on the sheet to derive from.');
-          return;
+          return res.status(400).json({ error: 'No accounts selected and no Account Used values found on the sheet to derive from.' });
         }
         const allProfiles = await getProfiles(token);
         const byName = new Map(allProfiles.map((p) => [String(p.name || '').toLowerCase(), p.id]));
@@ -1747,12 +1740,10 @@ app.post('/api/bulk-check-now', async (req, res) => {
         }
         derivedFromSheet = true;
         if (profileIdsToSweep.length === 0) {
-          campaignLog(`⚠ Manual bulk check aborted — found ${accountEmails.size} account email(s) on the sheet but none matched a GoLogin profile.`);
-          return;
+          return res.status(400).json({ error: `Found ${accountEmails.size} account email(s) on the sheet but none matched a GoLogin profile.` });
         }
       } catch (err) {
-        campaignLog(`⚠ Manual bulk check aborted — could not derive accounts from sheet: ${err.message}`);
-        return;
+        return res.status(500).json({ error: `Could not derive accounts from sheet: ${err.message}` });
       }
     }
 
@@ -1785,8 +1776,14 @@ app.post('/api/bulk-check-now', async (req, res) => {
       return true;
     });
     if (profileIdsToSweep.length === 0) {
-      campaignLog('ℹ Manual bulk check — no accounts left to sweep after filtering parked ones.');
-      return;
+      return res.json({
+        ok: true,
+        derivedFromSheet,
+        profilesSweep: 0,
+        skippedParked,
+        result: { matched: 0, stamped: 0, fetched: 0 },
+        perProfile: [],
+      });
     }
 
     // Sweep each profile sequentially. Sequential because GoLogin browsers
@@ -1932,9 +1929,22 @@ app.post('/api/bulk-check-now', async (req, res) => {
     } finally {
       setBulkCheckInProgress(false);
     }
+
+    res.json({
+      ok: true,
+      derivedFromSheet,
+      profilesSweep: profileIdsToSweep.length,
+      skippedParked,
+      result: {
+        matched: totalMatched,
+        stamped: totalStamped,
+        fetched: totalFetched,
+      },
+      perProfile,
+      autoPaused: _weShouldAutoResume,
+    });
   } catch (err) {
-    // v2.97: response was already sent (202) — surface failures in the live log.
-    campaignLog(`⚠ Manual bulk check failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
   } finally {
     _manualSweepRunning = false;
     // v2.71: ALWAYS resume if we were the ones who paused, even on error.
