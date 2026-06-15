@@ -9889,29 +9889,151 @@ async function _maybeConfirmReviveIntros(body, opts) {
     const count = (d && d.count) || 0;
     if (count > 0) {
       const who = ((d.primaryName || opts.primaryName || '').trim()) || 'the primary';
-      // Spell out HOW the accept will happen so there's no ambiguity.
-      let acceptLine;
-      if (!d.autoAccept) {
-        acceptLine = `• auto-accept is OFF — you'll need to accept the request as ${who} yourself`;
-      } else if (d.acceptVia === 'gologin') {
-        acceptLine = `• it will be auto-accepted from ${who}'s GoLogin profile${d.acceptViaName ? ` ("${d.acceptViaName}")` : ''}`;
-      } else {
-        acceptLine = `• it will be auto-accepted from your LOCAL browser (which must be signed in to LinkedIn as ${who})`;
-      }
-      const msg =
-        `${count} introduction(s) previously failed because ${who} isn't a 1st-degree connection of the sending account(s).\n\n` +
-        `Reconnect & retry these?\n` +
-        `• the affected account(s) will send ${who} a connection request\n` +
-        `${acceptLine}\n` +
-        `• the introductions then retry automatically on the next check\n\n` +
-        `OK = reconnect & retry   ·   Cancel = just run a normal check`;
-      if (typeof confirm === 'function' && confirm(msg)) {
+      // v2.100: open the custom modal (replaces native confirm) so the operator
+      // can flip auto-accept ON inline and pick the primary's GoLogin profile
+      // when it isn't already known. Returns the operator's choices.
+      const choice = await _openReviveModal({
+        count,
+        who,
+        autoAccept: !!d.autoAccept,
+        acceptVia: d.acceptVia,
+        acceptViaName: d.acceptViaName,
+        // the known gologin id (if the campaign saved one); '' / 'local-browser' → not known
+        knownSourceId: opts.primarySource,
+      });
+      if (choice && choice.ok) {
         body.reviveFailedIntros = true;
+        body.autoAcceptPrimary = choice.autoAccept;
+        // Only override primarySource when auto-accepting — the picked GoLogin
+        // profile is the primary's own account that drains the accept queue.
+        if (choice.autoAccept && choice.primarySource) {
+          body.primarySource = choice.primarySource;
+        }
       }
     }
   } catch { /* best-effort — proceed without revive */ }
   return body;
 }
+
+// v2.100 — Reconnect & retry modal plumbing. _openReviveModal resolves with
+// {ok, autoAccept, primarySource}. The picker reuses allProfilesData +
+// findSoOForProfile + renderSoOBadges (same machinery as the wizard's
+// primary-source picker). Inline onclick handlers require window.* assignment
+// because app.js is an ES module (module-scoped functions aren't global).
+let _reviveModalResolve = null;
+let _reviveWho = 'the primary';
+
+function _openReviveModal(cfg) {
+  return new Promise((resolve) => {
+    _reviveModalResolve = resolve;
+    _reviveWho = cfg.who || 'the primary';
+    // Make sure the profile list is populated for the picker.
+    if ((!allProfilesData || !allProfilesData.length) && typeof loadProfiles === 'function') {
+      try { loadProfiles(); } catch { /* picker will just show empty until loaded */ }
+    }
+    const bodyEl = document.getElementById('revive-intros-body');
+    if (bodyEl) {
+      bodyEl.innerHTML =
+        `<p style="margin:0 0 10px;"><b>${cfg.count}</b> introduction(s) previously failed because ${escHtml(_reviveWho)} isn't a 1st-degree connection of the sending account(s).</p>` +
+        `<p style="margin:0;">The affected account(s) will send ${escHtml(_reviveWho)} a connection request, then the introductions retry automatically on the next check.</p>`;
+    }
+    document.querySelectorAll('#revive-primary-name, #revive-source-who').forEach((el) => { el.textContent = _reviveWho; });
+    // Pre-select the known GoLogin profile (if any); local-browser / blank → none.
+    const known = (cfg.knownSourceId && cfg.knownSourceId !== 'local-browser') ? cfg.knownSourceId : '';
+    const hid = document.getElementById('revive-source-profile-id'); if (hid) hid.value = known;
+    const srch = document.getElementById('revive-source-search'); if (srch) srch.value = '';
+    const cb = document.getElementById('revive-auto-accept'); if (cb) cb.checked = !!cfg.autoAccept;
+    _onReviveAutoAcceptToggle();
+    const m = document.getElementById('revive-intros-modal');
+    if (m) m.classList.remove('hidden');
+  });
+}
+
+function _onReviveAutoAcceptToggle() {
+  const aa = !!document.getElementById('revive-auto-accept')?.checked;
+  const picker = document.getElementById('revive-source-picker');
+  const note = document.getElementById('revive-manual-note');
+  if (picker) picker.style.display = aa ? '' : 'none';
+  if (note) note.style.display = aa ? 'none' : '';
+  if (aa) _renderReviveSourcePicker(document.getElementById('revive-source-search')?.value || '');
+  _updateReviveOkState();
+}
+window._onReviveAutoAcceptToggle = _onReviveAutoAcceptToggle;
+
+function _renderReviveSourcePicker(filter = '') {
+  const grid = document.getElementById('revive-source-grid');
+  if (!grid) return;
+  const sel = document.getElementById('revive-source-profile-id')?.value || '';
+  const q = (filter || '').trim().toLowerCase();
+  const rows = (allProfilesData || []).filter((p) =>
+    !q || (p.name || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
+  grid.innerHTML = '';
+  if (rows.length === 0) {
+    grid.innerHTML = '<div class="aa-acct-empty">No profiles match.</div>';
+    return;
+  }
+  rows.forEach((p) => {
+    const soo = (typeof findSoOForProfile === 'function') ? findSoOForProfile(p.name) : null;
+    const isSel = p.id === sel;
+    const row = document.createElement('div');
+    row.className = 'aa-acct-row' + (isSel ? ' sel' : '');
+    row.dataset.profileId = p.id;
+    row.innerHTML = `
+      <input type="radio" name="revive-source-profile" ${isSel ? 'checked' : ''}>
+      <div class="body">
+        <div class="name">${escHtml(p.name)}</div>
+        ${!soo ? `<div class="id">${p.id.substring(0, 12)}…</div>` : ''}
+        ${typeof renderSoOBadges === 'function' ? renderSoOBadges(soo) : ''}
+      </div>`;
+    row.addEventListener('click', () => {
+      const hidden = document.getElementById('revive-source-profile-id');
+      if (hidden) hidden.value = p.id;
+      _renderReviveSourcePicker(document.getElementById('revive-source-search')?.value || '');
+      _updateReviveOkState();
+    });
+    grid.appendChild(row);
+  });
+}
+window._renderReviveSourcePicker = _renderReviveSourcePicker;
+
+function _updateReviveOkState() {
+  const aa = !!document.getElementById('revive-auto-accept')?.checked;
+  const sel = document.getElementById('revive-source-profile-id')?.value || '';
+  const btn = document.getElementById('revive-ok-btn');
+  const hint = document.getElementById('revive-source-hint');
+  const needsPick = aa && !sel;
+  if (btn) {
+    btn.disabled = needsPick;
+    btn.classList.toggle('is-disabled', needsPick);
+  }
+  if (hint) {
+    if (needsPick) {
+      hint.textContent = `Pick ${_reviveWho}'s GoLogin profile to auto-accept from.`;
+      hint.classList.remove('err');
+    } else if (aa && sel) {
+      const p = (allProfilesData || []).find((x) => x.id === sel);
+      hint.textContent = `Will auto-accept from "${p ? p.name : sel}".`;
+      hint.classList.remove('err');
+    } else {
+      hint.textContent = '';
+    }
+  }
+}
+
+function _resolveReviveModal(ok) {
+  const aa = !!document.getElementById('revive-auto-accept')?.checked;
+  const src = document.getElementById('revive-source-profile-id')?.value || '';
+  // Guard: OK with auto-accept on but no profile chosen — keep the modal open.
+  if (ok && aa && !src) { _updateReviveOkState(); return; }
+  const m = document.getElementById('revive-intros-modal');
+  if (m) m.classList.add('hidden');
+  const resolve = _reviveModalResolve;
+  _reviveModalResolve = null;
+  if (typeof resolve !== 'function') return;
+  if (!ok) { resolve({ ok: false }); return; }
+  resolve({ ok: true, autoAccept: aa, primarySource: aa ? src : '' });
+}
+window._resolveReviveModal = _resolveReviveModal;
 
 async function _runSoloCheckPast(idx, mode) {
   if (idx == null) return;
@@ -9929,6 +10051,11 @@ async function _runSoloCheckPast(idx, mode) {
     primaryIntroBody: t.primaryIntroBody || '',
     primaryUrl: t.primaryUrl || '',
     introTitle: t.introTitle || '',
+    // v2.99: carry the saved primary GoLogin account + auto-accept flag so the
+    // accept routes to the primary's own profile (there's no live campaign to
+    // fall back to for a past-campaign solo check).
+    primarySource: t.primarySource,
+    autoAcceptPrimary: t.autoAcceptPrimary,
   };
   // 'campaign' → pass the saved accounts. 'sheet' → omit profileIds so the
   // server derives every account from the sheet's Sender column.

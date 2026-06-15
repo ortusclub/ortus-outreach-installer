@@ -2087,6 +2087,42 @@
     </div>
   </div>
 
+  <!-- v2.100 — Reconnect & retry failed intros. Replaces the native confirm()
+       so the operator can flip auto-accept ON inline and, when the primary's
+       GoLogin profile isn't known, pick which profile is the primary's. Driven
+       by _maybeConfirmReviveIntros() in app.js (returns a Promise). -->
+  <div id="revive-intros-modal" class="modal-backdrop hidden" onclick="if(event.target===this)_resolveReviveModal(false)">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="revive-intros-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="_resolveReviveModal(false)">&times;</button>
+      <span class="ptm-pill modal-pill--alert">RECONNECT &amp; RETRY</span>
+      <h3 id="revive-intros-title" class="modal-title">Failed introductions</h3>
+      <div id="revive-intros-body" class="modal-body"></div>
+
+      <label class="revive-aa-toggle">
+        <input type="checkbox" id="revive-auto-accept" onchange="_onReviveAutoAcceptToggle()">
+        <span>Auto-accept the request as <b id="revive-primary-name">the primary</b></span>
+      </label>
+
+      <div id="revive-source-picker" style="display:none; margin-top: 12px;">
+        <div class="revive-picker-label">Accept from <b id="revive-source-who">the primary</b>'s GoLogin profile:</div>
+        <input type="text" id="revive-source-search" class="aa-acct-search"
+               placeholder="Search by name or email…" oninput="_renderReviveSourcePicker(this.value)">
+        <div id="revive-source-grid" class="aa-acct-grid" style="max-height: 220px; overflow-y: auto;"></div>
+        <input type="hidden" id="revive-source-profile-id" value="">
+        <div id="revive-source-hint" class="revive-picker-hint"></div>
+      </div>
+
+      <div id="revive-manual-note" class="revive-manual-note" style="display:none;">
+        You'll accept the connection request as the primary yourself — the introductions retry automatically on the next check.
+      </div>
+
+      <div class="modal-actions" style="margin-top: 18px;">
+        <button type="button" class="btn btn-secondary" onclick="_resolveReviveModal(false)">Just run a normal check</button>
+        <button type="button" class="btn btn-primary" id="revive-ok-btn" onclick="_resolveReviveModal(true)">Reconnect &amp; retry</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Phase 2.8.9: Inline toast for pause/resume status hints -->
   <div id="campaign-toast" class="campaign-toast" role="status" aria-live="polite"></div>
 
