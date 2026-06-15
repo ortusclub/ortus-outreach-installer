@@ -87,8 +87,31 @@ their lenient behaviour and all prior tests are unchanged.
 - `src/linkedin/outreach.js` — `state.skipNavigation` seam around the lead-profile `page.goto` (authorized minimal change).
 - `tests/profile-identity.test.js` — strict + name-match coverage incl. the real incident case.
 
-## Phase 2 (next, not in this change)
+## Phase 2 (shipped v2.96.1) — degradation handling
 
-Failure→pacing feedback: back off / pause an account when nav-races, timeouts,
-or 429s cluster (today the loop runs at fixed pace regardless), and a guard or
-warning on reckless settings such as 200/day on a single account.
+Failure→pacing feedback, so the loop stops hammering a degrading session:
+
+- **Per-account degradation streak.** `isDegradationSignal()` classifies an
+  outcome as degradation (nav race / `lead_timeout_watchdog` / `Profile not
+  found` / `Navigation timeout` / `net::ERR_` / rate-limit / identity-unverified)
+  vs a benign skip. A clean send resets the streak.
+- **Exponential backoff.** `degradationBackoffMs(base, streak, {maxMult, maxMs})`
+  doubles the inter-lead wait per consecutive degraded lead, capped at 32× and
+  an absolute 20-minute ceiling — giving LinkedIn time to recover instead of the
+  old fixed 15-45s pace.
+- **Park on persistence.** Identity-unverified skips now also feed
+  `consecutiveSkips`, so the existing `SKIP_PARK_THRESHOLD` parks the account if
+  it never recovers (this path previously bypassed the park check entirely).
+- **Reckless-settings guard.** At start, a connect-mode `dailyLimit > 80` logs a
+  loud warning + an Ops Log `reckless_daily_limit` event (the incident ran
+  200/day on one account).
+
+Both pacing helpers are pure and unit-tested (`tests/degradation-backoff.test.js`).
+
+## Still open / not in scope here
+
+- A hard cap (vs warning) on reckless daily limits — left as a warning so the
+  operator keeps control.
+- UI surfacing of the backoff/park state and the `identity_unverified` /
+  `reckless_daily_limit` Ops Log events (logged today; no dashboard card yet).
+- End-to-end verification against a live rate-limited LinkedIn session.

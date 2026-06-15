@@ -472,6 +472,27 @@ export function isDmIbEligible(row) {
 // the caller skips the lead (skip-on-doubt) rather than risk a wrong send.
 export const MAX_IDENTITY_ATTEMPTS = 5;
 
+// v2.96.0 (Phase 2) — outcomes that mean "the session/page is degrading" (a
+// navigation race, timeout, profile-not-found, rate-limit, or an
+// identity-unverified skip) as opposed to a benign skip like already-connected.
+// A cluster of these escalates the inter-lead backoff and, if it never clears,
+// parks the account. Pure + tested.
+export function isDegradationSignal(errorMsg) {
+  return /Execution context was destroyed|lead_timeout_watchdog|Navigation timeout|net::ERR_|Profile not found|page_not_found|rate_limited|too many requests|identity[-_ ]unverified|identity unverified/i
+    .test(String(errorMsg || ''));
+}
+
+// v2.96.0 (Phase 2) — exponential backoff for a degradation streak. Pure +
+// tested. streak 0 ⇒ baseMs unchanged; each consecutive degraded lead doubles
+// the wait, capped by maxMult and an absolute maxMs ceiling, so a degrading
+// LinkedIn session gets time to recover instead of being hammered.
+export function degradationBackoffMs(baseMs, streak, { maxMult = 32, maxMs = 20 * 60 * 1000 } = {}) {
+  const s = Math.max(0, Math.floor(streak || 0));
+  if (s === 0) return baseMs;
+  const mult = Math.min(maxMult, 2 ** s);
+  return Math.min(maxMs, Math.floor(baseMs * mult));
+}
+
 export async function gateConnectIdentity(page, { url, row, sourceName = '', log = () => {} }) {
   const sourceMemberId = readSourceMemberId(row);
   let last = { ok: false, reason: 'not-attempted', loaded: { name: '', memberNumber: '' } };
@@ -2548,6 +2569,17 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // is the cap. A wrong park is one click to undo via the re-enable toggle.)
     const consecutive429s = new Map();
     const HTTP_429_PARK_THRESHOLD = 2;
+    // v2.96.0 (Phase 2) — degradation backoff. Connect campaigns ran at a FIXED
+    // 15-45s pace regardless of how many leads mis-loaded; under LinkedIn
+    // rate-limiting that just hammered a degrading session (and produced the
+    // 2026-06-11 wrong-person sends). We now track a per-account "degradation
+    // streak" of navigation races / timeouts / not-found / rate-limit /
+    // identity-unverified outcomes and EXPONENTIALLY back off the inter-lead
+    // delay (capped at DEGRADE_MAX_WAIT_MS) until a clean success resets it.
+    // The existing SKIP_PARK_THRESHOLD still parks the account if it never recovers.
+    const degradationStreak = new Map();
+    const DEGRADE_MAX_MULT = 32;                // streak 5 ⇒ 32× before the cap bites
+    const DEGRADE_MAX_WAIT_MS = 20 * 60 * 1000; // never wait longer than 20 min between leads
     // Expose a closure that retryParkedProfile() can call to clear all the
     // local skip counters + drop the profile from weeklyLimited so the next
     // rotation considers it again. Cleared in the finally block at end-of-run.
@@ -2555,7 +2587,19 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       weeklyLimited.delete(profileId);
       consecutiveSkips.set(profileId, 0);
       consecutive429s.set(profileId, 0);
+      degradationStreak.set(profileId, 0);
     };
+
+    // v2.96.0 (Phase 2) — reckless-settings guard. LinkedIn rate-limits
+    // connection invites hard (~100/week is the practical ceiling); a high daily
+    // limit on a single account is what degraded the session in the 2026-06-11
+    // incident. Warn loudly so the operator can dial it back.
+    const _CONNECT_MODES_WARN = new Set(['connect_only', 'connect_and_introduce', 'connect_and_message']);
+    if (_CONNECT_MODES_WARN.has(mode) && dailyLimit > 80) {
+      const _warn = `Daily limit ${dailyLimit}/account on ${profileIds.length} account(s) is high for connect mode — LinkedIn typically caps ~100 invites/week, and high volume on few accounts triggers the rate-limiting behind the 2026-06-11 wrong-person incident. Consider ≤50/account.`;
+      log(`\n⚠⚠ ${_warn}\n`);
+      _ops('WARN', 'reckless_daily_limit', { details: _warn });
+    }
 
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
 
@@ -2987,8 +3031,20 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   auditAction: `Skipped: Identity unverified (${MAX_IDENTITY_ATTEMPTS}×) — loaded "${_gate.loaded.name || '?'}"`,
                 }, linkedinColumn);
               } catch { /* best-effort */ }
+              // Phase 2: an unverified profile is a degradation signal — escalate
+              // the inter-lead backoff, and park the account if it never recovers
+              // (this path bypasses the generic consecutive-skip park below).
+              degradationStreak.set(profileId, (degradationStreak.get(profileId) || 0) + 1);
+              const _idSkips = (consecutiveSkips.get(profileId) || 0) + 1;
+              consecutiveSkips.set(profileId, _idSkips);
               delete state.processed[url];
               await saveState(state);
+              if (_idSkips >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ⚠ ${pName}: ${_idSkips} consecutive unverified/degraded leads — parking account to stop hammering a degrading session.`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, `Parked after ${_idSkips} consecutive identity-unverified leads`);
+                break;
+              }
               continue;
             }
             _identityVerified = true;
@@ -3294,6 +3350,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
+            degradationStreak.set(profileId, 0); // v2.96.0 (Phase 2): a clean send clears the backoff
             // v2.84: a successful action proves this account is logged in again —
             // clear any Needs Login = Y flag it carried (no-op unless flagged).
             await setAccountNeedsLogin(pName, false);
@@ -3408,6 +3465,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             }
           } else {
             const errorMsg = result.error || result.action || '';
+            // v2.96.0 (Phase 2): escalate backoff when this looks like session
+            // degradation (nav race / timeout / not-found / rate-limit) rather
+            // than a benign skip. A clean success (above) resets the streak.
+            if (isDegradationSignal(errorMsg)) {
+              degradationStreak.set(profileId, (degradationStreak.get(profileId) || 0) + 1);
+            }
             // Session expired = cookies are dead until the operator logs in
             // again. No point waiting for SKIP_PARK_THRESHOLD strikes —
             // every subsequent lead will fail the same way. Park on the
@@ -3645,10 +3708,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             } else {
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
               waitMs = Math.floor(waitMs * delayMultiplier);
-              if (delayMultiplier > 1) {
+              // v2.96.0 (Phase 2): exponential degradation backoff — give a
+              // degrading LinkedIn session time to recover instead of hammering
+              // it at fixed pace. Cleared by a clean success.
+              const _dStreak = degradationStreak.get(profileId) || 0;
+              const _preDegrade = waitMs;
+              waitMs = degradationBackoffMs(waitMs, _dStreak, { maxMult: DEGRADE_MAX_MULT, maxMs: DEGRADE_MAX_WAIT_MS });
+              const _degraded = waitMs > _preDegrade;
+              if (delayMultiplier > 1 || _degraded) {
                 const parts = [];
                 if (!isFastMode && profileIds.length === 1) parts.push('single-account 2x');
                 if (campaign._throttle?.active) parts.push(`throttled ${campaign._throttle.multiplier}x`);
+                if (_degraded) parts.push(`degradation backoff (streak ${_dStreak})`);
                 log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (${parts.join(' + ')})`);
               } else {
                 log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s`);
