@@ -202,3 +202,142 @@ test('readSourceMemberId returns empty when nothing usable is present', () => {
   assert.equal(readSourceMemberId({ 'Linkedin Membership ID': '' }), '');
   assert.equal(readSourceMemberId(null), '');
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// v2.96.0 — PRE-SEND identity gate: strict mode + name matching.
+//
+// Background (2026-06-11 connect_only incident): encoded /in/ACwAA… lead URLs
+// mis-loaded under LinkedIn rate-limiting and the (correctly-named) connect
+// note was sent to the WRONG person — including people never in any sheet and
+// an internal colleague ("Hi Divya" reached "Dion Kadriu"). The gate must
+// POSITIVELY confirm the loaded profile is the intended lead before any
+// Connect click, and skip-on-doubt. These tests pin that behaviour while the
+// lenient (post-send write-back) default stays exactly as it was.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('strict: member-number match still confirms', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '199140892',
+    capturedUrn: 'ACoAAAvephwBrpfip6HuNSo8HdU1dQgxuAzg4Qg',
+    capturedName: 'Rishi Pandey',
+    leadUrl: 'https://www.linkedin.com/in/ACwAAAvephwBEn2Cp1fWf9V7IoCZUXIlIsFLlsc',
+    sourceMemberId: '199140892',
+    sourceName: 'Rishi Pandey',
+    strict: true,
+  });
+  assert.equal(v.ok, true);
+});
+
+test('strict: REAL INCIDENT — note for "Divya" loads "Dion Kadriu" → reject (name mismatch)', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '',
+    capturedUrn: '',
+    capturedName: 'Dion Kadriu',
+    leadUrl: 'https://www.linkedin.com/in/ACwAAAsomeEncodedTokenForDivya',
+    sourceMemberId: '',
+    sourceName: 'Divya Sharma',
+    strict: true,
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /name-mismatch/);
+});
+
+test('strict: name mismatch HARD-rejects even when member-number matches (fully corrupt row)', () => {
+  // The sheet paired the right note-name with a member id that is NOT that
+  // person — so member# matches the loaded profile, but it is the wrong human.
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '111',
+    capturedUrn: 'ACoAAADionDionDionDionDionDionDion',
+    capturedName: 'Dion Kadriu',
+    leadUrl: 'https://www.linkedin.com/in/ACwAAADionDionDionDionDionDionDion',
+    sourceMemberId: '111',
+    sourceName: 'Divya Sharma',
+    strict: true,
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /name-mismatch/);
+});
+
+test('strict: name match confirms a slug lead with no source member id', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '37007123',
+    capturedUrn: 'ACoAAB1abcdEFGhijklmnopQRStuvwx',
+    capturedName: 'Surya Suravarapu',
+    leadUrl: 'https://www.linkedin.com/in/suryasuravarapu/',
+    sourceMemberId: '',
+    sourceName: 'Surya Suravarapu',
+    strict: true,
+  });
+  assert.equal(v.ok, true);
+  assert.match(v.reason, /name-match/);
+});
+
+test('strict: a vanity slug that STAYED on the same slug confirms even without a name', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '',
+    capturedUrn: '',
+    capturedName: '',
+    leadUrl: 'https://www.linkedin.com/in/john-roman/',
+    landedUrl: 'https://www.linkedin.com/in/john-roman/',
+    sourceMemberId: '',
+    sourceName: '',
+    strict: true,
+  });
+  assert.equal(v.ok, true);
+  assert.match(v.reason, /slug/);
+});
+
+test('strict: profile did not load (no number, no name) → reject', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '',
+    capturedUrn: '',
+    capturedName: '',
+    leadUrl: 'https://www.linkedin.com/in/ACwAAAPdklQBPTRQQqLAaZSNksM36oFi4Wjc8ZQ',
+    sourceMemberId: '64852564',
+    sourceName: 'Pachaiyappan Varadhan',
+    strict: true,
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /no-member-number|did not load/i);
+});
+
+test('strict: bare member-number with no corroboration → reject (lenient would accept)', () => {
+  const args = {
+    capturedMemberNumber: '37007123',
+    capturedUrn: 'ACoAAB1abcdEFGhijklmnopQRStuvwx',
+    capturedName: '',                                              // name not captured
+    leadUrl: 'https://www.linkedin.com/in/uwe-martin-wiesler-37007b4', // no AC token
+    sourceMemberId: '',
+    sourceName: '',
+  };
+  assert.equal(verifyConnectIdentity({ ...args, strict: false }).ok, true);  // lenient unchanged
+  assert.equal(verifyConnectIdentity({ ...args, strict: true }).ok, false);  // strict rejects
+});
+
+test('name matching strips credentials/emoji and is order/diacritic tolerant', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '',
+    capturedUrn: '',
+    capturedName: 'Renée O’Brien, MBA 🔔 · 2nd',
+    leadUrl: 'https://www.linkedin.com/in/renee-obrien',
+    landedUrl: 'https://www.linkedin.com/in/renee-obrien',
+    sourceMemberId: '',
+    sourceName: "Renee O'Brien",
+    strict: true,
+  });
+  assert.equal(v.ok, true);
+});
+
+test('partial name overlap (first matches, last missing) is inconclusive — slug-stay rescues it', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '',
+    capturedUrn: '',
+    capturedName: 'Surya',                                        // truncated capture
+    leadUrl: 'https://www.linkedin.com/in/suryasuravarapu/',
+    landedUrl: 'https://www.linkedin.com/in/suryasuravarapu/',
+    sourceMemberId: '',
+    sourceName: 'Surya Suravarapu',
+    strict: true,
+  });
+  assert.equal(v.ok, true);   // not hard-rejected by partial name; slug-stay confirms
+});

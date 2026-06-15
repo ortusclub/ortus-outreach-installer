@@ -27,7 +27,7 @@ import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
-import { opsLogEvent, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
+import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
 import { emptyTally, applyOutcome } from './campaign-tally.js';
 import { summariseCampaign } from './campaign-summary.js';
@@ -479,6 +479,92 @@ export function isDmIbEligible(row) {
   return false;
 }
 
+// v2.96.0 — PRE-SEND identity gate. The connect flow (outreach.js → actions.js)
+// navigates to the lead URL and clicks Connect with NO check that the loaded
+// profile is the intended lead. Encoded /in/ACwAA… URLs that mis-load under
+// LinkedIn rate-limiting therefore sent the (correctly-named) connection note
+// to the WRONG person — including strangers and an internal colleague
+// (2026-06-11 incident). This gate runs BEFORE the send: it navigates, captures
+// the loaded profile, and verifies its identity against the sheet row. It
+// re-navigates up to MAX_IDENTITY_ATTEMPTS; if it can never POSITIVELY confirm,
+// the caller skips the lead (skip-on-doubt) rather than risk a wrong send.
+export const MAX_IDENTITY_ATTEMPTS = 5;
+
+// v2.96.0 (Phase 2) — outcomes that mean "the session/page is degrading" (a
+// navigation race, timeout, profile-not-found, rate-limit, or an
+// identity-unverified skip) as opposed to a benign skip like already-connected.
+// A cluster of these escalates the inter-lead backoff and, if it never clears,
+// parks the account. Pure + tested.
+export function isDegradationSignal(errorMsg) {
+  return /Execution context was destroyed|lead_timeout_watchdog|Navigation timeout|net::ERR_|Profile not found|page_not_found|rate_limited|too many requests|HTTP 429|\b429\b|linkedin_error|something went wrong|LINKEDIN_ERROR_TOAST|SEND_NOT_CONFIRMED|identity[-_ ]unverified|identity unverified/i
+    .test(String(errorMsg || ''));
+}
+
+// v2.96.0 (Phase 2) — exponential backoff for a degradation streak. Pure +
+// tested. streak 0 ⇒ baseMs unchanged; each consecutive degraded lead doubles
+// the wait, capped by maxMult and an absolute maxMs ceiling, so a degrading
+// LinkedIn session gets time to recover instead of being hammered.
+export function degradationBackoffMs(baseMs, streak, { maxMult = 32, maxMs = 20 * 60 * 1000 } = {}) {
+  const s = Math.max(0, Math.floor(streak || 0));
+  if (s === 0) return baseMs;
+  const mult = Math.min(maxMult, 2 ** s);
+  return Math.min(maxMs, Math.floor(baseMs * mult));
+}
+
+// v2.96.2 — normalize a Sales-Navigator lead URL to its /in/<urn> form so the
+// identity gate can verify it the same way performOutreach connects (which does
+// the same reverse transform, outreach.js). Legacy /sales/profile/<numeric>,…,
+// NAME_SEARCH has no extractable AC-URN → returned unchanged → the gate fails to
+// load a profile and skips (safe). Pure + tested.
+export function salesNavToInUrl(url) {
+  const m = String(url || '').match(/\/sales\/(?:lead|people)\/(AC[ow]AA[A-Za-z0-9_-]+)/i);
+  return m ? `https://www.linkedin.com/in/${m[1]}` : (url || '');
+}
+
+export async function gateConnectIdentity(page, { url, row, sourceName = '', log = () => {} }) {
+  const sourceMemberId = readSourceMemberId(row);
+  // Verify the same profile performOutreach will connect on: a /sales/ lead URL
+  // is rewritten to /in/<urn> before the connect, so gate the /in/ form.
+  const navUrl = salesNavToInUrl(url);
+  let last = { ok: false, reason: 'not-attempted', loaded: { name: '', memberNumber: '' } };
+  for (let attempt = 1; attempt <= MAX_IDENTITY_ATTEMPTS; attempt++) {
+    let meta = {};
+    let landedUrl = '';
+    try {
+      await page.goto(navUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      // Let any client-side redirect settle so we don't read a mid-navigation
+      // page (the "Execution context was destroyed" race seen in the logs).
+      await new Promise((r) => setTimeout(r, 2500));
+      landedUrl = page.url();
+      meta = await captureProfileMeta(page);
+    } catch (e) {
+      // A throw here ("Execution context was destroyed, …navigation") IS the
+      // degradation signal — treat as unconfirmed and retry on a fresh load.
+      last = { ok: false, reason: `capture-threw: ${e.message}`, loaded: { name: '', memberNumber: '' } };
+      log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${last.reason}`);
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
+    const v = verifyConnectIdentity({
+      capturedMemberNumber: meta.memberNumber,
+      capturedUrn: meta.memberId,
+      capturedName: meta.name,
+      leadUrl: navUrl,
+      landedUrl,
+      sourceMemberId,
+      sourceName,
+      strict: true,
+    });
+    last = { ok: v.ok, reason: v.reason, loaded: { name: meta.name || '', memberNumber: meta.memberNumber || '' } };
+    if (v.ok) {
+      if (attempt > 1) log(`  ✓ identity confirmed on attempt ${attempt} (${v.reason})`);
+      return last;
+    }
+    log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${v.reason}`);
+  }
+  return last;
+}
+
 // v2.59.x: Does this (action, mode) represent a pending invite worth
 // monitoring for acceptance? A NEW invite (connection_sent) always does. A
 // lead ALREADY invited in a prior campaign returns already_processed
@@ -582,6 +668,12 @@ export const campaign = {
   logs: [],
   errors: [],
   parkedProfiles: [],
+  // Local-browser re-login recovery (2026-06-15). _loginDone flips when the
+  // operator clicks "Done" in the popup; awaitLocalLogin reads + resets it.
+  _loginDone: false,
+  // When set, the UI shows the "log into LinkedIn" popup. Shape:
+  // { profileId, pName, since }. Cleared the moment the wait ends.
+  awaitingLogin: null,
   softWarnings: [],
   // Plan B: per-profile end reasons — populated when an account is removed
   // from the rotation (weekly cap, parked, ejected, completed quota, etc.).
@@ -910,6 +1002,28 @@ async function browseFeedOrganically(page, pName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Local-browser re-login recovery (2026-06-15)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 5-min "operator walked away" ceiling for the local-browser login wait. */
+export const LOCAL_LOGIN_MAX_WAIT_MS = 5 * 60 * 1000;
+
+/**
+ * Pure decision helper for awaitLocalLogin's poll loop. Resume the instant the
+ * operator is logged in (Done click or auto-detect), keep waiting until then,
+ * and give up only once the walked-away ceiling is hit.
+ * @returns {'resume'|'wait'|'timeout'}
+ */
+export function decideLoginWaitAction({ elapsedMs, loggedIn, maxMs = LOCAL_LOGIN_MAX_WAIT_MS }) {
+  if (loggedIn) return 'resume';
+  if (elapsedMs >= maxMs) return 'timeout';
+  return 'wait';
+}
+
+/** Operator clicked "Done" in the re-login popup (POST /api/campaign/login-done). */
+export function confirmLogin() { campaign._loginDone = true; return { ok: true }; }
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Profile health check (REL-04) — verifies LinkedIn session before leads
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -985,6 +1099,85 @@ export async function parkProfile(page, parkUrl = 'about:blank') {
   }
 }
 
+/**
+ * Local-browser re-login recovery loop (2026-06-15). Brings the Chromium window
+ * on-screen, raises the in-app "log into LinkedIn" popup (via campaign.awaitingLogin),
+ * and resumes the moment the operator is logged in — either because they clicked
+ * "Done" (campaign._loginDone) or because we auto-detect a logged-in URL/health.
+ * Gives up after LOCAL_LOGIN_MAX_WAIT_MS (operator walked away) so the caller can
+ * park the account exactly as before. Local-browser ONLY — GoLogin never calls this.
+ * @returns {Promise<{ ok: boolean, page: object }>}
+ */
+async function awaitLocalLogin(page, profileId, pName) {
+  // Bring the window forward so the operator can see + use it. Best-effort.
+  try {
+    const client = await page.target().createCDPSession();
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+    await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
+  } catch { /* */ }
+
+  campaign.awaitingLogin = { profileId, pName, since: Date.now() };
+  campaign._loginDone = false;
+  log(`⏳ ${pName}: waiting up to 5 min for you to log into LinkedIn (or click Done)...`);
+
+  const start = Date.now();
+  let action = 'wait';
+  let ticks = 0;
+  while (action === 'wait') {
+    await new Promise(r => setTimeout(r, 3000));
+    if (campaign._abort) { action = 'timeout'; break; }
+
+    // Re-acquire the active page (login can swap the tab/process).
+    try {
+      const pages = await page.browser().pages();
+      if (pages.length > 0) page = pages[pages.length - 1];
+    } catch { /* keep current */ }
+
+    let loggedIn = false;
+    try {
+      const u = page.url();
+      if (u.includes('linkedin.com') && !u.includes('/login') && !u.includes('/authwall') && !u.includes('/checkpoint')) {
+        loggedIn = true;
+      }
+    } catch { /* */ }
+
+    // If they clicked Done but the URL still looks logged-out, re-verify health
+    // before trusting it — guards against a premature click.
+    if (!loggedIn && campaign._loginDone) {
+      try {
+        const h = await checkProfileHealth(page, pName);
+        loggedIn = !!h.healthy;
+      } catch { /* */ }
+      if (!loggedIn) {
+        log(`  ⏳ ${pName}: not logged in yet — finish login in the browser, then click Done.`);
+        campaign._loginDone = false;
+      }
+    }
+
+    action = decideLoginWaitAction({ elapsedMs: Date.now() - start, loggedIn });
+    if (action === 'wait' && (++ticks % 10 === 0)) {
+      log(`  Still waiting for ${pName} login... (${Math.round((Date.now() - start) / 1000)}s)`);
+    }
+  }
+
+  campaign.awaitingLogin = null;
+  campaign._loginDone = false;
+
+  if (action === 'resume') {
+    // Tuck the window back off-screen and carry on.
+    try {
+      const client = await page.target().createCDPSession();
+      const { windowId } = await client.send('Browser.getWindowForTarget');
+      await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+    } catch { /* */ }
+    log(`✓ ${pName}: re-logged in — resuming.`);
+    return { ok: true, page };
+  }
+
+  log(`✗ ${pName}: login not completed within 5 min — parking account.`);
+  return { ok: false, page };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 11.2: ensureProfileLoggedIn — cache clear + home nav + health check
 // + interactive login wait. Extracted from the old STEP 1 warmup block so
@@ -1033,12 +1226,25 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
   // the profile cleanly. Skip the recovery-prompt UX (which is for when the
   // user just needs to log in once more — sessionExpired means cookies are
   // dead and we should drop this profile from rotation entirely).
-  if (health.sessionExpired) {
+  if (health.sessionExpired && profileId !== 'local-browser') {
+    // GoLogin cloud profiles can't be logged into interactively mid-run — drop.
     log(`✗ ${pName}: session expired — parking profile for rest of run.`);
     return { page: null, ok: false, sessionExpired: true };
   }
   if (!health.healthy) {
     if (profileId === 'local-browser') {
+      // Local-browser session expiry (2026-06-15): the operator is at the
+      // machine, so recover in place instead of parking. awaitLocalLogin pops
+      // the window + the in-app "Done" popup and resumes on login; a 5-min
+      // ceiling falls back to the same park-and-flag the caller does.
+      if (health.sessionExpired) {
+        log(`⚠ ${pName}: session expired — opening browser for you to log in.`);
+        const r = await awaitLocalLogin(page, profileId, pName);
+        if (!r.ok) return { page: null, ok: false, sessionExpired: true };
+        page = r.page || page;
+        log(`${pName} health check passed.`);
+        return { page, ok: true };
+      }
       log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
       log(`⏳ Waiting up to 120s for you to log in...`);
       await page.evaluate(() => { document.body.style.zoom = '90%'; }).catch(() => {});
@@ -2394,6 +2600,17 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // is the cap. A wrong park is one click to undo via the re-enable toggle.)
     const consecutive429s = new Map();
     const HTTP_429_PARK_THRESHOLD = 2;
+    // v2.96.0 (Phase 2) — degradation backoff. Connect campaigns ran at a FIXED
+    // 15-45s pace regardless of how many leads mis-loaded; under LinkedIn
+    // rate-limiting that just hammered a degrading session (and produced the
+    // 2026-06-11 wrong-person sends). We now track a per-account "degradation
+    // streak" of navigation races / timeouts / not-found / rate-limit /
+    // identity-unverified outcomes and EXPONENTIALLY back off the inter-lead
+    // delay (capped at DEGRADE_MAX_WAIT_MS) until a clean success resets it.
+    // The existing SKIP_PARK_THRESHOLD still parks the account if it never recovers.
+    const degradationStreak = new Map();
+    const DEGRADE_MAX_MULT = 32;                // streak 5 ⇒ 32× before the cap bites
+    const DEGRADE_MAX_WAIT_MS = 20 * 60 * 1000; // never wait longer than 20 min between leads
     // Expose a closure that retryParkedProfile() can call to clear all the
     // local skip counters + drop the profile from weeklyLimited so the next
     // rotation considers it again. Cleared in the finally block at end-of-run.
@@ -2401,7 +2618,19 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       weeklyLimited.delete(profileId);
       consecutiveSkips.set(profileId, 0);
       consecutive429s.set(profileId, 0);
+      degradationStreak.set(profileId, 0);
     };
+
+    // v2.96.0 (Phase 2) — reckless-settings guard. LinkedIn rate-limits
+    // connection invites hard (~100/week is the practical ceiling); a high daily
+    // limit on a single account is what degraded the session in the 2026-06-11
+    // incident. Warn loudly so the operator can dial it back.
+    const _CONNECT_MODES_WARN = new Set(['connect_only', 'connect_and_introduce', 'connect_and_message']);
+    if (_CONNECT_MODES_WARN.has(mode) && dailyLimit > 80) {
+      const _warn = `Daily limit ${dailyLimit}/account on ${profileIds.length} account(s) is high for connect mode — LinkedIn typically caps ~100 invites/week, and high volume on few accounts triggers the rate-limiting behind the 2026-06-11 wrong-person incident. Consider ≤50/account.`;
+      log(`\n⚠⚠ ${_warn}\n`);
+      _ops('WARN', 'reckless_daily_limit', { details: _warn });
+    }
 
     log(`\n✓ Starting batch loop (BATCH_SIZE=${BATCH_SIZE})…\n`);
 
@@ -2804,6 +3033,73 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
           setAction('Processing lead', { lead: data.firstName || '?', account: pName });
 
+          // ── v2.96.0: PRE-SEND identity gate (connect modes only) ──
+          // Confirm the loaded profile IS the intended lead BEFORE any Connect
+          // click. Without this, an encoded /in/ACwAA… URL that mis-loads under
+          // rate-limiting sent the correctly-named note to the wrong person.
+          // Skip-on-doubt: 5 attempts, then skip+flag rather than risk a send.
+          let _identityVerified = false;
+          // Gate every URL that will become a connect: plain /in/ AND Sales-Nav
+          // /sales/lead|people/ URLs (performOutreach rewrites those to /in/ and
+          // connects, so they carry the same mis-load risk — v2.96.2).
+          const _isConnectHint = (hint === 'force_connect' || hint === 'force_connect_op_fallback');
+          const _gateableUrl = /\/in\//i.test(url) || /\/sales\/(?:lead|people)\//i.test(url);
+          if (_isConnectHint && _gateableUrl) {
+            const _srcName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+            const _gate = await gateConnectIdentity(page, { url, row, sourceName: _srcName, log });
+            if (!_gate.ok) {
+              const _intended = `${_srcName || '?'} / ${readSourceMemberId(row) || 'no-member#'}`;
+              const _got = `${_gate.loaded.name || '?'} / ${_gate.loaded.memberNumber || 'no-member#'}`;
+              log(`  ✗ [${pName}] IDENTITY UNVERIFIED after ${MAX_IDENTITY_ATTEMPTS} tries — NOT sending. Intended: ${_intended} · Loaded: ${_got} · ${_gate.reason}`);
+              // Fold everything into `reason`: the Ops Log bridge writes
+              // `reason || details` to one column, so keep it all here and make
+              // it greppable for "identity_unverified".
+              _ops('WARN', 'identity_unverified', {
+                account: pName,
+                leadUrl: url,
+                phase: 'Connect',
+                outcome: 'skipped',
+                reason: `identity_unverified (${_gate.reason}) — intended=[${_intended}] loaded=[${_got}]`,
+              });
+              // Audit breadcrumb only (NOT a terminal Stage): the row stays
+              // eligible so a future, non-degraded run can retry a genuine lead
+              // whose page merely failed to load this time.
+              try {
+                await updateSheetRow(sheetUrl, url, {
+                  auditAction: `Skipped: Identity unverified (${MAX_IDENTITY_ATTEMPTS}×) — loaded "${_gate.loaded.name || '?'}"`,
+                }, linkedinColumn);
+              } catch { /* best-effort */ }
+              // Phase 2: an unverified profile is a degradation signal — escalate
+              // the inter-lead backoff, and park the account if it never recovers
+              // (this path bypasses the generic consecutive-skip park below).
+              degradationStreak.set(profileId, (degradationStreak.get(profileId) || 0) + 1);
+              const _idSkips = (consecutiveSkips.get(profileId) || 0) + 1;
+              consecutiveSkips.set(profileId, _idSkips);
+              delete state.processed[url];
+              await saveState(state);
+              if (_idSkips >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ⚠ ${pName}: ${_idSkips} consecutive unverified/degraded leads — parking account to stop hammering a degrading session.`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, `Parked after ${_idSkips} consecutive identity-unverified leads`);
+                break;
+              }
+              // v2.96.2: this `continue` jumps past the end-of-iteration delay
+              // block, so honor the exponential backoff HERE — otherwise a run
+              // where the gate keeps failing (the exact incident signature)
+              // would spin through leads at gate-internal speed with no inter-lead
+              // pacing. Abort-aware sleep.
+              const _gateBase = Math.floor((delayMin + delayMax) / 2) * 1000;
+              const _gateWaitMs = degradationBackoffMs(_gateBase, degradationStreak.get(profileId) || 0, { maxMult: DEGRADE_MAX_MULT, maxMs: DEGRADE_MAX_WAIT_MS });
+              log(`  ⏳ ${(_gateWaitMs / 1000).toFixed(0)}s (degradation backoff after unverified lead)`);
+              const _gateSleepEnd = Date.now() + _gateWaitMs;
+              while (Date.now() < _gateSleepEnd && !campaign._abort) {
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+              continue;
+            }
+            _identityVerified = true;
+          }
+
           // performOutreach with retry
           let result;
           let _preempted = false;
@@ -2818,11 +3114,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // abandon this lead immediately (preemptCurrentLead) and let the
             // campaign hit its pause boundary within ~1s.
             try {
+              // v2.97 preempt race (solo-check abandons this lead in ~1s) combined
+              // with v2.96 identity gate: when the pre-send gate already verified the
+              // lead's identity on a navigated page, performOutreach reuses it
+              // (skipNavigation) so verify+send share one navigation.
               const _preemptP = new Promise((_, reject) => { _leadPreemptReject = reject; });
               try {
                 result = await Promise.race([
                   withWatchdog(
-                    performOutreach(page, url, { ...tpl, data }, { profileId }, hint),
+                    performOutreach(page, url, { ...tpl, data }, { profileId, skipNavigation: _identityVerified }, hint),
                     LEAD_TIMEOUT_MS,
                     profileId,
                   ),
@@ -3129,6 +3429,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
+            // v2.96.2 (Phase 2): clear the backoff only on outcomes that PROVE
+            // a healthy page interaction — not cheap early-returns like
+            // 'already_processed' (which can short-circuit before any real page
+            // work and would mask an ongoing degradation streak).
+            if (['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_connected', 'status_accepted'].includes(result.action)) {
+              degradationStreak.set(profileId, 0);
+            }
             // v2.84: a successful action proves this account is logged in again —
             // clear any Needs Login = Y flag it carried (no-op unless flagged).
             await setAccountNeedsLogin(pName, false);
@@ -3243,29 +3550,50 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             }
           } else {
             const errorMsg = result.error || result.action || '';
+            // v2.96.0 (Phase 2): escalate backoff when this looks like session
+            // degradation (nav race / timeout / not-found / rate-limit) rather
+            // than a benign skip. A clean success (above) resets the streak.
+            if (isDegradationSignal(errorMsg)) {
+              degradationStreak.set(profileId, (degradationStreak.get(profileId) || 0) + 1);
+            }
             // Session expired = cookies are dead until the operator logs in
             // again. No point waiting for SKIP_PARK_THRESHOLD strikes —
             // every subsequent lead will fail the same way. Park on the
             // first occurrence so the loop rotates to a healthier account.
             const isSessionExpired = /session\s*expired/i.test(errorMsg);
             if (isSessionExpired && !weeklyLimited.has(profileId)) {
-              log(`  ⚠ ${pName}: session expired — parking account for rest of run (re-login required).`);
-              weeklyLimited.add(profileId);
-              recordProfileEnd(profileId, pName, 'Session expired — log in again');
-              campaign.parkedProfiles.push({
-                profileId,
-                pName,
-                parkedAt: Date.now(),
-                reason: 'session_expired',
-              });
-              // v2.84: flag every LEAD row handled by this account (Sender column)
-              // as Needs Login = Y in the campaign sheet, so the operator can filter
-              // to the stalled leads.
-              await setAccountNeedsLogin(pName, true);
-              // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
-              // (matched by Email == profile name) so the LinkedIn team re-logs it.
-              // Never auto-cleared. Best-effort — cannot affect the loop.
-              await markSoONeedsLogin(pName);
+              // Local-browser session expiry (2026-06-15): recover in place —
+              // pop the window + the in-app "Done" popup and wait for re-login.
+              // Only on a 5-min no-response timeout do we fall back to the same
+              // park-and-flag below. GoLogin profiles skip recovery entirely.
+              let recovered = false;
+              if (profileId === 'local-browser') {
+                log(`  ⚠ ${pName}: session expired mid-run — opening browser for you to log in.`);
+                const recovery = await awaitLocalLogin(page, profileId, pName);
+                recovered = recovery.ok;
+                if (recovered) { page = recovery.page || page; session.page = page; }
+              }
+              if (recovered) {
+                log(`  ✓ ${pName}: re-logged in — staying in rotation.`);
+              } else {
+                log(`  ⚠ ${pName}: session expired — parking account for rest of run (re-login required).`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, 'Session expired — log in again');
+                campaign.parkedProfiles.push({
+                  profileId,
+                  pName,
+                  parkedAt: Date.now(),
+                  reason: 'session_expired',
+                });
+                // v2.84: flag every LEAD row handled by this account (Sender column)
+                // as Needs Login = Y in the campaign sheet, so the operator can filter
+                // to the stalled leads.
+                await setAccountNeedsLogin(pName, true);
+                // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
+                // (matched by Email == profile name) so the LinkedIn team re-logs it.
+                // Never auto-cleared. Best-effort — cannot affect the loop.
+                await markSoONeedsLogin(pName);
+              }
             }
             // 429-specific tracker. Three strikes = treat as weekly cap and
             // park the profile, well before the generic SKIP_PARK_THRESHOLD
@@ -3468,10 +3796,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             } else {
               waitMs = Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
               waitMs = Math.floor(waitMs * delayMultiplier);
-              if (delayMultiplier > 1) {
+              // v2.96.0 (Phase 2): exponential degradation backoff — give a
+              // degrading LinkedIn session time to recover instead of hammering
+              // it at fixed pace. Cleared by a clean success.
+              const _dStreak = degradationStreak.get(profileId) || 0;
+              const _preDegrade = waitMs;
+              waitMs = degradationBackoffMs(waitMs, _dStreak, { maxMult: DEGRADE_MAX_MULT, maxMs: DEGRADE_MAX_WAIT_MS });
+              const _degraded = waitMs > _preDegrade;
+              if (delayMultiplier > 1 || _degraded) {
                 const parts = [];
                 if (!isFastMode && profileIds.length === 1) parts.push('single-account 2x');
                 if (campaign._throttle?.active) parts.push(`throttled ${campaign._throttle.multiplier}x`);
+                if (_degraded) parts.push(`degradation backoff (streak ${_dStreak})`);
                 log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s (${parts.join(' + ')})`);
               } else {
                 log(`  ⏳ ${(waitMs / 1000).toFixed(0)}s`);
@@ -3780,6 +4116,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     _ops('INFO', `Campaign ended (${endReason})`, {
       details: `${campaign.totalProcessed} processed · ${campaign.errors.length} errors · ${_durationSec}s`,
     });
+    // v2.96.2 — drain the Ops Log buffer at end-of-run so a short campaign's
+    // events (incl. reckless_daily_limit fired at startup) aren't left waiting
+    // on the 30s timer if the app is quit immediately after.
+    try { await flushOpsLog(); } catch { /* fire-and-forget */ }
     try {
       // Mode-aware template preview. Only dump fields the running mode
       // actually uses — wizard form state may carry leftover values
@@ -4239,6 +4579,8 @@ export function getCampaignStatus() {
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),
+    // Local-browser re-login recovery: drives the "log into LinkedIn" popup.
+    awaitingLogin: campaign.awaitingLogin || null,
     softWarnings: campaign.softWarnings.slice(),
     profileEndReasons: campaign.profileEndReasons.slice(),
     disk: { ..._diskStatusCache },

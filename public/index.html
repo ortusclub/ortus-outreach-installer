@@ -1972,6 +1972,20 @@
     </div>
   </div>
 
+  <!-- 2026-06-15 — Local-browser re-login recovery. Shown by maybeShowLoginModal()
+       when /api/campaign/status reports awaitingLogin. No dismiss: it auto-closes
+       when the run resumes (login detected) or parks (5-min ceiling). -->
+  <div id="login-recover-modal" class="modal-backdrop hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login-recover-title">
+      <span class="ptm-pill">LOG IN REQUIRED</span>
+      <h3 id="login-recover-title" class="modal-title">Log into LinkedIn</h3>
+      <div id="login-recover-body" class="modal-body"></div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-secondary" onclick="confirmLoginDone()">Done — I've logged in</button>
+      </div>
+    </div>
+  </div>
+
   <!-- v2.58.x — Operator timezone confirmation. Fires on first dashboard
        render after login when no tz preference is saved yet. Skip is allowed
        (re-prompts on next launch); saving stores the choice via

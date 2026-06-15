@@ -499,7 +499,7 @@ export async function getProfileUrn(page) {
  * a separate Voyager call and falls back to the existing helper.
  */
 export async function captureProfileMeta(page) {
-  const out = { urn: '', memberId: '', memberNumber: '', isOpenProfile: null, connectionDegree: null };
+  const out = { urn: '', memberId: '', memberNumber: '', name: '', isOpenProfile: null, connectionDegree: null };
 
   // ── Voyager calls (URN + openProfile + numeric member number) ──
   try {
@@ -717,8 +717,24 @@ export async function captureProfileMeta(page) {
   }
   delete out._voyagerSucceeded;
 
-  if (out.urn || out.memberId || out.memberNumber || out.isOpenProfile !== null || out.connectionDegree !== null) {
-    console.log(`[helpers] captureProfileMeta: urn=${out.urn ? out.urn.slice(0, 40) + '…' : '(none)'}, memberId=${out.memberId || '(none)'}, memberNumber=${out.memberNumber || '(none)'}, openProfile=${out.isOpenProfile === null ? '(unknown)' : out.isOpenProfile}, degree=${out.connectionDegree === null ? '(unknown)' : out.connectionDegree}`);
+  // ── Display name (v2.96.0 — for pre-send identity verification) ──
+  // Read the profile top-card <h1>. The caller compares this to the sheet
+  // lead's First+Last name so a mis-loaded profile is caught BEFORE any
+  // connection request is sent (the "Hi Divya → Dion Kadriu" class of bug).
+  try {
+    const nm = await page.evaluate(() => {
+      try {
+        const h1 = document.querySelector('main h1')
+                || document.querySelector('h1.text-heading-xlarge')
+                || document.querySelector('h1');
+        return h1 ? (h1.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      } catch { return ''; }
+    });
+    if (nm) out.name = nm;
+  } catch { /* best-effort */ }
+
+  if (out.urn || out.memberId || out.memberNumber || out.name || out.isOpenProfile !== null || out.connectionDegree !== null) {
+    console.log(`[helpers] captureProfileMeta: name="${out.name || '(none)'}", urn=${out.urn ? out.urn.slice(0, 40) + '…' : '(none)'}, memberId=${out.memberId || '(none)'}, memberNumber=${out.memberNumber || '(none)'}, openProfile=${out.isOpenProfile === null ? '(unknown)' : out.isOpenProfile}, degree=${out.connectionDegree === null ? '(unknown)' : out.connectionDegree}`);
   } else {
     console.log(`[helpers] captureProfileMeta: nothing captured`);
   }
