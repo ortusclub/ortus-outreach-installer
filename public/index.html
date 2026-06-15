@@ -1226,35 +1226,15 @@
       </div>
 
     <!-- ── Connection Note (connect_only, connect_and_introduce) ── -->
+    <!-- v2.102.0: the v2.101 OFF-by-default toggle + "names render wrong" warning
+         was a band-aid for the wrong-person incident. Root cause is now fixed by
+         the pre-send identity gate, so the note returns to a plain always-visible
+         field for every connect mode. -->
     <div class="section tpl-section" id="tpl-connect-section">
       <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
-
-      <!-- v2.101: CC+IC-only toggle, default OFF. Naming issues with connection
-           notes mean we strongly suggest leaving the note out for now. Shown
-           only in CC+IC by onModeChange → applyCcNoteToggleUI; other note modes
-           keep the field always visible. -->
-      <div id="cc-note-toggle-row" class="cc-note-toggle-row" style="display:none;">
-        <label class="cc-note-toggle-head">
-          <span class="notif-pref-toggle">
-            <input type="checkbox" id="cc-note-toggle" onchange="toggleCcNote()">
-            <span class="notif-pref-slider"></span>
-          </span>
-          <span class="cc-note-toggle-key">Add a connection note</span>
-        </label>
-        <div class="cc-note-warning">
-          <b>Not recommended — leave this off for now.</b> We've seen issues with how
-          names render inside connection notes (the wrong first name getting inserted).
-          Our strong suggestion is to send a bare connection request and put your
-          personalisation in the intro DM instead. Only turn this on if you understand
-          the risk.
-        </div>
-      </div>
-
-      <div id="cc-note-fields">
-        <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount()"></textarea>
-        <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
-        <div class="placeholder-tags" data-target="tpl-note"></div>
-      </div>
+      <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount()"></textarea>
+      <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
+      <div class="placeholder-tags" data-target="tpl-note"></div>
     </div>
 
     <!-- ── Direct message (message_only) — introduce_back keeps this hidden ── -->
