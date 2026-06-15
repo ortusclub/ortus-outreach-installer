@@ -336,10 +336,21 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     // explicit 2s buffer (Step 2 below) covers the rendered-action-buttons
     // wait that networkidle0 used to provide. Net: 30s dead time → ~3.5s
     // settle.
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    } catch (e) {
-      console.log(`[outreach] domcontentloaded timed out, continuing: ${e.message}`);
+    // v2.96.0 — pre-send identity gate seam. When the caller (campaign.js) has
+    // ALREADY navigated to this exact profile and VERIFIED it is the intended
+    // lead, re-navigating here would open a SECOND page load that, under
+    // rate-limiting, could land on a different profile after a clean verify —
+    // the exact race behind the wrong-person sends. Reuse the verified page.
+    // Defaults to navigating (state.skipNavigation absent/false) for every
+    // other caller, so behaviour is unchanged everywhere else.
+    if (state && state.skipNavigation) {
+      console.log('[outreach] Identity pre-verified by caller — reusing verified page, skipping re-navigation.');
+    } else {
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      } catch (e) {
+        console.log(`[outreach] domcontentloaded timed out, continuing: ${e.message}`);
+      }
     }
 
     // ── Step 2: DOM settle / buffer / zoom — only needed for paths that

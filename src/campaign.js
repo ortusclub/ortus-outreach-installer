@@ -461,6 +461,58 @@ export function isDmIbEligible(row) {
   return false;
 }
 
+// v2.96.0 — PRE-SEND identity gate. The connect flow (outreach.js → actions.js)
+// navigates to the lead URL and clicks Connect with NO check that the loaded
+// profile is the intended lead. Encoded /in/ACwAA… URLs that mis-load under
+// LinkedIn rate-limiting therefore sent the (correctly-named) connection note
+// to the WRONG person — including strangers and an internal colleague
+// (2026-06-11 incident). This gate runs BEFORE the send: it navigates, captures
+// the loaded profile, and verifies its identity against the sheet row. It
+// re-navigates up to MAX_IDENTITY_ATTEMPTS; if it can never POSITIVELY confirm,
+// the caller skips the lead (skip-on-doubt) rather than risk a wrong send.
+export const MAX_IDENTITY_ATTEMPTS = 5;
+
+export async function gateConnectIdentity(page, { url, row, sourceName = '', log = () => {} }) {
+  const sourceMemberId = readSourceMemberId(row);
+  let last = { ok: false, reason: 'not-attempted', loaded: { name: '', memberNumber: '' } };
+  for (let attempt = 1; attempt <= MAX_IDENTITY_ATTEMPTS; attempt++) {
+    let meta = {};
+    let landedUrl = '';
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      // Let any client-side redirect settle so we don't read a mid-navigation
+      // page (the "Execution context was destroyed" race seen in the logs).
+      await new Promise((r) => setTimeout(r, 2500));
+      landedUrl = page.url();
+      meta = await captureProfileMeta(page);
+    } catch (e) {
+      // A throw here ("Execution context was destroyed, …navigation") IS the
+      // degradation signal — treat as unconfirmed and retry on a fresh load.
+      last = { ok: false, reason: `capture-threw: ${e.message}`, loaded: { name: '', memberNumber: '' } };
+      log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${last.reason}`);
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
+    const v = verifyConnectIdentity({
+      capturedMemberNumber: meta.memberNumber,
+      capturedUrn: meta.memberId,
+      capturedName: meta.name,
+      leadUrl: url,
+      landedUrl,
+      sourceMemberId,
+      sourceName,
+      strict: true,
+    });
+    last = { ok: v.ok, reason: v.reason, loaded: { name: meta.name || '', memberNumber: meta.memberNumber || '' } };
+    if (v.ok) {
+      if (attempt > 1) log(`  ✓ identity confirmed on attempt ${attempt} (${v.reason})`);
+      return last;
+    }
+    log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${v.reason}`);
+  }
+  return last;
+}
+
 // v2.59.x: Does this (action, mode) represent a pending invite worth
 // monitoring for acceptance? A NEW invite (connection_sent) always does. A
 // lead ALREADY invited in a prior campaign returns already_processed
@@ -2906,6 +2958,42 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           log(`→ [${pName}] ${url} (${data.firstName || '?'}) [${hint || 'auto'}]`);
           setAction('Processing lead', { lead: data.firstName || '?', account: pName });
 
+          // ── v2.96.0: PRE-SEND identity gate (connect modes only) ──
+          // Confirm the loaded profile IS the intended lead BEFORE any Connect
+          // click. Without this, an encoded /in/ACwAA… URL that mis-loads under
+          // rate-limiting sent the correctly-named note to the wrong person.
+          // Skip-on-doubt: 5 attempts, then skip+flag rather than risk a send.
+          let _identityVerified = false;
+          if ((hint === 'force_connect' || hint === 'force_connect_op_fallback') && /\/in\//i.test(url)) {
+            const _srcName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+            const _gate = await gateConnectIdentity(page, { url, row, sourceName: _srcName, log });
+            if (!_gate.ok) {
+              const _intended = `${_srcName || '?'} / ${readSourceMemberId(row) || 'no-member#'}`;
+              const _got = `${_gate.loaded.name || '?'} / ${_gate.loaded.memberNumber || 'no-member#'}`;
+              log(`  ✗ [${pName}] IDENTITY UNVERIFIED after ${MAX_IDENTITY_ATTEMPTS} tries — NOT sending. Intended: ${_intended} · Loaded: ${_got} · ${_gate.reason}`);
+              _ops('WARN', 'identity_unverified', {
+                account: pName,
+                leadUrl: url,
+                phase: 'Connect',
+                outcome: 'skipped',
+                reason: _gate.reason,
+                details: `intended=[${_intended}] loaded=[${_got}]`,
+              });
+              // Audit breadcrumb only (NOT a terminal Stage): the row stays
+              // eligible so a future, non-degraded run can retry a genuine lead
+              // whose page merely failed to load this time.
+              try {
+                await updateSheetRow(sheetUrl, url, {
+                  auditAction: `Skipped: Identity unverified (${MAX_IDENTITY_ATTEMPTS}×) — loaded "${_gate.loaded.name || '?'}"`,
+                }, linkedinColumn);
+              } catch { /* best-effort */ }
+              delete state.processed[url];
+              await saveState(state);
+              continue;
+            }
+            _identityVerified = true;
+          }
+
           // performOutreach with retry
           let result;
           const MAX_RETRIES = 3;
@@ -2917,7 +3005,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // routes through the normal 3-retry/backoff flow.
             try {
               result = await withWatchdog(
-                performOutreach(page, url, { ...tpl, data }, { profileId }, hint),
+                performOutreach(page, url, { ...tpl, data }, { profileId, skipNavigation: _identityVerified }, hint),
                 LEAD_TIMEOUT_MS,
                 profileId,
               );
