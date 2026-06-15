@@ -3376,6 +3376,23 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
 }
 .btn.is-disabled, .btn:disabled { opacity: 0.4; pointer-events: none; }
 
+/* v2.101 — CC+IC connection-note toggle + "leave it off" warning. */
+.cc-note-toggle-row { margin-bottom: 14px; }
+.cc-note-toggle-head { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.cc-note-toggle-key { font-size: 0.92rem; font-weight: 600; color: var(--ink, #fafaf9); }
+.cc-note-warning {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border: 1px solid rgba(217, 140, 95, 0.55);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: rgba(217, 140, 95, 0.08);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #c98a55;
+}
+.cc-note-warning b { color: #e09a5f; }
+
 @keyframes modal-fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }

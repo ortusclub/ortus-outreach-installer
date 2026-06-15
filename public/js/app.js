@@ -1556,6 +1556,56 @@ async function refreshCheckDmsPreview() {
   }
 }
 
+// v2.101 — CC+IC connection-note toggle. Default OFF: naming issues with notes
+// mean we strongly steer operators away from them. When off, the note field is
+// hidden AND #tpl-note is emptied so every connectionNote read (launch payload,
+// preview, re-run) naturally yields '' — a bare connect request. The typed text
+// is stashed so toggling back on within the session restores it.
+let _ccNoteDraft = '';
+function toggleCcNote() {
+  const cb = document.getElementById('cc-note-toggle');
+  const fields = document.getElementById('cc-note-fields');
+  const ta = document.getElementById('tpl-note');
+  const on = !!(cb && cb.checked);
+  try { localStorage.setItem('ortus-cc-note-on', on ? '1' : '0'); } catch { /* storage blocked */ }
+  if (fields) fields.style.display = on ? '' : 'none';
+  if (ta) {
+    if (on) {
+      if (!ta.value && _ccNoteDraft) ta.value = _ccNoteDraft;
+    } else {
+      _ccNoteDraft = ta.value || _ccNoteDraft;
+      ta.value = '';
+    }
+    if (typeof updateTplNoteCount === 'function') updateTplNoteCount();
+  }
+}
+window.toggleCcNote = toggleCcNote;
+
+// Show/configure the note toggle per mode. CC+IC: show the toggle + warning,
+// default OFF (honour the saved choice; force ON if a saved note is present so
+// re-runs don't silently drop an existing note). Other note modes: no toggle,
+// field always visible (unchanged behaviour).
+function applyCcNoteToggleUI(mode) {
+  const row = document.getElementById('cc-note-toggle-row');
+  const fields = document.getElementById('cc-note-fields');
+  const cb = document.getElementById('cc-note-toggle');
+  const ta = document.getElementById('tpl-note');
+  if (!row || !fields) return;
+  if (mode === 'connect_and_introduce') {
+    row.style.display = '';
+    let on = false;
+    try { on = localStorage.getItem('ortus-cc-note-on') === '1'; } catch { /* default off */ }
+    if (ta && ta.value.trim()) on = true; // a restored note implies the operator wants it on
+    if (cb) cb.checked = on;
+    fields.style.display = on ? '' : 'none';
+    if (!on && ta && ta.value) { _ccNoteDraft = ta.value; ta.value = ''; if (typeof updateTplNoteCount === 'function') updateTplNoteCount(); }
+  } else {
+    row.style.display = 'none';
+    fields.style.display = '';
+  }
+}
+window.applyCcNoteToggleUI = applyCcNoteToggleUI;
+
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const connect = document.getElementById('tpl-connect-section');
@@ -1665,6 +1715,8 @@ function onModeChange() {
     // Connection Note section is always visible for connect modes.
     // Operator leaves the textarea empty if they don't want a note.
     connect.style.display = '';
+    // v2.101: CC+IC gets the OFF-by-default note toggle + warning.
+    try { applyCcNoteToggleUI(mode); } catch (_) {}
   } else if (mode === 'message_only') {
     // Message Only: standalone follow-up DM, uses the Follow-up Message template.
     message.style.display = '';
@@ -7146,6 +7198,10 @@ function applyPresetConfig(config) {
 
   const t = config.templates || {};
   setV('tpl-note', t.connectionNote || '');
+  // v2.101: onModeChange ran above before tpl-note was repopulated — re-apply
+  // the CC+IC note toggle now so a restored note flips the toggle on (and an
+  // empty one keeps it off + the field hidden).
+  try { if (typeof applyCcNoteToggleUI === 'function') applyCcNoteToggleUI(config.mode); } catch (_) {}
   setV('tpl-followup', t.followUp1 || '');
   setV('tpl-inmail-subject', t.inmailSubject || '');
   setV('tpl-inmail-body', t.inmailBody || '');
