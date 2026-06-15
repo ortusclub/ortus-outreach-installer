@@ -692,6 +692,20 @@ function isRestrictedStatus(status) {
   return /restricted/.test(s) || s === 'inaccessible';
 }
 
+// v2.102.0: at least one channel (OP/InMail/SN/CC) currently shows 'available'.
+function hasAvailableChannel(soo) {
+  if (!soo) return false;
+  return [soo.linkedinCredits, soo.inmailCredits, soo.salesNavCredits, soo.ccCredits]
+    .some((v) => (v || '').toString().toLowerCase().trim() === 'available');
+}
+
+// v2.102.0: "Available now" preset = ready to use right now — NOT restricted/
+// inaccessible AND has at least one free channel.
+function isAvailableNow(soo) {
+  if (!soo) return false;
+  return !isRestrictedStatus(soo['Status'] || soo['status']) && hasAvailableChannel(soo);
+}
+
 function findSoOForProfile(profileName) {
   if (!profileName || Object.keys(sooData).length === 0) return null;
   const key = (profileName || '').toLowerCase().trim();
@@ -1271,6 +1285,7 @@ function matchesPreset(preset, soo) {
     const assignee = (soo['Assignee'] || '').toLowerCase();
     return !isPool && assignee && assignee !== '-' && assignee.includes(me);
   }
+  if (preset === 'available-now') return isAvailableNow(soo);
   return true; // 'all'
 }
 
@@ -1295,13 +1310,14 @@ function applyPreset(preset) {
 function updateChipCounts() {
   const counts = { all: allProfilesData.length, available: 0, 'in-use': 0, selected: selectedProfileIds.length };
   const me = getMyIdentifier();
-  let assignedToMeCount = 0, poolCount = 0;
+  let assignedToMeCount = 0, poolCount = 0, availableNowCount = 0;
   allProfilesData.forEach((p) => {
     const soo = findSoOForProfile(p.name);
     if (!soo) return;
     const vals = [soo.linkedinCredits, soo.inmailCredits, soo.salesNavCredits, soo.ccCredits].map((v) => (v || '').toLowerCase());
     if (vals.some((v) => v === 'available')) counts.available++;
     if (vals.some((v) => v === 'in use' || v === 'in-use' || v === 'used')) counts['in-use']++;
+    if (isAvailableNow(soo)) availableNowCount++;
     const isPool = (soo.section || '').toLowerCase().includes('pool') ||
                    (soo.section || '').toLowerCase().includes('unassigned');
     const assignee = (soo['Assignee'] || '').toLowerCase();
@@ -1317,6 +1333,7 @@ function updateChipCounts() {
   set('chip-count-selected', counts.selected);
   set('preset-count-assigned', assignedToMeCount);
   set('preset-count-pool', poolCount);
+  set('preset-count-available-now', availableNowCount);
   set('preset-count-all-accounts', counts.all);
 }
 
