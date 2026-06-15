@@ -36,7 +36,7 @@ import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
 import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros } from './linkedin/auto-intro.js';
-import { checkAndConnectPrimary } from './linkedin/primary-connection.js';
+import { checkAndConnectPrimary, primaryConnState } from './linkedin/primary-connection.js';
 import { readSelfIdentity } from './linkedin/accept-invitation.js';
 import { buildAcceptTask, enqueuePrimaryTask } from './primary-tasks.js';
 import { clampCadenceMinutes } from '../public/js/campaign-modes.mjs';
@@ -2743,9 +2743,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             if (_prev !== 'connected') {
               try {
                 const _res = await checkAndConnectPrimary(page, _primaryUrl, {
-                  log, pName, attemptConnect: (_prev === undefined || _prev === 'no_url'),
+                  log, pName, attemptConnect: (_prev === undefined || _prev === 'no_url' || _prev === 'unverified'),
                 });
-                campaign._primaryConn.set(profileId, _res.connected ? 'connected' : 'pending');
+                // v2.102: tri-state. connected → 'connected'; CONFIRMED
+                // not-connected → 'pending' (connect sent, intros held); degree
+                // unreadable → 'unverified' (no connect, neutral badge, intros
+                // still proceed). A read failure must not coerce to 'pending'.
+                campaign._primaryConn.set(profileId, primaryConnState(_res.connected));
                 // v2.91: if we just sent a connect to the primary AND auto-accept
                 // is enabled, capture this account's own identity and queue the
                 // local browser to accept its invitation in the next idle gap.

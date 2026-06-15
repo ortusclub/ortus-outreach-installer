@@ -20,7 +20,7 @@
 
 import { sendIntroMessage, sendIntroViaCleanCompose } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
-import { checkAndConnectPrimary } from './primary-connection.js';
+import { checkAndConnectPrimary, primaryConnState } from './primary-connection.js';
 import { readSelfIdentity } from './accept-invitation.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
 import { extractSheetId } from '../utils.js';
@@ -335,9 +335,11 @@ export async function runAutoIntros({
         const _res = await checkAndConnectPrimary(page, primaryUrl, {
           log,
           pName: profileName,
-          attemptConnect: (_prevConn === undefined || _prevConn === 'no_url'),
+          attemptConnect: (_prevConn === undefined || _prevConn === 'no_url' || _prevConn === 'unverified'),
         });
-        campaign._primaryConn.set(profileId, _res.connected ? 'connected' : 'pending');
+        // v2.102: tri-state — a degree we couldn't read becomes 'unverified'
+        // (no connect, intros proceed), never coerced to 'pending'/"No primary".
+        campaign._primaryConn.set(profileId, primaryConnState(_res.connected));
 
         if (_shouldQueueAutoAccept({
           autoAcceptPrimary: templates.autoAcceptPrimary,

@@ -15,6 +15,55 @@
 import { sendConnectionRequest } from './actions.js';
 import { getVoyagerDegree, getDegreeBadge } from './helpers.js';
 
+// How many times readPrimaryDegree re-reads (and twice re-navigates) before
+// giving up with 'unknown'. The 2026-06-15 incident showed a single read is
+// fragile: a rate-limited session 429s Voyager and an encoded /in/ACwAA…
+// primary URL may not finish its redirect on the first try.
+const PRIMARY_DEGREE_MAX_ATTEMPTS = 4;
+
+/**
+ * Normalize a saved primary URL for the degree read. A Sales-Nav lead/people
+ * URL is rewritten to /in/<urn> so getVoyagerDegree can derive a publicId from
+ * the path; a vanity or encoded /in/ URL passes through unchanged (LinkedIn
+ * resolves an encoded /in/ACwAA… to its canonical slug on navigation). Pure.
+ */
+export function normalizePrimaryUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) return '';
+  const m = u.match(/linkedin\.com\/sales\/(?:lead|people)\/([^,/?#]+)/i);
+  if (m) return `https://www.linkedin.com/in/${m[1]}`;
+  return u;
+}
+
+/**
+ * Map a read degree to a tri-state connection verdict. Pure.
+ *   '1st'/'self'        → true  (connected)
+ *   '2nd'/'3rd'/'3rd+'  → false (CONFIRMED not connected)
+ *   anything else       → null  (couldn't determine — a read failure, NOT a
+ *                                 non-connection). This distinction is the fix
+ *                                 for the 2026-06-15 "everything NO PRIMARY" bug.
+ */
+export function degreeToConnected(degree) {
+  if (degree === '1st' || degree === 'self') return true;
+  if (degree === '2nd' || degree === '3rd' || degree === '3rd+') return false;
+  return null;
+}
+
+/**
+ * Map the tri-state `connected` to the per-account status string the UI badge
+ * and intro gate read. Pure.
+ *   true  → 'connected'   (Primary ✓, intros flow)
+ *   false → 'pending'     (No primary, a connect was sent, intros held)
+ *   null  → 'unverified'  (couldn't check — distinct neutral badge, NO connect
+ *                          sent, intros still proceed via the self-validating
+ *                          intro attempt)
+ */
+export function primaryConnState(connected) {
+  if (connected === true) return 'connected';
+  if (connected === false) return 'pending';
+  return 'unverified';
+}
+
 /**
  * Read the connection degree to the profile at `primaryUrl`.
  * Returns '1st' | '2nd' | '3rd' | 'unknown'.
@@ -30,45 +79,81 @@ import { getVoyagerDegree, getDegreeBadge } from './helpers.js';
  * with the careful slug-matched DOM badge as a fallback only when Voyager
  * returns nothing.
  */
-export async function readPrimaryDegree(page, primaryUrl) {
-  await page.goto(primaryUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  await new Promise((r) => setTimeout(r, 2500)); // let the page hydrate
+export async function readPrimaryDegree(page, primaryUrl, { attempts = PRIMARY_DEGREE_MAX_ATTEMPTS } = {}) {
+  // v2.102: normalize Sales-Nav → /in/, and retry. A single read is fragile
+  // under a rate-limited session (Voyager 429 → null) or an encoded primary URL
+  // whose redirect hasn't settled (publicId not yet canonical). Re-navigate on
+  // the first attempt and once midway (a fresh page can land the redirect /
+  // shed a 429); cheap re-reads in between (Voyager + badge re-fetch live).
+  const navUrl = normalizePrimaryUrl(primaryUrl);
+  const reNavOn = new Set([1, Math.ceil(attempts / 2) + 1]);
 
-  // 1) Authoritative: Voyager networkinfo distance for the profile in the URL.
-  try {
-    const deg = await getVoyagerDegree(page);
-    if (deg === 1) return '1st';
-    if (deg === 2) return '2nd';
-    if (deg === 3) return '3rd';
-  } catch { /* fall through to DOM badge */ }
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (reNavOn.has(attempt)) {
+      try {
+        await page.goto(navUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      } catch { /* nav hiccup — the read below just misses and we retry */ }
+    }
+    await new Promise((r) => setTimeout(r, attempt === 1 ? 2500 : 1500)); // let it hydrate
 
-  // 2) Fallback: the slug-matched degree badge (rejects sidebar/recommendation
-  //    matches), only consulted when Voyager gave us nothing.
-  try {
-    const badge = await getDegreeBadge(page);
-    if (badge === '1st') return '1st';
-    if (badge === '2nd') return '2nd';
-    if (badge === '3rd' || badge === '3rd+') return '3rd';
-  } catch { /* fall through */ }
+    // 1) Authoritative: Voyager networkinfo distance for the profile in the URL.
+    try {
+      const deg = await getVoyagerDegree(page);
+      if (deg === 1) return '1st';
+      if (deg === 2) return '2nd';
+      if (deg === 3) return '3rd';
+    } catch { /* fall through to DOM badge */ }
+
+    // 2) Fallback: the slug-matched degree badge (rejects sidebar/recommendation
+    //    matches), only consulted when Voyager gave us nothing.
+    try {
+      const badge = await getDegreeBadge(page);
+      if (badge === '1st') return '1st';
+      if (badge === '2nd') return '2nd';
+      if (badge === '3rd' || badge === '3rd+') return '3rd';
+    } catch { /* fall through */ }
+    // Neither signal resolved this pass — retry (re-read, periodically re-nav).
+  }
 
   return 'unknown';
 }
 
 /**
  * Check (and optionally connect to) the primary from the current account's page.
- * @returns {{degree:string, connected:boolean, connectAttempted:boolean, connectResult?:string, error?:string}}
+ *
+ * v2.102: `connected` is now TRI-STATE — true (1st), false (CONFIRMED 2nd/3rd),
+ * or null (couldn't read the degree). A read failure must NOT masquerade as
+ * "not connected": on null we send NO connect request, the account is badged
+ * 'unverified' (not "No primary"), and its intros still proceed (the intro
+ * compose is self-validating). Only a CONFIRMED non-connection (false) sends a
+ * connect + holds intros. This fixes the 2026-06-15 "everything NO PRIMARY /
+ * no introductions" incident, where a rate-limited Voyager read on encoded
+ * primary URLs coerced every account to false.
+ *
+ * @returns {{degree:string, connected:(boolean|null), connectAttempted:boolean, connectResult?:string, error?:string}}
  */
 export async function checkAndConnectPrimary(page, primaryUrl, { log = () => {}, pName = '', attemptConnect = true } = {}) {
-  const out = { degree: 'unknown', connected: false, connectAttempted: false };
+  const out = { degree: 'unknown', connected: null, connectAttempted: false };
   if (!primaryUrl) return out;
   try {
     const degree = await readPrimaryDegree(page, primaryUrl);
     out.degree = degree;
-    out.connected = (degree === '1st' || degree === 'self');
-    if (out.connected) {
+    out.connected = degreeToConnected(degree); // true | false | null
+
+    if (out.connected === true) {
       log(`  🔗 [${pName}] Connected to primary (${degree}).`);
       return out;
     }
+    if (out.connected === null) {
+      // Couldn't read the degree (Voyager + badge both empty: rate-limit, an
+      // encoded primary URL that didn't resolve, or a slow page). Do NOT treat
+      // this as "not connected" — no connect, no "No primary" badge. Intros
+      // still proceed; a genuinely-unconnected account fails the intro compose
+      // and is picked up by reconnect-&-retry.
+      log(`  ❓ [${pName}] Could not verify connection to primary (degree unreadable) — leaving unverified, not sending a connect.`);
+      return out;
+    }
+    // out.connected === false: a CONFIRMED non-connection (2nd/3rd).
     if (!attemptConnect) {
       log(`  🔗 [${pName}] Still not connected to primary (degree=${degree}).`);
       return out;
@@ -86,6 +171,7 @@ export async function checkAndConnectPrimary(page, primaryUrl, { log = () => {},
     }
   } catch (e) {
     out.error = e.message;
+    out.connected = null; // a thrown read = "couldn't determine", not "not connected"
     log(`  ⚠ [${pName}] Primary connection check failed: ${e.message}`);
   }
   return out;

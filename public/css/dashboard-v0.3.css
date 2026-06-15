@@ -762,6 +762,9 @@
   }
   body[data-dashboard='v3'] .prof-primary-tag.is-yes { color: var(--ink); border-color: var(--green, #00a854); background: rgba(0,168,84,0.08); }
   body[data-dashboard='v3'] .prof-primary-tag.is-no { color: var(--ink); border-color: #d97706; background: rgba(217,119,6,0.08); }
+  /* v2.102: degree unreadable — neutral, NOT the alarming amber "No primary".
+     Means "couldn't check; intros still proceed; re-checks next turn." */
+  body[data-dashboard='v3'] .prof-primary-tag.is-unknown { color: var(--gray, #6b7280); border-color: var(--hairline); background: transparent; opacity: 0.75; }
   /* v2.78: per-account skip toggle (bench from the rotation this run). */
   body[data-dashboard='v3'] .vj-prof-row.is-skipped .vj-prof-name { color: var(--gray); text-decoration: line-through; }
   body[data-dashboard='v3'] .prof-open-btn {

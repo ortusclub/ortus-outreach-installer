@@ -12267,7 +12267,9 @@ function renderActiveProfiles(status) {
       ? '<span class="prof-primary-tag is-yes" title="Connected to the primary person (1st-degree)">Primary ✓</span>'
       : pc === 'pending'
         ? '<span class="prof-primary-tag is-no" title="Not connected to the primary — a connect request was sent; this account’s intros are held until it’s accepted">No primary</span>'
-        : '<span></span>';
+        : pc === 'unverified'
+          ? '<span class="prof-primary-tag is-unknown" title="Couldn’t read the connection degree to the primary (rate-limit or slow page). No connect was sent and introductions still proceed — this re-checks next turn.">Primary?</span>'
+          : '<span></span>';
     return `
       <div class="vj-prof-row ${chip.cls}${isSkipped ? ' is-skipped' : ''}">
         <span class="vj-prof-name" title="${escHtml(name)}">${escHtml(name)}</span>
