@@ -2734,6 +2734,10 @@ const MODE_LIST = [
   {
     value: 'connect_only',
     name: 'Connect Only',
+    // v2.100.2: parked under maintenance per operator request.
+    disabled: true,
+    maintenance: true,
+    disabledReason: 'Connect Only is under maintenance — temporarily unavailable.',
     bullets: [
       'Send connection requests to new profiles',
       'Optional personalised note',
@@ -2761,6 +2765,10 @@ const MODE_LIST = [
   {
     value: 'connect_and_message',
     name: 'Connect + DM',
+    // v2.100.2: parked under maintenance per operator request.
+    disabled: true,
+    maintenance: true,
+    disabledReason: 'Connect + DM is under maintenance — temporarily unavailable.',
     bullets: [
       'Send connection requests to new profiles',
       'Once accepted, auto-DM the lead directly (no intro person)',
@@ -2860,6 +2868,19 @@ function renderModeSelector() {
   const current = select.value;
   let activeIdx = MODE_LIST.findIndex((m) => m.value === current);
   if (activeIdx < 0) activeIdx = 0;
+  // v2.100.2: never leave the active selection on a disabled/coming-soon mode
+  // (connect_only is the select's default and is now under maintenance). Fall
+  // through to the first available mode and sync the hidden select.
+  if (MODE_LIST[activeIdx] && (MODE_LIST[activeIdx].disabled || MODE_LIST[activeIdx].comingSoon)) {
+    const firstOk = MODE_LIST.findIndex((m) => !m.disabled && !m.comingSoon);
+    if (firstOk >= 0) {
+      activeIdx = firstOk;
+      if (select.value !== MODE_LIST[firstOk].value) {
+        select.value = MODE_LIST[firstOk].value;
+        if (typeof onModeChange === 'function') onModeChange();
+      }
+    }
+  }
 
   // Per-mode label overrides via the generic "Edit labels" flow.
   const saved = loadEditsFromStorage();
@@ -2872,7 +2893,7 @@ function renderModeSelector() {
     const isActive = i === activeIdx && !m.comingSoon && !m.disabled;
     const stateClass = (m.comingSoon || m.disabled) ? 'is-coming-soon' : (isActive ? 'active' : '');
     const badge = m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>'
-      : (m.disabled ? '<span class="mode-card-badge">Unavailable</span>' : '');
+      : (m.disabled ? `<span class="mode-card-badge">${m.maintenance ? 'Under maintenance' : 'Unavailable'}</span>` : '');
     return `
       <button type="button"
         class="mode-card ${stateClass}"
