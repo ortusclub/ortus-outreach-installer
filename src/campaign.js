@@ -564,6 +564,12 @@ export const campaign = {
   logs: [],
   errors: [],
   parkedProfiles: [],
+  // Local-browser re-login recovery (2026-06-15). _loginDone flips when the
+  // operator clicks "Done" in the popup; awaitLocalLogin reads + resets it.
+  _loginDone: false,
+  // When set, the UI shows the "log into LinkedIn" popup. Shape:
+  // { profileId, pName, since }. Cleared the moment the wait ends.
+  awaitingLogin: null,
   softWarnings: [],
   // Plan B: per-profile end reasons — populated when an account is removed
   // from the rotation (weekly cap, parked, ejected, completed quota, etc.).
@@ -892,6 +898,28 @@ async function browseFeedOrganically(page, pName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Local-browser re-login recovery (2026-06-15)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 5-min "operator walked away" ceiling for the local-browser login wait. */
+export const LOCAL_LOGIN_MAX_WAIT_MS = 5 * 60 * 1000;
+
+/**
+ * Pure decision helper for awaitLocalLogin's poll loop. Resume the instant the
+ * operator is logged in (Done click or auto-detect), keep waiting until then,
+ * and give up only once the walked-away ceiling is hit.
+ * @returns {'resume'|'wait'|'timeout'}
+ */
+export function decideLoginWaitAction({ elapsedMs, loggedIn, maxMs = LOCAL_LOGIN_MAX_WAIT_MS }) {
+  if (loggedIn) return 'resume';
+  if (elapsedMs >= maxMs) return 'timeout';
+  return 'wait';
+}
+
+/** Operator clicked "Done" in the re-login popup (POST /api/campaign/login-done). */
+export function confirmLogin() { campaign._loginDone = true; return { ok: true }; }
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Profile health check (REL-04) — verifies LinkedIn session before leads
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -967,6 +995,85 @@ export async function parkProfile(page, parkUrl = 'about:blank') {
   }
 }
 
+/**
+ * Local-browser re-login recovery loop (2026-06-15). Brings the Chromium window
+ * on-screen, raises the in-app "log into LinkedIn" popup (via campaign.awaitingLogin),
+ * and resumes the moment the operator is logged in — either because they clicked
+ * "Done" (campaign._loginDone) or because we auto-detect a logged-in URL/health.
+ * Gives up after LOCAL_LOGIN_MAX_WAIT_MS (operator walked away) so the caller can
+ * park the account exactly as before. Local-browser ONLY — GoLogin never calls this.
+ * @returns {Promise<{ ok: boolean, page: object }>}
+ */
+async function awaitLocalLogin(page, profileId, pName) {
+  // Bring the window forward so the operator can see + use it. Best-effort.
+  try {
+    const client = await page.target().createCDPSession();
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+    await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
+  } catch { /* */ }
+
+  campaign.awaitingLogin = { profileId, pName, since: Date.now() };
+  campaign._loginDone = false;
+  log(`⏳ ${pName}: waiting up to 5 min for you to log into LinkedIn (or click Done)...`);
+
+  const start = Date.now();
+  let action = 'wait';
+  let ticks = 0;
+  while (action === 'wait') {
+    await new Promise(r => setTimeout(r, 3000));
+    if (campaign._abort) { action = 'timeout'; break; }
+
+    // Re-acquire the active page (login can swap the tab/process).
+    try {
+      const pages = await page.browser().pages();
+      if (pages.length > 0) page = pages[pages.length - 1];
+    } catch { /* keep current */ }
+
+    let loggedIn = false;
+    try {
+      const u = page.url();
+      if (u.includes('linkedin.com') && !u.includes('/login') && !u.includes('/authwall') && !u.includes('/checkpoint')) {
+        loggedIn = true;
+      }
+    } catch { /* */ }
+
+    // If they clicked Done but the URL still looks logged-out, re-verify health
+    // before trusting it — guards against a premature click.
+    if (!loggedIn && campaign._loginDone) {
+      try {
+        const h = await checkProfileHealth(page, pName);
+        loggedIn = !!h.healthy;
+      } catch { /* */ }
+      if (!loggedIn) {
+        log(`  ⏳ ${pName}: not logged in yet — finish login in the browser, then click Done.`);
+        campaign._loginDone = false;
+      }
+    }
+
+    action = decideLoginWaitAction({ elapsedMs: Date.now() - start, loggedIn });
+    if (action === 'wait' && (++ticks % 10 === 0)) {
+      log(`  Still waiting for ${pName} login... (${Math.round((Date.now() - start) / 1000)}s)`);
+    }
+  }
+
+  campaign.awaitingLogin = null;
+  campaign._loginDone = false;
+
+  if (action === 'resume') {
+    // Tuck the window back off-screen and carry on.
+    try {
+      const client = await page.target().createCDPSession();
+      const { windowId } = await client.send('Browser.getWindowForTarget');
+      await client.send('Browser.setWindowBounds', { windowId, bounds: { left: -2400, top: -2400 } });
+    } catch { /* */ }
+    log(`✓ ${pName}: re-logged in — resuming.`);
+    return { ok: true, page };
+  }
+
+  log(`✗ ${pName}: login not completed within 5 min — parking account.`);
+  return { ok: false, page };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 11.2: ensureProfileLoggedIn — cache clear + home nav + health check
 // + interactive login wait. Extracted from the old STEP 1 warmup block so
@@ -1015,12 +1122,25 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
   // the profile cleanly. Skip the recovery-prompt UX (which is for when the
   // user just needs to log in once more — sessionExpired means cookies are
   // dead and we should drop this profile from rotation entirely).
-  if (health.sessionExpired) {
+  if (health.sessionExpired && profileId !== 'local-browser') {
+    // GoLogin cloud profiles can't be logged into interactively mid-run — drop.
     log(`✗ ${pName}: session expired — parking profile for rest of run.`);
     return { page: null, ok: false, sessionExpired: true };
   }
   if (!health.healthy) {
     if (profileId === 'local-browser') {
+      // Local-browser session expiry (2026-06-15): the operator is at the
+      // machine, so recover in place instead of parking. awaitLocalLogin pops
+      // the window + the in-app "Done" popup and resumes on login; a 5-min
+      // ceiling falls back to the same park-and-flag the caller does.
+      if (health.sessionExpired) {
+        log(`⚠ ${pName}: session expired — opening browser for you to log in.`);
+        const r = await awaitLocalLogin(page, profileId, pName);
+        if (!r.ok) return { page: null, ok: false, sessionExpired: true };
+        page = r.page || page;
+        log(`${pName} health check passed.`);
+        return { page, ok: true };
+      }
       log(`⚠ Local Browser not logged in. Bringing browser on-screen — please log into LinkedIn.`);
       log(`⏳ Waiting up to 120s for you to log in...`);
       await page.evaluate(() => { document.body.style.zoom = '90%'; }).catch(() => {});
@@ -3206,23 +3326,38 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // first occurrence so the loop rotates to a healthier account.
             const isSessionExpired = /session\s*expired/i.test(errorMsg);
             if (isSessionExpired && !weeklyLimited.has(profileId)) {
-              log(`  ⚠ ${pName}: session expired — parking account for rest of run (re-login required).`);
-              weeklyLimited.add(profileId);
-              recordProfileEnd(profileId, pName, 'Session expired — log in again');
-              campaign.parkedProfiles.push({
-                profileId,
-                pName,
-                parkedAt: Date.now(),
-                reason: 'session_expired',
-              });
-              // v2.84: flag every LEAD row handled by this account (Sender column)
-              // as Needs Login = Y in the campaign sheet, so the operator can filter
-              // to the stalled leads.
-              await setAccountNeedsLogin(pName, true);
-              // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
-              // (matched by Email == profile name) so the LinkedIn team re-logs it.
-              // Never auto-cleared. Best-effort — cannot affect the loop.
-              await markSoONeedsLogin(pName);
+              // Local-browser session expiry (2026-06-15): recover in place —
+              // pop the window + the in-app "Done" popup and wait for re-login.
+              // Only on a 5-min no-response timeout do we fall back to the same
+              // park-and-flag below. GoLogin profiles skip recovery entirely.
+              let recovered = false;
+              if (profileId === 'local-browser') {
+                log(`  ⚠ ${pName}: session expired mid-run — opening browser for you to log in.`);
+                const recovery = await awaitLocalLogin(page, profileId, pName);
+                recovered = recovery.ok;
+                if (recovered) { page = recovery.page || page; session.page = page; }
+              }
+              if (recovered) {
+                log(`  ✓ ${pName}: re-logged in — staying in rotation.`);
+              } else {
+                log(`  ⚠ ${pName}: session expired — parking account for rest of run (re-login required).`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, 'Session expired — log in again');
+                campaign.parkedProfiles.push({
+                  profileId,
+                  pName,
+                  parkedAt: Date.now(),
+                  reason: 'session_expired',
+                });
+                // v2.84: flag every LEAD row handled by this account (Sender column)
+                // as Needs Login = Y in the campaign sheet, so the operator can filter
+                // to the stalled leads.
+                await setAccountNeedsLogin(pName, true);
+                // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
+                // (matched by Email == profile name) so the LinkedIn team re-logs it.
+                // Never auto-cleared. Best-effort — cannot affect the loop.
+                await markSoONeedsLogin(pName);
+              }
             }
             // 429-specific tracker. Three strikes = treat as weekly cap and
             // park the profile, well before the generic SKIP_PARK_THRESHOLD
@@ -4193,6 +4328,8 @@ export function getCampaignStatus() {
     logs: campaign.logs.slice(-100),
     errors: campaign.errors.slice(-20),
     parked: campaign.parkedProfiles.slice(),
+    // Local-browser re-login recovery: drives the "log into LinkedIn" popup.
+    awaitingLogin: campaign.awaitingLogin || null,
     softWarnings: campaign.softWarnings.slice(),
     profileEndReasons: campaign.profileEndReasons.slice(),
     disk: { ..._diskStatusCache },

@@ -5406,6 +5406,7 @@ async function pollStatus() {
     if (typeof window.renderActiveCard === 'function') window.renderActiveCard(s);
     if (typeof window.renderMonitoringCard === 'function') window.renderMonitoringCard(s);
     if (typeof maybeShowCampaignDoneModal === 'function') maybeShowCampaignDoneModal(s);
+    if (typeof maybeShowLoginModal === 'function') maybeShowLoginModal(s);
 
     // Detect campaign completion and refresh history
     if (wasRunning && !s.running) {
@@ -8555,6 +8556,36 @@ function maybeShowCampaignDoneModal(status) {
   } catch { /* best-effort */ }
 }
 window.maybeShowCampaignDoneModal = maybeShowCampaignDoneModal;
+
+// 2026-06-15 — Local-browser re-login recovery. Driven entirely by the 2s status
+// poll: show the popup while status.awaitingLogin is set, auto-hide the moment it
+// clears (run resumed on login, or parked on the 5-min ceiling).
+function maybeShowLoginModal(status) {
+  const modal = document.getElementById('login-recover-modal');
+  if (!modal) return;
+  const a = status && status.awaitingLogin;
+  if (a) {
+    const who = (a.pName || 'Your account');
+    const body = document.getElementById('login-recover-body');
+    if (body) {
+      body.innerHTML = `<b>${who}</b>'s LinkedIn session expired. The browser window has ` +
+        `opened on-screen — log into LinkedIn there, then click <b>Done</b>. ` +
+        `(It also resumes automatically once you're logged back in.)`;
+    }
+    modal.classList.remove('hidden');
+  } else {
+    modal.classList.add('hidden');
+  }
+}
+window.maybeShowLoginModal = maybeShowLoginModal;
+
+async function confirmLoginDone() {
+  try { await fetch('/api/campaign/login-done', { method: 'POST' }); } catch { /* */ }
+  // Optimistic hide; if we weren't actually logged in, the next poll re-shows it.
+  const modal = document.getElementById('login-recover-modal');
+  if (modal) modal.classList.add('hidden');
+}
+window.confirmLoginDone = confirmLoginDone;
 
 function showCampaignDoneModal(n) {
   const modal = document.getElementById('campaign-done-modal');
