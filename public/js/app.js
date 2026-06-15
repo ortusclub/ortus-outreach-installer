@@ -682,6 +682,16 @@ function dedupeProfilesByEmail(profiles) {
   return out;
 }
 
+// v2.102.0: SoO column B "Status" — block accounts the SoO marks unusable.
+// Restricted dropdown values: "Identity Restricted", "Identity Restricted II",
+// "Unjust Identity Restricted", "Hard Identity Restricted" (all contain
+// "restricted"); "Inaccessible" is also unusable. Active/Construction/Rented/?
+// stay selectable. getSoO returns every column raw, so soo['Status'] is present.
+function isRestrictedStatus(status) {
+  const s = (status || '').toString().toLowerCase().trim();
+  return /restricted/.test(s) || s === 'inaccessible';
+}
+
 function findSoOForProfile(profileName) {
   if (!profileName || Object.keys(sooData).length === 0) return null;
   const key = (profileName || '').toLowerCase().trim();
@@ -955,23 +965,36 @@ function renderProfiles(profiles) {
     // selected. The change handler below only fires for user clicks, so any
     // programmatic selection (preset load, schedule restore, etc.) was leaving
     // the name map empty — the right pane then fell back to raw GoLogin IDs.
+    const soo = findSoOForProfile(p.name);
+    // v2.102.0: SoO column B "Status" = restricted/inaccessible → block selection.
+    // Case-tolerant on the header key (getSoO preserves raw case → 'Status').
+    const sooStatus = soo ? (soo['Status'] || soo['status'] || '').toString().trim() : '';
+    const restricted = isRestrictedStatus(sooStatus);
+    // Defensive: a restored preset/schedule must not keep a now-restricted
+    // account selected — drop it so a blocked account can't slip through.
+    if (restricted && selectedProfileIds.includes(p.id)) {
+      selectedProfileIds = selectedProfileIds.filter(id => id !== p.id);
+      delete selectedProfileNames[p.id];
+    }
     if (selectedProfileIds.includes(p.id)) {
       selectedProfileNames[p.id] = p.name;
     }
     const item = document.createElement('label');
-    item.className = 'profile-item' + (selectedProfileIds.includes(p.id) ? ' selected' : '');
+    item.className = 'profile-item'
+      + (selectedProfileIds.includes(p.id) ? ' selected' : '')
+      + (restricted ? ' is-restricted' : '');
     item.dataset.profileId = p.id;
-    const soo = findSoOForProfile(p.name);
     item.innerHTML = `
-      <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} />
+      <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${restricted ? 'disabled' : ''} />
       <div style="flex:1">
-        <div class="name">${escHtml(p.name)}${p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : ''}</div>
+        <div class="name">${escHtml(p.name)}${p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : ''}${restricted ? ` <span class="restricted-flag" title="${escHtml('SoO status: ' + sooStatus + ' — this account is restricted and can’t be selected.')}">⛔ ${escHtml(sooStatus || 'Restricted')}</span>` : ''}</div>
         ${!soo ? `<div class="id">${p.id.substring(0, 12)}…</div>` : ''}
         ${renderSoOBadges(soo)}
       </div>
     `;
     const cb = item.querySelector('input');
     cb.addEventListener('change', () => {
+      if (restricted) { cb.checked = false; return; } // blocked — never selectable
       if (cb.checked) {
         if (!selectedProfileIds.includes(p.id)) {
           selectedProfileIds.push(p.id);
