@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isDegradationSignal, degradationBackoffMs } from '../src/campaign.js';
+import { isDegradationSignal, degradationBackoffMs, salesNavToInUrl } from '../src/campaign.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // v2.96.0 (Phase 2) — degradation backoff. The connect loop ran at a fixed
@@ -21,6 +21,14 @@ test('flags the real degradation signals seen in the incident logs', () => {
   assert.equal(isDegradationSignal('rate_limited'), true);
   assert.equal(isDegradationSignal('Identity unverified after 5 attempts'), true);
   assert.equal(isDegradationSignal('identity-unverified: no-member-number-captured'), true);
+});
+
+test('flags the additional degradation signals found in adversarial review (v2.96.2)', () => {
+  assert.equal(isDegradationSignal('Connect failed: VOYAGER_REJECTED: HTTP 429 — rate limited'), true);
+  assert.equal(isDegradationSignal('Page error: linkedin_error'), true);
+  assert.equal(isDegradationSignal('LinkedIn showed: something went wrong'), true);
+  assert.equal(isDegradationSignal('LINKEDIN_ERROR_TOAST: try again'), true);
+  assert.equal(isDegradationSignal('SEND_NOT_CONFIRMED: pending not detected'), true);
 });
 
 test('does NOT flag benign skips that should not escalate backoff', () => {
@@ -56,4 +64,35 @@ test('the absolute ceiling (maxMs) is never exceeded', () => {
 test('negative / garbage streak is treated as no backoff', () => {
   assert.equal(degradationBackoffMs(30000, -3), 30000);
   assert.equal(degradationBackoffMs(30000, NaN), 30000);
+});
+
+// ── salesNavToInUrl: gate /sales/ leads too (v2.96.2 — adversarial review hole #1) ──
+
+test('rewrites /sales/lead/<urn> to /in/<urn> so the gate can verify it', () => {
+  assert.equal(
+    salesNavToInUrl('https://www.linkedin.com/sales/lead/ACwAAAvephwBEn2Cp1fWf9V7IoCZUXIlIsFLlsc'),
+    'https://www.linkedin.com/in/ACwAAAvephwBEn2Cp1fWf9V7IoCZUXIlIsFLlsc',
+  );
+});
+
+test('rewrites /sales/people/<urn>,NAME_SEARCH,xxx (strips the trailing params)', () => {
+  assert.equal(
+    salesNavToInUrl('https://www.linkedin.com/sales/people/ACwAAANNyY8BCUUmr5Bxb6j6-cClXL6N-zLTrms,NAME_SEARCH,H4h6'),
+    'https://www.linkedin.com/in/ACwAAANNyY8BCUUmr5Bxb6j6-cClXL6N-zLTrms',
+  );
+});
+
+test('leaves a plain /in/ URL unchanged', () => {
+  assert.equal(salesNavToInUrl('https://www.linkedin.com/in/john-roman/'), 'https://www.linkedin.com/in/john-roman/');
+});
+
+test('leaves a legacy /sales/profile/<numeric>,…,NAME_SEARCH unchanged (no AC-urn → gate will skip it)', () => {
+  const legacy = 'https://www.linkedin.com/sales/profile/2803628,rZnG,NAME_SEARCH';
+  assert.equal(salesNavToInUrl(legacy), legacy);
+});
+
+test('handles empty/garbage input without throwing', () => {
+  assert.equal(salesNavToInUrl(''), '');
+  assert.equal(salesNavToInUrl(null), '');
+  assert.equal(salesNavToInUrl(undefined), '');
 });

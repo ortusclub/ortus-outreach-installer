@@ -27,7 +27,7 @@ import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows } from './sheets.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
-import { opsLogEvent, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
+import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
 import { emptyTally, applyOutcome } from './campaign-tally.js';
 import { summariseCampaign } from './campaign-summary.js';
@@ -478,7 +478,7 @@ export const MAX_IDENTITY_ATTEMPTS = 5;
 // A cluster of these escalates the inter-lead backoff and, if it never clears,
 // parks the account. Pure + tested.
 export function isDegradationSignal(errorMsg) {
-  return /Execution context was destroyed|lead_timeout_watchdog|Navigation timeout|net::ERR_|Profile not found|page_not_found|rate_limited|too many requests|identity[-_ ]unverified|identity unverified/i
+  return /Execution context was destroyed|lead_timeout_watchdog|Navigation timeout|net::ERR_|Profile not found|page_not_found|rate_limited|too many requests|HTTP 429|\b429\b|linkedin_error|something went wrong|LINKEDIN_ERROR_TOAST|SEND_NOT_CONFIRMED|identity[-_ ]unverified|identity unverified/i
     .test(String(errorMsg || ''));
 }
 
@@ -493,14 +493,27 @@ export function degradationBackoffMs(baseMs, streak, { maxMult = 32, maxMs = 20 
   return Math.min(maxMs, Math.floor(baseMs * mult));
 }
 
+// v2.96.2 — normalize a Sales-Navigator lead URL to its /in/<urn> form so the
+// identity gate can verify it the same way performOutreach connects (which does
+// the same reverse transform, outreach.js). Legacy /sales/profile/<numeric>,…,
+// NAME_SEARCH has no extractable AC-URN → returned unchanged → the gate fails to
+// load a profile and skips (safe). Pure + tested.
+export function salesNavToInUrl(url) {
+  const m = String(url || '').match(/\/sales\/(?:lead|people)\/(AC[ow]AA[A-Za-z0-9_-]+)/i);
+  return m ? `https://www.linkedin.com/in/${m[1]}` : (url || '');
+}
+
 export async function gateConnectIdentity(page, { url, row, sourceName = '', log = () => {} }) {
   const sourceMemberId = readSourceMemberId(row);
+  // Verify the same profile performOutreach will connect on: a /sales/ lead URL
+  // is rewritten to /in/<urn> before the connect, so gate the /in/ form.
+  const navUrl = salesNavToInUrl(url);
   let last = { ok: false, reason: 'not-attempted', loaded: { name: '', memberNumber: '' } };
   for (let attempt = 1; attempt <= MAX_IDENTITY_ATTEMPTS; attempt++) {
     let meta = {};
     let landedUrl = '';
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.goto(navUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
       // Let any client-side redirect settle so we don't read a mid-navigation
       // page (the "Execution context was destroyed" race seen in the logs).
       await new Promise((r) => setTimeout(r, 2500));
@@ -518,7 +531,7 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
       capturedMemberNumber: meta.memberNumber,
       capturedUrn: meta.memberId,
       capturedName: meta.name,
-      leadUrl: url,
+      leadUrl: navUrl,
       landedUrl,
       sourceMemberId,
       sourceName,
@@ -3008,20 +3021,27 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // rate-limiting sent the correctly-named note to the wrong person.
           // Skip-on-doubt: 5 attempts, then skip+flag rather than risk a send.
           let _identityVerified = false;
-          if ((hint === 'force_connect' || hint === 'force_connect_op_fallback') && /\/in\//i.test(url)) {
+          // Gate every URL that will become a connect: plain /in/ AND Sales-Nav
+          // /sales/lead|people/ URLs (performOutreach rewrites those to /in/ and
+          // connects, so they carry the same mis-load risk — v2.96.2).
+          const _isConnectHint = (hint === 'force_connect' || hint === 'force_connect_op_fallback');
+          const _gateableUrl = /\/in\//i.test(url) || /\/sales\/(?:lead|people)\//i.test(url);
+          if (_isConnectHint && _gateableUrl) {
             const _srcName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
             const _gate = await gateConnectIdentity(page, { url, row, sourceName: _srcName, log });
             if (!_gate.ok) {
               const _intended = `${_srcName || '?'} / ${readSourceMemberId(row) || 'no-member#'}`;
               const _got = `${_gate.loaded.name || '?'} / ${_gate.loaded.memberNumber || 'no-member#'}`;
               log(`  ✗ [${pName}] IDENTITY UNVERIFIED after ${MAX_IDENTITY_ATTEMPTS} tries — NOT sending. Intended: ${_intended} · Loaded: ${_got} · ${_gate.reason}`);
+              // Fold everything into `reason`: the Ops Log bridge writes
+              // `reason || details` to one column, so keep it all here and make
+              // it greppable for "identity_unverified".
               _ops('WARN', 'identity_unverified', {
                 account: pName,
                 leadUrl: url,
                 phase: 'Connect',
                 outcome: 'skipped',
-                reason: _gate.reason,
-                details: `intended=[${_intended}] loaded=[${_got}]`,
+                reason: `identity_unverified (${_gate.reason}) — intended=[${_intended}] loaded=[${_got}]`,
               });
               // Audit breadcrumb only (NOT a terminal Stage): the row stays
               // eligible so a future, non-degraded run can retry a genuine lead
@@ -3044,6 +3064,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 weeklyLimited.add(profileId);
                 recordProfileEnd(profileId, pName, `Parked after ${_idSkips} consecutive identity-unverified leads`);
                 break;
+              }
+              // v2.96.2: this `continue` jumps past the end-of-iteration delay
+              // block, so honor the exponential backoff HERE — otherwise a run
+              // where the gate keeps failing (the exact incident signature)
+              // would spin through leads at gate-internal speed with no inter-lead
+              // pacing. Abort-aware sleep.
+              const _gateBase = Math.floor((delayMin + delayMax) / 2) * 1000;
+              const _gateWaitMs = degradationBackoffMs(_gateBase, degradationStreak.get(profileId) || 0, { maxMult: DEGRADE_MAX_MULT, maxMs: DEGRADE_MAX_WAIT_MS });
+              log(`  ⏳ ${(_gateWaitMs / 1000).toFixed(0)}s (degradation backoff after unverified lead)`);
+              const _gateSleepEnd = Date.now() + _gateWaitMs;
+              while (Date.now() < _gateSleepEnd && !campaign._abort) {
+                await new Promise((r) => setTimeout(r, 2000));
               }
               continue;
             }
@@ -3350,7 +3382,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
-            degradationStreak.set(profileId, 0); // v2.96.0 (Phase 2): a clean send clears the backoff
+            // v2.96.2 (Phase 2): clear the backoff only on outcomes that PROVE
+            // a healthy page interaction — not cheap early-returns like
+            // 'already_processed' (which can short-circuit before any real page
+            // work and would mask an ongoing degradation streak).
+            if (['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_connected', 'status_accepted'].includes(result.action)) {
+              degradationStreak.set(profileId, 0);
+            }
             // v2.84: a successful action proves this account is logged in again —
             // clear any Needs Login = Y flag it carried (no-op unless flagged).
             await setAccountNeedsLogin(pName, false);
@@ -4028,6 +4066,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     _ops('INFO', `Campaign ended (${endReason})`, {
       details: `${campaign.totalProcessed} processed · ${campaign.errors.length} errors · ${_durationSec}s`,
     });
+    // v2.96.2 — drain the Ops Log buffer at end-of-run so a short campaign's
+    // events (incl. reckless_daily_limit fired at startup) aren't left waiting
+    // on the 30s timer if the app is quit immediately after.
+    try { await flushOpsLog(); } catch { /* fire-and-forget */ }
     try {
       // Mode-aware template preview. Only dump fields the running mode
       // actually uses — wizard form state may carry leftover values

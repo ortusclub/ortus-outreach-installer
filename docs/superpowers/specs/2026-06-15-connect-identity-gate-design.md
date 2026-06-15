@@ -108,7 +108,22 @@ Failure→pacing feedback, so the loop stops hammering a degrading session:
 
 Both pacing helpers are pure and unit-tested (`tests/degradation-backoff.test.js`).
 
+## v2.96.2 — adversarial review findings & fixes
+
+Four read-only review agents (wrong-send, backoff/park, logging, edge-cases) attacked the v2.96.0/.1 work. Confirmed sound: the gate's happy `/in/` path, no stale `skipNavigation` leak, no page re-acquisition between gate and send, per-account streak maps are race-free, the gate-path park is clean, and degradation errors are *returned* (outreach.js:887) not thrown, so they reach the `isDegradationSignal` increment. **Holes found and FIXED in v2.96.2:**
+
+- **`/sales/` URLs bypassed the gate (HIGH).** The gate only fired on `/in/`, but performOutreach rewrites `/sales/lead|people/<urn>` → `/in/` and connects — so Sales-Nav rows connected ungated with the same mis-load risk. Fix: gate now fires on `/sales/lead|people/` too, and `salesNavToInUrl()` normalizes them to `/in/<urn>` for verification (pure + tested). Legacy `/sales/profile/<numeric>,…,NAME_SEARCH` has no AC-urn → gate can't load a profile → skipped (safe).
+- **Backoff bypassed on the identity-gate path (MEDIUM).** The gate skip `continue`d past the end-of-iteration delay block, so consecutive gated leads (the exact incident signature) spun at gate-internal speed with no inter-lead pacing — only the park-at-8 braked it. Fix: the gate-skip path now applies the same exponential backoff sleep before `continue`.
+- **`isDegradationSignal` missed real signals (MEDIUM).** Added `HTTP 429` / `429` / `linkedin_error` / `something went wrong` / `LINKEDIN_ERROR_TOAST` / `SEND_NOT_CONFIRMED` so they escalate the backoff (429 is also still hard-parked at 2 by its own counter).
+- **Streak reset too eagerly (LOW-MED).** It reset on any SUCCESS_ACTION incl. cheap `already_processed` early-returns, which could mask an ongoing degradation streak. Fix: reset only on outcomes that prove a healthy page interaction (connection_sent / message_sent / inmail_sent / op_message_sent / already_connected / status_accepted).
+- **Ops Log dropped the intended-vs-loaded detail + delayed short-run events.** The bridge writes `reason || details` (one column), so the `details` field was dropped when `reason` was set. Fix: folded intended/loaded into `reason` (and made it greppable for `identity_unverified`). Added a `flushOpsLog()` drain at campaign end so short-run events (e.g. `reckless_daily_limit`) aren't left on the 30s timer.
+
 ## Still open / not in scope here
+
+- **OP-direct mode (`force_connect_op_fallback`) re-navigation (MEDIUM, residual).** When "Message Open Profiles Directly" is on, the OP-first path resolves a Sales-Nav URL *from the verified page* and `page.goto`s to it inside performOutreach — a second navigation `skipNavigation` doesn't cover, so the Sales-Nav connect fallback isn't re-verified. Mitigating: the Sales-Nav URL is derived from the just-verified profile (same person), and it's an opt-in mode not involved in the incident. **Recommendation:** don't pair "Message Open Profiles Directly" with encoded/Sales-Nav sheets until a follow-up adds a post-navigation re-check (needs an authorized actions.js/outreach.js change).
+- **CC+IC auto-intro path (auto-intro.js).** The post-acceptance intro DM runs outside performOutreach and isn't gated; recipient is pinned by publicId in the compose URL (lower blast radius than a profile Connect click), but identity isn't re-verified against the sheet at intro time. Separate work item.
+- **Operator action — verify the Ops Log Apps Script is current.** The two new events land only if the deployed script behind `OPS_LOG_WEBAPP_URL` is the v2.93+ `ops-log-bridge.js` (single Events tab). If a pre-v2.93 build is deployed, redeploy it (Extensions → Apps Script → Deploy → New version).
+- **Reckless daily limit is advisory (by design).** The >80 guard warns + logs but does not clamp — no pacing can make e.g. 200/day on one account safe (LinkedIn's ceiling is ~100/week); the operator must lower it. Backoff + park are the reactive safety net if they don't.
 
 - A hard cap (vs warning) on reckless daily limits — left as a warning so the
   operator keeps control.
