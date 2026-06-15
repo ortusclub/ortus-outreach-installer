@@ -658,6 +658,30 @@ async function loadSoOStatus() {
 // GoLogin profile name IS the SoO email (team convention). Exact,
 // case-insensitive match only — no fuzzy substring matching, which used to
 // cause one operator's credit status to appear on a different profile.
+// v2.102.0: GoLogin can hold more than one profile with the same login email (a
+// profile got duplicated). The picker keys accounts by name (= email), so the
+// duplicate shows as two identical cards while SoO has a single row (Sam:
+// "two of this guy, only one in SoO"). Keep the first profile per email, hide
+// the rest from the picker, and tag the survivor with how many we hid so the
+// card can flag it — auto-hidden, but not silently (clean up in GoLogin).
+function dedupeProfilesByEmail(profiles) {
+  const seen = new Map();   // emailKey -> kept profile
+  const hidden = new Map(); // emailKey -> count hidden
+  const out = [];
+  for (const p of (profiles || [])) {
+    const key = ((p && p.name) || '').toLowerCase().trim();
+    if (!key) { out.push(p); continue; }                 // unnamed → never dedupe away
+    if (seen.has(key)) { hidden.set(key, (hidden.get(key) || 0) + 1); continue; }
+    seen.set(key, p);
+    out.push(p);
+  }
+  for (const p of out) {
+    const key = ((p && p.name) || '').toLowerCase().trim();
+    if (hidden.has(key)) p._dupHidden = hidden.get(key);
+  }
+  return out;
+}
+
 function findSoOForProfile(profileName) {
   if (!profileName || Object.keys(sooData).length === 0) return null;
   const key = (profileName || '').toLowerCase().trim();
@@ -831,10 +855,10 @@ async function loadProfiles() {
     const profilesRes = await fetch('/api/profiles');
     const profiles = await profilesRes.json();
     if (profiles.error) { loading.textContent = `Error: ${profiles.error}`; return; }
-    allProfilesData = profiles;
+    allProfilesData = dedupeProfilesByEmail(profiles);
     loading.classList.add('hidden');
     grid.classList.remove('hidden');
-    renderProfiles(profiles);
+    renderProfiles(allProfilesData);
     renderPassoverBanner();
     updateChipCounts();
 
@@ -941,7 +965,7 @@ function renderProfiles(profiles) {
     item.innerHTML = `
       <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} />
       <div style="flex:1">
-        <div class="name">${escHtml(p.name)}</div>
+        <div class="name">${escHtml(p.name)}${p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : ''}</div>
         ${!soo ? `<div class="id">${p.id.substring(0, 12)}…</div>` : ''}
         ${renderSoOBadges(soo)}
       </div>

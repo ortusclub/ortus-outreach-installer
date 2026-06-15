@@ -1136,6 +1136,8 @@ select {
 .browse-card .profile-item:hover { background: var(--card-bg-hover); border-color: var(--card-border); box-shadow: var(--card-shadow); opacity: 1; }
 .browse-card .profile-item.selected { background: var(--card-bg-hover); border-color: var(--ink); }
 .browse-card .profile-item .name { font-size: 0.74rem; line-height: 1.3; white-space: normal; word-break: break-all; }
+/* v2.102.0: duplicate-email marker on the profile picker survivor card. */
+.dup-flag { display: inline-block; font-size: 0.52rem; letter-spacing: 0.06em; text-transform: uppercase; color: #d97706; border: 1px solid rgba(217,119,6,0.45); border-radius: 9999px; padding: 0 6px; margin-left: 6px; white-space: nowrap; vertical-align: middle; cursor: help; }
 .browse-card .profile-item .id { font-size: 0.56rem; margin-top: 3px; }
 .browse-card .profile-item input[type="checkbox"] { margin-top: 2px; }
 
