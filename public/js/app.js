@@ -9923,14 +9923,41 @@ async function _maybeConfirmReviveIntros(body, opts) {
 let _reviveModalResolve = null;
 let _reviveWho = 'the primary';
 
-function _openReviveModal(cfg) {
+// v2.100.1 — when the campaign didn't save the primary's GoLogin profile, guess
+// it from the primary's name (team convention: profile name = SoO email, e.g.
+// "Julia Isabelle Yabut" → julia.yabut@ortus.solutions). Picks a profile only
+// when the surname uniquely identifies one, so we never auto-select the wrong
+// account.
+function _guessPrimaryProfileId(primaryName) {
+  const name = String(primaryName || '').toLowerCase().replace(/[^a-z\s]/g, ' ').trim();
+  if (!name) return '';
+  const tokens = name.split(/\s+/).filter((t) => t.length >= 2);
+  if (!tokens.length) return '';
+  const profiles = allProfilesData || [];
+  // 1) Unique surname (last token) match — the strongest signal.
+  const last = tokens[tokens.length - 1];
+  const surnameHits = profiles.filter((p) => (p.name || '').toLowerCase().includes(last));
+  if (surnameHits.length === 1) return surnameHits[0].id;
+  // 2) Otherwise the profile matching the most name tokens, if unambiguous (≥2).
+  let best = '', bestScore = 0, tie = false;
+  profiles.forEach((p) => {
+    const hay = (p.name || '').toLowerCase();
+    const score = tokens.reduce((n, t) => n + (hay.includes(t) ? 1 : 0), 0);
+    if (score > bestScore) { bestScore = score; best = p.id; tie = false; }
+    else if (score === bestScore && score > 0) { tie = true; }
+  });
+  return (bestScore >= 2 && !tie) ? best : '';
+}
+
+async function _openReviveModal(cfg) {
+  // Populate the profile list FIRST so pre-selection (saved or name-guessed)
+  // works on open instead of after a manual search.
+  if ((!allProfilesData || !allProfilesData.length) && typeof loadProfiles === 'function') {
+    try { await loadProfiles(); } catch { /* picker shows empty until loaded */ }
+  }
   return new Promise((resolve) => {
     _reviveModalResolve = resolve;
     _reviveWho = cfg.who || 'the primary';
-    // Make sure the profile list is populated for the picker.
-    if ((!allProfilesData || !allProfilesData.length) && typeof loadProfiles === 'function') {
-      try { loadProfiles(); } catch { /* picker will just show empty until loaded */ }
-    }
     const bodyEl = document.getElementById('revive-intros-body');
     if (bodyEl) {
       bodyEl.innerHTML =
@@ -9938,8 +9965,10 @@ function _openReviveModal(cfg) {
         `<p style="margin:0;">The affected account(s) will send ${escHtml(_reviveWho)} a connection request, then the introductions retry automatically on the next check.</p>`;
     }
     document.querySelectorAll('#revive-primary-name, #revive-source-who').forEach((el) => { el.textContent = _reviveWho; });
-    // Pre-select the known GoLogin profile (if any); local-browser / blank → none.
-    const known = (cfg.knownSourceId && cfg.knownSourceId !== 'local-browser') ? cfg.knownSourceId : '';
+    // Pre-select the known GoLogin profile; local-browser / blank → fall back to
+    // guessing it from the primary's name (team convention: profile = SoO email).
+    let known = (cfg.knownSourceId && cfg.knownSourceId !== 'local-browser') ? cfg.knownSourceId : '';
+    if (!known) known = _guessPrimaryProfileId(_reviveWho);
     const hid = document.getElementById('revive-source-profile-id'); if (hid) hid.value = known;
     const srch = document.getElementById('revive-source-search'); if (srch) srch.value = '';
     const cb = document.getElementById('revive-auto-accept'); if (cb) cb.checked = !!cfg.autoAccept;

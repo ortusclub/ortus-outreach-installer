@@ -2116,9 +2116,9 @@
         You'll accept the connection request as the primary yourself — the introductions retry automatically on the next check.
       </div>
 
-      <div class="modal-actions" style="margin-top: 18px;">
-        <button type="button" class="btn btn-secondary" onclick="_resolveReviveModal(false)">Just run a normal check</button>
+      <div class="modal-actions" style="margin-top: 18px; flex-direction: column; gap: 10px; align-items: stretch;">
         <button type="button" class="btn btn-primary" id="revive-ok-btn" onclick="_resolveReviveModal(true)">Reconnect &amp; retry</button>
+        <button type="button" class="btn btn-secondary" onclick="_resolveReviveModal(false)">Just run a normal check</button>
       </div>
     </div>
   </div>
