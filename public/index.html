@@ -1454,7 +1454,7 @@
                #btn-start and #btn-queue keep their IDs so existing
                button-mutex logic in app.js continues to enable/disable them
                based on campaign state. -->
-          <div class="launch-actions launch-actions--four">
+          <div class="launch-actions launch-actions--four" id="launch-actions">
             <button type="button" id="btn-start" class="btn btn-start" onclick="window.launchStartNow()">Start a campaign</button>
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>

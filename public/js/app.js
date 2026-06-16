@@ -7499,6 +7499,7 @@ async function refreshPresetList() {
 }
 
 async function loadPresetByName(name) {
+  window.__viewingActiveCampaign = false;
   if (!name) return;
   try {
     const res = await fetch(`/api/presets/${encodeURIComponent(name)}`);
@@ -7509,12 +7510,14 @@ async function loadPresetByName(name) {
     }
     const entry = await res.json();
     applyPresetConfig(entry.config || {});
+    if (typeof applyViewingActiveLock === 'function') applyViewingActiveLock();
   } catch (err) {
     alert(`Load failed: ${err.message}`);
   }
 }
 
 async function loadLastUsedPreset() {
+  window.__viewingActiveCampaign = false;
   try {
     const res = await fetch('/api/presets/_last_used');
     if (res.status === 404) { alert('No previous campaign to restore yet.'); return; }
@@ -7525,6 +7528,7 @@ async function loadLastUsedPreset() {
     }
     const entry = await res.json();
     applyPresetConfig(entry.config || {});
+    if (typeof applyViewingActiveLock === 'function') applyViewingActiveLock();
   } catch (err) {
     alert(`Load failed: ${err.message}`);
   }
@@ -8912,6 +8916,18 @@ function stopWizardPolling() {
   }
 }
 
+// When the operator opens the LIVE/monitoring campaign (dashboard "Open"), the
+// wizard is a read-only view of what's running — hide the launch panel so they
+// can't relaunch / queue / duplicate / save-as-draft the active campaign. Any
+// other entry (+ New, Edit, preset) clears the flag, so staging a new campaign
+// while one runs still shows the launch panel.
+window.__viewingActiveCampaign = window.__viewingActiveCampaign || false;
+function applyViewingActiveLock() {
+  const panel = document.getElementById('launch-actions');
+  if (panel) panel.style.display = window.__viewingActiveCampaign ? 'none' : '';
+}
+window.applyViewingActiveLock = applyViewingActiveLock;
+
 function applyRoute() {
   const isWizard = (window.location.hash || '#/').startsWith('#/new');
   document.body.classList.toggle('route-wizard', isWizard);
@@ -8948,6 +8964,7 @@ function applyRoute() {
       }
     } catch (_) { /* */ }
     startWizardPolling();
+    if (typeof applyViewingActiveLock === 'function') applyViewingActiveLock();
   }
   // v2.59.22: re-evaluate the Live Status card placement on every route change
   // (sync visibility first so placeLiveCard sees the right display state).
@@ -9144,6 +9161,7 @@ async function viewRunningCampaign() {
 window.viewRunningCampaign = viewRunningCampaign;
 
 async function editDraft(id) {
+  window.__viewingActiveCampaign = false;
   if (!id) return;
   // 2026-05-27 (drafts-isolation, Task 6): flush any pending autosave for
   // the CURRENT active draft BEFORE switching the id. Otherwise the next
@@ -10618,6 +10636,7 @@ window.deletePastCampaign = deletePastCampaign;
 // (added 2026-05). Older entries (pre-config-snapshot) only restore name + the
 // few legacy fields that were stored.
 async function editPastCampaign(idx) {
+  window.__viewingActiveCampaign = false;
   try {
     const data = await fetch('/api/history').then(r => r.json());
     if (!Array.isArray(data) || !data[idx]) {
@@ -10860,6 +10879,7 @@ window.resumeWithEditFirst = resumeWithEditFirst;
 // in the Dashboard's Drafts section), so the operator can stage multiple
 // campaigns in parallel without losing any.
 async function startNewCampaign() {
+  window.__viewingActiveCampaign = false;
   // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
   // prior run's jobs (the engine's job list is global, not per-draft).
   _scrapeBaselineDone = false;
