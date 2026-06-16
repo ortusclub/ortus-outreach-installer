@@ -7295,23 +7295,28 @@ function applyPresetConfig(config) {
   setV('message-gap', config.messageGap ?? 60);
   setV('within-batch-min', config.delayMin ?? 15);
   setV('within-batch-max', config.delayMax ?? 45);
-  if (config.linkedinColumn) setV('linkedin-col-select', config.linkedinColumn);
-  // v2.58.x — restore IC-only sheet-mapping picks. Dropdown + checkbox only
-  // exist after a sheet preview renders them, so we defer the restore via
-  // requestAnimationFrame to give the wizard a chance to populate columns.
-  if (config.senderColumn || config.allLeadsConnected) {
-    requestAnimationFrame(() => {
-      try {
-        if (config.senderColumn) {
-          const sel = document.getElementById('ic-sender-col-select');
-          if (sel) sel.value = config.senderColumn;
-        }
-        if (config.allLeadsConnected) {
-          const tog = document.getElementById('ic-all-connected-toggle');
-          if (tog) tog.checked = true;
-        }
-      } catch (_) {}
-    });
+  // Render the sheet preview, THEN restore the column mapping. previewSheet()
+  // is the only thing that fetches the sheet HTML and builds the column-select
+  // dropdowns (#linkedin-col-select / #ic-sender-col-select) — without it the
+  // table is blank and the saved column picks land on elements that don't exist
+  // yet (the old requestAnimationFrame defer raced the dropdowns and lost). The
+  // sheet-url field was set by setV above, so previewSheet reads the right URL.
+  if (config.sheetUrl && typeof previewSheet === 'function') {
+    Promise.resolve(previewSheet()).then(() => {
+      if (config.linkedinColumn) {
+        const sel = document.getElementById('linkedin-col-select');
+        if (sel) sel.value = config.linkedinColumn;
+      }
+      if (config.senderColumn) {
+        const sel = document.getElementById('ic-sender-col-select');
+        if (sel) sel.value = config.senderColumn;
+      }
+      if (config.allLeadsConnected) {
+        const tog = document.getElementById('ic-all-connected-toggle');
+        if (tog) tog.checked = true;
+      }
+      if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
+    }).catch(() => { /* preview failed (bad URL / offline) — fields stay as set */ });
   }
 
   const opCheck = document.getElementById('open-profile-msg');
