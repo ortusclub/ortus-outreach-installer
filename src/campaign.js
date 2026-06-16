@@ -52,6 +52,7 @@ import { enqueueDesktopNotification } from './notifier.js';
 import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
 import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
+import { readLastRun, writeLastRun } from './last-run-store.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -67,6 +68,7 @@ import * as browserSemaphore from './browser-semaphore.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
+const LAST_RUN_FILE = dataPath('last-run-settings.json');
 // Acceptance-check timing:
 //   • First check is gated by FIRST_HOUR_BLACKOUT_MS (in-batch) and
 //     IDLE_CAMPAIGN_MIN_DURATION_MS (idle) — always ~1h after campaign start,
@@ -1653,6 +1655,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
     senderColumn, allLeadsConnected,
   };
+
+  // Persist the snapshot so "Open" can rehydrate the wizard after the starting
+  // process is gone (server restart / monitoring resume re-loads from disk but
+  // never re-runs startCampaign, so the in-memory copy is the only one). Best-
+  // effort, synchronous atomic write — a disk failure must not block the run.
+  try { writeLastRun(LAST_RUN_FILE, _lastRunSettings); } catch { /* non-fatal */ }
 
   campaign.running = true;
   campaign.createdBy = createdBy || null;
@@ -4539,6 +4547,10 @@ export function stopCampaign({ full = false } = {}) {
   // campaign's background reply/accept tracking so the schedulers stop
   // reopening browsers for the next 7 days. Fire-and-forget (this fn is sync).
   if (full) {
+    // Full halt → clear the persisted snapshot so an idle dashboard can't
+    // resurrect a stale config. (A run that transitions into MONITORING is NOT
+    // a full stop, so the snapshot correctly survives into monitoring.)
+    try { writeLastRun(LAST_RUN_FILE, null); } catch { /* non-fatal */ }
     const _sid = _extractSheetIdFromUrl(campaign.sheetUrl);
     const _pids = (campaign.profileIds || []).slice();
     if (_sid) {
@@ -4691,7 +4703,11 @@ async function awaitUnpause(myGen) {
 // linkedinColumn and senderFirstNames, none of which getCampaignStatus emits.
 // Returns null when no campaign has run this process lifetime.
 export function getLastRunSettings() {
-  return _lastRunSettings ? { ..._lastRunSettings } : null;
+  if (_lastRunSettings) return { ..._lastRunSettings };
+  // In-memory snapshot is gone (server restarted / campaign resumed from disk
+  // for monitoring). Fall back to the persisted copy so "Open" still restores.
+  const fromDisk = readLastRun(LAST_RUN_FILE);
+  return fromDisk ? { ...fromDisk } : null;
 }
 
 export function getCampaignStatus() {
