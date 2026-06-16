@@ -32,7 +32,14 @@ const CONNECT_MODES = new Set([
  */
 export function resolveSoOTarget(mode, action) {
   if (action === 'connection_sent' && CONNECT_MODES.has(mode)) {
-    return { creditHeader: 'CC (Credits)', userHeader: 'CC User' };
+    // Stamp the reserver into the unprotected fallback column 'CC App User'
+    // (column AJ on the SoO board), NOT the protected 'CC User' (writes to the
+    // protected column throw inside the Apps Script setSoO handler). The Apps
+    // Script matches the column by header name, so this MUST equal the sheet
+    // header EXACTLY — verified 2026-06-16 via a dry-run that printed
+    // `column AJ (#36) header = "CC App User"`. An earlier guess of
+    // 'CC User App' silently matched no column, so nothing was ever stamped.
+    return { creditHeader: 'CC (Credits)', userHeader: 'CC App User' };
   }
   if (action === 'inmail_sent' && mode === 'inmail_only') {
     return { creditHeader: 'Inmail Credits', userHeader: 'Inmail User' };
@@ -44,6 +51,59 @@ export function resolveSoOTarget(mode, action) {
 export function sooWritebackEnabled() {
   const v = (process.env.ORTUS_SOO_WRITEBACK || '').toString().trim().toLowerCase();
   return !(v === 'off' || v === '0' || v === 'false');
+}
+
+// Shared/admin logins that must NEVER be stamped as an individual reserver.
+// The shared DASHBOARD_USERS credential (and the ADMIN_EMAILS notification
+// addresses) collapse multiple operators onto one identity, so stamping it
+// would label every reservation as Antonio — exactly what we must avoid.
+const ALWAYS_BLOCKED_STAMP_EMAILS = ['ortus@ortusclub.com', 'antonio@ortusclub.com'];
+
+/**
+ * Build the lowercased set of emails that must not be stamped as a reserver:
+ * the hardcoded admin/shared addresses + every login parsed out of the shared
+ * DASHBOARD_USERS ("email:pass,email:pass") + the ADMIN_EMAILS list.
+ */
+export function blockedOperatorEmails(env = process.env) {
+  const out = new Set(ALWAYS_BLOCKED_STAMP_EMAILS);
+  String(env.DASHBOARD_USERS || '')
+    .split(',')
+    .map((pair) => pair.split(':')[0].trim().toLowerCase())
+    .filter(Boolean)
+    .forEach((e) => out.add(e));
+  String(env.ADMIN_EMAILS || 'antonio@ortusclub.com')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+    .forEach((e) => out.add(e));
+  return out;
+}
+
+/**
+ * Normalize the operator email for stamping, dropping it (→ '') when blank or
+ * when it's a shared/admin login. buildFlipPayload then omits the user cell, so
+ * a shared login leaves the reserver blank rather than mislabelling it.
+ * Preserves original case for the stamp; the block check is case-insensitive.
+ */
+export function resolveStampEmail(operatorEmail, blocked = blockedOperatorEmails()) {
+  const trimmed = String(operatorEmail || '').trim();
+  if (!trimmed) return '';
+  if (blocked.has(trimmed.toLowerCase())) return '';
+  return trimmed;
+}
+
+/**
+ * Decide which email to stamp as the reserver. The per-machine operator email
+ * (operator-identity.js) is AUTHORITATIVE and used verbatim — it's the explicit
+ * "who is at this keyboard", so it's never blocked (an operator may legitimately
+ * set antonio@ on Antonio's own machine). Only when it's unset do we fall back
+ * to the login email, which still blank-stamps the shared/admin credential so a
+ * shared login never mislabels every reservation as one person.
+ */
+export function resolveOperatorStamp({ perMachineEmail, loginEmail, blocked = blockedOperatorEmails() } = {}) {
+  const pm = String(perMachineEmail || '').trim();
+  if (pm) return pm;
+  return resolveStampEmail(loginEmail, blocked);
 }
 
 /** Build the setSoO payload for an "In Use" flip (credit + paired user, guarded). */
@@ -104,6 +164,8 @@ export async function flipAccountInUse({ email, creditHeader, userHeader, operat
   if (!email) return { ok: false, error: 'no email' };
   if (!creditHeader || !userHeader) return { ok: false, error: 'no headers' };
   try {
+    // operatorEmail is already resolved by the caller (resolveOperatorStamp):
+    // the per-machine operator identity, or a blanked shared login. Stamp verbatim.
     const data = await postSetSoO(buildFlipPayload({ email, creditHeader, userHeader, operatorEmail }));
     if (data && data.error) return { ok: false, error: data.error };
     return { ok: true, ...data };

@@ -61,10 +61,20 @@ export function _shouldHoldIntros(primaryConnResult) {
 }
 
 // Should we queue the auto-accept task (the primary's own account accepts the
-// invite we just sent)? Only when auto-accept is enabled AND we actually sent a
-// fresh connect request this sweep.
-export function _shouldQueueAutoAccept({ autoAcceptPrimary, connectAttempted, connectResult } = {}) {
-  return !!autoAcceptPrimary && !!connectAttempted && connectResult === 'sent';
+// account's invite)? When auto-accept is enabled AND we ATTEMPTED a connect —
+// regardless of how it ended. Rationale (2026-06-16, the "Micha" case): the
+// sender side is fragile — an encoded /in/ACwAA… primary URL that doesn't render,
+// a rate-limited page, or a 3rd-degree layout can make sendConnectionRequest
+// throw "Connect button not found" even when an invite to the primary is ALREADY
+// outstanding (sent in a prior run). connectResult ('sent'/'already_pending'/
+// 'failed') is therefore NOT a reliable "is there an invite" signal. The
+// authoritative source is the primary's own received-invitations list, and
+// acceptInvitationFrom matches it PRECISELY (profile-URL or exact name) — so
+// queuing on every attempt is safe: a genuine no-invite simply matches nothing
+// and the runner marks it 'skipped'. We only skip queuing when no connect was
+// attempted at all (nothing could be pending from this account this run).
+export function _shouldQueueAutoAccept({ autoAcceptPrimary, connectAttempted } = {}) {
+  return !!autoAcceptPrimary && !!connectAttempted;
 }
 
 // The EXACT message-history selector the connection-note dedupe probe uses

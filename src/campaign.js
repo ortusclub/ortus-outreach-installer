@@ -32,13 +32,14 @@ import { classifyOutcome } from './linkedin/outcome-classify.js';
 import { emptyTally, applyOutcome } from './campaign-tally.js';
 import { summariseCampaign } from './campaign-summary.js';
 import { performOutreach } from './linkedin/outreach.js';
-import { getProfileUrn, captureProfileMeta } from './linkedin/helpers.js';
+import { getProfileUrn, captureProfileMeta, waitForProfileRender } from './linkedin/helpers.js';
 import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
-import { runAutoIntros } from './linkedin/auto-intro.js';
+import { runAutoIntros, _shouldQueueAutoAccept } from './linkedin/auto-intro.js';
 import { checkAndConnectPrimary, primaryConnState } from './linkedin/primary-connection.js';
-import { readSelfIdentity } from './linkedin/accept-invitation.js';
+import { readSelfIdentity, acceptInvitationFrom, acceptAllPendingInvitations } from './linkedin/accept-invitation.js';
 import { buildAcceptTask, enqueuePrimaryTask } from './primary-tasks.js';
+import { planAccountsNeedingConnect, handshakeProgress, shouldProceed } from './preflight-handshake.js';
 import { clampCadenceMinutes } from '../public/js/campaign-modes.mjs';
 import { runAutoDms } from './linkedin/auto-dm.js';
 import { registerSchedule as registerPostCampaignSweep, removeSchedulesForSheet as removeBulkSchedules } from './post-campaign-bulk-check.js';
@@ -48,7 +49,8 @@ import { registerAppender, buildAppendLogger, unregisterAppender } from './campa
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
-import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO } from './soo-writer.js';
+import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
+import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
@@ -489,6 +491,10 @@ export function isDmIbEligible(row) {
 // re-navigates up to MAX_IDENTITY_ATTEMPTS; if it can never POSITIVELY confirm,
 // the caller skips the lead (skip-on-doubt) rather than risk a wrong send.
 export const MAX_IDENTITY_ATTEMPTS = 5;
+// v2.105.2: pause between identity retries. "no-member-number-captured (profile
+// did not load)" is a rate-limited/slow session — retrying instantly just hits
+// the same cold state. Give the session 20s to breathe before re-navigating.
+export const IDENTITY_RETRY_DELAY_MS = 20_000;
 
 // v2.96.0 (Phase 2) — outcomes that mean "the session/page is degrading" (a
 // navigation race, timeout, profile-not-found, rate-limit, or an
@@ -532,9 +538,15 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
     let landedUrl = '';
     try {
       await page.goto(navUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-      // Let any client-side redirect settle so we don't read a mid-navigation
-      // page (the "Execution context was destroyed" race seen in the logs).
-      await new Promise((r) => setTimeout(r, 2500));
+      // v2.103: wait for the profile top-card to actually PAINT before reading,
+      // instead of a blind 2.5s. LinkedIn renders the <h1> name client-side
+      // after domcontentloaded, so the old fixed wait read an empty name every
+      // time → name-match never fired → the gate leaned entirely on the
+      // rate-limited Voyager member-number API and mass-skipped healthy leads
+      // ("no-member-number-captured"). Polling for the <h1> also lets the
+      // encoded /in/ACwAA… → vanity redirect settle, avoiding the
+      // "Execution context was destroyed" mid-navigation race.
+      await waitForProfileRender(page, { timeoutMs: 12000 });
       landedUrl = page.url();
       meta = await captureProfileMeta(page);
     } catch (e) {
@@ -542,7 +554,10 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
       // degradation signal — treat as unconfirmed and retry on a fresh load.
       last = { ok: false, reason: `capture-threw: ${e.message}`, loaded: { name: '', memberNumber: '' } };
       log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${last.reason}`);
-      await new Promise((r) => setTimeout(r, 1500));
+      if (attempt < MAX_IDENTITY_ATTEMPTS) {
+        log(`  ⏳ waiting ${IDENTITY_RETRY_DELAY_MS / 1000}s before retry…`);
+        await new Promise((r) => setTimeout(r, IDENTITY_RETRY_DELAY_MS));
+      }
       continue;
     }
     const v = verifyConnectIdentity({
@@ -561,6 +576,10 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
       return last;
     }
     log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${v.reason}`);
+    if (attempt < MAX_IDENTITY_ATTEMPTS) {
+      log(`  ⏳ waiting ${IDENTITY_RETRY_DELAY_MS / 1000}s before retry…`);
+      await new Promise((r) => setTimeout(r, IDENTITY_RETRY_DELAY_MS));
+    }
   }
   return last;
 }
@@ -1552,6 +1571,11 @@ export function normalizeTemplates(templates = {}, mode = '') {
     // invite from a campaign account. followUp* — automated first follow-up in
     // the intro's group thread. Posting identity is tpl.primarySource.
     autoAcceptPrimary: !!templates.autoAcceptPrimary,
+    // autoAcceptAllPending — opt-in (default OFF). When on, the primary's
+    // pre-flight session ALSO accepts every other pending invite in its inbox,
+    // not just this campaign's matched senders (strangers included). Safe-by-
+    // default per the "auto-send defaults OFF" operator rule.
+    autoAcceptAllPending: !!templates.autoAcceptAllPending,
     followUpEnabled: !!templates.followUpEnabled,
     followUpBody: (templates.followUpBody || '').trim(),
     followUpDelayMinutes: Number(templates.followUpDelayMinutes) > 0 ? Number(templates.followUpDelayMinutes) : 10,
@@ -1662,6 +1686,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // field: fresh CC+IC campaign reaches 3/3, logs "Campaign ended", but
   // the cockpit stays IDLE instead of flipping to Monitoring.
   campaign.state = null;
+  campaign.phase = null;
   campaign.sendingEndedAt = null;
   // v2.72: one-shot "no more rows to process" notice for the dashboard popup.
   // Cleared on each new run; set in the finally block when a campaign ends
@@ -1864,14 +1889,21 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         const acctNorm = (accountName || '').toString().toLowerCase().trim();
         if (!acctNorm || _sooFlipped.has(acctNorm)) return;
         _sooFlipped.add(acctNorm);
+        // Authoritative reserver = the per-machine operator email (set in the
+        // app), since every operator logs in with the SAME shared credential.
+        // Falls back to the login (blanked if it's the shared/admin account).
+        const stampEmail = resolveOperatorStamp({
+          perMachineEmail: getOperatorEmail(),
+          loginEmail: campaign.createdBy || '',
+        });
         const res = await flipAccountInUse({
           email: accountName,
           creditHeader: target.creditHeader,
           userHeader: target.userHeader,
-          operatorEmail: campaign.createdBy || '',
+          operatorEmail: stampEmail,
         });
         if (res && res.ok && res.matched && res.written && res.written.length) {
-          log(`  ⚑ SoO: ${accountName} → ${target.creditHeader} = In Use (${campaign.createdBy || '—'}).`);
+          log(`  ⚑ SoO: ${accountName} → ${target.creditHeader} = In Use (${stampEmail || '—'}).`);
         } else if (res && res.ok && res.matched) {
           log(`  · SoO: ${accountName} ${target.creditHeader} not Available — left as-is.`);
         }
@@ -2753,7 +2785,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 // v2.91: if we just sent a connect to the primary AND auto-accept
                 // is enabled, capture this account's own identity and queue the
                 // local browser to accept its invitation in the next idle gap.
-                if (tpl && tpl.autoAcceptPrimary && _res.connectAttempted && _res.connectResult === 'sent') {
+                if (_shouldQueueAutoAccept({ autoAcceptPrimary: tpl && tpl.autoAcceptPrimary, connectAttempted: _res.connectAttempted, connectResult: _res.connectResult })) {
                   try {
                     const _self = await readSelfIdentity(page);
                     // Don't enqueue a dead task: an empty identity (slow/cold
@@ -3943,6 +3975,130 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       }
     }
 
+    // ── Pre-flight primary handshake (Phase 0 → 0.5) ─────────────────────
+    // Runs ONCE before the rotation, for CC+IC + auto-accept campaigns only.
+    // Phase 0: each not-yet-connected account opens (sequentially) and sends a
+    //   bare connect to the primary, capturing its own identity → an accept task.
+    // Phase 0.5: the primary's browser opens ALONE and accepts those invitations
+    //   with a bounded ~2-min poll.
+    // Best-effort — NEVER blocks the campaign: any error or straggler falls back
+    // to the existing idle-runner queue via enqueuePrimaryTask().
+    async function runPreflightHandshake() {
+      const primaryUrl = (tpl && tpl.primaryUrl || '').trim();
+      if (mode !== 'connect_and_introduce' || !tpl?.autoAcceptPrimary || !primaryUrl) return;
+      // NOTE: campaign.participatingProfileIds is empty here (only filled at
+      // end-of-run), so plan over the run's profileIds directly.
+      const participating = profileIds || [];
+      const need = planAccountsNeedingConnect(participating, campaign._primaryConn);
+      // With accept-all on we still open the primary to sweep the inbox even when
+      // every sender is already connected (need is empty) — otherwise accept-all
+      // would silently never run on repeat runs of already-connected senders.
+      const wantAcceptAll = !!(tpl && tpl.autoAcceptAllPending);
+      if (need.length === 0 && !wantAcceptAll) return; // self-eliminating
+      campaign.phase = 'preflight';
+      if (need.length) log(`🤝 Preparing introductions — ${need.length} account(s) need to connect to the primary`);
+      else log('🤝 Pre-flight: senders already connected — running the accept-all sweep on the primary');
+      const sender = tpl.primarySource || 'local-browser';
+      const queuedAccepts = [];
+      for (const profileId of need) {
+        if (campaign._abort) break;
+        // ensureOpen() returns { profileId, pName, browser, page, warmedUp } or
+        // null. It launches fresh on a cache miss and holds a semaphore slot;
+        // closeSession() (below) deletes it from `sessions` AND releases that
+        // slot, so the later rotation re-opens this account cleanly in its turn.
+        const session = await ensureOpen(profileId);
+        if (!session) { campaign._primaryConn.set(profileId, 'unverified'); continue; }
+        const pName = session.pName;
+        try {
+          const _res = await checkAndConnectPrimary(session.page, primaryUrl, { log, pName, attemptConnect: true });
+          campaign._primaryConn.set(profileId, primaryConnState(_res.connected));
+          // autoAcceptPrimary is implicitly true here (runPreflightHandshake
+          // early-returns otherwise). Queue an accept when the account left an
+          // OUTSTANDING invite to the primary — freshly sent this run ('sent')
+          // OR already pending from a prior run that was never accepted
+          // ('already_pending'). The latter is the 2026-06-16 gap: a stale
+          // pending invite was detected, NOT re-sent (good), but also never
+          // accepted, so the account stayed non-1st-degree and its intros held.
+          if (_shouldQueueAutoAccept({ autoAcceptPrimary: true, connectAttempted: _res.connectAttempted, connectResult: _res.connectResult })) {
+            const _self = await readSelfIdentity(session.page, { log });
+            if (_self.name || _self.profileUrl) {
+              // 'sent' is a TRANSIENT pre-flight-only state (request out, not yet
+              // accepted) — used for both freshly-sent and already-pending invites.
+              // It is deliberately NOT in the _primaryIntroAllowed hold-set — no
+              // intros fire during pre-flight, and the account's first rotation turn
+              // re-reads the degree and reclassifies it via primaryConnState()
+              // (→ 'pending'/'connected') BEFORE any intro gate.
+              campaign._primaryConn.set(profileId, 'sent');
+              queuedAccepts.push(buildAcceptTask({
+                campaignProfileId: profileId, campaignProfileName: pName,
+                sheetId: _extractSheetIdFromUrl(sheetUrl) || '', sheetUrl,
+                account: _self, primaryUrl, sender,
+              }));
+            } else {
+              // Don't silently drop it (the 2026-06-16 bug): the invite IS
+              // outstanding, but with no identity the primary can't match it,
+              // so this account won't be auto-accepted — surface it.
+              log(`  ⚠ [${pName}] Couldn't read this account's identity — not queuing its auto-accept (invite is outstanding; accept manually if needed).`);
+            }
+          }
+        } catch (e) {
+          log(`  ⚠ [${pName}] Pre-flight connect error: ${e.message}`);
+        } finally {
+          // Real single-account close: closeSession() closes the browser,
+          // removes it from `sessions`, and releases the semaphore slot.
+          try { await closeSession(profileId); } catch { /* */ }
+        }
+      }
+      // Open the primary's session when there are matched senders to accept OR
+      // the operator turned on accept-all (which sweeps the rest of the inbox).
+      if (queuedAccepts.length || tpl.autoAcceptAllPending) {
+        const CAP_MS = 120_000, POLL_MS = 30_000;
+        const startedAt = Date.now();
+        try {
+          await browserSemaphore.acquire();
+          const launched = (sender === 'local-browser')
+            ? await launchLocalBrowser()
+            : await launchProfile(sender, token);
+          const page = launched.page;
+          let pending = [...queuedAccepts];
+          while (pending.length && !campaign._abort) {
+            const still = [];
+            for (const t of pending) {
+              campaign._primaryConn.set(t.campaignProfileId, 'accepting');
+              const r = await acceptInvitationFrom(page, t.account, { log })
+                .catch((e) => { log(`  ⚠ [${t.campaignProfileName}] primary accept errored: ${e.message}`); return { accepted: false }; });
+              if (r.accepted) { campaign._primaryConn.set(t.campaignProfileId, 'connected'); log(`  ✓ primary accepted ${t.campaignProfileName}`); }
+              else { campaign._primaryConn.set(t.campaignProfileId, 'sent'); still.push(t); }
+            }
+            pending = still;
+            const { accepted, total } = handshakeProgress(campaign._primaryConn, queuedAccepts.map(t => t.campaignProfileId));
+            if (shouldProceed({ startedAt, now: Date.now(), capMs: CAP_MS, accepted, total })) break;
+            if (pending.length) await new Promise(r => setTimeout(r, POLL_MS));
+          }
+          for (const t of pending) { try { await enqueuePrimaryTask(t); } catch { /* */ } }
+          if (pending.length) log(`  ⏳ ${pending.length} link(s) finishing in the background — outreach starting anyway`);
+          // Accept-all sweep (opt-in, default OFF): after the matched senders are
+          // handled, accept every OTHER pending invite in the primary's inbox —
+          // strangers included. Bounded internally so a huge inbox can't stall
+          // pre-flight. Best-effort: a sweep error never blocks outreach.
+          if (tpl.autoAcceptAllPending && !campaign._abort) {
+            log('🧹 Accept-all: clearing remaining pending invitations on the primary…');
+            try { await acceptAllPendingInvitations(page, { log }); }
+            catch (e) { log(`  ⚠ Accept-all sweep error: ${e.message}`); }
+          }
+        } catch (e) {
+          log(`  ⚠ Pre-flight: primary accept session failed (${e.message}) — queuing for the idle runner`);
+          for (const t of queuedAccepts) { try { await enqueuePrimaryTask(t); } catch { /* */ } }
+        } finally {
+          try { (sender === 'local-browser') ? await closeLocalBrowser() : await closeProfile(sender); } catch { /* */ }
+          browserSemaphore.release();
+        }
+      }
+      log('✅ Primary connections ready — starting outreach');
+    }
+
+    try { await runPreflightHandshake(); } finally { campaign.phase = null; }
+
     const workerCount = Math.max(1, Number(concurrency) || 1);
     await Promise.all(
       Array.from({ length: workerCount }, (_, i) => worker(i))
@@ -4555,6 +4711,10 @@ export function getCampaignStatus() {
     // v2.13.14: surface monitoring fields so the cockpit + run-bar can
     // reflect post-campaign monitoring state without a second poll.
     state: campaign.state || 'idle',
+    // v2.105: pre-flight primary handshake sub-phase ('preflight' | null) —
+    // drives the gold is-preflight card state. Distinct from `state` (running
+    // stays true through pre-flight).
+    phase: campaign.phase || null,
     monitoringUntil: campaign.monitoringUntil || null,
     nextCheckAt: campaign.nextCheckAt || null,
     // v2.52.0: surface the operator-chosen cadence so the cockpit tips +

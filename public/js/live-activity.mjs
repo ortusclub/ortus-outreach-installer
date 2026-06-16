@@ -13,6 +13,18 @@
 export function buildLiveActivity(status) {
   if (!status) return { state: 'idle', icon: '', l1: 'No campaign running', l2: '' };
 
+  if (status.phase === 'preflight') {
+    const conn = status.primaryConn || {};
+    const ids = (status.profileIds || []).filter((id) => id && id !== 'local-browser' && conn[id]);
+    const accepted = ids.filter((id) => conn[id] === 'connected').length;
+    return {
+      state: 'checking',
+      icon: '↻',
+      l1: 'Preparing introductions — primary handshake',
+      l2: `${accepted} of ${ids.length} connected · outreach starts when ready`,
+    };
+  }
+
   const monitoring = !status.running && status.state === 'monitoring';
   const paused = !!(status.paused || status._paused);
   const ca = status.currentAction || null;

@@ -98,17 +98,60 @@ export function pickInvitation(candidates, target) {
 }
 
 /**
- * Read the logged-in account's OWN identity from the global nav. Works on any
- * LinkedIn page (the "Me" control is global), so it can run on the campaign
- * account right after it sends the connect request to the primary. The name
- * (from the Me photo's alt) is the reliable signal; the profile URL is scoped
- * to the Me control so it doesn't pick up a sidebar suggestion, and is
- * best-effort corroboration only.
+ * Read the logged-in account's OWN identity (name + profile URL). Runs on the
+ * campaign account right after it sends the connect request to the primary; the
+ * result is used to match this account's invitation on the primary's side.
+ *
+ * v2.105.3: PRIMARY source is the Voyager /me API — DOM-independent. The old
+ * global-nav scrape silently returned EMPTY on (a) accounts with no profile
+ * photo (LinkedIn renders a ghost icon, not an <img alt="Name">) and (b) slow /
+ * rate-limited sessions where the nav hydrates after the 10s wait. Either way
+ * the caller skipped queuing the auto-accept, so the primary never opened to
+ * accept (the 2026-06-16 "it didn't auto-accept" report — confirmed via the
+ * field log: a flat 10s gap = the nav waitForFunction timing out every send).
+ * /me returns firstName/lastName/publicIdentifier from one lightweight GET,
+ * regardless of photo, hashed CSS classes, or nav timing. The nav scrape is
+ * kept as a fallback. Mirrors the proven getVoyagerDegree() idiom in helpers.js.
  * @returns {Promise<{name:string, profileUrl:string}>}
  */
-export async function readSelfIdentity(page) {
+export async function readSelfIdentity(page, { log = () => {} } = {}) {
+  // 1) Voyager /me — DOM-independent, immune to no-photo / slow-nav / hashing.
   try {
-    return await page.evaluate(() => {
+    const viaApi = await page.evaluate(async () => {
+      try {
+        const csrf = document.cookie.split(';').map((c) => c.trim())
+          .find((c) => c.startsWith('JSESSIONID='));
+        if (!csrf) return null;
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+        const r = await fetch('https://www.linkedin.com/voyager/api/me', {
+          headers: { 'accept': 'application/json', 'csrf-token': token, 'x-restli-protocol-version': '2.0.0' },
+          credentials: 'include',
+        });
+        if (!r.ok) return null;
+        const j = await r.json();
+        const mp = j && j.miniProfile;
+        if (!mp) return null;
+        const name = ((mp.firstName || '') + ' ' + (mp.lastName || '')).replace(/\s+/g, ' ').trim();
+        const profileUrl = mp.publicIdentifier ? ('https://www.linkedin.com/in/' + mp.publicIdentifier + '/') : '';
+        return { name, profileUrl };
+      } catch { return null; }
+    });
+    if (viaApi && (viaApi.name || viaApi.profileUrl)) {
+      log(`  ⓘ self-identity via Voyager /me: ${viaApi.name || '(no name)'}`);
+      return viaApi;
+    }
+  } catch { /* fall through to the nav scrape */ }
+
+  // 2) Fallback: global-nav scrape (v2.103.1). Works when there's a photo and a
+  // hydrated nav; the Voyager path above covers the cases where it doesn't.
+  try {
+    await page.waitForFunction(() => {
+      const img = document.querySelector('img.global-nav__me-photo, .global-nav__me img');
+      const me = document.querySelector('.global-nav__me');
+      const link = me ? me.querySelector('a[href*="/in/"]') : null;
+      return !!((img && (img.alt || '').trim()) || (link && link.href));
+    }, { timeout: 10000 }).catch(() => { /* fall through — read what's there */ });
+    const viaNav = await page.evaluate(() => {
       const out = { name: '', profileUrl: '' };
       const meImg = document.querySelector('img.global-nav__me-photo, .global-nav__me img');
       if (meImg && meImg.alt) out.name = meImg.alt.replace(/\s+/g, ' ').trim();
@@ -119,6 +162,9 @@ export async function readSelfIdentity(page) {
       if (link) out.profileUrl = link.href;
       return out;
     });
+    if (viaNav.name || viaNav.profileUrl) log(`  ⓘ self-identity via nav scrape: ${viaNav.name || '(no name)'}`);
+    else log('  ⚠ self-identity: both Voyager /me and the nav scrape came back empty');
+    return viaNav;
   } catch {
     return { name: '', profileUrl: '' };
   }
@@ -224,6 +270,148 @@ export async function acceptInvitationFrom(page, target, { log = () => {} } = {}
 
   if (!clicked) return { accepted: false, reason: 'matched-row-not-found-at-click' };
   await new Promise((r) => setTimeout(r, 1500));
+
+  // Some invitations (cold / high-mutual) trigger a "Take care when connecting"
+  // confirmation modal AFTER the card Accept — the invite is NOT actually
+  // accepted until its "Accept invite" button is clicked. The modal doesn't
+  // always appear, so this is best-effort: look for a dialog, click its
+  // accept-stem button (scoped to the dialog, never "View profile" or the X),
+  // then settle. Reuses the same locale-aware accept-stem logic as the card.
+  try {
+    const confirmed = await page.evaluate((acc, ign) => {
+      const isAcc = (s) => {
+        s = (s || '').toLowerCase();
+        if (!s) return false;
+        if (ign.some((v) => s.includes(v))) return false;
+        return acc.some((v) => s.includes(v));
+      };
+      // v2.105.3: the current "Take care when connecting" modal is a NATIVE
+      // <dialog data-testid="dialog"> (hashed classes, no explicit role attr),
+      // so the old '[role="dialog"], .artdeco-modal' selector never matched it
+      // and the confirm "Accept invite" button was never clicked — the invite
+      // stayed un-accepted. Match the native dialog + the SDUI confirm screen.
+      const dialog = document.querySelector(
+        'dialog[open], [data-testid="dialog"], [data-sdui-screen*="AcceptConfirmationDialog"], [role="dialog"], .artdeco-modal'
+      );
+      if (!dialog) return false;
+      for (const btn of Array.from(dialog.querySelectorAll('button'))) {
+        if (isAcc(btn.getAttribute('aria-label') || btn.textContent || '')) { btn.click(); return true; }
+      }
+      return false;
+    }, ACCEPT_STEMS, IGNORE_STEMS).catch(() => false);
+    if (confirmed) {
+      await new Promise((r) => setTimeout(r, 1200));
+      log(`  ✓ Auto-accept: confirmed via "Take care when connecting" for ${target?.name || 'the account'}.`);
+    }
+  } catch { /* no modal / already accepted — fine */ }
+
   log(`  ✓ Auto-accept: accepted the invitation from ${target?.name || 'the account'} (${reason}).`);
   return { accepted: true, reason };
+}
+
+/**
+ * Confirm the "Take care when connecting" dialog if it appeared after clicking a
+ * card's Accept. Clicks ONLY the dialog's accept-stem button (never "View
+ * profile"/"Ignore"/the X). Best-effort → returns whether it confirmed.
+ *
+ * Intentionally MIRRORS the inline block in acceptInvitationFrom (kept separate
+ * so the verified single-account accept path stays byte-for-byte unchanged); the
+ * accept-all sweep below is the only caller.
+ */
+async function _confirmAcceptDialog(page) {
+  try {
+    const confirmed = await page.evaluate((acc, ign) => {
+      const isAcc = (s) => {
+        s = (s || '').toLowerCase();
+        if (!s) return false;
+        if (ign.some((v) => s.includes(v))) return false;
+        return acc.some((v) => s.includes(v));
+      };
+      const dialog = document.querySelector(
+        'dialog[open], [data-testid="dialog"], [data-sdui-screen*="AcceptConfirmationDialog"], [role="dialog"], .artdeco-modal'
+      );
+      if (!dialog) return false;
+      for (const btn of Array.from(dialog.querySelectorAll('button'))) {
+        if (isAcc(btn.getAttribute('aria-label') || btn.textContent || '')) { btn.click(); return true; }
+      }
+      return false;
+    }, ACCEPT_STEMS, IGNORE_STEMS).catch(() => false);
+    if (confirmed) await new Promise((r) => setTimeout(r, 1200));
+    return confirmed;
+  } catch { return false; }
+}
+
+/**
+ * Accept-all sweep (opt-in, default OFF — driven by the per-campaign
+ * "Accept all pending invitations" toggle). On the primary's browser, accept
+ * EVERY pending received invitation — campaign sender OR stranger. Unlike
+ * acceptInvitationFrom (precise, single target), this is deliberately
+ * indiscriminate, which is why it ships behind an explicit operator opt-in.
+ *
+ * Bounded by maxAccepts AND maxMs so a huge inbox can't stall pre-flight, and by
+ * a stall guard so a card that refuses to clear can't spin the loop. Best-effort,
+ * DOM-dependent (hashed CSS classes → anchored on the locale-aware accept stem),
+ * verified manually against LinkedIn. Returns the count cleared.
+ */
+export async function acceptAllPendingInvitations(page, { log = () => {}, maxAccepts = 100, maxMs = 90_000 } = {}) {
+  await page.goto('https://www.linkedin.com/mynetwork/invitation-manager/received/', {
+    waitUntil: 'domcontentloaded', timeout: 45000,
+  });
+  // Wait for at least one Accept button to render (or 12s if the list is empty).
+  await page.waitForFunction(
+    (acc, ign) => {
+      const isAcc = (s) => {
+        s = (s || '').toLowerCase();
+        if (!s) return false;
+        if (ign.some((v) => s.includes(v))) return false;
+        return acc.some((v) => s.includes(v));
+      };
+      return Array.from(document.querySelectorAll('button'))
+        .some((b) => isAcc(b.getAttribute('aria-label') || b.textContent || ''));
+    },
+    { timeout: 12000 },
+    ACCEPT_STEMS, IGNORE_STEMS,
+  ).catch(() => { /* empty list / slow — counts as 0 below */ });
+  await new Promise((r) => setTimeout(r, 1500));
+
+  const countAccepts = () => page.evaluate((acc, ign) => {
+    const isAcc = (s) => {
+      s = (s || '').toLowerCase();
+      if (!s) return false;
+      if (ign.some((v) => s.includes(v))) return false;
+      return acc.some((v) => s.includes(v));
+    };
+    return Array.from(document.querySelectorAll('button'))
+      .filter((b) => isAcc(b.getAttribute('aria-label') || b.textContent || '')).length;
+  }, ACCEPT_STEMS, IGNORE_STEMS);
+
+  let cleared = 0, stall = 0;
+  const startedAt = Date.now();
+  while (cleared < maxAccepts && (Date.now() - startedAt) < maxMs) {
+    const before = await countAccepts();
+    if (before === 0) break;
+    const clicked = await page.evaluate((acc, ign) => {
+      const isAcc = (s) => {
+        s = (s || '').toLowerCase();
+        if (!s) return false;
+        if (ign.some((v) => s.includes(v))) return false;
+        return acc.some((v) => s.includes(v));
+      };
+      const btn = Array.from(document.querySelectorAll('button'))
+        .find((b) => isAcc(b.getAttribute('aria-label') || b.textContent || ''));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    }, ACCEPT_STEMS, IGNORE_STEMS);
+    if (!clicked) break;
+    await new Promise((r) => setTimeout(r, 1200));
+    await _confirmAcceptDialog(page);
+    await new Promise((r) => setTimeout(r, 800));
+    const after = await countAccepts();
+    if (after < before) { cleared += (before - after); stall = 0; }
+    else if (++stall >= 3) { log('  ⓘ Accept-all: a pending card would not clear — stopping the sweep.'); break; }
+  }
+  if (cleared) log(`  ✓ Accept-all: accepted ${cleared} pending invitation(s) on the primary.`);
+  else log('  ⓘ Accept-all: no additional pending invitations to accept.');
+  return cleared;
 }

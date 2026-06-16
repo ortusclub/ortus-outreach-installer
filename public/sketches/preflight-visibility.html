@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pre-flight handshake — visibility variants</title>
+  <!-- 1:1 with the real app: the actual stylesheets + the real vj-card components -->
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* ── sketch chrome only (not part of the app) ───────────────────────── */
+    body { padding: 40px clamp(16px, 5vw, 64px) 120px; max-width: 980px; margin: 0 auto; }
+    .sk-h1 { font-family: var(--display); font-size: 2rem; color: var(--ink); margin: 0 0 6px; }
+    .sk-sub { color: var(--gray); font-size: 0.95rem; line-height: 1.5; margin: 0 0 36px; max-width: 70ch; }
+    .sk-variant { margin: 0 0 14px; }
+    .sk-tag { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase;
+              color: var(--gold, #caa24a); font-weight: 700; }
+    .sk-name { font-family: var(--display); font-size: 1.25rem; color: var(--ink); margin: 2px 0 4px; }
+    .sk-note { color: var(--gray); font-size: 0.85rem; line-height: 1.5; margin: 0 0 16px; max-width: 74ch; }
+    .sk-sep { border: none; border-top: 1px solid var(--hairline); margin: 46px 0; }
+
+    /* ── PROPOSED new "pre-flight" card state (gold, reuses real tokens) ──── */
+    body[data-dashboard='v3'] .vj-card.is-preflight::before { background: var(--gold, #caa24a); }
+    body[data-dashboard='v3'] .vj-card.is-preflight .vj-eyebrow .vj-tag .dot { background: var(--gold, #caa24a); }
+    body[data-dashboard='v3'] .vj-card.is-preflight .vj-live-ico { color: var(--gold, #caa24a); }
+    body[data-dashboard='v3'] .vj-card.is-preflight .vj-hbar > i { background: var(--gold, #caa24a); }
+
+    /* per-account handshake checklist */
+    .pf-list { display: flex; flex-direction: column; gap: 2px; }
+    .pf-row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 12px;
+              padding: 9px 2px; border-bottom: 1px solid var(--hairline-soft, rgba(0,0,0,.06)); }
+    .pf-row:last-child { border-bottom: none; }
+    .pf-ic { font-family: var(--mono); text-align: center; font-size: 0.95rem; }
+    .pf-acct { color: var(--ink); font-weight: 500; }
+    .pf-state { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em; color: var(--gray); }
+    .pf-done .pf-ic { color: var(--green, #1a7f4b); }
+    .pf-active .pf-ic { color: var(--gold, #caa24a); }
+    .pf-wait .pf-ic { color: var(--gray); }
+    .pf-skip .pf-ic, .pf-skip .pf-acct, .pf-skip .pf-state { color: var(--gray-faint, #b8b8b6); }
+
+    /* stepper (Variant B) */
+    .pf-steps { display: flex; align-items: center; gap: 0; margin: 4px 0 16px; }
+    .pf-step { display: flex; align-items: center; gap: 9px; color: var(--gray-faint, #b8b8b6); }
+    .pf-step + .pf-step::before { content: ""; width: 38px; height: 1px; background: var(--hairline); margin: 0 14px; }
+    .pf-step-no { width: 22px; height: 22px; border-radius: 9999px; border: 1px solid currentColor;
+                  display: inline-flex; align-items: center; justify-content: center;
+                  font-family: var(--mono); font-size: 0.72rem; font-weight: 600; }
+    .pf-step span:last-child { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em; }
+    .pf-step-done { color: var(--green, #1a7f4b); }
+    .pf-step-active { color: var(--gold, #caa24a); }
+
+    /* faux live-log lines (the real vj-log fills the same box) */
+    .pf-log .ll { font-family: var(--mono); font-size: 0.8rem; line-height: 1.85; color: var(--gray); }
+    .pf-log .ll b { color: var(--ink); font-weight: 500; }
+    .pf-log .ll .t { color: var(--gray-faint, #b8b8b6); }
+  </style>
+</head>
+<body data-dashboard="v3">
+  <h1 class="sk-h1">Primary handshake — making the pre-flight visible</h1>
+  <p class="sk-sub">
+    Three ways to surface the new pre-flight step (senders connect → primary accepts → outreach starts) on the
+    dashboard, all built from the real <code>vj-card</code> components. Proposed new state = a <b>gold</b> "pre-flight"
+    accent (green = running, blue = monitoring, gold = preparing). Pick a direction and I'll spec it.
+  </p>
+
+  <!-- ════════════════ VARIANT A — minimal ════════════════ -->
+  <div class="sk-variant">
+    <div class="sk-tag">Variant A</div>
+    <div class="sk-name">Minimal — same card, "Preparing" state + live beat</div>
+    <p class="sk-note">No new component. The normal campaign card opens in a gold "preparing introductions" state with a
+      live activity line and a 2-step progress bar; the detail is in the live log. Lowest effort, lowest footprint.</p>
+  </div>
+  <section class="vj-card is-preflight">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span>Preparing introductions</span>
+      <span class="vj-when">step 2 of 2</span>
+    </div>
+    <h2 class="vj-name">REZ_MIL_I CC2</h2>
+    <div class="vj-live">
+      <span class="vj-live-ico">↻</span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1">Primary is accepting connection requests…</span>
+        <span class="vj-live-l2">2 of 3 accepted · outreach starts when ready</span>
+      </span>
+    </div>
+    <div class="vj-hbar" role="progressbar"><i style="width:82%;background:var(--gold,#caa24a)"></i></div>
+    <div class="vj-hero">
+      <div class="vj-stats">
+        <span><b>3</b> accounts connecting</span>
+        <span><b>2</b> accepted</span>
+        <span>· <b>1</b> already connected</span>
+      </div>
+    </div>
+  </section>
+
+  <hr class="sk-sep" />
+
+  <!-- ════════════════ VARIANT B — dedicated stepper card ════════════════ -->
+  <div class="sk-variant">
+    <div class="sk-tag">Variant B</div>
+    <div class="sk-name">Dedicated pre-flight card — stepper + per-account checklist</div>
+    <p class="sk-note">A temporary gold card that owns the handshake: a Send → Accept → Start stepper plus a row per
+      account, then it disappears and the normal running card takes over. Most explicit — you see exactly what's happening
+      and which account is where.</p>
+  </div>
+  <section class="vj-card is-preflight">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span>Preparing introductions</span>
+      <span class="vj-when">REZ_MIL_I CC2</span>
+    </div>
+    <h2 class="vj-name">Connecting accounts to Sam Adcock</h2>
+    <div class="vj-hero" style="display:block">
+      <div class="pf-steps">
+        <div class="pf-step pf-step-done"><span class="pf-step-no">✓</span><span>Send requests</span></div>
+        <div class="pf-step pf-step-active"><span class="pf-step-no">2</span><span>Primary accepts</span></div>
+        <div class="pf-step"><span class="pf-step-no">3</span><span>Start outreach</span></div>
+      </div>
+      <div class="pf-list">
+        <div class="pf-row pf-done"><span class="pf-ic">✓</span><span class="pf-acct">Angelica</span><span class="pf-state">accepted by primary</span></div>
+        <div class="pf-row pf-active"><span class="pf-ic">↻</span><span class="pf-acct">Miriam</span><span class="pf-state">accepting…</span></div>
+        <div class="pf-row pf-wait"><span class="pf-ic">•</span><span class="pf-acct">Cindy</span><span class="pf-state">request sent — waiting to appear</span></div>
+        <div class="pf-row pf-skip"><span class="pf-ic">–</span><span class="pf-acct">Stanley</span><span class="pf-state">already connected — skipped</span></div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="sk-sep" />
+
+  <!-- ════════════════ VARIANT C — integrated phase + log ════════════════ -->
+  <div class="sk-variant">
+    <div class="sk-tag">Variant C</div>
+    <div class="sk-name">Integrated — phase chip + checklist + live log in one card</div>
+    <p class="sk-note">The campaign card itself, with a gold "PRE-FLIGHT" chip, the progress bar tracking the handshake, a
+      compact checklist, and the real live log streaming the beats. Once done it morphs straight into the running card.
+      Balanced — visible without adding a second card.</p>
+  </div>
+  <section class="vj-card is-preflight">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span>Pre-flight · primary handshake</span>
+      <span class="vj-when">starts outreach when ready</span>
+    </div>
+    <h2 class="vj-name">REZ_MIL_I CC2</h2>
+    <div class="vj-live">
+      <span class="vj-live-ico">↻</span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1">Primary accepting — Miriam</span>
+        <span class="vj-live-l2">2 of 3 done · waiting up to 2 min for the last to appear</span>
+      </span>
+    </div>
+    <div class="vj-hbar" role="progressbar"><i style="width:66%;background:var(--gold,#caa24a)"></i></div>
+    <div class="vj-hero" style="display:block">
+      <div class="pf-list" style="margin-bottom:14px">
+        <div class="pf-row pf-done"><span class="pf-ic">✓</span><span class="pf-acct">Angelica</span><span class="pf-state">accepted by primary</span></div>
+        <div class="pf-row pf-active"><span class="pf-ic">↻</span><span class="pf-acct">Miriam</span><span class="pf-state">accepting…</span></div>
+        <div class="pf-row pf-wait"><span class="pf-ic">•</span><span class="pf-acct">Cindy</span><span class="pf-state">request sent — waiting</span></div>
+      </div>
+      <div class="pf-log">
+        <div class="ll"><span class="t">[10:31:02]</span> 🤝 Preparing introductions — <b>3</b> accounts need to connect to <b>Sam Adcock</b></div>
+        <div class="ll"><span class="t">[10:31:48]</span> → requests sent · opening primary to accept…</div>
+        <div class="ll"><span class="t">[10:32:01]</span> ✓ primary accepted <b>Angelica</b></div>
+        <div class="ll"><span class="t">[10:32:09]</span> ↻ accepting <b>Miriam</b>…</div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="sk-sep" />
+  <p class="sk-note" style="max-width:74ch">
+    <b>Fallback behaviour (all variants):</b> if a request hasn't surfaced within the ~2-min window, the card notes
+    "<i>finishing in the background</i>" and outreach starts anyway — the straggler falls to the existing idle-accept
+    queue. The card never blocks the campaign.
+  </p>
+</body>
+</html>

@@ -306,6 +306,12 @@
      Typography is bumped one notch heavier/darker than the radio cards
      to make the live state pop more than the picker. The green left rail
      stays — it's the active-state identity for the dashboard. */
+  /* v2.104.1: .vj-card sets display:grid below, which overrides the [hidden]
+     attribute's display:none — so card.hidden=true couldn't hide the dashboard
+     Replies card. This ID-specificity rule restores `hidden` for that card
+     while auto reply-tracking is disabled (see DASH_REPLIES_PANEL_ENABLED in
+     app.js). Delete this rule to bring the card back. */
+  #replies-card[hidden] { display: none; }
   body[data-dashboard='v3'] .vj-card {
     position: relative;
     background: var(--card-bg);
@@ -395,6 +401,30 @@
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-hbar,
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-hero { display: none; }
   body[data-dashboard='v3'] .vj-card.is-monitor .vj-monitor { display: block; grid-area: hero; }
+
+  /* v2.105 — pre-flight primary handshake (gold rail/dot/bar; green=running,
+     blue=monitoring). Mirrors the is-monitor hero swap: the per-account
+     checklist takes over the hero grid-area while the handshake runs.
+     NOTE: display on .pf-list is scoped to .is-preflight ONLY — never an
+     unconditional `.pf-list { display: … }` — so the [hidden] attribute still
+     hides it when not preparing (an author display rule would override [hidden]). */
+  body[data-dashboard='v3'] .vj-card.is-preflight::before { background: var(--gold, #caa24a); }
+  body[data-dashboard='v3'] .vj-card.is-preflight .vj-eyebrow .vj-tag .dot { background: var(--gold, #caa24a); }
+  body[data-dashboard='v3'] .vj-card.is-preflight .vj-live-ico { color: var(--gold, #caa24a); }
+  body[data-dashboard='v3'] .vj-card.is-preflight .vj-hbar > i { background: var(--gold, #caa24a); }
+  body[data-dashboard='v3'] .vj-card.is-preflight .vj-hero { display: none; }
+  body[data-dashboard='v3'] .vj-card.is-preflight .pf-list { display: flex; grid-area: hero; flex-direction: column; gap: 2px; }
+  body[data-dashboard='v3'] .pf-row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 12px; padding: 9px 2px; border-bottom: 1px solid var(--hairline-soft, rgba(0,0,0,.06)); }
+  body[data-dashboard='v3'] .pf-row:last-child { border-bottom: none; }
+  body[data-dashboard='v3'] .pf-ic { font-family: var(--mono); text-align: center; font-size: 0.95rem; }
+  body[data-dashboard='v3'] .pf-acct { color: var(--ink); font-weight: 500; }
+  body[data-dashboard='v3'] .pf-state { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em; color: var(--gray); }
+  body[data-dashboard='v3'] .pf-done .pf-ic { color: var(--green, #1a7f4b); }
+  body[data-dashboard='v3'] .pf-active .pf-ic { color: var(--gold, #caa24a); }
+  body[data-dashboard='v3'] .pf-wait .pf-ic { color: var(--gray); }
+  body[data-dashboard='v3'] .pf-skip .pf-ic,
+  body[data-dashboard='v3'] .pf-skip .pf-acct,
+  body[data-dashboard='v3'] .pf-skip .pf-state { color: var(--gray-faint, #b8b8b6); }
   body[data-dashboard='v3'] .vj-mon-hero { display: flex; align-items: flex-end; gap: 14px; }
   body[data-dashboard='v3'] .vj-mon-count {
     font-family: var(--display); font-weight: 500; font-size: 3.13rem; line-height: 0.85;

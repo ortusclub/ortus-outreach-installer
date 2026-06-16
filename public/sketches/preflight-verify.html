@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pre-flight CSS verification</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style> body { padding: 40px; max-width: 920px; margin: 0 auto; } </style>
+</head>
+<!-- Verifies the REAL #active-card markup in is-preflight state against the REAL
+     CSS: gold accents, hero-swap (checklist replaces vj-hero), gold progress. -->
+<body data-dashboard="v3">
+  <section class="vj-card is-preflight" id="active-card">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Pre-flight · primary handshake</span></span>
+      <span class="vj-when">starts outreach when ready</span>
+    </div>
+    <h2 class="vj-name"><span>REZ_MIL_I CC2</span></h2>
+    <div class="vj-live is-checking">
+      <span class="vj-live-ico">↻</span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1">Preparing introductions — primary handshake</span>
+        <span class="vj-live-l2">2 of 3 connected · outreach starts when ready</span>
+      </span>
+    </div>
+    <div class="pf-list" id="active-preflight-list">
+      <div class="pf-row pf-done"><span class="pf-ic">✓</span><span class="pf-acct">Angelica</span><span class="pf-state">accepted by primary</span></div>
+      <div class="pf-row pf-active"><span class="pf-ic">↻</span><span class="pf-acct">Miriam</span><span class="pf-state">accepting…</span></div>
+      <div class="pf-row pf-wait"><span class="pf-ic">•</span><span class="pf-acct">Cindy</span><span class="pf-state">request sent — waiting</span></div>
+      <div class="pf-row pf-skip"><span class="pf-ic">–</span><span class="pf-acct">Stanley</span><span class="pf-state">already connected</span></div>
+    </div>
+    <div class="vj-hbar" role="progressbar"><i style="width:66%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row"><div class="num"><span>0</span><span class="sub">%</span></div></div>
+      <div class="vj-stats"><span>SHOULD BE HIDDEN during pre-flight</span></div>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill">Open</button>
+    </div>
+  </section>
+</body>
+</html>

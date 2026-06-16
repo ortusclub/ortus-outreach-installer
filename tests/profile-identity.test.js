@@ -301,6 +301,45 @@ test('strict: profile did not load (no number, no name) → reject', () => {
   assert.match(v.reason, /no-member-number|did not load/i);
 });
 
+// v2.103 — the 2026-06-15 mass-skip: encoded /in/ACwAA… leads on a rate-limited
+// session. The Voyager member-number API was throttled (empty number), but the
+// profile DID load the right person. Before waitForProfileRender, the <h1> name
+// was read too early (empty) so name-match could never fire and the gate skipped
+// healthy leads as "no-member-number-captured". Once the name renders and is
+// captured, name-match must confirm WITHOUT any member number — that is the
+// payoff this test guards.
+test('strict: encoded URL, member-number throttled (empty), but rendered name matches → confirm via name-match (Paola)', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '',                                          // Voyager throttled
+    capturedUrn: 'ACoAAGUY1OsB8PCjf-rIJd5RsxV825VjWMb3GGw',            // real target URN
+    capturedName: 'Paola Scala',                                       // now captured after render
+    leadUrl: 'https://www.linkedin.com/in/ACwAAAKAh9cBM0NoEO_fpo4otHVxXytGloE31fM',
+    landedUrl: 'https://www.linkedin.com/in/paolascala/',              // resolved to the vanity slug
+    sourceMemberId: '',                                                // sheet had no number for this row
+    sourceName: 'Paola Scala',
+    strict: true,
+  });
+  assert.equal(v.ok, true);
+  assert.match(v.reason, /name-match/);
+});
+
+// Safety: the render fix must NOT weaken the wrong-person guard. Same throttled
+// number, but the rendered name belongs to someone else → still hard-reject.
+test('strict: encoded URL, empty number, rendered name is a DIFFERENT person → still reject', () => {
+  const v = verifyConnectIdentity({
+    capturedMemberNumber: '',
+    capturedUrn: 'ACoAAGUY1OsB8PCjf-rIJd5RsxV825VjWMb3GGw',
+    capturedName: 'Dion Kadriu',                                       // wrong person rendered
+    leadUrl: 'https://www.linkedin.com/in/ACwAAAKAh9cBM0NoEO_fpo4otHVxXytGloE31fM',
+    landedUrl: 'https://www.linkedin.com/in/dion-kadriu/',
+    sourceMemberId: '',
+    sourceName: 'Paola Scala',
+    strict: true,
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /name-mismatch/);
+});
+
 test('strict: bare member-number with no corroboration → reject (lenient would accept)', () => {
   const args = {
     capturedMemberNumber: '37007123',

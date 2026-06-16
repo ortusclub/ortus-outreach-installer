@@ -13,6 +13,11 @@ test('isAcceptLabel matches accept verbs across locales', () => {
   assert.equal(isAcceptLabel('Tanggapin ang imbitasyon ni Juan Dela Cruz'), true); // TL aria-label form
 });
 
+test('isAcceptLabel distinguishes the "Take care when connecting" modal buttons', () => {
+  assert.equal(isAcceptLabel('Accept invite'), true);   // the confirm we must click
+  assert.equal(isAcceptLabel('View profile'), false);   // must NOT click
+});
+
 test('isAcceptLabel rejects ignore/decline verbs — never clicks Ignore', () => {
   assert.equal(isAcceptLabel('Kontaktanfrage von Tony Otto ignorieren'), false); // DE ignore
   assert.equal(isAcceptLabel('Ignore'), false);

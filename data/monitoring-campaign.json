@@ -2,10 +2,10 @@
   "id": "legacy-singleton",
   "name": "",
   "state": "monitoring",
-  "monitoringUntil": "2026-06-16T13:05:27.434Z",
-  "nextCheckAt": "2026-06-15T13:35:26.434Z",
+  "monitoringUntil": "2026-06-17T15:09:52.844Z",
+  "nextCheckAt": "2026-06-16T15:39:51.844Z",
   "logs": [
-    "[2026-06-15T13:05:27.434Z] 🛏 Monitoring · auto-check starting (cadence=30m)"
+    "[2026-06-16T15:09:52.844Z] 🛏 Monitoring · auto-check starting (cadence=30m)"
   ],
   "checkIntervalMinutes": 30
 }

@@ -42,6 +42,7 @@ import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
+import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
 import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
@@ -56,6 +57,7 @@ _setAlertImpl((msg) => {
 });
 import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
 import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs } from './src/operator-prefs.js';
+import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/operator-identity.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { checkDiskFree } from './src/disk-check.js';
@@ -820,6 +822,34 @@ app.post('/api/templates/preview', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Build a clean campaign config from a request body. Shared between the
 // /api/campaign/start handler and the queue runner so a queued campaign
+// v2.104: server-side mirror of the wizard's primary-URL hard-lock (defense in
+// depth — covers re-run/restore/queue-only paths that don't go through the
+// browser gate). For the intro flows only, a non-blank primaryUrl must be a
+// real personal /in/ profile. Shares validatePrimaryUrl with the client, so
+// the reject reason matches the inline error the operator saw. Returns true
+// (and sends a 400) when the request should be rejected.
+function rejectIfBadPrimaryUrl(body, res) {
+  const mode = body && body.mode;
+  if (mode !== 'connect_and_introduce' && mode !== 'introduce_back') return false;
+  const url = ((body && body.templates && body.templates.primaryUrl) || '').toString().trim();
+  const v = validatePrimaryUrl(url);
+  if (!v.ok) {
+    res.status(400).json({ error: `Primary person URL is invalid — ${v.reason}` });
+    return true;
+  }
+  return false;
+}
+
+// Mandatory operator-identity gate. The shared dashboard login can't identify
+// who's operating, so every reservation would mislabel; we hard-block campaign
+// start until this machine's operator email is set. Returns true (and sends a
+// 409 the UI turns into the mandatory modal) when it's missing.
+function rejectIfNoOperatorEmail(res) {
+  if (getOperatorEmail()) return false;
+  res.status(409).json({ error: 'operator-email-required', code: 'OPERATOR_EMAIL_REQUIRED' });
+  return true;
+}
+
 // runs with exactly the same shape as a directly-launched one.
 function buildCampaignConfig(body) {
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
@@ -932,6 +962,8 @@ app.post('/api/campaign/start', async (req, res) => {
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
+    if (rejectIfNoOperatorEmail(res)) return;
+    if (rejectIfBadPrimaryUrl(body, res)) return;
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
@@ -1190,6 +1222,8 @@ app.post('/api/campaign/queue-only', async (req, res) => {
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
+    if (rejectIfNoOperatorEmail(res)) return;
+    if (rejectIfBadPrimaryUrl(body, res)) return;
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
@@ -3665,6 +3699,27 @@ app.post('/api/operator-prefs', async (req, res) => {
     res.json({ ok: true, prefs: next });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Per-machine operator identity — the email stamped as the reserver in the SoO
+// 'CC User App' column. Mandatory: campaign start is gated on it (see below),
+// because the shared dashboard login can't identify who's actually operating.
+app.get('/api/operator-identity', (req, res) => {
+  const email = getOperatorEmail();
+  res.json({ ok: true, email, set: !!email });
+});
+
+app.post('/api/operator-identity', (req, res) => {
+  try {
+    const email = (req.body && req.body.email != null) ? String(req.body.email).trim() : '';
+    if (!email || !isPlausibleEmail(email)) {
+      return res.status(400).json({ error: 'A valid email is required.' });
+    }
+    const saved = setOperatorEmail(email);
+    res.json({ ok: true, email: saved, set: !!saved });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

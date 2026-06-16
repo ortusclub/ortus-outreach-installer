@@ -25,6 +25,7 @@ import {
 import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity } from '/js/live-activity.mjs';
+import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -212,6 +213,7 @@ function gatherCampaignFormState() {
     // v2.91: CC+IC auto-accept + automated first follow-up. DOM-read, gated to
     // intro flows so leftover CC+IC config can't leak into other modes.
     autoAcceptPrimary: _isIntroFlow ? !!document.getElementById('auto-accept-toggle')?.checked : false,
+    autoAcceptAllPending: _isIntroFlow ? !!document.getElementById('auto-accept-all-toggle')?.checked : false,
     followUpEnabled: _isIntroFlow ? !!document.getElementById('follow-up-toggle')?.checked : false,
     followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
@@ -3654,6 +3656,31 @@ async function startCampaign(opts = {}) {
     }
   }
 
+  // v2.104: HARD-LOCK — a pasted Primary person URL must be a real personal
+  // /in/ profile. Structural check only (no network lookup), so it can block
+  // the start without ever false-flagging the right person on a throttled
+  // session. Blank is allowed (the URL is optional — it just enables the
+  // connected-to-primary check + auto-accept). The server re-checks this on
+  // /api/campaign/start as defense-in-depth.
+  if (_mode === 'connect_and_introduce' || _mode === 'introduce_back') {
+    const _pUrlEl = document.getElementById('primary-person-url');
+    const _v = validatePrimaryUrl((_pUrlEl?.value || '').trim());
+    if (!_v.ok) {
+      showPrimaryUrlError(_v.reason);
+      alert(
+        "That doesn't look like the Primary person's LinkedIn profile URL.\n\n" +
+        _v.reason + '\n\n' +
+        'Fix the Primary Person · LinkedIn profile URL and try again.'
+      );
+      if (_pUrlEl) {
+        _pUrlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => _pUrlEl.focus(), 400);
+      }
+      return;
+    }
+    clearPrimaryUrlError();
+  }
+
   // Resolve sender first names per profile (SoO column D, or local-browser input).
   // Resolver runs silently — the operator-facing preview popup was dropped
   // in favour of the post-launch tips card. Sheet-snapshot disclaimer lives
@@ -3731,6 +3758,7 @@ async function startCampaign(opts = {}) {
     // v2.91: CC+IC auto-accept + automated first follow-up. DOM-read at launch,
     // gated to intro flows. Backend normalizeTemplates passes these through.
     autoAcceptPrimary: _isIntroFlow ? !!document.getElementById('auto-accept-toggle')?.checked : false,
+    autoAcceptAllPending: _isIntroFlow ? !!document.getElementById('auto-accept-all-toggle')?.checked : false,
     followUpEnabled: _isIntroFlow ? !!document.getElementById('follow-up-toggle')?.checked : false,
     followUpBody: _isIntroFlow ? (document.getElementById('follow-up-body')?.value || '') : '',
     followUpDelayMinutes: _isIntroFlow ? (Number(document.getElementById('follow-up-delay')?.value) || 10) : 10,
@@ -3963,6 +3991,12 @@ async function submitStartCampaign(body, opts = {}) {
 
     if (!res.ok) {
       const txt = await res.text();
+      // v2.106.0 — mandatory operator-identity gate. Server 409s with this code
+      // when this machine's operator email isn't set; show the modal, not a raw alert.
+      if (res.status === 409 && txt.includes('OPERATOR_EMAIL_REQUIRED')) {
+        openOperatorEmailModal({ mandatory: true });
+        return;
+      }
       alert(`Could not ${opts.queueOnly ? 'queue' : 'start'} campaign:\n\n${txt}`);
       return;
     }
@@ -4023,6 +4057,82 @@ async function submitStartCampaign(body, opts = {}) {
     alert(`Network error starting campaign:\n\n${e.message}`);
   }
 }
+
+// ── v2.106.0 — Mandatory per-machine operator identity ──────────────────
+// Every operator's app logs in with the SAME shared dashboard credential, so
+// the login can't say who's actually operating. This email is the authoritative
+// reserver stamped into the SoO 'CC User App' column, and is REQUIRED before any
+// campaign can start (the server gates start/queue; this UI mirrors that).
+let _operatorEmailMandatory = false;
+
+async function initOperatorIdentity() {
+  try {
+    const r = await fetch('/api/operator-identity');
+    const d = await r.json();
+    _setOperatorChip(d && d.email);
+    if (!d || !d.set) openOperatorEmailModal({ mandatory: true });
+  } catch { /* offline — the server-side start gate still protects it */ }
+}
+
+function _setOperatorChip(email) {
+  const el = document.getElementById('operator-chip-email');
+  if (el) el.textContent = email || 'not set — click to set';
+  const chip = document.getElementById('operator-chip');
+  if (chip) chip.classList.toggle('operator-chip--unset', !email);
+}
+
+function openOperatorEmailModal(opts = {}) {
+  _operatorEmailMandatory = !!opts.mandatory;
+  const modal = document.getElementById('operator-email-modal');
+  if (!modal) return;
+  const cancel = document.getElementById('operator-email-cancel');
+  if (cancel) cancel.style.display = _operatorEmailMandatory ? 'none' : '';
+  const err = document.getElementById('operator-email-error');
+  if (err) { err.hidden = true; err.textContent = ''; }
+  const input = document.getElementById('operator-email-input');
+  // Pre-fill with the current value when editing (non-mandatory re-open).
+  if (input && !_operatorEmailMandatory) {
+    const cur = document.getElementById('operator-chip-email');
+    const v = cur ? cur.textContent.trim() : '';
+    input.value = /@/.test(v) ? v : '';
+  }
+  modal.classList.remove('hidden');
+  if (input) setTimeout(() => input.focus(), 50);
+}
+
+function closeOperatorEmailModal() {
+  if (_operatorEmailMandatory) return; // can't dismiss the mandatory gate
+  const modal = document.getElementById('operator-email-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function saveOperatorEmail() {
+  const input = document.getElementById('operator-email-input');
+  const err = document.getElementById('operator-email-error');
+  const email = ((input && input.value) || '').trim();
+  const showErr = (m) => { if (err) { err.textContent = m; err.hidden = false; } };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('Enter a valid email address.'); return; }
+  try {
+    const r = await fetch('/api/operator-identity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) { showErr((d && d.error) || 'Could not save — try again.'); return; }
+    _setOperatorChip(d.email);
+    _operatorEmailMandatory = false;
+    const modal = document.getElementById('operator-email-modal');
+    if (modal) modal.classList.add('hidden');
+  } catch {
+    showErr('Network error — try again.');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initOperatorIdentity);
+window.openOperatorEmailModal = openOperatorEmailModal;
+window.closeOperatorEmailModal = closeOperatorEmailModal;
+window.saveOperatorEmail = saveOperatorEmail;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Post-launch tips — modal (Variant A) + sidebar card (Variant B).
@@ -7229,6 +7339,7 @@ function applyPresetConfig(config) {
   // v2.91: restore CC+IC auto-accept + automated first follow-up. Without these
   // a Re-run / preset load drops the toggles back to defaults.
   if (document.getElementById('auto-accept-toggle')) document.getElementById('auto-accept-toggle').checked = !!t.autoAcceptPrimary;
+  if (document.getElementById('auto-accept-all-toggle')) document.getElementById('auto-accept-all-toggle').checked = !!t.autoAcceptAllPending;
   if (document.getElementById('follow-up-toggle')) document.getElementById('follow-up-toggle').checked = !!t.followUpEnabled;
   setV('follow-up-body', t.followUpBody || '');
   if (t.followUpDelayMinutes) setV('follow-up-delay', t.followUpDelayMinutes);
@@ -8296,7 +8407,37 @@ function savePrimaryPersonFields() {
   } catch { /* storage blocked */ }
   // v2.91: typing the primary URL unlocks the auto-accept toggle live.
   try { if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate(); } catch (_) {}
+  // v2.104: live structural validation of the primary URL as the operator types.
+  try { revalidatePrimaryUrlField(); } catch (_) {}
 }
+
+// v2.104: inline error UX for the Primary person URL field. The error banner
+// + red border show whenever the pasted value is a non-blank, malformed URL,
+// and clear the moment it's valid (or blanked). Shares validatePrimaryUrl with
+// the start-gate hard-lock and the server, so what you see is exactly what
+// blocks the launch.
+function showPrimaryUrlError(msg) {
+  const el = document.getElementById('primary-person-url-error');
+  const input = document.getElementById('primary-person-url');
+  if (el) { el.textContent = msg; el.hidden = false; }
+  if (input) input.classList.add('intro-config-input--invalid');
+}
+function clearPrimaryUrlError() {
+  const el = document.getElementById('primary-person-url-error');
+  const input = document.getElementById('primary-person-url');
+  if (el) { el.textContent = ''; el.hidden = true; }
+  if (input) input.classList.remove('intro-config-input--invalid');
+}
+function revalidatePrimaryUrlField() {
+  const input = document.getElementById('primary-person-url');
+  if (!input) return;
+  const v = validatePrimaryUrl((input.value || '').trim());
+  if (v.ok) clearPrimaryUrlError();
+  else showPrimaryUrlError(v.reason);
+}
+window.showPrimaryUrlError = showPrimaryUrlError;
+window.clearPrimaryUrlError = clearPrimaryUrlError;
+window.revalidatePrimaryUrlField = revalidatePrimaryUrlField;
 
 // v2.91: Automated first follow-up — reveal the message/delay/sender fields
 // only when the toggle is on.
@@ -8327,6 +8468,16 @@ function refreshAutoAcceptGate() {
     if (!hasUrl) toggle.checked = false;
   }
   if (gate) gate.style.display = hasUrl ? 'none' : '';
+  // v2.107: the accept-all sub-toggle is only meaningful while auto-accept is on
+  // (the sweep runs inside the pre-flight handshake, which requires auto-accept).
+  // Disable + clear it whenever auto-accept is off, so it can't silently apply.
+  const allToggle = document.getElementById('auto-accept-all-toggle');
+  const allRow = document.getElementById('auto-accept-all-row');
+  const allHint = document.getElementById('auto-accept-all-hint');
+  const aaOn = !!(toggle && toggle.checked && !toggle.disabled);
+  if (allToggle) { allToggle.disabled = !aaOn; if (!aaOn) allToggle.checked = false; }
+  if (allRow) allRow.style.opacity = aaOn ? '' : '0.45';
+  if (allHint) allHint.style.opacity = aaOn ? '' : '0.45';
   refreshPrimarySourceLabels();
 }
 window.refreshAutoAcceptGate = refreshAutoAcceptGate;
@@ -8551,9 +8702,18 @@ function stopDashboardPolling() {
 // v2.72: Replies panel. Polls /api/replies (populated by the hourly
 // reply-check) and renders the newest inbound messages with the account to
 // log into, so the operator can reply to each person manually.
+// v2.104.1: the dashboard Replies card is hidden while automatic reply-tracking
+// is disabled (see REPLY_CHECK_ENABLED in src/post-campaign-reply-check.js).
+// Force the card hidden and skip the /api/replies poll so stale entries can't
+// resurrect a dead "checked automatically every hour" panel. Flip back to true
+// together with REPLY_CHECK_ENABLED when reply tracking is restored.
+const DASH_REPLIES_PANEL_ENABLED = false;
 let _repliesInFlight = false;
 async function renderReplies() {
   const card = document.getElementById('replies-card');
+  // Force-hide via the attribute AND inline display (inline beats the
+  // .vj-card{display:grid} rule that would otherwise override [hidden]).
+  if (!DASH_REPLIES_PANEL_ENABLED) { if (card) { card.hidden = true; card.style.display = 'none'; } return; }
   const list = document.getElementById('replies-list');
   if (!card || !list || _repliesInFlight) return;
   _repliesInFlight = true;
@@ -12376,6 +12536,30 @@ window.renderActiveCard = function(status) {
   }
   card.classList.remove('is-empty');
   card.classList.toggle('is-monitor', isMonitoring);
+  // v2.105: pre-flight primary handshake state (gold). Mirrors is-monitor.
+  const _isPreflight = status.phase === 'preflight';
+  card.classList.toggle('is-preflight', _isPreflight);
+  const _pfList = document.getElementById('active-preflight-list');
+  if (_pfList) {
+    if (_isPreflight) {
+      const ICONS = { connected: '✓', accepting: '↻', sent: '•', already_connected: '–', unverified: '•', pending: '•', no_url: '–' };
+      const LABEL = { connected: 'accepted by primary', accepting: 'accepting…', sent: 'request sent — waiting', already_connected: 'already connected', unverified: 'could not verify', pending: 'request sent — waiting', no_url: 'no primary URL' };
+      const conn = status.primaryConn || {};
+      const names = status.profileNames || [];
+      const ids = status.profileIds || [];
+      const rows = ids.filter((id) => id && id !== 'local-browser' && conn[id]).map((id) => {
+        const st = conn[id];
+        const nm = names[ids.indexOf(id)] || id;
+        const cls = st === 'connected' ? 'pf-done' : st === 'accepting' ? 'pf-active' : (st === 'already_connected' || st === 'no_url') ? 'pf-skip' : 'pf-wait';
+        return `<div class="pf-row ${cls}"><span class="pf-ic">${ICONS[st] || '•'}</span><span class="pf-acct">${escHtml(nm)}</span><span class="pf-state">${LABEL[st] || ''}</span></div>`;
+      }).join('');
+      _pfList.innerHTML = rows;
+      _pfList.hidden = !rows;
+    } else {
+      _pfList.hidden = true;
+      _pfList.innerHTML = '';
+    }
+  }
   try { applyCheckSectionMode(status.mode); } catch (_) { /* section relabel best-effort */ }
   // v2.59.19: live activity line — what the campaign is doing right now.
   try {

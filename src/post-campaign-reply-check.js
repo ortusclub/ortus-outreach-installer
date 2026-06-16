@@ -40,6 +40,16 @@ const SCHEDULE_FILE = dataPath('post-campaign-reply-check.json');
 const TICK_INTERVAL_MS = 30 * 60 * 1000;        // ticks every 30 min…
 const REPLY_COOLDOWN_MS = 60 * 60 * 1000;       // …but each account is swept at most 1×/hour
 
+// v2.103.2: HARD-DISABLED. On a rate-limited / degraded session every inbox
+// scan fails (checkProfileDms → "Voyager returned null", "detached Frame",
+// or ENOENT on the profile's Default/Preferences). The scheduler still opens a
+// browser per (sheet, profile) for each failed scan, producing a continuous
+// open/fail/close browser storm that the operator could only stop by
+// force-quitting the app — and it caught zero replies anyway. Disabled until
+// the scan path is made degradation-safe (fail → skip with backoff, never
+// re-open a dead session). Flip back to true to re-enable.
+const REPLY_CHECK_ENABLED = false;
+
 // Stages meaning "we sent an outbound message and are tracking a reply."
 // Mirrors CHECK_DMS_STAGE_FILTER in server.js.
 const REPLY_STAGE_FILTER = new Set(['DM Sent', 'IC Sent', 'OP Sent', 'InM Sent', 'Replied']);
@@ -215,6 +225,7 @@ async function notifyNewReplies(entry, freshReplies) {
  * Sweeps each due account sequentially to keep GoLogin resource use predictable.
  */
 async function tick() {
+  if (!REPLY_CHECK_ENABLED) return; // v2.103.2: hard-disabled — see flag note above
   if (await isCampaignRunning()) {
     console.log('[reply-check] Tick skipped — campaign is running');
     return;
@@ -313,6 +324,10 @@ async function tick() {
 }
 
 export function startScheduler() {
+  if (!REPLY_CHECK_ENABLED) {
+    console.log('[reply-check] Scheduler DISABLED (v2.103.2) — not starting. Inbox reply tracking is off until the scan path is degradation-safe.');
+    return;
+  }
   if (_tickTimer) return;
   _tickTimer = setInterval(() => { tick().catch((err) => console.warn(`[reply-check] Tick threw: ${err.message}`)); }, TICK_INTERVAL_MS);
   setTimeout(() => { tick().catch((err) => console.warn(`[reply-check] First-tick threw: ${err.message}`)); }, 45_000);

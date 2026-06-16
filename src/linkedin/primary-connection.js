@@ -65,6 +65,21 @@ export function primaryConnState(connected) {
 }
 
 /**
+ * Classify a sendConnectionRequest failure into the connectResult verdict. An
+ * INVITATION_ALREADY_PENDING throw means a connect request to this profile is
+ * ALREADY outstanding (we didn't send a new one this run, but there IS a pending
+ * invite the primary can still accept) — distinct from a genuine send failure
+ * where nothing is pending. The 'already_pending' verdict is what lets the
+ * pre-flight handshake auto-accept a request the account sent in a PRIOR run
+ * that was never accepted (otherwise the account stays non-1st-degree and its
+ * intros stay held forever). Pure.
+ * @returns {'already_pending'|'failed'}
+ */
+export function classifyConnectError(message) {
+  return message === 'INVITATION_ALREADY_PENDING' ? 'already_pending' : 'failed';
+}
+
+/**
  * Read the connection degree to the profile at `primaryUrl`.
  * Returns '1st' | '2nd' | '3rd' | 'unknown'.
  *
@@ -165,9 +180,16 @@ export async function checkAndConnectPrimary(page, primaryUrl, { log = () => {},
       out.connectResult = 'sent';
       log(`  🔗 [${pName}] Connect request sent to the primary.`);
     } catch (e) {
-      out.connectResult = 'failed';
+      out.connectResult = classifyConnectError(e.message); // 'already_pending' | 'failed'
       out.error = e.message;
-      log(`  ⚠ [${pName}] Connect to primary failed: ${e.message}`);
+      if (out.connectResult === 'already_pending') {
+        // A request from this account to the primary is already outstanding
+        // (sent on a prior run, never accepted). NOT a failure — the primary
+        // can still accept it, so the caller queues an auto-accept for it.
+        log(`  🔗 [${pName}] Already invited the primary (request still pending) — will accept it from the primary side.`);
+      } else {
+        log(`  ⚠ [${pName}] Connect to primary failed: ${e.message}`);
+      }
     }
   } catch (e) {
     out.error = e.message;

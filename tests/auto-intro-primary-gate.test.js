@@ -44,10 +44,35 @@ test('_shouldQueueAutoAccept: no queue when no connect was attempted', () => {
   }), false);
 });
 
-test('_shouldQueueAutoAccept: no queue when the connect send failed', () => {
+test('_shouldQueueAutoAccept: STILL queues when the connect "failed" — the primary list arbitrates', () => {
+  // 2026-06-16 "Micha": her primary profile page didn't render (encoded URL /
+  // rate-limit) so sendConnectionRequest threw "Connect button not found" — yet
+  // her invite from a prior run was sitting pending in the primary's inbox. A
+  // 'failed' verdict must NOT drop the account: we queue the accept and let the
+  // primary's received list (precise matching) decide. A genuine no-invite is
+  // matched against nothing and the runner marks it 'skipped' — safe.
   assert.equal(_shouldQueueAutoAccept({
     autoAcceptPrimary: true, connectAttempted: true, connectResult: 'failed',
-  }), false);
+  }), true);
+});
+
+test('_shouldQueueAutoAccept: queues when the invite was ALREADY pending', () => {
+  assert.equal(_shouldQueueAutoAccept({
+    autoAcceptPrimary: true, connectAttempted: true, connectResult: 'already_pending',
+  }), true);
+});
+
+test('_shouldQueueAutoAccept: queues regardless of connectResult once a connect was attempted', () => {
+  // connectResult is no longer part of the decision — only "did we try to connect".
+  for (const r of ['sent', 'already_pending', 'failed', undefined]) {
+    assert.equal(_shouldQueueAutoAccept({ autoAcceptPrimary: true, connectAttempted: true, connectResult: r }), true, `result=${r}`);
+  }
+});
+
+test('_shouldQueueAutoAccept: never queues when auto-accept is disabled, whatever happened', () => {
+  for (const r of ['sent', 'already_pending', 'failed']) {
+    assert.equal(_shouldQueueAutoAccept({ autoAcceptPrimary: false, connectAttempted: true, connectResult: r }), false, `result=${r}`);
+  }
 });
 
 test('_shouldQueueAutoAccept: tolerates missing argument', () => {

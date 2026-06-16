@@ -115,6 +115,13 @@
       </div>
 
       <div class="sidebar-footer">
+        <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
+             in the SoO 'CC User App' column; click to set/change. Highlighted
+             gold until set (it's mandatory before a campaign can start). -->
+        <button type="button" class="operator-chip" id="operator-chip" onclick="openOperatorEmailModal({ mandatory:false })" title="The email stamped on every LinkedIn account you reserve. Click to change.">
+          <span class="operator-chip-label">Operating as</span>
+          <strong id="operator-chip-email">—</strong>
+        </button>
         <div class="user-chip">
           <strong id="user-chip-email">info@ortus.solutions</strong>
           <span id="user-chip-date"></span>
@@ -208,6 +215,7 @@
             <span class="vj-live-l2" id="activeLiveL2"></span>
           </span>
         </div>
+        <div class="pf-list" id="active-preflight-list" hidden></div>
         <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="0" aria-label="Active campaign progress"><i id="activeBar" style="width:0%"></i></div>
         <!-- Monitoring hero (Variant E) — shown only when .is-monitor. Big
              live countdown to the next acceptance check + a quiet stat line. -->
@@ -525,6 +533,7 @@
             <div class="intro-config-field">
               <label for="primary-person-url" class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
               <input type="text" id="primary-person-url" class="intro-config-input" placeholder="https://www.linkedin.com/in/..." oninput="savePrimaryPersonFields()">
+              <div id="primary-person-url-error" class="intro-config-error" hidden></div>
               <div class="intro-config-hint">The primary person's profile. Used to check each account is connected to them, and for the <code>{primary url}</code> placeholder.</div>
             </div>
             <!-- v2.94.x: the primary's ONE identity — used by both auto-accept and the follow-up -->
@@ -613,6 +622,15 @@
               <span class="dot"></span><span>Accepts as your primary — <span class="nm" id="auto-accept-primary-label">your local browser</span></span>
             </div>
             <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and the chosen browser accepts that one invitation automatically — no manual step before the intro.</div>
+            <!-- v2.107: accept-all opt-in (default OFF). Only relevant while auto-accept is on; gated by refreshAutoAcceptGate. -->
+            <div class="intro-config-toggle-row" id="auto-accept-all-row" style="margin-top:12px;">
+              <span id="auto-accept-all-label" class="intro-config-toggle-key">Also accept <b>all other</b> pending invitations</span>
+              <label class="notif-pref-toggle" id="auto-accept-all-toggle-wrap">
+                <input type="checkbox" id="auto-accept-all-toggle" disabled>
+                <span class="notif-pref-slider"></span>
+              </label>
+            </div>
+            <div class="intro-config-hint" id="auto-accept-all-hint">⚠️ With this on, your primary also accepts <b>every</b> pending invite in its inbox during pre-flight — including strangers and real prospects, not just this campaign's sender accounts. Leave off to accept only your senders.</div>
           </div>
 
           <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
@@ -1938,6 +1956,30 @@
       </div>
       <div style="text-align:center; margin-top: 12px;">
         <button type="button" class="modal-cancel-link" onclick="closeIcPreflightModal()">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v2.106.0 — MANDATORY operator-identity gate. Every operator's app logs in
+       with the SAME shared dashboard credential, so the app can't tell who's at
+       the keyboard. This email is stamped as the reserver in the SoO 'CC User
+       App' column and is REQUIRED before any campaign can start. Shown on load
+       when unset (no dismiss) and re-shown if the server 409s a start. No
+       backdrop-click close — operators must set it. -->
+  <div id="operator-email-modal" class="modal-backdrop hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="operator-email-title">
+      <span class="ptm-pill modal-pill--alert">REQUIRED</span>
+      <h3 id="operator-email-title" class="modal-title">Who's using this app?</h3>
+      <div class="modal-body">
+        <p>Enter <strong>your work email</strong>. It gets stamped against every LinkedIn account you reserve, so the team can see who's using what. You can't start a campaign until this is set.</p>
+        <input type="email" id="operator-email-input" class="oe-input" placeholder="you@ortusclub.com" autocomplete="email" inputmode="email" onkeydown="if(event.key==='Enter')saveOperatorEmail()" />
+        <div id="operator-email-error" class="intro-config-error" hidden></div>
+      </div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-primary" id="operator-email-save" onclick="saveOperatorEmail()">Save &amp; continue</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" id="operator-email-cancel" onclick="closeOperatorEmailModal()" style="display:none;">Cancel</button>
       </div>
     </div>
   </div>

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { degreeToConnected, primaryConnState, normalizePrimaryUrl } from '../src/linkedin/primary-connection.js';
+import { degreeToConnected, primaryConnState, normalizePrimaryUrl, classifyConnectError } from '../src/linkedin/primary-connection.js';
 import { _shouldHoldIntros } from '../src/linkedin/auto-intro.js';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -93,4 +93,20 @@ test('_shouldHoldIntros: a CONFIRMED not-connected (connected:false) still holds
 
 test('_shouldHoldIntros: connected (1st) proceeds', () => {
   assert.equal(_shouldHoldIntros({ connected: true, degree: '1st' }), false);
+});
+
+// ── classifyConnectError: when sendConnectionRequest throws, distinguish "an
+//    invite to the primary is ALREADY pending" (a pending invite the primary can
+//    still accept) from a genuine send failure (nothing pending to accept). The
+//    'already_pending' verdict is what lets the pre-flight handshake auto-accept
+//    a request the account sent in a PRIOR run that was never accepted. ──
+test('classifyConnectError: INVITATION_ALREADY_PENDING => already_pending', () => {
+  assert.equal(classifyConnectError('INVITATION_ALREADY_PENDING'), 'already_pending');
+});
+
+test('classifyConnectError: any other error => failed', () => {
+  assert.equal(classifyConnectError('Connect button not found'), 'failed');
+  assert.equal(classifyConnectError('Navigation timeout'), 'failed');
+  assert.equal(classifyConnectError(''), 'failed');
+  assert.equal(classifyConnectError(undefined), 'failed');
 });

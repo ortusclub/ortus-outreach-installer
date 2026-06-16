@@ -484,6 +484,33 @@ export async function getProfileUrn(page) {
 }
 
 /**
+ * Wait for the profile top-card to actually render before reading identity.
+ *
+ * Why this exists (2026-06-15): the identity gate captured at
+ * `domcontentloaded + 2.5s`, but LinkedIn paints the profile <h1> (the display
+ * name) client-side AFTER that. So `captureProfileMeta` read an empty name on
+ * EVERY lead — the `name-match` identity signal never fired, leaving the gate
+ * to lean entirely on the Voyager member-number API. Under rate-limiting that
+ * API is throttled, so healthy profiles (right person, fully loadable) were
+ * skipped as "no-member-number-captured (profile did not load)". Polling for
+ * the rendered <h1> first lets the DOM-based name read succeed, so name-match
+ * can confirm the lead independently of the throttled API. Resolves the instant
+ * the name paints (≈1-2s on a healthy load — faster than the old fixed 2.5s);
+ * only a genuinely-stuck page waits the full timeout. Best-effort: a timeout
+ * just proceeds and captures whatever is there (no worse than before).
+ */
+export async function waitForProfileRender(page, { timeoutMs = 10000 } = {}) {
+  try {
+    await page.waitForFunction(() => {
+      const h1 = document.querySelector('main h1')
+              || document.querySelector('h1.text-heading-xlarge')
+              || document.querySelector('h1');
+      return !!(h1 && (h1.textContent || '').trim().length > 0);
+    }, { timeout: timeoutMs }).catch(() => { /* fall through — capture what's there */ });
+  } catch { /* best-effort */ }
+}
+
+/**
  * Capture URN + member ID + Open Profile flag + connection degree in one
  * pass from the current profile page. Used immediately after a connect
  * action so the campaign can stamp all four columns at once.

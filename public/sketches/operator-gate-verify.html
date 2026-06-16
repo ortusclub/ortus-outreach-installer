@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>Operator-gate CSS verification</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <style> body { padding: 0; } .harness-note{position:fixed;top:8px;left:8px;color:#999;font:12px system-ui;z-index:1} </style>
+</head>
+<!-- Verifies the REAL operator-email modal markup + the sidebar chip (unset)
+     against the REAL style.css: gold REQUIRED pill, pill-radius input, gold CTA. -->
+<body>
+  <div class="harness-note">operator-gate-verify (static)</div>
+
+  <!-- sidebar chip, unset state -->
+  <div style="position:fixed; left:24px; bottom:24px; width:220px;">
+    <button type="button" class="operator-chip operator-chip--unset">
+      <span class="operator-chip-label">Operating as</span>
+      <strong>not set — click to set</strong>
+    </button>
+  </div>
+
+  <!-- the mandatory modal, forced visible -->
+  <div id="operator-email-modal" class="modal-backdrop">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="operator-email-title">
+      <span class="ptm-pill modal-pill--alert">REQUIRED</span>
+      <h3 id="operator-email-title" class="modal-title">Who's using this app?</h3>
+      <div class="modal-body">
+        <p>Enter <strong>your work email</strong>. It gets stamped against every LinkedIn account you reserve, so the team can see who's using what. You can't start a campaign until this is set.</p>
+        <input type="email" class="oe-input" placeholder="you@ortusclub.com" />
+        <div class="intro-config-error" hidden></div>
+      </div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-primary">Save &amp; continue</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

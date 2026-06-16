@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveSoOTarget } from '../src/soo-writer.js';
 
-test('connection_sent in any connect mode → CC column + CC User', () => {
+test('connection_sent in any connect mode → CC column + CC App User (column AJ)', () => {
   for (const mode of ['connect_only', 'connect_and_introduce', 'connect_and_message']) {
     assert.deepEqual(
       resolveSoOTarget(mode, 'connection_sent'),
-      { creditHeader: 'CC (Credits)', userHeader: 'CC User' },
+      { creditHeader: 'CC (Credits)', userHeader: 'CC App User' },
       mode,
     );
   }
