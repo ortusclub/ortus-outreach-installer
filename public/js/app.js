@@ -12966,6 +12966,11 @@ window.dashReplyCheck = async function() {
 };
 
 window.dashOpenActive = async function() {
+  // Entering via Open = a read-only VIEW of the live campaign. The launch panel
+  // is hidden (see applyViewingActiveLock). The flag is cleared by every other
+  // wizard entry (+ New, Edit, preset-load) so staging a NEW campaign while one
+  // runs still shows Start/Queue.
+  window.__viewingActiveCampaign = true;
   // "Open" enters the RUNNING/MONITORING campaign's editor. It MUST clear the
   // active draft first — otherwise it just navigates to #/new and shows
   // whatever draft was last open (a new campaign, or another campaign you
@@ -13001,6 +13006,8 @@ window.dashOpenActive = async function() {
         addNote: !!(s.templates && s.templates.connectionNote),
         templates: s.templates || {},
         profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+        senderColumn: s.senderColumn || '',
+        allLeadsConnected: !!s.allLeadsConnected,
         concurrency: s.concurrency ?? 1,
         senderFirstNames: s.senderFirstNames || {},
         _campaignName: s.name || '',
@@ -13016,6 +13023,7 @@ window.dashOpenActive = async function() {
       const nameInput = document.getElementById('campaign-name-input');
       if (nameInput && config._campaignName) nameInput.value = config._campaignName;
     }
+    if (typeof applyViewingActiveLock === 'function') applyViewingActiveLock();
     const target = document.getElementById('nav-templates');
     if (target && typeof target.scrollIntoView === 'function') {
       target.scrollIntoView({ behavior: 'smooth' });
