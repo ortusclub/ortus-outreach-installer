@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sketch · Follow-up countdown (CC+IC)</title>
+  <!-- 1:1 with the real app — links the actual stylesheets, reuses the real
+       monitoring-card classes. Open at /sketches/followup-countdown.html -->
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Sketch scaffold only (not part of the design system) */
+    .sk-wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+    .sk-h1 { font-family: var(--display, serif); font-weight: 500; font-size: 1.5rem; color: var(--ink); margin: 0 0 6px; }
+    .sk-sub { font-family: var(--mono, monospace); font-size: 0.8rem; color: var(--gray); margin: 0 0 28px; line-height: 1.6; }
+    .sk-label { font-family: var(--mono, monospace); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gray); margin: 30px 0 8px; display: flex; align-items: center; gap: 10px; }
+    .sk-label b { color: var(--ink); font-weight: 700; }
+    .sk-label .sk-pick { border: 1px solid var(--hairline); border-radius: 9999px; padding: 2px 9px; font-size: 0.55rem; color: var(--gray); }
+    .sk-note { font-family: var(--mono, monospace); font-size: 0.72rem; color: var(--gray); margin: 6px 0 0; line-height: 1.6; }
+    .sk-note b { color: var(--ink); }
+
+    /* ── NEW element being proposed: the follow-up countdown ─────────────── */
+
+    /* Variant A — "twin hero": a second, slightly smaller timer directly under
+       the "until next check" hero. The follow-up gets its own clock. */
+    body[data-dashboard='v3'] .fu-hero { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline-soft); }
+    body[data-dashboard='v3'] .fu-hero-row { display: flex; align-items: flex-end; gap: 12px; }
+    body[data-dashboard='v3'] .fu-count {
+      font-family: var(--display); font-weight: 500; font-size: 2.0rem; line-height: 0.85;
+      letter-spacing: 0.01em; color: var(--ink); font-variant-numeric: tabular-nums;
+    }
+    body[data-dashboard='v3'] .fu-cap {
+      font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--gray); padding-bottom: 5px;
+    }
+    body[data-dashboard='v3'] .fu-line { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); margin-top: 9px; }
+    body[data-dashboard='v3'] .fu-line b { color: var(--ink); font-weight: 600; }
+
+    /* Variant B — banner above the live log (mirrors the .vj-live soft strip) */
+    body[data-dashboard='v3'] .fu-banner {
+      display: flex; align-items: center; gap: 11px;
+      padding: 10px 14px; margin: 0 0 12px; border-radius: 11px;
+      background: rgba(127,127,127,.05); border: 1px solid var(--hairline-soft);
+      font-family: var(--mono); font-size: 0.78rem; color: var(--gray);
+    }
+    body[data-dashboard='v3'] .fu-banner b { color: var(--ink); font-weight: 600; }
+    body[data-dashboard='v3'] .fu-banner .fu-ico { font-size: 1rem; }
+
+    /* Variant C — compact: a chip on the account row + a stat micro-line */
+    body[data-dashboard='v3'] .fu-chip {
+      font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.06em;
+      padding: 2px 9px; border-radius: 9999px; border: 1px solid var(--hairline);
+      color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    body[data-dashboard='v3'] .fu-statline { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); margin-top: 8px; }
+    body[data-dashboard='v3'] .fu-statline b { color: var(--ink); font-weight: 600; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3" style="background: var(--bg, #fafafa); color: var(--ink, #0a0a0a); min-height: 100vh;">
+  <div class="sk-wrap">
+    <h1 class="sk-h1">CC+IC automated follow-up — visibility sketch</h1>
+    <p class="sk-sub">
+      The follow-up DM fires silently right now — no on-screen sign of when. This adds a live countdown to the
+      live-campaign card. Three placements below, same real card &amp; CSS. The copy assumes the batching change
+      (all follow-ups for the run fire <b>together</b>, one browser session), so it's a single shared countdown,
+      not one-per-message.
+    </p>
+
+    <!-- ════════════════ VARIANT A — twin hero ════════════════ -->
+    <div class="sk-label"><span class="sk-pick">A</span> <b>Twin hero</b> · the follow-up gets its own timer under the check timer <span class="sk-pick">most prominent</span></div>
+    <section class="vj-card is-monitor is-detailed">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>Monitoring · CC + IC</span><span class="vj-when">TEST CC+IC +CN</span></div>
+      <h2 class="vj-name">TEST CC+IC +CN</h2>
+      <div class="vj-live"><span class="vj-live-ico">⏱</span><span class="vj-live-txt"><span class="vj-live-l1">Waiting for next check</span><span class="vj-live-l2">1 account · checks every 2h</span></span></div>
+      <div class="vj-hbar"><i style="width:14%"></i></div>
+      <div class="vj-monitor">
+        <div class="vj-mon-hero"><span class="vj-mon-count">1H 48M</span><span class="vj-mon-cap">until next check</span></div>
+        <div class="vj-mon-line"><b>1</b> sent · <b>—</b> accepted · checks every <b>2h</b> · ends <b>Wed, 24 Jun</b></div>
+        <!-- NEW -->
+        <div class="fu-hero">
+          <div class="fu-hero-row"><span class="fu-count" data-countdown="522">08:42</span><span class="fu-cap">until follow-ups send</span></div>
+          <div class="fu-line">⏳ <b>3</b> queued · sent together in one batch · from <b>you</b></div>
+        </div>
+      </div>
+      <div class="vj-profiles">
+        <div class="vj-prof-row"><span class="vj-prof-name">soniya.rajput@ortus.solutions</span><span class="prof-primary-tag is-yes">Primary ✓</span><span class="vj-prof-chip">Queued</span><span class="vj-prof-today">1/6 today</span><button class="prof-open-btn">Open</button><label class="prof-skip-toggle"><input type="checkbox" checked /><span class="prof-skip-slider"></span></label></div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button></div>
+      <div class="vj-details">
+        <div>
+          <div class="vj-log-head"><span class="vj-details-head">Live log · last 15 events</span></div>
+          <div class="vj-log">
+            <div>🤝 <b>soniya</b> https://www.linkedin.com/in/rilany-darang…: Introduction Made</div>
+            <div>⏳ <b>soniya</b> https://www.linkedin.com/in/rilany-darang…: Follow-up queued · batch sends 11:33 · from you</div>
+          </div>
+        </div>
+        <div class="vj-bulk"><div class="vj-details-head">Bulk check connection</div><div class="vj-bulk-status">Last sweep · <b>—</b> · <span>0</span> newly accepted</div><div class="vj-bulk-hint">Checks all pending connect requests via Voyager.</div></div>
+      </div>
+    </section>
+
+    <!-- ════════════════ VARIANT B — banner above the log ════════════════ -->
+    <div class="sk-label"><span class="sk-pick">B</span> <b>Log banner</b> · sits in the details, right where the "Follow-up queued" lines already are <span class="sk-pick">contextual</span></div>
+    <section class="vj-card is-monitor is-detailed">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>Monitoring · CC + IC</span><span class="vj-when">TEST CC+IC +CN</span></div>
+      <h2 class="vj-name">TEST CC+IC +CN</h2>
+      <div class="vj-live"><span class="vj-live-ico">⏱</span><span class="vj-live-txt"><span class="vj-live-l1">Waiting for next check</span><span class="vj-live-l2">1 account · checks every 2h</span></span></div>
+      <div class="vj-hbar"><i style="width:14%"></i></div>
+      <div class="vj-monitor">
+        <div class="vj-mon-hero"><span class="vj-mon-count">1H 48M</span><span class="vj-mon-cap">until next check</span></div>
+        <div class="vj-mon-line"><b>1</b> sent · <b>—</b> accepted · checks every <b>2h</b> · ends <b>Wed, 24 Jun</b></div>
+      </div>
+      <div class="vj-profiles">
+        <div class="vj-prof-row"><span class="vj-prof-name">soniya.rajput@ortus.solutions</span><span class="prof-primary-tag is-yes">Primary ✓</span><span class="vj-prof-chip">Queued</span><span class="vj-prof-today">1/6 today</span><button class="prof-open-btn">Open</button><label class="prof-skip-toggle"><input type="checkbox" checked /><span class="prof-skip-slider"></span></label></div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button></div>
+      <div class="vj-details">
+        <div>
+          <!-- NEW -->
+          <div class="fu-banner"><span class="fu-ico">⏳</span><span>Next follow-up batch in <b data-countdown="522">08:42</b> · <b>3</b> queued (Rilany Darang +2) · sent together from you</span></div>
+          <div class="vj-log-head"><span class="vj-details-head">Live log · last 15 events</span></div>
+          <div class="vj-log">
+            <div>🤝 <b>soniya</b> https://www.linkedin.com/in/rilany-darang…: Introduction Made</div>
+            <div>⏳ <b>soniya</b> https://www.linkedin.com/in/rilany-darang…: Follow-up queued · batch sends 11:33 · from you</div>
+          </div>
+        </div>
+        <div class="vj-bulk"><div class="vj-details-head">Bulk check connection</div><div class="vj-bulk-status">Last sweep · <b>—</b> · <span>0</span> newly accepted</div><div class="vj-bulk-hint">Checks all pending connect requests via Voyager.</div></div>
+      </div>
+    </section>
+
+    <!-- ════════════════ VARIANT C — compact chip + stat line ════════════════ -->
+    <div class="sk-label"><span class="sk-pick">C</span> <b>Compact</b> · a chip on the account row + one stat line, no big new block <span class="sk-pick">smallest footprint</span></div>
+    <section class="vj-card is-monitor is-detailed">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span>Monitoring · CC + IC</span><span class="vj-when">TEST CC+IC +CN</span></div>
+      <h2 class="vj-name">TEST CC+IC +CN</h2>
+      <div class="vj-live"><span class="vj-live-ico">⏱</span><span class="vj-live-txt"><span class="vj-live-l1">Waiting for next check</span><span class="vj-live-l2">1 account · checks every 2h</span></span></div>
+      <div class="vj-hbar"><i style="width:14%"></i></div>
+      <div class="vj-monitor">
+        <div class="vj-mon-hero"><span class="vj-mon-count">1H 48M</span><span class="vj-mon-cap">until next check</span></div>
+        <div class="vj-mon-line"><b>1</b> sent · <b>—</b> accepted · checks every <b>2h</b> · ends <b>Wed, 24 Jun</b></div>
+        <!-- NEW (micro stat line) -->
+        <div class="fu-statline">⏳ <b>3</b> follow-ups send in <b data-countdown="522">08:42</b> · one batch, from you</div>
+      </div>
+      <div class="vj-profiles">
+        <!-- NEW (chip on the row) -->
+        <div class="vj-prof-row"><span class="vj-prof-name">soniya.rajput@ortus.solutions</span><span class="prof-primary-tag is-yes">Primary ✓</span><span class="fu-chip">⏳ <span data-countdown="522">08:42</span></span><span class="vj-prof-chip">Queued</span><span class="vj-prof-today">1/6 today</span><button class="prof-open-btn">Open</button><label class="prof-skip-toggle"><input type="checkbox" checked /><span class="prof-skip-slider"></span></label></div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button></div>
+      <div class="vj-details">
+        <div>
+          <div class="vj-log-head"><span class="vj-details-head">Live log · last 15 events</span></div>
+          <div class="vj-log">
+            <div>🤝 <b>soniya</b> https://www.linkedin.com/in/rilany-darang…: Introduction Made</div>
+            <div>⏳ <b>soniya</b> https://www.linkedin.com/in/rilany-darang…: Follow-up queued · batch sends 11:33 · from you</div>
+          </div>
+        </div>
+        <div class="vj-bulk"><div class="vj-details-head">Bulk check connection</div><div class="vj-bulk-status">Last sweep · <b>—</b> · <span>0</span> newly accepted</div><div class="vj-bulk-hint">Checks all pending connect requests via Voyager.</div></div>
+      </div>
+    </section>
+
+    <p class="sk-note" style="margin-top:34px">
+      <b>Part 2 (the batching) is not visual</b> — but it's why the countdown above shows ONE time, not ten.
+      Today each follow-up is due 10 min after <b>its own</b> intro, so the browser opens/closes once per message.
+      Aligning the due times to "<b>N min after the last intro</b>" makes the existing one-session drain fire them
+      all together — far less RAM, no open/close flapping, lower footprint to LinkedIn.
+    </p>
+  </div>
+
+  <script>
+    // Make the timers tick so the demo feels live (sketch-only).
+    function fmt(s){ const m = Math.floor(s/60), ss = s%60; return m + ':' + String(ss).padStart(2,'0'); }
+    const nodes = [...document.querySelectorAll('[data-countdown]')].map(el => ({ el, s: parseInt(el.dataset.countdown, 10) }));
+    setInterval(() => {
+      nodes.forEach(n => { n.s = n.s > 0 ? n.s - 1 : 522; n.el.textContent = fmt(n.s); });
+    }, 1000);
+  </script>
+</body>
+</html>
