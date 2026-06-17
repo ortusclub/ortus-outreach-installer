@@ -12693,6 +12693,7 @@ function v3FmtCountdown(ms) {
 // the latest nextCheckAt and tick the *display* once a second (no re-fetch —
 // nextCheckAt only changes every cadence interval) so it counts down smoothly.
 let _monHeroNextCheckAt = null;
+let _fuHeroDueAt = null; // v2.111: cached follow-up batch dueAt for the 1s tick
 function v3RenderMonitorHero(status) {
   const countEl = document.getElementById('monCount');
   const capEl = document.querySelector('#active-monitor .vj-mon-cap');
@@ -12729,6 +12730,24 @@ function v3RenderMonitorHero(status) {
     lineEl.innerHTML =
       `<b>${sent}</b> sent · <b>${accepted}</b> accepted · checks every <b>${cad}</b> · ends <b>${ends}</b>`;
   }
+  // v2.111: follow-up batch countdown.
+  const fu = status.followUp;
+  const fuHero = document.getElementById('active-fu-hero');
+  if (fuHero) {
+    if (fu && fu.count > 0) {
+      _fuHeroDueAt = fu.dueAt || null;
+      const q = document.getElementById('fuQueued');
+      const s = document.getElementById('fuSender');
+      const c = document.getElementById('fuCount');
+      if (q) q.textContent = String(fu.count);
+      if (s) s.textContent = (fu.sender && fu.sender !== 'local-browser') ? 'the primary' : 'you';
+      if (c) { const ms = (fu.dueAt || 0) - Date.now(); c.textContent = ms <= 0 ? 'Sending…' : v3FmtCountdown(ms); }
+      fuHero.hidden = false;
+    } else {
+      _fuHeroDueAt = null;
+      fuHero.hidden = true;
+    }
+  }
 }
 
 // v2.59.19: smooth 1s display tick for the monitoring countdown. Only touches
@@ -12744,6 +12763,10 @@ function _tickMonHeroCountdown() {
   const countEl = document.getElementById('monCount');
   if (countEl) {
     countEl.textContent = v3FmtCountdown(new Date(_monHeroNextCheckAt).getTime() - Date.now());
+  }
+  if (_fuHeroDueAt) {
+    const fuEl = document.getElementById('fuCount');
+    if (fuEl) { const ms = _fuHeroDueAt - Date.now(); fuEl.textContent = ms <= 0 ? 'Sending…' : v3FmtCountdown(ms); }
   }
 }
 setInterval(_tickMonHeroCountdown, 1000);

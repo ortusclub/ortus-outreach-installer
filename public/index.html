@@ -225,6 +225,11 @@
             <span class="vj-mon-cap">until next check</span>
           </div>
           <div class="vj-mon-line" id="monLine">— sent</div>
+          <!-- v2.111: follow-up batch countdown — shown by v3RenderMonitorHero when a batch is pending -->
+          <div class="fu-hero" id="active-fu-hero" hidden>
+            <div class="fu-hero-row"><span class="fu-count" id="fuCount">—</span><span class="fu-cap">until follow-ups send</span></div>
+            <div class="fu-line">⏳ <b id="fuQueued">0</b> queued · sent together in one batch · from <b id="fuSender">you</b></div>
+          </div>
         </div>
         <div class="vj-hero">
           <div class="vj-hero-row">
