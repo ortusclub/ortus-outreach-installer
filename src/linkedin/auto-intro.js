@@ -24,7 +24,7 @@ import { checkAndConnectPrimary, primaryConnState } from './primary-connection.j
 import { readSelfIdentity } from './accept-invitation.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
 import { extractSheetId } from '../utils.js';
-import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask } from '../primary-tasks.js';
+import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask, enqueueFollowUpBatched } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
@@ -836,7 +836,7 @@ export async function runAutoIntros({
           url, threadUrl: _threadUrl,
         });
         if (_fu) {
-          const stored = await enqueuePrimaryTask(_fu);
+          const stored = await enqueueFollowUpBatched(_fu, tpl.followUpDelayMinutes, Date.now());
           if (stored) log(`  ⏳ [${profileName}] ${url}: Follow-up queued · due ${new Date(stored.dueAt).toLocaleTimeString()} · from ${_fu.sender === 'local-browser' ? 'you' : 'the primary'}`);
         }
       } catch (e) {
