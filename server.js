@@ -32,6 +32,7 @@ import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/d
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
+import { loadTasks as loadPrimaryTasks, summarizeFollowUps } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
@@ -1539,7 +1540,19 @@ app.post('/api/campaign/restore', async (_req, res) => {
   }
 });
 
-app.get('/api/campaign/status', (_req, res) => {
+// v2.111: follow-up batch summary for the live-campaign countdown. Reads the
+// queue at most once per 5s so the 2s status poll stays off the synchronous
+// hot path (see campaign.js getCampaignStatus perf note).
+let _fuCache = { at: 0, tasks: [] };
+async function _activeFollowUpSummary(base) {
+  const ids = (base.profileIds && base.profileIds.length) ? base.profileIds : (base.participatingProfileIds || []);
+  if (!ids.length) return null;
+  const now = Date.now();
+  if (now - _fuCache.at > 5000) _fuCache = { at: now, tasks: await loadPrimaryTasks() };
+  return summarizeFollowUps(_fuCache.tasks, ids);
+}
+
+app.get('/api/campaign/status', async (_req, res) => {
   const base = getCampaignStatus();
   // v2.12.x: when Post Amplification is running, surface its state through
   // the same payload the Live Status panel already polls. Logs are already
@@ -1568,7 +1581,9 @@ app.get('/api/campaign/status', (_req, res) => {
       errors: postAmp.errors.slice(-20).map(e => ({ message: e })),
     });
   }
-  res.json(base);
+  let followUp = null;
+  try { followUp = await _activeFollowUpSummary(base); } catch { /* non-fatal — countdown just hides */ }
+  res.json({ ...base, followUp });
 });
 
 // v2.83: live settings snapshot for the dashboard "Open" button. Returns the
