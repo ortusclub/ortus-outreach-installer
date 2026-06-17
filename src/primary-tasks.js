@@ -49,6 +49,20 @@ export function slideFollowUpDueDates(tasks, campaignProfileId, dueAt) {
   );
 }
 
+/** Pure: summary of the soonest pending follow-up batch for the given campaign
+ *  profile ids → { count, dueAt, sender } or null when none pending. count is
+ *  ALL pending follow-ups for those ids; dueAt is the soonest; sender is that
+ *  soonest task's sender. Feeds the live-campaign countdown (v2.111). */
+export function summarizeFollowUps(tasks, campaignProfileIds) {
+  const ids = new Set(campaignProfileIds || []);
+  const pending = (tasks || []).filter(
+    t => t && t.type === 'follow-up' && t.status === 'pending' && ids.has(t.campaignProfileId)
+  );
+  if (pending.length === 0) return null;
+  const soonest = pending.reduce((a, b) => (b.dueAt < a.dueAt ? b : a));
+  return { count: pending.length, dueAt: soonest.dueAt, sender: soonest.sender || 'local-browser' };
+}
+
 export function buildAcceptTask({
   campaignProfileId, campaignProfileName = '', sheetId = '', sheetUrl = '',
   account = { name: '', profileUrl: '' }, primaryUrl = '', sender = 'local-browser', now,
