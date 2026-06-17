@@ -37,6 +37,18 @@ export function buildFollowUpTask({
   };
 }
 
+/** Pure: return a COPY of tasks where every PENDING follow-up for this campaign
+ *  has its dueAt set to `dueAt`. Accept tasks, other campaigns, and non-pending
+ *  tasks are returned unchanged. Used to batch a run's follow-ups so they ripen
+ *  together (v2.111). */
+export function slideFollowUpDueDates(tasks, campaignProfileId, dueAt) {
+  return (tasks || []).map(t =>
+    (t && t.type === 'follow-up' && t.status === 'pending' && t.campaignProfileId === campaignProfileId)
+      ? { ...t, dueAt }
+      : t
+  );
+}
+
 export function buildAcceptTask({
   campaignProfileId, campaignProfileName = '', sheetId = '', sheetUrl = '',
   account = { name: '', profileUrl: '' }, primaryUrl = '', sender = 'local-browser', now,
