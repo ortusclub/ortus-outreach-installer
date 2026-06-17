@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { slideFollowUpDueDates, summarizeFollowUps } from '../src/primary-tasks.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  slideFollowUpDueDates, summarizeFollowUps,
+  enqueueFollowUpBatched, loadTasks, saveTasks, buildFollowUpTask,
+} from '../src/primary-tasks.js';
+
+function tmpFile() { return join(mkdtempSync(join(tmpdir(), 'fu-')), 'primary-tasks.json'); }
 
 test('slideFollowUpDueDates bumps pending follow-ups of the target campaign', () => {
   const tasks = [
@@ -62,4 +70,40 @@ test('summarizeFollowUps counts across multiple accounts', () => {
     { id:'b', type:'follow-up', status:'pending', campaignProfileId:'p2', dueAt: 200, sender:'profile-2' },
   ];
   assert.deepEqual(summarizeFollowUps(tasks, ['p1','p2']), { count: 2, dueAt: 200, sender: 'profile-2' });
+});
+
+test('enqueueFollowUpBatched aligns the new task + existing siblings to now+delay', async () => {
+  const file = tmpFile();
+  const now = 1_000_000;
+  await saveTasks([
+    { id:'old', type:'follow-up', status:'pending', campaignProfileId:'p1', leadUrl:'x', dueAt: now - 50_000, sender:'local-browser' },
+  ], file);
+  const task = buildFollowUpTask({ campaignProfileId:'p1', leadUrl:'y', sender:'local-browser', now });
+  const stored = await enqueueFollowUpBatched(task, 10, now, file);
+  const all = await loadTasks(file);
+  const expected = now + 10 * 60_000;
+  assert.equal(stored.dueAt, expected);
+  assert.deepEqual(all.map(t => t.dueAt).sort((a,b)=>a-b), [expected, expected]);
+});
+
+test('enqueueFollowUpBatched returns null on a duplicate lead but still slides siblings', async () => {
+  const file = tmpFile();
+  const now = 2_000_000;
+  await saveTasks([
+    { id:'dup', type:'follow-up', status:'pending', campaignProfileId:'p1', leadUrl:'y', dueAt: now - 99_000, sender:'local-browser' },
+  ], file);
+  const task = buildFollowUpTask({ campaignProfileId:'p1', leadUrl:'y', sender:'local-browser', now });
+  const stored = await enqueueFollowUpBatched(task, 10, now, file);
+  const all = await loadTasks(file);
+  assert.equal(stored, null);
+  assert.equal(all.length, 1);
+  assert.equal(all[0].dueAt, now + 10 * 60_000);
+});
+
+test('enqueueFollowUpBatched defaults to 10 minutes for an invalid delay', async () => {
+  const file = tmpFile();
+  const now = 3_000_000;
+  const task = buildFollowUpTask({ campaignProfileId:'p1', leadUrl:'z', sender:'local-browser', now });
+  const stored = await enqueueFollowUpBatched(task, 0, now, file);
+  assert.equal(stored.dueAt, now + 10 * 60_000);
 });

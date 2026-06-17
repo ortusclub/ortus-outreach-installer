@@ -130,6 +130,27 @@ export async function enqueuePrimaryTask(task, file = PRIMARY_TASKS_FILE) {
   return task;
 }
 
+/** Enqueue a follow-up so the whole campaign's pending follow-ups ripen together:
+ *  align this task AND existing pending siblings (same campaignProfileId) to
+ *  now + delayMinutes, then dedupe like enqueuePrimaryTask. Returns the stored
+ *  task, or null on a duplicate lead (siblings are still slid + persisted, since
+ *  a new intro DID fire). (v2.111) */
+export async function enqueueFollowUpBatched(task, delayMinutes, now, file = PRIMARY_TASKS_FILE) {
+  const created = Number.isFinite(now) ? now : Date.now();
+  const delay = Number(delayMinutes) > 0 ? Number(delayMinutes) : 10;
+  const batchDue = created + delay * 60_000;
+  const tasks = slideFollowUpDueDates(await loadTasks(file), task.campaignProfileId, batchDue);
+  const key = dedupeKey(task);
+  if (tasks.some(t => t.status === 'pending' && dedupeKey(t) === key)) {
+    await saveTasks(tasks, file);
+    return null;
+  }
+  const stored = { ...task, dueAt: batchDue };
+  tasks.push(stored);
+  await saveTasks(tasks, file);
+  return stored;
+}
+
 export async function markTask(id, status, patch = {}, file = PRIMARY_TASKS_FILE) {
   const tasks = await loadTasks(file);
   const t = tasks.find(x => x.id === id);
