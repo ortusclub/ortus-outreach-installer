@@ -1636,7 +1636,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 15, delayMax = 45, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
@@ -4643,8 +4643,8 @@ export async function restoreCampaign() {
             dailyLimit: s.dailyLimit ?? 50,
             mode: last.mode,
             messageOpenProfiles: !!s.messageOpenProfiles,
-            delayMin: s.delayMin ?? 15,
-            delayMax: s.delayMax ?? 45,
+            delayMin: s.delayMin ?? 30,
+            delayMax: s.delayMax ?? 60,
             linkedinColumn: s.linkedinColumn || '',
             concurrency: s.concurrency ?? 1,
             name: last.name ? `${last.name} (restored)` : '',

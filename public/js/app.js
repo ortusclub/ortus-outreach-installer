@@ -3711,8 +3711,8 @@ async function startCampaign(opts = {}) {
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 15;
-    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 45;
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 30;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 60;
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
@@ -4148,8 +4148,8 @@ function _ptmContextFromBody(body) {
   const tpl = body?.templates || {};
   return {
     dailyLimit: body?.dailyLimit ?? 50,
-    delayMin: body?.delayMin ?? 15,
-    delayMax: body?.delayMax ?? 45,
+    delayMin: body?.delayMin ?? 30,
+    delayMax: body?.delayMax ?? 60,
     checkIntervalMinutes: body?.checkIntervalMinutes ?? 60,
     primaryName: tpl.primaryName || tpl.introName || '',
   };
@@ -4161,8 +4161,8 @@ function _ptmContextFromCockpit() {
   const cadenceFromWizard = parseInt(document.getElementById('check-cadence-select')?.value, 10);
   return {
     dailyLimit: 50, // server status doesn't surface dailyLimit; default fits CC tip
-    delayMin: 15,
-    delayMax: 45,
+    delayMin: 30,
+    delayMax: 60,
     checkIntervalMinutes: (__cockpit && __cockpit.checkIntervalMinutes)
       || (Number.isFinite(cadenceFromWizard) ? cadenceFromWizard : 60),
     primaryName: tpl.primaryName || document.getElementById('primary-person-name')?.value || '',
@@ -6241,8 +6241,8 @@ async function saveQuickSchedule() {
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 15;
-    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 45;
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 30;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 60;
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
@@ -7249,8 +7249,8 @@ function collectCurrentConfig() {
     // presets that still carry these fields are silently ignored on load.
     dailyLimit: getN('daily-limit', 50),
     messageGap: getN('message-gap', 60),
-    delayMin: getN('within-batch-min', 15),
-    delayMax: getN('within-batch-max', 45),
+    delayMin: getN('within-batch-min', 30),
+    delayMax: getN('within-batch-max', 60),
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
@@ -7293,8 +7293,8 @@ function applyPresetConfig(config) {
   // a fixed 6-min per-account turn floor + queue rotation.
   setV('daily-limit', config.dailyLimit ?? 50);
   setV('message-gap', config.messageGap ?? 60);
-  setV('within-batch-min', config.delayMin ?? 15);
-  setV('within-batch-max', config.delayMax ?? 45);
+  setV('within-batch-min', config.delayMin ?? 30);
+  setV('within-batch-max', config.delayMax ?? 60);
   // Render the sheet preview, THEN restore the column mapping. previewSheet()
   // is the only thing that fetches the sheet HTML and builds the column-select
   // dropdowns (#linkedin-col-select / #ic-sender-col-select) — without it the
@@ -9989,8 +9989,8 @@ function rerunPastCampaign() {
     mode: c.mode,
     sheetUrl: s.sheetUrl || '',
     dailyLimit: s.dailyLimit ?? 50,
-    delayMin: s.delayMin ?? 15,
-    delayMax: s.delayMax ?? 45,
+    delayMin: s.delayMin ?? 30,
+    delayMax: s.delayMax ?? 60,
     linkedinColumn: s.linkedinColumn || '',
     messageOpenProfiles: !!s.messageOpenProfiles,
     addNote: !!(s.templates && s.templates.connectionNote),
@@ -10773,8 +10773,8 @@ async function resumeWithSameSettings() {
     dailyLimit: s.dailyLimit ?? 50,
     mode: c.mode,
     messageOpenProfiles: !!s.messageOpenProfiles,
-    delayMin: s.delayMin ?? 15,
-    delayMax: s.delayMax ?? 45,
+    delayMin: s.delayMin ?? 30,
+    delayMax: s.delayMax ?? 60,
     linkedinColumn: s.linkedinColumn || '',
     concurrency: s.concurrency ?? 1,
     // v2.60.x: don't suffix "(resumed)" — keeps the name clean across
@@ -11962,8 +11962,8 @@ window.launchScheduleIt = async function () {
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 15;
-    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 45;
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 30;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 60;
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
@@ -13042,8 +13042,8 @@ window.dashOpenActive = async function() {
         mode: s.mode,
         sheetUrl: s.sheetUrl || '',
         dailyLimit: s.dailyLimit ?? 50,
-        delayMin: s.delayMin ?? 15,
-        delayMax: s.delayMax ?? 45,
+        delayMin: s.delayMin ?? 30,
+        delayMax: s.delayMax ?? 60,
         linkedinColumn: s.linkedinColumn || '',
         messageOpenProfiles: !!s.messageOpenProfiles,
         addNote: !!(s.templates && s.templates.connectionNote),
@@ -13935,8 +13935,8 @@ window.dashEditResumePast = async function(originalIdx) {
     mode: entry.mode,
     sheetUrl: s.sheetUrl || '',
     dailyLimit: s.dailyLimit ?? 50,
-    delayMin: s.delayMin ?? 15,
-    delayMax: s.delayMax ?? 45,
+    delayMin: s.delayMin ?? 30,
+    delayMax: s.delayMax ?? 60,
     linkedinColumn: s.linkedinColumn || '',
     messageOpenProfiles: !!s.messageOpenProfiles,
     addNote: !!(s.templates && s.templates.connectionNote),
