@@ -586,7 +586,7 @@
           <div id="follow-up-block" class="intro-config-card" style="display:none;">
             <div class="intro-config-eyebrow">Automated first follow-up <span class="intro-config-newtag">NEW</span></div>
             <div class="intro-config-toggle-row">
-              <span class="intro-config-toggle-key">Send a first follow-up after the intro</span>
+              <span class="intro-config-toggle-key">Send a first follow-up (batched after the last intro)</span>
               <label class="notif-pref-toggle">
                 <input type="checkbox" id="follow-up-toggle" onchange="savePrimaryPersonFields(); toggleFollowUpFields();">
                 <span class="notif-pref-slider"></span>
@@ -597,7 +597,7 @@
                 <label class="intro-config-label" for="follow-up-delay">Send after</label>
                 <div style="display:flex; align-items:baseline; gap:8px;">
                   <input type="number" id="follow-up-delay" class="intro-config-num" min="1" max="240" value="10" oninput="savePrimaryPersonFields()">
-                  <span class="intro-config-prefix">minutes</span>
+                  <span class="intro-config-prefix">minutes after the last intro</span>
                 </div>
               </div>
               <div class="uses-primary">
@@ -1306,7 +1306,7 @@
          Conversation Body. Visible only when CC+IC AND the follow-up toggle is on
          (driven by onModeChange + toggleFollowUpFields). -->
     <div class="section tpl-section" id="tpl-followup-section" style="display:none">
-      <h2 data-edit="h2-followup">First Follow-up Message <small>sent in the group thread, ~10 min after the intro</small></h2>
+      <h2 data-edit="h2-followup">First Follow-up Message <small>sent in the group thread — all queued follow-ups go together, after the last intro</small></h2>
       <textarea id="follow-up-body" rows="4" placeholder="Hi {first name}, great to be connected…" oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="follow-up-body"></div>
     </div>
