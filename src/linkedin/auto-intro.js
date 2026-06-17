@@ -28,6 +28,7 @@ import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask } from '../prima
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
+import { leadIdentityKeys } from './bulk-check-connections.js';
 
 // Note-aware intro routing (spec 2026-06-10-ccic-note-group-intro). Clean-compose
 // (typeahead BOTH pills into a blank /messaging/compose → real group) is used when
@@ -47,6 +48,28 @@ export function _groupHasHistory(eventCount) {
   return Number(eventCount) > 0;
 }
 
+// Defense-in-depth duplicate-profile guard (boss report 2026-06-16). bulk-check
+// already dedups the connectedUrls it produces, but collapse the work-list here
+// too so NO caller — present or future — can introduce the same person twice in
+// one pass. Same strong-identity keys bulk-check matches on (slug + ACwAA token
+// + numeric Membership ID), resolved per URL from the sheet row map. A URL with
+// no resolvable identity falls back to its raw string, so an exact repeat is
+// still collapsed and a real lead is never silently dropped. Pure for testing.
+// Returns { urls, duplicates } — duplicates is the count removed (for logging).
+export function _dedupeIntroUrls(urls, rowByUrl) {
+  const seen = new Set();
+  const out = [];
+  let duplicates = 0;
+  for (const u of (urls || [])) {
+    const keys = leadIdentityKeys(u, (rowByUrl && rowByUrl.get(u)) || {});
+    const effectiveKeys = keys.length ? keys : ['url:' + String(u)];
+    if (effectiveKeys.some((k) => seen.has(k))) { duplicates++; continue; }
+    for (const k of effectiveKeys) seen.add(k);
+    out.push(u);
+  }
+  return { urls: out, duplicates };
+}
+
 // v2.96 — connect-to-primary self-heal (spec: every intro to JULIA failed with
 // INTRO_RECIPIENT_NOT_FOUND because the sending account wasn't a 1st-degree
 // connection of the primary). Pure decision helpers for the gate below.
@@ -58,6 +81,29 @@ export function _groupHasHistory(eventCount) {
 // held leads must not be stamped).
 export function _shouldHoldIntros(primaryConnResult) {
   return !!primaryConnResult && primaryConnResult.connected === false;
+}
+
+// v2.104 — a made (or already-made) 3-way intro is positive proof the lead is a
+// 1st-degree connection of THIS account (you can't open the group otherwise), so
+// the intro stamp also stamps the connection columns. Without this, a successful
+// intro on the reconnect-&-retry or aged-off path (which fire without a fresh
+// bulk-check Connected stamp) leaves the row reading "Introduction Made" but
+// "Connect Pending". Values mirror bulk-check's Connected stamp so they route to
+// the same columns (cc/checkStatus → Connection Accepted Status, stage → Stage,
+// connectedAlready → Connected). Returns {} for any non-confirmed outcome — we
+// never claim Connected on a failed or interrupted intro.
+export function introConnectionStamp(introConfirmed) {
+  return introConfirmed
+    ? { cc: 'Connected', stage: 'Connected', checkStatus: 'Connected', connectedAlready: 'Yes' }
+    : {};
+}
+
+// v2.103 — is this an actual LinkedIn member profile URL (/in/<slug>)? The
+// connect-to-primary gate only makes sense for one; operators sometimes paste a
+// Google Sheet link or a header label in the Primary URL field, and loading that
+// just wastes a navigation. Company pages (/company/) aren't member profiles.
+export function isLinkedInProfileUrl(url) {
+  return /linkedin\.com\/in\/[^/?#\s]+/i.test((url || '').toString());
 }
 
 // Should we queue the auto-accept task (the primary's own account accepts the
@@ -108,6 +154,41 @@ async function _leadHasPriorThread(page, leadUrl) {
     return _groupHasHistory(eventCount);
   } catch {
     return false;
+  }
+}
+
+// Capture a person's REAL profile-photo token from their /in/ page, used to
+// disambiguate same-name people in the clean-compose typeahead. The token (the
+// licdn media-id) is identical between the profile photo and the dropdown
+// avatar (verified live 2026-06-16). Matches the img whose alt is the person's
+// name (or the top-card photo) — NOT just the first displayphoto on the page,
+// which can be someone else's (e.g. a "people also viewed" face). Navigates the
+// page; the caller re-opens compose on retry. Returns '' on any failure → the
+// caller then skips rather than guess. Called only on a same-name ambiguity.
+async function _captureProfileAvatarToken(page, profileUrl, fullName) {
+  try {
+    await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 1500));
+    return await page.evaluate((wantName) => {
+      const tok = (s) => (String(s || '').match(/image\/v2\/([^\/]+)\//) || [])[1] || '';
+      const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const want = norm(wantName);
+      const parts = want.split(' ').filter(Boolean);
+      const first = parts[0] || '', last = parts[parts.length - 1] || '';
+      const imgs = Array.from(document.querySelectorAll('img')).filter((im) => /displayphoto/i.test(im.getAttribute('src') || ''));
+      // Prefer the img whose alt is the person's name (the main profile photo).
+      const named = imgs.find((im) => {
+        const alt = norm(im.getAttribute('alt') || '');
+        return alt && (alt === want || (first && last && alt.includes(first) && alt.includes(last)));
+      });
+      if (named) return tok(named.getAttribute('src'));
+      const tc = document.querySelector(
+        'img.pv-top-card-profile-picture__image, .pv-top-card__photo img, button[aria-label*="profile photo" i] img'
+      );
+      return tc ? tok(tc.getAttribute('src')) : '';
+    }, fullName);
+  } catch {
+    return '';
   }
 }
 
@@ -264,6 +345,12 @@ function _friendlyIntroFailure(errMsg) {
   if (m.includes('MESSAGE_SEND_FAILED: introName required')) {
     return 'Failed — Primary name missing in template';
   }
+  // Same-name guard (2026-06-16): 2+ people share the name and no profile photo
+  // confidently matched the intended person — skipped rather than message a
+  // stranger. Terminal (operator clears the cell to retry after disambiguating).
+  if (m.includes('IC_INTRO_AMBIGUOUS_RECIPIENT')) {
+    return 'Skipped — multiple same-name matches, verify manually';
+  }
   // Clean-compose (CC+IC note-branch) failures — IC_ prefixed.
   if (m.includes('IC_INTRO_RECIPIENT_NOT_FOUND')) {
     return 'Failed — Lead or primary not in your connections';
@@ -337,7 +424,7 @@ export async function runAutoIntros({
   // All four runAutoIntros callers gate on mode === 'connect_and_introduce', and
   // we additionally require a primaryUrl + a real GoLogin profile, so this can
   // never fire on plain Introduce-Back or the local browser.
-  if (primaryUrl && profileId && profileId !== 'local-browser') {
+  if (primaryUrl && isLinkedInProfileUrl(primaryUrl) && profileId && profileId !== 'local-browser') {
     if (!campaign._primaryConn) campaign._primaryConn = new Map();
     const _prevConn = campaign._primaryConn.get(profileId);
     if (_prevConn !== 'connected') {
@@ -424,6 +511,18 @@ export async function runAutoIntros({
   for (const r of rows) {
     const u = extractLinkedInUrl(r, linkedinColumn);
     if (u) rowByUrl.set(u, r);
+  }
+
+  // Defense-in-depth duplicate-profile guard (2026-06-16): collapse the
+  // work-list by strong identity so the send loop below physically cannot fire
+  // the intro twice for the same person, even if a caller hands us a list with
+  // duplicates. bulk-check dedups upstream; this is the belt-and-suspenders.
+  {
+    const _dd = _dedupeIntroUrls(connectedUrls, rowByUrl);
+    if (_dd.duplicates > 0) {
+      log(`  ⚠ [${profileName}] Collapsed ${_dd.duplicates} duplicate profile(s) in this batch — introducing each person once.`);
+      connectedUrls = _dd.urls;
+    }
   }
 
   // v2.14.x: split primaryName on whitespace so operators can write
@@ -599,50 +698,64 @@ export async function runAutoIntros({
     let errMsg = '';
     let attempt = 0;
 
-    // v2.92: prior-1:1-thread guard. If the lead already has a 1:1 thread with this
-    // account (ANY prior message, not only a connection note), URL-routing collapses
-    // the intro INTO that thread and silently drops the primary pill — the body
-    // ships as a 1:1 DM yet gets stamped "Introduction Made" (operator-confirmed,
-    // Pinky Salaria 2026-06-11). Reuse the exact clean-compose group path the
-    // connection-note case already uses. Probe ONCE per lead, and only when it can
-    // change the route (no note yet + a lead name to typeahead).
+    // v2.110 (Antonio + boss, 2026-06-16): CC+IC now ALWAYS builds the 3-way
+    // GROUP via clean-compose — the exact path Introduce Back uses. A blank
+    // /messaging/compose/ with both pills typed by name never collapses into an
+    // existing 1:1 thread, so the old v2.92 _leadHasPriorThread DOM probe (which
+    // missed in the field — Pinky Salaria) is gone: there's nothing to detect.
+    // URL-routing survives ONLY as the fallback for rows with no name to typeahead.
     const leadFullName = `${leadFirstName} ${leadLastName}`.trim();
-    let hasPriorThread = false;
-    if (!hasConnectionNote && leadFullName && _browserAlive()) {
-      hasPriorThread = await _leadHasPriorThread(page, url);
-      if (hasPriorThread) {
-        log(`  ↳ [${profileName}] ${url}: existing 1:1 thread detected — routing via group clean-compose (same as note path).`);
-      }
-    }
+
+    // Same-name disambiguation needs the intended person's real profile photo.
+    // Resolved LAZILY (only on a typeahead ambiguity) so the common single-match
+    // case keeps the fast-path's zero-profile-visit speed. The primary's photo is
+    // cached across leads/sweeps — it's one person per campaign.
+    let leadAvatarToken = '';
+    let primaryAvatarToken = (campaign._primaryAvatarToken && campaign._primaryAvatarToken.url === primaryUrl)
+      ? campaign._primaryAvatarToken.token
+      : '';
 
     while (attempt < 2) {
       attempt++;
       try {
-        // Note-aware fork (spec 2026-06-10) + prior-thread fork (v2.92). A connection
-        // note OR an existing 1:1 thread, plus a lead name → reuse the IB clean-
-        // compose group path with the dedupe probe ON. Otherwise the unchanged
-        // URL-routing path. leadFirstName/leadLastName/leadFullName resolved above.
-        const introPath = _decideIntroPath({ hasConnectionNote, hasPriorThread, leadFullName });
-        if (hasConnectionNote && introPath === 'url-routing') {
-          log(`  ⚠ [${profileName}] ${url}: note campaign but lead name missing — using URL-routing (add First/Last Name to enable group compose).`);
-        }
-        if (introPath === 'clean-compose') {
-          await sendIntroViaCleanCompose(page, body, leadFullName, primaryName, title, { dedupeProbe: true });
+        if (leadFullName) {
+          await sendIntroViaCleanCompose(page, body, leadFullName, primaryName, title, {
+            dedupeProbe: true,
+            leadAvatarToken,
+            primaryAvatarToken,
+          });
         } else {
+          // No First/Last Name on the row → can't typeahead the lead into a group.
+          // Fall back to URL-routing (Antonio's choice 2026-06-16); it can collapse
+          // into a 1:1, but it's the only option without a name.
+          log(`  ⚠ [${profileName}] ${url}: no First/Last Name on the row — URL-routing fallback (add a name to force the 3-way group).`);
           await sendIntroMessage(page, body, primaryName, title, '', url);
         }
         ok = true;
         break;
       } catch (err) {
         errMsg = err.message || String(err);
-        // v2.14.x: sendIntroMessage detected via URL-settle that the trio
-        // already has an existing intro thread (LinkedIn redirected from
-        // /compose/?recipient=X to /messaging/thread/{id} mid-type). Stamp
-        // 'Introduction Already Made' to preserve the audit distinction
-        // between intros made by THIS run vs pre-existing ones.
+        // Existing-thread redirect (URL-routing fallback path) → already introduced.
         if (errMsg.includes('INTRO_ALREADY_EXISTS')) {
           alreadyMade = true;
           break;
+        }
+        // Same-name ambiguity: resolve the intended person's REAL profile photo(s)
+        // and retry once so the typeahead picks by picture. If no reference photo
+        // can be captured, fall through → skip (never message the wrong person).
+        if (attempt < 2 && errMsg.includes('IC_INTRO_AMBIGUOUS_RECIPIENT')) {
+          if (!leadAvatarToken && leadFullName) {
+            leadAvatarToken = await _captureProfileAvatarToken(page, url, leadFullName).catch(() => '');
+          }
+          if (!primaryAvatarToken && primaryUrl) {
+            primaryAvatarToken = await _captureProfileAvatarToken(page, primaryUrl, primaryName).catch(() => '');
+            if (primaryAvatarToken) campaign._primaryAvatarToken = { url: primaryUrl, token: primaryAvatarToken };
+          }
+          if (leadAvatarToken || primaryAvatarToken) {
+            log(`  ↻ [${profileName}] ${url}: same-name match — resolved profile photo(s), retrying with photo disambiguation…`);
+            continue;
+          }
+          break; // no reference photo available → skip-on-doubt
         }
         if (attempt < 2 && (errMsg.includes('INTRO_RECIPIENT_NOT_FOUND') || errMsg.includes('IC_INTRO_RECIPIENT_NOT_FOUND'))) {
           log(`  ↻ [${profileName}] ${url}: typeahead miss, retrying once…`);
@@ -690,6 +803,9 @@ export async function runAutoIntros({
           : interrupted
             ? `Skipped — ${interruptReason}`
             : _friendlyIntroFailure(errMsg),
+      // v2.104: a made/already-made intro proves the connection — stamp the
+      // connection columns too so the row never reads "Connect Pending".
+      ...introConnectionStamp(ok || alreadyMade),
       sender: profileName,
       accountUsed: profileName,
       dateLastAction: _formatLocalDate(new Date()),

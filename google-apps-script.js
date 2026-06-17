@@ -918,35 +918,26 @@ function handleUpdateRow(sheet, data) {
     return jsonResponse({ error: 'No LinkedIn URL column found in the sheet' });
   }
 
-  // Try exact match first, then loose match (contains the linkedin.com/in/ slug)
-  var targetRow = findRowByUrl(sheet, urlColIndex, data.linkedinUrl);
+  // v2.105 — stamp EVERY copy of this lead (duplicate rows), not just the first.
+  // findRowsByUrl already does exact-normalized match with a loose /in/<slug>
+  // fallback, so the inline fallback that lived here is no longer needed.
+  var targetRows = findRowsByUrl(sheet, urlColIndex, data.linkedinUrl);
 
-  if (targetRow === -1) {
-    // Loose match: extract the slug from the search URL and match against cell values
-    var slugMatch = data.linkedinUrl.match(/linkedin\.com\/in\/([^/?#]+)/i);
-    if (slugMatch) {
-      var slug = slugMatch[1].toLowerCase();
-      var lastRow = sheet.getLastRow();
-      if (lastRow >= 2) {
-        var allVals = sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues();
-        for (var r = 0; r < allVals.length; r++) {
-          var cellVal = (allVals[r][0] || '').toString().toLowerCase();
-          if (cellVal.indexOf(slug) !== -1) { targetRow = r + 2; break; }
-        }
-      }
-    }
-  }
-
-  if (targetRow === -1) {
+  if (targetRows.length === 0) {
     return jsonResponse({ error: 'Row not found for: ' + data.linkedinUrl });
   }
 
-  var updated = writeFields(sheet, headers, targetRow, data);
+  // Audit records ONCE for the action — skip the audit append on copies 2..n.
+  var updated = [];
+  for (var ti = 0; ti < targetRows.length; ti++) {
+    updated = writeFields(sheet, headers, targetRows[ti], data, /* skipAudit */ ti > 0);
+  }
 
   return jsonResponse({
     success: true,
     sheetId: data.sheetId,
-    row: targetRow,
+    row: targetRows[0],
+    rows: targetRows,
     updated: updated
   });
 }
@@ -975,26 +966,34 @@ function handleBatchUpdate(sheet, data) {
     return jsonResponse({ error: 'Sheet has no data rows' });
   }
 
+  // v2.105 — one read, then index normalized identity → ALL its row numbers, so
+  // a stamp lands on every duplicate copy instead of only the last one (the old
+  // urlMap kept just `i+2`, so later dup rows clobbered earlier ones).
   var allUrls = sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues();
-  var urlMap = {};
+  var rowsByIdentity = {};
   for (var i = 0; i < allUrls.length; i++) {
     var normalized = normalizeUrl(allUrls[i][0]);
-    if (normalized) urlMap[normalized] = i + 2; // row number
+    if (!normalized) continue;
+    if (!rowsByIdentity[normalized]) rowsByIdentity[normalized] = [];
+    rowsByIdentity[normalized].push(i + 2);
   }
 
   var results = [];
 
   data.updates.forEach(function(update) {
-    var normalized = normalizeUrl(update.linkedinUrl);
-    var row = urlMap[normalized];
+    var rows = rowsByIdentity[normalizeUrl(update.linkedinUrl)] || [];
 
-    if (!row) {
+    if (rows.length === 0) {
       results.push({ linkedinUrl: update.linkedinUrl, error: 'not found' });
       return;
     }
 
-    var updated = writeFields(sheet, headers, row, update);
-    results.push({ linkedinUrl: update.linkedinUrl, row: row, updated: updated });
+    // Audit once per update — skip the audit append on copies 2..n.
+    var updated = [];
+    for (var ri = 0; ri < rows.length; ri++) {
+      updated = writeFields(sheet, headers, rows[ri], update, /* skipAudit */ ri > 0);
+    }
+    results.push({ linkedinUrl: update.linkedinUrl, row: rows[0], rows: rows, updated: updated });
   });
 
   return jsonResponse({
@@ -1148,9 +1147,51 @@ function findRowByUrl(sheet, urlColIndex, searchUrl) {
   return -1;
 }
 
+// v2.105 — loose identity: the same person resolves to ONE key regardless of
+// protocol, www, query string, fragment, trailing slash, or case, so a stamp
+// can't scatter across rows that are really the same lead. Mirror of
+// normalizeLeadUrl in src/sheet-url-match.js (keep the two in sync).
 function normalizeUrl(url) {
   if (!url) return '';
-  return url.toString().trim().toLowerCase().replace(/\/+$/, '');
+  return url.toString().trim().toLowerCase()
+    .replace(/[?#].*$/, '')      // drop query string + fragment
+    .replace(/^https?:\/\//, '') // drop protocol
+    .replace(/^www\./, '')       // drop www.
+    .replace(/\/+$/, '');        // drop trailing slash(es)
+}
+
+// v2.105 — every row whose URL resolves to the same identity as searchUrl, so a
+// stamp lands on EVERY duplicate copy (the 109/110 case), not just the first or
+// last. Exact normalized match first; if none, fall back to a /in/<slug>
+// contains-match (or a bare-slug search). Mirror of matchingRowNumbers in
+// src/sheet-url-match.js (keep in sync).
+function findRowsByUrl(sheet, urlColIndex, searchUrl) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var urls = sheet.getRange(2, urlColIndex + 1, lastRow - 1, 1).getValues();
+  var target = normalizeUrl(searchUrl);
+  if (!target) return [];
+
+  var exact = [];
+  for (var r = 0; r < urls.length; r++) {
+    if (normalizeUrl(urls[r][0]) === target) exact.push(r + 2);
+  }
+  if (exact.length > 0) return exact;
+
+  // Loose fallback — only from the canonical /in/<slug> form, or a bare slug
+  // (no slash/dot/space). Never pluck the first token out of a full URL.
+  var s = searchUrl.toString();
+  var inMatch = s.match(/linkedin\.com\/in\/([^/?#]+)/i);
+  var slug = '';
+  if (inMatch) slug = inMatch[1].toLowerCase();
+  else if (!/[/.\s]/.test(s)) slug = s.trim().toLowerCase();
+  if (!slug) return [];
+  var loose = [];
+  for (var k = 0; k < urls.length; k++) {
+    var cell = (urls[k][0] || '').toString().toLowerCase();
+    if (cell.indexOf(slug) !== -1) loose.push(k + 2);
+  }
+  return loose;
 }
 
 // PERFORMANCE NOTE (v2.59.x): Apps Script buffers setValue() writes and
@@ -1164,7 +1205,9 @@ function normalizeUrl(url) {
 // the sheet actually has action columns), then performs every write with no
 // read interleaved, so the writes commit as a single batch. Behaviour is
 // identical — same cells, same values, same dash-fill decision.
-function writeFields(sheet, headers, row, data) {
+// v2.105 — skipAudit lets a multi-row stamp (duplicate copies of one lead)
+// write all rows but append the audit-log entry only once for the action.
+function writeFields(sheet, headers, row, data, skipAudit) {
   var updated = [];
 
   // ── READ FIRST (only if there are action columns to dash-fill) ──
@@ -1281,7 +1324,8 @@ function writeFields(sheet, headers, row, data) {
   });
 
   // Append audit entry if this write represents an action (has accountUsed).
-  if (data.accountUsed) {
+  // skipAudit suppresses it on duplicate-copy stamps 2..n (logged once).
+  if (data.accountUsed && !skipAudit) {
     appendAuditLog(sheet.getParent(), {
       date: data.dateLastAction || new Date().toISOString(),
       linkedinUrl: data.linkedinUrl || '',

@@ -44,6 +44,29 @@ function memberIdFromAny(value) {
 }
 
 /**
+ * Strong-identity keys for a lead row — the SAME signals bulk-check already
+ * matches connections on (vanity slug + ACwAA member token + numeric
+ * Membership ID). Two rows are "the same person" when ANY key overlaps, so a
+ * duplicate profile — whether it's a byte-identical row written underneath
+ * another (the boss's 109/110 report) or a different URL form of the same
+ * person (trailing slash, ?query, vanity slug vs /in/ACwAA… member-id URL) —
+ * collapses to one intro. Each key is type-prefixed so a slug can never
+ * collide with a member number. Exported so the auto-intro pass can apply the
+ * identical dedup to its work-list (defense in depth).
+ */
+export function leadIdentityKeys(url, row) {
+  const keys = [];
+  const slug = publicIdFromUrl(url);
+  if (slug) keys.push('slug:' + slug);
+  const rowUrn = (row && (row['LinkedIn URN'] || row['linkedin urn'])) || '';
+  const mid = memberIdFromAny(rowUrn) || memberIdFromAny(url);
+  if (mid) keys.push('mid:' + mid);
+  const num = readSourceMemberId(row || {});
+  if (num) keys.push('num:' + num);
+  return keys;
+}
+
+/**
  * Pure helper — given the fetched connections + the sheet rows, decide
  * which rows get Connected stamps vs Still Pending stamps. Extracted from
  * bulkCheckConnections so it can be unit-tested without spinning up a
@@ -128,6 +151,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   let dbgRowsScanned = 0, dbgWithUrl = 0, dbgWithCRS = 0;
   let dbgAlreadyConnected = 0, dbgAlreadyDeclined = 0, dbgPidMatched = 0;
   let dbgAlreadyIntroduced = 0;
+  let dbgDuplicateCollapsed = 0;
   let dbgAlreadyDmd = 0;
   let dbgRequestHealed = 0;
   let dbgAlreadyUnverified = 0;
@@ -159,6 +183,63 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       },
     };
   }
+
+  // ── Duplicate-profile safety check (boss report 2026-06-16) ──────────────
+  // Two identical rows (e.g. 109 & 110) both pass the per-row "Introduction
+  // Status is blank" guard, so without this the same person is pushed into
+  // connectedUrls twice and introduced multiple times. We dedup the intro
+  // work-list by STRONG IDENTITY in two layers:
+  //
+  //   • terminalIntroKeys — a pre-pass over ALL rows recording the identities
+  //     already actioned (terminal phase-2 status) anywhere in the sheet. This
+  //     is the DURABLE guard: it survives an app restart that wipes the
+  //     in-memory introducedInRun set, because the audit trail lives in the
+  //     sheet. A blank duplicate of an already-introduced person is skipped.
+  //   • queuedIdentityKeys — identities queued earlier in THIS sweep, so two
+  //     blank duplicates in the same pass collapse to one (the 109/110 case).
+  //
+  // Keyed by identity, NOT raw URL, so a different URL form of the same person
+  // is recognised too. Terminality mirrors the existing one-shot semantics:
+  // any non-open Introduction Status (intro) / 'DM Sent' (dm) is terminal —
+  // the operator clears the cell to deliberately re-enable a person.
+  const terminalIntroKeys = new Set();
+  for (const r of rows) {
+    const u = extractLinkedInUrl(r, linkedinColumn);
+    if (!u) continue;
+    const terminal = dmSentTerminal
+      ? ((
+          r['DM Status'] || r['dm status'] || r['DM status'] ||
+          r['Direct Message Status'] || r['dmStatus'] || ''
+        ).toString().trim() === 'DM Sent')
+      : !isIntroSlotOpen(r['Introduction Status'] || r['introduction status'] || '');
+    if (terminal) for (const k of leadIdentityKeys(u, r)) terminalIntroKeys.add(k);
+  }
+  const queuedIdentityKeys = new Set();
+
+  // Queue a lead for the auto-intro pass unless its identity is already
+  // terminal in the sheet or already queued this sweep. Returns true when
+  // queued, false when collapsed as a duplicate (and, in intro mode, stamps
+  // the blank duplicate row "Skipped — duplicate …" so the operator can SEE
+  // the safeguard fired — best-effort: byte-identical URLs collapse to one
+  // addressable row in the Apps Script, so the log/diag count below is the
+  // authoritative signal).
+  const tryQueueIntro = (u, r, introStatusVal) => {
+    const idKeys = leadIdentityKeys(u, r);
+    const isDup = idKeys.some((k) => terminalIntroKeys.has(k) || queuedIdentityKeys.has(k));
+    if (isDup) {
+      dbgDuplicateCollapsed++;
+      if (!suppressAcceptedStamp && !dmSentTerminal && isIntroSlotOpen(introStatusVal)) {
+        updates.push({
+          linkedinUrl: u,
+          introductionStatus: 'Skipped — duplicate of an already-introduced profile',
+        });
+      }
+      return false;
+    }
+    connectedUrls.push(u);
+    for (const k of idKeys) queuedIdentityKeys.add(k);
+    return true;
+  };
 
   for (const row of rows) {
     dbgRowsScanned++;
@@ -374,7 +455,12 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       if (ccAlreadyStamped) dbgAlreadyConnected++;
       // v2.79: only the account actually connected (= the sweeping account) may
       // fire the intro, so it runs from a 1st-degree browser.
-      if (sweepingConnected) connectedUrls.push(url);
+      // Duplicate-profile guard (2026-06-16): tryQueueIntro collapses a second
+      // row for the same person; on a duplicate we skip the Connected re-stamp
+      // below (it's already stamped on the twin) and let the dup flag stand.
+      if (sweepingConnected && !tryQueueIntro(url, row, introductionStatus)) {
+        continue;
+      }
 
       // Only stamp the CC column when it's not already at its target
       // value — avoids redundant Apps Script writes for rows we're just
@@ -444,13 +530,11 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
             row['DM Status'] || row['dm status'] || row['DM status'] ||
             row['Direct Message Status'] || row['dmStatus'] || ''
           ).toString().trim();
-          if (_dmStatus === '') connectedUrls.push(url);
+          if (_dmStatus === '') tryQueueIntro(url, row, '');
         } else {
           // v2.98: open slot = genuinely blank OR the reconnect-retry sentinel.
-          const _introOpen = isIntroSlotOpen(
-            row['Introduction Status'] || row['introduction status'] || ''
-          );
-          if (_introOpen) connectedUrls.push(url);
+          const _introStatus = row['Introduction Status'] || row['introduction status'] || '';
+          if (isIntroSlotOpen(_introStatus)) tryQueueIntro(url, row, _introStatus);
         }
       }
       continue;
@@ -502,6 +586,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       alreadyConnected: dbgAlreadyConnected,
       alreadyDeclined: dbgAlreadyDeclined,
       alreadyIntroduced: dbgAlreadyIntroduced,
+      duplicateCollapsed: dbgDuplicateCollapsed,
       alreadyDmd: dbgAlreadyDmd,
       requestHealed: dbgRequestHealed,
       alreadyUnverified: dbgAlreadyUnverified,
@@ -658,10 +743,13 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     }
   );
 
-  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, alreadyDmd=${diag.alreadyDmd}, requestHealed=${diag.requestHealed}, alreadyUnverified=${diag.alreadyUnverified}, composeCapped=${diag.composeCapped}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
+  const diagSummary = `scanned=${diag.rowsScanned}, withUrl=${diag.withUrl}, slugs=${diag.slugs}, memberIds=${diag.memberIds}, names=${diag.names}, pidMatched=${diag.pidMatched}, alreadyConnected=${diag.alreadyConnected}, alreadyIntroduced=${diag.alreadyIntroduced}, duplicateCollapsed=${diag.duplicateCollapsed}, alreadyDmd=${diag.alreadyDmd}, requestHealed=${diag.requestHealed}, alreadyUnverified=${diag.alreadyUnverified}, composeCapped=${diag.composeCapped}, alreadyDeclined=${diag.alreadyDeclined}, stamped=${diag.withCRS}\n  ↳ sampleSheetSlugs=${diag.sampleSheetSlugs.join(' | ') || '(none)'}\n  ↳ sampleSheetMemberIds=${diag.sampleSheetMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedSlugs=${diag.sampleConnectedSlugs.join(' | ') || '(none)'}\n  ↳ sampleConnectedMemberIds=${diag.sampleConnectedMemberIds.join(' | ') || '(none)'}\n  ↳ sampleConnectedNames=${diag.sampleConnectedNames.join(' | ') || '(none)'}\n  ↳ sampleCRS=${[...diag.sampleCRSValues].join(' | ') || '(none)'}`;
   // Log to stdout for forensic deep-dives, AND also surface in the return
   // so the campaign loop can pipe it into the dashboard-visible log.
   console.log(`[bulk-check] diag: ${diagSummary}`);
+  if (diag.duplicateCollapsed > 0) {
+    console.log(`[bulk-check] ⚠ Collapsed ${diag.duplicateCollapsed} duplicate profile(s) — same person appeared on more than one row; introduced once, the extra row(s) stamped "Skipped — duplicate".`);
+  }
 
   if (updates.length === 0) {
     return { matched: 0, fetched: conns.length, diag: diagSummary, connectedUrls };

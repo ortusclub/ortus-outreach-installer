@@ -2295,7 +2295,7 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
   // from sendIntroMessage's typeahead path but tagged with a different
   // data-attribute so the two functions can't interfere if both run in the
   // same session.
-  async function addRecipientViaTypeahead(name) {
+  async function addRecipientViaTypeahead(name, expectedAvatarToken = '') {
     const TAG = 'data-ortus-ic-recipient';
 
     // Locate + tag a visible recipient input.
@@ -2365,7 +2365,7 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
     // textContent picks those up and produces false matches; innerText only
     // returns visibly-rendered text. The existing sendIntroMessage in this
     // file uses the same pattern — kept identical for parity.
-    const clickResult = await page.evaluate(async (wantName) => {
+    const clickResult = await page.evaluate(async (wantName, expectedToken) => {
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const isVisible = (el) => {
         if (!el) return false;
@@ -2387,54 +2387,50 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
         .replace(/[^a-z0-9\s'-]/g, ' ').replace(/\s+/g, ' ').trim();
       const norm = normalizeName(wantName);
       const tokens = norm.split(/\s+/).filter(Boolean);
-
-      // Helper: does this candidate look like a 1st-degree connection?
-      // LinkedIn surfaces "• 1st" or "1st degree connection" in the row's
-      // visible label. Robust check across UI variants.
       const isFirstDegree = (text) => /\b1st\b|1st\s*degree|·\s*1st/i.test(text);
-
-      // 3-tier matcher (mirrors sendIntroMessage's matchOne in this file).
-      //   1. exact / startsWith on normalized name
-      //   2. token-prefix (each name token must prefix some word in candidate)
-      //   3. single-candidate fallback (only one suggestion: trust it)
-      const matchOne = (cands) => {
-        // PREFERRED pass: name match AND 1st-degree.
-        for (let i = 0; i < cands.length; i++) {
-          const visibleText = cands[i].innerText || '';
-          const t = normalizeName(visibleText);
-          if ((t === norm || t.startsWith(`${norm} `)) && isFirstDegree(visibleText)) {
-            return { idx: i, reason: 'exact+1st' };
-          }
-        }
-        for (let i = 0; i < cands.length; i++) {
-          const visibleText = cands[i].innerText || '';
-          const t = normalizeName(visibleText);
+      const isGroupRow = (text) => /participants|group message/i.test(text);
+      // Stable avatar media-id token — identical between this dropdown row and
+      // the person's profile-page photo (verified live 2026-06-16). This is the
+      // ONLY per-candidate identity signal the messaging typeahead exposes (no
+      // slug, no member-id), so it's how we tell same-name people apart.
+      const avatarTokenOf = (el) => {
+        const img = el.querySelector('img');
+        const src = img ? (img.getAttribute('src') || img.getAttribute('data-delayed-url') || '') : '';
+        return (String(src).match(/image\/v2\/([^\/]+)\//) || [])[1] || '';
+      };
+      // Collect ALL name-matching, non-group candidates (1st-degree preferred),
+      // returning each one's avatar token. We never auto-click the first of
+      // several same-name rows — the caller disambiguates by photo. Mirrors the
+      // pure pickRecipientByIdentity in match-primary.js (keep in sync).
+      const collectMatches = (cands) => {
+        const nameHit = (text) => {
+          const t = normalizeName(text);
+          if (t === norm || t.startsWith(`${norm} `)) return true;
           const words = t.split(/\s+/);
-          if (tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok))) && isFirstDegree(visibleText)) {
-            return { idx: i, reason: 'token-prefix+1st' };
-          }
-        }
-        // FALLBACK pass: name match without the 1st-degree requirement.
-        // (Only fires if no 1st-degree row matched the name — protects against
-        // LinkedIn rendering the degree badge in a way our regex misses.)
-        for (let i = 0; i < cands.length; i++) {
-          const t = normalizeName(cands[i].innerText || '');
-          if (t === norm || t.startsWith(`${norm} `)) return { idx: i, reason: 'exact-no-degree' };
-        }
-        for (let i = 0; i < cands.length; i++) {
-          const t = normalizeName(cands[i].innerText || '');
-          const words = t.split(/\s+/);
-          if (tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok)))) {
-            return { idx: i, reason: 'token-prefix-no-degree' };
-          }
-        }
-        if (cands.length === 1) return { idx: 0, reason: 'single-candidate' };
-        return { idx: -1, reason: 'no-match' };
+          return tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok)));
+        };
+        const people = cands
+          .map((el, i) => ({ el, i, text: el.innerText || '' }))
+          .filter(p => !isGroupRow(p.text) && nameHit(p.text));
+        const firstDeg = people.filter(p => isFirstDegree(p.text));
+        const chosen = firstDeg.length > 0 ? firstDeg : people;
+        return chosen.map(p => ({
+          idx: p.i,
+          token: avatarTokenOf(p.el),
+          name: (p.text || '').trim().split('\n')[0].slice(0, 120),
+        }));
+      };
+      const decide = (matched) => {
+        if (matched.length === 0) return { action: 'none' };
+        if (matched.length === 1) return { action: 'click', idx: matched[0].idx, reason: 'single', name: matched[0].name };
+        if (!expectedToken) return { action: 'ambiguous', reason: 'ambiguous-no-reference', names: matched.map(m => m.name) };
+        const photo = matched.filter(m => m.token && m.token === expectedToken);
+        if (photo.length === 1) return { action: 'click', idx: photo[0].idx, reason: 'photo-match', name: photo[0].name };
+        return { action: 'ambiguous', reason: photo.length === 0 ? 'ambiguous-no-photo-match' : 'ambiguous-multiple-photo-match', names: matched.map(m => m.name) };
       };
 
-      let lastCandidateCount = 0;
-      let lastCandidatePreview = '';
-
+      let lastCandidateCount = 0, lastCandidatePreview = '';
+      let stableMatchCount = -1, stableTicks = 0, lastMatched = [];
       // Poll up to 50 * 200ms = 10s. Mirrors sendIntroMessage timing.
       for (let i = 0; i < 50; i++) {
         await sleep(200);
@@ -2442,31 +2438,51 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
           '.msg-connections-typeahead__search-results, [role="listbox"], .reusable-search__entity-result-list'
         ));
         const searchRoots = roots.length ? roots : [document];
+        let candidates = [];
         for (const root of searchRoots) {
-          const candidates = Array.from(root.querySelectorAll(
+          const found = Array.from(root.querySelectorAll(
             'li, [role="option"], button, .msg-connections-typeahead__search-result, .reusable-search__result-container'
           )).filter(isVisible);
-          if (candidates.length > lastCandidateCount) {
-            lastCandidateCount = candidates.length;
-            lastCandidatePreview = candidates.slice(0, 3)
-              .map(c => (c.innerText || '').trim().split('\n')[0])
-              .join(' | ');
+          if (found.length > candidates.length) candidates = found;
+        }
+        if (candidates.length > lastCandidateCount) {
+          lastCandidateCount = candidates.length;
+          lastCandidatePreview = candidates.slice(0, 3).map(c => (c.innerText || '').trim().split('\n')[0]).join(' | ');
+        }
+        const matched = collectMatches(candidates);
+        if (matched.length === 0) { stableMatchCount = -1; stableTicks = 0; continue; }
+        // Wait for the match set to stop growing (same count across 2 ticks)
+        // before deciding — a mid-render list can paint one same-name row before
+        // the second, which would defeat the photo-disambiguation check.
+        if (matched.length === stableMatchCount) stableTicks++;
+        else { stableMatchCount = matched.length; stableTicks = 0; }
+        lastMatched = matched;
+        if (stableTicks >= 1) {
+          const d = decide(matched);
+          if (d.action === 'click') {
+            activate(candidates[d.idx]);
+            return { ok: true, matched: d.name, reason: d.reason, candidateCount: candidates.length };
           }
-          const result = matchOne(candidates);
-          if (result.idx >= 0) {
-            activate(candidates[result.idx]);
-            return {
-              ok: true,
-              matched: (candidates[result.idx].innerText || '').trim().split('\n')[0].slice(0, 120),
-              reason: result.reason,
-              candidateCount: candidates.length,
-            };
+          if (d.action === 'ambiguous') {
+            return { ok: false, ambiguous: true, reason: d.reason, names: d.names, candidateCount: candidates.length };
           }
         }
       }
+      // Timed out without a stable set — if the last snapshot was ambiguous,
+      // surface that (skip-on-doubt); otherwise report no usable match.
+      if (lastMatched.length > 1) {
+        const d = decide(lastMatched);
+        if (d.action === 'ambiguous') return { ok: false, ambiguous: true, reason: d.reason, names: d.names, candidateCount: lastCandidateCount };
+      }
       return { ok: false, candidateCount: lastCandidateCount, preview: lastCandidatePreview };
-    }, name);
+    }, name, expectedAvatarToken);
 
+    if (clickResult.ambiguous) {
+      // Two+ people share this name and we can't be SURE which is the intended
+      // one by profile photo. Never guess — throw so runAutoIntros stamps the
+      // row "Skipped — multiple same-name matches" (boss report 2026-06-16).
+      throw new Error(`IC_INTRO_AMBIGUOUS_RECIPIENT: "${name}" — ${clickResult.reason} (${(clickResult.names || []).join(' / ')})`);
+    }
     if (!clickResult.ok) {
       const detail = clickResult.candidateCount === 0
         ? 'typeahead dropdown never opened — confirm 1st-degree connection'
@@ -2484,11 +2500,12 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
     await new Promise(r => setTimeout(r, 1200));
   }
 
-  // Step 1 — add the lead.
-  await addRecipientViaTypeahead(leadFullName);
+  // Step 1 — add the lead. opts.leadAvatarToken (the lead's real profile-photo
+  // token) disambiguates same-name people; empty unless the caller resolved it.
+  await addRecipientViaTypeahead(leadFullName, opts.leadAvatarToken || '');
 
   // Step 2 — add the primary.
-  await addRecipientViaTypeahead(primaryName);
+  await addRecipientViaTypeahead(primaryName, opts.primaryAvatarToken || '');
 
   // Settle for LinkedIn to render the "Group name (optional)" field. With
   // both pills added via typeahead (no URL routing), LinkedIn renders this
