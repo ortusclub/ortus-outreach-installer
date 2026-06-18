@@ -12585,6 +12585,45 @@ async function toggleProfileSkip(id, checked, event) {
 }
 window.toggleProfileSkip = toggleProfileSkip;
 
+function renderPrimaryPanel(status) {
+  const el = document.getElementById('primary-panel');
+  if (!el) return;
+  const conn = status && status.primaryConn ? status.primaryConn : null;
+  const names = Array.isArray(status?.profileNames) ? status.profileNames : [];
+  const ids   = Array.isArray(status?.profileIds)   ? status.profileIds   : [];
+  if (!conn || !names.length || !Object.keys(conn).length) { el.hidden = true; el.innerHTML = ''; return; }
+  const src = status.primaryConnSource || {};
+  const pName = status.primaryName || 'the primary';
+  const initials = pName.split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'P';
+  const STATE = {
+    connected: { cls: 's-connected', st: 'Connected' },
+    pending:   { cls: 's-pending',   st: 'Pending' },
+    accepting: { cls: 's-checking',  st: 'Checking' },
+    sent:      { cls: 's-pending',   st: 'Pending' },
+    unverified:{ cls: 's-unverified',st: 'Primary?' },
+    no_url:    { cls: 's-unverified',st: '—' },
+  };
+  const rows = names.map((name, i) => {
+    const id = ids[i] || '';
+    const state = (id && conn[id]) || 'unverified';
+    const s = STATE[state] || STATE.unverified;
+    const remembered = src[id] === 'remembered';
+    const meta = remembered ? 'remembered · from store'
+      : state === 'pending' || state === 'sent' ? 'connect request sent · awaiting accept'
+      : state === 'unverified' ? 'degree unread · re-checks next turn'
+      : 'verified live';
+    return `<div class="v3-item ${s.cls}"><span class="led"></span>` +
+      `<span><span class="nm" title="${escHtml(name)}">${escHtml(name)}</span>` +
+      `<span class="meta">${escHtml(meta)}</span></span>` +
+      `<span class="st">${escHtml(s.st)}${remembered ? ' <span class=\"remember\">remembered</span>' : ''}</span></div>`;
+  }).join('');
+  el.innerHTML =
+    `<div class="v3-head"><div class="v3-ava">${escHtml(initials)}</div>` +
+    `<div class="who"><span class="lbl">Primary person</span>${escHtml(pName)}</div></div>` +
+    rows;
+  el.hidden = false;
+}
+
 function renderActiveProfiles(status) {
   const el = document.getElementById('active-profiles');
   if (!el) return;
@@ -12637,6 +12676,7 @@ function renderActiveProfiles(status) {
     `;
   }).join('');
   el.innerHTML = rows;
+  renderPrimaryPanel(status);
   el.hidden = false;
 }
 
