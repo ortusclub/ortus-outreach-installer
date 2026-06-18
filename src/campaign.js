@@ -1647,8 +1647,13 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately' }) {
   if (campaign.running) throw new Error('Campaign already running');
+
+  // #7: when 'after_connections', the primary connect/check is deferred until
+  // all accounts finish sending connections — the pre-loop handshake and the
+  // per-turn primary connect are skipped, and the same handshake runs post-loop.
+  const _deferPrimary = primaryCheckTiming === 'after_connections';
 
   // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
   // mode so accidental flagging from other code paths cannot change
@@ -2869,6 +2874,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         let { page } = session;
         campaign.currentProfile = pName;
 
+        if (!_deferPrimary) {
         // v2.78: CC+IC primary-connection gate. Verify this account is a
         // 1st-degree connection of the primary before its intros can fire.
         // First turn: read degree + (if not connected) send ONE connect request
@@ -2948,6 +2954,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               }
             }
           }
+        }
         }
 
         const batchStart = Date.now();
@@ -4260,12 +4267,20 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       }
     }
 
-    try { await runPreflightHandshake(); } finally { campaign.phase = null; }
+    if (!_deferPrimary) { try { await runPreflightHandshake(); } finally { campaign.phase = null; } }
 
     const workerCount = Math.max(1, Number(concurrency) || 1);
     await Promise.all(
       Array.from({ length: workerCount }, (_, i) => worker(i))
     );
+
+    // #7: deferred primary step — all accounts have finished sending their
+    // connections for the day; now run the same handshake (connect + accept)
+    // before entering monitoring, restoring the pre-2102 "after connections" order.
+    if (_deferPrimary && !campaign._abort) {
+      campaign.phase = 'primary';
+      try { await runPreflightHandshake(); } finally { campaign.phase = null; }
+    }
 
     // Log per-profile stats (from the sessions Map — covers both still-open
     // and already-closed profiles via campaignCounts).
