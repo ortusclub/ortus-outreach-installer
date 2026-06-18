@@ -13,7 +13,7 @@ if (missing.length) {
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { appendFileSync, createWriteStream, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -442,6 +442,22 @@ open "$APP"
     import('electron')
       .then(({ app }) => { app.isQuitting = true; setTimeout(() => app.quit(), 400); })
       .catch(() => {});
+  }
+});
+
+// v2.112: expose the detached install-helper log so a failed update is
+// diagnosable. The helper runs AFTER the app quits during a bundle swap, so
+// its log is read on the NEXT launch. Read-only; no secrets in this log.
+app.get('/api/update-log', async (_req, res) => {
+  const logPath = join(tmpdir(), 'ortus-update.log');
+  try {
+    if (!existsSync(logPath)) {
+      return res.json({ exists: false, downloadError: _downloadState.error || null });
+    }
+    const [text, st] = await Promise.all([readFile(logPath, 'utf8'), stat(logPath)]);
+    res.json({ exists: true, text, mtimeMs: st.mtimeMs, downloadError: _downloadState.error || null });
+  } catch (err) {
+    res.json({ exists: false, error: err.message });
   }
 });
 
