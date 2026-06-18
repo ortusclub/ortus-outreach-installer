@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>#5 guardrails — 3 visibility variants</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* All three variants are the REAL app cards + CSS. Only the highlight treatment
+       differs, scoped under .vA / .vB / .vC. Amber = #d97706 (matches the app's
+       .dup-flag). Restricted (red) is unchanged in every variant. */
+
+    body { padding: 0; }
+    .sketch-wrap { max-width: 1280px; margin: 0 auto; padding: 24px 24px 80px; }
+    .variant { border: 1px solid var(--hairline); border-radius: 12px; padding: 18px 20px 22px; margin-bottom: 30px; }
+    .variant > h2 { margin: 0 0 2px; font-size: 1.05rem; }
+    .variant > .cap { color: var(--gray); font-size: 0.82rem; margin-bottom: 16px; }
+    .variant .profile-grid { margin-top: 6px; }
+
+    /* shared base badge (mirrors .dup-flag) */
+    .warn-flag { display:inline-block; font-size:0.52rem; letter-spacing:0.06em; text-transform:uppercase; color:#d97706; border:1px solid rgba(217,119,6,0.45); border-radius:9999px; padding:0 6px; margin-left:6px; white-space:nowrap; vertical-align:middle; }
+    .passover-banner strong.passover-closed { color:#d97706; }
+
+    /* ───────── Variant A — Amber card wash ───────── */
+    .vA .profile-item.is-flagged { background: rgba(217,119,6,0.09); border-color: rgba(217,119,6,0.55); box-shadow: inset 3px 0 0 #d97706; }
+    .vA .warn-flag { background: rgba(217,119,6,0.16); color:#b45309; border-color: rgba(217,119,6,0.6); font-weight:600; }
+    .vA .passover-banner strong.passover-closed { background: rgba(217,119,6,0.15); padding:1px 8px; border-radius:9999px; }
+
+    /* ───────── Variant B — Top warning ribbon ───────── */
+    .vB .profile-item.is-flagged { position: relative; padding-top: 28px; border-color: rgba(217,119,6,0.55); overflow: hidden; }
+    .vB .profile-item.is-flagged::before { content: attr(data-warn); position:absolute; top:0; left:0; right:0; background:#d97706; color:#fff; font-family:var(--mono); font-size:0.54rem; letter-spacing:0.08em; text-transform:uppercase; padding:4px 9px; }
+    .vB .profile-item.is-restricted { position: relative; padding-top: 28px; overflow: hidden; }
+    .vB .profile-item.is-restricted::before { content: "⛔ Restricted — blocked"; position:absolute; top:0; left:0; right:0; background:#c0392b; color:#fff; font-family:var(--mono); font-size:0.54rem; letter-spacing:0.08em; text-transform:uppercase; padding:4px 9px; }
+    .vB .warn-flag, .vB .restricted-flag { display:none; } /* the ribbon replaces the inline pill */
+
+    /* ───────── Variant C — Aggregate alert bar + bold chip ───────── */
+    .vC .guardrail-alert { display:flex; align-items:flex-start; gap:11px; background:#fdf2e2; border:1px solid #d97706; border-left-width:4px; border-radius:8px; padding:12px 14px; margin-bottom:16px; }
+    .vC .guardrail-alert .big { font-size:1.25rem; line-height:1; }
+    .vC .guardrail-alert .txt { font-size:0.85rem; color:#7c2d12; line-height:1.5; }
+    .vC .guardrail-alert .txt b { color:#9a3412; }
+    .vC .profile-item.is-flagged { border-color: rgba(217,119,6,0.55); }
+    .vC .warn-flag { background:#d97706; color:#fff; border-color:#d97706; font-weight:600; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+<div class="sketch-wrap">
+
+  <!-- ════════ VARIANT A ════════ -->
+  <section class="variant vA">
+    <h2>Variant A — Amber card wash</h2>
+    <div class="cap">The whole flagged card gets a soft amber fill + left bar + filled badge. Stays in the grid rhythm; reads as "caution" at a glance without shouting.</div>
+    <div class="browse-secondary">
+      <div class="passover-banner">
+        <span>OP / InMail / Sales Nav — <strong class="passover-active">Passover ACTIVE — closes in 13d</strong></span>
+        <span style="margin-left:16px">CC — <strong class="passover-closed">Passover in 3d (closed)</strong></span>
+      </div>
+    </div>
+    <div class="profile-grid">
+      <label class="profile-item selected"><input type="checkbox" checked><div style="flex:1"><div class="name">antonio@ortusclub.com</div><div class="soo-user">Assigned: Antonio</div><div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-flagged"><input type="checkbox"><div style="flex:1"><div class="name">marigona@ortusclub.com <span class="warn-flag">⚠ assigned to Marigona</span></div><div class="soo-user">Assigned: Marigona</div><div class="status-bar status-bar-4"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-flagged selected"><input type="checkbox" checked><div style="flex:1"><div class="name">pool · sales nav #4 <span class="warn-flag">⚠ in use by marco@</span></div><div class="soo-user">Pool — free for all</div><div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg na"></div><div class="status-seg in-use"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-restricted"><input type="checkbox" disabled><div style="flex:1"><div class="name">denisse.deleon@ortus.solutions <span class="restricted-flag">⛔ Identity Restricted</span></div><div class="status-bar status-bar-4"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+    </div>
+  </section>
+
+  <!-- ════════ VARIANT B ════════ -->
+  <section class="variant vB">
+    <h2>Variant B — Top warning ribbon</h2>
+    <div class="cap">A full-width colored strip across the top of the card states the reason (amber = assigned / in use, red = restricted). Most scannable — you spot every flagged card instantly, even while scrolling.</div>
+    <div class="browse-secondary">
+      <div class="passover-banner">
+        <span>OP / InMail / Sales Nav — <strong class="passover-active">Passover ACTIVE — closes in 13d</strong></span>
+        <span style="margin-left:16px">CC — <strong class="passover-closed">⚠ Passover in 3d (closed)</strong></span>
+      </div>
+    </div>
+    <div class="profile-grid">
+      <label class="profile-item selected"><input type="checkbox" checked><div style="flex:1"><div class="name">antonio@ortusclub.com</div><div class="soo-user">Assigned: Antonio</div><div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-flagged" data-warn="⚠ Assigned to Marigona"><input type="checkbox"><div style="flex:1"><div class="name">marigona@ortusclub.com</div><div class="soo-user">Assigned: Marigona</div><div class="status-bar status-bar-4"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-flagged selected" data-warn="⚠ In use by marco@"><input type="checkbox" checked><div style="flex:1"><div class="name">pool · sales nav #4</div><div class="soo-user">Pool — free for all</div><div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg na"></div><div class="status-seg in-use"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-restricted"><input type="checkbox" disabled><div style="flex:1"><div class="name">denisse.deleon@ortus.solutions</div><div class="status-bar status-bar-4"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+    </div>
+  </section>
+
+  <!-- ════════ VARIANT C ════════ -->
+  <section class="variant vC">
+    <h2>Variant C — Aggregate alert bar + bold chip</h2>
+    <div class="cap">A prominent amber alert above the grid sums up the situation ("2 assigned · CC in passover"), and each flagged card carries a solid amber chip. Emphasis comes from the top-level alert, so nothing is missed even if a card scrolls off.</div>
+    <div class="guardrail-alert">
+      <span class="big">⚠</span>
+      <span class="txt"><b>2 of your selected accounts are assigned to others</b>, and this Connect campaign's <b>CC credits are in passover until Thursday</b></span>
+    </div>
+    <div class="browse-secondary">
+      <div class="passover-banner">
+        <span>OP / InMail / Sales Nav — <strong class="passover-active">Passover ACTIVE — closes in 13d</strong></span>
+        <span style="margin-left:16px">CC — <strong class="passover-closed">Passover in 3d (closed)</strong></span>
+      </div>
+    </div>
+    <div class="profile-grid">
+      <label class="profile-item selected"><input type="checkbox" checked><div style="flex:1"><div class="name">antonio@ortusclub.com</div><div class="soo-user">Assigned: Antonio</div><div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-flagged"><input type="checkbox"><div style="flex:1"><div class="name">marigona@ortusclub.com <span class="warn-flag">⚠ assigned to Marigona</span></div><div class="soo-user">Assigned: Marigona</div><div class="status-bar status-bar-4"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-flagged selected"><input type="checkbox" checked><div style="flex:1"><div class="name">pool · sales nav #4 <span class="warn-flag">⚠ in use by marco@</span></div><div class="soo-user">Pool — free for all</div><div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg na"></div><div class="status-seg in-use"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+      <label class="profile-item is-restricted"><input type="checkbox" disabled><div style="flex:1"><div class="name">denisse.deleon@ortus.solutions <span class="restricted-flag">⛔ Identity Restricted</span></div><div class="status-bar status-bar-4"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div><div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div></div></label>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

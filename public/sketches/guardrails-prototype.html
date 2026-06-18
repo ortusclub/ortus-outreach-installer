@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>#5 Account-selection guardrails — sketch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- the REAL app stylesheets -->
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* ───────── NEW for #5 — the only additions this sketch makes; everything
+       else is the real app markup + CSS. These rules are what the implementation
+       would add to style.css, using the app's own design tokens. ───────── */
+
+    /* Warning badge for an account assigned to / in use by another operator.
+       Mirrors .dup-flag's amber pill so it reads as "caution, not blocked"
+       (vs .restricted-flag's red, which IS a block). */
+    .warn-flag { display: inline-block; font-size: 0.52rem; letter-spacing: 0.06em; text-transform: uppercase; color: #d97706; border: 1px solid rgba(217,119,6,0.45); border-radius: 9999px; padding: 0 6px; margin-left: 6px; white-space: nowrap; vertical-align: middle; cursor: help; }
+
+    /* A flagged (but selectable) card gets a faint amber edge so it's scannable. */
+    .profile-item.is-flagged { box-shadow: inset 2px 0 0 rgba(217,119,6,0.55); }
+
+    /* Passover: when a channel is CLOSED, tint that banner entry amber (today the
+       inactive state just shows in ink — easy to miss). Active stays green. */
+    .passover-banner strong.passover-closed { color: #d97706; }
+
+    /* The visual note under the toolbar. */
+    .guardrail-note { margin-top: 10px; border-left: 2px solid #d97706; background: rgba(217,119,6,0.06); padding: 8px 12px; font-size: 0.78rem; line-height: 1.45; color: var(--ink); border-radius: 4px; }
+    .guardrail-note b { color: #b45309; }
+
+    /* Start-confirm card (warn + override). Styled like a section card. */
+    .guardrail-confirm { max-width: 560px; margin: 28px auto 0; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 20px 22px; }
+    .guardrail-confirm h3 { margin: 0 0 4px; }
+    .gc-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); margin-top: 14px; }
+    .gc-line { font-size: 0.85rem; line-height: 1.7; color: var(--ink); }
+    .gc-line .muted { color: var(--gray); }
+    .gc-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+    body { padding: 0; }
+    .sketch-wrap { max-width: 1400px; margin: 0 auto; padding: 28px 24px 60px; }
+    .sketch-tag { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-bottom: 14px; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+<div class="sketch-wrap">
+  <div class="sketch-tag">Sketch · #5 account-selection guardrails · real app CSS</div>
+
+  <div class="section collapsible" id="nav-accounts">
+    <h2 class="section-toggle"><span class="caret">▾</span> 3. Select GoLogin Accounts</h2>
+    <div class="collapsible-body">
+
+      <!-- stat bar (real markup) -->
+      <div class="acct-summary-bar">
+        <button type="button" class="acct-sb-stat preset" data-preset="assigned">
+          <div class="acct-sb-stat-lbl">Assigned to me</div>
+          <div class="acct-sb-stat-num preset-count">1</div>
+          <div class="acct-sb-stat-desc preset-desc">Profiles where assignee matches my identifier</div>
+        </button>
+        <button type="button" class="acct-sb-stat preset" data-preset="pool">
+          <div class="acct-sb-stat-lbl">Unassigned pool</div>
+          <div class="acct-sb-stat-num preset-count">116</div>
+          <div class="acct-sb-stat-desc preset-desc">Shared</div>
+        </button>
+        <button type="button" class="acct-sb-stat preset" data-preset="available-now">
+          <div class="acct-sb-stat-lbl">Available now</div>
+          <div class="acct-sb-stat-num preset-count">108</div>
+          <div class="acct-sb-stat-desc preset-desc">Ready to use — not restricted, has free credits</div>
+        </button>
+        <button type="button" class="acct-sb-stat preset active" data-preset="all">
+          <div class="acct-sb-stat-lbl">All</div>
+          <div class="acct-sb-stat-num preset-count">422</div>
+          <div class="acct-sb-stat-desc preset-desc">Show every profile</div>
+        </button>
+        <div class="acct-sb-match my-identity-row">
+          <label class="acct-sb-match-lbl my-identity-label">Match name <a href="#" class="identifier-toggle-link" onclick="return false">Override</a></label>
+          <input type="text" value="Antonio" readonly />
+        </div>
+      </div>
+      <div class="acct-sb-hint">Match name is your ID in the lead sheet — it links you to your assigned LinkedIn accounts. Click Override to edit.</div>
+
+      <!-- browse card (real markup) -->
+      <div class="accounts-browser browse-card collapsible" id="accounts-browser">
+        <h3 class="section-toggle browse-card-head accounts-browser-toggle"><span class="caret">▾</span> Browse accounts</h3>
+        <div class="collapsible-body browse-card-body">
+          <div class="browse-toolbar">
+            <div class="browse-search"><input type="text" placeholder="Search by name or email…" /></div>
+            <div class="chip-row">
+              <button type="button" class="chip active">All <span class="count">422</span></button>
+              <button type="button" class="chip">Available <span class="count">108</span></button>
+              <button type="button" class="chip">In use <span class="count">283</span></button>
+              <button type="button" class="chip">Selected <span class="count">0</span></button>
+            </div>
+          </div>
+
+          <div class="browse-secondary">
+            <!-- passover banner (real markup) — shown as it looks Mon–Wed: CC CLOSED -->
+            <div id="passover-banner" class="passover-banner">
+              <span>OP / InMail / Sales Nav — <strong class="passover-active">Passover ACTIVE — closes in 13d</strong></span>
+              <span style="margin-left:16px">CC — <strong class="passover-closed">Passover in 3d (closed)</strong></span>
+            </div>
+            <div class="browse-bulk-row">
+              <button class="bulk-pill">Select all visible</button>
+              <button class="bulk-pill">Deselect all</button>
+            </div>
+          </div>
+
+          <!-- the VISUAL NOTE (new) -->
+          <div class="guardrail-note">
+            <b>⚠ Heads-up, not a block.</b> A ⚠ account is assigned to, or in use by, another operator, or its credits are in passover. You can still pick it — you'll just confirm at Start. <span style="color:#c0392b">⛔ Restricted</span> stays blocked.
+          </div>
+
+          <!-- profile grid (real markup + classes) -->
+          <div id="profiles-grid" class="profile-grid">
+
+            <!-- normal, no SoO → id line -->
+            <label class="profile-item">
+              <input type="checkbox" />
+              <div style="flex:1">
+                <div class="name">zoominfo_ii</div>
+                <div class="id">688C9C16E171…</div>
+              </div>
+            </label>
+
+            <!-- yours (assigned to me) — selectable, selected -->
+            <label class="profile-item selected">
+              <input type="checkbox" checked />
+              <div style="flex:1">
+                <div class="name">antonio@ortusclub.com</div>
+                <div class="soo-user">Assigned: Antonio</div>
+                <div class="status-bar status-bar-4">
+                  <div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg na"></div>
+                </div>
+                <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+              </div>
+            </label>
+
+            <!-- FLAGGED: assigned to another operator (new ⚠) -->
+            <label class="profile-item is-flagged">
+              <input type="checkbox" />
+              <div style="flex:1">
+                <div class="name">marigona@ortusclub.com <span class="warn-flag" title="Assigned to Marigona in the SoO — not you">⚠ assigned to Marigona</span></div>
+                <div class="soo-user">Assigned: Marigona</div>
+                <div class="status-bar status-bar-4">
+                  <div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div>
+                </div>
+                <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+              </div>
+            </label>
+
+            <!-- FLAGGED: in use by another operator (new ⚠), but selected -->
+            <label class="profile-item is-flagged selected">
+              <input type="checkbox" checked />
+              <div style="flex:1">
+                <div class="name">pool · sales nav #4 <span class="warn-flag" title="Sales Nav credits marked In Use by marco@ in the SoO">⚠ in use by marco@</span></div>
+                <div class="soo-user">Pool — free for all</div>
+                <div class="status-bar status-bar-4">
+                  <div class="status-seg available"></div><div class="status-seg na"></div><div class="status-seg in-use"></div><div class="status-seg na"></div>
+                </div>
+                <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+              </div>
+            </label>
+
+            <!-- duplicate (real, unchanged) -->
+            <label class="profile-item">
+              <input type="checkbox" />
+              <div style="flex:1">
+                <div class="name">profile 196 <span class="dup-flag">⚠ dup</span></div>
+                <div class="id">6A313FCCF75A…</div>
+              </div>
+            </label>
+
+            <!-- restricted (real, unchanged — hard blocked) -->
+            <label class="profile-item is-restricted">
+              <input type="checkbox" disabled />
+              <div style="flex:1">
+                <div class="name">denisse.deleon@ortus.solutions <span class="restricted-flag">⛔ Identity Restricted</span></div>
+                <div class="status-bar status-bar-4">
+                  <div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div>
+                </div>
+                <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+              </div>
+            </label>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Start-confirm (new): warn + override, shown when warned accounts are selected -->
+  <div class="guardrail-confirm">
+    <h3>Before you start…</h3>
+    <div class="gc-label">Assigned / in use by others — 1 selected</div>
+    <div class="gc-line">⚠ pool · sales nav #4 — <span class="muted">in use by marco@</span></div>
+
+    <div class="gc-label">Passover</div>
+    <div class="gc-line">This is a <b>Connect</b> campaign and <span style="color:#d97706">CC credits are in passover</span> until Thursday.</div>
+
+    <div class="gc-actions">
+      <button class="btn btn-secondary btn-sm">Back to selection</button>
+      <button class="btn btn-start btn-sm">Start anyway</button>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
