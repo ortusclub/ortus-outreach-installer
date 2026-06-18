@@ -9579,7 +9579,12 @@ function renderMonitoringCard(state) {
         <div class="mon-actions">
           <button class="mon-btn" id="mon-check-now-btn" onclick="monitoringCheckNow()">⚡ Check now</button>
           <button class="mon-btn danger" onclick="monitoringStop()">✕ Stop monitoring</button>
+          <label class="mon-auto-toggle" title="When off, the timer won't run checks or fire intros/follow-ups automatically — use ⚡ Check now.">
+            <input type="checkbox" id="mon-auto-checks" ${state.autoChecksEnabled !== false ? 'checked' : ''} onchange="setMonitoringAutoChecks(this.checked)">
+            Automatic checks
+          </label>
         </div>
+        <div class="mon-auto-hint" id="mon-auto-hint" style="${state.autoChecksEnabled === false ? '' : 'display:none'}">Auto-checks are off — use ⚡ Check now to run a check (and fire any due intros/follow-ups).</div>
         <div class="mon-sub-label">Accounts (${participating.length})</div>
         <div class="mon-accounts">${accountRows}</div>
         <div class="mon-sub-label">Log (live)</div>
@@ -9623,6 +9628,25 @@ async function monitoringCheckNow() {
   }
 }
 window.monitoringCheckNow = monitoringCheckNow;
+
+async function setMonitoringAutoChecks(enabled) {
+  const hint = document.getElementById('mon-auto-hint');
+  if (hint) hint.style.display = enabled ? 'none' : '';
+  try {
+    const r = await fetch('/api/monitoring/auto-checks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  } catch (err) {
+    alert('Could not change automatic checks: ' + err.message);
+    const cb = document.getElementById('mon-auto-checks');
+    if (cb) cb.checked = !enabled;            // revert to reflect the failed change
+    if (hint) hint.style.display = !enabled ? 'none' : '';
+  }
+}
+window.setMonitoringAutoChecks = setMonitoringAutoChecks;
 
 async function monitoringStop() {
   if (!confirm('End monitoring now? Still-pending leads stay "Connection Request Sent" — they may still accept later.')) return;

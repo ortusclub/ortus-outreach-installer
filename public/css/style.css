@@ -5667,6 +5667,19 @@ body.route-dashboard .sidebar-nav { display: none; }
 .mon-btn:disabled { opacity: 0.4; cursor: default; }
 .mon-btn.danger { color: var(--red); }
 .mon-btn.danger:hover { border-color: var(--red); }
+.mon-auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+.mon-auto-hint {
+  font-size: 0.72rem;
+  color: var(--gray);
+  margin-top: 6px;
+}
 .mon-btn-expand {
   background: transparent;
   color: var(--gray);
