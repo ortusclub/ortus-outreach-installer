@@ -1546,18 +1546,38 @@ app.post('/api/campaign/resume/reload-sheet', async (req, res) => {
   }
 });
 
-app.post('/api/campaign/resume/accounts', (req, res) => {
+app.post('/api/campaign/resume/accounts', async (req, res) => {
   if (!_resumeGuard(res)) return;
-  const { bench } = req.body || {};
-  if (bench && typeof bench === 'object') {
-    for (const [id, skip] of Object.entries(bench)) {
-      if (!(campaign.profileIds || []).includes(id)) {
-        return res.status(400).json({ error: `unknown profile ${id}` });
-      }
-      campaign._pendingResume.benchToggles[id] = !!skip;
+  const { bench, add } = req.body || {};
+  // Validate everything BEFORE mutating staging, so a 400 leaves nothing partially staged.
+  const benchEntries = (bench && typeof bench === 'object') ? Object.entries(bench) : [];
+  for (const [id] of benchEntries) {
+    if (!(campaign.profileIds || []).includes(id)) {
+      return res.status(400).json({ error: `unknown profile ${id}` });
     }
   }
-  // add/swap handled in Phase 4.
+  let addById = null;
+  if (Array.isArray(add) && add.length) {
+    // getProfiles already imported from ./src/gologin-launcher.js (same source
+    // /api/gologin/profiles uses). Returns [{ id, name, ... }].
+    const available = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+    addById = new Map(available.map(p => [p.id, p.name]));
+    for (const a of add) {
+      if (!addById.has(a.id)) return res.status(400).json({ error: `unknown profile ${a.id}` });
+      if ((campaign.profileIds || []).includes(a.id)) return res.status(400).json({ error: `already in run ${a.id}` });
+    }
+  }
+  // All valid — apply.
+  for (const [id, skip] of benchEntries) {
+    campaign._pendingResume.benchToggles[id] = !!skip;
+  }
+  if (addById) {
+    for (const a of add) {
+      if (!campaign._pendingResume.addProfiles.some(x => x.id === a.id)) {
+        campaign._pendingResume.addProfiles.push({ id: a.id, name: addById.get(a.id) });
+      }
+    }
+  }
   res.json({ ok: true, resumeChanges: _buildResumeChanges() });
 });
 
