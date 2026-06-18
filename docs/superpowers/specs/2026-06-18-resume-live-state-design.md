@@ -13,17 +13,23 @@
 
 ## Problem
 
-A running campaign freezes everything at start: the lead list (`targets`, filtered once
-at `campaign.js:2031`), the templates/primary/cadence config, and the account set
-(`profileQueue = [...profileIds]`, `campaign.js:2708`). Pause/resume
-(`pauseCampaign`/`resumeCampaign`, `campaign.js:4578`/`4588`) only flips flags — resume
-continues from frozen in-memory state. So an operator who, mid-campaign:
+**What already works today (v2.86.15 "edit-while-paused"):** when paused, the operator can
+already edit campaign **settings** in place — message/intro templates (`setLiveTemplates`,
+`campaign.js:1597`), daily send limit (`setLiveDailyLimit`, `1618`), and check cadence
+(`setLiveCadence`, `1631`) — via the `#pause-edit-panel` UI (`index.html:1562`,
+`app.js:4662–4695`). All three require `campaign._paused`, mutate the live config in place,
+and take effect on Resume. Benching an account mid-run also exists (`setProfileSkip`, `4511`).
 
-- adds new leads to the sheet, or edits a pending lead's message variables → **not picked up**;
-- changes cadence / primary / templates → **not picked up**;
-- wants to add a fresh GoLogin account (e.g. to replace a parked one) → **can't, without stop→restart**;
+**What does NOT work — the gaps this sub-project closes.** A running campaign still freezes
+the lead list (`targets`, filtered once at `campaign.js:2031`) and the account set
+(`profileQueue = [...profileIds]`, `campaign.js:2708`). So an operator who, mid-campaign:
+
+- adds new leads to the sheet, or edits a pending lead's column values → **not picked up** (#3);
+- wants to add a fresh GoLogin account (e.g. to replace a parked one) → **can't, without stop→restart** (#2b);
 - benches an account → it keeps sending for up to `BATCH_SIZE` (8) more leads, and the
-  benched state is lost on an app restart.
+  benched/added state is **lost on an app restart** (#2a + #2c);
+- makes several paused edits at once → there is **no single "here's everything that will
+  change" review before Resume** — edits apply piecemeal with separate Save buttons.
 
 ## Goal
 
@@ -39,7 +45,7 @@ effect within one lead.
 |---|---|
 | Re-read model | **C — explicit edits while paused + a "review before resume" summary**, applied on Confirm. No pending changes → Resume resumes directly, no summary. |
 | Sheet scope (v1) | **Reload the SAME sheet.** Pick up newly-added lead rows + edits to still-pending rows' column values (the per-lead personalization variables, e.g. first-name / title / custom columns). Lead identity = the LinkedIn-URL column. Already-sent leads are never re-contacted. |
-| Settings scope (v1) | **Settings group is OUT of v1.** Templates, primary person, cadence, and sender first-names are **wizard config** passed to `startCampaign` — they do NOT live in the sheet, and there is no mid-pause editor for them. So reloading the sheet cannot change them, and the review summary must not pretend it can. v1 summary = **Sheet + Accounts only.** Optional fast-follow (Phase 5, if wanted): a paused "change cadence" control with a real endpoint, which would re-introduce a Settings line. |
+| Settings scope (v1) | **Settings group IS in v1.** It reflects the changes the *existing* paused live-editors already make: message/intro templates (`setLiveTemplates`), daily limit (`setLiveDailyLimit`), and cadence (`setLiveCadence`). These are real, paused-only, take-effect-on-Resume values — so the review summary diffs them honestly (snapshot at pause vs current at confirm). We are NOT building new settings editors; we surface what those existing editors changed. (Sheet variables = per-lead column values from the reloaded rows, separate from these settings.) |
 | Repointing URL/column | **OUT of v1** (deferred — different sheet = different lead universe, unsafe to merge progress). |
 | Review summary surface | **Inline expanding panel on the live campaign card** — NOT a modal/dialog (respects the command-deck design system; avoids browser-dialog pitfalls). |
 | Build order | (1) sheet-reload + review panel → (2) #2c persistence → (3) #2a bench fix → (4) add/swap fresh account. Riskiest last; each phase is a stopping point. |
@@ -92,10 +98,14 @@ existing `campaign._unparkProfile` side-channel pattern (`campaign.js:2662`).
   Already-sent leads are excluded upstream by the existing filter, so they never appear.
 - `computeAccountDiff(prevAccountSet, nextAccountSet)` → `{ added, removed, benched,
   reEnabled }` (arrays of `{ id, name }`).
-- `summarizeResumeChanges({ sheetDiff, accountDiff })` → the `resumeChanges` object the API
-  returns and the UI renders. `isEmpty` flag is true when nothing changed.
-- (Deferred to Phase 5 if the cadence control is added: `computeSettingsDiff` for a single
-  cadence `{ from, to }` line. NOT in v1 — see "Settings scope" above.)
+- `computeSettingsDiff(pauseSnapshot, current)` → ordered list of changed settings, sourced
+  from the values the existing paused editors already mutate: `dailyLimit`
+  (`{ from, to }`), `checkIntervalMinutes` (`{ from, to }`), and a boolean "templates/intro
+  text changed" (deep-equal compare of the templates object). No new editors — this only
+  *reads* `campaign.dailyLimit` / `campaign.checkIntervalMinutes` / `campaign.templates`
+  versus a snapshot taken at pause time.
+- `summarizeResumeChanges({ sheetDiff, accountDiff, settingsDiff })` → the `resumeChanges`
+  object the API returns and the UI renders. `isEmpty` flag is true when nothing changed.
 
 These functions take plain data and return plain data — no I/O, no DOM. The server computes
 `resumeChanges` and returns it; the client renders it; Confirm applies from the same staged
@@ -130,6 +140,13 @@ Side-channel closures exposed from inside `startCampaign` (alongside `_unparkPro
 `resumeCampaign()` gains an internal path: when called via Confirm, run
 `_applyPendingResume()` BEFORE clearing the pause flags.
 
+**Pause-time snapshot (for the Settings diff).** `pauseCampaign()` records
+`campaign._pauseSnapshot = { dailyLimit, checkIntervalMinutes, templates: <deep copy> }` at
+the moment of pause. The existing paused editors (`setLiveTemplates` / `setLiveDailyLimit` /
+`setLiveCadence`) already mutate the live values; `computeSettingsDiff(_pauseSnapshot,
+campaign)` reports what changed. Cleared on resume. This is read-only over existing state —
+no change to those editors' behavior.
+
 **3. Server endpoints — `server.js` (all require `campaign.running` && paused → 409 otherwise).**
 
 - `POST /api/campaign/resume/reload-sheet` → re-fetch via `fetchSheetRows(campaign.sheetUrl)`,
@@ -150,9 +167,11 @@ Side-channel closures exposed from inside `startCampaign` (alongside `_unparkPro
   and an account editor row per account (Active/Benched toggle reusing the existing
   `bench-btn`, a `Swap…` action, and `＋ Add account` populated from the available-now
   profile list). These call the staging endpoints.
+- The existing `#pause-edit-panel` (daily limit / cadence / templates) stays as-is — its
+  edits feed the Settings diff automatically via the pause-time snapshot.
 - `Resume…` → `GET preview`; if `resumeChanges.isEmpty`, resume immediately
   (`POST confirm`). Otherwise expand an **inline review panel** on the card rendering the
-  two groups (Sheet / Accounts) from `resumeChanges`, with `Keep editing` and
+  three groups (Sheet / Accounts / Settings) from `resumeChanges`, with `Keep editing` and
   `Confirm & Resume`. Confirm → `POST confirm`, collapse panel, card returns to running.
 - No invented values: the panel iterates the server object; if a group is empty it is hidden.
 
@@ -213,7 +232,8 @@ Approach (TDD + systematic-debugging):
 ## Testing
 
 - **Pure helpers** (`tests/resume-diff.test.js`, `node:test`): sheet diff by URL identity
-  (added / updated-pending / sent-excluded), account diff, `isEmpty`.
+  (added / updated-pending / sent-excluded), account diff, settings diff (dailyLimit /
+  cadence `{from,to}` + templates-changed bool), `isEmpty`.
 - **#2a gate** (`tests/*-bench-gate.test.js`): the extracted per-turn gate stops a
   mid-turn benched profile within one lead; drained-queue un-bench path.
 - **Manual browser verification** for the paused UI + review panel (no UI test suite, per
@@ -223,9 +243,10 @@ Approach (TDD + systematic-debugging):
 ## Done looks like
 
 Pause a running CC+IC campaign. Add a lead to the sheet, edit a pending lead's title column,
-bench one account, add a fresh account. Press Resume → the inline panel shows the **real**
-counts (e.g. "+1 new lead, 1 lead updated, 1 benched, +1 added"). Confirm → the new lead
-gets processed, the edited lead uses its new variable values, the benched account stops
-within one lead, the fresh account launches and joins rotation. Restart the app mid-run →
-the benched + added accounts are restored. No invented numbers anywhere; all styling is the
-real command deck.
+bench one account, add a fresh account, and bump the cadence in the existing pause-edit
+panel. Press Resume → the inline panel shows the **real** changes (e.g. "+1 new lead, 1 lead
+updated · 1 benched, +1 added · cadence 60→45m"). Confirm → the new lead gets processed, the
+edited lead uses its new variable values, the benched account stops within one lead, the
+fresh account launches and joins rotation, and the new cadence is live. Restart the app
+mid-run → the benched + added accounts are restored. No invented numbers anywhere; all
+styling is the real command deck.
