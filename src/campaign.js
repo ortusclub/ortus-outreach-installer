@@ -48,6 +48,7 @@ import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
+import { shouldContinueTurn } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
 import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
@@ -2892,10 +2893,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // (e.g. the 2nd consecutive HTTP 429 → weekly-limit park). Without this
         // guard the loop kept firing all BATCH_SIZE leads at an account that had
         // already hit its cap, so "confirming…" repeated 8× before rotating.
-        for (let leadInBatch = 0; leadInBatch < innerLimit && !campaign._abort && !isOrphan() && !weeklyLimited.has(profileId); leadInBatch++) {
+        for (let leadInBatch = 0; leadInBatch < innerLimit && shouldContinueTurn({ abort: campaign._abort, orphan: isOrphan(), weeklyLimited: weeklyLimited.has(profileId), benched: campaign._skippedProfiles?.has(profileId) }); leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause(myGen);
-        if (campaign._abort || isOrphan()) break;
+        // v2.112 (#2a): also bail if the operator benched this account while paused — without
+        // this, the post-pause path would send one more lead before the for-condition re-checks.
+        if (campaign._abort || isOrphan() || campaign._skippedProfiles?.has(profileId)) break;
         // ── Phase 11.1: per-iteration resource sample + throttle decision ──
         // Pattern: RESEARCH.md §Pattern 2 (cached sample) + §Pattern 3 (multiplicative composition).
         // Writes campaign._lastSample and campaign._throttle for the status endpoint to read.
