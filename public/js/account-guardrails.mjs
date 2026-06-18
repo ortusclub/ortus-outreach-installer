@@ -37,3 +37,33 @@ export function classifyAccountFlag(soo, me) {
   }
   return { flagged: false, reason: null, label: '' };
 }
+
+const CC_MODES = new Set(['connect_only', 'connect_and_introduce', 'connect_and_message']);
+const MONTHLY_MODES = new Set(['open_profile_only', 'inmail_only']);
+
+/** Which credit channel a campaign mode consumes (drives the passover warning). */
+export function mapModeToChannel(mode) {
+  if (CC_MODES.has(mode)) return 'cc';
+  if (MONTHLY_MODES.has(mode)) return 'monthly';
+  return null; // message_only / check_status / introduce_back consume no credits
+}
+
+/** Mode-aware passover warning. passover = getPassoverStatus() → { monthly, cc }. */
+export function passoverWarning(mode, passover) {
+  const channel = mapModeToChannel(mode);
+  if (!channel || !passover) return null;
+  const info = passover[channel];
+  if (!info || info.active) return null;
+  return { channel, label: info.label };
+}
+
+/** Aggregate the currently-selected accounts. selectedSooList = [{ email, soo }]. */
+export function summarizeSelection(selectedSooList, me, mode, passover) {
+  const flagged = [];
+  for (const entry of (selectedSooList || [])) {
+    const f = classifyAccountFlag(entry.soo, me);
+    if (f.flagged) flagged.push({ email: entry.email, label: f.label });
+  }
+  const pw = passoverWarning(mode, passover);
+  return { flagged, passover: pw, hasWarnings: flagged.length > 0 || !!pw };
+}

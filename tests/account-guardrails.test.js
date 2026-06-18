@@ -31,3 +31,40 @@ test('assigned wins over in-use for the label', () => {
   const r = classifyAccountFlag({ Assignee: 'Marigona', section: 'Team A', ccCredits: 'In Use' }, 'antonio');
   assert.equal(r.reason, 'assigned');
 });
+
+import { mapModeToChannel, passoverWarning, summarizeSelection } from '../public/js/account-guardrails.mjs';
+
+const PO = { monthly: { active: true, label: 'ACTIVE — closes in 12d' }, cc: { active: false, label: 'in 3d' } };
+
+test('mapModeToChannel', () => {
+  assert.equal(mapModeToChannel('connect_only'), 'cc');
+  assert.equal(mapModeToChannel('connect_and_introduce'), 'cc');
+  assert.equal(mapModeToChannel('open_profile_only'), 'monthly');
+  assert.equal(mapModeToChannel('inmail_only'), 'monthly');
+  assert.equal(mapModeToChannel('check_status'), null);
+});
+test('passoverWarning: CC closed for a connect campaign', () => {
+  const w = passoverWarning('connect_only', PO);
+  assert.equal(w.channel, 'cc'); assert.equal(w.label, 'in 3d');
+});
+test('passoverWarning: monthly active → no warning', () => {
+  assert.equal(passoverWarning('open_profile_only', PO), null);
+});
+test('passoverWarning: mode with no channel → null', () => {
+  assert.equal(passoverWarning('check_status', PO), null);
+});
+test('summarizeSelection: counts flagged + passover, hasWarnings', () => {
+  const sel = [
+    { email: 'a@x', soo: { Assignee: 'Marigona', section: 'Team A' } },
+    { email: 'b@x', soo: { Assignee: 'Antonio', section: 'Team A' } },
+  ];
+  const s = summarizeSelection(sel, 'antonio', 'connect_only', PO);
+  assert.equal(s.flagged.length, 1);
+  assert.equal(s.flagged[0].email, 'a@x');
+  assert.equal(s.passover.channel, 'cc');
+  assert.equal(s.hasWarnings, true);
+});
+test('summarizeSelection: nothing flagged + active channel → no warnings', () => {
+  const s = summarizeSelection([{ email: 'b@x', soo: { Assignee: 'Antonio', section: 'Team A' } }], 'antonio', 'open_profile_only', PO);
+  assert.equal(s.hasWarnings, false);
+});
