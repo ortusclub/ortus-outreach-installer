@@ -68,7 +68,7 @@ import {
 } from './resource-monitor.js';
 import * as browserSemaphore from './browser-semaphore.js';
 import {
-  primaryKeyFromUrl, storeKey, getEntry, shouldRecheck,
+  primaryKeyFromUrl, storeKey, getEntry,
   mergeLiveRead, resolveDisplayState, seedConnectedIds,
   loadPrimaryStatus, savePrimaryStatus,
 } from './primary-status-store.js';
