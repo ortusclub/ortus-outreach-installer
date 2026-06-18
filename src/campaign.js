@@ -47,6 +47,7 @@ import { registerReplySchedule as registerReplyTracking, removeSchedulesForSheet
 import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
+import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
 import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
@@ -4984,9 +4985,14 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
       }
     }
 
-    // Duty 2: fire bulk-check + auto-intros when nextCheckAt is overdue
-    if (!campaign.nextCheckAt) return;
-    if (Date.now() < new Date(campaign.nextCheckAt).getTime()) return;
+    // Duty 2: fire bulk-check + auto-intros when nextCheckAt is overdue —
+    // unless the operator turned automatic checks off (they then run them
+    // manually via the Check now button). 7-day expiry above is unaffected.
+    if (!shouldAutoFireCheck({
+      autoChecksEnabled: campaign.autoChecksEnabled,
+      nextCheckAt: campaign.nextCheckAt,
+      now: Date.now(),
+    })) return;
     if (_checkInProgress) return;
 
     _checkInProgress = true;
@@ -5112,6 +5118,17 @@ export function _setTestState(patch) {
   if (patch && typeof patch === 'object') {
     Object.assign(campaign, patch);
   }
+}
+
+/**
+ * Operator toggle for the periodic monitoring auto-check. enabled=false stops
+ * the watcher from auto-firing (manual "Check now" still works); enabled=true
+ * resumes it. Persisted so it survives an app restart.
+ */
+export async function setMonitoringAutoChecks(enabled) {
+  campaign.autoChecksEnabled = !!enabled;
+  try { await writeMonitoringState(campaign); } catch { /* persistence is best-effort */ }
+  return campaign.autoChecksEnabled;
 }
 
 /**

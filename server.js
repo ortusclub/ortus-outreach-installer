@@ -1287,6 +1287,24 @@ app.post('/api/monitoring/check-now', async (req, res) => {
   }
 });
 
+app.post('/api/monitoring/auto-checks', async (req, res) => {
+  try {
+    const { enabled } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled (boolean) required' });
+    }
+    const { getCampaignState, setMonitoringAutoChecks } = await import('./src/campaign.js');
+    const state = getCampaignState();
+    if (state.state !== 'monitoring') {
+      return res.status(400).json({ error: 'Campaign is not in monitoring state' });
+    }
+    const value = await setMonitoringAutoChecks(enabled);
+    res.json({ ok: true, autoChecksEnabled: value });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/monitoring/stop', async (_req, res) => {
   try {
     const { stopMonitoring: _stopMonitoring } = await import('./src/campaign.js');
@@ -1313,6 +1331,7 @@ app.get('/api/monitoring/state', (_req, res) => {
       logs: c.logs || [],
       sheetUrl: c.sheetUrl,
       name: c.name,
+      autoChecksEnabled: c.autoChecksEnabled !== false,
     });
   }).catch((err) => res.status(500).json({ error: err.message }));
 });

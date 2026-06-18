@@ -33,6 +33,9 @@ export const MONITORING_FIELDS = [
   // interval after rehydration; defaults to 60 if absent (e.g. older
   // state files written before this field shipped).
   'checkIntervalMinutes',
+  // v2.112: operator toggle for the periodic auto-check. Absent in older
+  // state files → undefined → treated as enabled (default-on).
+  'autoChecksEnabled',
 ];
 
 export function extractMonitoringSlice(campaign) {
