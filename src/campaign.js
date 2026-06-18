@@ -1655,6 +1655,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
     senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled,
+    benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.slice() : [],
   };
 
   // Persist the snapshot so "Open" can rehydrate the wizard after the starting
@@ -4575,7 +4576,17 @@ export function setProfileSkip(profileId, skip) {
     if (wasParked && campaign.running) retryParkedProfile(profileId);
     else log(`▶ ${pName} re-enabled — back in the rotation.`);
   }
+  _persistRunSettings();
   return { ok: true, skipped: [...campaign._skippedProfiles] };
+}
+
+// v2.112: keep the restore snapshot current so a mid-run bench / added account survives an
+// app restart. Best-effort, atomic (same path as start). No-op if no snapshot yet.
+function _persistRunSettings() {
+  if (!_lastRunSettings) return;
+  _lastRunSettings.profileIds = (campaign.profileIds || []).slice();
+  _lastRunSettings.benchedProfileIds = [...(campaign._skippedProfiles || [])];
+  try { writeLastRun(LAST_RUN_FILE, _lastRunSettings); } catch { /* non-fatal */ }
 }
 
 export function stopCampaign({ full = false } = {}) {
