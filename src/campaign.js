@@ -2028,7 +2028,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       log(`Direct Messages · "all leads already connected" — Stage filter bypassed.`);
     }
 
-    const targets = rows.filter(row => {
+    const _isTarget = (row) => {
       const url = extractLinkedInUrl(row, linkedinColumn);
       if (!url) return false;
 
@@ -2194,7 +2194,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       }
 
       return true;
-    });
+    }; // end _isTarget
+    const targets = rows.filter(_isTarget);
     log(`Pre-filter → ${targets.length} to process, ${rows.length - targets.length} skipped (mode: ${mode})`);
     campaign.totalTargets = targets.length;
 
@@ -2665,6 +2666,48 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       consecutive429s.set(profileId, 0);
       degradationStreak.set(profileId, 0);
     };
+
+    // v2.112: resume-reload side-channel. Re-applies the SAME _isTarget filter to freshly
+    // fetched rows and appends still-pending rows not already queued; updates in place the
+    // row object for still-pending URLs already present (so edited variables go live).
+    // Mutates `targets` in place — the loop reads it by reference. Must only be called at the
+    // pause boundary (campaign._paused === true), so the loop isn't mid-iteration.
+    // norm() mirrors normUrl() in src/resume-diff.js — kept local to avoid coupling campaign.js
+    // to that frontend-agnostic module. Returns {added, updated, skippedNew}.
+    campaign._reloadTargets = (newRows) => {
+      const norm = (u) => String(u || '').trim().toLowerCase().split('?')[0].replace(/\/+$/, '');
+      // Per-profile-slice modes (check_status/message_only/introduce_back) drain pre-built
+      // slices in _checkStatusTargetsByProfile, NOT `targets` directly — so appended new
+      // leads would never be seen. Pick up in-place edits to existing rows (shared object
+      // refs, so they reach both arrays), but don't pretend to add brand-new leads.
+      const sliceMode = !!_checkStatusTargetsByProfile;
+      const byUrl = new Map();
+      for (const r of targets) {
+        const u = norm(extractLinkedInUrl(r, linkedinColumn));
+        if (u) byUrl.set(u, r);
+      }
+      let added = 0, updated = 0, skippedNew = 0;
+      for (const r of (newRows || []).filter(_isTarget)) {
+        const u = norm(extractLinkedInUrl(r, linkedinColumn));
+        if (!u) continue;
+        if (!byUrl.has(u)) {
+          if (sliceMode) { skippedNew++; continue; }
+          targets.push(r); byUrl.set(u, r); added++;
+        } else { Object.assign(byUrl.get(u), r); updated++; }
+      }
+      campaign.totalTargets = targets.length;
+      if (skippedNew) {
+        log(`⟳ Reload: ${skippedNew} new lead(s) found, but new-lead pickup needs a restart in ${mode} mode. ${updated} existing lead(s) updated.`);
+      }
+      return { added, updated, skippedNew };
+    };
+    // Expose the row→url + filter so the server can compute a dry-run diff without applying.
+    campaign._urlOf = (row) => extractLinkedInUrl(row, linkedinColumn);
+    campaign._isTarget = _isTarget;
+    campaign._currentTargets = () => targets;
+    // Re-fetch the SAME sheet. campaign.js already imports fetchSheetRows and owns sheetUrl,
+    // so the server stays out of the sheets layer — it just calls this.
+    campaign._refetchRows = async () => fetchSheetRows(campaign.sheetUrl);
 
     // v2.96.0 (Phase 2) — reckless-settings guard. LinkedIn rate-limits
     // connection invites hard (~100/week is the practical ceiling); a high daily
@@ -4453,6 +4496,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     campaign.running = false;
     campaign.currentProfile = null;
     campaign._unparkProfile = null;
+    campaign._reloadTargets = null;
+    campaign._urlOf = null;
+    campaign._isTarget = null;
+    campaign._currentTargets = null;
+    campaign._refetchRows = null;
+    campaign._pauseSnapshot = null;
     // v2.14.x: reset abort flag at campaign-end. Without this, _abort stays
     // true after any operator-initiated Stop and bleeds into subsequent
     // manual /api/bulk-check-now, post-campaign sweeps, and monitoring
@@ -4581,6 +4630,13 @@ export function pauseCampaign() {
     return { ok: true, alreadyPausing: true };
   }
   campaign._pauseRequested = true;
+  // v2.112: snapshot the settings the paused editors can change, so the resume review can
+  // diff them honestly. Deep-copy templates (setLiveTemplates mutates it in place).
+  campaign._pauseSnapshot = {
+    dailyLimit: campaign.dailyLimit,
+    checkIntervalMinutes: campaign.checkIntervalMinutes,
+    templates: JSON.parse(JSON.stringify(campaign.templates || {})),
+  };
   log('⏸ Pause requested — will pause after current lead completes.');
   return { ok: true };
 }
@@ -4592,6 +4648,7 @@ export function resumeCampaign() {
   }
   campaign._pauseRequested = false;
   campaign._paused = false; // awaitUnpause's while-loop will exit on next tick
+  campaign._pauseSnapshot = null;
   log('▶ Resume requested.');
   return { ok: true };
 }
