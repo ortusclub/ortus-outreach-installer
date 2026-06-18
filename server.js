@@ -24,6 +24,7 @@ import { pipeline } from 'node:stream/promises';
 
 import { startCampaign, stopCampaign, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNext as popNextQueued } from './src/campaign-queue.js';
+import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
 import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
@@ -1477,6 +1478,99 @@ app.post('/api/campaign/pause', (_req, res) => {
 
 app.post('/api/campaign/resume', (_req, res) => {
   res.json(resumeCampaign());
+});
+
+// ── v2.112: resume-with-live-state (paused only) ────────────────────────────
+function _resumeGuard(res) {
+  if (!campaign.running) { res.status(409).json({ error: 'not-running' }); return false; }
+  if (!campaign._paused) { res.status(409).json({ error: 'not-paused' }); return false; }
+  return true;
+}
+
+function _buildResumeChanges() {
+  const urlOf = campaign._urlOf || ((r) => r && (r.url || ''));
+  const prev = campaign._currentTargets ? campaign._currentTargets() : [];
+  const staged = campaign._pendingResume || {};
+  const sheetDiff = staged.reloadSheet && staged.newRows
+    ? computeSheetDiff(prev, staged.newRows.filter(campaign._isTarget || (() => true)), urlOf)
+    : computeSheetDiff(prev, prev, urlOf);
+  // Slice modes (check_status/message_only/introduce_back) drain pre-built per-profile
+  // slices, so _reloadTargets will NOT add brand-new leads (only update existing rows).
+  // Mirror that here so the preview is honest: relabel `added` as `skippedNew` (a "needs
+  // restart to include" notice), never show it as an applied add.
+  const SLICE_MODES = ['check_status', 'message_only', 'introduce_back'];
+  if (SLICE_MODES.includes(campaign.mode) && sheetDiff.addedCount) {
+    sheetDiff.skippedNew = sheetDiff.addedCount;
+    sheetDiff.added = [];
+    sheetDiff.addedCount = 0;
+  } else {
+    sheetDiff.skippedNew = 0;
+  }
+  const ids = (campaign.profileIds || []).slice();
+  const names = {};
+  (campaign.profileIds || []).forEach((id, i) => { names[id] = (campaign.profileNames || [])[i] || id; });
+  const nextIds = ids.concat((staged.addProfiles || []).map(a => a.id));
+  (staged.addProfiles || []).forEach(a => { names[a.id] = a.name || a.id; });
+  const prevBench = [...(campaign._skippedProfiles || [])];
+  const nextBench = prevBench.slice();
+  for (const [id, skip] of Object.entries(staged.benchToggles || {})) {
+    if (skip && !nextBench.includes(id)) nextBench.push(id);
+    if (!skip) { const i = nextBench.indexOf(id); if (i >= 0) nextBench.splice(i, 1); }
+  }
+  const accountDiff = computeAccountDiff(
+    { ids, benched: prevBench, names },
+    { ids: nextIds, benched: nextBench, names },
+  );
+  const snap = campaign._pauseSnapshot || { dailyLimit: campaign.dailyLimit, checkIntervalMinutes: campaign.checkIntervalMinutes, templates: campaign.templates };
+  const settingsDiff = computeSettingsDiff(snap, {
+    dailyLimit: campaign.dailyLimit, checkIntervalMinutes: campaign.checkIntervalMinutes, templates: campaign.templates,
+  });
+  const rc = summarizeResumeChanges({ sheetDiff, accountDiff, settingsDiff });
+  // skippedNew is informational (slice modes) — surface the notice even if nothing else changed.
+  if (rc.sheet.skippedNew) rc.isEmpty = false;
+  return rc;
+}
+
+app.post('/api/campaign/resume/reload-sheet', async (req, res) => {
+  if (!_resumeGuard(res)) return;
+  try {
+    const rows = await campaign._refetchRows();
+    campaign._pendingResume.reloadSheet = true;
+    campaign._pendingResume.newRows = rows;
+    res.json({ ok: true, resumeChanges: _buildResumeChanges() });
+  } catch (err) {
+    // Intentional HTTP 200 with { ok:false }: a failed reload must NOT block resume — the
+    // frontend keeps the current targets and shows the error inline. Do not change to a
+    // non-200 status (it would break that error-handling contract).
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/campaign/resume/accounts', (req, res) => {
+  if (!_resumeGuard(res)) return;
+  const { bench } = req.body || {};
+  if (bench && typeof bench === 'object') {
+    for (const [id, skip] of Object.entries(bench)) {
+      if (!(campaign.profileIds || []).includes(id)) {
+        return res.status(400).json({ error: `unknown profile ${id}` });
+      }
+      campaign._pendingResume.benchToggles[id] = !!skip;
+    }
+  }
+  // add/swap handled in Phase 4.
+  res.json({ ok: true, resumeChanges: _buildResumeChanges() });
+});
+
+app.get('/api/campaign/resume/preview', (req, res) => {
+  if (!_resumeGuard(res)) return;
+  res.json({ ok: true, resumeChanges: _buildResumeChanges() });
+});
+
+app.post('/api/campaign/resume/confirm', (req, res) => {
+  if (!_resumeGuard(res)) return;
+  const applied = _buildResumeChanges();
+  const result = resumeCampaign({ applyPending: true });
+  res.json({ ok: result.ok !== false, applied });
 });
 
 // Local-browser re-login recovery (2026-06-15): operator clicked "Done" in the
