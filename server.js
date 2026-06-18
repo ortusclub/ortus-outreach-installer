@@ -37,6 +37,7 @@ import { loadTasks as loadPrimaryTasks, summarizeFollowUps } from './src/primary
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
+import { primaryKeyFromUrl, loadPrimaryStatus } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows } from './src/sheets.js';
@@ -883,7 +884,9 @@ function buildCampaignConfig(body) {
           // v2.59 (resume support): { totalProcessed } from the past history
           // entry being resumed. Seeded into campaign counters so the cockpit
           // continues counting from the saved total instead of zero.
-          resumeContext } = body || {};
+          resumeContext,
+          // #7: when the primary connect/check happens.
+          primaryCheckTiming } = body || {};
   let concurrencyClean = 1;
   if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
     const n = Math.min(5, Number(concurrency));
@@ -925,6 +928,10 @@ function buildCampaignConfig(body) {
     resumeContext: (resumeContext && typeof resumeContext === 'object') ? {
       totalProcessed: Number(resumeContext.totalProcessed) || 0,
     } : null,
+    // #7: when the primary connect/check happens. 'immediately' (default) =
+    // pre-loop handshake (today's behavior); 'after_connections' = after all
+    // accounts finish sending connections. Any other value coerces to default.
+    primaryCheckTiming: primaryCheckTiming === 'after_connections' ? 'after_connections' : 'immediately',
   };
 }
 
@@ -1128,6 +1135,28 @@ app.post('/api/campaign/preflight-ic-senders', async (req, res) => {
   } catch (err) {
     console.error('IC preflight error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Picker (#8): stored connection-to-primary status for a given primary URL,
+// so the wizard can show "remembered" status before a campaign starts.
+app.get('/api/primary-status', async (req, res) => {
+  try {
+    const primaryUrl = String(req.query.primaryUrl || '');
+    const key = primaryKeyFromUrl(primaryUrl);
+    if (!key) return res.json({ key: '', statuses: {} });
+    const store = await loadPrimaryStatus(dataPath('primary-status.json'));
+    const suffix = '|' + key;
+    const statuses = {};
+    for (const k of Object.keys(store)) {
+      if (k.endsWith(suffix)) {
+        const pid = k.slice(0, -suffix.length);
+        statuses[pid] = { state: store[k].state, verifiedAt: store[k].verifiedAt || null };
+      }
+    }
+    res.json({ key, statuses });
+  } catch (e) {
+    res.json({ key: '', statuses: {} });
   }
 });
 
