@@ -58,3 +58,22 @@ export function seedConnectedIds(store, primaryKey) {
     .filter((k) => k.endsWith(suffix) && store[k] && store[k].state === 'connected')
     .map((k) => k.slice(0, -suffix.length));
 }
+
+import { readFile as _readFile, writeFile as _writeFile, rename as _rename } from 'node:fs/promises';
+
+// Read-or-empty: a missing or corrupt store must never block a campaign.
+export async function loadPrimaryStatus(file) {
+  try { return JSON.parse(await _readFile(file, 'utf8')); }
+  catch { return {}; }
+}
+
+// Atomic write: tmp + rename, so a crash mid-write can't corrupt the store.
+export async function savePrimaryStatus(file, map) {
+  try {
+    const tmp = file + '.tmp';
+    await _writeFile(tmp, JSON.stringify(map, null, 2));
+    await _rename(tmp, file);
+  } catch (err) {
+    console.warn(`[primary-status] store write failed: ${err.message}`);
+  }
+}

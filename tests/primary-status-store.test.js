@@ -4,6 +4,10 @@ import {
   primaryKeyFromUrl, storeKey, getEntry, shouldRecheck,
   mergeLiveRead, resolveDisplayState, seedConnectedIds,
 } from '../src/primary-status-store.js';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { loadPrimaryStatus, savePrimaryStatus } from '../src/primary-status-store.js';
 
 test('primaryKeyFromUrl prefers vanity slug, lowercased', () => {
   assert.equal(primaryKeyFromUrl('https://www.linkedin.com/in/John-Smith/'), 's:john-smith');
@@ -79,4 +83,38 @@ test('seedConnectedIds returns the profileIds stored connected for a primaryKey'
   };
   assert.deepEqual(seedConnectedIds(store, 's:john').sort(), ['p1', 'p4']);
   assert.deepEqual(seedConnectedIds(store, 's:none'), []);
+});
+
+test('savePrimaryStatus then loadPrimaryStatus round-trips', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pstore-'));
+  const file = join(dir, 'primary-status.json');
+  const data = { 'p1|s:john': { state: 'connected', degree: '1st', verifiedAt: 'T', primaryUrl: 'u' } };
+  await savePrimaryStatus(file, data);
+  assert.deepEqual(await loadPrimaryStatus(file), data);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('loadPrimaryStatus returns {} for a missing file', async () => {
+  assert.deepEqual(await loadPrimaryStatus(join(tmpdir(), 'nope-does-not-exist.json')), {});
+});
+
+test('loadPrimaryStatus returns {} for a corrupt file (never throws)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pstore-'));
+  const file = join(dir, 'primary-status.json');
+  await savePrimaryStatus(file, {});            // create
+  await readFile(file);                          // exists
+  const fsp = await import('node:fs/promises');
+  await fsp.writeFile(file, '{ this is not json');
+  assert.deepEqual(await loadPrimaryStatus(file), {});
+  await rm(dir, { recursive: true, force: true });
+});
+
+test('savePrimaryStatus leaves no .tmp file behind', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pstore-'));
+  const file = join(dir, 'primary-status.json');
+  await savePrimaryStatus(file, { a: 1 });
+  const fsp = await import('node:fs/promises');
+  const entries = await fsp.readdir(dir);
+  assert.deepEqual(entries, ['primary-status.json']);
+  await rm(dir, { recursive: true, force: true });
 });
