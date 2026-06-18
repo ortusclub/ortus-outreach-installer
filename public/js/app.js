@@ -12929,18 +12929,96 @@ window.dashCopyLog = async function(btn) {
   }
 };
 
+// v2.112: resume-with-live-state client. Renders ONLY from the server's resumeChanges
+// object — never computes counts locally (no invented data).
+async function reloadSheetWhilePaused() {
+  const r = await fetch('/api/campaign/resume/reload-sheet', { method: 'POST' })
+    .then(x => x.json()).catch(() => null);
+  if (!r || !r.ok) { showCampaignToast(`Reload failed: ${r?.error || 'unknown'}`, 4000); return; }
+  showCampaignToast(`Sheet reloaded — review on Resume.`, 2500);
+}
+
+function renderResumeReview(rc) {
+  const groups = [];
+  if (rc.sheet && (rc.sheet.addedCount || rc.sheet.updatedCount || rc.sheet.skippedNew)) {
+    let lines = '';
+    if (rc.sheet.addedCount || rc.sheet.updatedCount) {
+      lines += `<div class="rr-line">+${rc.sheet.addedCount} new lead(s) · ${rc.sheet.updatedCount} updated · ${rc.sheet.newTotal} total</div>`;
+    }
+    if (rc.sheet.skippedNew) {
+      lines += `<div class="rr-line rr-warn">${rc.sheet.skippedNew} new lead(s) found — restart the campaign to include them in this mode.</div>`;
+    }
+    groups.push(`<div class="rr-group"><div class="rr-label">Sheet</div>${lines}
+      <div class="rr-sub">Already-sent leads untouched.</div></div>`);
+  }
+  const a = rc.accounts || {};
+  if ((a.added||[]).length || (a.benched||[]).length || (a.reEnabled||[]).length) {
+    const parts = [];
+    (a.added||[]).forEach(x => parts.push(`<div class="rr-line">＋ Added ${escapeHtml(x.name)}</div>`));
+    (a.benched||[]).forEach(x => parts.push(`<div class="rr-line">⏸ Benched ${escapeHtml(x.name)}</div>`));
+    (a.reEnabled||[]).forEach(x => parts.push(`<div class="rr-line">▶ Re-enabled ${escapeHtml(x.name)}</div>`));
+    groups.push(`<div class="rr-group"><div class="rr-label">Accounts</div>${parts.join('')}</div>`);
+  }
+  if ((rc.settings||[]).length) {
+    const parts = (rc.settings).map(s => s.changed
+      ? `<div class="rr-line">${escapeHtml(s.label)} changed</div>`
+      : `<div class="rr-line">${escapeHtml(s.label)} ${escapeHtml(String(s.from))} → ${escapeHtml(String(s.to))}</div>`);
+    groups.push(`<div class="rr-group"><div class="rr-label">Settings</div>${parts.join('')}</div>`);
+  }
+  document.getElementById('resume-review-body').innerHTML = groups.join('') || '<div class="rr-line">No changes.</div>';
+}
+
+// Shared confirm path: applies any staged edits, gives the operator feedback, and refreshes
+// the card so it leaves the "paused" state immediately (not on the next poll cycle).
+async function confirmResume() {
+  await fetch('/api/campaign/resume/confirm', { method: 'POST' });
+  if (typeof showCampaignToast === 'function') showCampaignToast('Resuming…');
+  if (typeof pollStatus === 'function') pollStatus();
+}
+
+async function onResumeClicked() {
+  const pre = await fetch('/api/campaign/resume/preview').then(x => x.json()).catch(() => null);
+  if (!pre || !pre.ok || pre.resumeChanges.isEmpty) {
+    // Nothing staged (or preview unavailable) → resume straight away. confirm still applies
+    // any staged edits server-side, so this never silently drops changes.
+    await confirmResume();
+    return;
+  }
+  renderResumeReview(pre.resumeChanges);
+  const panel = document.getElementById('resume-review-panel');
+  panel.hidden = false; panel.style.display = 'flex'; // .cockpit-panel is flex; match #pause-edit-panel
+}
+
+document.getElementById('resume-keep-editing')?.addEventListener('click', () => {
+  const panel = document.getElementById('resume-review-panel');
+  panel.hidden = true; panel.style.display = 'none';
+});
+document.getElementById('resume-confirm')?.addEventListener('click', async () => {
+  await confirmResume();
+  const panel = document.getElementById('resume-review-panel');
+  panel.hidden = true; panel.style.display = 'none';
+});
+window.reloadSheetWhilePaused = reloadSheetWhilePaused;
+
 window.dashPauseActive = async function() {
   try {
     const sr = await fetch('/api/campaign/status');
     const s = await sr.json();
     const isPaused = !!(s._paused || s.paused);
-    const endpoint = isPaused ? '/api/campaign/resume' : '/api/campaign/pause';
-    const r = await fetch(endpoint, { method: 'POST' });
-    if (r.ok) {
-      if (typeof showCampaignToast === 'function') showCampaignToast(isPaused ? 'Resumed' : 'Pausing…');
-      if (typeof pollStatus === 'function') pollStatus();
+    if (isPaused) {
+      // onResumeClicked either resumes immediately (confirmResume → toast + pollStatus) or
+      // opens the review panel (whose Confirm button does the same). No poll here: when the
+      // panel is shown nothing has changed yet, and confirmResume owns the post-resume refresh.
+      await onResumeClicked();
     } else {
-      if (typeof showCampaignToast === 'function') showCampaignToast('Pause/resume failed');
+      const endpoint = '/api/campaign/pause';
+      const r = await fetch(endpoint, { method: 'POST' });
+      if (r.ok) {
+        if (typeof showCampaignToast === 'function') showCampaignToast('Pausing…');
+        if (typeof pollStatus === 'function') pollStatus();
+      } else {
+        if (typeof showCampaignToast === 'function') showCampaignToast('Pause/resume failed');
+      }
     }
   } catch (err) { console.error('[v3] dashPauseActive:', err); }
 };

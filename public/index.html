@@ -1583,8 +1583,21 @@
           <label for="pe-template-body" id="pe-template-label" class="intro-config-label">Connection note</label>
           <textarea id="pe-template-body" rows="5"></textarea>
         </div>
-        <div style="display:flex; justify-content:flex-end; margin-top:14px">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px">
+          <button type="button" class="btn btn-secondary btn-sm" id="resume-reload-sheet" onclick="reloadSheetWhilePaused()">&#x27F3; Reload from sheet</button>
           <button type="button" id="pe-apply" class="btn btn-secondary btn-sm">Apply changes</button>
+        </div>
+      </div>
+      <!-- v2.112: resume review panel — populated from /api/campaign/resume/preview.
+           Both `hidden` AND inline `display:none` are required: .cockpit-panel sets
+           display:flex which overrides [hidden], so the inline style hides it at first paint
+           (same pattern as #pause-edit-panel). JS toggles style.display flex/none. -->
+      <div id="resume-review-panel" class="cockpit-panel" hidden style="display:none">
+        <div class="resume-review-head">Review before resuming</div>
+        <div id="resume-review-body" class="resume-review-body"></div>
+        <div class="resume-review-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="resume-keep-editing">Keep editing</button>
+          <button type="button" class="btn btn-start btn-sm" id="resume-confirm">Confirm &amp; Resume</button>
         </div>
       </div>
       <div id="account-queue" class="account-queue hidden"></div>
