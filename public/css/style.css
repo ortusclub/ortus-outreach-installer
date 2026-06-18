@@ -184,6 +184,27 @@ body {
   text-transform: uppercase;
   color: var(--gray);
 }
+.update-detail { margin-top: 6px; }
+.update-detail-btn {
+  font-size: 0.72rem;
+  background: none;
+  border: none;
+  color: var(--gray);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+.update-log-pre {
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  white-space: pre-wrap;
+  color: var(--ink);
+  background: rgba(127,127,127,0.12);
+  padding: 6px;
+  margin-top: 4px;
+}
 
 /* v2.76 — per-Past-campaign monitoring on/off chip. */
 /* Matches the compact STOPPED EARLY badge (.pa-stopped) so the row's pills are

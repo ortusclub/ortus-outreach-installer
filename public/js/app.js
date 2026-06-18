@@ -27,6 +27,7 @@ import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
+import { summarizeUpdateError } from '/js/update-error.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -7759,6 +7760,43 @@ function _hideUpdateStatus() {
   const wrap = document.getElementById('update-status');
   if (wrap) wrap.classList.add('hidden');
 }
+function _showUpdateDetail(msg) {
+  const wrap = document.getElementById('update-status');
+  const text = document.getElementById('update-status-text');
+  const detail = document.getElementById('update-detail');
+  if (wrap) wrap.classList.remove('hidden');
+  if (text) text.textContent = msg;
+  if (detail) {
+    detail.classList.remove('hidden');
+    detail.innerHTML = '<button type="button" class="update-detail-btn" onclick="showUpdateLog()">Details ▾</button><pre id="update-log-pre" class="update-log-pre hidden"></pre>';
+  }
+}
+async function showUpdateLog() {
+  const pre = document.getElementById('update-log-pre');
+  if (!pre) return;
+  if (!pre.classList.contains('hidden')) { pre.classList.add('hidden'); return; }
+  try {
+    const r = await (await fetch('/api/update-log')).json();
+    pre.textContent = (r && r.exists && r.text)
+      ? r.text
+      : 'No install log on this machine yet — the failure was during download (see the message above), or the install helper has not run here.';
+  } catch (e) {
+    pre.textContent = 'Could not read the update log: ' + e.message;
+  }
+  pre.classList.remove('hidden');
+}
+window.showUpdateLog = showUpdateLog;
+async function _checkLastUpdateAttempt() {
+  try {
+    const r = await (await fetch('/api/update-log')).json();
+    if (!r || !r.exists || !r.text) return;
+    const failed = /failed|no \.app|mount failed|copy failed|swap failed/i.test(r.text);
+    const recent = r.mtimeMs ? (Date.now() - r.mtimeMs) < 24 * 3600 * 1000 : true;
+    if (failed && recent) {
+      _showUpdateDetail('The last update attempt didn’t complete. Open Details for the log, or retry from the update button.');
+    }
+  } catch { /* */ }
+}
 
 // Poll the server's download progress until done/error.
 function _pollDownloadProgress() {
@@ -7803,24 +7841,27 @@ async function onUpdateClick(e) {
         if (text) text.textContent = 'Installing the update…';
         let inst = {};
         try { inst = await (await fetch('/api/update-install', { method: 'POST' })).json(); }
-        catch { inst = {}; }
+        catch (e) { inst = { error: e.message }; }
         if (inst.relaunching) {
           pill.innerHTML = '<span class="update-pill-arrow">✓</span> Updating — the app will reopen…';
           if (text) text.textContent = 'The app will close and reopen on the new version.';
         } else {
-          // Fallback: DMG opened for a manual drag.
+          // Fallback: DMG opened for a manual drag, or install error.
+          const msg = summarizeUpdateError({ installError: inst.error, fallback: inst.fallback });
           pill.innerHTML = '<span class="update-pill-arrow">✓</span> Installer opened — drag to Applications';
-          if (text) text.textContent = 'Download complete.';
+          if (text) text.textContent = msg || 'Download complete.';
+          if (inst.error) _showUpdateDetail(msg);
         }
       } else {
+        const msg = summarizeUpdateError({ downloadError: res.error });
         pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
         pill.disabled = false;
-        _hideUpdateStatus();
+        _showUpdateDetail(msg || 'Update failed.');
       }
-    } catch {
+    } catch (err) {
       pill.innerHTML = '<span class="update-pill-arrow">!</span> Failed — retry';
       pill.disabled = false;
-      _hideUpdateStatus();
+      _showUpdateDetail(summarizeUpdateError({ downloadError: err.message }) || ('Update failed: ' + err.message));
     }
     return;
   }
@@ -7845,6 +7886,7 @@ async function onUpdateClick(e) {
 window.onUpdateClick = onUpdateClick;
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => checkForUpdate(false), 800);
+  setTimeout(() => _checkLastUpdateAttempt(), 1200);
   // Auto re-check every 30 min so an already-open app notices a new release
   // without needing a restart.
   setInterval(() => checkForUpdate(false), UPDATE_POLL_MS);
