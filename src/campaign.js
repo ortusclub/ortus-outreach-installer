@@ -4772,8 +4772,20 @@ export async function restoreCampaign() {
   campaign.currentAction = null;
   log('↻ Restore: campaign engine force-reset.');
 
-  // If we weren't running but have history with settings, restore from
-  // there (covers the "app restarted after crash" case).
+  // If we weren't running but have a persisted snapshot, restore from there
+  // (covers the "app restarted after crash" case). Prefer last-run-settings.json —
+  // it's authoritative (carries benchedProfileIds, templates, senderFirstNames and all
+  // start args, kept current by _persistRunSettings) — over the lossy history.json
+  // reconstruction below. This is what makes a mid-run bench/added account survive a
+  // true app restart (#2c), not just the in-memory Restore button.
+  if (!settings) {
+    const fromDisk = readLastRun(LAST_RUN_FILE);
+    if (fromDisk && Array.isArray(fromDisk.profileIds) && fromDisk.profileIds.length) {
+      settings = { ...fromDisk };
+    }
+  }
+  // Last resort: rebuild from the most recent history entry (lossy — no benchedProfileIds,
+  // templates, or senderFirstNames; kept for back-compat when no snapshot file exists).
   if (!settings) {
     try {
       const raw = await readFile(HISTORY_PATH, 'utf8');

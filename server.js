@@ -1559,7 +1559,7 @@ app.post('/api/campaign/resume/accounts', async (req, res) => {
   let addById = null;
   if (Array.isArray(add) && add.length) {
     // getProfiles already imported from ./src/gologin-launcher.js (same source
-    // /api/gologin/profiles uses). Returns [{ id, name, ... }].
+    // the /api/profiles route uses). Returns [{ id, name, ... }].
     const available = await getProfiles(process.env.GOLOGIN_API_TOKEN);
     addById = new Map(available.map(p => [p.id, p.name]));
     for (const a of add) {

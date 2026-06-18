@@ -13028,8 +13028,8 @@ async function renderPauseAccountAdd() {
   if (!__cockpit || __cockpit.paused !== true) { container.hidden = true; container.style.display = 'none'; return; }
   container.hidden = false; container.style.display = 'flex';
 
-  // Fetch all profiles from GoLogin.
-  const data = await fetch('/api/gologin/profiles').then(x => x.json()).catch(() => null);
+  // Fetch all profiles (same endpoint the wizard account picker uses).
+  const data = await fetch('/api/profiles').then(x => x.json()).catch(() => null);
   const allProfiles = (data && Array.isArray(data.profiles) ? data.profiles : (Array.isArray(data) ? data : []));
 
   // Exclude accounts already in the running campaign.
