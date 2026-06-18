@@ -673,6 +673,16 @@
             </div>
             <div class="intro-config-hint">On (default): after sending ends we keep checking on the cadence above and auto-send any due intros/follow-ups. Off: that pauses — run a check yourself with ⚡ Check now on the live campaign card.</div>
           </div>
+
+          <!-- #7: Primary check timing — CC+IC only. Hidden for all other modes. -->
+          <div class="field" id="primary-timing-field" hidden>
+            <label for="primary-timing-select">Primary check timing</label>
+            <select id="primary-timing-select">
+              <option value="immediately" selected>Immediately (at start)</option>
+              <option value="after_connections">After connections complete</option>
+            </select>
+            <p class="field-hint">When the connect/check to the primary person runs. "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</p>
+          </div>
         </div>
       </div>
 

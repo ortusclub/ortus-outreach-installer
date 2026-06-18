@@ -1730,6 +1730,9 @@ function onModeChange() {
   // Cadence applies to every monitoring mode (CC+IC + CC+DM). Same predicate
   // drives the launch payload read so visibility and persistence stay in lockstep.
   if (cadenceBlock) cadenceBlock.style.display = usesMonitoringCadence(mode) ? '' : 'none';
+  // #7: Primary check timing — only meaningful for CC+IC (the only mode with a preflight handshake).
+  const ptf = document.getElementById('primary-timing-field');
+  if (ptf) ptf.hidden = (mode !== 'connect_and_introduce');
   // v2.62: hide the 2-up row wrapper too when neither child is visible —
   // otherwise its grid gap + top margin shows as an empty band. CC+DM has
   // no primary-person block (no intro) but DOES use the cadence block, so
@@ -3919,6 +3922,11 @@ async function startCampaign(opts = {}) {
     // the two never drift. Backend defaults absent → enabled.
     autoChecksEnabled: usesMonitoringCadence(mode)
       ? (document.getElementById('auto-checks-toggle')?.checked !== false)
+      : undefined,
+    // #7: when the primary connect/check happens. Only meaningful for CC+IC;
+    // omitted otherwise so the server keeps its default.
+    primaryCheckTiming: (mode === 'connect_and_introduce')
+      ? (document.getElementById('primary-timing-select')?.value || 'immediately')
       : undefined,
   };
 
