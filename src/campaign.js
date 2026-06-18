@@ -67,6 +67,11 @@ import {
   readAvailableMemory,
 } from './resource-monitor.js';
 import * as browserSemaphore from './browser-semaphore.js';
+import {
+  primaryKeyFromUrl, storeKey, getEntry, shouldRecheck,
+  mergeLiveRead, resolveDisplayState, seedConnectedIds,
+  loadPrimaryStatus, savePrimaryStatus,
+} from './primary-status-store.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
@@ -86,6 +91,7 @@ const IDLE_CAMPAIGN_MIN_DURATION_MS = 60 * 60 * 1000;
 // check. Used to gate the bulk-check to once every BULK_CHECK_INTERVAL_MS
 // per profile per sheet, avoiding redundant Voyager hits.
 const BULK_CHECK_FILE = dataPath('bulk-check-cooldown.json');
+const PRIMARY_STATUS_FILE = dataPath('primary-status.json');
 const BULK_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined', 'already_connected']);
 
@@ -668,6 +674,9 @@ export const campaign = {
   // 'connected' | 'pending' (connect request sent, not yet accepted). Drives the
   // Live Status label and gates that account's intros. Reset each run.
   _primaryConn: new Map(),
+  _primaryConnSource: new Map(), // profileId -> 'remembered' | 'live'
+  _primaryStore: null,           // loaded data/primary-status.json (object) for this run
+  _primaryKey: '',               // primaryKeyFromUrl(primaryUrl) for this run
   // v2.52.0: monotonic generation counter for orphan-loop detection.
   // startCampaign increments this and each loop captures its own myGen
   // closure. If restoreCampaign re-launches before the prior loop has
@@ -4202,6 +4211,25 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         }
       }
       log('✅ Primary connections ready — starting outreach');
+    }
+
+    // #8: seed connection-to-primary from the persistent store so confirmed-
+    // connected accounts skip re-verification this run (and survive restarts).
+    {
+      const _pUrl = (tpl && tpl.primaryUrl || '').trim();
+      campaign._primaryKey = primaryKeyFromUrl(_pUrl);
+      campaign._primaryStore = await loadPrimaryStatus(PRIMARY_STATUS_FILE);
+      if (campaign._primaryKey) {
+        const ids = seedConnectedIds(campaign._primaryStore, campaign._primaryKey);
+        const run = new Set(profileIds || []);
+        for (const pid of ids) {
+          if (run.has(pid)) {
+            campaign._primaryConn.set(pid, 'connected');
+            campaign._primaryConnSource.set(pid, 'remembered');
+          }
+        }
+        if (ids.length) log(`🧠 Remembered ${ids.filter((i) => run.has(i)).length} account(s) already connected to the primary — skipping their re-check.`);
+      }
     }
 
     try { await runPreflightHandshake(); } finally { campaign.phase = null; }
