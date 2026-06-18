@@ -925,6 +925,133 @@ Use **superpowers:finishing-a-development-branch** to verify tests, then present
 
 ---
 
+## Task 12: Make the primary URL mandatory for intro modes
+
+> Added 2026-06-18 (see spec Addendum). The URL is the identity the feature keys on; require it
+> to launch for `connect_and_introduce` and `introduce_back`. Enforced only at launch, only for
+> those modes; the shared `validatePrimaryUrl` is unchanged (blank stays valid while typing).
+
+**Files:**
+- Modify: `public/js/app.js` (the v2.104 launch hard-lock, ~`:3768-3785`)
+- Modify: `server.js` (`rejectIfBadPrimaryUrl`, ~`:850`)
+
+- [ ] **Step 1: Frontend — block a blank primary URL at launch (intro modes)**
+
+The existing block (`public/js/app.js:3768`) validates format but allows blank. Replace the
+inner check so a blank field is also blocked. Current:
+
+```javascript
+  if (_mode === 'connect_and_introduce' || _mode === 'introduce_back') {
+    const _pUrlEl = document.getElementById('primary-person-url');
+    const _v = validatePrimaryUrl((_pUrlEl?.value || '').trim());
+    if (!_v.ok) {
+      showPrimaryUrlError(_v.reason);
+      alert(
+        "That doesn't look like the Primary person's LinkedIn profile URL.\n\n" +
+        _v.reason + '\n\n' +
+        'Fix the Primary Person · LinkedIn profile URL and try again.'
+      );
+      if (_pUrlEl) {
+        _pUrlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => _pUrlEl.focus(), 400);
+      }
+      return;
+    }
+    clearPrimaryUrlError();
+  }
+```
+
+Change to (add a blank-required branch before the format check; update the stale "Blank is
+allowed" comment):
+
+```javascript
+  // v2.112: primary URL is REQUIRED to launch the intro modes — it's the identity
+  // the connected-to-primary check + auto-accept + the persistent store all key on.
+  // (Structural check only, no network lookup, so it can block without false-flagging.)
+  if (_mode === 'connect_and_introduce' || _mode === 'introduce_back') {
+    const _pUrlEl = document.getElementById('primary-person-url');
+    const _pUrlVal = (_pUrlEl?.value || '').trim();
+    if (!_pUrlVal) {
+      const _msg = 'Primary person URL is required for this mode.';
+      showPrimaryUrlError(_msg);
+      alert(_msg + '\n\nAdd the Primary Person · LinkedIn profile URL and try again.');
+      if (_pUrlEl) {
+        _pUrlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => _pUrlEl.focus(), 400);
+      }
+      return;
+    }
+    const _v = validatePrimaryUrl(_pUrlVal);
+    if (!_v.ok) {
+      showPrimaryUrlError(_v.reason);
+      alert(
+        "That doesn't look like the Primary person's LinkedIn profile URL.\n\n" +
+        _v.reason + '\n\n' +
+        'Fix the Primary Person · LinkedIn profile URL and try again.'
+      );
+      if (_pUrlEl) {
+        _pUrlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => _pUrlEl.focus(), 400);
+      }
+      return;
+    }
+    clearPrimaryUrlError();
+  }
+```
+
+- [ ] **Step 2: Server — reject a blank primary URL (defense-in-depth)**
+
+`server.js` `rejectIfBadPrimaryUrl` is already mode-gated to the two intro modes. Current:
+
+```javascript
+function rejectIfBadPrimaryUrl(body, res) {
+  const mode = body && body.mode;
+  if (mode !== 'connect_and_introduce' && mode !== 'introduce_back') return false;
+  const url = ((body && body.templates && body.templates.primaryUrl) || '').toString().trim();
+  const v = validatePrimaryUrl(url);
+  if (!v.ok) {
+    res.status(400).json({ error: `Primary person URL is invalid — ${v.reason}` });
+    return true;
+  }
+  return false;
+}
+```
+
+Add a blank-required check before the format check:
+
+```javascript
+function rejectIfBadPrimaryUrl(body, res) {
+  const mode = body && body.mode;
+  if (mode !== 'connect_and_introduce' && mode !== 'introduce_back') return false;
+  const url = ((body && body.templates && body.templates.primaryUrl) || '').toString().trim();
+  if (!url) {
+    res.status(400).json({ error: 'Primary person URL is required for this mode.' });
+    return true;
+  }
+  const v = validatePrimaryUrl(url);
+  if (!v.ok) {
+    res.status(400).json({ error: `Primary person URL is invalid — ${v.reason}` });
+    return true;
+  }
+  return false;
+}
+```
+
+Confirm `server.js` imports `validatePrimaryUrl` (it already calls it). No new import needed.
+
+- [ ] **Step 3: Verify**
+
+- `node --check public/js/app.js` → clean.
+- `node --test tests/*.test.js` → ~855 pass / 0 fail (no test touches this path; confirm no regression).
+- Reason through: non-intro modes (`connect_only`, `message_only`, etc.) are untouched (the mode gate returns early on both sides). Blank intro-mode launch is now blocked both client- and server-side. A valid URL still launches.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add public/js/app.js server.js
+git commit -m "feat: require primary person URL to launch intro modes (#7/#8)"
+```
+
 ## Self-Review
 
 **Spec coverage:** persistent store (Tasks 1-2) ✓; trust stored-connected/skip-recheck (Task 3 seeding + `shouldRecheck`) ✓; rate-limit fallback (Task 4 `resolveDisplayState`) ✓; sticky-connected (`mergeLiveRead`) ✓; per-primary keying + URL-form note (Task 1) ✓; read-at-pick-time (Task 7 endpoint + Task 10) ✓; #7 timing dropdown immediately/after-connections (Tasks 5/6/8) ✓; Variant-3 panel (Task 9) ✓; picker row (Task 10) ✓; preserves-existing-behavior (Task 11) ✓; primary-only / no CC changes (no CC files touched) ✓; off-limits untouched (Task 11 Step 3) ✓.

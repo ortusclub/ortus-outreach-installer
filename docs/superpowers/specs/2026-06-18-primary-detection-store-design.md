@@ -168,3 +168,23 @@ remembered account shows Connected, not "No Primary." Switch timing to **"After 
 complete"**: the campaign starts sending immediately and the primary handshake runs once all
 accounts finish their connection sends — as it did before the recent change. Default timing and CC
 behavior are unchanged; no off-limits files touched.
+
+## Addendum (2026-06-18): mandatory primary URL for intro modes
+
+**Decision:** the primary person's LinkedIn URL becomes **required to launch** for the two intro
+modes (`connect_and_introduce` and `introduce_back`). Rationale: the URL *is* the identity the
+whole feature keys on — without it the app has nobody to look for, intros can't fire, and the
+store/panel/picker are inert. Today `validatePrimaryUrl('')` returns `{ ok: true, kind: 'empty' }`,
+so an intro-mode campaign can launch with no primary; this closes that gap.
+
+**Scope:** enforced ONLY at launch, ONLY for those two modes. We do NOT change the shared
+`validatePrimaryUrl` (blank stays valid *while typing* / for non-intro modes). Enforcement is added
+at the two existing launch gates:
+- Frontend hard-lock (`public/js/app.js:3768`, the v2.104 block): when mode is an intro mode and the
+  field is blank, block the launch with the existing inline-error UX (`showPrimaryUrlError`) +
+  message "Primary person URL is required for this mode." (replaces the current "Blank is allowed").
+- Server `rejectIfBadPrimaryUrl` (`server.js:850`, already mode-gated to the two intro modes):
+  reject an empty URL (`v.kind === 'empty'` / blank) with a 400 "Primary person URL is required",
+  as defense-in-depth.
+
+No off-limits files. Preserves behavior for all non-intro modes.
