@@ -7756,10 +7756,6 @@ function _setUpdateStatus(pct, received, total) {
       : `Downloading… ${mb(received)} MB`;
   }
 }
-function _hideUpdateStatus() {
-  const wrap = document.getElementById('update-status');
-  if (wrap) wrap.classList.add('hidden');
-}
 function _showUpdateDetail(msg) {
   const wrap = document.getElementById('update-status');
   const text = document.getElementById('update-status-text');
@@ -7791,7 +7787,7 @@ async function _checkLastUpdateAttempt() {
     const r = await (await fetch('/api/update-log')).json();
     if (!r || !r.exists || !r.text) return;
     const failed = /failed|no \.app|mount failed|copy failed|swap failed/i.test(r.text);
-    const recent = r.mtimeMs ? (Date.now() - r.mtimeMs) < 24 * 3600 * 1000 : true;
+    const recent = (Date.now() - r.mtimeMs) < 24 * 3600 * 1000;
     if (failed && recent) {
       _showUpdateDetail('The last update attempt didn’t complete. Open Details for the log, or retry from the update button.');
     }
