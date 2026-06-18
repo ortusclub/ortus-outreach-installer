@@ -3846,6 +3846,12 @@ async function startCampaign(opts = {}) {
       const v = parseInt(document.getElementById('check-cadence-select')?.value, 10);
       return Number.isFinite(v) ? v : 60;
     })(),
+    // v2.112: operator can launch with the after-sending automatic checks OFF
+    // (default on). Only meaningful for monitoring modes; gated like cadence so
+    // the two never drift. Backend defaults absent → enabled.
+    autoChecksEnabled: usesMonitoringCadence(mode)
+      ? (document.getElementById('auto-checks-toggle')?.checked !== false)
+      : undefined,
   };
 
   // v2.58.x — IC preflight: catch "no sender column" / "no matching profile"
@@ -7383,6 +7389,12 @@ function applyPresetConfig(config) {
   // to every monitoring mode (CC+IC + CC+DM).
   if (config.checkIntervalMinutes) setV('check-cadence-select', String(config.checkIntervalMinutes));
 
+  // v2.112: restore the automatic-checks toggle on Re-run (default on when absent).
+  {
+    const _ac = document.getElementById('auto-checks-toggle');
+    if (_ac) _ac.checked = config.autoChecksEnabled !== false;
+  }
+
   // v2.14.x: concurrency restore. concurrency=1 means single-worker
   // (toggle off); >1 means parallel mode (toggle on + count set).
   const _conc = Number(config.concurrency || 1);
@@ -10851,6 +10863,8 @@ async function resumeWithSameSettings() {
     // history entries don't have the field — undefined here lets the server
     // apply its 60-min default just like before.
     checkIntervalMinutes: s.checkIntervalMinutes,
+    // v2.112: carry the operator's automatic-checks choice across resume.
+    autoChecksEnabled: s.autoChecksEnabled,
     // v2.59 resume — seed cockpit + history with the prior run's totals so
     // counters continue instead of restarting from 0. processedToday is
     // intentionally NOT seeded (it's a today-only counter; resuming on a

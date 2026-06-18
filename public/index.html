@@ -663,6 +663,15 @@
               </div>
               <div class="intro-config-hint">How often we check each account for new acceptances and fire the follow-up — during sending and after. The first check is always ~1 hour in; after that it follows this interval. A little later if all browsers are busy sending.</div>
             </div>
+            <!-- v2.112: pause the AFTER-sending automatic checks at launch (default on). -->
+            <div class="intro-config-toggle-row" style="margin-top:14px;">
+              <span class="intro-config-toggle-key">Run checks automatically</span>
+              <label class="notif-pref-toggle">
+                <input type="checkbox" id="auto-checks-toggle" checked>
+                <span class="notif-pref-slider"></span>
+              </label>
+            </div>
+            <div class="intro-config-hint">On (default): after sending ends we keep checking on the cadence above and auto-send any due intros/follow-ups. Off: that pauses — run a check yourself with ⚡ Check now on the live campaign card.</div>
           </div>
         </div>
       </div>

@@ -872,6 +872,8 @@ function buildCampaignConfig(body) {
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
           delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
           acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes,
+          // v2.112: launch with the after-sending automatic checks off (default on).
+          autoChecksEnabled,
           // v2.78: accounts to start benched (out of the rotation).
           benchedProfileIds,
           // v2.58.x — Introduction Campaign (introduce_back) sheet-mapping overrides.
@@ -912,6 +914,8 @@ function buildCampaignConfig(body) {
     name: typeof name === 'string' ? name : '',
     acceptanceTrackingDays: Math.max(0, Math.min(30, Number(acceptanceTrackingDays) || 0)),
     checkIntervalMinutes: clampCadenceMinutes(checkIntervalMinutes),
+    // v2.112: default-on; only false when the operator explicitly turned it off.
+    autoChecksEnabled: autoChecksEnabled !== false,
     // Honoured only when mode is message_only or introduce_back. campaign.js
     // gates further so other modes silently ignore the flag.
     preflightCheckStatus: !!preflightCheckStatus,

@@ -1637,7 +1637,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
@@ -1654,7 +1654,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
-    senderColumn, allLeadsConnected,
+    senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled,
   };
 
   // Persist the snapshot so "Open" can rehydrate the wizard after the starting
@@ -1767,6 +1767,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // callers like restore/resume must not slip an out-of-range value through).
   checkIntervalMinutes = clampCadenceMinutes(checkIntervalMinutes);
   campaign.checkIntervalMinutes = checkIntervalMinutes;
+  // v2.112: operator's launch-time choice for the after-sending auto-checks.
+  // shouldAutoFireCheck() in tickMonitoringNow honors this; persisted via the
+  // monitoring slice so it survives restart, and adjustable live on the card.
+  campaign.autoChecksEnabled = autoChecksEnabled !== false;
   campaign.dailyLimit = dailyLimit;
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
