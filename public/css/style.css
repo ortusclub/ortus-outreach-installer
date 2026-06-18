@@ -7062,3 +7062,5 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 /* v2.112: paused account editor */
 .acct-edit-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--hairline, #2a2a2a); font-size: 13px; }
 .acct-edit-add { margin-top: 10px; }
+.acct-swap-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.btn.is-benched { opacity: 0.55; }

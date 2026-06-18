@@ -4867,6 +4867,7 @@ function updateCockpit(s) {
   __cockpit.participatingProfileIds = s.participatingProfileIds || [];
   __cockpit.profileIds = s.profileIds || [];
   __cockpit.profileNames = s.profileNames || [];
+  __cockpit.skippedProfiles = s.skippedProfiles || [];
   __cockpit.sheetUrl = s.sheetUrl || '';
   // Issue #5 Part B: mirror the live-editable settings so renderPauseEditPanel
   // can pre-fill the daily-limit + cadence fields. (templates aren't on the
@@ -13006,6 +13007,10 @@ document.getElementById('resume-confirm')?.addEventListener('click', async () =>
 });
 window.reloadSheetWhilePaused = reloadSheetWhilePaused;
 
+// v2.112 (#2b): per-account staged intent — keyed by profileId, value is boolean (true=benched).
+// Reset each time the editor renders so a fresh pause starts from current server state.
+let _pausedAcctIntent = {};
+
 // v2.112 (#2b): stage account add/swap/bench for the resume review (NOT applied until Confirm).
 async function stageAccountChange({ bench, add } = {}) {
   const body = {}; if (bench) body.bench = bench; if (add) body.add = add;
@@ -13036,21 +13041,113 @@ async function renderPauseAccountAdd() {
   const runIds = new Set(__cockpit.profileIds || []);
   const available = allProfiles.filter(p => !runIds.has(p.id));
 
+  // --- Step 2: Per-account rows (bench toggle + Swap) ---
+  // Reset intent map from current server state so a fresh pause starts correctly.
+  const benchedNow = new Set(__cockpit.skippedProfiles || []);
+  _pausedAcctIntent = {};
+  const runProfileIds = __cockpit.profileIds || [];
+  const runProfileNames = __cockpit.profileNames || [];
+  runProfileIds.forEach((id, i) => {
+    _pausedAcctIntent[id] = benchedNow.has(id);
+  });
+
+  // Build swap <select> options from available list (profiles not already in the run).
+  const swapOptions = available.length > 0
+    ? available.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}</option>`).join('')
+    : '';
+
+  const rowsHtml = runProfileIds.map((id, i) => {
+    const name = escapeHtml(runProfileNames[i] || id);
+    const safeId = escapeHtml(id);
+    const isBenched = _pausedAcctIntent[id];
+    const benchLabel = isBenched ? 'Benched' : 'Active';
+    const benchClass = isBenched ? 'btn btn-secondary btn-sm is-benched' : 'btn btn-secondary btn-sm';
+    const swapSelectId = `acct-swap-sel-${i}`;
+    const swapToggleId = `acct-swap-toggle-${i}`;
+    const swapBlockId = `acct-swap-block-${i}`;
+    const swapHtml = available.length > 0
+      ? `<span class="acct-swap-wrap" id="${escapeHtml(swapBlockId)}" style="display:none">
+           <select id="${escapeHtml(swapSelectId)}" class="intro-config-select" style="max-width:130px">${swapOptions}</select>
+           <button type="button" class="btn btn-start btn-sm" onclick="window._doSwapAccount(${i})">Swap</button>
+         </span>
+         <button type="button" class="btn btn-secondary btn-sm" id="${escapeHtml(swapToggleId)}" onclick="window._toggleSwapRow(${i})">Swap…</button>`
+      : '';
+    return `<div class="acct-edit-row" id="acct-edit-row-${i}" data-acct-id="${safeId}">
+      <span class="acct-edit-name">${name}</span>
+      <span class="acct-edit-actions" style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        ${swapHtml}
+        <button type="button" class="${benchClass}" id="acct-bench-btn-${i}" onclick="window._toggleBenchIntent(${i})">${benchLabel}</button>
+      </span>
+    </div>`;
+  }).join('');
+
+  // --- ＋ Add account control (existing, below per-account rows) ---
+  let addHtml;
   if (available.length === 0) {
-    container.innerHTML = `<div class="acct-edit-add"><span style="color:var(--gray,#8a8a8a);font-size:12px">No additional accounts available to add.</span></div>`;
-    return;
+    addHtml = `<div class="acct-edit-add"><span style="color:var(--gray,#8a8a8a);font-size:12px">No additional accounts available to add.</span></div>`;
+  } else {
+    const options = available.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}</option>`).join('');
+    addHtml = `
+      <div class="acct-edit-add">
+        <label class="intro-config-label" style="display:block;margin-bottom:6px">＋ Add account</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="acct-add-select" class="intro-config-select" style="flex:1;min-width:0">${options}</select>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window._doAddAccount()">Add</button>
+        </div>
+      </div>`;
   }
 
-  const options = available.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}</option>`).join('');
-  container.innerHTML = `
-    <div class="acct-edit-add">
-      <label class="intro-config-label" style="display:block;margin-bottom:6px">＋ Add account</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="acct-add-select" class="intro-config-select" style="flex:1;min-width:0">${options}</select>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="window._doAddAccount()">Add</button>
-      </div>
-    </div>`;
+  const sectionLabel = runProfileIds.length > 0
+    ? `<div class="rr-label" style="margin-bottom:2px">Current accounts</div>`
+    : '';
 
+  container.innerHTML = sectionLabel + rowsHtml + addHtml;
+
+  // --- inline onclick handlers ---
+
+  // Bench toggle: flip intended state, update button, stage via stageBench.
+  // id is resolved from the row's data-acct-id (never embedded as a JS string literal).
+  window._toggleBenchIntent = async function(idx) {
+    const id = document.getElementById(`acct-edit-row-${idx}`)?.dataset.acctId;
+    if (!id) return;
+    _pausedAcctIntent[id] = !_pausedAcctIntent[id];
+    const intendedBenched = _pausedAcctIntent[id];
+    const btn = document.getElementById(`acct-bench-btn-${idx}`);
+    if (btn) {
+      btn.textContent = intendedBenched ? 'Benched' : 'Active';
+      if (intendedBenched) btn.classList.add('is-benched');
+      else btn.classList.remove('is-benched');
+    }
+    await stageBench(id, intendedBenched);
+  };
+
+  // Swap…: show/hide the inline swap select + confirm button.
+  window._toggleSwapRow = function(idx) {
+    const block = document.getElementById(`acct-swap-block-${idx}`);
+    const tog = document.getElementById(`acct-swap-toggle-${idx}`);
+    if (!block) return;
+    const visible = block.style.display !== 'none';
+    block.style.display = visible ? 'none' : 'inline-flex';
+    if (tog) tog.textContent = visible ? 'Swap…' : 'Cancel';
+  };
+
+  // Swap confirm: call stageSwap(oldId, newId), mark row as swapping.
+  window._doSwapAccount = async function(idx) {
+    const oldId = document.getElementById(`acct-edit-row-${idx}`)?.dataset.acctId;
+    const sel = document.getElementById(`acct-swap-sel-${idx}`);
+    if (!oldId || !sel || !sel.value) return;
+    const newId = sel.value;
+    const ok = await stageSwap(oldId, newId);
+    if (ok) {
+      const row = document.getElementById(`acct-edit-row-${idx}`);
+      if (row) {
+        const actionsEl = row.querySelector('.acct-edit-actions');
+        if (actionsEl) actionsEl.innerHTML = `<span style="color:var(--gray,#8a8a8a);font-size:12px">→ swapping on resume</span>`;
+      }
+    }
+  };
+
+  // ＋ Add account handler.
   window._doAddAccount = async function() {
     const sel = document.getElementById('acct-add-select');
     if (!sel || !sel.value) return;
@@ -13061,7 +13158,10 @@ async function renderPauseAccountAdd() {
       if (opt) opt.remove();
       if (sel.options.length === 0) {
         const c = document.getElementById('acct-add-section');
-        if (c) c.innerHTML = `<div class="acct-edit-add"><span style="color:var(--gray,#8a8a8a);font-size:12px">No additional accounts available to add.</span></div>`;
+        if (c) {
+          const addSection = c.querySelector('.acct-edit-add');
+          if (addSection) addSection.innerHTML = `<span style="color:var(--gray,#8a8a8a);font-size:12px">No additional accounts available to add.</span>`;
+        }
       }
     }
   };
