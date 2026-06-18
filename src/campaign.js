@@ -4953,6 +4953,7 @@ export function getCampaignStatus() {
     skippedProfiles: [...(campaign._skippedProfiles || [])],
     // v2.78: CC+IC per-account connection-to-primary status for Live Status.
     primaryConn: Object.fromEntries(campaign._primaryConn || []),
+    primaryConnSource: Object.fromEntries(campaign._primaryConnSource || []),
     // v2.13.14: surface monitoring fields so the cockpit + run-bar can
     // reflect post-campaign monitoring state without a second poll.
     state: campaign.state || 'idle',
