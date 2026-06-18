@@ -2895,7 +2895,21 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 // not-connected → 'pending' (connect sent, intros held); degree
                 // unreadable → 'unverified' (no connect, neutral badge, intros
                 // still proceed). A read failure must not coerce to 'pending'.
-                campaign._primaryConn.set(profileId, primaryConnState(_res.connected));
+                {
+                  const _live = primaryConnState(_res.connected); // 'connected'|'pending'|'unverified'
+                  const _entry = campaign._primaryKey
+                    ? getEntry(campaign._primaryStore, profileId, campaign._primaryKey) : null;
+                  const _disp = resolveDisplayState(_entry, _live);
+                  campaign._primaryConn.set(profileId, _disp.state);
+                  campaign._primaryConnSource.set(profileId, _disp.source);
+                  if (campaign._primaryKey && _live !== 'unverified') {
+                    const _now = new Date().toISOString();
+                    campaign._primaryStore = campaign._primaryStore || {};
+                    campaign._primaryStore[storeKey(profileId, campaign._primaryKey)] =
+                      mergeLiveRead(_entry, _live, _now, (tpl && tpl.primaryUrl) || '');
+                    await savePrimaryStatus(PRIMARY_STATUS_FILE, campaign._primaryStore);
+                  }
+                }
                 // v2.91: if we just sent a connect to the primary AND auto-accept
                 // is enabled, capture this account's own identity and queue the
                 // local browser to accept its invitation in the next idle gap.
@@ -4127,7 +4141,21 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         const pName = session.pName;
         try {
           const _res = await checkAndConnectPrimary(session.page, primaryUrl, { log, pName, attemptConnect: true });
-          campaign._primaryConn.set(profileId, primaryConnState(_res.connected));
+          {
+            const _live = primaryConnState(_res.connected);
+            const _entry = campaign._primaryKey
+              ? getEntry(campaign._primaryStore, profileId, campaign._primaryKey) : null;
+            const _disp = resolveDisplayState(_entry, _live);
+            campaign._primaryConn.set(profileId, _disp.state);
+            campaign._primaryConnSource.set(profileId, _disp.source);
+            if (campaign._primaryKey && _live !== 'unverified') {
+              const _now = new Date().toISOString();
+              campaign._primaryStore = campaign._primaryStore || {};
+              campaign._primaryStore[storeKey(profileId, campaign._primaryKey)] =
+                mergeLiveRead(_entry, _live, _now, primaryUrl || '');
+              await savePrimaryStatus(PRIMARY_STATUS_FILE, campaign._primaryStore);
+            }
+          }
           // autoAcceptPrimary is implicitly true here (runPreflightHandshake
           // early-returns otherwise). Queue an accept when the account left an
           // OUTSTANDING invite to the primary — freshly sent this run ('sent')
