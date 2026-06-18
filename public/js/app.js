@@ -44,6 +44,18 @@ let benchedProfileIds = new Set();
 // v2.112 (#6): set to true when operator clicks "Start anyway" in the guardrail
 // confirm dialog so the Start handler skips the re-check on re-entry.
 let _guardrailConfirmed = false;
+// #8: store-sourced primary status for the account picker (CC+IC mode).
+// Populated by loadPrimaryStatusForPicker() before renderProfiles() renders.
+let primaryStatusCache = { key: '', statuses: {} };
+async function loadPrimaryStatusForPicker() {
+  const url = (document.getElementById('primary-person-url')?.value || '').trim();
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  if (mode !== 'connect_and_introduce' || !url) { primaryStatusCache = { key: '', statuses: {} }; return; }
+  try {
+    const r = await fetch('/api/primary-status?primaryUrl=' + encodeURIComponent(url));
+    primaryStatusCache = await r.json();
+  } catch { primaryStatusCache = { key: '', statuses: {} }; }
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Draft state: activeDraftId is the single source of truth for which draft
@@ -890,6 +902,7 @@ async function loadProfiles() {
     allProfilesData = dedupeProfilesByEmail(profiles);
     loading.classList.add('hidden');
     grid.classList.remove('hidden');
+    await loadPrimaryStatusForPicker();
     renderProfiles(allProfilesData);
     renderPassoverBanner();
     updateChipCounts();
@@ -1015,6 +1028,15 @@ function renderProfiles(profiles) {
         <div class="name">${escHtml(p.name)}${p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : ''}${restricted ? ` <span class="restricted-flag" title="${escHtml('SoO status: ' + sooStatus + ' — this account is restricted and can’t be selected.')}">⛔ ${escHtml(sooStatus || 'Restricted')}</span>` : ''}</div>
         ${!soo ? `<div class="id">${p.id.substring(0, 12)}…</div>` : ''}
         ${renderSoOBadges(soo)}
+        ${(() => {
+          const _mode = document.getElementById('campaign-mode')?.value || '';
+          if (_mode !== 'connect_and_introduce' || !primaryStatusCache.key) return '';
+          const e = primaryStatusCache.statuses[p.id];
+          if (!e) return '<div class="pick-primary s-none"><span class="dot"></span>Primary — not checked yet</div>';
+          if (e.state === 'connected') return '<div class="pick-primary s-connected"><span class="dot"></span>Primary ✓ <span class="remember">remembered</span></div>';
+          if (e.state === 'pending')   return '<div class="pick-primary s-pending"><span class="dot"></span>Primary pending <span class="remember">remembered</span></div>';
+          return '<div class="pick-primary s-none"><span class="dot"></span>Primary — not checked yet</div>';
+        })()}
       </div>
     `;
     const cb = item.querySelector('input');
@@ -1955,6 +1977,12 @@ function onModeChange() {
   // v2.112 (#5): re-evaluate guardrail alert when mode changes (passover
   // channel is mode-dependent).
   renderGuardrailAlert();
+
+  // #8: refresh store-sourced primary status when switching to/from CC+IC
+  // so the picker rows update without requiring a full profile reload.
+  loadPrimaryStatusForPicker().then(() => {
+    if (allProfilesData.length > 0) renderProfiles(allProfilesData);
+  }).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

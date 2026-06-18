@@ -7109,3 +7109,10 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .v3-item .st { font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; text-align: right; }
 .v3-item.s-connected .st { color: var(--green); } .v3-item.s-pending .st { color: #d97706; }
 .v3-item.s-checking .st { color: var(--blue); } .v3-item.s-unverified .st { color: var(--gray); }
+
+/* Picker primary row (#8) — store-sourced, shown only in primary modes */
+.pick-primary { display: flex; align-items: center; gap: 7px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline-soft); font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.pick-primary .dot { width: 7px; height: 7px; border-radius: 9999px; flex: none; }
+.pick-primary.s-connected { color: var(--green); } .pick-primary.s-connected .dot { background: var(--green); }
+.pick-primary.s-pending { color: #d97706; } .pick-primary.s-pending .dot { background: #d97706; }
+.pick-primary.s-none { color: var(--gray); } .pick-primary.s-none .dot { background: var(--gray); opacity: 0.5; }
