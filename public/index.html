@@ -1588,6 +1588,9 @@
           <button type="button" id="pe-apply" class="btn btn-secondary btn-sm">Apply changes</button>
         </div>
       </div>
+      <!-- v2.112 (#2b): account-add section — rendered by renderPauseAccountAdd() in app.js.
+           Hidden at first paint; shown only while the campaign is fully paused. -->
+      <div id="acct-add-section" class="cockpit-panel" hidden style="display:none"></div>
       <!-- v2.112: resume review panel — populated from /api/campaign/resume/preview.
            Both `hidden` AND inline `display:none` are required: .cockpit-panel sets
            display:flex which overrides [hidden], so the inline style hides it at first paint

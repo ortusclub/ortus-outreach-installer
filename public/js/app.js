@@ -4585,6 +4585,10 @@ function renderPauseEditPanel() {
     panel.hidden = true;
     panel.style.display = 'none';
     _peFilled = false;
+    // Also hide the account-add section sibling. Both hidden AND display:none are needed —
+    // .cockpit-panel is display:flex, which overrides [hidden] (same pattern as the panels above).
+    const aas = document.getElementById('acct-add-section');
+    if (aas) { aas.hidden = true; aas.style.display = 'none'; }
     return;
   }
 
@@ -4603,6 +4607,8 @@ function renderPauseEditPanel() {
     _pePrefillFields();
     panel.hidden = false;
     panel.style.display = 'flex';
+    // v2.112 (#2b): populate the Add account control on first pause tick.
+    if (typeof renderPauseAccountAdd === 'function') renderPauseAccountAdd();
     return;
   }
 
@@ -12999,6 +13005,68 @@ document.getElementById('resume-confirm')?.addEventListener('click', async () =>
   panel.hidden = true; panel.style.display = 'none';
 });
 window.reloadSheetWhilePaused = reloadSheetWhilePaused;
+
+// v2.112 (#2b): stage account add/swap/bench for the resume review (NOT applied until Confirm).
+async function stageAccountChange({ bench, add } = {}) {
+  const body = {}; if (bench) body.bench = bench; if (add) body.add = add;
+  const r = await fetch('/api/campaign/resume/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(x => x.json()).catch(() => null);
+  if (!r || !r.ok) { showCampaignToast((r && r.error) || 'account change rejected', 4000); return false; }
+  showCampaignToast('Staged — review on Resume.', 2000);
+  return true;
+}
+function stageBench(id, skip) { return stageAccountChange({ bench: { [id]: skip } }); }
+function stageAddAccount(id) { return stageAccountChange({ add: [{ id }] }); }
+function stageSwap(oldId, newId) { return stageAccountChange({ bench: { [oldId]: true }, add: [{ id: newId }] }); }
+window.stageBench = stageBench; window.stageAddAccount = stageAddAccount; window.stageSwap = stageSwap;
+
+// v2.112 (#2b): Fetch available GoLogin profiles, excluding those already in the run,
+// and render the ＋ Add account control inside the pause-edit-panel.
+async function renderPauseAccountAdd() {
+  const container = document.getElementById('acct-add-section');
+  if (!container) return;
+  if (!__cockpit || __cockpit.paused !== true) { container.hidden = true; container.style.display = 'none'; return; }
+  container.hidden = false; container.style.display = 'flex';
+
+  // Fetch all profiles from GoLogin.
+  const data = await fetch('/api/gologin/profiles').then(x => x.json()).catch(() => null);
+  const allProfiles = (data && Array.isArray(data.profiles) ? data.profiles : (Array.isArray(data) ? data : []));
+
+  // Exclude accounts already in the running campaign.
+  const runIds = new Set(__cockpit.profileIds || []);
+  const available = allProfiles.filter(p => !runIds.has(p.id));
+
+  if (available.length === 0) {
+    container.innerHTML = `<div class="acct-edit-add"><span style="color:var(--gray,#8a8a8a);font-size:12px">No additional accounts available to add.</span></div>`;
+    return;
+  }
+
+  const options = available.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}</option>`).join('');
+  container.innerHTML = `
+    <div class="acct-edit-add">
+      <label class="intro-config-label" style="display:block;margin-bottom:6px">＋ Add account</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="acct-add-select" class="intro-config-select" style="flex:1;min-width:0">${options}</select>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window._doAddAccount()">Add</button>
+      </div>
+    </div>`;
+
+  window._doAddAccount = async function() {
+    const sel = document.getElementById('acct-add-select');
+    if (!sel || !sel.value) return;
+    const ok = await stageAddAccount(sel.value);
+    if (ok) {
+      // Remove the added option so the same profile can't be added twice.
+      const opt = sel.querySelector(`option[value="${CSS.escape(sel.value)}"]`);
+      if (opt) opt.remove();
+      if (sel.options.length === 0) {
+        const c = document.getElementById('acct-add-section');
+        if (c) c.innerHTML = `<div class="acct-edit-add"><span style="color:var(--gray,#8a8a8a);font-size:12px">No additional accounts available to add.</span></div>`;
+      }
+    }
+  };
+}
+window.renderPauseAccountAdd = renderPauseAccountAdd;
 
 window.dashPauseActive = async function() {
   try {
