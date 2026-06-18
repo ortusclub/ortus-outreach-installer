@@ -40,3 +40,46 @@ test('computeSheetDiff: rows without a URL are ignored', () => {
   assert.equal(d.addedCount, 0);
   assert.equal(d.newTotal, 2);
 });
+
+import {
+  computeAccountDiff, computeSettingsDiff, summarizeResumeChanges,
+} from '../src/resume-diff.js';
+
+test('computeAccountDiff: added / benched / reEnabled', () => {
+  const prev = { ids: ['p1', 'p2'], benched: ['p2'], names: { p1: 'A', p2: 'B' } };
+  const next = { ids: ['p1', 'p2', 'p3'], benched: ['p1'], names: { p1: 'A', p2: 'B', p3: 'C' } };
+  const d = computeAccountDiff(prev, next);
+  assert.deepEqual(d.added, [{ id: 'p3', name: 'C' }]);
+  assert.deepEqual(d.benched, [{ id: 'p1', name: 'A' }]);
+  assert.deepEqual(d.reEnabled, [{ id: 'p2', name: 'B' }]);
+  assert.deepEqual(d.removed, []);
+});
+
+test('computeSettingsDiff: dailyLimit + cadence + templates-changed', () => {
+  const snap = { dailyLimit: 50, checkIntervalMinutes: 60, templates: { ccDmBody: 'hi' } };
+  const cur = { dailyLimit: 40, checkIntervalMinutes: 60, templates: { ccDmBody: 'yo' } };
+  const d = computeSettingsDiff(snap, cur);
+  assert.equal(d.find(c => c.key === 'dailyLimit').from, 50);
+  assert.equal(d.find(c => c.key === 'dailyLimit').to, 40);
+  assert.equal(d.some(c => c.key === 'cadence'), false);
+  assert.equal(d.find(c => c.key === 'templates').changed, true);
+});
+
+test('summarizeResumeChanges: isEmpty true when nothing changed', () => {
+  const empty = summarizeResumeChanges({
+    sheetDiff: { added: [], updatedPending: [], addedCount: 0, updatedCount: 0, newTotal: 5 },
+    accountDiff: { added: [], removed: [], benched: [], reEnabled: [] },
+    settingsDiff: [],
+  });
+  assert.equal(empty.isEmpty, true);
+});
+
+test('summarizeResumeChanges: isEmpty false when any group has a change', () => {
+  const s = summarizeResumeChanges({
+    sheetDiff: { added: [{}], updatedPending: [], addedCount: 1, updatedCount: 0, newTotal: 6 },
+    accountDiff: { added: [], removed: [], benched: [], reEnabled: [] },
+    settingsDiff: [],
+  });
+  assert.equal(s.isEmpty, false);
+  assert.equal(s.sheet.addedCount, 1);
+});
