@@ -2003,6 +2003,13 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 
 .hidden { display: none; }
 
+.note-hint {
+  font-size: 0.72rem;
+  color: var(--gray);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
 /* Placeholder tags */
 .placeholder-tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 24px 0; }
 .placeholder-tags .tag {

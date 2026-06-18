@@ -26,6 +26,7 @@ import { computePillState, shouldShowConsole } from '/js/live-console.mjs';
 import { usesMonitoringCadence } from '/js/campaign-modes.mjs';
 import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
+import { shouldShowNoteHint } from '/js/note-hint.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -1378,6 +1379,8 @@ function updateTplNoteCount() {
   const n = (ta.value || '').length;
   out.textContent = `${n} / 300`;
   out.style.color = n >= 280 ? '#dc2626' : 'var(--gray)';
+  const hint = document.getElementById('tpl-note-hint');
+  if (hint) hint.classList.toggle('hidden', !shouldShowNoteHint(ta.value || ''));
 }
 window.updateTplNoteCount = updateTplNoteCount;
 document.addEventListener('DOMContentLoaded', updateTplNoteCount);
