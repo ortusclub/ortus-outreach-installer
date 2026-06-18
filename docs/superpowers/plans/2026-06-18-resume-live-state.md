@@ -496,6 +496,18 @@ function _buildResumeChanges() {
   const sheetDiff = staged.reloadSheet && staged.newRows
     ? computeSheetDiff(prev, staged.newRows.filter(campaign._isTarget || (() => true)), urlOf)
     : computeSheetDiff(prev, prev, urlOf);
+  // Slice modes (check_status/message_only/introduce_back) drain pre-built per-profile
+  // slices, so _reloadTargets will NOT add brand-new leads (only update existing rows).
+  // Mirror that here so the preview is honest: relabel `added` as `skippedNew` (a "needs
+  // restart to include" notice), never show it as an applied add.
+  const SLICE_MODES = ['check_status', 'message_only', 'introduce_back'];
+  if (SLICE_MODES.includes(campaign.mode) && sheetDiff.addedCount) {
+    sheetDiff.skippedNew = sheetDiff.addedCount;
+    sheetDiff.added = [];
+    sheetDiff.addedCount = 0;
+  } else {
+    sheetDiff.skippedNew = 0;
+  }
   const ids = (campaign.profileIds || []).slice();
   const names = {};
   (campaign.profileIds || []).forEach((id, i) => { names[id] = (campaign.profileNames || [])[i] || id; });
@@ -515,7 +527,10 @@ function _buildResumeChanges() {
   const settingsDiff = computeSettingsDiff(snap, {
     dailyLimit: campaign.dailyLimit, checkIntervalMinutes: campaign.checkIntervalMinutes, templates: campaign.templates,
   });
-  return summarizeResumeChanges({ sheetDiff, accountDiff, settingsDiff });
+  const rc = summarizeResumeChanges({ sheetDiff, accountDiff, settingsDiff });
+  // skippedNew is informational (slice modes) — surface the notice even if nothing else changed.
+  if (rc.sheet.skippedNew) rc.isEmpty = false;
+  return rc;
 }
 
 app.post('/api/campaign/resume/reload-sheet', async (req, res) => {
@@ -557,6 +572,8 @@ app.post('/api/campaign/resume/confirm', (req, res) => {
   res.json({ ok: result.ok !== false, applied });
 });
 ```
+
+**Note on `isEmpty` + `skippedNew`:** `summarizeResumeChanges` computes `isEmpty` from real applied changes (added/updated/accounts/settings). A reload that found ONLY `skippedNew` leads (slice mode) is otherwise "empty", but we still want to show the "N new leads need a restart" notice. So after building `resumeChanges`, the endpoint sets `if (resumeChanges.sheet.skippedNew) resumeChanges.isEmpty = false;` before returning — in BOTH `preview` and `reload-sheet` responses. Do this in `_buildResumeChanges` right before `return`.
 
 - [ ] **Step 2: Add the import.** At the top of `server.js`, add to the import list from `./src/resume-diff.js`:
 
@@ -620,9 +637,15 @@ async function reloadSheetWhilePaused() {
 
 function renderResumeReview(rc) {
   const groups = [];
-  if (rc.sheet && (rc.sheet.addedCount || rc.sheet.updatedCount)) {
-    groups.push(`<div class="rr-group"><div class="rr-label">Sheet</div>
-      <div class="rr-line">+${rc.sheet.addedCount} new lead(s) · ${rc.sheet.updatedCount} updated · ${rc.sheet.newTotal} total</div>
+  if (rc.sheet && (rc.sheet.addedCount || rc.sheet.updatedCount || rc.sheet.skippedNew)) {
+    let lines = '';
+    if (rc.sheet.addedCount || rc.sheet.updatedCount) {
+      lines += `<div class="rr-line">+${rc.sheet.addedCount} new lead(s) · ${rc.sheet.updatedCount} updated · ${rc.sheet.newTotal} total</div>`;
+    }
+    if (rc.sheet.skippedNew) {
+      lines += `<div class="rr-line rr-warn">${rc.sheet.skippedNew} new lead(s) found — restart the campaign to include them in this mode.</div>`;
+    }
+    groups.push(`<div class="rr-group"><div class="rr-label">Sheet</div>${lines}
       <div class="rr-sub">Already-sent leads untouched.</div></div>`);
   }
   const a = rc.accounts || {};
@@ -676,6 +699,7 @@ window.reloadSheetWhilePaused = reloadSheetWhilePaused;
 .rr-group { margin-bottom: 12px; }
 .rr-label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim, #8a8a8a); margin-bottom: 4px; }
 .rr-line { font-size: 13px; line-height: 1.6; }
+.rr-warn { color: var(--warn, #d4c98a); }
 .rr-sub { font-size: 11.5px; color: var(--text-dim, #8a8a8a); }
 .resume-review-actions { display: flex; justify-content: flex-end; gap: 10px; }
 ```
