@@ -28,7 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
-import { classifyAccountFlag } from '/js/account-guardrails.mjs';
+import { classifyAccountFlag, summarizeSelection } from '/js/account-guardrails.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -41,6 +41,9 @@ let allProfilesData = [];
 // v2.78: accounts pre-benched in the wizard — selected but start the campaign
 // out of the rotation (translated to campaign._skippedProfiles on launch).
 let benchedProfileIds = new Set();
+// v2.112 (#6): set to true when operator clicks "Start anyway" in the guardrail
+// confirm dialog so the Start handler skips the re-check on re-entry.
+let _guardrailConfirmed = false;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Draft state: activeDraftId is the single source of truth for which draft
@@ -1087,6 +1090,52 @@ function renderSelectedPanel() {
   if (typeof renderPostAmpEngagementTable === 'function') {
     renderPostAmpEngagementTable();
   }
+
+  // v2.112 (#5): refresh aggregate guardrail alert on every selection change.
+  renderGuardrailAlert();
+}
+
+// v2.112 (#5): aggregate guardrail alert — from the currently-SELECTED accounts only.
+function renderGuardrailAlert() {
+  const el = document.getElementById('guardrail-alert');
+  if (!el) return;
+  const selected = (selectedProfileIds || []).map(id => {
+    const name = selectedProfileNames[id] || id;
+    return { email: name, soo: findSoOForProfile(name) };
+  });
+  const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
+  const s = summarizeSelection(selected, getMyIdentifier(), mode, getPassoverStatus());
+  if (!s.hasWarnings) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const bits = [];
+  if (s.flagged.length) bits.push(`<b>${s.flagged.length} of your selected accounts are assigned to / in use by others</b>`);
+  if (s.passover) bits.push(`this campaign's <b>${s.passover.channel === 'cc' ? 'CC' : 'monthly'} credits are in passover (${escHtml(s.passover.label)})</b>`);
+  el.innerHTML = `<span class="big">⚠</span><span class="txt">${bits.join(', and ')}.</span>`;
+  el.classList.remove('hidden');
+}
+
+// v2.112 (#6): show "Before you start…" confirm with flagged accounts + passover.
+function showGuardrailConfirm(s) {
+  const host = document.getElementById('guardrail-confirm-host');
+  if (!host) return;
+  const lines = s.flagged.map(f => `<div class="gc-line">⚠ ${escHtml(f.email)} — <span class="muted">${escHtml(f.label)}</span></div>`).join('');
+  const po = s.passover
+    ? `<div class="gc-label">Passover</div><div class="gc-line">This campaign's <span style="color:#d97706">${s.passover.channel === 'cc' ? 'CC' : 'monthly'} credits are in passover</span> (${escHtml(s.passover.label)}).</div>`
+    : '';
+  host.innerHTML = `<div class="guardrail-confirm">
+    <h3>Before you start…</h3>
+    ${s.flagged.length ? `<div class="gc-label">Assigned / in use by others — ${s.flagged.length} selected</div>${lines}` : ''}
+    ${po}
+    <div class="gc-actions">
+      <button type="button" class="btn btn-secondary btn-sm" id="gc-back">Back to selection</button>
+      <button type="button" class="btn btn-start btn-sm" id="gc-go">Start anyway</button>
+    </div>
+  </div>`;
+  host.classList.remove('hidden');
+  document.getElementById('gc-back').onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; };
+  // "Start anyway" re-enters via launchStartNow (the main Start path: autosave flush +
+  // editing-banner update) so it behaves exactly like a normal Start; the gate now passes
+  // because _guardrailConfirmed is true. Falls back to startCampaign() if unavailable.
+  document.getElementById('gc-go').onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; _guardrailConfirmed = true; (window.launchStartNow || startCampaign)(); };
 }
 
 function toggleBenchProfile(id) {
@@ -1899,6 +1948,10 @@ function onModeChange() {
   if (typeof window.updateEditingBanner === 'function') {
     try { window.updateEditingBanner(); } catch (_) {}
   }
+
+  // v2.112 (#5): re-evaluate guardrail alert when mode changes (passover
+  // channel is mode-dependent).
+  renderGuardrailAlert();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3575,6 +3628,17 @@ async function startCampaign(opts = {}) {
   if (!_autoRoutedModes.has(_modeForValidation) && selectedProfileIds.length === 0) {
     alert('Select at least one GoLogin profile.'); return;
   }
+  // v2.112 (#6): warn (not block) on assigned/in-use selected accounts + passover.
+  if (!_guardrailConfirmed) {
+    const _sel = selectedProfileIds.map(id => {
+      const name = selectedProfileNames[id] || id;
+      return { email: name, soo: findSoOForProfile(name) };
+    });
+    const _mode0 = document.getElementById('campaign-mode')?.value || 'connect_only';
+    const _s = summarizeSelection(_sel, getMyIdentifier(), _mode0, getPassoverStatus());
+    if (_s.hasWarnings) { showGuardrailConfirm(_s); return; }
+  }
+  _guardrailConfirmed = false;
   const sheetUrl = document.getElementById('sheet-url').value.trim();
   if (!sheetUrl) { alert('Enter a Google Sheet URL.'); return; }
   const dailyLimit = parseInt(document.getElementById('daily-limit').value, 10);

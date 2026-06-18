@@ -1169,6 +1169,7 @@
                area as the first selectable tile. -->
           <div id="local-browser-host" class="local-browser-host"></div>
 
+          <div id="guardrail-alert" class="guardrail-alert hidden"></div>
           <div id="profiles-loading">Loading profiles…</div>
           <div id="profiles-grid" class="profile-grid hidden"></div>
           <div id="profiles-count" style="color:#8b949e; font-size:0.8rem; margin-top:8px"></div>
@@ -1485,6 +1486,7 @@
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
             <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
           </div>
+          <div id="guardrail-confirm-host" class="hidden"></div>
 
           <!-- Hidden legacy elements — kept in the DOM so app.js handlers
                (button-mutex, setLaunchMode null-guards, btn-pause/stop
