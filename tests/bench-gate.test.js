@@ -20,3 +20,12 @@ test('shouldRequeue: only when not already queued and not mid-turn', () => {
   assert.equal(shouldRequeue({ inQueue: false, beingRun: true }), false);
   assert.equal(shouldRequeue({ inQueue: true, beingRun: true }), false);
 });
+
+import { canAddProfile } from '../src/bench-gate.js';
+
+test('canAddProfile rejects empty + duplicates, allows new', () => {
+  assert.equal(canAddProfile(['a'], 'a'), false);
+  assert.equal(canAddProfile(['a'], ''), false);
+  assert.equal(canAddProfile(['a'], 'b'), true);
+  assert.equal(canAddProfile(null, 'b'), true);
+});

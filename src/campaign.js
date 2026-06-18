@@ -48,7 +48,7 @@ import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
-import { shouldContinueTurn, shouldRequeue } from './bench-gate.js';
+import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
 import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
@@ -2661,6 +2661,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     const degradationStreak = new Map();
     const DEGRADE_MAX_MULT = 32;                // streak 5 ⇒ 32× before the cap bites
     const DEGRADE_MAX_WAIT_MS = 20 * 60 * 1000; // never wait longer than 20 min between leads
+    // v2.112 (#2b): accounts added to the rotation mid-run + which have launched ≥once + a
+    // per-account launch-failure count. A freshly-added account that can't even launch is
+    // auto-benched after 2 failures so it doesn't churn. START accounts are NOT tracked here,
+    // so their existing behavior is unchanged.
+    const addedMidRun = new Set();
+    const launchedOk = new Set();
+    const launchFailures = new Map();
     // Expose a closure that retryParkedProfile() can call to clear all the
     // local skip counters + drop the profile from weeklyLimited so the next
     // rotation considers it again. Cleared in the finally block at end-of-run.
@@ -2765,6 +2772,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         log(`↻ ${profileNameCache[id] || id} re-queued for rotation (queue=${profileQueue.length}).`);
       }
     };
+    // v2.112 (#2b): add a fresh account to the live rotation mid-run. Pushes to the run's
+    // id/name arrays + the worker queue; the worker opens its browser on its next turn.
+    campaign._addProfile = (id, name) => {
+      if (!canAddProfile(campaign.profileIds, id)) return false;
+      campaign.profileIds.push(id);
+      campaign.profileNames.push(name || id);
+      profileNameCache[id] = name || id;
+      addedMidRun.add(id);
+      profileQueue.push(id);
+      log(`＋ ${name || id} added to the live rotation.`);
+      return true;
+    };
     // v2.11.0: dropped batchesPerHour. Per-profile cooldown is now a fixed 6-min
     // floor — protects the eject-cascade scenario (when most profiles drop out
     // mid-run, the survivors would otherwise hammer LinkedIn at unsafe rates).
@@ -2819,7 +2838,23 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         if (leadsExhausted) return;
 
         const session = await ensureOpen(profileId);
-        if (!session) return; // opened-but-unhealthy OR launch failed
+        if (!session) {
+          // v2.112 (#2b): a mid-run-added account that can't even launch would churn (re-
+          // enqueued every rotation). After 2 failed launches before it ever opened, auto-
+          // bench it so the campaign continues without it. START accounts are unaffected.
+          if (addedMidRun.has(profileId) && !launchedOk.has(profileId)) {
+            const fails = (launchFailures.get(profileId) || 0) + 1;
+            launchFailures.set(profileId, fails);
+            if (fails >= 2) {
+              if (!campaign._skippedProfiles) campaign._skippedProfiles = new Set();
+              campaign._skippedProfiles.add(profileId);
+              log(`⚠ ${profileNameCache[profileId] || profileId} failed to launch ${fails}× — benched; campaign continues.`);
+              _persistRunSettings();
+            }
+          }
+          return; // opened-but-unhealthy OR launch failed
+        }
+        launchedOk.add(profileId);
 
         const { pName, browser } = session;
         let { page } = session;
@@ -4513,6 +4548,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     campaign.currentProfile = null;
     campaign._unparkProfile = null;
     campaign._requeueProfile = null;
+    campaign._addProfile = null;
     campaign._reloadTargets = null;
     campaign._urlOf = null;
     campaign._isTarget = null;

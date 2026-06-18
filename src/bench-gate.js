@@ -11,3 +11,9 @@ export function shouldContinueTurn({ abort, orphan, weeklyLimited, benched }) {
 export function shouldRequeue({ inQueue, beingRun }) {
   return !inQueue && !beingRun;
 }
+
+// v2.112 (#2b): a profile can be added to the rotation only if it has an id and isn't
+// already present. Pure so the dedup rule is unit-tested.
+export function canAddProfile(existingIds, id) {
+  return !!id && !(existingIds || []).includes(id);
+}
