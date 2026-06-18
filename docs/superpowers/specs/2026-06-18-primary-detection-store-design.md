@@ -87,6 +87,11 @@ Pure functions over a plain object map; a thin load/save wraps the atomic-write 
 - **Shape:** `data/primary-status.json` = `{ "<profileId>|<primaryKey>": { state, degree,
   verifiedAt, primaryUrl } }`. `primaryKey` = resolved member#/ACwAA if available, else
   normalized `/in/` slug — so "account A ↔ primary X" is reusable across any campaign using X.
+  **`primaryKey` stability is load-bearing:** the same primary entered in different URL forms
+  (vanity slug vs encoded `/in/ACwAA…`) MUST resolve to the same key — resolve to member# when
+  available (same principle as the connect-identity gate / primary-side identity model), so a
+  primary isn't mistaken for two different people. Status is remembered **per primary**:
+  what's stored is "A is connected to **X**," not "A is connected."
 - `getStored(map, profileId, primaryKey)` → entry | null.
 - `shouldRecheck(entry)` → `false` iff `entry.state === 'connected'`; otherwise `true`
   (pending / unverified / missing).
@@ -136,7 +141,8 @@ Pure functions over a plain object map; a thin load/save wraps the atomic-write 
 | Live read confirms `pending`/`connected` | `mergeLiveRead` updates + persists; `connected` sticky. |
 | Mode has no primary (e.g. `connect_only`) | No panel, no picker row, store untouched. |
 | Primary not yet configured at pick-time | Picker row hidden until a primary is set. |
-| Different primary than stored | Keyed by `primaryKey` → only the matching primary's entries apply. |
+| Primary person changed (switch to Y) | New `primaryKey` → those accounts read "not checked yet" and re-check against Y. Old primary X's entries are kept (switching back to X recalls them). No cross-primary bleed. |
+| Same primary in different URL forms | Resolved to member# (load-bearing) → keys identically, so it isn't treated as two primaries. If only a slug is available, the normalized slug is used consistently. |
 | Corrupt/unreadable store file | Treat as empty (log once); never block a campaign. |
 
 ## Testing
