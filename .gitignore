@@ -35,3 +35,6 @@ dist/
 # Parallel-work worktrees (per-developer, not source)
 .worktrees/
 apps-script/
+
+# Superpowers brainstorm visual-companion scratch
+.superpowers/
