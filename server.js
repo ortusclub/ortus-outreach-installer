@@ -843,8 +843,9 @@ app.post('/api/templates/preview', async (req, res) => {
 // /api/campaign/start handler and the queue runner so a queued campaign
 // v2.104: server-side mirror of the wizard's primary-URL hard-lock (defense in
 // depth — covers re-run/restore/queue-only paths that don't go through the
-// browser gate). For the intro flows only, a non-blank primaryUrl must be a
-// real personal /in/ profile. Shares validatePrimaryUrl with the client, so
+// browser gate). For the intro flows only (v2.112): the primaryUrl is REQUIRED
+// (blank rejected) and, when present, must be a real personal /in/ profile.
+// Shares validatePrimaryUrl with the client, so
 // the reject reason matches the inline error the operator saw. Returns true
 // (and sends a 400) when the request should be rejected.
 function rejectIfBadPrimaryUrl(body, res) {
