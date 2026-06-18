@@ -219,6 +219,33 @@ Approach (TDD + systematic-debugging):
 
 ---
 
+## Preserves existing behavior (no silent removals — verified against code)
+
+This sub-project is **additive**. Implementers MUST NOT remove or repurpose any of the
+following; they are kept intact:
+
+- **Plain resume path.** `resumeCampaign()` keeps working with no args (callers:
+  `server.js:1479`, `2183`, `2344`). The new param is `resumeCampaign({ applyPending=false })`
+  — default false = today's exact behavior. The existing `POST /api/campaign/resume`
+  endpoint stays; the review flow is a NEW `/api/campaign/resume/confirm` endpoint.
+- **Edit-while-paused panel.** `#pause-edit-panel` and its three live editors
+  (`setLiveTemplates`/`setLiveDailyLimit`/`setLiveCadence`, `app.js:4676–4695`) stay exactly
+  as-is. They additionally feed the Settings diff via the pause-time snapshot — no change to
+  how they apply.
+- **Wizard bench UI** (`bench-btn` / `toggleBenchProfile`, `app.js:1072/1088`) and the
+  **monitoring card** (`renderMonitoringCard`, incl. the `mon-auto-checks` toggle from the
+  prior batch, `app.js:9576/9633`) — untouched.
+- **Existing mid-run bench** (`setProfileSkip`, `campaign.js:4511`) is extended (staging +
+  persistence), never replaced.
+- **Restore / monitoring-persistence** paths are ridden as-is; `MONITORING_FIELDS` unchanged.
+- **Off-limits** `src/linkedin/outreach.js` / `actions.js` — not modified.
+
+Deliberate changes to existing behavior, each tied to a stated ask (and nothing beyond them):
+the Resume button routes through preview→confirm (no staged changes → immediate resume, as
+today); the inner loop gains a `_skippedProfiles` re-check (#2a); `targets` becomes
+mutable-in-place (no behavior change; enables #3 reload); `_lastRunSettings` gains
+`benchedProfileIds` (#2c).
+
 ## Error handling
 
 | Case | Behavior |
