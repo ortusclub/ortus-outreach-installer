@@ -12645,9 +12645,13 @@ function renderPrimaryPanel(status) {
       `<span class="meta">${escHtml(meta)}</span></span>` +
       `<span class="st">${escHtml(s.st)}${remembered ? ' <span class=\"remember\">remembered</span>' : ''}</span></div>`;
   }).join('');
+  const timing = status.primaryCheckTiming === 'after_connections' ? 'After connections' : 'Immediately';
+  const timingChip = status.primaryCheckTiming
+    ? `<div class="mode">Timing · ${escHtml(timing)}</div>`
+    : '';
   el.innerHTML =
     `<div class="v3-head"><div class="v3-ava">${escHtml(initials)}</div>` +
-    `<div class="who"><span class="lbl">Primary person</span>${escHtml(pName)}</div></div>` +
+    `<div class="who"><span class="lbl">Primary person</span>${escHtml(pName)}</div>${timingChip}</div>` +
     rows;
   el.hidden = false;
 }

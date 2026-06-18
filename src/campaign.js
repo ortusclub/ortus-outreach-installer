@@ -1654,6 +1654,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // all accounts finish sending connections — the pre-loop handshake and the
   // per-turn primary connect are skipped, and the same handshake runs post-loop.
   const _deferPrimary = primaryCheckTiming === 'after_connections';
+  campaign.primaryCheckTiming = primaryCheckTiming;
 
   // v2.58.x — IC-only options. Coerced to defaults outside introduce_back
   // mode so accidental flagging from other code paths cannot change
@@ -4954,6 +4955,8 @@ export function getCampaignStatus() {
     // v2.78: CC+IC per-account connection-to-primary status for Live Status.
     primaryConn: Object.fromEntries(campaign._primaryConn || []),
     primaryConnSource: Object.fromEntries(campaign._primaryConnSource || []),
+    primaryName: (campaign.templates && campaign.templates.primaryName) || '',
+    primaryCheckTiming: campaign.primaryCheckTiming || 'immediately',
     // v2.13.14: surface monitoring fields so the cockpit + run-bar can
     // reflect post-campaign monitoring state without a second poll.
     state: campaign.state || 'idle',
