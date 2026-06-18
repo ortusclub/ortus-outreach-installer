@@ -7063,4 +7063,21 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .acct-edit-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--hairline, #2a2a2a); font-size: 13px; }
 .acct-edit-add { margin-top: 10px; }
 .acct-swap-wrap { display: inline-flex; align-items: center; gap: 6px; }
+
+/* v2.112: #5 account-selection guardrails (warn + override). Visual contract:
+   public/sketches/guardrails-final.html. Amber #d97706 = caution (selectable). */
+.profile-item.is-flagged { position: relative; padding-top: 28px; border-color: rgba(217,119,6,0.55); overflow: hidden; }
+.profile-item.is-flagged::before { content: attr(data-warn); position: absolute; top: 0; left: 0; right: 0; background: #d97706; color: #fff; font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 9px; }
+.passover-banner strong.passover-closed { color: #d97706; }
+.guardrail-alert { display: flex; align-items: flex-start; gap: 11px; background: #fdf2e2; border: 1px solid #d97706; border-left-width: 4px; border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+.guardrail-alert.hidden { display: none; }
+.guardrail-alert .big { font-size: 1.25rem; line-height: 1; }
+.guardrail-alert .txt { font-size: 0.85rem; color: #7c2d12; line-height: 1.5; }
+.guardrail-alert .txt b { color: #9a3412; }
+.guardrail-confirm { max-width: 560px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 20px 22px; }
+.guardrail-confirm h3 { margin: 0 0 6px; }
+.gc-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); margin-top: 14px; }
+.gc-line { font-size: 0.85rem; line-height: 1.7; color: var(--ink); }
+.gc-line .muted { color: var(--gray); }
+.gc-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .btn.is-benched { opacity: 0.55; }
