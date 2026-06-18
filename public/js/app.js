@@ -3759,15 +3759,23 @@ async function startCampaign(opts = {}) {
     }
   }
 
-  // v2.104: HARD-LOCK — a pasted Primary person URL must be a real personal
-  // /in/ profile. Structural check only (no network lookup), so it can block
-  // the start without ever false-flagging the right person on a throttled
-  // session. Blank is allowed (the URL is optional — it just enables the
-  // connected-to-primary check + auto-accept). The server re-checks this on
-  // /api/campaign/start as defense-in-depth.
+  // v2.112: primary URL is REQUIRED to launch the intro modes — it's the identity
+  // the connected-to-primary check + auto-accept + the persistent store all key on.
+  // (Structural check only, no network lookup, so it can block without false-flagging.)
   if (_mode === 'connect_and_introduce' || _mode === 'introduce_back') {
     const _pUrlEl = document.getElementById('primary-person-url');
-    const _v = validatePrimaryUrl((_pUrlEl?.value || '').trim());
+    const _pUrlVal = (_pUrlEl?.value || '').trim();
+    if (!_pUrlVal) {
+      const _msg = 'Primary person URL is required for this mode.';
+      showPrimaryUrlError(_msg);
+      alert(_msg + '\n\nAdd the Primary Person · LinkedIn profile URL and try again.');
+      if (_pUrlEl) {
+        _pUrlEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => _pUrlEl.focus(), 400);
+      }
+      return;
+    }
+    const _v = validatePrimaryUrl(_pUrlVal);
     if (!_v.ok) {
       showPrimaryUrlError(_v.reason);
       alert(

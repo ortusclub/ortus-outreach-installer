@@ -851,6 +851,10 @@ function rejectIfBadPrimaryUrl(body, res) {
   const mode = body && body.mode;
   if (mode !== 'connect_and_introduce' && mode !== 'introduce_back') return false;
   const url = ((body && body.templates && body.templates.primaryUrl) || '').toString().trim();
+  if (!url) {
+    res.status(400).json({ error: 'Primary person URL is required for this mode.' });
+    return true;
+  }
   const v = validatePrimaryUrl(url);
   if (!v.ok) {
     res.status(400).json({ error: `Primary person URL is invalid — ${v.reason}` });
