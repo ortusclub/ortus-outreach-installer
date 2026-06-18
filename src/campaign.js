@@ -1708,6 +1708,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign.dmSentInRun = new Set();
   campaign.composeAttempts = new Map();
   campaign._paused = false;
+  // v2.112: resume staging — paused edits accumulate here, applied at the pause boundary.
+  campaign._pendingResume = { reloadSheet: false, newRows: null, addProfiles: [], benchToggles: {} };
   campaign._pauseRequested = false;
   campaign.currentProfile = null;
   // v2.59 (resume support): when resumeContext is supplied (client clicked
@@ -4641,16 +4643,36 @@ export function pauseCampaign() {
   return { ok: true };
 }
 
-export function resumeCampaign() {
+export function resumeCampaign({ applyPending = false } = {}) {
   if (!campaign.running) return { ok: false, reason: 'not-running' };
   if (!campaign._paused && !campaign._pauseRequested) {
     return { ok: true, notPaused: true };
   }
+  if (applyPending) {
+    try { _applyPendingResume(); } catch (err) { log(`⚠ resume apply failed: ${err.message}`); }
+  }
+  campaign._pauseSnapshot = null;
   campaign._pauseRequested = false;
   campaign._paused = false; // awaitUnpause's while-loop will exit on next tick
-  campaign._pauseSnapshot = null;
   log('▶ Resume requested.');
   return { ok: true };
+}
+
+// v2.112: apply staged paused edits at the boundary (loop parked in awaitUnpause).
+function _applyPendingResume() {
+  const p = campaign._pendingResume;
+  if (!p) return;
+  if (p.reloadSheet && p.newRows && typeof campaign._reloadTargets === 'function') {
+    const r = campaign._reloadTargets(p.newRows);
+    log(`⟳ Sheet reloaded on resume — +${r.added} new, ${r.updated} updated (total ${campaign.totalTargets}).`);
+  }
+  for (const { id, name } of p.addProfiles || []) {
+    if (typeof campaign._addProfile === 'function') campaign._addProfile(id, name);
+  }
+  for (const [id, skip] of Object.entries(p.benchToggles || {})) {
+    setProfileSkip(id, !!skip);
+  }
+  campaign._pendingResume = { reloadSheet: false, newRows: null, addProfiles: [], benchToggles: {} };
 }
 
 // v2.14.x: Restore — "panic button" for when the campaign is stuck and
