@@ -48,7 +48,7 @@ import { transitionToMonitoring } from './campaign-state-transitions.js';
 import { registerAppender, buildAppendLogger, unregisterAppender } from './campaign-log-bus.js';
 import { writeMonitoringState, readMonitoringState, clearMonitoringState, extractMonitoringSlice } from './monitoring-persistence.js';
 import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
-import { shouldContinueTurn } from './bench-gate.js';
+import { shouldContinueTurn, shouldRequeue } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
 import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
@@ -2755,6 +2755,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     const profileQueue = [...profileIds];
     const profilesBeingRun = new Set();
     const profileCooldownUntil = new Map();
+    // v2.112 (#2a/H2): re-add a profile to the rotation queue if it drained out (a parked /
+    // weekly-limited profile is NOT re-pushed at turn-end, so retry/un-bench must re-queue it
+    // or it can never be picked again). shouldRequeue guards against double-enqueue.
+    campaign._requeueProfile = (id) => {
+      if (!id) return;
+      if (shouldRequeue({ inQueue: profileQueue.includes(id), beingRun: profilesBeingRun.has(id) })) {
+        profileQueue.push(id);
+        log(`↻ ${profileNameCache[id] || id} re-queued for rotation (queue=${profileQueue.length}).`);
+      }
+    };
     // v2.11.0: dropped batchesPerHour. Per-profile cooldown is now a fixed 6-min
     // floor — protects the eject-cascade scenario (when most profiles drop out
     // mid-run, the survivors would otherwise hammer LinkedIn at unsafe rates).
@@ -4502,6 +4512,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     campaign.running = false;
     campaign.currentProfile = null;
     campaign._unparkProfile = null;
+    campaign._requeueProfile = null;
     campaign._reloadTargets = null;
     campaign._urlOf = null;
     campaign._isTarget = null;
@@ -4552,6 +4563,7 @@ export function retryParkedProfile(profileId) {
   if (typeof campaign._unparkProfile === 'function') {
     campaign._unparkProfile(profileId);
   }
+  if (typeof campaign._requeueProfile === 'function') campaign._requeueProfile(profileId);
   log(`▶ Retry requested for ${pName} — will attempt again on next rotation.`);
   return { ok: true, profileName: pName };
 }
@@ -4577,7 +4589,7 @@ export function setProfileSkip(profileId, skip) {
     // so the same toggle forces it back into rotation.
     const wasParked = (campaign.parkedProfiles || []).some((p) => p.profileId === profileId);
     if (wasParked && campaign.running) retryParkedProfile(profileId);
-    else log(`▶ ${pName} re-enabled — back in the rotation.`);
+    else { if (typeof campaign._requeueProfile === 'function') campaign._requeueProfile(profileId); log(`▶ ${pName} re-enabled — back in the rotation.`); }
   }
   _persistRunSettings();
   return { ok: true, skipped: [...campaign._skippedProfiles] };

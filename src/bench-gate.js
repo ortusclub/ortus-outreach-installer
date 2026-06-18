@@ -4,3 +4,10 @@
 export function shouldContinueTurn({ abort, orphan, weeklyLimited, benched }) {
   return !abort && !orphan && !weeklyLimited && !benched;
 }
+
+// v2.112 (#2a/H2): a profile can be re-queued only if it isn't already queued and isn't
+// mid-turn — fixes a parked-then-retried profile that drained from the queue being stranded,
+// and avoids double-enqueue.
+export function shouldRequeue({ inQueue, beingRun }) {
+  return !inQueue && !beingRun;
+}
