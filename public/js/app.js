@@ -28,6 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
+import { classifyAccountFlag } from '/js/account-guardrails.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -827,7 +828,7 @@ function renderPassoverBanner() {
   const { monthly, cc } = getPassoverStatus();
 
   const fmt = (info) => {
-    const cls = info.active ? ' class="passover-active"' : '';
+    const cls = info.active ? ' class="passover-active"' : ' class="passover-closed"';
     return `<strong${cls}>Passover ${info.label}</strong>`;
   };
 
@@ -988,6 +989,7 @@ function renderProfiles(profiles) {
     // Case-tolerant on the header key (getSoO preserves raw case → 'Status').
     const sooStatus = soo ? (soo['Status'] || soo['status'] || '').toString().trim() : '';
     const restricted = isRestrictedStatus(sooStatus);
+    const flag = restricted ? { flagged: false, label: '' } : classifyAccountFlag(soo, getMyIdentifier());
     // Defensive: a restored preset/schedule must not keep a now-restricted
     // account selected — drop it so a blocked account can't slip through.
     if (restricted && selectedProfileIds.includes(p.id)) {
@@ -1000,7 +1002,9 @@ function renderProfiles(profiles) {
     const item = document.createElement('label');
     item.className = 'profile-item'
       + (selectedProfileIds.includes(p.id) ? ' selected' : '')
-      + (restricted ? ' is-restricted' : '');
+      + (restricted ? ' is-restricted' : '')
+      + (flag.flagged ? ' is-flagged' : '');
+    if (flag.flagged) item.dataset.warn = '⚠ ' + flag.label;
     item.dataset.profileId = p.id;
     item.innerHTML = `
       <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${restricted ? 'disabled' : ''} />
