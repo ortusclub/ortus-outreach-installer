@@ -588,6 +588,10 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
     let meta = {};
     let landedUrl = '';
     try {
+      // v2.112.7 (Fix B): on a re-navigation (attempt > 1), force a real page
+      // teardown first — an SPA same-URL goto can be a no-op, so a wedged page
+      // never actually reloads. about:blank guarantees a fresh load below.
+      if (attempt > 1) await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
       await page.goto(navUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
       // v2.103: wait for the profile top-card to actually PAINT before reading,
       // instead of a blind 2.5s. LinkedIn renders the <h1> name client-side
@@ -1688,7 +1692,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately' }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // #7: when 'after_connections', the primary connect/check is deferred until
@@ -1839,6 +1843,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // shouldAutoFireCheck() in tickMonitoringNow honors this; persisted via the
   // monitoring slice so it survives restart, and adjustable live on the card.
   campaign.autoChecksEnabled = autoChecksEnabled !== false;
+  // v2.112.7 (Fix B): operator's pause-on-throttle choice. ON ⇒ a
+  // `throttle`-classified connect failure parks that account (jittered backoff)
+  // so other accounts keep running; OFF ⇒ the account keeps sending through
+  // throttling after only the backoff sleep. Older saved campaigns without the
+  // field default ON (back-compat). Challenges always halt regardless.
+  campaign.pauseOnThrottle = pauseOnThrottle !== false;
   campaign.dailyLimit = dailyLimit;
   campaign._lastSample = null;   // phase 11.1: reset resource snapshot
   campaign._throttle   = null;   // phase 11.1: reset throttle state
@@ -3360,6 +3370,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // performOutreach with retry
           let result;
           let _preempted = false;
+          // v2.112.7 (Fix B): set when the throttle-OFF branch already slept its
+          // jittered backoff for this lead, so the end-of-iteration delay below
+          // skips a second wait. Declared at lead scope so both points see it.
+          let _throttleHandled = false;
           const MAX_RETRIES = 3;
           for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             // Phase 2.8.20 (W2-A1): wrap with watchdog so a Puppeteer hang
@@ -3439,6 +3453,18 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // the dominant source of "loop won't exit" lag after Stop.
             if (campaign._abort) { log('  ■ Abort detected — skipping retry.'); break; }
 
+            // v2.112.7 (Fix B): a retry is about to happen — classify the prior
+            // failure and route. Only a `transient` glitch warrants an inline
+            // retry (with a REAL page reset + identity re-verify). `throttle`
+            // (LinkedIn told us to slow down), `invite_cap` (quota spent), and
+            // `challenge` (checkpoint) must NOT be retried inline — break out
+            // and let the per-lead failure routing below handle them.
+            const _cls = classifyConnectFailure(result.error);
+            if (_cls === 'throttle' || _cls === 'invite_cap' || _cls === 'challenge') {
+              log(`  ⏹ ${pName}: ${_cls} — not retrying this lead inline (${result.error}).`);
+              break;
+            }
+
             const backoff = attempt * 15000;
             log(`  ⟳ Retry ${attempt}/${MAX_RETRIES} in ${backoff / 1000}s — ${result.error}`);
             setAction(`Retrying lead (${attempt}/${MAX_RETRIES})`, { lead: data.firstName || '?', account: pName, durationMs: backoff });
@@ -3463,6 +3489,32 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               // v2.14.x: re-apply CDP focus emulation on retry path.
               await applyFocusEmulation(page, profileId);
             } catch { /* */ }
+
+            // v2.112.7 (Fix B): for a `transient` glitch on a gated connect, a
+            // soft page re-acquisition is not enough — an SPA same-URL goto can
+            // be a no-op and the wedged page never reloads. Force a real teardown
+            // (about:blank) then RE-RUN the identity gate (fresh load + re-verify)
+            // so the wrong-person safeguard fires on every fresh load. If the gate
+            // confirms, mark verified so the next performOutreach reuses the
+            // navigation (skipNavigation:true). If the gate now fails, treat it as
+            // the existing identity-unverified skip: synthesize a skipped result
+            // (routed by isDegradationSignal/the failure handler below — same
+            // streak/park/backoff behavior as the pre-send gate failure) and stop
+            // retrying. Only on gated connect URLs; other modes keep the old retry.
+            if (_isConnectHint && _gateableUrl) {
+              await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
+              const _srcNameRetry = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+              const _gateRetry = await gateConnectIdentity(page, { url, row, sourceName: _srcNameRetry, log });
+              if (_gateRetry.ok) {
+                _identityVerified = true;
+              } else {
+                const _intendedR = `${_srcNameRetry || '?'} / ${readSourceMemberId(row) || 'no-member#'}`;
+                const _gotR = `${_gateRetry.loaded.name || '?'} / ${_gateRetry.loaded.memberNumber || 'no-member#'}`;
+                log(`  ✗ [${pName}] IDENTITY UNVERIFIED on transient retry — NOT sending. Intended: ${_intendedR} · Loaded: ${_gotR} · ${_gateRetry.reason}`);
+                result = { action: 'skipped', error: `identity_unverified (${_gateRetry.reason}) — intended=[${_intendedR}] loaded=[${_gotR}]` };
+                break;
+              }
+            }
           }
           // v2.97: preempted by a solo bulk check — skip ALL result handling
           // (stamping, already-connected probe, the inter-lead delay) and let
@@ -3807,10 +3859,97 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             }
           } else {
             const errorMsg = result.error || result.action || '';
+            // v2.112.7 (Fix B): classify the failure once and route the three
+            // account-level outcomes that need distinct treatment. `invite_cap`
+            // (quota spent) falls through to the existing WEEKLY_LIMIT / 429
+            // parking paths below — those already mark the account done-sending
+            // for the cycle while monitoring continues. `challenge` and
+            // `throttle` are handled here.
+            const _failCls = classifyConnectFailure(errorMsg);
+            // `challenge` — a LinkedIn checkpoint/captcha/unusual-activity wall.
+            // Halt the account immediately and surface to a human; NEVER auto-
+            // retry through it. weeklyLimited.add stops further sends this cycle
+            // and turns the is429/skip/WEEKLY_LIMIT parks below into no-ops
+            // (all guarded by !weeklyLimited.has), so there's no double-park.
+            if (_failCls === 'challenge' && !weeklyLimited.has(profileId)) {
+              log(`  ⛔ ${pName}: LinkedIn checkpoint/challenge — halting account, needs a human. (${errorMsg})`);
+              weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, 'LinkedIn checkpoint — needs a human');
+              campaign.parkedProfiles.push({
+                profileId,
+                pName,
+                parkedAt: Date.now(),
+                reason: 'challenge',
+              });
+              _ops('ERROR', 'challenge', {
+                account: pName,
+                leadUrl: url,
+                phase: 'Connect',
+                outcome: 'halted',
+                reason: `challenge — LinkedIn checkpoint, needs a human (${errorMsg})`,
+              });
+              pushSoftWarning(campaign, {
+                profileId,
+                pName,
+                kind: 'challenge',
+                message: 'LinkedIn checkpoint — needs a human',
+              });
+            } else if (_failCls === 'throttle' && !weeklyLimited.has(profileId)) {
+              // `throttle` — LinkedIn is rate-limiting this account. Escalate the
+              // degradation streak and back off (jittered, anti-thundering-herd /
+              // anti-fingerprint per B3). If the operator left pauseOnThrottle ON
+              // (default), park the account so the OTHER accounts keep running;
+              // if OFF, keep this account going after the abort-aware backoff.
+              degradationStreak.set(profileId, (degradationStreak.get(profileId) || 0) + 1);
+              const _tStreak = degradationStreak.get(profileId) || 0;
+              const _tBase = Math.floor((delayMin + delayMax) / 2) * 1000;
+              const _tWaitMs = degradationBackoffMs(_tBase, _tStreak, { jitter: true, maxMult: DEGRADE_MAX_MULT, maxMs: DEGRADE_MAX_WAIT_MS });
+              if (campaign.pauseOnThrottle) {
+                log(`  ⏸ ${pName}: throttled by LinkedIn — pausing account (pauseOnThrottle ON), others continue. (${errorMsg})`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, 'Paused — LinkedIn throttling (resumes next run)');
+                campaign.parkedProfiles.push({
+                  profileId,
+                  pName,
+                  parkedAt: Date.now(),
+                  reason: 'throttle_paused',
+                });
+                pushSoftWarning(campaign, {
+                  profileId,
+                  pName,
+                  kind: 'rate_limited',
+                  message: 'Paused on LinkedIn throttling',
+                });
+                _ops('WARN', 'throttle', {
+                  account: pName,
+                  leadUrl: url,
+                  phase: 'Connect',
+                  outcome: 'paused',
+                  reason: `throttle — account paused (streak ${_tStreak}) (${errorMsg})`,
+                });
+              } else {
+                log(`  ⏳ ${pName}: throttled — backing off ${(_tWaitMs / 1000).toFixed(0)}s (streak ${_tStreak}, pauseOnThrottle OFF) then continuing.`);
+                _ops('WARN', 'throttle', {
+                  account: pName,
+                  leadUrl: url,
+                  phase: 'Connect',
+                  outcome: 'backoff',
+                  reason: `throttle — backoff ${(_tWaitMs / 1000).toFixed(0)}s (streak ${_tStreak}) (${errorMsg})`,
+                });
+                // Abort-aware backoff sleep in 2s chunks so Stop interrupts ~2s.
+                const _tSleepEnd = Date.now() + _tWaitMs;
+                while (Date.now() < _tSleepEnd && !campaign._abort) {
+                  await new Promise((r) => setTimeout(r, 2000));
+                }
+                _throttleHandled = true;
+              }
+            }
             // v2.96.0 (Phase 2): escalate backoff when this looks like session
             // degradation (nav race / timeout / not-found / rate-limit) rather
             // than a benign skip. A clean success (above) resets the streak.
-            if (isDegradationSignal(errorMsg)) {
+            // v2.112.7: skip the increment for failures the Fix-B routing above
+            // already escalated (throttle) so the streak isn't double-counted.
+            if (_failCls !== 'throttle' && isDegradationSignal(errorMsg)) {
               degradationStreak.set(profileId, (degradationStreak.get(profileId) || 0) + 1);
             }
             // Session expired = cookies are dead until the operator logs in
@@ -4024,7 +4163,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // v2.97: also skip the delay when a pause has been requested (e.g. a
           // solo bulk check is taking precedence) so the loop reaches its pause
           // boundary within ~1s instead of sleeping 15-45s first.
-          if (!campaign._abort && !campaign._pauseRequested && !weeklyLimited.has(profileId)) {
+          // v2.112.7 (Fix B): also skip when the throttle-OFF branch above already
+          // performed the jittered backoff sleep for this lead — no double-wait.
+          if (!campaign._abort && !campaign._pauseRequested && !weeklyLimited.has(profileId) && !_throttleHandled) {
             // Messaging existing 1st-degree connections is much lower risk than
             // sending new connection requests, so use a faster cadence and skip
             // the single-account slowdown.
