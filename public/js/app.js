@@ -47,9 +47,6 @@ window._tabsData = [];            // full tab list from last /api/sheet/tabs cal
 window._tabPickerMulti = false;   // true when workbook has >1 tabs
 window._tabLeadOk = true;         // true when chosen tab passes lead-look check
 window._savedSheetGid = '';       // gid from the history entry on a rerun — used by the tab-change modal
-// v2.112 (#6): set to true when operator clicks "Start anyway" in the guardrail
-// confirm dialog so the Start handler skips the re-check on re-entry.
-let _guardrailConfirmed = false;
 // #8: store-sourced primary status for the account picker (CC+IC mode).
 // Populated by loadPrimaryStatusForPicker() before renderProfiles() renders.
 let primaryStatusCache = { key: '', statuses: {} };
@@ -1251,31 +1248,6 @@ function renderGuardrailAlert() {
   if (s.passover) bits.push(`this campaign's <b>${s.passover.channel === 'cc' ? 'CC' : 'monthly'} credits are in passover (${escHtml(s.passover.label)})</b>`);
   el.innerHTML = `<span class="big">⚠</span><span class="txt">${bits.join(', and ')}.</span>`;
   el.classList.remove('hidden');
-}
-
-// v2.112 (#6): show "Before you start…" confirm with flagged accounts + passover.
-function showGuardrailConfirm(s) {
-  const host = document.getElementById('guardrail-confirm-host');
-  if (!host) return;
-  const lines = s.flagged.map(f => `<div class="gc-line">⚠ ${escHtml(f.email)} — <span class="muted">${escHtml(f.label)}</span></div>`).join('');
-  const po = s.passover
-    ? `<div class="gc-label">Passover</div><div class="gc-line">This campaign's <span style="color:#d97706">${s.passover.channel === 'cc' ? 'CC' : 'monthly'} credits are in passover</span> (${escHtml(s.passover.label)}).</div>`
-    : '';
-  host.innerHTML = `<div class="guardrail-confirm">
-    <h3>Before you start…</h3>
-    ${s.flagged.length ? `<div class="gc-label">Assigned / in use by others — ${s.flagged.length} selected</div>${lines}` : ''}
-    ${po}
-    <div class="gc-actions">
-      <button type="button" class="btn btn-secondary btn-sm" id="gc-back">Back to selection</button>
-      <button type="button" class="btn btn-start btn-sm" id="gc-go">Start anyway</button>
-    </div>
-  </div>`;
-  host.classList.remove('hidden');
-  document.getElementById('gc-back').onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; };
-  // "Start anyway" re-enters via launchStartNow (the main Start path: autosave flush +
-  // editing-banner update) so it behaves exactly like a normal Start; the gate now passes
-  // because _guardrailConfirmed is true. Falls back to startCampaign() if unavailable.
-  document.getElementById('gc-go').onclick = () => { host.classList.add('hidden'); host.innerHTML = ''; _guardrailConfirmed = true; (window.launchStartNow || startCampaign)(); };
 }
 
 function toggleBenchProfile(id) {
@@ -4034,17 +4006,10 @@ async function startCampaign(opts = {}) {
   if (!_autoRoutedModes.has(_modeForValidation) && selectedProfileIds.length === 0) {
     alert('Select at least one GoLogin profile.'); return;
   }
-  // v2.112 (#6): warn (not block) on assigned/in-use selected accounts + passover.
-  if (!_guardrailConfirmed) {
-    const _sel = selectedProfileIds.map(id => {
-      const name = selectedProfileNames[id] || id;
-      return { email: name, soo: findSoOForProfile(name) };
-    });
-    const _mode0 = document.getElementById('campaign-mode')?.value || 'connect_only';
-    const _s = summarizeSelection(_sel, getMyIdentifier(), _mode0, getPassoverStatus());
-    if (_s.hasWarnings) { showGuardrailConfirm(_s); return; }
-  }
-  _guardrailConfirmed = false;
+  // v2.112.26 (#1): the "Before you start…" assigned/in-use confirm dialog was
+  // removed as obsolete — the persistent banner in the accounts picker already
+  // surfaces this, so Start no longer interrupts with a popup. (The banner stays;
+  // only the blocking dialog is gone.)
   const sheetUrl = document.getElementById('sheet-url').value.trim();
   if (!sheetUrl) { alert('Enter a Google Sheet URL.'); return; }
   const dailyLimit = parseInt(document.getElementById('daily-limit').value, 10);

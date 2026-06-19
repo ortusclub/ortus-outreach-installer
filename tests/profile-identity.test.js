@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { verifyConnectIdentity, readSourceMemberId } from '../src/profile-identity.js';
+import { verifyConnectIdentity, readSourceMemberId, is404Url } from '../src/profile-identity.js';
 
 // Real data from the 2026-06-08 connect_and_introduce campaign that produced
 // false "Already Connected" stamps. The lead URLs are the encoded member-URN
@@ -379,4 +379,35 @@ test('partial name overlap (first matches, last missing) is inconclusive — slu
     strict: true,
   });
   assert.equal(v.ok, true);   // not hard-rejected by partial name; slug-stay confirms
+});
+
+// ── is404Url (v2.112.26, #4) ──────────────────────────────────────────────
+// A dead LinkedIn profile either lands on /404 or redirects to /in/unavailable.
+// The identity gate must skip-terminally on these instead of burning 5 retries.
+
+test('is404Url: linkedin.com/404 → true', () => {
+  assert.equal(is404Url('https://www.linkedin.com/404'), true);
+  assert.equal(is404Url('https://www.linkedin.com/404/'), true);
+  assert.equal(is404Url('https://www.linkedin.com/404?trk=x'), true);
+});
+
+test('is404Url: /in/unavailable redirect → true', () => {
+  assert.equal(is404Url('https://www.linkedin.com/in/unavailable/'), true);
+  assert.equal(is404Url('https://www.linkedin.com/in/unavailable'), true);
+});
+
+test('is404Url: a healthy profile URL → false', () => {
+  assert.equal(is404Url('https://www.linkedin.com/in/surya-suravarapu/'), false);
+  assert.equal(is404Url('https://www.linkedin.com/in/ACwAAAemNeMBJ1_bBWZ9kuosC20s54oAGTG4haA'), false);
+});
+
+test('is404Url: "404"/"unavailable" inside a vanity slug → false (not a path segment)', () => {
+  assert.equal(is404Url('https://www.linkedin.com/in/john404smith/'), false);
+  assert.equal(is404Url('https://www.linkedin.com/in/marie-unavailable/'), false);
+});
+
+test('is404Url: empty / nullish → false', () => {
+  assert.equal(is404Url(''), false);
+  assert.equal(is404Url(null), false);
+  assert.equal(is404Url(undefined), false);
 });

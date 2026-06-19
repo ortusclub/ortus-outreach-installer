@@ -34,7 +34,7 @@ import { emptyTally, applyOutcome } from './campaign-tally.js';
 import { summariseCampaign } from './campaign-summary.js';
 import { performOutreach } from './linkedin/outreach.js';
 import { getProfileUrn, captureProfileMeta, waitForProfileRender } from './linkedin/helpers.js';
-import { verifyConnectIdentity, readSourceMemberId } from './profile-identity.js';
+import { verifyConnectIdentity, readSourceMemberId, is404Url } from './profile-identity.js';
 import { bulkCheckConnections } from './linkedin/bulk-check-connections.js';
 import { runAutoIntros, _shouldQueueAutoAccept } from './linkedin/auto-intro.js';
 import { checkAndConnectPrimary, primaryConnState } from './linkedin/primary-connection.js';
@@ -404,6 +404,9 @@ function normalizeSkipReason(msg) {
   }
   const lower = s.toLowerCase();
   if (lower.includes('legacy sales nav')) return 'Skipped: Legacy Sales Nav URL';
+  // v2.112.26 (#4): dead profile — must win over the generic "profile not found"
+  // rule below so the operator sees the precise 404 wording they chose.
+  if (lower.includes('profile_not_found_404')) return 'Skipped: Profile not found (404)';
   if (lower.includes('profile not found') || lower.includes('url not found')) return 'Skipped: URL not found';
   if (lower.includes('login page detected') || lower.includes('session expired')) return 'Skipped: Session expired';
   if (lower.includes('email required')) return 'Skipped: Email required';
@@ -578,13 +581,39 @@ export function salesNavToInUrl(url) {
   return m ? `https://www.linkedin.com/in/${m[1]}` : (url || '');
 }
 
+// v2.112.26 (#4): true when the loaded page is LinkedIn's "this page doesn't
+// exist" interstitial — the dead-profile case the identity gate must skip
+// terminally rather than retry. Mirrors the proven text probe in outreach.js
+// (matches "this page doesn" so it's robust to straight vs curly apostrophes).
+// Best-effort: any eval failure (context destroyed mid-nav) → false.
+async function pageShowsProfileNotFound(page) {
+  try {
+    return await page.evaluate(() => {
+      const t = (document.body?.innerText || '').toLowerCase().slice(0, 3000);
+      return t.includes('this page doesn') && t.includes('exist');
+    });
+  } catch { return false; }
+}
+
 export async function gateConnectIdentity(page, { url, row, sourceName = '', log = () => {} }) {
   const sourceMemberId = readSourceMemberId(row);
   // Verify the same profile performOutreach will connect on: a /sales/ lead URL
   // is rewritten to /in/<urn> before the connect, so gate the /in/ form.
   const navUrl = salesNavToInUrl(url);
   let last = { ok: false, reason: 'not-attempted', loaded: { name: '', memberNumber: '' } };
+  // v2.112.26 (#5): Stop must interrupt this loop immediately. The 20s
+  // inter-attempt wait polls campaign._abort so a mid-wait Stop breaks out fast
+  // instead of grinding through all MAX_IDENTITY_ATTEMPTS.
+  const abortableSleep = async (ms) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end && !campaign._abort) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  };
   for (let attempt = 1; attempt <= MAX_IDENTITY_ATTEMPTS; attempt++) {
+    // v2.112.26 (#5): operator pressed Stop → bail now rather than running the
+    // remaining attempts. Skip-on-doubt: the caller treats !ok as a skip.
+    if (campaign._abort) { last.reason = `aborted-by-stop (${last.reason})`; return last; }
     let meta = {};
     let landedUrl = '';
     try {
@@ -593,6 +622,18 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
       // never actually reloads. about:blank guarantees a fresh load below.
       if (attempt > 1) await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
       await page.goto(navUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      // v2.112.26 (#4): dead-profile short-circuit BEFORE the 12s render wait.
+      // A 404 / "this page doesn't exist" can never resolve to the intended
+      // member, so retrying 5× at 20s each is pure waste. Bail immediately and
+      // let the caller stamp the row "Skipped: Profile not found (404)". The URL
+      // check catches the /404 + /in/unavailable redirects; the text probe
+      // catches the interstitial that keeps the original /in/ URL.
+      {
+        const _landed = page.url();
+        if (is404Url(_landed) || await pageShowsProfileNotFound(page)) {
+          return { ok: false, reason: 'profile_not_found_404', notFound: true, loaded: { name: '', memberNumber: '' } };
+        }
+      }
       // v2.103: wait for the profile top-card to actually PAINT before reading,
       // instead of a blind 2.5s. LinkedIn renders the <h1> name client-side
       // after domcontentloaded, so the old fixed wait read an empty name every
@@ -611,7 +652,7 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
       log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${last.reason}`);
       if (attempt < MAX_IDENTITY_ATTEMPTS) {
         log(`  ⏳ waiting ${IDENTITY_RETRY_DELAY_MS / 1000}s before retry…`);
-        await new Promise((r) => setTimeout(r, IDENTITY_RETRY_DELAY_MS));
+        await abortableSleep(IDENTITY_RETRY_DELAY_MS);
       }
       continue;
     }
@@ -633,7 +674,7 @@ export async function gateConnectIdentity(page, { url, row, sourceName = '', log
     log(`  ⟳ ${attempt}/${MAX_IDENTITY_ATTEMPTS} identity unconfirmed — ${v.reason}`);
     if (attempt < MAX_IDENTITY_ATTEMPTS) {
       log(`  ⏳ waiting ${IDENTITY_RETRY_DELAY_MS / 1000}s before retry…`);
-      await new Promise((r) => setTimeout(r, IDENTITY_RETRY_DELAY_MS));
+      await abortableSleep(IDENTITY_RETRY_DELAY_MS);
     }
   }
   return last;
@@ -1810,6 +1851,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign.startedAt = new Date().toISOString();
   campaign.profileNames = [];
   campaign.errors = [];
+  // v2.112.26 (#3): a fresh launch must start with a clean live log. campaign.logs
+  // is an append-only buffer the cockpit polls every 2s; without this reset the
+  // PREVIOUS campaign's lines linger and the new run looks like it's replaying old
+  // activity. On resume, keep the buffer — we're continuing the same campaign, so
+  // its log history is still ours (mirrors the Recent-Connections-tab rule above).
+  // Placed before any of this run's log() calls, so no new lines are lost.
+  if (!resumeContext) campaign.logs = [];
   campaign.tally = emptyTally(); // v2.93 — per-run funnel + leak counters
   campaign.parkedProfiles = [];
   campaign.softWarnings = [];
@@ -3315,6 +3363,34 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             const _srcName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
             const _gate = await gateConnectIdentity(page, { url, row, sourceName: _srcName, log });
             if (!_gate.ok) {
+              // v2.112.26 (#4): a dead profile (404 / "this page doesn't exist")
+              // is a DATA problem, not a degrading session. Stamp it clearly and
+              // move on WITHOUT escalating the degradation backoff or parking the
+              // account — a sheet full of bad URLs must never park a healthy one.
+              // The gate already bailed on attempt 1, so no 5× retry was burned.
+              if (_gate.notFound) {
+                log(`  ✗ [${pName}] Profile not found (404) — skipping (no retry). ${url}`);
+                _ops('WARN', 'profile_not_found_404', {
+                  account: pName, leadUrl: url, phase: 'Connect', outcome: 'skipped',
+                  reason: 'profile_not_found_404 (page does not exist / linkedin.com/404)',
+                });
+                try {
+                  await updateSheetRow(sheetUrl, url, {
+                    auditAction: 'Skipped: Profile not found (404)',
+                  }, linkedinColumn);
+                } catch { /* best-effort */ }
+                delete state.processed[url];
+                await saveState(state);
+                // Normal inter-lead pacing (NOT the escalated degradation
+                // backoff): a 404 returns instantly but a navigation still
+                // happened. Abort-aware so Stop breaks out immediately.
+                const _ndWaitMs = Math.floor((delayMin + delayMax) / 2) * 1000;
+                const _ndEnd = Date.now() + _ndWaitMs;
+                while (Date.now() < _ndEnd && !campaign._abort) {
+                  await new Promise((r) => setTimeout(r, 2000));
+                }
+                continue;
+              }
               const _intended = `${_srcName || '?'} / ${readSourceMemberId(row) || 'no-member#'}`;
               const _got = `${_gate.loaded.name || '?'} / ${_gate.loaded.memberNumber || 'no-member#'}`;
               log(`  ✗ [${pName}] IDENTITY UNVERIFIED after ${MAX_IDENTITY_ATTEMPTS} tries — NOT sending. Intended: ${_intended} · Loaded: ${_got} · ${_gate.reason}`);
@@ -3507,6 +3583,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               const _gateRetry = await gateConnectIdentity(page, { url, row, sourceName: _srcNameRetry, log });
               if (_gateRetry.ok) {
                 _identityVerified = true;
+              } else if (_gateRetry.notFound) {
+                // v2.112.26 (#4): the profile went dead (404) on the re-load —
+                // a 'profile_not_found_404' error routes through normalizeSkipReason
+                // to the same "Skipped: Profile not found (404)" sheet stamp.
+                log(`  ✗ [${pName}] Profile not found (404) on transient retry — skipping. ${url}`);
+                result = { action: 'skipped', error: 'profile_not_found_404' };
+                break;
               } else {
                 const _intendedR = `${_srcNameRetry || '?'} / ${readSourceMemberId(row) || 'no-member#'}`;
                 const _gotR = `${_gateRetry.loaded.name || '?'} / ${_gateRetry.loaded.memberNumber || 'no-member#'}`;

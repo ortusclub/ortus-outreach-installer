@@ -85,6 +85,17 @@ function namesMatch(sourceName, capturedName) {
   return null; // partial → inconclusive
 }
 
+// v2.112.26 (#4): a dead/non-existent profile. LinkedIn either redirects to
+// /404 or to /in/unavailable when a profile URL no longer resolves. Either way
+// the page will NEVER become the intended member, so the pre-send identity gate
+// must skip the row terminally instead of burning all MAX_IDENTITY_ATTEMPTS
+// retries on it. Matches only when "404"/"unavailable" is a whole PATH SEGMENT
+// (followed by /, ?, # or end) so a vanity slug like /in/john404smith — or
+// /in/marie-unavailable — is never misread as a dead page. Pure + tested.
+export function is404Url(url) {
+  return /\/(?:404|unavailable)(?:[/?#]|$)/i.test(String(url || ''));
+}
+
 // The vanity slug of a /in/ URL, or '' for an encoded AC**AA member-URN URL.
 // A vanity slug is LinkedIn's stable public handle — if we navigate to one and
 // the browser STAYS on it, that is strong proof we're on the intended profile.
