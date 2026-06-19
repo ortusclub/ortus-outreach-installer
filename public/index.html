@@ -585,7 +585,7 @@
             <!-- #7: Primary check timing — CC+IC only. Moved inside primary-person-block (v2.112.8). -->
             <div class="intro-config-field" id="primary-timing-field">
               <label for="primary-timing-select" class="intro-config-label">Primary check timing</label>
-              <select id="primary-timing-select" class="intro-config-select" onchange="savePrimaryPersonFields()">
+              <select id="primary-timing-select" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
                 <option value="immediately" selected>Immediately (at start)</option>
                 <option value="after_connections">After connections complete</option>
               </select>
@@ -606,8 +606,8 @@
             <div id="follow-up-fields" style="display:none;">
               <div class="intro-config-field" style="margin-bottom:14px;">
                 <label class="intro-config-label" for="follow-up-delay">Send after</label>
-                <div style="display:flex; align-items:baseline; gap:8px;">
-                  <select id="follow-up-delay" class="intro-config-select" onchange="savePrimaryPersonFields()">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <select id="follow-up-delay" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
                     <option value="10" selected>10 minutes</option>
                     <option value="20">20 minutes</option>
                     <option value="30">30 minutes</option>
@@ -661,9 +661,9 @@
             <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
             <div class="intro-config-field">
               <label for="check-cadence-select" class="intro-config-label">Cadence</label>
-              <div class="intro-config-inline">
+              <div style="display:flex; align-items:center; gap:10px;">
                 <span class="intro-config-prefix">Every</span>
-                <select id="check-cadence-select" class="intro-config-select">
+                <select id="check-cadence-select" class="intro-config-select-wide" style="flex:1">
                   <option value="60" selected>1 hour</option>
                   <option value="120">2 hours</option>
                   <option value="240">4 hours</option>
@@ -1609,9 +1609,9 @@
         </div>
         <div class="intro-config-field" style="margin-top:14px">
           <label for="pe-cadence" class="intro-config-label">Check cadence</label>
-          <div class="intro-config-inline">
+          <div style="display:flex; align-items:center; gap:10px;">
             <span class="intro-config-prefix">Every</span>
-            <select id="pe-cadence" class="intro-config-select">
+            <select id="pe-cadence" class="intro-config-select-wide" style="flex:1">
               <option value="60">1 hour</option>
               <option value="120">2 hours</option>
               <option value="240">4 hours</option>
