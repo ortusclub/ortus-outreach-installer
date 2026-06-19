@@ -3359,7 +3359,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // connects, so they carry the same mis-load risk — v2.96.2).
           const _isConnectHint = (hint === 'force_connect' || hint === 'force_connect_op_fallback');
           const _gateableUrl = /\/in\//i.test(url) || /\/sales\/(?:lead|people)\//i.test(url);
-          if (_isConnectHint && _gateableUrl) {
+          // v2.112.29: pre-send identity gate DISABLED per operator request — the
+          // 5×20s re-navigations on slow/encoded profile loads were stalling
+          // campaigns. With the gate off, _identityVerified stays false and
+          // performOutreach navigates + connects directly. The gate code is left
+          // in place (inert) so it can be re-enabled by flipping this flag.
+          const _GATE_ENABLED = false;
+          if (_GATE_ENABLED && _isConnectHint && _gateableUrl) {
             const _srcName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
             const _gate = await gateConnectIdentity(page, { url, row, sourceName: _srcName, log });
             if (!_gate.ok) {
@@ -3585,7 +3591,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // (routed by isDegradationSignal/the failure handler below — same
             // streak/park/backoff behavior as the pre-send gate failure) and stop
             // retrying. Only on gated connect URLs; other modes keep the old retry.
-            if (_isConnectHint && _gateableUrl) {
+            if (_GATE_ENABLED && _isConnectHint && _gateableUrl) {
               await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
               const _srcNameRetry = `${data.firstName || ''} ${data.lastName || ''}`.trim();
               const _gateRetry = await gateConnectIdentity(page, { url, row, sourceName: _srcNameRetry, log });
