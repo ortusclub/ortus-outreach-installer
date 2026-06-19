@@ -25,6 +25,7 @@
       { email: 'ryan.ceballo@ortus.solutions',   ch: [['SN OP','Used',''],['LN OP','Available',''],['InMail','Used','']] },
       { email: 'dianne.siacon@ortus.solutions',  ch: [['SN OP','Used','yllkaq'],['LN OP','In Use','janne'],['InMail','Used','yllkaq']] },
       { email: 'karla.mendez@ortus.solutions',   ch: [['SN OP','In Use','bleron'],['LN OP','In Use','bleron'],['InMail','Partial Inaccessible','']] },
+      { email: 'gil.cesista@ortus.solutions',    assignee: 'Argil', ch: [['SN OP','In Use','argil'],['LN OP','In Use','argil'],['InMail','In Use','argil']] },
       { email: 'abigail.coral@ortus.solutions',  ch: [['SN OP','NA',''],['LN OP','NA',''],['InMail','NA','']] },
     ];
     const esc = (s) => String(s).replace(/[&<>"]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
@@ -44,10 +45,11 @@
       }).join('');
       const cls = locked ? ' muted' : (anyFree ? '' : ' muted-soft');
       const accent = anyFree ? ' free' : (anyActive ? ' busy' : '');
+      const pill = a.assignee ? `<span class="asg-tag" title="Assigned to ${esc(a.assignee)} until the 16th">\u{1F512} ${esc(a.assignee)}</span>` : '';
       return `<label class="profile-item jt jt-brk${cls}">
         <div class="brk-accent${accent}"></div>
         <div class="jt-det">
-          <div class="jt-top"><input type="checkbox" ${locked ? 'disabled' : ''} /><span class="jt-email">${esc(a.email)}</span></div>
+          <div class="jt-top"><input type="checkbox" ${locked ? 'disabled' : ''} /><span class="jt-email">${esc(a.email)}</span>${pill}</div>
           <div class="brk-grid">${cells}</div>
         </div></label>`;
     }

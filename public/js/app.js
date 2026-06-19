@@ -28,7 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
-import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels } from '/js/account-guardrails.mjs';
+import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -1054,7 +1054,7 @@ function renderProfiles(profiles) {
     })
     .sort((a, b) => (a.rank - b.rank) || (a.i - b.i)); // stable within rank
 
-  _ordered.forEach(({ p, st: _state, br: _br }) => {
+  _ordered.forEach(({ p, soo: _soo, st: _state, br: _br }) => {
     // 'blocked' / unusable is never selectable (greyed + disabled). Single-verdict
     // modes: blocked when classifyAccountState says so (restricted, or the CC/credit
     // column is NA/Used/etc.). Breakdown modes: blocked when restricted OR no channel
@@ -1098,12 +1098,16 @@ function renderProfiles(profiles) {
       // Accent (left "lip") reflects the best channel: green if any Available,
       // else gold if any In Use (even alongside reds), grey only when nothing's active.
       const _accent = _br.anyFree ? ' free' : (_br.anyActive ? ' busy' : '');
+      // Owner pill (V1): the account is locked to its SoO Assignee for the monthly
+      // cycle (only they should use it until passover frees it on the 16th).
+      const _asg = breakdownAssignee(_soo, _meId, _passover);
+      const _asgPill = _asg ? `<span class="asg-tag" title="Assigned to ${escHtml(_asg)} until the 16th">\u{1F512} ${escHtml(_asg)}</span>` : '';
       _inner = `
       <div class="brk-accent${_accent}"></div>
       <div class="jt-det">
         <div class="jt-top">
           <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
-          <span class="jt-email">${escHtml(p.name)}${_dup}</span>
+          <span class="jt-email">${escHtml(p.name)}${_dup}</span>${_asgPill}
         </div>
         <div class="brk-grid">${_cells}</div>
       </div>`;

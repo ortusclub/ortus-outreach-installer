@@ -1330,6 +1330,13 @@ select {
   text-transform:none; letter-spacing:normal; line-height:1.3; min-width:0;
 }
 .browse-card .profile-item.jt.jt-brk .brk-vt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Email shrinks so it ellipsizes before the owner pill, which sits flush right. */
+.browse-card .profile-item.jt.jt-brk .jt-top .jt-email { flex:1; min-width:0; }
+.browse-card .profile-item.jt.jt-brk .asg-tag {
+  margin-left:auto; flex:none; display:inline-flex; align-items:center; gap:5px;
+  font-family:var(--mono); font-size:0.62rem; letter-spacing:0.04em; text-transform:none;
+  color:var(--blue); border:1px solid var(--blue); border-radius:9999px; padding:2px 9px; line-height:1.4;
+}
 .browse-card .profile-item.jt.jt-brk .brk-vdot { width:8px; height:8px; border-radius:50%; flex:none; }
 .browse-card .profile-item.jt .d-avail { background:var(--green); }
 .browse-card .profile-item.jt .d-inuse { background:var(--gold); }

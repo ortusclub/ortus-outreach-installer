@@ -294,3 +294,22 @@ export function classifyAccountChannels(soo) {
   const anyActive = channels.some((c) => { const v = norm(c.status); return v === 'available' || v === IN_USE; });
   return { channels, anyFree, anyActive, blocked };
 }
+
+/**
+ * The person a breakdown-mode account is currently locked to, or '' if nobody.
+ * The SoO Assignee owns the account for the monthly cycle; before monthly passover
+ * only they should use it, after passover (the 16th) it frees to the pool. So we
+ * surface the assignee only when: not a pool/unassigned section, an assignee is set,
+ * it isn't me, AND the monthly passover hasn't freed it yet (monthly.active===false).
+ * Cleaned for display. Pure.
+ */
+export function breakdownAssignee(soo, me, passover) {
+  if (!soo) return '';
+  const assignee = String(soo.Assignee || soo.assignee || '').trim();
+  if (!assignee || assignee === '-') return '';
+  const isPool = norm(soo.section).includes('pool') || norm(soo.section).includes('unassigned');
+  if (isPool) return '';
+  if (norm(assignee).includes(norm(me))) return ''; // assigned to me → not flagged
+  if (passover && passover.monthly && passover.monthly.active === false) return cleanWho(assignee);
+  return '';
+}
