@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J3 account tiles — states, assigned rule, campaign-aware</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 26px 26px 120px; }
+    .tag { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; display:inline-block; margin-bottom: 14px; }
+    .sec { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.04em; color: var(--ink); margin: 40px 0 6px; }
+    .sec:first-of-type { margin-top: 16px; }
+    .lead { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); line-height: 1.62; margin: 0 0 18px; max-width: 840px; }
+    .lead b { color: var(--ink); }
+    .panel { border:1px solid var(--card-border); border-radius:14px; background:var(--card-bg); box-shadow:var(--card-shadow); padding:18px; margin-bottom: 8px; }
+    .note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-top:14px; font-style:italic; line-height:1.55; }
+    .modepill { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink); border:1px solid var(--card-border); border-radius:9999px; padding:4px 11px; background:var(--bg-soft); }
+
+    /* credit badges */
+    .cb { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.03em; border:1px solid var(--hairline); border-radius:6px; padding:3px 7px; color:var(--gray); white-space:nowrap; }
+    .cb.ok { color:var(--green); border-color:rgba(63,185,80,0.45); }
+    .cb.rest { color:var(--gold); border-color:rgba(247,190,104,0.5); }
+    .cb.no { color:var(--red); border-color:rgba(248,81,73,0.45); }
+    .cb.need { box-shadow:0 0 0 2px rgba(58,110,165,0.18); border-color:var(--blue); color:var(--blue); }
+    .badges { display:flex; flex-wrap:wrap; gap:6px; }
+
+    /* ── J3 tile ── */
+    .j3-card { display:flex; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); overflow:hidden; cursor:pointer; }
+    .j3-card.sel { border-color:var(--ink); }
+    .j3-card.dim { opacity:0.6; }
+    .j3-status { width:130px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:16px 8px; text-align:center; }
+    .st-go { background:rgba(63,185,80,0.10); }
+    .st-rest { background:rgba(247,190,104,0.12); }
+    .st-assigned { background:rgba(58,110,165,0.12); }
+    .st-stop { background:rgba(248,81,73,0.10); }
+    .j3-dot { width:13px; height:13px; border-radius:9999px; }
+    .dot-go{background:var(--green);} .dot-rest{background:var(--gold);} .dot-assigned{background:var(--blue);} .dot-stop{background:var(--red);}
+    .j3-word { font-family:var(--display); font-size:1.3rem; letter-spacing:0.06em; }
+    .w-go{color:var(--green);} .w-rest{color:var(--gold);} .w-assigned{color:var(--blue);} .w-stop{color:var(--red);}
+    .j3-when { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.06em; color:var(--gray); text-transform:uppercase; line-height:1.35; }
+    .j3-detail { flex:1; padding:13px 15px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+    .j3-top { display:flex; align-items:center; gap:8px; }
+    .j3-top input { margin:0; flex:none; }
+    .j3-email { font-family:var(--body); font-size:0.84rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .j3-verdict { font-family:var(--body); font-size:0.78rem; color:var(--gray); line-height:1.4; }
+    .j3-verdict b { color:var(--ink); font-weight:600; }
+
+    .gallery { display:grid; grid-template-columns:1fr; gap:14px; }
+    .defrow { display:grid; grid-template-columns: 1.3fr 1fr; gap:18px; align-items:center; }
+    .def { font-family:var(--body); font-size:0.82rem; color:var(--gray); line-height:1.55; }
+    .def b { color:var(--ink); font-weight:600; }
+    .def .meaning { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; display:block; margin-bottom:5px; }
+    .mg-go{color:var(--green);} .mg-rest{color:var(--gold);} .mg-assigned{color:var(--blue);} .mg-stop{color:var(--red);}
+    @media (max-width:820px){ .defrow{grid-template-columns:1fr;} }
+
+    /* transition arrow */
+    .trans { display:grid; grid-template-columns: 1fr 64px 1fr; gap:10px; align-items:center; }
+    .trans .arr { font-family:var(--display); font-size:1.4rem; color:var(--gray); text-align:center; }
+    .trans .cap { font-family:var(--mono); font-size:0.56rem; color:var(--gray); text-align:center; letter-spacing:0.06em; text-transform:uppercase; margin-top:6px; }
+
+    /* campaign demo */
+    .demo-mode { display:flex; align-items:center; gap:10px; margin:0 0 12px; }
+    .demo-mode .ml { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); }
+    .demo-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .ctable { width:100%; border-collapse:collapse; margin-bottom:8px; }
+    .ctable th, .ctable td { text-align:left; font-family:var(--mono); font-size:0.66rem; padding:7px 10px; border-bottom:1px solid var(--hairline-soft); color:var(--ink); }
+    .ctable th { color:var(--gray); letter-spacing:0.08em; text-transform:uppercase; font-size:0.58rem; }
+    .ctable td .yes { color:var(--green); } .ctable td .no2 { color:var(--gray); }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · 2026-06-19 · J3 chosen · states + assigned rule + campaign-aware · real app CSS</div>
+
+    <!-- ═══════════════ A — the various states ═══════════════ -->
+    <div class="sec">A — The states a tile can show (what each means)</div>
+    <p class="lead">A J3 tile is always exactly <b>one</b> of these four. The left panel's colour + word is the at-a-glance read; the right side spells out the credits and the verdict. The credit the <b>current campaign needs</b> is ringed in blue.</p>
+    <div class="panel">
+      <div class="gallery">
+
+        <div class="defrow">
+          <div class="j3-card sel">
+            <div class="j3-status st-go"><span class="j3-dot dot-go"></span><span class="j3-word w-go">READY</span><span class="j3-when">All credits active</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">alborz@ortus.solutions</span></div><div class="badges"><span class="cb ok need">Connect ✓</span><span class="cb ok">InMail ✓</span><span class="cb ok">Sales Nav ✓</span><span class="cb ok">OP ✓</span></div><div class="j3-verdict"><b>Good for this campaign.</b></div></div>
+          </div>
+          <div class="def"><span class="meaning mg-go">Green · READY</span>Free, not assigned to anyone, and the credit this campaign needs is <b>active</b>. Safe to pick.</div>
+        </div>
+
+        <div class="defrow">
+          <div class="j3-card">
+            <div class="j3-status st-rest"><span class="j3-dot dot-rest"></span><span class="j3-word w-rest">RESTING</span><span class="j3-when">Connect back Thu</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">marco@ortus.solutions</span></div><div class="badges"><span class="cb rest need">Connect ⏳Thu</span><span class="cb ok">InMail ✓</span><span class="cb ok">Sales Nav ✓</span><span class="cb ok">OP ✓</span></div><div class="j3-verdict"><b>Skip today</b> — this campaign needs Connect, back Thursday.</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-rest">Amber · RESTING</span>The credit this campaign needs is <b>in passover</b> (or used up). It comes back on a known date. Don't pick it today — it can't send.</div>
+        </div>
+
+        <div class="defrow">
+          <div class="j3-card">
+            <div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy · frees Thu</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">alecx@ortus.solutions</span></div><div class="badges"><span class="cb ok need">Connect ✓</span><span class="cb ok">InMail ✓</span><span class="cb ok">Sales Nav ✓</span><span class="cb ok">OP ✓</span></div><div class="j3-verdict"><b>Assigned to Cathy</b> this cycle — leave it. Frees up after Thursday's Connect reset.</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-assigned">Blue · ASSIGNED</span>Held by another operator for the current Connect (CC) cycle. <b>Blue until the CC passover, then it turns green (READY) automatically</b> when credits reset and it's free again.</div>
+        </div>
+
+        <div class="defrow">
+          <div class="j3-card dim">
+            <div class="j3-status st-stop"><span class="j3-dot dot-stop"></span><span class="j3-word w-stop">BLOCKED</span><span class="j3-when">Restricted</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox" disabled><span class="j3-email">noah@ortus.solutions</span></div><div class="badges"><span class="cb no">Restricted by LinkedIn</span></div><div class="j3-verdict"><b>Can't be used.</b> LinkedIn has restricted this account.</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-stop">Red · BLOCKED</span>LinkedIn restricted the account (from the State-of-Operations sheet). The checkbox is disabled — it can't be selected at all.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ═══════════════ B — assigned turns green at passover ═══════════════ -->
+    <div class="sec">B — "Assigned" goes blue → green at the Connect reset</div>
+    <p class="lead">Your rule: an assigned account is <b>blue while a colleague holds it this week</b>, and <b>green once the weekly Connect (CC) passover resets</b> (Thursday) and it's free for anyone again. Same account, before and after:</p>
+    <div class="panel">
+      <div class="trans">
+        <div>
+          <div class="j3-card">
+            <div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy · frees Thu</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">alecx@ortus.solutions</span></div><div class="badges"><span class="cb ok need">Connect ✓</span><span class="cb ok">InMail ✓</span><span class="cb ok">Sales Nav ✓</span><span class="cb ok">OP ✓</span></div><div class="j3-verdict"><b>Mon–Wed</b> — Cathy's for this Connect cycle.</div></div>
+          </div>
+          <div class="cap">Before passover · blue</div>
+        </div>
+        <div><div class="arr">→</div><div class="cap">Thu reset</div></div>
+        <div>
+          <div class="j3-card sel">
+            <div class="j3-status st-go"><span class="j3-dot dot-go"></span><span class="j3-word w-go">READY</span><span class="j3-when">Free again</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">alecx@ortus.solutions</span></div><div class="badges"><span class="cb ok need">Connect ✓</span><span class="cb ok">InMail ✓</span><span class="cb ok">Sales Nav ✓</span><span class="cb ok">OP ✓</span></div><div class="j3-verdict"><b>Thu onward</b> — assignment cleared, free for anyone.</div></div>
+          </div>
+          <div class="cap">After passover · green</div>
+        </div>
+      </div>
+      <div class="note">Question to confirm: should the assignment-clears-at-passover follow the <b>weekly CC reset (Thursday)</b> as drawn, or the assignment in the State-of-Operations sheet (cleared by whoever owns the sheet)? Drawn here = weekly CC, per "for CCs".</div>
+    </div>
+
+    <!-- ═══════════════ C — verdict follows the campaign ═══════════════ -->
+    <div class="sec">C — The verdict follows the campaign you're in</div>
+    <p class="lead">Each campaign type uses a <b>different credit</b>, so "resting" only matters if it's the credit <b>this</b> campaign needs. Message Campaign (Open Profile) doesn't touch Connect at all, so a Connect-resting account is still fine for it.</p>
+    <div class="panel">
+      <table class="ctable">
+        <thead><tr><th>Campaign</th><th>Credit it needs</th><th>Cares about CC passover?</th></tr></thead>
+        <tbody>
+          <tr><td>Connect Only</td><td>Connect (CC)</td><td><span class="yes">Yes</span></td></tr>
+          <tr><td>Connect + Introduce Back</td><td>Connect (CC)</td><td><span class="yes">Yes</span></td></tr>
+          <tr><td>Connect + DM</td><td>Connect (CC)</td><td><span class="yes">Yes</span></td></tr>
+          <tr><td>Message Campaign (Open Profile)</td><td>Open Profile (OP)</td><td><span class="no2">No — uses OP</span></td></tr>
+          <tr><td>Direct Messages</td><td>none (DMs existing connections)</td><td><span class="no2">No</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:0;margin-bottom:18px;">Confirm this mapping — especially: does <b>Direct Messages</b> need any credit, and is <b>Open Profile</b> the right credit for "Message Campaign"?</div>
+
+      <p class="lead" style="margin-bottom:14px;">Same account, same day (<b>example: the 12th</b> — Connect active, monthly OP resting til the 16th), two different campaigns:</p>
+
+      <div class="demo-mode"><span class="ml">In:</span><span class="modepill">Connect + Introduce Back → needs Connect (CC)</span></div>
+      <div class="demo-grid">
+        <div class="j3-card sel"><div class="j3-status st-go"><span class="j3-dot dot-go"></span><span class="j3-word w-go">READY</span><span class="j3-when">Connect active</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">alborz@ortus.solutions</span></div><div class="badges"><span class="cb ok need">Connect ✓</span><span class="cb rest">OP ⏳16th</span></div><div class="j3-verdict"><b>Good</b> — needs Connect, it's active.</div></div></div>
+        <div class="j3-card sel"><div class="j3-status st-go"><span class="j3-dot dot-go"></span><span class="j3-word w-go">READY</span><span class="j3-when">Connect active</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">sara@ortus.solutions</span></div><div class="badges"><span class="cb ok need">Connect ✓</span><span class="cb rest">OP ⏳16th</span></div><div class="j3-verdict"><b>Good</b> — needs Connect, it's active.</div></div></div>
+        <div class="j3-card"><div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy · frees Thu</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">alecx@ortus.solutions</span></div><div class="badges"><span class="cb ok need">Connect ✓</span><span class="cb rest">OP ⏳16th</span></div><div class="j3-verdict"><b>Assigned to Cathy</b> — leave it.</div></div></div>
+      </div>
+
+      <div class="demo-mode" style="margin-top:18px;"><span class="ml">In:</span><span class="modepill">Message Campaign (Open Profile) → needs OP, not CC</span></div>
+      <div class="demo-grid">
+        <div class="j3-card"><div class="j3-status st-rest"><span class="j3-dot dot-rest"></span><span class="j3-word w-rest">RESTING</span><span class="j3-when">OP back 16th</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">alborz@ortus.solutions</span></div><div class="badges"><span class="cb ok">Connect ✓</span><span class="cb rest need">OP ⏳16th</span></div><div class="j3-verdict"><b>Skip today</b> — needs Open Profile, back the 16th.</div></div></div>
+        <div class="j3-card"><div class="j3-status st-rest"><span class="j3-dot dot-rest"></span><span class="j3-word w-rest">RESTING</span><span class="j3-when">OP back 16th</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">sara@ortus.solutions</span></div><div class="badges"><span class="cb ok">Connect ✓</span><span class="cb rest need">OP ⏳16th</span></div><div class="j3-verdict"><b>Skip today</b> — needs Open Profile, back the 16th.</div></div></div>
+        <div class="j3-card"><div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">alecx@ortus.solutions</span></div><div class="badges"><span class="cb ok">Connect ✓</span><span class="cb rest need">OP ⏳16th</span></div><div class="j3-verdict"><b>Assigned to Cathy</b> — leave it.</div></div></div>
+      </div>
+      <div class="note">Notice alborz + sara flip <b>READY → RESTING</b> just by switching the campaign — because the needed credit changed from Connect (active) to OP (resting). Assigned stays assigned in both (ownership isn't campaign-specific).</div>
+    </div>
+
+    <p class="note" style="margin-top:26px;">All real app classes/tokens. Account names, credit states and the example date are illustrative — the live picker reads real SoO statuses, the live date, and the selected campaign mode.</p>
+  </div>
+</body>
+</html>

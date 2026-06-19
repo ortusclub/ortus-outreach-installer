@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Account picker — 3 grid variants · dropdown restyle · URL column</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 26px 26px 120px; }
+    .tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; display:inline-block; margin-bottom: 14px; }
+    .sec { font-family: var(--display); font-size: 1.6rem; letter-spacing: 0.04em; color: var(--ink); margin: 46px 0 6px; }
+    .sec:first-of-type { margin-top: 18px; }
+    .lead { font-family: var(--mono); font-size: 0.74rem; color: var(--gray); line-height: 1.6; margin: 0 0 20px; max-width: 760px; }
+    .lead b { color: var(--ink); }
+    .vh { font-family: var(--display); font-size: 1.2rem; letter-spacing: 0.05em; color: var(--ink); margin: 28px 0 3px; display:flex; align-items:center; gap:10px; }
+    .vsub { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); margin: 0 0 12px; line-height:1.55; max-width: 780px; }
+    .vsub b { color: var(--ink); }
+    .rec { font-family: var(--mono); font-size: 0.56rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--green); border:1px solid var(--green); border-radius:9999px; padding:2px 8px; }
+    .badcase { font-family: var(--mono); font-size: 0.56rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--red); border:1px solid var(--red); border-radius:9999px; padding:2px 8px; }
+    .panel { border:1px solid var(--card-border); border-radius:14px; background:var(--card-bg); box-shadow:var(--card-shadow); padding:16px 18px 20px; margin-bottom: 8px; }
+    .note { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top:12px; font-style:italic; line-height:1.5; }
+
+    /* ── legend of the corrected state model (shared by all 3 variants) ── */
+    .statekey { display:flex; flex-wrap:wrap; gap:8px 16px; margin: 4px 0 20px; }
+    .statekey .k { display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:0.62rem; color:var(--gray); }
+    .statekey .sw { width:11px; height:11px; border-radius:9999px; flex:none; }
+    .sw.free{background:var(--green);} .sw.inuse{background:var(--gold);} .sw.assigned{background:var(--gray);} .sw.you{background:var(--blue);} .sw.restr{background:var(--red);}
+
+    /* ════ VARIANT G1 — quiet card, one chip ════ */
+    .gv1-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+    .gv1-card { border:1px solid var(--hairline); border-radius:8px; background:var(--card-bg); padding:10px 11px; display:flex; flex-direction:column; gap:8px; cursor:pointer; }
+    .gv1-card:hover { background:var(--card-bg-hover); }
+    .gv1-card.sel { border-color:var(--ink); background:var(--card-bg-hover); }
+    .gv1-card.restr { opacity:0.5; }
+    .gv1-top { display:flex; align-items:flex-start; gap:8px; }
+    .gv1-top input { margin:2px 0 0; flex:none; }
+    .gv1-name { font-family:var(--body); font-size:0.74rem; color:var(--ink); word-break:break-all; line-height:1.25; }
+    .gv1-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .chip1 { font-family:var(--mono); font-size:0.52rem; letter-spacing:0.1em; text-transform:uppercase; border:1px solid var(--hairline); border-radius:9999px; padding:2px 8px; color:var(--gray); white-space:nowrap; }
+    .chip1.free { color:var(--green); border-color:var(--green); }
+    .chip1.inuse { color:var(--gold); border-color:var(--gold); }
+    .chip1.assigned { color:var(--gray); border-color:var(--hairline); }
+    .chip1.you { color:var(--blue); border-color:var(--blue); }
+    .chip1.restr { color:var(--red); border-color:var(--red); }
+    .dots { display:flex; gap:4px; }
+    .dot { width:7px; height:7px; border-radius:9999px; background:var(--hairline); }
+    .dot.ok{background:var(--green);} .dot.busy{background:var(--gold);} .dot.no{background:var(--red);opacity:0.6;}
+
+    /* ════ VARIANT G2 — single row + hover detail ════ */
+    .gv2-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+    .gv2-row { position:relative; display:flex; align-items:center; gap:9px; border:1px solid var(--hairline); border-radius:8px; background:var(--card-bg); padding:10px 11px; cursor:pointer; }
+    .gv2-row:hover { background:var(--card-bg-hover); }
+    .gv2-row.sel { border-color:var(--ink); background:var(--card-bg-hover); }
+    .gv2-row.restr { opacity:0.55; }
+    .gv2-st { width:9px; height:9px; border-radius:9999px; flex:none; }
+    .gv2-st.free{background:var(--green);} .gv2-st.inuse{background:var(--gold);} .gv2-st.assigned{background:var(--gray);} .gv2-st.you{background:var(--blue);} .gv2-st.restr{background:var(--red);}
+    .gv2-email { flex:1; font-family:var(--body); font-size:0.73rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .gv2-tag { font-family:var(--mono); font-size:0.5rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--gold); white-space:nowrap; }
+    .gv2-tag.restr { color:var(--red); }
+    .gv2-row input { flex:none; margin:0; }
+    /* hover popover (shown statically on the demo row) */
+    .gv2-pop { position:absolute; top:calc(100% + 6px); left:0; z-index:5; width:230px; border:1px solid var(--card-border); border-radius:10px; background:var(--card-bg); box-shadow:var(--card-shadow-hover); padding:11px 13px; }
+    .gv2-pop .pl { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); margin-bottom:6px; }
+    .gv2-pop .pr { font-family:var(--mono); font-size:0.62rem; color:var(--ink); display:flex; justify-content:space-between; padding:3px 0; }
+    .gv2-pop .pr span:last-child { color:var(--gray); }
+
+    /* ════ VARIANT G3 — sectioned grid (group = state) ════ */
+    .gv3-group { margin-bottom:16px; }
+    .gv3-ghead { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--gray); display:flex; align-items:center; gap:9px; margin:0 0 9px; }
+    .gv3-ghead .ct { color:var(--ink); }
+    .gv3-ghead .ln { flex:1; height:1px; background:var(--hairline-soft); }
+    .gv3-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+    .gv3-card { border:1px solid var(--hairline); border-left-width:3px; border-radius:8px; background:var(--card-bg); padding:10px 11px; display:flex; flex-direction:column; gap:8px; cursor:pointer; }
+    .gv3-card:hover { background:var(--card-bg-hover); }
+    .gv3-card.sel { border-color:var(--ink); border-left-color:var(--ink); background:var(--card-bg-hover); }
+    .gv3-card.g-free { border-left-color:var(--green); }
+    .gv3-card.g-inuse { border-left-color:var(--gold); }
+    .gv3-card.g-restr { border-left-color:var(--red); opacity:0.55; }
+    .gv3-top { display:flex; align-items:flex-start; gap:8px; }
+    .gv3-top input { margin:2px 0 0; flex:none; }
+    .gv3-name { font-family:var(--body); font-size:0.74rem; color:var(--ink); word-break:break-all; line-height:1.25; }
+    .gv3-sub { font-family:var(--mono); font-size:0.52rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--gray); }
+
+    /* ── dropdown restyle: before/after rows ── */
+    .ba { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .ba .col-h { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.14em; text-transform:uppercase; margin-bottom:12px; }
+    .col-h.before { color:var(--red); } .col-h.after { color:var(--green); }
+    .ddcard { border:1px solid var(--card-border); border-radius:12px; background:var(--card-bg); padding:16px 18px; }
+    .ddrow { margin-bottom:18px; } .ddrow:last-child { margin-bottom:0; }
+    .ddrow .lab { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--gray); margin-bottom:7px; }
+    .mismatch { font-family:var(--mono); font-size:0.55rem; color:var(--red); margin-top:6px; font-style:italic; }
+    @media (max-width: 820px){ .ba{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · 2026-06-19 · account picker (3 grid variants) + dropdown restyle · real app CSS</div>
+
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <div class="sec">A — Account picker: what's there now</div>
+    <p class="lead">Each card crams in <b>seven things</b>: an orange top ribbon (<code>is-flagged</code>), the email, an assignee line, a 4-segment credit bar, an <code>OP/InM/SN/CC</code> legend, optional dup/restricted flags, and a primary-status pill — in a 6-wide grid. That's the "very messy". The orange ribbon is also the part that misfires (some in-use accounts don't get it; some not-in-use ones do). Below is the real render, then 3 cleaner grid layouts.</p>
+
+    <div class="panel">
+      <div class="browse-card" style="border:none;box-shadow:none;background:transparent;">
+        <div class="profile-grid" style="padding:0;max-height:none;">
+          <label class="profile-item is-flagged selected" data-warn="⚠ In use by Cathy">
+            <input type="checkbox" checked />
+            <div style="flex:1">
+              <div class="name">alecx@ortus.solutions</div>
+              <div class="soo-badges"><span class="soo-badge in-use">In use</span></div>
+              <div class="soo-user">Assigned: Cathy R.</div>
+              <div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg in-use"></div><div class="status-seg available"></div><div class="status-seg na"></div></div>
+              <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+              <div class="pick-primary s-connected"><span class="dot"></span>Primary ✓ <span class="remember">remembered</span></div>
+            </div>
+          </label>
+          <label class="profile-item">
+            <input type="checkbox" />
+            <div style="flex:1">
+              <div class="name">alborz@ortus.solutions</div>
+              <div class="soo-badges"><span class="soo-badge available">Available</span></div>
+              <div class="soo-user">Pool — free for all</div>
+              <div class="status-bar status-bar-4"><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div><div class="status-seg available"></div></div>
+              <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+              <div class="pick-primary s-none"><span class="dot"></span>Primary — not checked yet</div>
+            </div>
+          </label>
+          <label class="profile-item is-restricted">
+            <input type="checkbox" disabled />
+            <div style="flex:1">
+              <div class="name">noah@ortus.solutions <span class="restricted-flag">⛔ Restricted</span></div>
+              <div class="status-bar status-bar-4"><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div><div class="status-seg na"></div></div>
+              <div class="status-legend"><span>OP</span><span>InM</span><span>SN</span><span>CC</span></div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="note">Verbatim real classes (<code>.profile-item</code>, <code>.is-flagged</code>, <code>.soo-badge</code>, <code>.status-bar</code>, <code>.pick-primary</code>). Account names & credit states illustrative.</div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <div class="sec">B — Three grid replacements</div>
+    <p class="lead">All keep the grid. All replace the seven elements + misfiring ribbon with <b>one honest state chip</b> driven by corrected rules: match by <b>email</b> (not name), only flag an account that is <b>currently</b> in use, never flag your own use or CC as "taken". Credits shrink to a 4-dot strip (hover for the OP/InM/SN/CC detail).</p>
+    <div class="statekey">
+      <div class="k"><span class="sw free"></span>Free — yours to use</div>
+      <div class="k"><span class="sw inuse"></span>In use · &lt;who&gt; — taken right now</div>
+      <div class="k"><span class="sw assigned"></span>Assigned · &lt;who&gt; — owned by someone else</div>
+      <div class="k"><span class="sw you"></span>You — your own active session</div>
+      <div class="k"><span class="sw restr"></span>Restricted — hard-blocked</div>
+    </div>
+
+    <div class="vh">G1 — Quiet card, one chip <span class="rec">recommended</span></div>
+    <p class="vsub">Same card footprint, stripped to: checkbox + email, then a footer with <b>one state chip</b> on the left and the 4 credit dots on the right. No ribbon, no legend, no assignee line, no primary pill clutter. In-use = gold chip (not a screaming banner). Restricted dims the whole card.</p>
+    <div class="panel">
+      <div class="gv1-grid">
+        <div class="gv1-card sel"><div class="gv1-top"><input type="checkbox" checked><div class="gv1-name">alecx@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 inuse">In use · Cathy</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot busy"></span><span class="dot ok"></span><span class="dot no"></span></span></div></div>
+        <div class="gv1-card"><div class="gv1-top"><input type="checkbox"><div class="gv1-name">alborz@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 free">Free</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span></span></div></div>
+        <div class="gv1-card"><div class="gv1-top"><input type="checkbox"><div class="gv1-name">elena@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 assigned">Assigned · Dan</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot no"></span><span class="dot ok"></span></span></div></div>
+        <div class="gv1-card sel"><div class="gv1-top"><input type="checkbox" checked><div class="gv1-name">priya@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 you">You</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot busy"></span></span></div></div>
+        <div class="gv1-card restr"><div class="gv1-top"><input type="checkbox" disabled><div class="gv1-name">noah@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 restr">Restricted</span><span class="dots"><span class="dot no"></span><span class="dot no"></span><span class="dot no"></span><span class="dot no"></span></span></div></div>
+        <div class="gv1-card"><div class="gv1-top"><input type="checkbox"><div class="gv1-name">marco@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 free">Free</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot no"></span><span class="dot ok"></span><span class="dot ok"></span></span></div></div>
+        <div class="gv1-card"><div class="gv1-top"><input type="checkbox"><div class="gv1-name">sara@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 free">Free</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span></span></div></div>
+        <div class="gv1-card"><div class="gv1-top"><input type="checkbox"><div class="gv1-name">tom@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 inuse">In use · Mae</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot busy"></span><span class="dot ok"></span></span></div></div>
+        <div class="gv1-card"><div class="gv1-top"><input type="checkbox"><div class="gv1-name">lina@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 free">Free</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span></span></div></div>
+        <div class="gv1-card"><div class="gv1-top"><input type="checkbox"><div class="gv1-name">kai@ortus.solutions</div></div><div class="gv1-foot"><span class="chip1 free">Free</span><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot no"></span><span class="dot ok"></span></span></div></div>
+      </div>
+    </div>
+
+    <div class="vh">G2 — One line + hover detail</div>
+    <p class="vsub">Densest. Each account is a <b>single row</b>: a state dot, the email, an optional small tag for non-free states, and the checkbox. Everything else (credits, assignee, primary status) lives in a <b>hover popover</b> — shown open on the first row here. Fits the most accounts on screen; nothing is lost, just tucked away until asked for.</p>
+    <div class="panel">
+      <div class="gv2-grid">
+        <div class="gv2-row sel"><span class="gv2-st inuse"></span><span class="gv2-email">alecx@ortus.solutions</span><span class="gv2-tag">In use · Cathy</span><input type="checkbox" checked>
+          <div class="gv2-pop">
+            <div class="pl">Credits</div>
+            <div class="pr"><span>OP</span><span>Available</span></div>
+            <div class="pr"><span>InMail</span><span>In use</span></div>
+            <div class="pr"><span>Sales Nav</span><span>Available</span></div>
+            <div class="pr"><span>CC</span><span>N/A</span></div>
+            <div class="pl" style="margin-top:8px">Assigned</div>
+            <div class="pr"><span>Cathy R.</span><span>now</span></div>
+          </div>
+        </div>
+        <div class="gv2-row"><span class="gv2-st free"></span><span class="gv2-email">alborz@ortus.solutions</span><input type="checkbox"></div>
+        <div class="gv2-row"><span class="gv2-st assigned"></span><span class="gv2-email">elena@ortus.solutions</span><span class="gv2-tag">Dan</span><input type="checkbox"></div>
+        <div class="gv2-row sel"><span class="gv2-st you"></span><span class="gv2-email">priya@ortus.solutions</span><input type="checkbox" checked></div>
+        <div class="gv2-row"><span class="gv2-st free"></span><span class="gv2-email">marco@ortus.solutions</span><input type="checkbox"></div>
+        <div class="gv2-row restr"><span class="gv2-st restr"></span><span class="gv2-email">noah@ortus.solutions</span><span class="gv2-tag restr">Restricted</span><input type="checkbox" disabled></div>
+        <div class="gv2-row"><span class="gv2-st free"></span><span class="gv2-email">sara@ortus.solutions</span><input type="checkbox"></div>
+        <div class="gv2-row"><span class="gv2-st inuse"></span><span class="gv2-email">tom@ortus.solutions</span><span class="gv2-tag">Mae</span><input type="checkbox"></div>
+        <div class="gv2-row"><span class="gv2-st free"></span><span class="gv2-email">lina@ortus.solutions</span><input type="checkbox"></div>
+      </div>
+      <div class="note">First row shows the hover popover open. In the app it appears only on hover, so the resting grid is just dot + email + checkbox.</div>
+    </div>
+
+    <div class="vh">G3 — Sectioned grid (group = state)</div>
+    <p class="vsub">Attacks the mess by <b>organising</b> instead of per-card chips. The grid splits into labelled groups — Available / In use / Restricted — each a clean mini-grid. The group header carries the state, so cards inside need no chip: just email + a thin coloured left edge + credit dots. You scan to the "Available" block and pick.</p>
+    <div class="panel">
+      <div class="gv3-group">
+        <div class="gv3-ghead"><span class="sw free" style="width:9px;height:9px;border-radius:9999px;"></span>Available <span class="ct">· 6</span><span class="ln"></span></div>
+        <div class="gv3-grid">
+          <div class="gv3-card g-free"><div class="gv3-top"><input type="checkbox"><div class="gv3-name">alborz@ortus.solutions</div></div><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span></span></div>
+          <div class="gv3-card g-free sel"><div class="gv3-top"><input type="checkbox" checked><div class="gv3-name">marco@ortus.solutions</div></div><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot no"></span><span class="dot ok"></span><span class="dot ok"></span></span></div>
+          <div class="gv3-card g-free"><div class="gv3-top"><input type="checkbox"><div class="gv3-name">sara@ortus.solutions</div></div><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span></span></div>
+          <div class="gv3-card g-free"><div class="gv3-top"><input type="checkbox"><div class="gv3-name">lina@ortus.solutions</div></div><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span></span></div>
+          <div class="gv3-card g-free"><div class="gv3-top"><input type="checkbox"><div class="gv3-name">kai@ortus.solutions</div></div><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot no"></span><span class="dot ok"></span></span></div>
+          <div class="gv3-card g-free"><div class="gv3-top"><input type="checkbox"><div class="gv3-name">omar@ortus.solutions</div></div><span class="dots" title="OP · InMail · Sales Nav · CC"><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span><span class="dot ok"></span></span></div>
+        </div>
+      </div>
+      <div class="gv3-group">
+        <div class="gv3-ghead"><span class="sw inuse" style="width:9px;height:9px;border-radius:9999px;"></span>In use <span class="ct">· 2</span><span class="ln"></span></div>
+        <div class="gv3-grid">
+          <div class="gv3-card g-inuse"><div class="gv3-top"><input type="checkbox"><div class="gv3-name">alecx@ortus.solutions</div></div><div class="gv3-sub">Cathy R.</div></div>
+          <div class="gv3-card g-inuse"><div class="gv3-top"><input type="checkbox"><div class="gv3-name">tom@ortus.solutions</div></div><div class="gv3-sub">Mae</div></div>
+        </div>
+      </div>
+      <div class="gv3-group">
+        <div class="gv3-ghead"><span class="sw restr" style="width:9px;height:9px;border-radius:9999px;"></span>Restricted <span class="ct">· 1</span><span class="ln"></span></div>
+        <div class="gv3-grid">
+          <div class="gv3-card g-restr"><div class="gv3-top"><input type="checkbox" disabled><div class="gv3-name">noah@ortus.solutions</div></div><div class="gv3-sub">SoO: restricted</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <div class="sec">C — Dropdowns made uniform</div>
+    <p class="lead">Right now the three config dropdowns wear three different styles: <b>Primary check timing</b> is borderless text with a tiny chevron, <b>Cadence</b> is an inline "Every [select]" with just a bottom rule, and the <b>column picker</b> is a full bordered box. That's the "not uniform anymore". The fix: one control style for all of them — the bordered box (it already exists as <code>.intro-config-select-wide</code>), so every dropdown reads the same.</p>
+    <div class="ba">
+      <div>
+        <div class="col-h before">● Before — 3 different styles</div>
+        <div class="ddcard">
+          <div class="ddrow"><div class="lab">Primary check timing</div>
+            <select class="intro-config-select"><option>Immediately (at start)</option></select>
+          </div>
+          <div class="ddrow"><div class="lab">Cadence</div>
+            <div class="intro-config-inline"><span class="intro-config-prefix">Every</span><select class="intro-config-select"><option>1 hour</option></select></div>
+          </div>
+          <div class="ddrow"><div class="lab">1st connection column</div>
+            <select class="intro-config-select-wide"><option>— Use "Sender" column —</option></select>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="col-h after">● After — one boxed style <span class="rec" style="margin-left:6px">recommended</span></div>
+        <div class="ddcard">
+          <div class="ddrow"><div class="lab">Primary check timing</div>
+            <select class="intro-config-select-wide"><option>Immediately (at start)</option></select>
+          </div>
+          <div class="ddrow"><div class="lab">Cadence</div>
+            <div style="display:flex;align-items:center;gap:10px;"><span class="intro-config-prefix" style="font-size:0.95rem;">Every</span><select class="intro-config-select-wide" style="flex:1"><option>1 hour</option></select></div>
+          </div>
+          <div class="ddrow"><div class="lab">1st connection column</div>
+            <select class="intro-config-select-wide"><option>— Use "Sender" column —</option></select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note">"After" reuses the existing <code>.intro-config-select-wide</code> (bordered, rounded 8px, chevron right) for all three. Cadence keeps its "Every" prefix but the select becomes a box like the rest.</div>
+
+    <!-- ════════════════════════════════════════════════════════════════ -->
+    <div class="sec">D — LinkedIn URL column = tab-picker style</div>
+    <p class="lead">As you asked: the LinkedIn-URL-column picker becomes the <b>same control as the tab picker</b> — the gold-tinted block, a boxed select, an auto-detect ✓, and a red block if a non-URL column (like <code>Linkedin Bio</code>) is chosen. Same component → uniform by construction.</p>
+
+    <div class="vh" style="font-size:1rem;">Auto-detected (good)</div>
+    <div class="tabpick" style="border:1px solid var(--card-border);border-radius:12px;">
+      <div class="tabpick-head"><span class="dot"></span> Which column holds the LinkedIn profile URL?</div>
+      <select><option>LinkedIn URL  ✓ auto-detected</option><option>First Name</option><option>Company</option><option>Linkedin Bio</option></select>
+      <div style="font-family:var(--mono);font-size:0.62rem;color:var(--green);margin-top:8px;">✓ Detected from header "LinkedIn URL" — values look like linkedin.com/in/… profiles.</div>
+    </div>
+
+    <div class="vh" style="font-size:1rem;margin-top:22px;">Wrong column picked <span class="badcase">guarded</span></div>
+    <div class="tabpick" style="border:1px solid var(--card-border);border-radius:12px;">
+      <div class="tabpick-head"><span class="dot"></span> Which column holds the LinkedIn profile URL?</div>
+      <select><option>Linkedin Bio</option><option>LinkedIn URL</option><option>First Name</option></select>
+      <div class="leadblock" style="display:block;">
+        <div class="lb-title">⛔ That doesn't look like a URL column</div>
+        <div class="lb-body">"Linkedin Bio" holds free text, not <code>linkedin.com/in/…</code> links. Pick the column whose cells are profile URLs, or the app can't open the right person.</div>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:26px;">All states use real app classes/tokens. Names & credit states illustrative — no real operator data. Decision needed: which grid (G1 / G2 / G3), and confirm the uniform boxed dropdown.</p>
+  </div>
+</body>
+</html>

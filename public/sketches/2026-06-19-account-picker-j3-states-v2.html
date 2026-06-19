@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J3 tiles v2 — assignment / in-use / passover, campaign-aware</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 26px 26px 120px; }
+    .tag { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; display:inline-block; margin-bottom: 14px; }
+    .sec { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.04em; color: var(--ink); margin: 40px 0 6px; }
+    .sec:first-of-type { margin-top: 16px; }
+    .lead { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); line-height: 1.62; margin: 0 0 18px; max-width: 850px; }
+    .lead b { color: var(--ink); }
+    .panel { border:1px solid var(--card-border); border-radius:14px; background:var(--card-bg); box-shadow:var(--card-shadow); padding:18px; margin-bottom: 8px; }
+    .note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-top:14px; font-style:italic; line-height:1.55; }
+    .modepill { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink); border:1px solid var(--card-border); border-radius:9999px; padding:4px 11px; background:var(--bg-soft); }
+
+    /* ── J3 tile ── */
+    .j3-card { display:flex; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); overflow:hidden; cursor:pointer; }
+    .j3-card.sel { border-color:var(--ink); }
+    .j3-card.dim { opacity:0.6; }
+    .j3-status { width:138px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:16px 8px; text-align:center; }
+    .st-free { background:rgba(63,185,80,0.10); }
+    .st-yours { background:rgba(63,185,80,0.10); }
+    .st-assigned { background:rgba(58,110,165,0.12); }
+    .st-inuse { background:rgba(247,190,104,0.13); }
+    .st-stop { background:rgba(248,81,73,0.10); }
+    .j3-dot { width:13px; height:13px; border-radius:9999px; }
+    .dot-free{background:var(--green);} .dot-yours{background:var(--green);} .dot-assigned{background:var(--blue);} .dot-inuse{background:var(--gold);} .dot-stop{background:var(--red);}
+    .j3-word { font-family:var(--display); font-size:1.3rem; letter-spacing:0.06em; }
+    .w-free{color:var(--green);} .w-yours{color:var(--green);} .w-assigned{color:var(--blue);} .w-inuse{color:var(--gold);} .w-stop{color:var(--red);}
+    .j3-when { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.06em; color:var(--gray); text-transform:uppercase; line-height:1.35; }
+    .j3-detail { flex:1; padding:14px 16px; display:flex; flex-direction:column; gap:8px; min-width:0; justify-content:center; }
+    .j3-top { display:flex; align-items:center; gap:8px; }
+    .j3-top input { margin:0; flex:none; }
+    .j3-email { font-family:var(--body); font-size:0.86rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .j3-verdict { font-family:var(--body); font-size:0.79rem; color:var(--gray); line-height:1.45; }
+    .j3-verdict b { color:var(--ink); font-weight:600; }
+
+    .gallery { display:grid; grid-template-columns:1fr; gap:13px; }
+    .defrow { display:grid; grid-template-columns: 1.25fr 1fr; gap:18px; align-items:center; }
+    .def { font-family:var(--body); font-size:0.82rem; color:var(--gray); line-height:1.55; }
+    .def b { color:var(--ink); font-weight:600; }
+    .def .meaning { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; display:block; margin-bottom:5px; }
+    .mg-free{color:var(--green);} .mg-assigned{color:var(--blue);} .mg-inuse{color:var(--gold);} .mg-stop{color:var(--red);}
+    @media (max-width:820px){ .defrow{grid-template-columns:1fr;} }
+
+    .trans { display:grid; grid-template-columns: 1fr 64px 1fr; gap:10px; align-items:center; }
+    .trans .arr { font-family:var(--display); font-size:1.4rem; color:var(--gray); text-align:center; }
+    .trans .cap { font-family:var(--mono); font-size:0.56rem; color:var(--gray); text-align:center; letter-spacing:0.06em; text-transform:uppercase; margin-top:6px; }
+
+    .demo-mode { display:flex; align-items:center; gap:10px; margin:0 0 12px; flex-wrap:wrap; }
+    .demo-mode .ml { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); }
+    .demo-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · 2026-06-19 · J3 v2 · assignment + in-use + passover · campaign-aware · real app CSS</div>
+
+    <!-- ═══════════════ A — states ═══════════════ -->
+    <div class="sec">A — The states (corrected)</div>
+    <p class="lead">The big word + colour says <b>who an account belongs to and whether someone's on it</b> — not whether to "skip" it. Passover only changes <b>when an assignment frees up</b>.</p>
+    <div class="panel">
+      <div class="gallery">
+
+        <div class="defrow">
+          <div class="j3-card sel">
+            <div class="j3-status st-free"><span class="j3-dot dot-free"></span><span class="j3-word w-free">FREE</span><span class="j3-when">Anyone can use</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">alborz@ortus.solutions</span></div><div class="j3-verdict"><b>Free to use</b> — unassigned, or its assignment already reset at passover.</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-free">Green · FREE</span>Nobody's assigned to it (or passover has freed it). Anyone can pick it.</div>
+        </div>
+
+        <div class="defrow">
+          <div class="j3-card">
+            <div class="j3-status st-yours"><span class="j3-dot dot-yours"></span><span class="j3-word w-yours">YOURS</span><span class="j3-when">Assigned to you</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">priya@ortus.solutions</span></div><div class="j3-verdict"><b>Assigned to you</b> this cycle — go ahead and use it.</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-free">Green · YOURS</span>Assigned to <b>you</b> before passover. It's yours to use — green, no warning.</div>
+        </div>
+
+        <div class="defrow">
+          <div class="j3-card">
+            <div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy · frees Thu</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">elena@ortus.solutions</span></div><div class="j3-verdict"><b>Assigned to Cathy</b> this cycle — only she should use it. Frees up at passover (Thu).</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-assigned">Blue · ASSIGNED</span>Assigned to <b>someone else</b> before passover. You <i>can</i> still tick it, but it's theirs for now — leave it unless you know otherwise. Turns green automatically at passover.</div>
+        </div>
+
+        <div class="defrow">
+          <div class="j3-card">
+            <div class="j3-status st-inuse"><span class="j3-dot dot-inuse"></span><span class="j3-word w-inuse">IN USE</span><span class="j3-when">Mae · right now</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">tom@ortus.solutions</span></div><div class="j3-verdict"><b>In use by Mae right now</b> — pick another so you don't clash with her live session.</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-inuse">Yellow · IN USE</span>Someone is <b>running it this moment</b>. The tile names who (Mae). Picking it now risks two sessions on one account — choose another.</div>
+        </div>
+
+        <div class="defrow">
+          <div class="j3-card dim">
+            <div class="j3-status st-stop"><span class="j3-dot dot-stop"></span><span class="j3-word w-stop">BLOCKED</span><span class="j3-when">Restricted</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox" disabled><span class="j3-email">noah@ortus.solutions</span></div><div class="j3-verdict"><b>Restricted by LinkedIn</b> — can't be selected at all.</div></div>
+          </div>
+          <div class="def"><span class="meaning mg-stop">Red · BLOCKED</span>LinkedIn restricted it (from the State-of-Operations sheet). Checkbox disabled.</div>
+        </div>
+
+      </div>
+      <div class="note">Dropped the old "RESTING / skip" tile — that was my misread. (Per-account credit balances can still live on a hover tooltip if you want the detail, but they no longer drive a "skip".)</div>
+    </div>
+
+    <!-- ═══════════════ B — blue → green at passover ═══════════════ -->
+    <div class="sec">B — Assigned (blue) → Free (green) at passover</div>
+    <p class="lead">An account assigned to a colleague is <b>blue while it's theirs</b>, and flips to <b>green (free)</b> the moment its passover resets the assignment. Same account, before and after:</p>
+    <div class="panel">
+      <div class="trans">
+        <div>
+          <div class="j3-card">
+            <div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy · frees Thu</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">elena@ortus.solutions</span></div><div class="j3-verdict"><b>Before passover</b> — Cathy's for this cycle.</div></div>
+          </div>
+          <div class="cap">Assigned · blue</div>
+        </div>
+        <div><div class="arr">→</div><div class="cap">Passover</div></div>
+        <div>
+          <div class="j3-card sel">
+            <div class="j3-status st-free"><span class="j3-dot dot-free"></span><span class="j3-word w-free">FREE</span><span class="j3-when">Anyone can use</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">elena@ortus.solutions</span></div><div class="j3-verdict"><b>After passover</b> — assignment cleared, free for anyone.</div></div>
+          </div>
+          <div class="cap">Free · green</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ C — campaign decides the schedule ═══════════════ -->
+    <div class="sec">C — Same look, different passover per campaign</div>
+    <p class="lead">The blue→green logic is identical everywhere — only the <b>reset date</b> changes with the campaign's credit. Connect campaigns follow the <b>weekly</b> Connect reset; Open Profile / email campaigns follow the <b>monthly</b> one (assigned the first 15 days, free from the 16th). CC is simply irrelevant to an OP/email campaign.</p>
+    <div class="panel">
+      <div class="demo-mode"><span class="ml">In:</span><span class="modepill">Connect + Introduce Back → Connect (CC), weekly reset</span></div>
+      <div class="demo-grid">
+        <div class="j3-card"><div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy · frees Thu</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">elena@ortus.solutions</span></div><div class="j3-verdict"><b>Assigned to Cathy</b> — frees at the weekly Connect reset (Thursday).</div></div></div>
+        <div class="j3-card sel"><div class="j3-status st-free"><span class="j3-dot dot-free"></span><span class="j3-word w-free">FREE</span><span class="j3-when">Anyone can use</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">alborz@ortus.solutions</span></div><div class="j3-verdict"><b>Free to use.</b></div></div></div>
+      </div>
+
+      <div class="demo-mode" style="margin-top:18px;"><span class="ml">In:</span><span class="modepill">Message Campaign (Open Profile) → OP, monthly reset (16th)</span></div>
+      <div class="demo-grid">
+        <div class="j3-card"><div class="j3-status st-assigned"><span class="j3-dot dot-assigned"></span><span class="j3-word w-assigned">ASSIGNED</span><span class="j3-when">Cathy · frees 16th</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">elena@ortus.solutions</span></div><div class="j3-verdict"><b>Assigned to Cathy</b> — frees on the 16th (monthly reset). Same look, just a different date.</div></div></div>
+        <div class="j3-card sel"><div class="j3-status st-free"><span class="j3-dot dot-free"></span><span class="j3-word w-free">FREE</span><span class="j3-when">Anyone can use</span></div><div class="j3-detail"><div class="j3-top"><input type="checkbox" checked><span class="j3-email">alborz@ortus.solutions</span></div><div class="j3-verdict"><b>Free to use.</b></div></div></div>
+      </div>
+      <div class="note">Only the "frees …" date differs between the two campaigns (Thursday vs the 16th). The colours, words and behaviour are identical.</div>
+    </div>
+
+    <p class="note" style="margin-top:26px;">All real app classes/tokens. Account names, who-has-what and dates are illustrative — the live picker reads real SoO assignee/status + the live date + the selected campaign mode.</p>
+  </div>
+</body>
+</html>

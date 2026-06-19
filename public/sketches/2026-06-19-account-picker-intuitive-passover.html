@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Account picker — intuitive + passover · 3 variants</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 26px 26px 120px; }
+    .tag { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; display:inline-block; margin-bottom: 14px; }
+    .sec { font-family: var(--display); font-size: 1.55rem; letter-spacing: 0.04em; color: var(--ink); margin: 12px 0 6px; }
+    .lead { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); line-height: 1.62; margin: 0 0 18px; max-width: 800px; }
+    .lead b { color: var(--ink); }
+    .vh { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.05em; color: var(--ink); margin: 34px 0 4px; display:flex; align-items:center; gap:10px; }
+    .vsub { font-family: var(--mono); font-size: 0.74rem; color: var(--gray); margin: 0 0 14px; line-height:1.58; max-width: 820px; }
+    .vsub b { color: var(--ink); }
+    .rec { font-family: var(--mono); font-size: 0.58rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--green); border:1px solid var(--green); border-radius:9999px; padding:2px 9px; }
+    .panel { border:1px solid var(--card-border); border-radius:14px; background:var(--card-bg); box-shadow:var(--card-shadow); padding:18px; margin-bottom: 8px; }
+    .note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-top:14px; font-style:italic; line-height:1.55; }
+
+    /* ── Passover banner (plain-language, shared) ── */
+    .pass-banner { display:flex; gap:14px; align-items:flex-start; border:1px solid var(--gold); background:var(--gold-tint-bg); border-radius:12px; padding:14px 16px; margin-bottom:22px; }
+    .pass-banner .pb-ic { font-size:1.3rem; line-height:1; }
+    .pass-banner .pb-txt { font-family:var(--body); font-size:0.86rem; color:var(--ink); line-height:1.5; }
+    .pass-banner .pb-txt b { font-weight:600; }
+    .pass-banner .pb-rest { color:var(--gold); font-weight:600; }
+    .pass-banner .pb-ok { color:var(--green); font-weight:600; }
+
+    /* ════ H1 — Traffic light + plain verdict ════ */
+    .h1-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+    .h1-card { display:flex; gap:0; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); overflow:hidden; cursor:pointer; }
+    .h1-card:hover { background:var(--card-bg-hover); }
+    .h1-card.sel { border-color:var(--ink); }
+    .h1-bar { width:6px; flex:none; }
+    .h1-bar.go{background:var(--green);} .h1-bar.busy{background:var(--gold);} .h1-bar.rest{background:var(--gold);} .h1-bar.stop{background:var(--red);}
+    .h1-body { flex:1; padding:11px 13px; display:flex; flex-direction:column; gap:6px; min-width:0; }
+    .h1-row1 { display:flex; align-items:center; gap:8px; }
+    .h1-row1 input { margin:0; flex:none; }
+    .h1-email { font-family:var(--body); font-size:0.8rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .h1-verdict { font-family:var(--body); font-size:0.82rem; font-weight:600; display:flex; align-items:center; gap:6px; }
+    .h1-verdict.go{color:var(--green);} .h1-verdict.busy{color:var(--gold);} .h1-verdict.rest{color:var(--gold);} .h1-verdict.stop{color:var(--red);}
+    .h1-refresh { font-family:var(--mono); font-size:0.62rem; color:var(--gray); }
+    .h1-card.dim { opacity:0.55; }
+
+    /* ════ H2 — Sorted: use these / avoid now ════ */
+    .h2-grp { margin-bottom:18px; }
+    .h2-gh { display:flex; align-items:center; gap:9px; font-family:var(--body); font-size:0.92rem; font-weight:600; margin:0 0 10px; }
+    .h2-gh.good { color:var(--green); } .h2-gh.warn { color:var(--gold); } .h2-gh.stop { color:var(--red); }
+    .h2-gh .ct { font-family:var(--mono); font-size:0.66rem; color:var(--gray); font-weight:400; }
+    .h2-gh .ln { flex:1; height:1px; }
+    .h2-gh.good .ln { background:rgba(63,185,80,0.3);} .h2-gh.warn .ln{background:rgba(247,190,104,0.3);} .h2-gh.stop .ln{background:rgba(248,81,73,0.3);}
+    .h2-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+    .h2-card { border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); padding:12px 13px; display:flex; flex-direction:column; gap:7px; cursor:pointer; }
+    .h2-card.good-c { border-color:rgba(63,185,80,0.45); }
+    .h2-card:hover { background:var(--card-bg-hover); }
+    .h2-card.sel { border-color:var(--ink); background:var(--card-bg-hover); }
+    .h2-card.dim { opacity:0.55; }
+    .h2-top { display:flex; align-items:center; gap:8px; }
+    .h2-top input { margin:0; flex:none; }
+    .h2-email { font-family:var(--body); font-size:0.8rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .h2-reason { font-family:var(--body); font-size:0.76rem; }
+    .h2-reason.good { color:var(--green); } .h2-reason.warn { color:var(--gold); } .h2-reason.stop { color:var(--red); }
+
+    /* ════ H3 — Spelled-out badges + mode verdict ════ */
+    .h3-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .h3-card { border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); padding:13px 14px; display:flex; flex-direction:column; gap:9px; cursor:pointer; }
+    .h3-card:hover { background:var(--card-bg-hover); }
+    .h3-card.sel { border-color:var(--ink); background:var(--card-bg-hover); }
+    .h3-card.dim { opacity:0.55; }
+    .h3-top { display:flex; align-items:center; gap:8px; }
+    .h3-top input { margin:0; flex:none; }
+    .h3-email { font-family:var(--body); font-size:0.82rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .h3-badges { display:flex; flex-wrap:wrap; gap:6px; }
+    .h3-b { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.04em; border:1px solid var(--hairline); border-radius:6px; padding:3px 7px; color:var(--gray); display:flex; align-items:center; gap:4px; }
+    .h3-b.ok { color:var(--green); border-color:rgba(63,185,80,0.45); }
+    .h3-b.rest { color:var(--gold); border-color:rgba(247,190,104,0.5); }
+    .h3-b.no { color:var(--red); border-color:rgba(248,81,73,0.45); }
+    .h3-verdict { font-family:var(--body); font-size:0.78rem; font-weight:600; padding-top:8px; border-top:1px solid var(--hairline-soft); display:flex; align-items:center; gap:6px; }
+    .h3-verdict.go { color:var(--green); } .h3-verdict.warn { color:var(--gold); } .h3-verdict.stop { color:var(--red); }
+    .modepill { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink); border:1px solid var(--card-border); border-radius:9999px; padding:3px 10px; background:var(--bg-soft); }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · 2026-06-19 · account picker · intuitive + passover-aware · 3 variants · real app CSS</div>
+
+    <div class="sec">Account picker — built for "just tell me which one to use"</div>
+    <p class="lead">The earlier three were too clever — abstract dots, no plain meaning, and <b>nothing about passover</b>. These three lead with a plain-English verdict per account, and every one surfaces passover: monthly credits (OP · InMail · Sales Nav) <b>rest the 1st→15th and refresh on the 16th</b>; weekly Connect (CC) <b>rests Mon→Wed and refreshes Thursday</b>. All three share the banner below.</p>
+
+    <div class="pass-banner">
+      <span class="pb-ic">⏳</span>
+      <div class="pb-txt">
+        <b>Passover — example: today is the 12th.</b><br>
+        Monthly credits (OP · InMail · Sales Nav) are <span class="pb-rest">resting until the 16th — in 4 days</span>. Weekly Connect (CC) is <span class="pb-ok">active until Sunday</span>. Accounts below are tagged so you don't pick one that can't send today.
+      </div>
+    </div>
+    <p class="note" style="margin-top:0;margin-bottom:26px;">(The date is an example to show passover in action — the real banner reads the live date. On the 19th, like today, both monthly and CC are active and the banner says so.)</p>
+
+    <!-- ════════════════════ H1 ════════════════════ -->
+    <div class="vh">H1 — Traffic light + one plain sentence</div>
+    <p class="vsub">A coloured edge (🟢 go / 🟡 busy or resting / 🔴 stop) and <b>one sentence telling you what to do</b>. No dots to decode. The passover refresh date sits right under the verdict so a resting account explains itself.</p>
+    <div class="panel">
+      <div class="h1-grid">
+        <div class="h1-card sel"><div class="h1-bar go"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox" checked><span class="h1-email">alborz@ortus.solutions</span></div><div class="h1-verdict go">✓ Ready to use</div><div class="h1-refresh">All credits active</div></div></div>
+        <div class="h1-card"><div class="h1-bar busy"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox"><span class="h1-email">alecx@ortus.solutions</span></div><div class="h1-verdict busy">● In use by Cathy</div><div class="h1-refresh">Pick another account</div></div></div>
+        <div class="h1-card"><div class="h1-bar rest"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox"><span class="h1-email">elena@ortus.solutions</span></div><div class="h1-verdict rest">⏳ Monthly credits resting</div><div class="h1-refresh">InMail / Sales Nav back on the 16th</div></div></div>
+        <div class="h1-card dim"><div class="h1-bar stop"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox" disabled><span class="h1-email">noah@ortus.solutions</span></div><div class="h1-verdict stop">⛔ Restricted — can't use</div><div class="h1-refresh">Blocked by LinkedIn</div></div></div>
+        <div class="h1-card"><div class="h1-bar go"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox"><span class="h1-email">sara@ortus.solutions</span></div><div class="h1-verdict go">✓ Ready to use</div><div class="h1-refresh">All credits active</div></div></div>
+        <div class="h1-card"><div class="h1-bar rest"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox"><span class="h1-email">marco@ortus.solutions</span></div><div class="h1-verdict rest">⏳ Connect (CC) resting</div><div class="h1-refresh">CC credits back Thursday</div></div></div>
+        <div class="h1-card"><div class="h1-bar go"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox"><span class="h1-email">lina@ortus.solutions</span></div><div class="h1-verdict go">✓ Ready to use</div><div class="h1-refresh">All credits active</div></div></div>
+        <div class="h1-card"><div class="h1-bar busy"></div><div class="h1-body"><div class="h1-row1"><input type="checkbox"><span class="h1-email">tom@ortus.solutions</span></div><div class="h1-verdict busy">● In use by Mae</div><div class="h1-refresh">Pick another account</div></div></div>
+      </div>
+    </div>
+
+    <!-- ════════════════════ H2 ════════════════════ -->
+    <div class="vh">H2 — Sorted for you: "use these" vs "avoid today" <span class="rec">recommended</span></div>
+    <p class="vsub">The most foolproof. The app does the thinking: ready accounts float to the top under <b>"Use these now"</b>; everything you shouldn't touch today drops to <b>"Avoid today"</b> with the reason spelled out (in use / resting / restricted). A non-technical operator just picks from the green group.</p>
+    <div class="panel">
+      <div class="h2-grp">
+        <div class="h2-gh good">✓ Use these now<span class="ct">— ready, credits active</span><span class="ln"></span></div>
+        <div class="h2-grid">
+          <div class="h2-card good-c sel"><div class="h2-top"><input type="checkbox" checked><span class="h2-email">alborz@ortus.solutions</span></div><div class="h2-reason good">Ready — all credits active</div></div>
+          <div class="h2-card good-c"><div class="h2-top"><input type="checkbox"><span class="h2-email">sara@ortus.solutions</span></div><div class="h2-reason good">Ready — all credits active</div></div>
+          <div class="h2-card good-c"><div class="h2-top"><input type="checkbox"><span class="h2-email">lina@ortus.solutions</span></div><div class="h2-reason good">Ready — all credits active</div></div>
+          <div class="h2-card good-c"><div class="h2-top"><input type="checkbox"><span class="h2-email">kai@ortus.solutions</span></div><div class="h2-reason good">Ready — all credits active</div></div>
+        </div>
+      </div>
+      <div class="h2-grp">
+        <div class="h2-gh warn">⏳ Avoid today<span class="ct">— busy or resting</span><span class="ln"></span></div>
+        <div class="h2-grid">
+          <div class="h2-card dim"><div class="h2-top"><input type="checkbox"><span class="h2-email">alecx@ortus.solutions</span></div><div class="h2-reason warn">In use by Cathy right now</div></div>
+          <div class="h2-card dim"><div class="h2-top"><input type="checkbox"><span class="h2-email">tom@ortus.solutions</span></div><div class="h2-reason warn">In use by Mae right now</div></div>
+          <div class="h2-card dim"><div class="h2-top"><input type="checkbox"><span class="h2-email">elena@ortus.solutions</span></div><div class="h2-reason warn">Monthly credits rest til the 16th</div></div>
+          <div class="h2-card dim"><div class="h2-top"><input type="checkbox"><span class="h2-email">marco@ortus.solutions</span></div><div class="h2-reason warn">Connect (CC) credits back Thursday</div></div>
+        </div>
+      </div>
+      <div class="h2-grp">
+        <div class="h2-gh stop">⛔ Restricted<span class="ct">— can't be used</span><span class="ln"></span></div>
+        <div class="h2-grid">
+          <div class="h2-card dim"><div class="h2-top"><input type="checkbox" disabled><span class="h2-email">noah@ortus.solutions</span></div><div class="h2-reason stop">Blocked by LinkedIn</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════ H3 ════════════════════ -->
+    <div class="vh">H3 — Everything spelled out + a verdict for THIS campaign</div>
+    <p class="vsub">Most detail, still in words. Each account lists its four credit types as plain badges (✓ ready / ⏳ resting / ✗ out), then a bottom line that judges the account <b>against the campaign you're running</b> — here a <span class="modepill">Connect &amp; Introduce</span> campaign, which needs Connect (CC) credits, so a "CC resting" account is flagged even if everything else is fine.</p>
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <span style="font-family:var(--mono);font-size:0.64rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gray);">Campaign needs:</span>
+        <span class="modepill">Connect &amp; Introduce → uses Connect (CC)</span>
+      </div>
+      <div class="h3-grid">
+        <div class="h3-card sel">
+          <div class="h3-top"><input type="checkbox" checked><span class="h3-email">alborz@ortus.solutions</span></div>
+          <div class="h3-badges"><span class="h3-b ok">✓ Connect</span><span class="h3-b ok">✓ InMail</span><span class="h3-b ok">✓ Sales Nav</span><span class="h3-b ok">✓ OP</span></div>
+          <div class="h3-verdict go">✓ Good for this campaign</div>
+        </div>
+        <div class="h3-card">
+          <div class="h3-top"><input type="checkbox"><span class="h3-email">marco@ortus.solutions</span></div>
+          <div class="h3-badges"><span class="h3-b rest">⏳ Connect — Thu</span><span class="h3-b ok">✓ InMail</span><span class="h3-b ok">✓ Sales Nav</span><span class="h3-b ok">✓ OP</span></div>
+          <div class="h3-verdict warn">⏳ Skip today — needs Connect, back Thursday</div>
+        </div>
+        <div class="h3-card">
+          <div class="h3-top"><input type="checkbox"><span class="h3-email">elena@ortus.solutions</span></div>
+          <div class="h3-badges"><span class="h3-b ok">✓ Connect</span><span class="h3-b rest">⏳ InMail — 16th</span><span class="h3-b rest">⏳ Sales Nav — 16th</span><span class="h3-b ok">✓ OP</span></div>
+          <div class="h3-verdict go">✓ Good for this campaign <span style="font-weight:400;color:var(--gray);">(Connect is active)</span></div>
+        </div>
+        <div class="h3-card">
+          <div class="h3-top"><input type="checkbox"><span class="h3-email">alecx@ortus.solutions</span></div>
+          <div class="h3-badges"><span class="h3-b ok">✓ Connect</span><span class="h3-b ok">✓ InMail</span><span class="h3-b ok">✓ Sales Nav</span><span class="h3-b ok">✓ OP</span></div>
+          <div class="h3-verdict warn">● In use by Cathy — pick another</div>
+        </div>
+        <div class="h3-card">
+          <div class="h3-top"><input type="checkbox"><span class="h3-email">sara@ortus.solutions</span></div>
+          <div class="h3-badges"><span class="h3-b ok">✓ Connect</span><span class="h3-b ok">✓ InMail</span><span class="h3-b ok">✓ Sales Nav</span><span class="h3-b ok">✓ OP</span></div>
+          <div class="h3-verdict go">✓ Good for this campaign</div>
+        </div>
+        <div class="h3-card dim">
+          <div class="h3-top"><input type="checkbox" disabled><span class="h3-email">noah@ortus.solutions</span></div>
+          <div class="h3-badges"><span class="h3-b no">⛔ Restricted</span></div>
+          <div class="h3-verdict stop">⛔ Can't use — blocked by LinkedIn</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:26px;">All real app classes/tokens. Account names, credit states and the example passover date are illustrative — the live picker reads real SoO statuses + the live date. Decision: H1 / H2 / H3.</p>
+  </div>
+</body>
+</html>
