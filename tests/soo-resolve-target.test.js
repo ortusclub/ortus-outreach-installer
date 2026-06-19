@@ -19,8 +19,17 @@ test('inmail_sent in inmail_only → Inmail column + Inmail User', () => {
   );
 });
 
-test('open_profile_only writes nothing — even on its InMail fallback', () => {
-  assert.equal(resolveSoOTarget('open_profile_only', 'op_message_sent'), null);
+test('open_profile_only genuine send → Linkedin (OP Credits) + Linkedin OP User', () => {
+  for (const action of ['op_message_sent', 'message_sent']) {
+    assert.deepEqual(
+      resolveSoOTarget('open_profile_only', action),
+      { creditHeader: 'Linkedin (OP Credits)', userHeader: 'Linkedin OP User' },
+      action,
+    );
+  }
+});
+
+test('open_profile_only InMail fallback still writes nothing (unchanged)', () => {
   assert.equal(resolveSoOTarget('open_profile_only', 'inmail_sent'), null);
 });
 

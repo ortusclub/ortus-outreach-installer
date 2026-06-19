@@ -50,6 +50,8 @@ const CREDIT_FIELDS = [
   ['salesNavCredits', 'salesNavUser'],
   ['ccCredits', 'CC User'],
 ];
+// Same pairing as a lookup: credit column → its paired "User" (reserver) column.
+const CREDIT_USER = Object.fromEntries(CREDIT_FIELDS);
 
 /**
  * Classify one account at selection time. `me` = operator identifier (lowercased upstream).
@@ -144,30 +146,35 @@ export function classifyAccountState(soo, me, mode, passover) {
   // 1. Guard: missing soo or me → free
   if (!soo || !me) return FREE;
 
-  // 2. Blocked: SoO Status is restricted or inaccessible
+  // 2. Blocked: SoO Status is restricted or inaccessible (column B). Independent
+  // of the per-channel credit columns below.
   if (isRestrictedStatus(soo.Status || soo.status)) return { state: 'blocked', who: '', frees: '', reason: 'restricted' };
 
-  // 2b. Blocked (NA): the campaign's own credit channel shows "NA" → no credits
-  // for this campaign, so the account can't run it. Channel-aware: only the
-  // column this mode consumes is checked (an OP=NA account is still fine for a
-  // Connect campaign). Beats in-use/assigned — if there are no credits, who has
-  // it or who it's assigned to is moot. Credit-free modes (null) skip this.
+  const meN = norm(me);
+
+  // 3. The campaign's OWN credit column is the source of truth for whether this
+  // account can run THIS campaign. Channel-aware via mapModeToCreditField:
+  //   connect_* → CC (Credits) [AH] · open_profile_only → Linkedin (OP Credits)
+  //   [AD] · inmail_only → Inmail Credits [AF]. (Sales Nav [AB] has no mode.)
+  // Dropdown values: Available | In Use | Used | - | NA | Partial Inaccessible.
+  // Rule: ONLY "Available" is usable; "In Use" → in-use (reserver from the
+  // paired User column); any OTHER non-blank value → not usable (NA → "no
+  // credits"; Used / - / Partial Inaccessible → unavailable). A blank cell is
+  // not a positive "unusable" signal, so it falls through to free. Credit-free
+  // modes (message_only / check_status / introduce_back → null) skip this.
   const creditField = mapModeToCreditField(mode);
   if (creditField) {
     const v = norm(soo[creditField]);
-    if (v === 'na' || v === 'n/a') return { state: 'blocked', who: '', frees: '', reason: 'na' };
-  }
-
-  // 3. In use: scan credit channels; first "In Use" by a different operator wins
-  const meN = norm(me);
-  for (const [creditKey, userKey] of CREDIT_FIELDS) {
-    if (norm(soo[creditKey]) === IN_USE) {
-      const reserver = userKey ? String(soo[userKey] || '').trim() : '';
-      if (reserver && !norm(reserver).includes(meN)) {
-        return { state: 'in-use', who: cleanWho(reserver), frees: '' };
-      }
-      // If reserver is me or empty, continue scanning — don't flag in-use
+    if (v === IN_USE) {
+      const userField = CREDIT_USER[creditField];
+      const reserver = userField ? String(soo[userField] || '').trim() : '';
+      return { state: 'in-use', who: cleanWho(reserver), frees: '' };
     }
+    if (v && v !== 'available') {
+      const reason = (v === 'na' || v === 'n/a') ? 'na' : 'unavailable';
+      return { state: 'blocked', who: '', frees: '', reason, label: String(soo[creditField] || '').trim() };
+    }
+    // 'available' (or blank) → fall through to the assigned / free check.
   }
 
   // 4. Assigned: section is not a pool, assignee is someone else

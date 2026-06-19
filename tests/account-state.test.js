@@ -10,10 +10,17 @@ test('blocked wins over everything', () => {
   assert.equal(s.state, 'blocked');
 });
 
-test('in use by someone else → in-use + who', () => {
-  const s = classifyAccountState({ linkedinCredits: 'In Use', linkedinUser: 'Cathy' }, 'alecx', 'connect_only', PASS);
+test('in use by someone else on the campaign channel → in-use + who', () => {
+  // open_profile_only reads Linkedin (OP Credits); its reserver is Linkedin OP User.
+  const s = classifyAccountState({ linkedinCredits: 'In Use', linkedinUser: 'Cathy' }, 'alecx', 'open_profile_only', PASS);
   assert.equal(s.state, 'in-use');
   assert.equal(s.who, 'Cathy');
+});
+
+test('channel-aware: a non-campaign channel being In Use does NOT block', () => {
+  // Connect campaign reads ONLY CC. Linkedin OP being In Use is irrelevant here.
+  const s = classifyAccountState({ linkedinCredits: 'In Use', linkedinUser: 'Cathy', ccCredits: 'Available' }, 'alecx', 'connect_only', PASS);
+  assert.equal(s.state, 'free');
 });
 
 test('CC in use → who comes from the "CC User" column (not Linkedin OP User)', () => {
@@ -42,9 +49,21 @@ test('rafaela repro: CC=In Use + CC User=ivy, empty Linkedin OP User → in-use 
   assert.equal(s.who, 'ivy');
 });
 
-test('in use by me → free (not flagged)', () => {
-  const s = classifyAccountState({ linkedinCredits: 'In Use', linkedinUser: 'alecx' }, 'alecx', 'connect_only', PASS);
-  assert.equal(s.state, 'free');
+test('In Use on the campaign channel → in-use even if the reserver is me (one campaign at a time)', () => {
+  // The credit column is the truth: if CC says In Use, the account is busy. We no
+  // longer treat "in use by me" as free — In Use means In Use.
+  const s = classifyAccountState({ ccCredits: 'In Use', 'CC User': 'alecx' }, 'alecx', 'connect_only', PASS);
+  assert.equal(s.state, 'in-use');
+});
+
+test('Used / Partial Inaccessible on the campaign channel → blocked (unavailable)', () => {
+  assert.equal(classifyAccountState({ ccCredits: 'Used' }, 'me', 'connect_only', PASS).state, 'blocked');
+  assert.equal(classifyAccountState({ ccCredits: 'Used' }, 'me', 'connect_only', PASS).reason, 'unavailable');
+  assert.equal(classifyAccountState({ linkedinCredits: 'Partial Inaccessible' }, 'me', 'open_profile_only', PASS).state, 'blocked');
+});
+
+test('blank campaign-channel cell → not a positive block → free', () => {
+  assert.equal(classifyAccountState({ ccCredits: '' }, 'me', 'connect_only', PASS).state, 'free');
 });
 
 test('assigned to other + channel resting → assigned (blue) with frees label', () => {

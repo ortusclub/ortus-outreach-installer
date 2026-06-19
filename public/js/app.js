@@ -1078,18 +1078,22 @@ function renderProfiles(profiles) {
     };
     const _sm = _SMAP[_state.state] || _SMAP.free;
     const _who = escHtml(_state.who || '');
-    // NA reuses the blocked (greyed + non-selectable) treatment, but it means
-    // "no credits for this campaign", not a LinkedIn restriction — so it gets
-    // its own word + sub line rather than reading "BLOCKED / Restricted".
-    const _isNA = (_state.state === 'blocked' && _state.reason === 'na');
-    const _word = _isNA ? 'N/A' : _sm.word;
+    // 'blocked' covers three reasons, each greyed + non-selectable but worded
+    // from what the SoO actually says (no invented copy):
+    //   restricted → LinkedIn status block · na → channel credit = NA (no credits)
+    //   unavailable → channel credit = Used / - / Partial Inaccessible (show it).
+    const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
+    const _label = escHtml(_state.label || '');           // raw SoO credit value
+    const _word = (_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word;
     let _sub;
     if (_state.state === 'assigned') {
-      _sub = `Assigned to <b>${_who}</b>.`;
+      _sub = _who ? `Assigned to <b>${_who}</b>.` : 'Assigned to another operator.';
     } else if (_state.state === 'in-use') {
-      _sub = `In use by <b>${_who}</b>.`;
+      _sub = _who ? `In use by <b>${_who}</b>.` : 'In use.';
     } else if (_state.state === 'blocked') {
-      _sub = _isNA ? 'No credits for this campaign.' : 'Restricted by LinkedIn.';
+      if (_reason === 'na') _sub = 'No credits for this campaign.';
+      else if (_reason === 'unavailable') _sub = _label ? `Not available — <b>${_label}</b>.` : 'Not available for this campaign.';
+      else _sub = 'Restricted by LinkedIn.';
     } else {
       _sub = 'Anyone can use.';
     }

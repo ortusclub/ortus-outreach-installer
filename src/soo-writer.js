@@ -44,6 +44,14 @@ export function resolveSoOTarget(mode, action) {
   if (action === 'inmail_sent' && mode === 'inmail_only') {
     return { creditHeader: 'Inmail Credits', userHeader: 'Inmail User' };
   }
+  // Message Campaign (open_profile_only): a genuine Open-Profile message uses the
+  // Linkedin OP channel, so flip Linkedin (OP Credits) [AD] + stamp Linkedin OP
+  // User [AE]. Reverses the earlier "OP writes nothing" stance per the operator
+  // (2026-06-19): the credit column MUST reflect that the account was used. The
+  // InMail fallback path (action 'inmail_sent' in OP mode) is left untouched.
+  if (mode === 'open_profile_only' && (action === 'op_message_sent' || action === 'message_sent')) {
+    return { creditHeader: 'Linkedin (OP Credits)', userHeader: 'Linkedin OP User' };
+  }
   return null;
 }
 
