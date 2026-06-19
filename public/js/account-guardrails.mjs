@@ -4,13 +4,18 @@
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
+export function isRestrictedStatus(status) {
+  const s = String(status || '').toLowerCase().trim();
+  return /restricted/.test(s) || s === 'inaccessible';
+}
+
 const IN_USE = 'in use';
-// [creditField, reserverField|null] — ccCredits has NO reserver field in the SoO.
+// [creditField, reserverField|null] — ccCredits falls back to linkedinUser (the OP User column).
 const CREDIT_FIELDS = [
   ['linkedinCredits', 'linkedinUser'],
   ['inmailCredits', 'inmailUser'],
   ['salesNavCredits', 'salesNavUser'],
-  ['ccCredits', null],
+  ['ccCredits', 'linkedinUser'],
 ];
 
 /**
@@ -66,4 +71,59 @@ export function summarizeSelection(selectedSooList, me, mode, passover) {
   }
   const pw = passoverWarning(mode, passover);
   return { flagged, passover: pw, hasWarnings: flagged.length > 0 || !!pw };
+}
+
+/**
+ * Classify a single account tile into one of four exclusive states:
+ *   'blocked'  — SoO Status is restricted/inaccessible; never selectable.
+ *   'in-use'   — a credit channel is stamped "In Use" by a different operator.
+ *   'assigned' — tile belongs to another operator's team section (and credit
+ *                channel is not yet active, so passover hasn't freed it yet).
+ *   'free'     — available for the current operator to use.
+ *
+ * Priority: blocked > in-use > assigned > free.
+ * Pure — no DOM, no I/O.
+ *
+ * @param {object|null} soo      Raw SoO row object (all columns).
+ * @param {string}      me       Current operator identifier (lowercased upstream).
+ * @param {string}      mode     Campaign mode string (e.g. 'connect_only').
+ * @param {object}      passover getPassoverStatus() result: { cc, monthly } each { active, label }.
+ * @returns {{ state: 'blocked'|'in-use'|'assigned'|'free', who: string, frees: string }}
+ */
+export function classifyAccountState(soo, me, mode, passover) {
+  const FREE = { state: 'free', who: '', frees: '' };
+
+  // 1. Guard: missing soo or me → free
+  if (!soo || !me) return FREE;
+
+  // 2. Blocked: SoO Status is restricted or inaccessible
+  if (isRestrictedStatus(soo.Status || soo.status)) return { state: 'blocked', who: '', frees: '' };
+
+  // 3. In use: scan credit channels; first "In Use" by a different operator wins
+  const meN = norm(me);
+  for (const [creditKey, userKey] of CREDIT_FIELDS) {
+    if (norm(soo[creditKey]) === IN_USE) {
+      const reserver = userKey ? String(soo[userKey] || '').trim() : '';
+      if (reserver && !norm(reserver).includes(meN)) {
+        return { state: 'in-use', who: reserver, frees: '' };
+      }
+      // If reserver is me or empty, continue scanning — don't flag in-use
+    }
+  }
+
+  // 4. Assigned: section is not a pool, assignee is someone else
+  const assignee = String(soo.Assignee || soo.assignee || '').trim();
+  const isPool = norm(soo.section).includes('pool') || norm(soo.section).includes('unassigned');
+  if (!isPool && assignee && assignee !== '-' && !norm(assignee).includes(meN)) {
+    const channel = mapModeToChannel(mode);
+    if (channel === null) return { state: 'assigned', who: assignee, frees: '' };
+    if (passover && passover[channel] && passover[channel].active === false) {
+      return { state: 'assigned', who: assignee, frees: passover[channel].label || '' };
+    }
+    // Channel is active (passover lifted) → treat as free
+    return FREE;
+  }
+
+  // 5. Default: free
+  return FREE;
 }

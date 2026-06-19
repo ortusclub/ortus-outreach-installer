@@ -28,7 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
-import { classifyAccountFlag, summarizeSelection } from '/js/account-guardrails.mjs';
+import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus } from '/js/account-guardrails.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -708,15 +708,12 @@ function dedupeProfilesByEmail(profiles) {
   return out;
 }
 
-// v2.102.0: SoO column B "Status" — block accounts the SoO marks unusable.
+// v2.102.0: isRestrictedStatus moved to account-guardrails.mjs (imported above).
+// SoO column B "Status" — block accounts the SoO marks unusable.
 // Restricted dropdown values: "Identity Restricted", "Identity Restricted II",
 // "Unjust Identity Restricted", "Hard Identity Restricted" (all contain
 // "restricted"); "Inaccessible" is also unusable. Active/Construction/Rented/?
 // stay selectable. getSoO returns every column raw, so soo['Status'] is present.
-function isRestrictedStatus(status) {
-  const s = (status || '').toString().toLowerCase().trim();
-  return /restricted/.test(s) || s === 'inaccessible';
-}
 
 // v2.102.0: at least one channel (OP/InMail/SN/CC) currently shows 'available'.
 function hasAvailableChannel(soo) {
