@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Breakdown tile — showing the account's assignee</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .skx-wrap { max-width: 760px; margin: 0 auto; padding: 32px 28px 80px; }
+    .skx-lead { font-family: var(--body); color: var(--ink); font-size: 0.9rem; line-height: 1.5; margin: 0 0 6px; }
+    .skx-note { font-family: var(--body); color: var(--gray); font-size: 0.78rem; line-height: 1.5; margin: 0 0 14px; }
+    .skx-vh { font-family: var(--display); letter-spacing: 0.06em; font-size: 1.25rem; color: var(--ink); margin: 32px 0 4px; }
+    .skx-vs { font-family: var(--body); color: var(--gray); font-size: 0.78rem; margin: 0 0 14px; }
+
+    /* ── assignee treatments (all use the app's --blue assigned colour) ─────── */
+    /* V1 — pill on the right of the email row */
+    .asg-tag {
+      margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px;
+      font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.04em; text-transform: none;
+      color: var(--blue); border: 1px solid var(--blue); border-radius: 9999px; padding: 2px 9px;
+    }
+    /* V2 — blue line between email and the channel grid */
+    .asg-line {
+      display: flex; align-items: center; gap: 6px; padding-left: 30px; margin-top: 4px;
+      font-family: var(--body); font-size: 0.76rem; color: var(--blue);
+      text-transform: none; letter-spacing: normal;
+    }
+    .asg-line b { font-weight: 600; }
+    /* V3 — blue accent + owner appended inline to the email */
+    .asg-inline { font-family: var(--body); font-size: 0.82rem; color: var(--blue); text-transform: none; letter-spacing: normal; }
+    .brk-accent.assigned { background: var(--blue) !important; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="skx-wrap">
+    <p class="skx-lead"><b>Where to show "this account is assigned to a person".</b> Some accounts are owned by a specific operator (the SoO <b>Assignee</b> column) — before monthly passover only they should use it, so the picker should flag it (the Connect tiles already do this in blue). Below: 3 placements on the breakdown tile. Pick one.</p>
+    <p class="skx-note">Assignee names here are illustrative (the Assignee field exists; this is about placement). The channel accent still shows the best channel; assignment is the blue layer on top. Examples: <b>gil.cesista</b> assigned to Argil (all In Use) · <b>tara.singh</b> assigned to Dafina (LN OP free) · <b>michael.lontoc</b> pool / unassigned (all free).</p>
+
+    <div class="skx-vh">V1 · OWNER PILL (right of the email)</div>
+    <p class="skx-vs">A small blue "owner" pill on the email row. Lightest touch; channels read exactly as now.</p>
+    <div class="accounts-browser browse-card"><div class="browse-card-body"><div class="profile-grid" id="g1"></div></div></div>
+
+    <div class="skx-vh">V2 · ASSIGNED LINE (above the channels)</div>
+    <p class="skx-vs">A blue line between the email and the channel grid, with the passover hint ("frees the 16th"). Most explicit.</p>
+    <div class="accounts-browser browse-card"><div class="browse-card-body"><div class="profile-grid" id="g2"></div></div></div>
+
+    <div class="skx-vh">V3 · BLUE ACCENT + INLINE OWNER</div>
+    <p class="skx-vs">The left accent turns blue when assigned (overriding the channel colour) and the owner is appended to the email. Strongest "this belongs to someone" signal — but you lose the channel colour on the lip.</p>
+    <div class="accounts-browser browse-card"><div class="browse-card-body"><div class="profile-grid" id="g3"></div></div></div>
+  </div>
+
+  <script>
+    const ACCOUNTS = [
+      { email: 'gil.cesista@ortus.solutions',    assignee: 'Argil',  frees: 'the 16th', ch: [['SN OP','In Use','argil'],['LN OP','In Use','argil'],['InMail','In Use','argil']] },
+      { email: 'tara.singh@ortus.solutions',     assignee: 'Dafina', frees: 'the 16th', ch: [['SN OP','Used',''],['LN OP','Available',''],['InMail','NA','']] },
+      { email: 'michael.lontoc@ortus.solutions', assignee: null,     frees: null,       ch: [['SN OP','Available',''],['LN OP','Available',''],['InMail','Available','']] },
+    ];
+    const esc = (s) => String(s).replace(/[&<>"]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+    const dotOf = (st) => { const v = st.toLowerCase().trim();
+      return v === 'available' ? 'd-avail' : v === 'in use' ? 'd-inuse' : (v === 'na' || v.includes('inaccessible')) ? 'd-na' : 'd-spent'; };
+    const cells = (a) => a.ch.map(([l, st, who]) => {
+      const txt = /inaccessible/i.test(st) ? 'NA' : esc(st);
+      const w = who ? ' · ' + esc(who) : '';
+      return `<div class="brk-col"><div class="brk-k">${esc(l)}</div><div class="brk-v"><i class="brk-vdot ${dotOf(st)}"></i><span class="brk-vt">${txt}${w}</span></div></div>`;
+    }).join('');
+    const accentOf = (a) => { const free = a.ch.some(c => c[1] === 'Available'); const active = a.ch.some(c => ['available','in use'].includes(c[1].toLowerCase())); return free ? ' free' : (active ? ' busy' : ''); };
+
+    function v1(a) {
+      const tag = a.assignee ? `<span class="asg-tag">\u{1F512} ${esc(a.assignee)}</span>` : '';
+      return `<label class="profile-item jt jt-brk"><div class="brk-accent${accentOf(a)}"></div>
+        <div class="jt-det"><div class="jt-top"><input type="checkbox" /><span class="jt-email">${esc(a.email)}</span>${tag}</div>
+        <div class="brk-grid">${cells(a)}</div></div></label>`;
+    }
+    function v2(a) {
+      const line = a.assignee ? `<div class="asg-line">\u{1F512} Assigned to <b>${esc(a.assignee)}</b> · frees ${esc(a.frees)}</div>` : '';
+      return `<label class="profile-item jt jt-brk"><div class="brk-accent${accentOf(a)}"></div>
+        <div class="jt-det"><div class="jt-top"><input type="checkbox" /><span class="jt-email">${esc(a.email)}</span></div>
+        ${line}<div class="brk-grid">${cells(a)}</div></div></label>`;
+    }
+    function v3(a) {
+      const inline = a.assignee ? ` <span class="asg-inline">· ${esc(a.assignee)}</span>` : '';
+      const acc = a.assignee ? ' assigned' : accentOf(a);
+      return `<label class="profile-item jt jt-brk"><div class="brk-accent${acc}"></div>
+        <div class="jt-det"><div class="jt-top"><input type="checkbox" /><span class="jt-email">${esc(a.email)}${inline}</span></div>
+        <div class="brk-grid">${cells(a)}</div></div></label>`;
+    }
+    document.getElementById('g1').innerHTML = ACCOUNTS.map(v1).join('');
+    document.getElementById('g2').innerHTML = ACCOUNTS.map(v2).join('');
+    document.getElementById('g3').innerHTML = ACCOUNTS.map(v3).join('');
+  </script>
+</body>
+</html>
