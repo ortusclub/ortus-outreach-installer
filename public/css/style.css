@@ -2057,7 +2057,7 @@ table.mini td { padding: 5px 8px; color: var(--ink); border-bottom: 1px solid va
 .hidden { display: none; }
 
 .note-hint {
-  font-size: 0.72rem;
+  font-size: 0.86rem;
   color: var(--gray);
   margin-top: 6px;
   line-height: 1.4;
@@ -7184,9 +7184,9 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 }
 .delay-danger .dd-body {
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: 0.86rem;
   color: var(--ink);
-  line-height: 1.6;
+  line-height: 1.55;
 }
 .delay-danger .dd-body b { color: var(--red); }
 

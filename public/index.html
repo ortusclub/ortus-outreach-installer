@@ -582,6 +582,15 @@
               </div>
               <div class="intro-config-hint">Used for <b>both</b> primary-side actions below. It must be logged into LinkedIn as the primary.</div>
             </div>
+            <!-- #7: Primary check timing — CC+IC only. Moved inside primary-person-block (v2.112.8). -->
+            <div class="intro-config-field" id="primary-timing-field">
+              <label for="primary-timing-select" class="intro-config-label">Primary check timing</label>
+              <select id="primary-timing-select" class="intro-config-select" onchange="savePrimaryPersonFields()">
+                <option value="immediately" selected>Immediately (at start)</option>
+                <option value="after_connections">After connections complete</option>
+              </select>
+              <div class="intro-config-hint">When the connect/check to the primary person runs. "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</div>
+            </div>
           </div>
 
           <!-- v2.91: Automated first follow-up -->
@@ -675,15 +684,6 @@
             <div class="intro-config-hint">On (default): after sending ends we keep checking on the cadence above and auto-send any due intros/follow-ups. Off: that pauses — run a check yourself with ⚡ Check now on the live campaign card.</div>
           </div>
 
-          <!-- #7: Primary check timing — CC+IC only. Hidden for all other modes. -->
-          <div class="field" id="primary-timing-field" hidden>
-            <label for="primary-timing-select">Primary check timing</label>
-            <select id="primary-timing-select">
-              <option value="immediately" selected>Immediately (at start)</option>
-              <option value="after_connections">After connections complete</option>
-            </select>
-            <p class="field-hint">When the connect/check to the primary person runs. "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</p>
-          </div>
         </div>
       </div>
 

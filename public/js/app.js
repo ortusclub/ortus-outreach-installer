@@ -1758,9 +1758,8 @@ function onModeChange() {
   // Cadence applies to every monitoring mode (CC+IC + CC+DM). Same predicate
   // drives the launch payload read so visibility and persistence stay in lockstep.
   if (cadenceBlock) cadenceBlock.style.display = usesMonitoringCadence(mode) ? '' : 'none';
-  // #7: Primary check timing — only meaningful for CC+IC (the only mode with a preflight handshake).
-  const ptf = document.getElementById('primary-timing-field');
-  if (ptf) ptf.hidden = (mode !== 'connect_and_introduce');
+  // #7: Primary check timing — lives inside primary-person-block; block visibility
+  // already handles show/hide via _ccic above, so no separate hidden toggle needed.
   // v2.62: hide the 2-up row wrapper too when neither child is visible —
   // otherwise its grid gap + top margin shows as an empty band. CC+DM has
   // no primary-person block (no intro) but DOES use the cadence block, so
@@ -3266,7 +3265,7 @@ async function refreshSheetTabPicker() {
   select.innerHTML = tabs.map(tab => {
     const isSys = _isSystemTabName(tab.name);
     const tabLabel = isSys ? `${tab.name} — not leads` : tab.name;
-    const detail = `· gid ${tab.gid} · ${tab.rowCount} rows`;
+    const detail = `· ${tab.rowCount} rows`;
     const selected = (urlGid && String(tab.gid) === urlGid) ? ' selected' : '';
     return `<option value="${tab.gid}"${selected} data-sys="${isSys}" data-name="${escHtml(tab.name)}">${escHtml(tabLabel)} ${detail}</option>`;
   }).join('');
