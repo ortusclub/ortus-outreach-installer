@@ -894,17 +894,23 @@ function renderPassoverBanner() {
     const m = String(label || '').match(/(\d+d)/);
     return m ? m[1] : (label || '—');
   };
-  const setBannerWindow = (info, daysId, stateId) => {
+  // Phase-aware: an "active" window = post-passover (accounts not yet used are
+  // AVAILABLE/green for everyone); an "inactive" window = start of the cycle
+  // (accounts are locked to their assignees, ASSIGNED/blue). The note says the
+  // NEXT change, not a misleading "Resets <day>".
+  const setBannerWindow = (info, daysId, stateId, noteId, freeDay, lockDay) => {
     const daysEl = document.getElementById(daysId);
     const stateEl = document.getElementById(stateId);
+    const noteEl = document.getElementById(noteId);
     if (daysEl) daysEl.textContent = days(info.label);
     if (stateEl) {
-      stateEl.textContent = info.active ? '● Active' : '● Closed';
-      stateEl.className = 'acct-cd-s ' + (info.active ? 'pass-on' : 'pass-off');
+      stateEl.textContent = info.active ? 'Available' : 'Assigned';
+      stateEl.className = 'acct-cd-s ' + (info.active ? 'pass-on' : 'pass-assigned');
     }
+    if (noteEl) noteEl.textContent = info.active ? ('Re-locks ' + lockDay) : ('Frees ' + freeDay);
   };
-  setBannerWindow(monthly, 'pass-monthly-days', 'pass-monthly-state');
-  setBannerWindow(cc, 'pass-cc-days', 'pass-cc-state');
+  setBannerWindow(monthly, 'pass-monthly-days', 'pass-monthly-state', 'pass-monthly-note', 'the 16th', 'the 1st');
+  setBannerWindow(cc, 'pass-cc-days', 'pass-cc-state', 'pass-cc-note', 'Thursday', 'Monday');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

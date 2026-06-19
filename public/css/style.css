@@ -967,6 +967,7 @@ select {
 .acct-cd-s { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); }
 .acct-cd-s.pass-on { color:var(--green); }
 .acct-cd-s.pass-off { color:var(--gray); }
+.acct-cd-s.pass-assigned { color:var(--blue); }
 .acct-cd-w { font-family:var(--body); font-size:0.74rem; color:var(--gray); margin-top:3px; }
 
 @media (max-width: 900px) {
