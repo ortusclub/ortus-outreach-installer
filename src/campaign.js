@@ -24,7 +24,8 @@ import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
-import { fetchSheet as fetchSheetRows } from './sheets.js';
+import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
+import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
@@ -276,6 +277,31 @@ function bulkCheckKey(sheetId, profileId) { return `${sheetId}|${profileId}`; }
 function _extractSheetIdFromUrl(url) {
   const m = (url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
   return m ? m[1] : '';
+}
+
+/**
+ * Pure run-guard decision: is the source we're about to send from actually a
+ * lead tab? Safety backstop in front of every send. No I/O — the caller
+ * gathers the inputs (just-fetched rows, the chosen gid, tab metadata).
+ *
+ * @param {object} args
+ * @param {number} args.tabCount - number of tabs in the workbook (unknown → 1).
+ * @param {string} args.gid - the operator-chosen tab gid ('' when none chosen).
+ * @param {string} args.tabName - name of the resolved tab ('' when unknown).
+ * @param {Record<string,string>[]} args.rows - the rows just fetched.
+ * @returns {{ ok: boolean, reason: string }}
+ */
+export function decideLeadSource({ tabCount, gid, tabName, rows }) {
+  if (Number(tabCount) > 1 && !gid) {
+    return { ok: false, reason: 'multiple tabs, no tab chosen' };
+  }
+  if (tabName && isSystemTabName(tabName)) {
+    return { ok: false, reason: 'system tab, not leads: ' + tabName };
+  }
+  if (!looksLikeLeadRows(rows)) {
+    return { ok: false, reason: 'tab does not look like a lead list' };
+  }
+  return { ok: true, reason: 'ok' };
 }
 
 /**
@@ -1647,7 +1673,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately' }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately' }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // #7: when 'after_connections', the primary connect/check is deferred until
@@ -1664,10 +1690,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     allLeadsConnected = false;
   }
 
+  // Lead-source guard: the operator-chosen tab (gid). Normalize to digits;
+  // backfill from any gid already carried in the sheet URL when not supplied.
+  // Persisted alongside sheetUrl everywhere so reruns/restores read the SAME tab.
+  sheetGid = String(sheetGid || '').replace(/\D/g, '') || extractSheetGid(sheetUrl);
+
   // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
   // throw, so even a campaign that fails preflight is recoverable.
   _lastRunSettings = {
-    profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
+    profileIds, sheetUrl, sheetGid, templates, dailyLimit, mode, messageOpenProfiles,
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
     senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled,
@@ -1773,6 +1804,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign.templates = templates || {};
   campaign.senderFirstNames = senderFirstNames || {};
   campaign.sheetUrl = sheetUrl || '';
+  // Lead-source guard: the resolved tab. Read back by the run-guard, the
+  // monitoring slice, and re-fetches so every read targets the chosen tab.
+  campaign.sheetGid = sheetGid || '';
   campaign.linkedinColumn = linkedinColumn || '';
   // v2.58.x — IC-only sheet-mapping options exposed on campaign state so
   // restore/monitoring paths can read them back from a running campaign.
@@ -1876,8 +1910,41 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
     // ── Fetch leads from Google Sheet ──
     log('Fetching sheet…');
-    const rows = await fetchSheetRows(sheetUrl);
+    // Lead-source guard: always read the operator-chosen tab. withGid is a
+    // no-op when sheetGid is empty (legacy single-tab links keep working).
+    const _src = withGid(sheetUrl, campaign.sheetGid);
+    const rows = await fetchSheetRows(_src);
     log(`${rows.length} row(s). Columns: ${Object.keys(rows[0] || {}).join(', ')}`);
+
+    // ── Lead-source run-guard (safety backstop) ──
+    // Before any sends, prove this is a lead tab. Aborts the launch on a
+    // multi-tab workbook with no tab chosen, a known system tab, or rows that
+    // don't look like a lead list. listSheetTabs is best-effort: if it throws
+    // (Apps Script not redeployed / offline), treat tabCount as unknown=1 and
+    // fall back to the rows check.
+    let _tabCount = 1;
+    let _tabName = '';
+    if (!campaign.sheetGid) {
+      try {
+        const _tabs = await listSheetTabs(sheetUrl);
+        _tabCount = Array.isArray(_tabs) ? _tabs.length : 1;
+      } catch (tabErr) {
+        log(`  ⚠ Could not enumerate sheet tabs (${tabErr.message}) — relying on the lead-row check.`);
+        _tabCount = 1;
+      }
+    }
+    const _guard = decideLeadSource({
+      tabCount: _tabCount,
+      gid: campaign.sheetGid,
+      tabName: _tabName,
+      rows,
+    });
+    if (!_guard.ok) {
+      const _msg = `Refusing to launch — bad lead source (${_guard.reason}). Pick the correct lead tab and try again.`;
+      log(`✖ ${_msg}`);
+      _ops('ERROR', 'Lead-source guard blocked launch', { details: _guard.reason });
+      throw new Error(_msg);
+    }
 
     // v2.84: "Needs Login" SoO flag. When an account's session expires it can't
     // act on any of its leads, so flag every row assigned to that account
@@ -2732,8 +2799,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     campaign._isTarget = _isTarget;
     campaign._currentTargets = () => targets;
     // Re-fetch the SAME sheet. campaign.js already imports fetchSheetRows and owns sheetUrl,
-    // so the server stays out of the sheets layer — it just calls this.
-    campaign._refetchRows = async () => fetchSheetRows(campaign.sheetUrl);
+    // so the server stays out of the sheets layer — it just calls this. withGid pins the
+    // operator-chosen tab (no-op when sheetGid is empty / legacy single-tab links).
+    campaign._refetchRows = async () => fetchSheetRows(withGid(campaign.sheetUrl, campaign.sheetGid));
 
     // v2.96.0 (Phase 2) — reckless-settings guard. LinkedIn rate-limits
     // connection invites hard (~100/week is the practical ceiling); a high daily
@@ -4416,6 +4484,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         settings: {
           profileIds: Array.isArray(profileIds) ? [...profileIds] : [],
           sheetUrl: sheetUrl || '',
+          // Lead-source guard: persist the chosen tab so Re-run reads the
+          // SAME tab the operator launched with (not Google's first-tab default).
+          sheetGid: campaign.sheetGid || '',
           templates: {
             connectionNote: tpl.connectionNote || '',
             followUpMessage: tpl.followUpMessage || '',
@@ -4854,6 +4925,9 @@ export async function restoreCampaign() {
     const fromDisk = readLastRun(LAST_RUN_FILE);
     if (fromDisk && Array.isArray(fromDisk.profileIds) && fromDisk.profileIds.length) {
       settings = { ...fromDisk };
+      // Lead-source guard: backfill the chosen tab for snapshots written
+      // before sheetGid was persisted.
+      if (!settings.sheetGid) settings.sheetGid = extractSheetGid(settings.sheetUrl || '');
     }
   }
   // Last resort: rebuild from the most recent history entry (lossy — no benchedProfileIds,
@@ -4869,6 +4943,9 @@ export async function restoreCampaign() {
           settings = {
             profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
             sheetUrl: s.sheetUrl || '',
+            // Lead-source guard: carry the chosen tab; backfill from the URL
+            // for pre-feature history entries that lack it.
+            sheetGid: s.sheetGid || extractSheetGid(s.sheetUrl || ''),
             templates: s.templates || {},
             dailyLimit: s.dailyLimit ?? 50,
             mode: last.mode,

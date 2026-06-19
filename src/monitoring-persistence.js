@@ -14,6 +14,10 @@ export const MONITORING_FIELDS = [
   'state',
   'mode',
   'sheetUrl',
+  // Lead-source guard: the operator-chosen tab. Persisted so post-restart
+  // monitoring re-fetches the SAME tab. Older slices lack it → campaign.js
+  // backfills from extractSheetGid(sheetUrl) on restore.
+  'sheetGid',
   'linkedinColumn',
   'profileIds',
   'profileNames',
