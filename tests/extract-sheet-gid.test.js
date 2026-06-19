@@ -7,7 +7,7 @@ import { extractSheetGid } from '../src/utils.js';
 //   - #gid=  (typical share link)
 //   - ?gid=  (older view links)
 //   - &gid=  (when combined with another query param)
-// All three should match. Anything else returns null and the caller falls back
+// All three should match. Anything else returns '' and the caller falls back
 // to the first tab.
 
 test('extracts gid from #gid= fragment', () => {
@@ -25,16 +25,16 @@ test('extracts gid from &gid= when chained after another param', () => {
   assert.equal(extractSheetGid(url), '12345');
 });
 
-test('returns null when URL has no gid', () => {
+test('returns empty string when URL has no gid', () => {
   const url = 'https://docs.google.com/spreadsheets/d/abc123/edit?usp=sharing';
-  assert.equal(extractSheetGid(url), null);
+  assert.equal(extractSheetGid(url), '');
 });
 
-test('returns null for empty / non-string input', () => {
-  assert.equal(extractSheetGid(''), null);
-  assert.equal(extractSheetGid(null), null);
-  assert.equal(extractSheetGid(undefined), null);
-  assert.equal(extractSheetGid(12345), null);
+test('returns empty string for empty / non-string input', () => {
+  assert.equal(extractSheetGid(''), '');
+  assert.equal(extractSheetGid(null), '');
+  assert.equal(extractSheetGid(undefined), '');
+  assert.equal(extractSheetGid(12345), '');
 });
 
 test('handles gid=0 (first tab) explicitly', () => {
