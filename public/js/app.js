@@ -2062,9 +2062,19 @@ function onModeChange() {
 
   // #8: refresh store-sourced primary status when switching to/from CC+IC
   // so the picker rows update without requiring a full profile reload.
-  loadPrimaryStatusForPicker().then(() => {
-    if (allProfilesData.length > 0) renderProfiles(allProfilesData);
-  }).catch(() => {});
+  // v2.112.19: account-tile states are mode-dependent (each mode reads its own
+  // credit column), so the picker MUST re-render on every mode change. Do it now
+  // — synchronously, and via filterProfiles() so the operator's active search /
+  // filter is preserved (the old code re-rendered the FULL list, dropping it).
+  // Re-run after the primary-status fetch resolves too (refreshes primary badges),
+  // but don't depend on it: a slow/failed fetch must not leave stale tiles.
+  const _reRenderPicker = () => {
+    if (!Array.isArray(allProfilesData) || allProfilesData.length === 0) return;
+    if (typeof filterProfiles === 'function') { try { filterProfiles(); return; } catch (_) { /* fall through */ } }
+    renderProfiles(allProfilesData);
+  };
+  _reRenderPicker();
+  loadPrimaryStatusForPicker().then(_reRenderPicker).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
