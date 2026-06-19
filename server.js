@@ -40,7 +40,8 @@ import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { primaryKeyFromUrl, loadPrimaryStatus } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
-import { fetchSheet, fetchSheetWithRows } from './src/sheets.js';
+import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
+import { spreadsheetIdFromUrl, extractSheetGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
 import { closeLocalBrowser } from './src/local-launcher.js';
@@ -541,6 +542,27 @@ app.get('/api/sheet/preview', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Tab enumeration — used by the frontend tab picker (Task 4, Fix A).
+// Returns the list of sheets/tabs in the workbook so the operator can choose
+// which tab is the lead source. Delegates to the Apps Script listTabs action
+// via listSheetTabs(); requires the script to be redeployed with that action.
+// ---------------------------------------------------------------------------
+app.get('/api/sheet/tabs', async (req, res) => {
+  try {
+    const sheetUrl = (req.query.sheetUrl || '').toString().trim();
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    if (!spreadsheetIdFromUrl(sheetUrl)) {
+      return res.status(400).json({ error: 'sheetUrl required' });
+    }
+    const tabs = await listSheetTabs(sheetUrl);
+    res.json({ tabs });
+  } catch (err) {
+    console.error('Sheet tabs error:', err.message);
+    res.status(502).json({ error: `Could not read tabs — is the Apps Script redeployed? (${err.message})` });
+  }
+});
+
 // 2.8.29: Check Status preview. Reads the sheet, counts rows where Account
 // Used (column D) is filled — that's the signal an invite went out. CC text
 // is no longer the source of truth. Cross-references the senders with
@@ -891,7 +913,15 @@ function buildCampaignConfig(body) {
           // continues counting from the saved total instead of zero.
           resumeContext,
           // #7: when the primary connect/check happens.
-          primaryCheckTiming } = body || {};
+          primaryCheckTiming,
+          // Fix A Task 4: explicit tab selection from the frontend picker.
+          sheetGid: sheetGidRaw,
+          // Fix A Task 4: frontend signals whether the workbook has multiple tabs.
+          multiTab } = body || {};
+  // Coerce sheetGid to digits only; fall back to extracting from the URL.
+  const sheetGid = sheetGidRaw != null
+    ? String(sheetGidRaw).replace(/\D/g, '')
+    : extractSheetGid(sheetUrl || '');
   let concurrencyClean = 1;
   if (Number.isFinite(Number(concurrency)) && Number(concurrency) >= 2) {
     const n = Math.min(5, Number(concurrency));
@@ -937,6 +967,9 @@ function buildCampaignConfig(body) {
     // pre-loop handshake (today's behavior); 'after_connections' = after all
     // accounts finish sending connections. Any other value coerces to default.
     primaryCheckTiming: primaryCheckTiming === 'after_connections' ? 'after_connections' : 'immediately',
+    // Fix A Task 4: resolved tab GID (digits only). Empty string means unknown /
+    // single-tab workbook; campaign.js will apply withGid when non-empty.
+    sheetGid,
   };
 }
 
@@ -998,6 +1031,18 @@ app.post('/api/campaign/start', async (req, res) => {
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
     if (rejectIfNoOperatorEmail(res)) return;
     if (rejectIfBadPrimaryUrl(body, res)) return;
+
+    // Fix A Task 4 — fast intake check: reject if the frontend signals a
+    // multi-tab workbook but no tab was chosen. The deep guard fires again
+    // inside campaign.js (Task 5); this keeps the failure fast and surfaced.
+    {
+      const resolvedGid = body.sheetGid != null
+        ? String(body.sheetGid).replace(/\D/g, '')
+        : extractSheetGid(sheetUrl || '');
+      if (body.multiTab === true && !resolvedGid) {
+        return res.status(400).json({ error: 'Pick the lead tab — this workbook has multiple tabs.' });
+      }
+    }
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
@@ -1280,6 +1325,16 @@ app.post('/api/campaign/queue-only', async (req, res) => {
     if (!dailyLimit || dailyLimit < 1) return res.status(400).json({ error: 'dailyLimit must be >= 1' });
     if (rejectIfNoOperatorEmail(res)) return;
     if (rejectIfBadPrimaryUrl(body, res)) return;
+
+    // Fix A Task 4 — intake guard (mirrors /api/campaign/start).
+    {
+      const resolvedGid = body.sheetGid != null
+        ? String(body.sheetGid).replace(/\D/g, '')
+        : extractSheetGid(sheetUrl || '');
+      if (body.multiTab === true && !resolvedGid) {
+        return res.status(400).json({ error: 'Pick the lead tab — this workbook has multiple tabs.' });
+      }
+    }
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
