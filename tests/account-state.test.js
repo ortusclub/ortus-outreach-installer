@@ -16,14 +16,30 @@ test('in use by someone else → in-use + who', () => {
   assert.equal(s.who, 'Cathy');
 });
 
-test('CC in use falls back to linkedinUser for who', () => {
-  const s = classifyAccountState({ ccCredits: 'In Use', linkedinUser: 'Cathy' }, 'alecx', 'connect_only', PASS);
+test('CC in use → who comes from the "CC User" column (not Linkedin OP User)', () => {
+  const s = classifyAccountState({ ccCredits: 'In Use', 'CC User': 'Cathy' }, 'alecx', 'connect_only', PASS);
   assert.equal(s.state, 'in-use');
   assert.equal(s.who, 'Cathy');
 });
 
+test('CC in use is NOT attributed to an unrelated Linkedin OP User value', () => {
+  // Linkedin OP User belongs to the OP channel, not CC. A populated OP user must
+  // not stand in as the CC reserver — that mis-attributed CC accounts before.
+  const s = classifyAccountState({ ccCredits: 'In Use', linkedinUser: 'Cathy' }, 'alecx', 'connect_only', PASS);
+  assert.notEqual(s.who, 'Cathy');
+});
+
 test('who is cleaned: SoO log string → just the person (email local part)', () => {
-  assert.equal(classifyAccountState({ ccCredits: 'In Use', linkedinUser: 'ivy@ortusclub.com, 2026-06-17 07:05, In Use' }, 'alecx', 'connect_only', PASS).who, 'ivy');
+  assert.equal(classifyAccountState({ ccCredits: 'In Use', 'CC User': 'ivy@ortusclub.com, 2026-06-17 07:05, In Use' }, 'alecx', 'connect_only', PASS).who, 'ivy');
+});
+
+test('rafaela repro: CC=In Use + CC User=ivy, empty Linkedin OP User → in-use by ivy (was wrongly FREE)', () => {
+  const s = classifyAccountState(
+    { ccCredits: 'In Use', 'CC User': 'ivy@ortusclub.com, 2026-06-17 07:05, In Use', linkedinCredits: 'NA', inmailCredits: 'NA' },
+    'antonio', 'connect_only', PASS,
+  );
+  assert.equal(s.state, 'in-use');
+  assert.equal(s.who, 'ivy');
 });
 
 test('in use by me → free (not flagged)', () => {

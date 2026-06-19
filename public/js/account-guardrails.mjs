@@ -38,12 +38,17 @@ export function isHiddenSection(soo) {
 }
 
 const IN_USE = 'in use';
-// [creditField, reserverField|null] — ccCredits falls back to linkedinUser (the OP User column).
+// [creditField, reserverField|null] — each channel's reserver lives in its OWN
+// "User" column. The SoO has a dedicated "CC User" column (raw header key,
+// emitted by handleGetSoO alongside the structured fields), so CC reads from
+// there — NOT from linkedinUser (the Linkedin OP User column), which only
+// names the OP reserver and is empty for CC-only accounts. Reading CC from
+// linkedinUser mis-classified CC-in-use accounts (e.g. rafaela) as FREE.
 const CREDIT_FIELDS = [
   ['linkedinCredits', 'linkedinUser'],
   ['inmailCredits', 'inmailUser'],
   ['salesNavCredits', 'salesNavUser'],
-  ['ccCredits', 'linkedinUser'],
+  ['ccCredits', 'CC User'],
 ];
 
 /**
