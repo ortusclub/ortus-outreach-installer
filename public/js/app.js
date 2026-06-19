@@ -3413,6 +3413,17 @@ function _showTabChangeModal(fromLabel, toLabel) {
 window.onSheetTabChange = onSheetTabChange;
 window.refreshSheetTabPicker = refreshSheetTabPicker;
 
+// True if any sample row's value for `col` looks like a LinkedIn profile URL
+// (contains linkedin.com) or a generic http(s) URL. Used to guard the
+// LinkedIn-URL column picker against a wrong (non-URL) column choice.
+function _looksLikeUrlColumn(col, rows) {
+  for (const row of (rows || [])) {
+    const v = String((row && row[col]) || '').toLowerCase();
+    if (v.includes('linkedin.com') || /^https?:\/\//.test(v)) return true;
+  }
+  return false;
+}
+
 async function previewSheet() {
   const url = document.getElementById('sheet-url').value.trim();
   const preview = document.getElementById('sheet-preview');
@@ -3451,20 +3462,20 @@ async function previewSheet() {
         if (autoDetectCol) break;
       }
     }
-    html += `<div class="ic-filled" style="margin-top:12px"><div class="ic-row">
-      <div class="ic-label-block">
-        <div class="ic-label">LinkedIn URL<br>Column</div>
-        <div class="ic-sub">Cell values must be full LinkedIn profile URLs (e.g. <code>https://www.linkedin.com/in/…</code>). Rows where this is blank are skipped.</div>
-      </div>
-      <div>
-        <select id="linkedin-col-select" class="ic-select">`;
+    let _urlOpts = '';
     data.columns.forEach((col) => {
-      const selected = (autoDetectCol && col === autoDetectCol) ? 'selected' : '';
-      html += `<option value="${escHtml(col)}" ${selected}>${escHtml(col)}</option>`;
+      const sel = (autoDetectCol && col === autoDetectCol) ? 'selected' : '';
+      _urlOpts += `<option value="${escHtml(col)}" ${sel}>${escHtml(col)}</option>`;
     });
-    html += `</select>
+    html += `<div class="tabpick" id="linkedin-col-pick" style="margin-top:12px; border:1px solid var(--card-border); border-radius:12px;">
+      <div class="tabpick-head"><span class="dot"></span> Which column holds the LinkedIn profile URL?</div>
+      <select id="linkedin-col-select">${_urlOpts}</select>
+      <div id="linkedin-col-autodetect" style="font-family:var(--mono); font-size:0.62rem; color:var(--green); margin-top:8px; ${autoDetectCol ? '' : 'display:none'}">✓ Auto-detected${autoDetectCol ? ` from “${escHtml(autoDetectCol)}”` : ''} — values look like linkedin.com/in/… profiles.</div>
+      <div id="linkedin-col-guard" class="leadblock" style="display:none; margin-top:10px;">
+        <div class="lb-title">⛔ That doesn't look like a URL column</div>
+        <div class="lb-body">This column's cells aren't <code>linkedin.com/in/…</code> links. Pick the column whose values are LinkedIn profile URLs, or the app can't open the right person.</div>
       </div>
-    </div></div>`;
+    </div>`;
     // v2.59: the duplicated 'Which column contains the LinkedIn 1st
     // connections?' dropdown previously added here was removed — the IC
     // extras section below already exposes the same picker (#ic-sender-col-select)
@@ -3504,6 +3515,24 @@ async function previewSheet() {
     }
 
     preview.innerHTML = html;
+
+    // Wire the LinkedIn-URL column guard. The auto-detected column passes the
+    // initial check (green ✓ line stays); picking a non-URL column (e.g. a bio
+    // text column) swaps in the red leadblock warning.
+    const _urlSel = document.getElementById('linkedin-col-select');
+    if (_urlSel) {
+      const _rows = data.preview || [];
+      const _validateUrlCol = () => {
+        const ok = _looksLikeUrlColumn(_urlSel.value, _rows);
+        const guard = document.getElementById('linkedin-col-guard');
+        const auto = document.getElementById('linkedin-col-autodetect');
+        if (guard) guard.style.display = ok ? 'none' : 'block';
+        if (auto) auto.style.display = ok ? '' : 'none';
+      };
+      _urlSel.addEventListener('change', _validateUrlCol);
+      _validateUrlCol(); // initial check (auto-detected col should pass)
+    }
+
     sheetColumns = data.columns;
     window.sheetTotalRows = typeof data.totalRows === 'number' ? data.totalRows : null;
     try { window.__sheetPreviewCache = { count: (typeof data.totalRows === 'number' ? data.totalRows : 0), at: Date.now() }; } catch (_) {}
