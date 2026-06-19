@@ -68,3 +68,39 @@ test('summarizeSelection: nothing flagged + active channel → no warnings', () 
   const s = summarizeSelection([{ email: 'b@x', soo: { Assignee: 'Antonio', section: 'Team A' } }], 'antonio', 'open_profile_only', PO);
   assert.equal(s.hasWarnings, false);
 });
+
+// The banner must MIRROR the account tile (classifyAccountState): passover-aware
+// and channel-aware. Regression for luigic — tile FREE (passover lifted) yet the
+// banner still warned, because summarizeSelection used to ignore mode+passover.
+const PO_LIFTED = { monthly: { active: true, label: '' }, cc: { active: true, label: '' } };
+
+test('summarizeSelection: assigned but passover lifted → NOT flagged (mirrors FREE tile)', () => {
+  const sel = [{ email: 'luigic@ortus.solutions', soo: { Assignee: 'Someone Else', section: 'Team B' } }];
+  const s = summarizeSelection(sel, 'antonio', 'connect_only', PO_LIFTED);
+  assert.equal(s.flagged.length, 0);
+  assert.equal(s.hasWarnings, false);
+});
+
+test('summarizeSelection: cross-channel in-use ignored — only the campaign channel matters', () => {
+  // Connect campaign gates on CC; a DIFFERENT channel (InMail) is In Use by someone
+  // else, but CC is free → tile is FREE → banner must not flag.
+  const sel = [{ email: 'x@y', soo: { section: 'pool', ccCredits: 'Available', inmailCredits: 'In Use', inmailUser: 'marco@x.com' } }];
+  const s = summarizeSelection(sel, 'antonio', 'connect_only', PO_LIFTED);
+  assert.equal(s.flagged.length, 0);
+});
+
+test('summarizeSelection: campaign channel in use by another → still flagged with name', () => {
+  const sel = [{ email: 'x@y', soo: { section: 'pool', ccCredits: 'In Use', 'CC User': 'marco@x.com' } }];
+  const s = summarizeSelection(sel, 'antonio', 'connect_only', PO_LIFTED);
+  assert.equal(s.flagged.length, 1);
+  assert.equal(s.flagged[0].label, 'in use by marco');
+});
+
+test('summarizeSelection: assigned + passover NOT lifted → still flagged', () => {
+  // monthly locked (active:false) → tile shows ASSIGNED → banner must warn.
+  const PO_LOCKED = { monthly: { active: false, label: 'in 5d' }, cc: { active: false, label: 'in 2d' } };
+  const sel = [{ email: 'z@y', soo: { Assignee: 'Marigona', section: 'Team A' } }];
+  const s = summarizeSelection(sel, 'antonio', 'open_profile_only', PO_LOCKED);
+  assert.equal(s.flagged.length, 1);
+  assert.equal(s.flagged[0].label, 'assigned to Marigona');
+});

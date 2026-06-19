@@ -170,12 +170,23 @@ export function passoverWarning(mode, passover) {
   return { channel, label: info.label };
 }
 
-/** Aggregate the currently-selected accounts. selectedSooList = [{ email, soo }]. */
+/**
+ * Aggregate the currently-selected accounts. selectedSooList = [{ email, soo }].
+ * The warning banner MUST mirror the account tile, so this flags via
+ * classifyAccountState (mode-aware + passover-aware) — NOT classifyAccountFlag,
+ * which ignored both and warned about passover-freed assignments and channels
+ * the campaign never touches (the luigic regression: tile FREE, banner warned).
+ * An account is flagged only when its tile shows IN-USE or ASSIGNED.
+ */
 export function summarizeSelection(selectedSooList, me, mode, passover) {
   const flagged = [];
   for (const entry of (selectedSooList || [])) {
-    const f = classifyAccountFlag(entry.soo, me);
-    if (f.flagged) flagged.push({ email: entry.email, label: f.label });
+    const st = classifyAccountState(entry.soo, me, mode, passover);
+    if (st.state === 'in-use' || st.state === 'assigned') {
+      const verb = st.state === 'in-use' ? 'in use by' : 'assigned to';
+      const label = st.who ? `${verb} ${st.who}` : (st.state === 'in-use' ? 'in use' : 'assigned');
+      flagged.push({ email: entry.email, label });
+    }
   }
   const pw = passoverWarning(mode, passover);
   return { flagged, passover: pw, hasWarnings: flagged.length > 0 || !!pw };
