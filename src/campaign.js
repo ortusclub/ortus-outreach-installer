@@ -546,11 +546,26 @@ export function isDegradationSignal(errorMsg) {
 // tested. streak 0 ⇒ baseMs unchanged; each consecutive degraded lead doubles
 // the wait, capped by maxMult and an absolute maxMs ceiling, so a degrading
 // LinkedIn session gets time to recover instead of being hammered.
-export function degradationBackoffMs(baseMs, streak, { maxMult = 32, maxMs = 20 * 60 * 1000 } = {}) {
+export function degradationBackoffMs(baseMs, streak, { maxMult = 32, maxMs = 20 * 60 * 1000, jitter = false, rng = Math.random, retryAfterMs = 0 } = {}) {
   const s = Math.max(0, Math.floor(streak || 0));
-  if (s === 0) return baseMs;
   const mult = Math.min(maxMult, 2 ** s);
-  return Math.min(maxMs, Math.floor(baseMs * mult));
+  const capped = Math.min(maxMs, baseMs * mult);
+  const val = jitter ? Math.floor(rng() * capped) : capped;
+  return Math.max(val, retryAfterMs);
+}
+
+// v2.112.7 — classify a connect-failure message into one of five buckets so the
+// campaign loop can route throttling, invite caps, checkpoints, transient glitches,
+// and benign outcomes to the right recovery paths. Pure + exported. Test in
+// PRIORITY order (invite_cap before throttle so "weekly invitation limit" is never
+// caught by the generic 429/rate-limited rule).
+export function classifyConnectFailure(msg) {
+  const m = String(msg || '').toLowerCase();
+  if (/weekly invitation|invitation limit|weekly_limit/.test(m)) return 'invite_cap';
+  if (/checkpoint|captcha|unusual activity|verify (you|your)|challenge/.test(m)) return 'challenge';
+  if (/429|rate[_ ]limited|too many requests|resource level throttle|voyager_rejected/.test(m)) return 'throttle';
+  if (/execution context was destroyed|navigation|timeout|net::err_|no modal appeared|context was destroyed/.test(m)) return 'transient';
+  return 'benign';
 }
 
 // v2.96.2 — normalize a Sales-Navigator lead URL to its /in/<urn> form so the
