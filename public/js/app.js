@@ -1118,15 +1118,16 @@ function renderProfiles(profiles) {
         'blocked':  { cls: 'stop',     word: 'BLOCKED' },
       };
       const _sm = _SMAP[_state.state] || _SMAP.free;
-      const _who = escHtml(_state.who || '');
       // 'blocked' worded from what the SoO actually says (no invented copy):
       //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
       const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
       const _label = escHtml(_state.label || '');
       const _word = (_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word;
       let _sub;
-      if (_state.state === 'assigned') _sub = _who ? `Assigned to <b>${_who}</b>.` : 'Assigned to another operator.';
-      else if (_state.state === 'in-use') _sub = _who ? `In use by <b>${_who}</b>.` : 'In use.';
+      // v2.112.27: operator asked to drop "who uses who" from the picker for now —
+      // show bare states (the who is still in classifyAccountState/the log if needed).
+      if (_state.state === 'assigned') _sub = 'Assigned.';
+      else if (_state.state === 'in-use') _sub = 'In use.';
       else if (_state.state === 'blocked') {
         if (_reason === 'na') _sub = 'No credits for this campaign.';
         else if (_reason === 'unavailable') _sub = _label ? `Not available — <b>${_label}</b>.` : 'Not available for this campaign.';

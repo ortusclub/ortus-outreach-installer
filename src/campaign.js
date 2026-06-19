@@ -3375,7 +3375,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   reason: 'profile_not_found_404 (page does not exist / linkedin.com/404)',
                 });
                 try {
+                  // v2.112.27: stamp the VISIBLE columns (Stage + the mode's
+                  // status column) via buildSkipSheetData — the audit-only write
+                  // landed in a column most sheets don't show, so the 404 looked
+                  // un-marked (William/Philip rows stayed blank). This also makes
+                  // the row terminal: next run's pre-filter skips a row whose
+                  // status is set, so a dead URL is never re-attempted.
                   await updateSheetRow(sheetUrl, url, {
+                    ...buildSkipSheetData(mode, 'Skipped: Profile not found (404)', pName),
+                    dateLastAction: formatLocalDate(new Date()),
                     auditAction: 'Skipped: Profile not found (404)',
                   }, linkedinColumn);
                 } catch { /* best-effort */ }
