@@ -1008,7 +1008,6 @@ function renderProfiles(profiles) {
     // Case-tolerant on the header key (getSoO preserves raw case → 'Status').
     const sooStatus = soo ? (soo['Status'] || soo['status'] || '').toString().trim() : '';
     const restricted = isRestrictedStatus(sooStatus);
-    const flag = restricted ? { flagged: false, label: '' } : classifyAccountFlag(soo, getMyIdentifier());
     // Defensive: a restored preset/schedule must not keep a now-restricted
     // account selected — drop it so a blocked account can't slip through.
     if (restricted && selectedProfileIds.includes(p.id)) {
@@ -1018,28 +1017,56 @@ function renderProfiles(profiles) {
     if (selectedProfileIds.includes(p.id)) {
       selectedProfileNames[p.id] = p.name;
     }
+    // v2.112.9: J3 two-zone tile. classifyAccountState collapses SoO assignee +
+    // status + live-use + the campaign passover into one of four states; the
+    // status panel + plain verdict replace the old badge/credit-bar/pill clutter.
+    const _state = classifyAccountState(
+      soo,
+      getMyIdentifier(),
+      document.getElementById('campaign-mode')?.value || '',
+      getPassoverStatus()
+    );
+    const _SMAP = {
+      'free':     { cls: 'free',     word: 'FREE' },
+      'assigned': { cls: 'assigned', word: 'ASSIGNED' },
+      'in-use':   { cls: 'inuse',    word: 'IN USE' },
+      'blocked':  { cls: 'stop',     word: 'BLOCKED' },
+    };
+    const _sm = _SMAP[_state.state] || _SMAP.free;
+    const _who = escHtml(_state.who || '');
+    const _frees = escHtml(_state.frees || '');
+    let _when, _verdict;
+    if (_state.state === 'assigned') {
+      _when = _frees ? `${_who} · frees ${_frees}` : _who;
+      _verdict = _frees ? `<b>Assigned to ${_who}</b> this cycle — frees ${_frees}.` : `<b>Assigned to ${_who}</b> this cycle.`;
+    } else if (_state.state === 'in-use') {
+      _when = `${_who} · right now`;
+      _verdict = `<b>In use by ${_who}</b> right now — pick another.`;
+    } else if (_state.state === 'blocked') {
+      _when = 'Restricted';
+      _verdict = `<b>Restricted by LinkedIn</b> — can't be used.`;
+    } else {
+      _when = 'Anyone can use';
+      _verdict = `<b>Free to use.</b>`;
+    }
     const item = document.createElement('label');
-    item.className = 'profile-item'
+    item.className = 'profile-item j3 ' + _state.state
       + (selectedProfileIds.includes(p.id) ? ' selected' : '')
-      + (restricted ? ' is-restricted' : '')
-      + (flag.flagged ? ' is-flagged' : '');
-    if (flag.flagged) item.dataset.warn = '⚠ ' + flag.label;
+      + (restricted ? ' is-restricted' : '');
     item.dataset.profileId = p.id;
+    const _dup = p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : '';
     item.innerHTML = `
-      <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${restricted ? 'disabled' : ''} />
-      <div style="flex:1">
-        <div class="name">${escHtml(p.name)}${p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : ''}${restricted ? ` <span class="restricted-flag" title="${escHtml('SoO status: ' + sooStatus + ' — this account is restricted and can’t be selected.')}">⛔ ${escHtml(sooStatus || 'Restricted')}</span>` : ''}</div>
-        ${!soo ? `<div class="id">${p.id.substring(0, 12)}…</div>` : ''}
-        ${renderSoOBadges(soo)}
-        ${(() => {
-          const _mode = document.getElementById('campaign-mode')?.value || '';
-          if (_mode !== 'connect_and_introduce' || !primaryStatusCache.key) return '';
-          const e = primaryStatusCache.statuses[p.id];
-          if (!e) return '<div class="pick-primary s-none"><span class="dot"></span>Primary — not checked yet</div>';
-          if (e.state === 'connected') return '<div class="pick-primary s-connected"><span class="dot"></span>Primary ✓ <span class="remember">remembered</span></div>';
-          if (e.state === 'pending')   return '<div class="pick-primary s-pending"><span class="dot"></span>Primary pending <span class="remember">remembered</span></div>';
-          return '<div class="pick-primary s-none"><span class="dot"></span>Primary — not checked yet</div>';
-        })()}
+      <div class="j3-status st-${_sm.cls}">
+        <span class="j3-dot dot-${_sm.cls}"></span>
+        <span class="j3-word w-${_sm.cls}">${_sm.word}</span>
+        <span class="j3-when">${_when}</span>
+      </div>
+      <div class="j3-detail">
+        <div class="j3-top">
+          <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${restricted ? 'disabled' : ''} />
+          <span class="j3-email">${escHtml(p.name)}${_dup}</span>
+        </div>
+        <div class="j3-verdict">${_verdict}</div>
       </div>
     `;
     const cb = item.querySelector('input');

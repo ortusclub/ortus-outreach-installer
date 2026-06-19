@@ -1137,7 +1137,7 @@ select {
 
 /* Profile grid inside browse card: 6-col dense, compact items */
 .browse-card .profile-grid {
-  display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 6px;
   padding: 12px 18px 18px;
   background: transparent; border: none;
   max-height: 480px;
@@ -1165,6 +1165,31 @@ select {
 .profile-item.is-restricted input[type="checkbox"] { cursor: not-allowed; }
 .browse-card .profile-item .id { font-size: 0.56rem; margin-top: 3px; }
 .browse-card .profile-item input[type="checkbox"] { margin-top: 2px; }
+
+/* ── J3 account tile (v2.112.9) ── */
+/* Two-zone account picker tile: tinted status panel (FREE/ASSIGNED/IN USE/
+   BLOCKED) + detail zone (checkbox + email + plain verdict). Scoped to
+   .profile-item.j3 so it overrides the base .browse-card .profile-item padding. */
+.browse-card .profile-item.j3 { display:flex; padding:0; overflow:hidden; align-items:stretch; gap:0; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); }
+.browse-card .profile-item.j3:hover { background:var(--card-bg); }
+.profile-item.j3.selected { border-color:var(--ink); }
+.profile-item.j3.is-restricted { opacity:0.6; }
+.j3-status { width:132px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:14px 8px; text-align:center; }
+.j3-status.st-free { background:rgba(63,185,80,0.10); }
+.j3-status.st-assigned { background:rgba(58,110,165,0.12); }
+.j3-status.st-inuse { background:rgba(247,190,104,0.13); }
+.j3-status.st-stop { background:rgba(248,81,73,0.10); }
+.j3-dot { width:12px; height:12px; border-radius:9999px; }
+.j3-dot.dot-free{background:var(--green);} .j3-dot.dot-assigned{background:var(--blue);} .j3-dot.dot-inuse{background:var(--gold);} .j3-dot.dot-stop{background:var(--red);}
+.j3-word { font-family:var(--display); font-size:1.2rem; letter-spacing:0.06em; line-height:1; }
+.j3-word.w-free{color:var(--green);} .j3-word.w-assigned{color:var(--blue);} .j3-word.w-inuse{color:var(--gold);} .j3-word.w-stop{color:var(--red);}
+.j3-when { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.05em; color:var(--gray); text-transform:uppercase; line-height:1.3; }
+.j3-detail { flex:1; padding:12px 14px; display:flex; flex-direction:column; gap:7px; min-width:0; justify-content:center; }
+.j3-detail .j3-top { display:flex; align-items:center; gap:8px; }
+.j3-detail .j3-top input { margin:0; flex:none; }
+.j3-email { font-family:var(--body); font-size:0.82rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.j3-verdict { font-family:var(--body); font-size:0.76rem; color:var(--gray); line-height:1.4; }
+.j3-verdict b { color:var(--ink); font-weight:600; }
 
 /* Local browser tile inside the new browse card — compact full-width
    row: [checkbox] [Local Browser] [— your system Chrome…]. Name and
