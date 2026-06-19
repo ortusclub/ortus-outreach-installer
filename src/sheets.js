@@ -141,9 +141,11 @@ async function fetchSheetCsv(sheetUrl) {
   // for any spreadsheet with multiple tabs.
   const gid = extractSheetGid(sheetUrl);
   if (!gid) {
-    throw new Error('NO_GID: multi-tab-unsafe — sheet URL is missing #gid=');
+    console.warn('[sheets] no gid in sheet URL — reading first tab; multi-tab guard runs at campaign start');
   }
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  const csvUrl = gid
+    ? `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`
+    : `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
 
   console.log(`[sheets] Fetching CSV from: ${csvUrl}`);
 
