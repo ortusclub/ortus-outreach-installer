@@ -15,7 +15,7 @@ test('returns the 3 non-CC channels in order: Sales Nav, LinkedIn, InMail', () =
   const { channels } = classifyAccountChannels({
     salesNavCredits: 'Used', linkedinCredits: 'Available', inmailCredits: 'NA',
   });
-  assert.deepEqual(channels.map((c) => c.label), ['Sales Nav', 'LinkedIn', 'InMail']);
+  assert.deepEqual(channels.map((c) => c.label), ['SN OP', 'LN OP', 'InMail']);
   assert.deepEqual(channels.map((c) => c.status), ['Used', 'Available', 'NA']);
 });
 

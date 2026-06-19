@@ -1081,9 +1081,11 @@ function renderProfiles(profiles) {
           : v === 'in use' ? 'd-inuse'
           : (v === 'na' || v === 'n/a' || v.includes('inaccessible')) ? 'd-na'
           : 'd-spent'; // used / - / blank / other
-        const txt = c.status ? escHtml(c.status) : '—';
+        // Operator preference: don't print the verbose "Partial Inaccessible" —
+        // show it as NA (it can't be accessed). Everything else shown verbatim.
+        const txt = /inaccessible/i.test(c.status) ? 'NA' : (c.status ? escHtml(c.status) : '—');
         const who = c.who ? ' · ' + escHtml(c.who) : '';
-        const title = c.who ? `In use by ${escHtml(c.who)}` : escHtml(c.status || '—');
+        const title = c.who ? `In use by ${escHtml(c.who)}` : txt;
         return `<div class="brk-col"><div class="brk-k">${escHtml(c.label)}</div>`
           + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dot}"></i><span class="brk-vt">${txt}${who}</span></div></div>`;
       }).join('');

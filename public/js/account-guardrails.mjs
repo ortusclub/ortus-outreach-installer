@@ -259,9 +259,9 @@ export function isBreakdownMode(mode) { return BREAKDOWN_MODES.has(mode); }
 
 // The three non-CC channels shown in the breakdown, in display order.
 const BREAKDOWN_CHANNELS = [
-  { key: 'salesNav', label: 'Sales Nav', credit: 'salesNavCredits', user: 'salesNavUser' },
-  { key: 'linkedin', label: 'LinkedIn',  credit: 'linkedinCredits', user: 'linkedinUser' },
-  { key: 'inmail',   label: 'InMail',    credit: 'inmailCredits',   user: 'inmailUser' },
+  { key: 'salesNav', label: 'SN OP',  credit: 'salesNavCredits', user: 'salesNavUser' },
+  { key: 'linkedin', label: 'LN OP',  credit: 'linkedinCredits', user: 'linkedinUser' },
+  { key: 'inmail',   label: 'InMail', credit: 'inmailCredits',   user: 'inmailUser' },
 ];
 
 /**

@@ -21,11 +21,11 @@
 
   <script>
     const ACCOUNTS = [
-      { email: 'michael.lontoc@ortus.solutions', ch: [['Sales Nav','Available',''],['LinkedIn','Available',''],['InMail','Available','']] },
-      { email: 'ryan.ceballo@ortus.solutions',   ch: [['Sales Nav','Used',''],['LinkedIn','Available',''],['InMail','Used','']] },
-      { email: 'dianne.siacon@ortus.solutions',  ch: [['Sales Nav','Used','yllkaq'],['LinkedIn','In Use','janne'],['InMail','Used','yllkaq']] },
-      { email: 'karla.mendez@ortus.solutions',   ch: [['Sales Nav','In Use','bleron'],['LinkedIn','In Use','bleron'],['InMail','In Use','bleron']] },
-      { email: 'abigail.coral@ortus.solutions',  ch: [['Sales Nav','NA',''],['LinkedIn','NA',''],['InMail','NA','']] },
+      { email: 'michael.lontoc@ortus.solutions', ch: [['SN OP','Available',''],['LN OP','Available',''],['InMail','Available','']] },
+      { email: 'ryan.ceballo@ortus.solutions',   ch: [['SN OP','Used',''],['LN OP','Available',''],['InMail','Used','']] },
+      { email: 'dianne.siacon@ortus.solutions',  ch: [['SN OP','Used','yllkaq'],['LN OP','In Use','janne'],['InMail','Used','yllkaq']] },
+      { email: 'karla.mendez@ortus.solutions',   ch: [['SN OP','In Use','bleron'],['LN OP','In Use','bleron'],['InMail','Partial Inaccessible','']] },
+      { email: 'abigail.coral@ortus.solutions',  ch: [['SN OP','NA',''],['LN OP','NA',''],['InMail','NA','']] },
     ];
     const esc = (s) => String(s).replace(/[&<>"]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
     const dotOf = (st) => { const v = st.toLowerCase().trim();
@@ -34,10 +34,11 @@
     function tile(a) {
       const anyFree = a.ch.some(c => c[1] === 'Available');
       const cells = a.ch.map(([l, st, who]) => {
+        const txt = /inaccessible/i.test(st) ? 'NA' : esc(st);   // Partial Inaccessible → NA
         const w = who ? ' · ' + esc(who) : '';
-        const title = who ? `In use by ${esc(who)}` : esc(st);
+        const title = who ? `In use by ${esc(who)}` : txt;
         return `<div class="brk-col"><div class="brk-k">${esc(l)}</div>`
-          + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dotOf(st)}"></i><span class="brk-vt">${esc(st)}${w}</span></div></div>`;
+          + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dotOf(st)}"></i><span class="brk-vt">${txt}${w}</span></div></div>`;
       }).join('');
       return `<label class="profile-item jt jt-brk${anyFree ? '' : ' muted'}">
         <div class="brk-accent${anyFree ? ' free' : ''}"></div>
