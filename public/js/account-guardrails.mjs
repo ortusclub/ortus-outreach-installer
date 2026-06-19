@@ -97,7 +97,11 @@ export function mapModeToChannel(mode) {
  *   inmail_only → Inmail Credits | credit-free modes → null
  */
 export function mapModeToCreditField(mode) {
-  if (CC_MODES.has(mode)) return 'ccCredits';
+  // CC-family modes — Connect Only, CC+IC, CC+DM, and IB (introduce_back) — all
+  // gate on the single CC (Credits) column [AH] (operator decision 2026-06-19).
+  if (CC_MODES.has(mode) || mode === 'introduce_back') return 'ccCredits';
+  // open_profile_only / inmail_only keep single-column gating for now; they move
+  // to the per-channel breakdown (classifyAccountChannels) in the follow-up.
   if (mode === 'open_profile_only') return 'linkedinCredits';
   if (mode === 'inmail_only') return 'inmailCredits';
   return null;

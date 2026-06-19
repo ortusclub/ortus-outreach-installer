@@ -6,10 +6,11 @@ const PASS = { cc: { active: false, label: 'in 2d' }, monthly: { active: false, 
 
 // --- mapModeToCreditField: mode → the specific SoO credit column it consumes ---
 
-test('connect modes consume CC credits', () => {
+test('CC-family modes (Connect Only, CC+IC, CC+DM, IB) all consume CC credits', () => {
   assert.equal(mapModeToCreditField('connect_only'), 'ccCredits');
   assert.equal(mapModeToCreditField('connect_and_introduce'), 'ccCredits');
   assert.equal(mapModeToCreditField('connect_and_message'), 'ccCredits');
+  assert.equal(mapModeToCreditField('introduce_back'), 'ccCredits');
 });
 
 test('open profile (Message Campaign) consumes Linkedin OP credits', () => {
@@ -23,9 +24,14 @@ test('inmail mode consumes InMail credits', () => {
 test('credit-free modes map to null', () => {
   assert.equal(mapModeToCreditField('message_only'), null);
   assert.equal(mapModeToCreditField('check_status'), null);
-  assert.equal(mapModeToCreditField('introduce_back'), null);
   assert.equal(mapModeToCreditField(''), null);
   assert.equal(mapModeToCreditField(undefined), null);
+});
+
+test('IB (introduce_back) → in-use when CC (Credits) = In Use', () => {
+  const s = classifyAccountState({ ccCredits: 'In Use', 'CC User': 'ivy' }, 'me', 'introduce_back', PASS);
+  assert.equal(s.state, 'in-use');
+  assert.equal(s.who, 'ivy');
 });
 
 // --- classifyAccountState: NA on the campaign's channel → blocked (unusable) ---
