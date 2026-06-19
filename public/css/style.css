@@ -2122,7 +2122,7 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 .sheet-hero-preview:not(.hidden) { padding: 16px 24px 8px; }
 /* Row count line from previewSheet() — restyle the plain <p> it writes */
 .sheet-hero-preview > p:first-child {
-  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em;
+  font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.2em;
   text-transform: uppercase; font-weight: 600; color: var(--gray);
   margin: 0 0 4px 0;
   display: flex; align-items: baseline; gap: 10px;
@@ -2138,12 +2138,12 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
   border: 1px solid var(--hairline-soft);
   border-radius: 8px;
   overflow: hidden;
-  font-size: 0.85rem;
+  font-size: 0.98rem; /* v2.112.28: bumped for legibility (was 0.85rem) */
 }
 .sheet-hero-preview .preview-table th {
   background: var(--hairline-soft);
   padding: 10px 14px;
-  font-size: 0.58rem; font-weight: 600;
+  font-size: 0.74rem; font-weight: 600; /* v2.112.28: was 0.58rem — headers were unreadable */
 }
 .sheet-hero-preview .preview-table td {
   padding: 11px 14px;
@@ -2201,17 +2201,17 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
 
 /* ── Task 6: multi-tab lead-source picker ── */
 .tabpick { margin-top: 0; border-top: 1px solid var(--hairline-soft); padding: 16px 24px 18px; background: var(--gold-tint-bg); }
-.tabpick-head { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); margin-bottom: 10px; display:flex; align-items:center; gap:8px; }
+.tabpick-head { font-family: var(--mono); font-size: 0.82rem; color: var(--ink); margin-bottom: 10px; display:flex; align-items:center; gap:8px; }
 .tabpick-head .dot { width:7px; height:7px; border-radius:9999px; background: var(--gold); flex-shrink:0; }
 .tabpick select { width: 100%; font-family: var(--mono); font-size: 0.85rem; color: var(--ink);
   background: var(--bg-soft); border: 1px solid var(--card-border); border-radius: 8px; padding: 11px 12px; }
 .tabpick-preview { margin-top: 12px; border-top: 1px solid var(--hairline-soft); padding-top: 12px; }
-.tabpick-cols { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-bottom: 8px; }
+.tabpick-cols { font-family: var(--mono); font-size: 0.78rem; color: var(--gray); margin-bottom: 8px; }
 .tabpick-cols b { color: var(--green); }
 table.mini { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.66rem; }
 table.mini th { text-align: left; color: var(--gray); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--hairline); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.56rem; }
 table.mini td { padding: 5px 8px; color: var(--ink); border-bottom: 1px solid var(--hairline-soft); }
-.tabpick-ok { font-family: var(--mono); font-size: 0.62rem; color: var(--green); margin-top: 10px; }
+.tabpick-ok { font-family: var(--mono); font-size: 0.78rem; color: var(--green); margin-top: 10px; }
 /* ── Task 6: hard-stop launch block (red) ── */
 .leadblock { padding: 14px 16px; background: rgba(248,81,73,0.08);
   border: 1px solid var(--red); border-left: 3px solid var(--red); border-radius: 8px; margin-top: 12px; }

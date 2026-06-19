@@ -1245,7 +1245,7 @@ function renderGuardrailAlert() {
   const s = summarizeSelection(selected, getMyIdentifier(), mode, getPassoverStatus());
   if (!s.hasWarnings) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   const bits = [];
-  if (s.flagged.length) bits.push(`<b>${s.flagged.length} of your selected accounts are assigned to / in use by others</b>`);
+  if (s.flagged.length) bits.push(`<b>${s.flagged.length} of your selected accounts are assigned to / in use</b>`);
   if (s.passover) bits.push(`this campaign's <b>${s.passover.channel === 'cc' ? 'CC' : 'monthly'} credits are in passover (${escHtml(s.passover.label)})</b>`);
   el.innerHTML = `<span class="big">⚠</span><span class="txt">${bits.join(', and ')}.</span>`;
   el.classList.remove('hidden');
@@ -3544,7 +3544,7 @@ async function previewSheet() {
     html += `<div class="tabpick" id="linkedin-col-pick" style="margin-top:12px; border:1px solid var(--card-border); border-radius:12px;">
       <div class="tabpick-head"><span class="dot"></span> Which column holds the LinkedIn profile URL?</div>
       <select id="linkedin-col-select">${_urlOpts}</select>
-      <div id="linkedin-col-autodetect" style="font-family:var(--mono); font-size:0.62rem; color:var(--green); margin-top:8px; ${autoDetectCol ? '' : 'display:none'}">✓ Auto-detected${autoDetectCol ? ` from “${escHtml(autoDetectCol)}”` : ''} — values look like linkedin.com/in/… profiles.</div>
+      <div id="linkedin-col-autodetect" style="font-family:var(--mono); font-size:0.78rem; color:var(--green); margin-top:8px; ${autoDetectCol ? '' : 'display:none'}">✓ Auto-detected${autoDetectCol ? ` from “${escHtml(autoDetectCol)}”` : ''} — values look like linkedin.com/in/… profiles.</div>
       <div id="linkedin-col-guard" class="leadblock" style="display:none; margin-top:10px;">
         <div class="lb-title">⛔ That doesn't look like a URL column</div>
         <div class="lb-body">This column's cells aren't <code>linkedin.com/in/…</code> links. Pick the column whose values are LinkedIn profile URLs, or the app can't open the right person.</div>
