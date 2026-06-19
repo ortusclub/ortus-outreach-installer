@@ -22,6 +22,10 @@ test('CC in use falls back to linkedinUser for who', () => {
   assert.equal(s.who, 'Cathy');
 });
 
+test('who is cleaned: SoO log string → just the person (email local part)', () => {
+  assert.equal(classifyAccountState({ ccCredits: 'In Use', linkedinUser: 'ivy@ortusclub.com, 2026-06-17 07:05, In Use' }, 'alecx', 'connect_only', PASS).who, 'ivy');
+});
+
 test('in use by me → free (not flagged)', () => {
   const s = classifyAccountState({ linkedinCredits: 'In Use', linkedinUser: 'alecx' }, 'alecx', 'connect_only', PASS);
   assert.equal(s.state, 'free');

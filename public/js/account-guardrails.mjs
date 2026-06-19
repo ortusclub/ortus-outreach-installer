@@ -4,6 +4,21 @@
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
 
+/**
+ * Clean a SoO reserver/assignee value down to just the person for display.
+ * The SoO "User" columns can hold a log string like
+ *   "ivy@ortusclub.com, 2026-06-17 07:05, In Use"
+ * Take the part before the first comma; if that's an email, keep the local part
+ * before "@". A plain name ("Cathy") passes through unchanged.
+ */
+export function cleanWho(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  s = s.split(',')[0].trim();        // drop trailing "…, timestamp, In Use"
+  if (s.includes('@')) s = s.split('@')[0].trim();  // email → local part
+  return s;
+}
+
 export function isRestrictedStatus(status) {
   const s = String(status || '').toLowerCase().trim();
   return /restricted/.test(s) || s === 'inaccessible';
@@ -105,7 +120,7 @@ export function classifyAccountState(soo, me, mode, passover) {
     if (norm(soo[creditKey]) === IN_USE) {
       const reserver = userKey ? String(soo[userKey] || '').trim() : '';
       if (reserver && !norm(reserver).includes(meN)) {
-        return { state: 'in-use', who: reserver, frees: '' };
+        return { state: 'in-use', who: cleanWho(reserver), frees: '' };
       }
       // If reserver is me or empty, continue scanning — don't flag in-use
     }
@@ -116,9 +131,9 @@ export function classifyAccountState(soo, me, mode, passover) {
   const isPool = norm(soo.section).includes('pool') || norm(soo.section).includes('unassigned');
   if (!isPool && assignee && assignee !== '-' && !norm(assignee).includes(meN)) {
     const channel = mapModeToChannel(mode);
-    if (channel === null) return { state: 'assigned', who: assignee, frees: '' };
+    if (channel === null) return { state: 'assigned', who: cleanWho(assignee), frees: '' };
     if (passover && passover[channel] && passover[channel].active === false) {
-      return { state: 'assigned', who: assignee, frees: passover[channel].label || '' };
+      return { state: 'assigned', who: cleanWho(assignee), frees: passover[channel].label || '' };
     }
     // Channel is active (passover lifted) → treat as free
     return FREE;

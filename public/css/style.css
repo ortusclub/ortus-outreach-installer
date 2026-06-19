@@ -936,6 +936,82 @@ select {
    card with internal hairline subdivisions.
    ───────────────────────────────────────────────────────────────────────── */
 
+/* ── Credit-passover banner (v2.112.10, Window C) ── */
+/* Gold-bordered, gold-tint banner at the top of section 3: explanation on the
+   left, two countdown blocks (Monthly OP/InMail/SN, Weekly CC) on the right.
+   The day count + Active/Closed state are populated by renderPassoverBanner(). */
+.acct-banner {
+  display:flex; align-items:stretch; gap:0; overflow:hidden;
+  border:1.5px solid var(--gold); border-radius:16px;
+  background:var(--gold-tint-bg);
+  margin:12px 0 16px;
+}
+.acct-banner-l { flex:1; padding:22px 26px; min-width:0; }
+.acct-banner-h {
+  font-family:var(--display); font-size:1.6rem; letter-spacing:0.04em;
+  color:var(--ink); display:flex; align-items:center; gap:12px; margin-bottom:8px;
+}
+.acct-banner-h .ic { font-size:1.5rem; }
+.acct-banner-sub {
+  font-family:var(--body); font-size:0.92rem; color:var(--ink);
+  line-height:1.55; max-width:640px;
+}
+.acct-banner-r { flex:none; display:flex; }
+.acct-cd {
+  width:190px; padding:22px 20px; display:flex; flex-direction:column;
+  justify-content:center; gap:3px;
+  border-left:1px solid rgba(247,190,104,0.4); background:var(--card-bg);
+}
+.acct-cd-t { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); }
+.acct-cd-n { font-family:var(--display); font-size:2.4rem; line-height:0.9; color:var(--ink); }
+.acct-cd-s { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--gray); }
+.acct-cd-s.pass-on { color:var(--green); }
+.acct-cd-s.pass-off { color:var(--gray); }
+.acct-cd-w { font-family:var(--body); font-size:0.74rem; color:var(--gray); margin-top:3px; }
+
+@media (max-width: 900px) {
+  .acct-banner { flex-direction:column; }
+  .acct-banner-r { flex-wrap:wrap; }
+  .acct-cd { width:50%; border-left:none; border-top:1px solid rgba(247,190,104,0.4); }
+}
+
+/* ── Compact stat pills (v2.112.10, Window C) ── */
+/* The .acct-summary-bar now lays out as a pill row (number + small uppercase
+   label, active one gold-tinted). Buttons keep their ids + applyPreset()
+   onclicks; only the classes/CSS changed. */
+.acct-summary-bar.acct-pills {
+  display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+  background:transparent; border:none; box-shadow:none; border-radius:0;
+  padding:0; margin:0 0 16px;
+}
+.acct-summary-bar.acct-pills > *:not(:first-child) { border-left:none; }
+.acct-summary-bar.acct-pills .acct-pill {
+  display:flex !important; flex-direction:row; align-items:baseline; gap:9px;
+  padding:11px 18px; border:1px solid var(--card-border); border-radius:9999px;
+  background:var(--card-bg); cursor:pointer; text-align:left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.acct-summary-bar.acct-pills .acct-pill:hover { background:var(--hairline-soft); opacity:1; }
+.acct-summary-bar.acct-pills .acct-pill.active {
+  background:var(--gold-tint-bg); border:1px solid var(--gold); padding:11px 18px;
+}
+.acct-summary-bar.acct-pills .acct-pill .acct-pill-num {
+  font-family:var(--display); font-size:1.3rem; font-weight:500;
+  color:var(--ink); line-height:1; letter-spacing:0.01em;
+}
+.acct-summary-bar.acct-pills .acct-pill.active .acct-pill-num { color:var(--gold); }
+.acct-summary-bar.acct-pills .acct-pill .acct-pill-lbl {
+  font-family:var(--mono); font-size:0.58rem; letter-spacing:0.14em;
+  text-transform:uppercase; font-weight:600; color:var(--gray); line-height:1;
+}
+.acct-summary-bar.acct-pills .acct-pill.active .acct-pill-lbl { color:var(--gray); }
+/* Match-name block sits at the end of the pill row, pushed to its own line on
+   narrow widths. Keeps #my-identifier + its label + Override link intact. */
+.acct-summary-bar.acct-pills .acct-pill-match {
+  flex:1 1 240px; min-width:220px; padding:0; margin:0;
+  display:flex; flex-direction:column; gap:4px; justify-content:center;
+}
+
 .acct-summary-bar {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -1105,7 +1181,11 @@ select {
   padding: 10px 18px; gap: 14px;
   border-bottom: 1px solid var(--hairline-soft);
 }
-.browse-secondary .passover-banner {
+/* v2.112.10: the big Credit-passover banner at the top of section 3 now owns
+   this info, so the small in-toolbar mirror is hidden. renderPassoverBanner()
+   still populates #passover-banner (harmless) — only display changes here. */
+.browse-secondary .passover-banner { display: none; }
+.browse-secondary .passover-banner-legacy {
   font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em;
   text-transform: uppercase; color: var(--gray);
   display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline;
@@ -1137,7 +1217,7 @@ select {
 
 /* Profile grid inside browse card: 6-col dense, compact items */
 .browse-card .profile-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 6px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 8px;
   padding: 12px 18px 18px;
   background: transparent; border: none;
   max-height: 480px;
@@ -1166,30 +1246,59 @@ select {
 .browse-card .profile-item .id { font-size: 0.56rem; margin-top: 3px; }
 .browse-card .profile-item input[type="checkbox"] { margin-top: 2px; }
 
-/* ── J3 account tile (v2.112.9) ── */
-/* Two-zone account picker tile: tinted status panel (FREE/ASSIGNED/IN USE/
-   BLOCKED) + detail zone (checkbox + email + plain verdict). Scoped to
-   .profile-item.j3 so it overrides the base .browse-card .profile-item padding. */
-.browse-card .profile-item.j3 { display:flex; padding:0; overflow:hidden; align-items:stretch; gap:0; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); }
-.browse-card .profile-item.j3:hover { background:var(--card-bg); }
-.profile-item.j3.selected { border-color:var(--ink); }
-.profile-item.j3.is-restricted { opacity:0.6; }
-.j3-status { width:132px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:14px 8px; text-align:center; }
-.j3-status.st-free { background:rgba(63,185,80,0.10); }
-.j3-status.st-assigned { background:rgba(58,110,165,0.12); }
-.j3-status.st-inuse { background:rgba(247,190,104,0.13); }
-.j3-status.st-stop { background:rgba(248,81,73,0.10); }
-.j3-dot { width:12px; height:12px; border-radius:9999px; }
-.j3-dot.dot-free{background:var(--green);} .j3-dot.dot-assigned{background:var(--blue);} .j3-dot.dot-inuse{background:var(--gold);} .j3-dot.dot-stop{background:var(--red);}
-.j3-word { font-family:var(--display); font-size:1.2rem; letter-spacing:0.06em; line-height:1; }
-.j3-word.w-free{color:var(--green);} .j3-word.w-assigned{color:var(--blue);} .j3-word.w-inuse{color:var(--gold);} .j3-word.w-stop{color:var(--red);}
-.j3-when { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.05em; color:var(--gray); text-transform:uppercase; line-height:1.3; }
-.j3-detail { flex:1; padding:12px 14px; display:flex; flex-direction:column; gap:7px; min-width:0; justify-content:center; }
-.j3-detail .j3-top { display:flex; align-items:center; gap:8px; }
-.j3-detail .j3-top input { margin:0; flex:none; }
-.j3-email { font-family:var(--body); font-size:0.82rem; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.j3-verdict { font-family:var(--body); font-size:0.76rem; color:var(--gray); line-height:1.4; }
-.j3-verdict b { color:var(--ink); font-weight:600; }
+/* ── JT account tile (v2.112.10, Window C) ── */
+/* Cleaned two-zone account picker tile: tinted stat zone (FREE/ASSIGNED/IN USE/
+   BLOCKED) + detail zone (checkbox + email + single sentence-case sub line).
+   Scoped to .browse-card .profile-item.jt so it overrides the base
+   .browse-card .profile-item padding. CRITICAL: the email/sub set
+   text-transform:none + letter-spacing:normal to defeat the global label{}
+   rule (uppercase + 0.22em) — every tile is a <label>. margin:0 kills the
+   label rule's margin-bottom; uniform min-height + single-line ellipsis. */
+.browse-card .profile-item.jt {
+  display:flex; align-items:stretch; gap:0; padding:0; margin:0; overflow:hidden;
+  min-height:64px;
+  border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg);
+  text-transform:none; letter-spacing:normal;
+}
+.browse-card .profile-item.jt:hover { background:var(--card-bg); border-color:var(--card-border); box-shadow:none; opacity:1; }
+.browse-card .profile-item.jt.selected { border-color:var(--ink); background:var(--card-bg-hover); }
+.browse-card .profile-item.jt.muted { opacity:0.5; }
+.browse-card .profile-item.jt.is-restricted input[type="checkbox"] { cursor:not-allowed; }
+.browse-card .profile-item.jt .jt-stat {
+  width:108px; flex:none; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:6px; padding:8px 6px;
+}
+.browse-card .profile-item.jt .jt-stat.s-free { background:rgba(63,185,80,0.10); }
+.browse-card .profile-item.jt .jt-stat.s-assigned { background:rgba(58,110,165,0.12); }
+.browse-card .profile-item.jt .jt-stat.s-inuse { background:rgba(247,190,104,0.13); }
+.browse-card .profile-item.jt .jt-stat.s-stop { background:rgba(248,81,73,0.10); }
+.browse-card .profile-item.jt .jt-dot { width:9px; height:9px; border-radius:50%; }
+.browse-card .profile-item.jt .s-free .jt-dot { background:var(--green); }
+.browse-card .profile-item.jt .s-assigned .jt-dot { background:var(--blue); }
+.browse-card .profile-item.jt .s-inuse .jt-dot { background:var(--gold); }
+.browse-card .profile-item.jt .s-stop .jt-dot { background:var(--red); }
+.browse-card .profile-item.jt .jt-word { font-family:var(--display); font-size:1.08rem; letter-spacing:0.06em; line-height:1; }
+.browse-card .profile-item.jt .s-free .jt-word { color:var(--green); }
+.browse-card .profile-item.jt .s-assigned .jt-word { color:var(--blue); }
+.browse-card .profile-item.jt .s-inuse .jt-word { color:var(--gold); }
+.browse-card .profile-item.jt .s-stop .jt-word { color:var(--red); }
+.browse-card .profile-item.jt .jt-det {
+  flex:1; min-width:0; padding:11px 15px;
+  display:flex; flex-direction:column; justify-content:center; gap:3px;
+}
+.browse-card .profile-item.jt .jt-top { display:flex; align-items:center; gap:10px; min-width:0; }
+.browse-card .profile-item.jt .jt-top input { flex:none; margin:0; }
+.browse-card .profile-item.jt .jt-email {
+  font-family:var(--body); font-size:0.88rem; font-weight:500; color:var(--ink);
+  text-transform:none; letter-spacing:normal; line-height:1.3;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.browse-card .profile-item.jt .jt-sub {
+  font-family:var(--body); font-size:0.74rem; color:var(--gray);
+  text-transform:none; letter-spacing:normal; line-height:1.3;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:30px;
+}
+.browse-card .profile-item.jt .jt-sub b { color:var(--ink); font-weight:600; }
 
 /* Local browser tile inside the new browse card — compact full-width
    row: [checkbox] [Local Browser] [— your system Chrome…]. Name and

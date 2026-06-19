@@ -885,6 +885,26 @@ function renderPassoverBanner() {
     ccState.className = 'rp-passover-state ' + (cc.active ? 'active' : 'closed');
   }
   if (ccDetail) ccDetail.textContent = cc.label.replace(/^ACTIVE — /, '').replace(/^in /, 'Opens in ');
+
+  // v2.112.10 (Window C): big banner at the top of section 3. Pull the day
+  // count out of the label (e.g. "ACTIVE — closes in 12d" / "in 4d" → "12d"),
+  // falling back to the raw label if no digit-d match. State = ● Active/Closed
+  // with a green/gray class.
+  const days = (label) => {
+    const m = String(label || '').match(/(\d+d)/);
+    return m ? m[1] : (label || '—');
+  };
+  const setBannerWindow = (info, daysId, stateId) => {
+    const daysEl = document.getElementById(daysId);
+    const stateEl = document.getElementById(stateId);
+    if (daysEl) daysEl.textContent = days(info.label);
+    if (stateEl) {
+      stateEl.textContent = info.active ? '● Active' : '● Closed';
+      stateEl.className = 'acct-cd-s ' + (info.active ? 'pass-on' : 'pass-off');
+    }
+  };
+  setBannerWindow(monthly, 'pass-monthly-days', 'pass-monthly-state');
+  setBannerWindow(cc, 'pass-cc-days', 'pass-cc-state');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -998,7 +1018,22 @@ function renderProfiles(profiles) {
     localHost.appendChild(localItem);
   }
 
-  profiles.forEach((p) => {
+  // v2.112.10 (Window C, free-first): compute each profile's state ONCE so we can
+  // both sort (usable accounts first) and render from the same value. State comes
+  // only from classifyAccountState (SoO) — no invented status.
+  const _mode = document.getElementById('campaign-mode')?.value || '';
+  const _passover = getPassoverStatus();
+  const _meId = getMyIdentifier();
+  const _stateOf = (p) => classifyAccountState(findSoOForProfile(p.name), _meId, _mode, _passover);
+  const _RANK = { 'free': 0, 'assigned': 1, 'in-use': 2, 'blocked': 3 };
+  const _ordered = profiles
+    .map((p, i) => ({ p, i, st: _stateOf(p) }))
+    .sort((a, b) => {
+      const r = (_RANK[a.st.state] ?? 9) - (_RANK[b.st.state] ?? 9);
+      return r !== 0 ? r : a.i - b.i; // stable within rank
+    });
+
+  _ordered.forEach(({ p, st: _state }) => {
     // v2.11.4: keep selectedProfileNames in sync with whatever is currently
     // selected. The change handler below only fires for user clicks, so any
     // programmatic selection (preset load, schedule restore, etc.) was leaving
@@ -1017,15 +1052,11 @@ function renderProfiles(profiles) {
     if (selectedProfileIds.includes(p.id)) {
       selectedProfileNames[p.id] = p.name;
     }
-    // v2.112.9: J3 two-zone tile. classifyAccountState collapses SoO assignee +
-    // status + live-use + the campaign passover into one of four states; the
-    // status panel + plain verdict replace the old badge/credit-bar/pill clutter.
-    const _state = classifyAccountState(
-      soo,
-      getMyIdentifier(),
-      document.getElementById('campaign-mode')?.value || '',
-      getPassoverStatus()
-    );
+    // v2.112.10: cleaned two-zone tile (.jt). classifyAccountState collapses SoO
+    // assignee + status + live-use + the campaign passover into one of four
+    // states; a tinted stat zone (FREE/ASSIGNED/IN USE/BLOCKED) + a single
+    // sentence-case sub line replace the old verdict wall. `who` is already
+    // cleaned in classifyAccountState.
     const _SMAP = {
       'free':     { cls: 'free',     word: 'FREE' },
       'assigned': { cls: 'assigned', word: 'ASSIGNED' },
@@ -1034,39 +1065,35 @@ function renderProfiles(profiles) {
     };
     const _sm = _SMAP[_state.state] || _SMAP.free;
     const _who = escHtml(_state.who || '');
-    const _frees = escHtml(_state.frees || '');
-    let _when, _verdict;
+    let _sub;
     if (_state.state === 'assigned') {
-      _when = _frees ? `${_who} · frees ${_frees}` : _who;
-      _verdict = _frees ? `<b>Assigned to ${_who}</b> this cycle — frees ${_frees}.` : `<b>Assigned to ${_who}</b> this cycle.`;
+      _sub = `Assigned to <b>${_who}</b>.`;
     } else if (_state.state === 'in-use') {
-      _when = `${_who} · right now`;
-      _verdict = `<b>In use by ${_who}</b> right now — pick another.`;
+      _sub = `In use by <b>${_who}</b>.`;
     } else if (_state.state === 'blocked') {
-      _when = 'Restricted';
-      _verdict = `<b>Restricted by LinkedIn</b> — can't be used.`;
+      _sub = 'Restricted by LinkedIn.';
     } else {
-      _when = 'Anyone can use';
-      _verdict = `<b>Free to use.</b>`;
+      _sub = 'Anyone can use.';
     }
+    const _muted = (_state.state === 'in-use' || _state.state === 'blocked');
     const item = document.createElement('label');
-    item.className = 'profile-item j3 ' + _state.state
+    item.className = 'profile-item jt ' + _state.state
       + (selectedProfileIds.includes(p.id) ? ' selected' : '')
+      + (_muted ? ' muted' : '')
       + (restricted ? ' is-restricted' : '');
     item.dataset.profileId = p.id;
     const _dup = p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : '';
     item.innerHTML = `
-      <div class="j3-status st-${_sm.cls}">
-        <span class="j3-dot dot-${_sm.cls}"></span>
-        <span class="j3-word w-${_sm.cls}">${_sm.word}</span>
-        <span class="j3-when">${_when}</span>
+      <div class="jt-stat s-${_sm.cls}">
+        <span class="jt-dot"></span>
+        <span class="jt-word">${_sm.word}</span>
       </div>
-      <div class="j3-detail">
-        <div class="j3-top">
+      <div class="jt-det">
+        <div class="jt-top">
           <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${restricted ? 'disabled' : ''} />
-          <span class="j3-email">${escHtml(p.name)}${_dup}</span>
+          <span class="jt-email">${escHtml(p.name)}${_dup}</span>
         </div>
-        <div class="j3-verdict">${_verdict}</div>
+        <div class="jt-sub">${_sub}</div>
       </div>
     `;
     const cb = item.querySelector('input');

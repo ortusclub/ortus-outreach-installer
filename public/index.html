@@ -1130,32 +1130,50 @@
       <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>
       <div class="collapsible-body">
 
-      <!-- v2.62 (variant C): slim summary bar consolidating the 3 preset
-           cells + Match Name input. Local Browser is separate because the JS
-           renders it as a full tile (checkbox + body + first-name row) into
-           #local-browser-host, which sits at the top of the profile grid. -->
-      <div class="acct-summary-bar">
-        <button type="button" class="acct-sb-stat preset" data-preset="assigned" onclick="applyPreset('assigned')">
-          <div class="acct-sb-stat-lbl">Assigned to me</div>
-          <div class="acct-sb-stat-num preset-count" id="preset-count-assigned">—</div>
-          <div class="acct-sb-stat-desc preset-desc">Profiles where assignee matches my identifier</div>
+      <!-- v2.112.10 (Window C / banner-led): big Credit-passover banner up top,
+           then a compact stat-pill row, then the Browse-accounts card. The
+           banner's countdown bits are populated by renderPassoverBanner(). -->
+      <div class="acct-banner">
+        <div class="acct-banner-l">
+          <div class="acct-banner-h"><span class="ic">⏳</span> Credit passover</div>
+          <div class="acct-banner-sub">Your sending credits refresh on a schedule. While a window is active you can send; the number is the days until it closes and resets. Monthly credits (Open Profile, InMail, Sales Nav) reset on the 16th; weekly Connect (CC) resets every Thursday.</div>
+        </div>
+        <div class="acct-banner-r">
+          <div class="acct-cd">
+            <div class="acct-cd-t">Monthly · OP/InMail/SN</div>
+            <div class="acct-cd-n" id="pass-monthly-days">—</div>
+            <div class="acct-cd-s" id="pass-monthly-state">—</div>
+            <div class="acct-cd-w">Resets 16th</div>
+          </div>
+          <div class="acct-cd">
+            <div class="acct-cd-t">Weekly · Connect (CC)</div>
+            <div class="acct-cd-n" id="pass-cc-days">—</div>
+            <div class="acct-cd-s" id="pass-cc-state">—</div>
+            <div class="acct-cd-w">Resets Thursday</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.112.10: compact stat-pill row. The buttons keep their ids +
+           applyPreset() onclicks — only the classes/CSS changed (pill row). -->
+      <div class="acct-summary-bar acct-pills">
+        <button type="button" class="acct-sb-stat acct-pill preset" data-preset="assigned" onclick="applyPreset('assigned')">
+          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-assigned">—</span>
+          <span class="acct-sb-stat-lbl acct-pill-lbl">Assigned to me</span>
         </button>
-        <button type="button" class="acct-sb-stat preset" data-preset="pool" onclick="applyPreset('pool')">
-          <div class="acct-sb-stat-lbl">Unassigned pool</div>
-          <div class="acct-sb-stat-num preset-count" id="preset-count-pool">—</div>
-          <div class="acct-sb-stat-desc preset-desc">Shared</div>
+        <button type="button" class="acct-sb-stat acct-pill preset" data-preset="pool" onclick="applyPreset('pool')">
+          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-pool">—</span>
+          <span class="acct-sb-stat-lbl acct-pill-lbl">Unassigned pool</span>
         </button>
-        <button type="button" class="acct-sb-stat preset" data-preset="available-now" onclick="applyPreset('available-now')">
-          <div class="acct-sb-stat-lbl">Available now</div>
-          <div class="acct-sb-stat-num preset-count" id="preset-count-available-now">—</div>
-          <div class="acct-sb-stat-desc preset-desc">Ready to use — not restricted, has free credits</div>
+        <button type="button" class="acct-sb-stat acct-pill preset" data-preset="available-now" onclick="applyPreset('available-now')">
+          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-available-now">—</span>
+          <span class="acct-sb-stat-lbl acct-pill-lbl">Available now</span>
         </button>
-        <button type="button" class="acct-sb-stat preset active" data-preset="all" onclick="applyPreset('all')">
-          <div class="acct-sb-stat-lbl">All</div>
-          <div class="acct-sb-stat-num preset-count" id="preset-count-all-accounts">—</div>
-          <div class="acct-sb-stat-desc preset-desc">Show every profile</div>
+        <button type="button" class="acct-sb-stat acct-pill preset active" data-preset="all" onclick="applyPreset('all')">
+          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-all-accounts">—</span>
+          <span class="acct-sb-stat-lbl acct-pill-lbl">All profiles</span>
         </button>
-        <div class="acct-sb-match my-identity-row">
+        <div class="acct-sb-match acct-pill-match my-identity-row">
           <label class="acct-sb-match-lbl my-identity-label" for="my-identifier">
             Match name
             <a href="#" id="identifier-toggle" onclick="event.preventDefault(); toggleIdentifierMode()" class="identifier-toggle-link">Override</a>
