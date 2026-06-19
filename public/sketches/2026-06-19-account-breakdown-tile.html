@@ -33,6 +33,8 @@
         : (v === 'na' || v.includes('inaccessible')) ? 'd-na' : 'd-spent'; };
     function tile(a) {
       const anyFree = a.ch.some(c => c[1] === 'Available');
+      const anyActive = a.ch.some(c => { const v = c[1].toLowerCase().trim(); return v === 'available' || v === 'in use'; });
+      const locked = !anyActive; // selectable if any channel is Available or In Use
       const cells = a.ch.map(([l, st, who]) => {
         const txt = /inaccessible/i.test(st) ? 'NA' : esc(st);   // Partial Inaccessible → NA
         const w = who ? ' · ' + esc(who) : '';
@@ -40,10 +42,11 @@
         return `<div class="brk-col"><div class="brk-k">${esc(l)}</div>`
           + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dotOf(st)}"></i><span class="brk-vt">${txt}${w}</span></div></div>`;
       }).join('');
-      return `<label class="profile-item jt jt-brk${anyFree ? '' : ' muted'}">
+      const cls = locked ? ' muted' : (anyFree ? '' : ' muted-soft');
+      return `<label class="profile-item jt jt-brk${cls}">
         <div class="brk-accent${anyFree ? ' free' : ''}"></div>
         <div class="jt-det">
-          <div class="jt-top"><input type="checkbox" ${anyFree ? '' : 'disabled'} /><span class="jt-email">${esc(a.email)}</span></div>
+          <div class="jt-top"><input type="checkbox" ${locked ? 'disabled' : ''} /><span class="jt-email">${esc(a.email)}</span></div>
           <div class="brk-grid">${cells}</div>
         </div></label>`;
     }

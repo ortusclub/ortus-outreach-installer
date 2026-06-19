@@ -272,7 +272,7 @@ const BREAKDOWN_CHANNELS = [
  * `blocked` = restricted/inaccessible Status (whole account off-limits). Pure.
  */
 export function classifyAccountChannels(soo) {
-  if (!soo) return { channels: [], anyFree: false, blocked: false };
+  if (!soo) return { channels: [], anyFree: false, anyActive: false, blocked: false };
   const blocked = isRestrictedStatus(soo.Status || soo.status);
   const channels = BREAKDOWN_CHANNELS.map((c) => {
     const status = String(soo[c.credit] || '').trim();
@@ -285,5 +285,12 @@ export function classifyAccountChannels(soo) {
       who: v === IN_USE ? cleanWho(soo[c.user]) : '',
     };
   });
-  return { channels, anyFree: channels.some((c) => c.usable), blocked };
+  // anyFree = at least one Available channel (drives the green accent).
+  // anyActive = at least one Available OR In Use channel — i.e. the account has
+  // live credits somewhere. The picker locks a breakdown tile only when this is
+  // false (every channel NA/Used/Partial/blank) or the account is restricted;
+  // an all-"In Use" account stays selectable, matching the Connect tiles.
+  const anyFree = channels.some((c) => c.usable);
+  const anyActive = channels.some((c) => { const v = norm(c.status); return v === 'available' || v === IN_USE; });
+  return { channels, anyFree, anyActive, blocked };
 }

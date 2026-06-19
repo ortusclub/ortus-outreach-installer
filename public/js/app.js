@@ -1059,7 +1059,7 @@ function renderProfiles(profiles) {
     // modes: blocked when classifyAccountState says so (restricted, or the CC/credit
     // column is NA/Used/etc.). Breakdown modes: blocked when restricted OR no channel
     // is Available (nothing usable for this campaign right now).
-    const _locked = _breakdown ? (_br.blocked || !_br.anyFree) : (_state.state === 'blocked');
+    const _locked = _breakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked');
     // Defensive: a restored preset/schedule must not keep a now-unusable account
     // selected — drop it (before building the tile so `checked` reflects reality).
     if (_locked && selectedProfileIds.includes(p.id)) {
@@ -1089,9 +1089,11 @@ function renderProfiles(profiles) {
         return `<div class="brk-col"><div class="brk-k">${escHtml(c.label)}</div>`
           + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dot}"></i><span class="brk-vt">${txt}${who}</span></div></div>`;
       }).join('');
+      // locked (no credits anywhere) → heavy mute; selectable-but-no-free-channel
+      // (all In Use) → light mute, like a busy Connect tile; has a free channel → full.
       _classes = 'profile-item jt jt-brk'
         + (_checked ? ' selected' : '')
-        + (_locked ? ' muted' : '')
+        + (_locked ? ' muted' : (!_br.anyFree ? ' muted-soft' : ''))
         + (_br.blocked ? ' is-restricted' : '');
       _inner = `
       <div class="brk-accent${_br.anyFree ? ' free' : ''}"></div>

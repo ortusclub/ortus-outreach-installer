@@ -45,6 +45,16 @@ test('restricted Status → blocked flag (whole account off-limits)', () => {
   assert.equal(classifyAccountChannels({ linkedinCredits: 'Available' }).blocked, false);
 });
 
-test('null soo → empty channels, not free, not blocked', () => {
-  assert.deepEqual(classifyAccountChannels(null), { channels: [], anyFree: false, blocked: false });
+test('anyActive = a channel is Available OR In Use (all-In-Use stays active)', () => {
+  // all In Use → no free channel, but still "active" (selectable, like Connect tiles).
+  const allInUse = classifyAccountChannels({ salesNavCredits: 'In Use', linkedinCredits: 'In Use', inmailCredits: 'In Use' });
+  assert.equal(allInUse.anyFree, false);
+  assert.equal(allInUse.anyActive, true);
+  // all dead (NA/Used/Partial) → not active → the picker locks it.
+  const allDead = classifyAccountChannels({ salesNavCredits: 'Used', linkedinCredits: 'NA', inmailCredits: 'Partial Inaccessible' });
+  assert.equal(allDead.anyActive, false);
+});
+
+test('null soo → empty channels, not free, not active, not blocked', () => {
+  assert.deepEqual(classifyAccountChannels(null), { channels: [], anyFree: false, anyActive: false, blocked: false });
 });
