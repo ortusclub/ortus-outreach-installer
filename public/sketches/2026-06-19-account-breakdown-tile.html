@@ -43,8 +43,9 @@
           + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dotOf(st)}"></i><span class="brk-vt">${txt}${w}</span></div></div>`;
       }).join('');
       const cls = locked ? ' muted' : (anyFree ? '' : ' muted-soft');
+      const accent = anyFree ? ' free' : (anyActive ? ' busy' : '');
       return `<label class="profile-item jt jt-brk${cls}">
-        <div class="brk-accent${anyFree ? ' free' : ''}"></div>
+        <div class="brk-accent${accent}"></div>
         <div class="jt-det">
           <div class="jt-top"><input type="checkbox" ${locked ? 'disabled' : ''} /><span class="jt-email">${esc(a.email)}</span></div>
           <div class="brk-grid">${cells}</div>

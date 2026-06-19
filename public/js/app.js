@@ -1095,8 +1095,11 @@ function renderProfiles(profiles) {
         + (_checked ? ' selected' : '')
         + (_locked ? ' muted' : (!_br.anyFree ? ' muted-soft' : ''))
         + (_br.blocked ? ' is-restricted' : '');
+      // Accent (left "lip") reflects the best channel: green if any Available,
+      // else gold if any In Use (even alongside reds), grey only when nothing's active.
+      const _accent = _br.anyFree ? ' free' : (_br.anyActive ? ' busy' : '');
       _inner = `
-      <div class="brk-accent${_br.anyFree ? ' free' : ''}"></div>
+      <div class="brk-accent${_accent}"></div>
       <div class="jt-det">
         <div class="jt-top">
           <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
