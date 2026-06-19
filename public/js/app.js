@@ -28,7 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
-import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection } from '/js/account-guardrails.mjs';
+import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO } from '/js/account-guardrails.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -731,8 +731,10 @@ function isAvailableNow(soo) {
 
 function findSoOForProfile(profileName) {
   if (!profileName || Object.keys(sooData).length === 0) return null;
-  const key = (profileName || '').toLowerCase().trim();
-  return sooData[key] || null;
+  // lookupSoO matches the bare email first, then the email embedded in a
+  // decorated GoLogin name (e.g. "ryan.ceballo@ortus.solutions [1]"). Exact
+  // string match alone left those accounts showing FREE.
+  return lookupSoO(sooData, profileName);
 }
 
 // Manual SoO refresh — wired to the "Refresh SoO" button in the Accounts

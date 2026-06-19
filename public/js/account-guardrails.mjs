@@ -25,6 +25,24 @@ export function isRestrictedStatus(status) {
 }
 
 /**
+ * Find an account's SoO row from a GoLogin profile name. The SoO map is keyed by
+ * the bare lowercased account email. GoLogin names are USUALLY that email, but
+ * some carry decoration the exact-match lookup would miss — a " [1]" duplicate
+ * suffix (e.g. "ryan.ceballo@ortus.solutions [1]"), a stray leading invisible
+ * char, a "Name <email>" display form, etc. Try the exact (lowercased) name
+ * first, then fall back to the email embedded in the name. Returns the row or
+ * null. Only matches an email that actually exists in the SoO — no false hits.
+ */
+export function lookupSoO(sooData, profileName) {
+  if (!sooData || !profileName) return null;
+  const raw = String(profileName).toLowerCase().trim();
+  if (sooData[raw]) return sooData[raw];
+  const m = raw.match(/[\w.+-]+@[\w.-]+\.\w+/);
+  if (m && sooData[m[0]]) return sooData[m[0]];
+  return null;
+}
+
+/**
  * Accounts living under the "Construction" section header (column A of the SoO)
  * must never appear in the GoLogin launcher window. The section is derived by
  * handleGetSoO straight from the sheet's column-A header rows, so this stays
