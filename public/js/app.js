@@ -46,6 +46,7 @@ window._chosenSheetGid = '';      // gid of the operator's chosen tab
 window._tabsData = [];            // full tab list from last /api/sheet/tabs call
 window._tabPickerMulti = false;   // true when workbook has >1 tabs
 window._tabLeadOk = true;         // true when chosen tab passes lead-look check
+window._savedSheetGid = '';       // gid from the history entry on a rerun — used by the tab-change modal
 // v2.112 (#6): set to true when operator clicks "Start anyway" in the guardrail
 // confirm dialog so the Start handler skips the re-check on re-entry.
 let _guardrailConfirmed = false;
@@ -4216,6 +4217,11 @@ async function startCampaign(opts = {}) {
 
   // Task 6: rerun tab-change confirm — when the campaign has a saved sheetGid
   // and the operator chose a different tab, show the confirm modal.
+  // Fold in the window-level savedSheetGid set by rerunPastCampaign() so the
+  // modal fires even when startCampaign is called with opts={} from a button click.
+  if (!opts.savedSheetGid && window._savedSheetGid) {
+    opts = { ...opts, savedSheetGid: window._savedSheetGid };
+  }
   if (!opts.skipTabChangeConfirm) {
     try {
       const _savedGid = String(opts.savedSheetGid || '');
@@ -4231,6 +4237,8 @@ async function startCampaign(opts = {}) {
       }
     } catch { /* non-blocking — proceed */ }
   }
+  // Rerun context consumed — clear so a subsequent fresh launch isn't treated as a rerun.
+  window._savedSheetGid = '';
 
   await submitStartCampaign(body, opts);
 }
@@ -10417,6 +10425,16 @@ function rerunPastCampaign() {
   const s = c.settings;
   if (!s) return;
 
+  // Extract the saved tab gid: prefer s.sheetGid (persisted by Task 5's history
+  // snapshot); fall back to extracting #gid= from the saved sheetUrl.
+  const _rerunSavedGid = (() => {
+    if (s.sheetGid) return String(s.sheetGid);
+    const m = (s.sheetUrl || '').match(/[#&?]gid=(\d+)/);
+    return m ? m[1] : '';
+  })();
+  // Store so startCampaign can compare against the operator's current tab choice.
+  window._savedSheetGid = _rerunSavedGid;
+
   // Build a preset-config-shaped object so we can reuse applyPresetConfig.
   // v2.14.x: include CC+IC fields (primaryName / primaryUrl / primaryIntroBody
   // / introTitle) and the concurrency knob so Re-run truly carries forward
@@ -10427,6 +10445,7 @@ function rerunPastCampaign() {
   const config = {
     mode: c.mode,
     sheetUrl: s.sheetUrl || '',
+    sheetGid: _rerunSavedGid,
     dailyLimit: s.dailyLimit ?? 50,
     delayMin: s.delayMin ?? 30,
     delayMax: s.delayMax ?? 60,
@@ -10444,6 +10463,25 @@ function rerunPastCampaign() {
   // Defer applyPresetConfig until the wizard view is mounted.
   setTimeout(() => {
     if (typeof applyPresetConfig === 'function') applyPresetConfig(config);
+    // Restore the saved tab as the operator's default choice so the picker
+    // reflects the prior run. applyPresetConfig → previewSheet does NOT rebuild
+    // the tab picker (that only happens on real URL oninput), so we set the
+    // select + _chosenSheetGid directly. The tab-change modal will still fire
+    // if the operator then manually picks a different tab before launching.
+    if (_rerunSavedGid) {
+      window._chosenSheetGid = _rerunSavedGid;
+      const _tabSel = document.getElementById('sheet-tab-select');
+      if (_tabSel) {
+        // If the picker is populated (e.g. operator had previously used this
+        // workbook this session), select the saved option.
+        for (let i = 0; i < _tabSel.options.length; i++) {
+          if (String(_tabSel.options[i].value) === _rerunSavedGid) {
+            _tabSel.selectedIndex = i;
+            break;
+          }
+        }
+      }
+    }
     // Surface the campaign name (with "(re-run)" suffix) so the operator can
     // tweak. The wizard's #campaign-name-input drives the new run.
     const nameInput = document.getElementById('campaign-name-input');
