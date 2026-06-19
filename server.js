@@ -917,7 +917,11 @@ function buildCampaignConfig(body) {
           // Fix A Task 4: explicit tab selection from the frontend picker.
           sheetGid: sheetGidRaw,
           // Fix A Task 4: frontend signals whether the workbook has multiple tabs.
-          multiTab } = body || {};
+          multiTab,
+          // Fix B Task 3: pause the campaign when a 429/throttle is detected.
+          // Defaults to true when absent or undefined so legacy clients opt-in automatically.
+          pauseOnThrottle: pauseOnThrottleRaw } = body || {};
+  const pauseOnThrottle = pauseOnThrottleRaw === false ? false : true;
   // Coerce sheetGid to digits only; fall back to extracting from the URL.
   const sheetGid = sheetGidRaw != null
     ? String(sheetGidRaw).replace(/\D/g, '')
@@ -970,6 +974,8 @@ function buildCampaignConfig(body) {
     // Fix A Task 4: resolved tab GID (digits only). Empty string means unknown /
     // single-tab workbook; campaign.js will apply withGid when non-empty.
     sheetGid,
+    // Fix B Task 3: pause campaign on 429/throttle detection. Default true.
+    pauseOnThrottle,
   };
 }
 
@@ -3411,6 +3417,8 @@ function registerSchedule(schedule) {
         delayMin: schedule.delayMin,
         delayMax: schedule.delayMax,
         createdBy: schedule.createdBy || null,
+        // Fix B Task 3: schedules default to pausing on throttle.
+        pauseOnThrottle: schedule.pauseOnThrottle === false ? false : true,
       });
       const all = await loadSchedules();
       const s = all.find(x => x.id === schedule.id);
