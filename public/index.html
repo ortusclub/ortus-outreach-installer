@@ -765,12 +765,28 @@
             <div class="alpha-advanced-body">
               <div class="alpha-knob-label">Pause between leads</div>
               <div class="alpha-knob-row">
-                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="30" min="5" max="120" oninput="updateCampaignSummary()" />
+                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="30" min="5" max="120" oninput="updateCampaignSummary(); checkDelayDanger();" />
                 <span class="alpha-pause-sep">to</span>
                 <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="60" min="10" max="300" oninput="updateCampaignSummary()" />
                 <span class="alpha-knob-suffix">seconds</span>
               </div>
               <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
+
+              <div class="delay-danger" id="delay-danger-block">
+                <div class="dd-top"><span class="x">!</span> Danger — this pace will get accounts throttled</div>
+                <div class="dd-body">Below <b>30s</b> between invites floods LinkedIn with requests (HTTP&nbsp;429) — which causes <b>mass skipping</b>, and walks accounts toward <b>checkpoints, restrictions, and bans</b>. Safe range is <b>30–120s</b>. Only go lower if you fully understand the risk.</div>
+              </div>
+
+              <div class="throttle-row">
+                <label class="alpha-toggle" title="Pause account when LinkedIn throttles it">
+                  <input type="checkbox" id="pause-on-throttle" checked onchange="syncPauseOnThrottleHelp()" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
+                <div class="tr-text">
+                  <div class="tr-label">Pause an account when LinkedIn throttles it (429)</div>
+                  <div class="tr-help" id="pause-on-throttle-help"><b>On:</b> the account stops sending and backs off when throttled, then resumes slower — protects it from restriction. Other accounts keep running.</div>
+                </div>
+              </div>
             </div>
           </details>
 

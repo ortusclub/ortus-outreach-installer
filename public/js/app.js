@@ -3614,6 +3614,23 @@ function alphaSyncConcurrency() {
   updateCampaignSummary();
 }
 
+// Task 4 (2026-06-19): B1 delay-danger disclaimer — show when #within-batch-min < 30.
+function checkDelayDanger() {
+  const min = parseInt(document.getElementById('within-batch-min')?.value || '30', 10);
+  const block = document.getElementById('delay-danger-block');
+  if (block) block.classList.toggle('show', min < 30);
+}
+
+// Task 4 (2026-06-19): B2 pause-on-throttle help text update.
+function syncPauseOnThrottleHelp() {
+  const tog = document.getElementById('pause-on-throttle');
+  const help = document.getElementById('pause-on-throttle-help');
+  if (!tog || !help) return;
+  help.innerHTML = tog.checked
+    ? '<b>On:</b> the account stops sending and backs off when throttled, then resumes slower — protects it from restriction. Other accounts keep running.'
+    : '<b>Off:</b> the account keeps sending through throttling. Faster, but risks more skips and pushes the account toward restriction. Not recommended.';
+}
+
 function alphaRecalc() {
   // v2.11.0: simpler model. Total max invites this run = N accounts × campaign limit.
   // v2.61 redesign removed the alpha-total-leads/acct-count/per-acct/eq-total
@@ -4190,6 +4207,9 @@ async function startCampaign(opts = {}) {
     primaryCheckTiming: (mode === 'connect_and_introduce')
       ? (document.getElementById('primary-timing-select')?.value || 'immediately')
       : undefined,
+    // Task 4 (2026-06-19): pause the account when LinkedIn returns 429.
+    // Default true (ON) — operator can disable in Advanced section.
+    pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked !== false,
   };
 
   // v2.58.x — IC preflight: catch "no sender column" / "no matching profile"
@@ -7631,6 +7651,7 @@ function collectCurrentConfig() {
     messageGap: getN('message-gap', 60),
     delayMin: getN('within-batch-min', 30),
     delayMax: getN('within-batch-max', 60),
+    pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked !== false,
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
@@ -7675,6 +7696,12 @@ function applyPresetConfig(config) {
   setV('message-gap', config.messageGap ?? 60);
   setV('within-batch-min', config.delayMin ?? 30);
   setV('within-batch-max', config.delayMax ?? 60);
+  // Task 4 (2026-06-19): restore pause-on-throttle toggle; default ON when absent.
+  {
+    const _pot = document.getElementById('pause-on-throttle');
+    if (_pot) _pot.checked = config.pauseOnThrottle !== false;
+  }
+  if (typeof checkDelayDanger === 'function') checkDelayDanger();
   // Render the sheet preview, THEN restore the column mapping. previewSheet()
   // is the only thing that fetches the sheet HTML and builds the column-select
   // dropdowns (#linkedin-col-select / #ic-sender-col-select) — without it the
@@ -8068,6 +8095,8 @@ window.alphaSyncDailyLimit = alphaSyncDailyLimit;
 window.alphaStepDaily = alphaStepDaily;
 window.alphaStepConcurrency = alphaStepConcurrency;
 window.alphaSyncConcurrency = alphaSyncConcurrency;
+window.checkDelayDanger = checkDelayDanger;
+window.syncPauseOnThrottleHelp = syncPauseOnThrottleHelp;
 window.toggleSection = toggleSection;
 window.openUnifiedLog = openUnifiedLog;
 window.openPastCampaignModal = openPastCampaignModal;
@@ -9053,6 +9082,10 @@ function restoreCcDmState() {
 window.saveCcDmFields = saveCcDmFields;
 document.addEventListener('DOMContentLoaded', restoreCcDmState);
 if (document.readyState !== 'loading') restoreCcDmState();
+// Task 4 (2026-06-19): evaluate delay-danger on load so a saved <30s config
+// shows the warning immediately (before the operator touches anything).
+document.addEventListener('DOMContentLoaded', checkDelayDanger);
+if (document.readyState !== 'loading') checkDelayDanger();
 // app.js is loaded as <script type="module">, so top-level `function`
 // declarations are module-scoped. onclick="setIntroMode(true)" in the HTML
 // can't see them unless we explicitly attach to window. Same pattern as
