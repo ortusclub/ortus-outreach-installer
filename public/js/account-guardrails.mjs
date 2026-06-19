@@ -24,22 +24,58 @@ export function isRestrictedStatus(status) {
   return /restricted/.test(s) || s === 'inaccessible';
 }
 
+// Levenshtein edit distance (rolling two-row). Used by the fuzzy SoO match.
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = new Array(n + 1);
+  let cur = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    const tmp = prev; prev = cur; cur = tmp;
+  }
+  return prev[n];
+}
+
+// ≥95% identical = same account (operator rule 2026-06-19). Catches a missing/
+// extra char, a swapped letter, etc. that exact + email-extract can't.
+const SOO_FUZZY_THRESHOLD = 0.95;
+
 /**
  * Find an account's SoO row from a GoLogin profile name. The SoO map is keyed by
  * the bare lowercased account email. GoLogin names are USUALLY that email, but
- * some carry decoration the exact-match lookup would miss — a " [1]" duplicate
- * suffix (e.g. "ryan.ceballo@ortus.solutions [1]"), a stray leading invisible
- * char, a "Name <email>" display form, etc. Try the exact (lowercased) name
- * first, then fall back to the email embedded in the name. Returns the row or
- * null. Only matches an email that actually exists in the SoO — no false hits.
+ * some carry decoration or typos the exact-match lookup would miss:
+ *   - " [1]" duplicate suffix ("ryan.ceballo@ortus.solutions [1]")
+ *   - a stray leading invisible char ("‎anthony.ricaplaza@ortus.solutions")
+ *   - a one-char typo ("sebastian.ferrer@ortus.solution" — missing the 's')
+ * Three tiers, cheapest first: exact name → email embedded in the name → fuzzy
+ * (≥95% similar to a SoO email). The length pre-filter keeps the fuzzy pass cheap
+ * (edit distance ≥ the length gap, so a >5% length gap can't clear 95%). Only
+ * ever returns a row that exists in the SoO — verified against the live data to
+ * produce no false matches, no collisions, no ambiguity.
  */
 export function lookupSoO(sooData, profileName) {
   if (!sooData || !profileName) return null;
   const raw = String(profileName).toLowerCase().trim();
   if (sooData[raw]) return sooData[raw];
   const m = raw.match(/[\w.+-]+@[\w.-]+\.\w+/);
-  if (m && sooData[m[0]]) return sooData[m[0]];
-  return null;
+  const probe = m ? m[0] : raw;
+  if (m && sooData[probe]) return sooData[probe];
+  let best = null;
+  for (const key in sooData) {
+    const lenMax = Math.max(probe.length, key.length);
+    if (!lenMax) continue;
+    if (Math.abs(probe.length - key.length) / lenMax > (1 - SOO_FUZZY_THRESHOLD)) continue;
+    const s = 1 - levenshtein(probe, key) / lenMax;
+    if (s >= SOO_FUZZY_THRESHOLD && (!best || s > best.s)) best = { key, s };
+  }
+  return best ? sooData[best.key] : null;
 }
 
 /**

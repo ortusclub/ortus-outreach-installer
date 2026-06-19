@@ -44,3 +44,21 @@ test('empty / missing args → null', () => {
   assert.equal(lookupSoO(SOO, ''), null);
   assert.equal(lookupSoO(null, 'ryan.ceballo@ortus.solutions'), null);
 });
+
+test('one-char typo (missing trailing s) → fuzzy match (the sebastian bug)', () => {
+  // SoO has ...solutions; the GoLogin name is ...solution (no final s).
+  const SOO2 = { 'sebastian.ferrer@ortus.solutions': { email: 'sebastian.ferrer@ortus.solutions', ccCredits: 'In Use' } };
+  assert.equal(lookupSoO(SOO2, 'sebastian.ferrer@ortus.solution').ccCredits, 'In Use');
+});
+
+test('a different account < 95% similar does NOT false-match', () => {
+  const SOO2 = { 'jordan.peralta@ortus.solutions': { email: 'jordan.peralta@ortus.solutions' } };
+  // dennis.peralta shares the domain + surname but the local part differs a lot.
+  assert.equal(lookupSoO(SOO2, 'dennis.peralta@ortus.solutions'), null);
+});
+
+test('junk / non-account names never fuzzy-match a real email', () => {
+  assert.equal(lookupSoO(SOO, 'profile 196'), null);
+  assert.equal(lookupSoO(SOO, 'zoominfo_ii'), null);
+  assert.equal(lookupSoO(SOO, 'samuel.adcock@gmail.com'), null);
+});
