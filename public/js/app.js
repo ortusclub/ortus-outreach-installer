@@ -41,6 +41,11 @@ let allProfilesData = [];
 // v2.78: accounts pre-benched in the wizard — selected but start the campaign
 // out of the rotation (translated to campaign._skippedProfiles on launch).
 let benchedProfileIds = new Set();
+// Task 6: multi-tab lead-source guard state
+window._chosenSheetGid = '';      // gid of the operator's chosen tab
+window._tabsData = [];            // full tab list from last /api/sheet/tabs call
+window._tabPickerMulti = false;   // true when workbook has >1 tabs
+window._tabLeadOk = true;         // true when chosen tab passes lead-look check
 // v2.112 (#6): set to true when operator clicks "Start anyway" in the guardrail
 // confirm dialog so the Start handler skips the re-check on re-entry.
 let _guardrailConfirmed = false;
@@ -3185,6 +3190,205 @@ function _refreshOpenSheetButtons() {
     : (setup ? 'Open the sheet you entered above' : 'Enter a sheet URL first');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 6: multi-tab lead-source guard
+// ─────────────────────────────────────────────────────────────────────────────
+
+// System tab names that should never be used as a lead source.
+const SYSTEM_TAB_NAMES = new Set([
+  'recent connections', 'recent messages', 'savedsearch/batches',
+  'savedsearch', 'batches', 'soo', 'linkedin accounts',
+  'ops log', 'events', 'config',
+]);
+
+function _isSystemTabName(name) {
+  return SYSTEM_TAB_NAMES.has((name || '').trim().toLowerCase());
+}
+
+// Decide if header array + preview rows look like a lead tab.
+// Requires: a "First Name" column AND a LinkedIn-URL-ish column.
+function _looksLikeLeadHeader(headers) {
+  if (!headers || headers.length === 0) return false;
+  const lh = headers.map(h => (h || '').toString().trim().toLowerCase());
+  const hasFirstName = lh.some(h => /^first[\s_]?name$/.test(h));
+  const hasLinkedIn  = lh.some(h => /linkedin|profile\s*url|slug/i.test(h) || h === 'url');
+  return hasFirstName && hasLinkedIn;
+}
+
+let _tabPickDebounceTimer = null;
+
+// Called on #sheet-url input/blur — fetches tabs, shows picker if multi-tab.
+async function refreshSheetTabPicker() {
+  const urlEl = document.getElementById('sheet-url');
+  const picker = document.getElementById('sheet-tab-picker');
+  const select = document.getElementById('sheet-tab-select');
+  const label  = document.getElementById('sheet-tab-picker-label');
+  if (!urlEl || !picker || !select) return;
+
+  const url = urlEl.value.trim();
+  if (!url || !url.includes('docs.google.com/spreadsheets')) {
+    picker.style.display = 'none';
+    window._tabsData = [];
+    window._tabPickerMulti = false;
+    window._chosenSheetGid = '';
+    window._tabLeadOk = true;
+    return;
+  }
+
+  let tabs;
+  try {
+    const res = await fetch('/api/sheet/tabs?sheetUrl=' + encodeURIComponent(url));
+    const data = await res.json();
+    if (!res.ok || !data.tabs) { picker.style.display = 'none'; return; }
+    tabs = data.tabs;
+  } catch { picker.style.display = 'none'; return; }
+
+  window._tabsData = tabs;
+  window._tabPickerMulti = tabs.length > 1;
+
+  if (tabs.length <= 1) {
+    // Single-tab: auto-select, store gid, hide picker
+    if (tabs.length === 1) {
+      window._chosenSheetGid = String(tabs[0].gid || '');
+      window._tabLeadOk = !_isSystemTabName(tabs[0].name) && _looksLikeLeadHeader(tabs[0].header || []);
+    }
+    picker.style.display = 'none';
+    return;
+  }
+
+  // Multi-tab: show picker
+  if (label) label.textContent = `This workbook has ${tabs.length} tabs — choose the campaign's lead list`;
+
+  // Pre-select tab whose gid matches what's already in the URL
+  const urlGid = (url.match(/[#&?]gid=(\d+)/) || [])[1] || '';
+
+  select.innerHTML = tabs.map(tab => {
+    const isSys = _isSystemTabName(tab.name);
+    const tabLabel = isSys ? `${tab.name} — not leads` : tab.name;
+    const detail = `· gid ${tab.gid} · ${tab.rowCount} rows`;
+    const selected = (urlGid && String(tab.gid) === urlGid) ? ' selected' : '';
+    return `<option value="${tab.gid}"${selected} data-sys="${isSys}" data-name="${escHtml(tab.name)}">${escHtml(tabLabel)} ${detail}</option>`;
+  }).join('');
+
+  picker.style.display = '';
+  // Trigger preview for the currently selected option
+  onSheetTabChange();
+}
+
+function _debounceTabPicker() {
+  clearTimeout(_tabPickDebounceTimer);
+  _tabPickDebounceTimer = setTimeout(refreshSheetTabPicker, 500);
+}
+
+// Called on <select> change — preview the chosen tab.
+async function onSheetTabChange() {
+  const select   = document.getElementById('sheet-tab-select');
+  const previewEl = document.getElementById('sheet-tab-preview');
+  const blockEl  = document.getElementById('sheet-tab-leadblock');
+  const blockBody = document.getElementById('sheet-tab-leadblock-body');
+  if (!select) return;
+
+  const gid = select.value;
+  window._chosenSheetGid = gid;
+
+  const opt = select.options[select.selectedIndex];
+  const isSys = opt?.dataset?.sys === 'true';
+  const tabName = opt?.dataset?.name || gid;
+
+  if (!gid) {
+    if (previewEl) previewEl.style.display = 'none';
+    if (blockEl) blockEl.style.display = 'none';
+    window._tabLeadOk = false;
+    return;
+  }
+
+  // Find tab header from cached data
+  const tabInfo = (window._tabsData || []).find(t => String(t.gid) === String(gid));
+  const header = tabInfo ? (tabInfo.header || []) : [];
+
+  if (isSys || !_looksLikeLeadHeader(header)) {
+    // Show block
+    window._tabLeadOk = false;
+    if (previewEl) previewEl.style.display = 'none';
+    if (blockEl) {
+      blockEl.style.display = '';
+      if (blockBody) {
+        if (isSys) {
+          blockBody.innerHTML = `The selected tab <code>${escHtml(tabName)}</code> is a system tab (LinkedIn data log), not your leads. Pick the campaign's lead tab — the one with <b>First Name</b> + a <b>LinkedIn URL</b> column.`;
+        } else {
+          blockBody.innerHTML = `The selected tab <code>${escHtml(tabName)}</code> doesn't look like a lead list — it's missing a <b>First Name</b> column and/or a <b>LinkedIn URL</b> column. Pick the right tab.`;
+        }
+      }
+    }
+    return;
+  }
+
+  // Looks like leads — show preview
+  window._tabLeadOk = true;
+  if (blockEl) blockEl.style.display = 'none';
+
+  // Build 3-row preview from header + up to 3 rows if available
+  if (previewEl) {
+    const topCols = header.slice(0, 5); // first 5 cols
+    const colPills = topCols.map(h => {
+      const isKey = /^first[\s_]?name$/i.test(h) || /linkedin|profile\s*url/i.test(h);
+      return isKey ? `<b>${escHtml(h)} ✓</b>` : escHtml(h);
+    }).join(' · ');
+
+    let html = `<div class="tabpick-cols">Detected columns: ${colPills}</div>`;
+
+    // Try to fetch a small preview via the existing /api/sheet/preview endpoint with the gid
+    try {
+      const urlEl = document.getElementById('sheet-url');
+      const baseUrl = (urlEl?.value || '').trim();
+      // Build url with this gid
+      const previewUrl = baseUrl.replace(/[#&?]gid=\d+/g, '').replace(/#$/, '') + '#gid=' + gid;
+      const res = await fetch('/api/sheet/preview?url=' + encodeURIComponent(previewUrl));
+      const data = await res.json();
+      if (!data.error && data.preview && data.preview.length > 0) {
+        const cols = data.columns.slice(0, 5);
+        html += '<table class="mini"><thead><tr>';
+        cols.forEach(c => { html += `<th>${escHtml(c)}</th>`; });
+        html += '</tr></thead><tbody>';
+        data.preview.slice(0, 3).forEach(row => {
+          html += '<tr>';
+          cols.forEach(c => { html += `<td>${escHtml(String(row[c] || ''))}</td>`; });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+    } catch { /* preview fetch failed — still show col pills */ }
+
+    html += `<div class="tabpick-ok">✓ Looks like a lead list — ready to launch.</div>`;
+    previewEl.innerHTML = html;
+    previewEl.style.display = '';
+  }
+}
+
+// Show the rerun tab-change confirm modal.
+// Resolves true (proceed) or false (cancel).
+function _showTabChangeModal(fromLabel, toLabel) {
+  return new Promise(resolve => {
+    const scrim = document.getElementById('tab-change-modal');
+    const bodyEl = document.getElementById('tab-change-modal-body');
+    const confirmBtn = document.getElementById('tab-change-confirm');
+    const cancelBtn  = document.getElementById('tab-change-cancel');
+    if (!scrim) { resolve(true); return; }
+
+    if (bodyEl) {
+      bodyEl.innerHTML = `This rerun will pull leads from a <b>different tab</b> than last time:<br><br>from <span class="from">"${escHtml(fromLabel)}"</span><br>to <span class="to">"${escHtml(toLabel)}"</span>`;
+    }
+    scrim.classList.add('open');
+
+    function cleanup() { scrim.classList.remove('open'); confirmBtn.onclick = null; cancelBtn.onclick = null; }
+    confirmBtn.onclick = () => { cleanup(); resolve(true); };
+    cancelBtn.onclick  = () => { cleanup(); resolve(false); };
+  });
+}
+
+window.onSheetTabChange = onSheetTabChange;
+window.refreshSheetTabPicker = refreshSheetTabPicker;
+
 async function previewSheet() {
   const url = document.getElementById('sheet-url').value.trim();
   const preview = document.getElementById('sheet-preview');
@@ -3792,6 +3996,25 @@ async function startCampaign(opts = {}) {
     clearPrimaryUrlError();
   }
 
+  // Task 6: tab picker lock — block launch when multi-tab workbook has no
+  // valid lead tab chosen.
+  if (window._tabPickerMulti) {
+    if (!window._chosenSheetGid) {
+      const _pickerEl = document.getElementById('sheet-tab-picker');
+      if (_pickerEl) _pickerEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      alert('This workbook has multiple tabs — pick the lead tab before launching.');
+      return;
+    }
+    if (!window._tabLeadOk) {
+      const _select = document.getElementById('sheet-tab-select');
+      const _tabName = _select?.options[_select.selectedIndex]?.dataset?.name || window._chosenSheetGid;
+      const _blockEl = document.getElementById('sheet-tab-leadblock');
+      if (_blockEl) _blockEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      alert(`Can't launch — the selected tab "${_tabName}" isn't a lead list. Pick the correct lead tab.`);
+      return;
+    }
+  }
+
   // Resolve sender first names per profile (SoO column D, or local-browser input).
   // Resolver runs silently — the operator-facing preview popup was dropped
   // in favour of the post-launch tips card. Sheet-snapshot disclaimer lives
@@ -3900,6 +4123,8 @@ async function startCampaign(opts = {}) {
     // v2.78: accounts to start benched (out of the rotation).
     benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     sheetUrl,
+    sheetGid: window._chosenSheetGid || '',
+    multiTab: !!window._tabPickerMulti,
     templates,
     dailyLimit,
     mode,
@@ -3988,6 +4213,24 @@ async function startCampaign(opts = {}) {
       }
     }
   } catch {}
+
+  // Task 6: rerun tab-change confirm — when the campaign has a saved sheetGid
+  // and the operator chose a different tab, show the confirm modal.
+  if (!opts.skipTabChangeConfirm) {
+    try {
+      const _savedGid = String(opts.savedSheetGid || '');
+      const _chosenGid = String(window._chosenSheetGid || '');
+      if (_savedGid && _chosenGid && _savedGid !== _chosenGid) {
+        // Find display names
+        const _fromTab = (window._tabsData || []).find(t => String(t.gid) === _savedGid);
+        const _toTab   = (window._tabsData || []).find(t => String(t.gid) === _chosenGid);
+        const _fromLabel = (_fromTab?.name || `gid ${_savedGid}`);
+        const _toLabel   = (_toTab?.name   || `gid ${_chosenGid}`);
+        const _proceed = await _showTabChangeModal(_fromLabel, _toLabel);
+        if (!_proceed) return;
+      }
+    } catch { /* non-blocking — proceed */ }
+  }
 
   await submitStartCampaign(body, opts);
 }
@@ -12448,6 +12691,23 @@ function updateSheetTabHint() {
 document.addEventListener('DOMContentLoaded', updateSheetTabHint);
 if (document.readyState !== 'loading') updateSheetTabHint();
 window.updateSheetTabHint = updateSheetTabHint;
+
+// Task 6: wire tab picker to sheet-url
+(function () {
+  function _wireTabPicker() {
+    const el = document.getElementById('sheet-url');
+    if (!el) return;
+    el.addEventListener('input', _debounceTabPicker);
+    el.addEventListener('blur', refreshSheetTabPicker);
+    // If a URL is already pre-filled (config restore), trigger immediately
+    if (el.value && el.value.includes('docs.google.com')) refreshSheetTabPicker();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _wireTabPicker);
+  } else {
+    _wireTabPicker();
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // Dev tools — Preview intro DM (no LinkedIn interaction, pure text preview)

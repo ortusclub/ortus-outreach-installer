@@ -826,6 +826,18 @@
               <button class="btn btn-secondary sheet-hero-btn" onclick="openSheetInBrowser()">Open Sheet</button>
             </div>
           </div>
+          <!-- v2.Task6: multi-tab lead-source picker -->
+          <div id="sheet-tab-picker" style="display:none" class="tabpick">
+            <div class="tabpick-head"><span class="dot"></span> <span id="sheet-tab-picker-label">This workbook has multiple tabs — choose the campaign's lead list</span></div>
+            <select id="sheet-tab-select" onchange="onSheetTabChange()">
+              <option value="">— loading tabs… —</option>
+            </select>
+            <div class="tabpick-preview" id="sheet-tab-preview" style="display:none"></div>
+            <div class="leadblock" id="sheet-tab-leadblock" style="display:none">
+              <div class="lb-title">⛔ Can't launch — this isn't a lead list</div>
+              <div class="lb-body" id="sheet-tab-leadblock-body"></div>
+            </div>
+          </div>
           <div id="sheet-preview" class="hidden sheet-hero-preview"></div>
         </div>
 
@@ -2425,5 +2437,18 @@
       </div>
     </div>
   </div>
+<!-- v2.Task6: rerun tab-change confirm modal -->
+<div class="modal-scrim" id="tab-change-modal">
+  <div class="modal-card solid">
+    <div class="modal-eyebrow">Rerun · tab changed</div>
+    <div class="modal-title">You changed the tab</div>
+    <div class="modal-body" id="tab-change-modal-body">This rerun will pull leads from a different tab than last time.</div>
+    <div class="modal-note">Are you sure? The campaign will connect to the new tab's people.</div>
+    <div class="modal-acts">
+      <button class="btn btn-secondary" id="tab-change-cancel">Keep last tab</button>
+      <button class="btn btn-primary" id="tab-change-confirm">Yes, use the new tab</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
