@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sketches — lead-source guard + 429 pacing UI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 760px; margin: 0 auto; padding: 26px 22px 120px; }
+    .tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px;
+      display: inline-block; margin-bottom: 22px; }
+    .sk-h { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.05em; color: var(--ink);
+      margin: 40px 0 4px; border-bottom: 1px solid var(--hairline); padding-bottom: 8px; }
+    .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 16px; line-height: 1.55; }
+    .sk-cap b { color: var(--ink); }
+    .sk-frame { border: 1px solid var(--card-border); background: var(--card-bg); border-radius: 12px;
+      padding: 20px; margin-bottom: 10px; box-shadow: var(--card-shadow); }
+    .sk-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); margin-bottom: 14px; }
+
+    /* ── NEW: tab picker (Data step) — built on app tokens ── */
+    .tabpick { margin-top: 14px; border: 1px solid var(--gold); background: var(--gold-tint-bg);
+      border-radius: 10px; padding: 14px 16px; }
+    .tabpick-head { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); margin-bottom: 10px; display:flex; align-items:center; gap:8px; }
+    .tabpick-head .dot { width:7px; height:7px; border-radius:9999px; background: var(--gold); }
+    .tabpick select { width: 100%; font-family: var(--mono); font-size: 0.85rem; color: var(--ink);
+      background: var(--bg-soft); border: 1px solid var(--card-border); border-radius: 8px; padding: 11px 12px; }
+    .tabpick-preview { margin-top: 12px; border-top: 1px solid var(--hairline-soft); padding-top: 12px; }
+    .tabpick-cols { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-bottom: 8px; }
+    .tabpick-cols b { color: var(--green); }
+    table.mini { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.66rem; }
+    table.mini th { text-align: left; color: var(--gray); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--hairline); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.56rem; }
+    table.mini td { padding: 5px 8px; color: var(--ink); border-bottom: 1px solid var(--hairline-soft); }
+    .tabpick-ok { font-family: var(--mono); font-size: 0.62rem; color: var(--green); margin-top: 10px; }
+
+    /* ── NEW: hard-stop / launch block (red) — mirrors #scrape-unconfigured ── */
+    .leadblock { margin-top: 14px; padding: 14px 16px; background: rgba(248,81,73,0.08);
+      border: 1px solid var(--red); border-left: 3px solid var(--red); border-radius: 8px; }
+    .leadblock .lb-title { font-family: var(--mono); font-size: 0.74rem; color: var(--red); font-weight: 600; margin-bottom: 6px; }
+    .leadblock .lb-body { font-family: var(--mono); font-size: 0.66rem; color: var(--ink); line-height: 1.55; }
+    .leadblock code { background: var(--hairline-soft); padding: 1px 5px; border-radius: 4px; }
+
+    /* ── NEW: rerun tab-change confirm (modal) ── */
+    .modal-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 50; }
+    .modal-scrim.open { display: flex; }
+    .modal-card { width: 440px; max-width: 92vw; background: var(--card-bg); border: 1px solid var(--gold);
+      border-radius: 12px; padding: 22px; box-shadow: var(--card-shadow-hover); }
+    .modal-card.solid { background: var(--bg); }
+    .modal-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+    .modal-title { font-family: var(--display); font-size: 1.25rem; letter-spacing: 0.04em; color: var(--ink); margin-bottom: 10px; }
+    .modal-body { font-family: var(--mono); font-size: 0.74rem; color: var(--ink); line-height: 1.6; margin-bottom: 8px; }
+    .modal-body .from { color: var(--red); } .modal-body .to { color: var(--green); }
+    .modal-note { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); margin-bottom: 18px; }
+    .modal-acts { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ── NEW: big red delay disclaimer ── */
+    .delay-danger { margin-top: 14px; padding: 14px 16px; background: rgba(248,81,73,0.10);
+      border: 2px solid var(--red); border-radius: 10px; display: none; }
+    .delay-danger.show { display: block; }
+    .delay-danger .dd-top { display:flex; align-items:center; gap:9px; font-family: var(--display); font-size: 1.05rem; letter-spacing: 0.04em; color: var(--red); margin-bottom: 6px; }
+    .delay-danger .dd-top .x { width: 18px; height: 18px; border-radius: 9999px; border: 2px solid var(--red); color: var(--red); display:inline-flex; align-items:center; justify-content:center; font-size: 0.7rem; font-family: var(--mono); }
+    .delay-danger .dd-body { font-family: var(--mono); font-size: 0.68rem; color: var(--ink); line-height: 1.6; }
+    .delay-danger .dd-body b { color: var(--red); }
+
+    /* ── NEW: pause-on-throttle toggle row ── */
+    .throttle-row { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hairline-soft);
+      display: flex; align-items: flex-start; gap: 14px; }
+    .throttle-row .tr-text { flex: 1; }
+    .throttle-row .tr-label { font-family: var(--body); font-size: 0.92rem; color: var(--ink); font-weight: 600; }
+    .throttle-row .tr-help { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); margin-top: 4px; line-height: 1.5; }
+    .throttle-row .tr-help b { color: var(--ink); }
+    /* reuse the app's real .alpha-toggle/.alpha-toggle-track if present; minimal fallback below */
+    .sw { position: relative; width: 46px; height: 26px; flex: 0 0 auto; cursor: pointer; }
+    .sw input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .sw .track { position: absolute; inset: 0; background: var(--hairline); border-radius: 9999px; transition: background .15s; }
+    .sw .track::after { content:''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 9999px; background: var(--ink); transition: transform .15s; }
+    .sw input:checked + .track { background: var(--green); }
+    .sw input:checked + .track::after { transform: translateX(20px); background: #fff; }
+
+    .step-note { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 8px; font-style: italic; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · lead-source guard + 429 pacing · real app CSS · review before greenlight</div>
+
+    <!-- ====================================================== -->
+    <h2 class="sk-h">A — Multi-tab lead source (the wrong-people fix)</h2>
+
+    <!-- A1 -->
+    <div class="sk-eyebrow">A1 · Data step — tab picker after pasting a multi-tab sheet</div>
+    <p class="sk-cap">When the pasted workbook has more than one tab, the operator <b>must pick</b> the campaign's lead tab. System tabs are flagged. A 3-row preview + detected columns confirms it's really the lead list. Single-tab sheets skip this entirely.</p>
+    <div class="sk-frame">
+      <div class="sheet-hero">
+        <div class="sheet-hero-top">
+          <div class="sheet-hero-url-block">
+            <label for="sk-url" class="sheet-hero-url-label">Public Google Sheet with LinkedIn URLs</label>
+            <input type="text" id="sk-url" class="sheet-hero-url-input" value="https://docs.google.com/spreadsheets/d/1GHIL…/edit?gid=1249624821#gid=1249624821" />
+            <p class="sheet-tab-hint">Open the specific tab inside the sheet, then copy the URL — it should include <code>#gid=…</code>.</p>
+          </div>
+          <div class="sheet-hero-actions">
+            <button class="btn btn-secondary sheet-hero-btn">Preview Sheet</button>
+            <button class="btn btn-secondary sheet-hero-btn">Open Sheet</button>
+          </div>
+        </div>
+
+        <div class="tabpick">
+          <div class="tabpick-head"><span class="dot"></span> This workbook has 4 tabs — choose the campaign's lead list</div>
+          <select id="sk-tab" onchange="skPick()">
+            <option value="sys">SavedSearch/Batches — system tab (not leads)</option>
+            <option value="sys">Recent Messages — system tab (not leads)</option>
+            <option value="sys">Recent Connections — system tab (not leads)</option>
+            <option value="leads" selected>HTECHxDELLxINT leads · gid 1249624821 · 1,030 rows</option>
+          </select>
+          <div class="tabpick-preview" id="sk-prev">
+            <div class="tabpick-cols">Detected columns: <b>First Name ✓</b> · <b>LinkedIn URL ✓</b> · Last Name · Company · Title</div>
+            <table class="mini">
+              <tr><th>First Name</th><th>Last Name</th><th>LinkedIn URL</th></tr>
+              <tr><td>Ryan</td><td>Rooijen</td><td>/in/ACwAAADy-6kB…</td></tr>
+              <tr><td>Philippe</td><td>Beque</td><td>/in/philippe-beque-620b498</td></tr>
+              <tr><td>Bastien</td><td>Parizot</td><td>/in/ACwAAAC6jEkB…</td></tr>
+            </table>
+            <div class="tabpick-ok">✓ Looks like a lead list — ready to launch.</div>
+          </div>
+        </div>
+      </div>
+      <div class="step-note">Try selecting a "system tab" option above ↑ to see the block in A2.</div>
+    </div>
+
+    <!-- A2 -->
+    <div class="sk-eyebrow" style="margin-top:26px">A2 · Hard-stop guard — launch blocked on a bad source</div>
+    <p class="sk-cap">The safety net independent of the picker. If the resolved tab is a system tab, has no <code>gid</code> on a multi-tab workbook, or doesn't look like leads, the launch is <b>blocked</b> with the reason — never a silent run on the wrong tab.</p>
+    <div class="sk-frame">
+      <div class="leadblock" id="sk-block" style="display:block">
+        <div class="lb-title">⛔ Can't launch — this isn't a lead list</div>
+        <div class="lb-body">The selected tab <code>Recent Connections</code> is a system tab (LinkedIn connection log), not your leads. Pick the campaign's lead tab — the one with <b>First Name</b> + a <b>LinkedIn URL</b> column.</div>
+      </div>
+    </div>
+
+    <!-- A3 -->
+    <div class="sk-eyebrow" style="margin-top:26px">A3 · Rerun — tab-change confirmation</div>
+    <p class="sk-cap">On a rerun/restore, if the chosen tab differs from the one saved with the campaign, an explicit confirm appears. A tab switch is never silent — this is the disclaimer you asked for.</p>
+    <div class="sk-frame" style="text-align:center">
+      <button class="btn btn-secondary" onclick="document.getElementById('sk-modal').classList.add('open')">▶ Preview the rerun confirm</button>
+    </div>
+
+    <!-- ====================================================== -->
+    <h2 class="sk-h">B — 429 / pacing (the skipping + intervals fix)</h2>
+
+    <!-- B1 -->
+    <div class="sk-eyebrow">B1 · Pause between leads — big red disclaimer below the safe range</div>
+    <p class="sk-cap">No hard floor (per your call) — default stays <b>30–60s</b>. But drop the low end <b>under 30s</b> and a big red warning appears. Shown here triggered at 15s. Type 30+ to clear it.</p>
+    <div class="sk-frame">
+      <div class="alpha-advanced-body">
+        <div class="alpha-knob-label">Pause between leads</div>
+        <div class="alpha-knob-row">
+          <input class="alpha-knob-input alpha-pause-input" type="number" id="sk-dmin" value="15" min="5" max="120" oninput="skDelay()" />
+          <span class="alpha-pause-sep">to</span>
+          <input class="alpha-knob-input alpha-pause-input" type="number" id="sk-dmax" value="30" min="10" max="300" />
+          <span class="alpha-knob-suffix">seconds</span>
+        </div>
+        <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
+
+        <div class="delay-danger show" id="sk-danger">
+          <div class="dd-top"><span class="x">!</span> Danger — this pace will get accounts throttled</div>
+          <div class="dd-body">Below <b>30s</b> between invites floods LinkedIn with requests (HTTP&nbsp;429) — which causes the <b>mass skipping</b> you've been seeing, and walks accounts toward <b>checkpoints, restrictions, and bans</b>. Safe range is <b>30–120s</b>. Only go lower if you fully understand the risk.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- B2 -->
+    <div class="sk-eyebrow" style="margin-top:26px">B2 · Pause-on-throttle — operator toggle</div>
+    <p class="sk-cap">When an account hits a 429 / soft-block, the app can either pause that account (safe) or keep going — <b>your choice</b>, per the change you asked for. Default ON (recommended). Challenges/checkpoints always halt + surface to a human regardless.</p>
+    <div class="sk-frame">
+      <div class="throttle-row" style="border-top:none; padding-top:0">
+        <label class="sw"><input type="checkbox" id="sk-throttle" checked><span class="track"></span></label>
+        <div class="tr-text">
+          <div class="tr-label">Pause an account when LinkedIn throttles it (429)</div>
+          <div class="tr-help" id="sk-throttle-help"><b>On:</b> the account stops sending and backs off when throttled, then resumes slower — protects it from restriction. Other accounts keep running.</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="step-note" style="margin-top:30px">Row counts illustrative. All field names, tabs, accounts and the workbook id are real. Built on <code>/css/style.css</code> + <code>/css/dashboard-v0.3.css</code>.</p>
+  </div>
+
+  <!-- rerun confirm modal -->
+  <div class="modal-scrim" id="sk-modal">
+    <div class="modal-card solid">
+      <div class="modal-eyebrow">Rerun · tab changed</div>
+      <div class="modal-title">You changed the tab</div>
+      <div class="modal-body">This rerun will pull leads from a <b>different tab</b> than last time:<br><br>
+        from <span class="from">“Recent Connections”</span><br>to <span class="to">“HTECHxDELLxINT leads · gid 1249624821”</span></div>
+      <div class="modal-note">Are you sure? The campaign will connect to the new tab's people.</div>
+      <div class="modal-acts">
+        <button class="btn btn-secondary" onclick="document.getElementById('sk-modal').classList.remove('open')">Keep last tab</button>
+        <button class="btn btn-primary" onclick="document.getElementById('sk-modal').classList.remove('open')">Yes, use the new tab</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function skPick() {
+      const v = document.getElementById('sk-tab').value;
+      document.getElementById('sk-prev').style.display = v === 'leads' ? 'block' : 'none';
+      document.getElementById('sk-block').style.display = v === 'leads' ? 'none' : 'block';
+    }
+    function skDelay() {
+      const min = parseInt(document.getElementById('sk-dmin').value || '0', 10);
+      document.getElementById('sk-danger').classList.toggle('show', min < 30);
+    }
+    document.getElementById('sk-throttle').addEventListener('change', function () {
+      document.getElementById('sk-throttle-help').innerHTML = this.checked
+        ? '<b>On:</b> the account stops sending and backs off when throttled, then resumes slower — protects it from restriction. Other accounts keep running.'
+        : '<b>Off:</b> the account keeps sending through throttling. Faster, but risks more skips and pushes the account toward restriction. Not recommended.';
+    });
+  </script>
+</body>
+</html>
