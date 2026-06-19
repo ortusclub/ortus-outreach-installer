@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tab picker — 3 variants (the gid question)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 720px; margin: 0 auto; padding: 26px 22px 90px; }
+    .tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; display:inline-block; margin-bottom: 14px; }
+    .lead { font-family: var(--mono); font-size: 0.74rem; color: var(--gray); line-height: 1.55; margin: 0 0 24px; }
+    .lead b { color: var(--ink); }
+    .vh { font-family: var(--display); font-size: 1.25rem; letter-spacing: 0.05em; color: var(--ink); margin: 30px 0 4px; }
+    .vsub { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); margin: 0 0 12px; line-height:1.5; }
+    .vsub b { color: var(--ink); }
+    .rec { font-family: var(--mono); font-size: 0.58rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--green); border:1px solid var(--green); border-radius:9999px; padding:2px 8px; margin-left:8px; }
+
+    /* picker shell (open dropdown look) on real tokens */
+    .pick { border: 1px solid var(--gold); background: var(--gold-tint-bg); border-radius: 10px; padding: 12px 14px; }
+    .pick-head { font-family: var(--mono); font-size: 0.66rem; color: var(--ink); margin-bottom: 10px; display:flex; align-items:center; gap:8px;}
+    .pick-head .dot { width:7px;height:7px;border-radius:9999px;background:var(--gold);}
+    .opt { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--card-border);
+      border-radius:8px; background:var(--card-bg); margin-bottom:7px; cursor:pointer; }
+    .opt:last-child { margin-bottom:0; }
+    .opt.sel { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+    .opt.sys { opacity: 0.62; }
+    .radio { width:14px;height:14px;border-radius:9999px;border:2px solid var(--card-border); flex:0 0 auto; }
+    .opt.sel .radio { border-color: var(--green); background: radial-gradient(circle, var(--green) 0 4px, transparent 5px); }
+    .opt-main { flex:1; min-width:0; }
+    .opt-name { font-family: var(--body); font-size: 0.92rem; color: var(--ink); font-weight:600; }
+    .opt-meta { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); margin-top:2px; }
+    .opt-cols { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); margin-top:3px; }
+    .opt-cols b { color: var(--green); }
+    .sysflag { font-family: var(--mono); font-size: 0.58rem; letter-spacing:0.06em; text-transform:uppercase; color: var(--gray); }
+    .gidtag { font-family: var(--mono); font-size: 0.56rem; color: var(--gray); opacity:0.7; border:1px solid var(--hairline); border-radius:6px; padding:1px 6px; flex:0 0 auto; }
+    .okflag { font-family: var(--mono); font-size: 0.58rem; letter-spacing:0.06em; text-transform:uppercase; color: var(--green); }
+    .note { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top:10px; font-style:italic; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · #2 tab picker · 3 variants · real app CSS</div>
+    <p class="lead">The <b>gid</b> is the tab's permanent internal ID (the <code>#gid=</code> in the URL). The app needs it to pin the exact tab; the operator rarely needs to read it. These three options differ in <b>how much of that to surface</b>. Same 4 real tabs from the HTECH workbook in each.</p>
+
+    <!-- VARIANT A -->
+    <div class="vh">A — Minimal <span class="rec">recommended</span></div>
+    <p class="vsub">Tab name + row count only. <b>No gid.</b> System tabs greyed + flagged. Cleanest; fits a native dropdown. The gid is still used under the hood — just not shown.</p>
+    <div class="pick">
+      <div class="pick-head"><span class="dot"></span> This workbook has 4 tabs — pick the lead list</div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">SavedSearch/Batches</div></div><span class="sysflag">not leads</span></div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">Recent Messages</div></div><span class="sysflag">not leads</span></div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">Recent Connections</div></div><span class="sysflag">not leads</span></div>
+      <div class="opt sel"><span class="radio"></span><div class="opt-main"><div class="opt-name">HTECHxDELLxINT leads</div><div class="opt-meta">1,030 rows</div></div><span class="okflag">✓ leads</span></div>
+    </div>
+
+    <!-- VARIANT B -->
+    <div class="vh">B — Name + faint gid</div>
+    <p class="vsub">Like A, but each tab keeps a small grey <b>gid tag</b> for power users who want to cross-check it against the <code>#gid=</code> in the URL they pasted. Visible but de-emphasised.</p>
+    <div class="pick">
+      <div class="pick-head"><span class="dot"></span> This workbook has 4 tabs — pick the lead list</div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">SavedSearch/Batches</div></div><span class="sysflag">not leads</span><span class="gidtag">gid 0</span></div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">Recent Messages</div></div><span class="sysflag">not leads</span><span class="gidtag">gid 8123…</span></div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">Recent Connections</div></div><span class="sysflag">not leads</span><span class="gidtag">gid 4471…</span></div>
+      <div class="opt sel"><span class="radio"></span><div class="opt-main"><div class="opt-name">HTECHxDELLxINT leads</div><div class="opt-meta">1,030 rows</div></div><span class="okflag">✓ leads</span><span class="gidtag">gid 1249624821</span></div>
+    </div>
+
+    <!-- VARIANT C -->
+    <div class="vh">C — Content-first (columns)</div>
+    <p class="vsub">No gid at all — instead each tab shows its <b>detected columns</b>, so the operator picks by what's actually in the tab. A lead tab is self-evident (<b>First Name + LinkedIn URL</b>); system tabs visibly aren't. Most foolproof; needs a custom list (not a native dropdown).</p>
+    <div class="pick">
+      <div class="pick-head"><span class="dot"></span> This workbook has 4 tabs — pick the lead list</div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">SavedSearch/Batches</div><div class="opt-cols">Search · Batch · Notes</div></div><span class="sysflag">not a lead list</span></div>
+      <div class="opt sys"><span class="radio"></span><div class="opt-main"><div class="opt-name">Recent Connections</div><div class="opt-cols">Account · Public ID · URN · Connected At</div></div><span class="sysflag">not a lead list</span></div>
+      <div class="opt sel"><span class="radio"></span><div class="opt-main"><div class="opt-name">HTECHxDELLxINT leads</div><div class="opt-cols"><b>First Name ✓</b> · Last Name · <b>LinkedIn URL ✓</b> · Company · 1,030 rows</div></div><span class="okflag">✓ leads</span></div>
+    </div>
+    <p class="note">All four tab names are real (HTECH workbook). Row counts + non-HTECH gids illustrative. The HTECH lead-tab gid (1249624821) is the real one.</p>
+  </div>
+</body>
+</html>

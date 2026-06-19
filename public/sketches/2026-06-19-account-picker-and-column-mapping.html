@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sketch — account picker declutter + URL-column mapping</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 760px; margin: 0 auto; padding: 26px 22px 100px; }
+    .tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; display:inline-block; margin-bottom: 16px; }
+    .sk-h { font-family: var(--display); font-size: 1.35rem; letter-spacing: 0.05em; color: var(--ink); margin: 34px 0 4px; border-bottom: 1px solid var(--hairline); padding-bottom: 8px; }
+    .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.55; margin: 0 0 14px; }
+    .sk-cap b { color: var(--ink); }
+    .eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); margin: 18px 0 8px; }
+    .panel { border: 1px solid var(--card-border); background: var(--card-bg); border-radius: 12px; padding: 16px; box-shadow: var(--card-shadow); }
+
+    /* ---- CURRENT (cluttered) mock ---- */
+    .old-card { border:1px solid var(--card-border); border-radius:10px; padding:12px 14px; background:var(--bg-soft); position:relative; margin-top:18px; }
+    .old-ribbon { position:absolute; top:-1px; left:-1px; right:-1px; height:18px; background:#d97706; color:#fff; font-family:var(--mono); font-size:0.56rem; letter-spacing:0.08em; text-transform:uppercase; display:flex; align-items:center; padding:0 10px; border-radius:10px 10px 0 0; }
+    .old-body { margin-top:16px; }
+    .old-name { font-family:var(--body); font-weight:600; color:var(--ink); }
+    .chip { font-family:var(--mono); font-size:0.55rem; padding:1px 6px; border-radius:9999px; border:1px solid var(--hairline); color:var(--gray); margin-left:6px; }
+    .chip.red { color:var(--red); border-color:var(--red); }
+    .bar { display:flex; gap:3px; margin-top:8px; }
+    .seg { height:14px; flex:1; border-radius:3px; font-family:var(--mono); font-size:0.5rem; display:flex; align-items:center; justify-content:center; color:var(--gray); }
+    .seg.used { background:rgba(217,119,6,0.25); } .seg.free { background:rgba(63,185,80,0.18); }
+    .legend { font-family:var(--mono); font-size:0.5rem; color:var(--gray); margin-top:4px; }
+    .assignee { font-family:var(--mono); font-size:0.56rem; color:var(--gray); margin-top:6px; }
+    .pill2 { font-family:var(--mono); font-size:0.55rem; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:1px 7px; margin-top:8px; display:inline-block; }
+
+    /* ---- NEW (clean) rows ---- */
+    .acct { display:flex; align-items:center; gap:12px; padding:11px 12px; border-bottom:1px solid var(--hairline-soft); }
+    .acct:last-child { border-bottom:none; }
+    .cb { width:16px;height:16px;border-radius:4px;border:2px solid var(--card-border); flex:0 0 auto; }
+    .cb.on { background: var(--green); border-color: var(--green); }
+    .acct-main { flex:1; min-width:0; }
+    .acct-name { font-family:var(--body); font-size:0.9rem; color:var(--ink); font-weight:600; }
+    .acct-sub { font-family:var(--mono); font-size:0.6rem; color:var(--gray); margin-top:2px; }
+    .state { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.05em; padding:3px 9px; border-radius:9999px; white-space:nowrap; flex:0 0 auto; }
+    .state.free { color:var(--green); border:1px solid rgba(63,185,80,0.5); }
+    .state.mine { color:var(--gray); border:1px solid var(--hairline); }
+    .state.busy { color:#d97706; border:1px solid #d97706; background:rgba(217,119,6,0.10); }
+    .state.restr { color:var(--red); border:1px solid var(--red); background:rgba(248,81,73,0.10); }
+    .disabled .acct-name { color: var(--gray); }
+
+    .rules { margin-top:14px; padding:12px 14px; border:1px solid var(--hairline); border-radius:8px; background:var(--bg-soft); }
+    .rules-h { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); margin-bottom:8px; }
+    .rule { font-family:var(--mono); font-size:0.64rem; color:var(--ink); line-height:1.7; }
+    .rule b.amber { color:#d97706; } .rule b.grn { color:var(--green); } .rule b.red { color:var(--red); }
+    .caveat { font-family:var(--mono); font-size:0.6rem; color:var(--gray); margin-top:10px; line-height:1.5; font-style:italic; }
+
+    /* ---- URL column mapping ---- */
+    .map { border:1px solid var(--gold); background:var(--gold-tint-bg); border-radius:10px; padding:14px 16px; margin-top:10px; }
+    .map-eyebrow { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); margin-bottom:10px; }
+    .map-sel { width:100%; font-family:var(--mono); font-size:0.85rem; color:var(--ink); background:var(--card-bg); border:1px solid var(--card-border); border-radius:8px; padding:10px 12px; display:flex; align-items:center; justify-content:space-between; }
+    .map-sel .chk { color:var(--green); font-size:0.7rem; }
+    .map-opts { margin-top:8px; border:1px solid var(--card-border); border-radius:8px; overflow:hidden; }
+    .map-opt { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; font-family:var(--mono); font-size:0.72rem; color:var(--ink); border-bottom:1px solid var(--hairline-soft); }
+    .map-opt:last-child { border-bottom:none; }
+    .map-opt .detect { font-size:0.56rem; color:var(--green); letter-spacing:0.06em; text-transform:uppercase; }
+    .map-opt.dim { color:var(--gray); }
+    .map-hint { font-family:var(--mono); font-size:0.7rem; color:var(--gray); margin-top:10px; line-height:1.5; }
+    .map-hint code { background:var(--hairline-soft); padding:1px 5px; border-radius:4px; }
+    .map-warn { margin-top:10px; padding:10px 12px; border:1px solid #d97706; background:rgba(217,119,6,0.10); border-radius:8px; font-family:var(--mono); font-size:0.72rem; color:#d97706; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · #3 account picker + URL-column mapping · review before build</div>
+
+    <!-- ===================== #3 ===================== -->
+    <h2 class="sk-h">#3 — Account picker: declutter + fix the ribbon</h2>
+
+    <div class="eyebrow">Today — up to 6 things stacked per card (the clutter)</div>
+    <div class="old-card">
+      <div class="old-ribbon">⚠ in use — adri@ortusclub.com</div>
+      <div class="old-body">
+        <span class="old-name">christian.saguid@ortus.solutions</span><span class="chip">⚠ dup</span><span class="chip red">⛔ restricted</span>
+        <div class="bar"><span class="seg used">OP</span><span class="seg free">InM</span><span class="seg used">SN</span><span class="seg used">CC</span></div>
+        <div class="legend">OP · InMail · Sales Nav · CC</div>
+        <div class="assignee">Assigned: —</div>
+        <span class="pill2">Primary — not checked yet</span>
+      </div>
+    </div>
+
+    <div class="eyebrow" style="margin-top:22px">Proposed — one clean row, one clear state</div>
+    <div class="panel">
+      <div class="acct">
+        <span class="cb on"></span>
+        <div class="acct-main"><div class="acct-name">alizandre.villar@ortus.solutions</div><div class="acct-sub">Sales Nav · CC ready</div></div>
+        <span class="state free">Free</span>
+      </div>
+      <div class="acct">
+        <span class="cb on"></span>
+        <div class="acct-main"><div class="acct-name">lenard.mendoza@ortus.solutions</div><div class="acct-sub">in use by you</div></div>
+        <span class="state mine">You</span>
+      </div>
+      <div class="acct disabled">
+        <span class="cb"></span>
+        <div class="acct-main"><div class="acct-name">christian.saguid@ortus.solutions</div><div class="acct-sub">CC in use right now</div></div>
+        <span class="state busy">In use · adri</span>
+      </div>
+      <div class="acct disabled">
+        <span class="cb"></span>
+        <div class="acct-main"><div class="acct-name">sai.sidhartha@ortus.solutions</div><div class="acct-sub">reserved for another operator</div></div>
+        <span class="state busy">Assigned · mj</span>
+      </div>
+      <div class="acct disabled">
+        <span class="cb"></span>
+        <div class="acct-main"><div class="acct-name">mj.petete@ortus.solutions</div><div class="acct-sub">account restricted by LinkedIn</div></div>
+        <span class="state restr">Restricted</span>
+      </div>
+    </div>
+    <div class="sk-cap" style="margin-top:8px">Credit detail (OP/InMail/SN/CC) moves to a hover/expand — off the card by default. One state chip per row; the amber states also grey the row + disable the checkbox.</div>
+
+    <div class="rules">
+      <div class="rules-h">Corrected ribbon rules (fixes the misfires)</div>
+      <div class="rule">• Match account ↔ SoO by <b>email</b>, not name=email (fixes "some don't show").</div>
+      <div class="rule">• <b class="amber">In use · X</b> only when a credit cell is <b>currently</b> In Use AND its paired *User ≠ you. (CC no longer flags unconditionally.)</div>
+      <div class="rule">• <b class="amber">Assigned · X</b> only when there's a <b>real</b> assignment value ≠ you. (Today it reads a field the sheet never sends → never fires.)</div>
+      <div class="rule">• <b class="grn">You</b> = your own in-use account — informational, never an alarm.</div>
+      <div class="rule">• <b class="red">Restricted</b> stays a hard block (unchanged).</div>
+      <div class="caveat">Accuracy depends on the SoO sheet being current and the Apps Script emitting the real assignment + *User columns. If that data isn't reliable, the honest fallback is to show "In use · X" only from a live in-use stamp and drop the guessy "assigned" ribbon — flag this if you want that stricter behavior.</div>
+    </div>
+
+    <!-- ===================== URL COLUMN ===================== -->
+    <h2 class="sk-h">LinkedIn URL Column — guided pick (your image)</h2>
+    <p class="sk-cap">Today it let "<b>Linkedin Bio</b>" be chosen as the URL column (wrong → every row skipped, silently). Proposed: auto-detect the column whose cells are actually URLs, pre-select it with a ✓, and warn if a non-URL column is chosen.</p>
+    <div class="map">
+      <div class="map-eyebrow">LinkedIn URL Column</div>
+      <div class="map-sel"><span>LinkedIn URL</span><span class="chk">✓ auto-detected — cells are URLs</span></div>
+      <div class="map-opts">
+        <div class="map-opt"><span>LinkedIn URL</span><span class="detect">✓ looks like URLs</span></div>
+        <div class="map-opt dim"><span>Linkedin Bio</span><span>text — not URLs</span></div>
+        <div class="map-opt dim"><span>First Name</span><span>text</span></div>
+        <div class="map-opt dim"><span>Company</span><span>text</span></div>
+      </div>
+      <div class="map-hint">Cell values must be full LinkedIn profile URLs (e.g. <code>https://www.linkedin.com/in/…</code>). Rows where this is blank are skipped.</div>
+      <div class="map-warn">⚠ "Linkedin Bio" doesn't look like LinkedIn URLs — every row would be skipped. (This warning shows only if you override the auto-detected column.)</div>
+    </div>
+
+    <p class="sk-cap" style="margin-top:24px">Account emails are real; SoO states + operator names illustrative. Real <code>style.css</code> tokens.</p>
+  </div>
+</body>
+</html>
