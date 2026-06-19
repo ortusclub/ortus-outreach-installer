@@ -412,10 +412,38 @@ function doPost(e) {
 
       case 'getRowStatus':
         return handleGetRowStatus(sheet, data);
+
+      // NOTE: operators must re-paste this script into their Apps Script editor
+      // and redeploy as a new version for the tab-picker in the app to work.
+      case 'listTabs':
+        return handleListTabs(spreadsheet);
     }
 
   } catch (err) {
     return jsonResponse({ error: err.message, stack: err.stack });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: List all tabs in the spreadsheet
+// ═══════════════════════════════════════════════════════════════════════════
+
+function handleListTabs(spreadsheet) {
+  try {
+    var sheets = spreadsheet.getSheets();
+    var tabs = sheets.map(function(s) {
+      return {
+        name: s.getName(),
+        gid: String(s.getSheetId()),
+        rowCount: s.getLastRow(),
+        header: (s.getLastRow() > 0 && s.getLastColumn() > 0)
+          ? s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0]
+          : []
+      };
+    });
+    return jsonResponse({ ok: true, tabs: tabs });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.message });
   }
 }
 
