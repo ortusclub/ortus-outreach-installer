@@ -251,3 +251,39 @@ export function classifyAccountState(soo, me, mode, passover) {
   // 5. Default: free
   return FREE;
 }
+
+// Modes that don't consume CC and so show a per-channel breakdown instead of a
+// single CC verdict: Message Campaign, Direct Messages, InMail Only.
+const BREAKDOWN_MODES = new Set(['open_profile_only', 'inmail_only', 'message_only']);
+export function isBreakdownMode(mode) { return BREAKDOWN_MODES.has(mode); }
+
+// The three non-CC channels shown in the breakdown, in display order.
+const BREAKDOWN_CHANNELS = [
+  { key: 'salesNav', label: 'Sales Nav', credit: 'salesNavCredits', user: 'salesNavUser' },
+  { key: 'linkedin', label: 'LinkedIn',  credit: 'linkedinCredits', user: 'linkedinUser' },
+  { key: 'inmail',   label: 'InMail',    credit: 'inmailCredits',   user: 'inmailUser' },
+];
+
+/**
+ * Per-channel view for the breakdown modes. Returns the three non-CC channels —
+ * Sales Nav, LinkedIn (OP), InMail — each with its RAW SoO credit value (shown
+ * verbatim, no invented label) + reserver (when In Use), plus aggregate flags.
+ * `usable` is true only for "Available"; `anyFree` = at least one usable channel;
+ * `blocked` = restricted/inaccessible Status (whole account off-limits). Pure.
+ */
+export function classifyAccountChannels(soo) {
+  if (!soo) return { channels: [], anyFree: false, blocked: false };
+  const blocked = isRestrictedStatus(soo.Status || soo.status);
+  const channels = BREAKDOWN_CHANNELS.map((c) => {
+    const status = String(soo[c.credit] || '').trim();
+    const v = norm(status);
+    return {
+      key: c.key,
+      label: c.label,
+      status,
+      usable: v === 'available',
+      who: v === IN_USE ? cleanWho(soo[c.user]) : '',
+    };
+  });
+  return { channels, anyFree: channels.some((c) => c.usable), blocked };
+}

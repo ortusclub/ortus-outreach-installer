@@ -3,74 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Account picker — per-channel breakdown (Part 2)</title>
+  <title>Account picker — per-channel breakdown (Variant C, built)</title>
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
   <style>
-    /* ── sketch-only scaffolding ───────────────────────────────────────── */
-    .skx-wrap { max-width: 1100px; margin: 0 auto; padding: 32px 28px 80px; }
+    .skx-wrap { max-width: 760px; margin: 0 auto; padding: 32px 28px 80px; }
     .skx-lead { font-family: var(--body); color: var(--ink); font-size: 0.9rem; line-height: 1.5; margin: 0 0 6px; }
-    .skx-note { font-family: var(--body); color: var(--gray); font-size: 0.78rem; line-height: 1.5; margin: 0 0 28px; }
-    .skx-vh { font-family: var(--display); letter-spacing: 0.06em; font-size: 1.3rem; color: var(--ink); margin: 36px 0 4px; }
-    .skx-vs { font-family: var(--body); color: var(--gray); font-size: 0.78rem; margin: 0 0 14px; }
-
-    /* Per-channel status colour tokens reused across all three variants. */
-    .d-avail { background: var(--green); }
-    .d-inuse { background: var(--gold); }
-    .d-spent { background: var(--gray); }
-    .d-na    { background: var(--red); }
-    .brk-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
-
-    /* ── Variant A — aggregate word + chip row ─────────────────────────── */
-    .brkA .brk-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 30px; margin-top: 5px; }
-    .brk-chip {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.01em;
-      text-transform: none; color: var(--ink);
-      border: 1px solid var(--hairline); border-radius: 9999px; padding: 3px 9px;
-    }
-    .brk-chip.c-avail { border-color: rgba(63,185,80,0.5); }
-    .brk-chip.c-na, .brk-chip.c-spent { color: var(--gray); }
-
-    /* ── Variant B — three-row status panel on the left ───────────────── */
-    .brkB .brkB-stat {
-      display: flex; flex-direction: column; justify-content: center; gap: 6px;
-      min-width: 132px; padding: 10px 12px; border-right: 1px solid var(--hairline);
-    }
-    .brkB-row { display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 0.64rem; }
-    .brkB-row b { font-weight: 600; color: var(--ink); width: 30px; }
-    .brkB-row span { color: var(--gray); }
-
-    /* ── Variant C — channel grid under the email ─────────────────────── */
-    .brkC .brkC-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 9px; }
-    .brkC-cell { border: 1px solid var(--hairline); border-radius: 7px; padding: 6px 8px; }
-    .brkC-cell.c-avail { border-color: rgba(63,185,80,0.5); background: rgba(63,185,80,0.06); }
-    .brkC-k { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
-    .brkC-v { display: flex; align-items: center; gap: 6px; font-family: var(--body); font-size: 0.74rem; color: var(--ink); margin-top: 3px; }
-    .brkC .brkC-accent { width: 4px; align-self: stretch; border-radius: 9999px; background: var(--hairline); flex: none; }
-    .brkC .brkC-accent.has-free { background: var(--green); }
+    .skx-note { font-family: var(--body); color: var(--gray); font-size: 0.78rem; line-height: 1.5; margin: 0 0 22px; }
   </style>
 </head>
 <body class="theme-light" data-dashboard="v3">
   <div class="skx-wrap">
-    <p class="skx-lead"><b>Part 2 — per-channel breakdown tile.</b> Shown when the campaign is <b>InMail Only</b>, <b>Message Campaign</b>, or <b>Direct Messages</b> — these don't use CC, so the tile shows the three non-CC channels divided: <b>Sales Nav (OP)</b>, <b>LinkedIn (OP)</b>, <b>InMail</b>. (Connect modes keep the single CC tile.)</p>
-    <p class="skx-note">Data below is real (from the SoO): michael.lontoc (all free) · ryan.ceballo (OP free, SN/InMail used) · dianne.siacon (mixed) · karla.mendez (all in use) · abigail.coral (all NA). Colour key: <b style="color:var(--green)">● Available</b> · <b style="color:var(--gold)">● In Use</b> · <span style="color:var(--gray)">● Used</span> · <b style="color:var(--red)">● NA</b>. Pick a variant and I'll build it.</p>
-
-    <div class="skx-vh">VARIANT A · CHIP ROW</div>
-    <p class="skx-vs">Aggregate word on the left (OPEN if any channel is free), three status chips under the email.</p>
-    <div class="accounts-browser browse-card"><div class="browse-card-body"><div class="profile-grid" id="gridA"></div></div></div>
-
-    <div class="skx-vh">VARIANT B · THREE-ROW PANEL</div>
-    <p class="skx-vs">Left panel stacks the three channels (dot + label + status); the right side keeps the email + a one-line summary.</p>
-    <div class="accounts-browser browse-card"><div class="browse-card-body"><div class="profile-grid" id="gridB"></div></div></div>
-
-    <div class="skx-vh">VARIANT C · CHANNEL GRID</div>
-    <p class="skx-vs">Email on top, then a 3-cell grid — each cell names a channel and shows its status. Available cells are tinted green.</p>
-    <div class="accounts-browser browse-card"><div class="browse-card-body"><div class="profile-grid" id="gridC"></div></div></div>
+    <p class="skx-lead"><b>Variant C — per-channel breakdown (as built).</b> Shown for Message Campaign · Direct Messages · InMail Only. This page uses the real production CSS (<code>.jt-brk</code>) — it's exactly what the picker now renders.</p>
+    <p class="skx-note">Real SoO rows. Slim accent = green if any channel is free, grey otherwise. 🟢 Available · 🟡 In Use (· who) · ⚪ Used · 🔴 NA. Free-first sort; rows with no free channel are dimmed + non-selectable.</p>
+    <div class="accounts-browser browse-card"><div class="browse-card-body"><div class="profile-grid" id="grid"></div></div></div>
   </div>
 
   <script>
-    // Real SoO rows (Sales Nav / LinkedIn OP / InMail). [label, status, who]
     const ACCOUNTS = [
       { email: 'michael.lontoc@ortus.solutions', ch: [['Sales Nav','Available',''],['LinkedIn','Available',''],['InMail','Available','']] },
       { email: 'ryan.ceballo@ortus.solutions',   ch: [['Sales Nav','Used',''],['LinkedIn','Available',''],['InMail','Used','']] },
@@ -78,49 +27,26 @@
       { email: 'karla.mendez@ortus.solutions',   ch: [['Sales Nav','In Use','bleron'],['LinkedIn','In Use','bleron'],['InMail','In Use','bleron']] },
       { email: 'abigail.coral@ortus.solutions',  ch: [['Sales Nav','NA',''],['LinkedIn','NA',''],['InMail','NA','']] },
     ];
-    const DOT = { 'Available':'d-avail', 'In Use':'d-inuse', 'Used':'d-spent', 'NA':'d-na' };
-    const CLS = { 'Available':'c-avail', 'In Use':'c-inuse', 'Used':'c-spent', 'NA':'c-na' };
-    const short = { 'Sales Nav':'SN', 'LinkedIn':'OP', 'InMail':'IM' };
-    const anyFree = (a) => a.ch.some(c => c[1] === 'Available');
-    const esc = (s) => String(s).replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[m]));
-
-    function tileA(a) {
-      const free = anyFree(a);
-      const chips = a.ch.map(([l, st, who]) =>
-        `<span class="brk-chip ${CLS[st]}"><i class="brk-dot ${DOT[st]}"></i>${short[l]} · ${st}${who ? ' ('+esc(who)+')' : ''}</span>`).join('');
-      return `<label class="profile-item jt brkA ${free ? '' : 'muted-soft'}">
-        <div class="jt-stat ${free ? 's-free' : 's-inuse'}"><span class="jt-dot"></span><span class="jt-word">${free ? 'OPEN' : 'BUSY'}</span></div>
+    const esc = (s) => String(s).replace(/[&<>"]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m]));
+    const dotOf = (st) => { const v = st.toLowerCase().trim();
+      return v === 'available' ? 'd-avail' : v === 'in use' ? 'd-inuse'
+        : (v === 'na' || v.includes('inaccessible')) ? 'd-na' : 'd-spent'; };
+    function tile(a) {
+      const anyFree = a.ch.some(c => c[1] === 'Available');
+      const cells = a.ch.map(([l, st, who]) => {
+        const w = who ? ' · ' + esc(who) : '';
+        const title = who ? `In use by ${esc(who)}` : esc(st);
+        return `<div class="brk-col"><div class="brk-k">${esc(l)}</div>`
+          + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dotOf(st)}"></i><span class="brk-vt">${esc(st)}${w}</span></div></div>`;
+      }).join('');
+      return `<label class="profile-item jt jt-brk${anyFree ? '' : ' muted'}">
+        <div class="brk-accent${anyFree ? ' free' : ''}"></div>
         <div class="jt-det">
-          <div class="jt-top"><input type="checkbox" ${free ? '' : 'disabled'} /><span class="jt-email">${esc(a.email)}</span></div>
-          <div class="brk-chips">${chips}</div>
+          <div class="jt-top"><input type="checkbox" ${anyFree ? '' : 'disabled'} /><span class="jt-email">${esc(a.email)}</span></div>
+          <div class="brk-grid">${cells}</div>
         </div></label>`;
     }
-    function tileB(a) {
-      const rows = a.ch.map(([l, st, who]) =>
-        `<div class="brkB-row"><i class="brk-dot ${DOT[st]}"></i><b>${short[l]}</b><span>${st}${who ? ' · '+esc(who) : ''}</span></div>`).join('');
-      const freeLabels = a.ch.filter(c => c[1] === 'Available').map(c => c[0]);
-      const sub = freeLabels.length ? `Free on ${freeLabels.join(', ')}.` : 'No channel free.';
-      return `<label class="profile-item jt brkB">
-        <div class="jt-stat brkB-stat">${rows}</div>
-        <div class="jt-det">
-          <div class="jt-top"><input type="checkbox" ${anyFree(a) ? '' : 'disabled'} /><span class="jt-email">${esc(a.email)}</span></div>
-          <div class="jt-sub">${sub}</div>
-        </div></label>`;
-    }
-    function tileC(a) {
-      const free = anyFree(a);
-      const cells = a.ch.map(([l, st, who]) =>
-        `<div class="brkC-cell ${CLS[st]}"><div class="brkC-k">${esc(l)}</div><div class="brkC-v"><i class="brk-dot ${DOT[st]}"></i>${st}${who ? ' ('+esc(who)+')' : ''}</div></div>`).join('');
-      return `<label class="profile-item jt brkC">
-        <div class="brkC-accent ${free ? 'has-free' : ''}"></div>
-        <div class="jt-det" style="flex:1">
-          <div class="jt-top"><input type="checkbox" ${free ? '' : 'disabled'} /><span class="jt-email">${esc(a.email)}</span></div>
-          <div class="brkC-grid">${cells}</div>
-        </div></label>`;
-    }
-    document.getElementById('gridA').innerHTML = ACCOUNTS.map(tileA).join('');
-    document.getElementById('gridB').innerHTML = ACCOUNTS.map(tileB).join('');
-    document.getElementById('gridC').innerHTML = ACCOUNTS.map(tileC).join('');
+    document.getElementById('grid').innerHTML = ACCOUNTS.map(tile).join('');
   </script>
 </body>
 </html>

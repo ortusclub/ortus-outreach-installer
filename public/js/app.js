@@ -28,7 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
-import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO } from '/js/account-guardrails.mjs';
+import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels } from '/js/account-guardrails.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -1032,93 +1032,120 @@ function renderProfiles(profiles) {
   const _mode = document.getElementById('campaign-mode')?.value || '';
   const _passover = getPassoverStatus();
   const _meId = getMyIdentifier();
-  const _stateOf = (p) => classifyAccountState(findSoOForProfile(p.name), _meId, _mode, _passover);
+  // Breakdown modes (Message Campaign / Direct Messages / InMail Only) don't use
+  // CC, so the tile shows every non-CC channel divided; all other modes collapse
+  // to one CC/credit verdict (the two-zone tile).
+  const _breakdown = isBreakdownMode(_mode);
   const _RANK = { 'free': 0, 'assigned': 1, 'in-use': 2, 'blocked': 3 };
   // Accounts under the SoO "Construction" section never show in the launcher.
   // SoO loads after the first render, so pre-SoO these can't be identified yet;
   // the post-SoO re-render (loadProfiles) drops them once their section is known.
   const _visible = profiles.filter((p) => !isHiddenSection(findSoOForProfile(p.name)));
   const _ordered = _visible
-    .map((p, i) => ({ p, i, st: _stateOf(p) }))
-    .sort((a, b) => {
-      const r = (_RANK[a.st.state] ?? 9) - (_RANK[b.st.state] ?? 9);
-      return r !== 0 ? r : a.i - b.i; // stable within rank
-    });
+    .map((p, i) => {
+      const soo = findSoOForProfile(p.name);
+      if (_breakdown) {
+        const br = classifyAccountChannels(soo);
+        // free-first: usable (0) → has-status-but-none-free (1) → blocked (2).
+        return { p, i, soo, br, rank: br.blocked ? 2 : (br.anyFree ? 0 : 1) };
+      }
+      const st = classifyAccountState(soo, _meId, _mode, _passover);
+      return { p, i, soo, st, rank: (_RANK[st.state] ?? 9) };
+    })
+    .sort((a, b) => (a.rank - b.rank) || (a.i - b.i)); // stable within rank
 
-  _ordered.forEach(({ p, st: _state }) => {
-    // v2.11.4: keep selectedProfileNames in sync with whatever is currently
-    // selected. The change handler below only fires for user clicks, so any
-    // programmatic selection (preset load, schedule restore, etc.) was leaving
-    // the name map empty — the right pane then fell back to raw GoLogin IDs.
-    const soo = findSoOForProfile(p.name);
-    // A 'blocked' state is never selectable: greyed + disabled. classifyAccountState
-    // collapses two reasons into 'blocked' — (a) SoO Status restricted/inaccessible
-    // (v2.102.0, case-tolerant on the 'Status' header), and (b) the campaign's own
-    // credit channel showing NA. NA is mode-aware: it only blocks when it's the
-    // channel THIS campaign consumes (a CC-only account with OP=NA is still fine
-    // for a Connect campaign). `_state.reason` distinguishes them for the label.
-    const _locked = (_state.state === 'blocked');
-    // Defensive: a restored preset/schedule must not keep a now-unusable
-    // account selected — drop it so a blocked account can't slip through.
+  _ordered.forEach(({ p, st: _state, br: _br }) => {
+    // 'blocked' / unusable is never selectable (greyed + disabled). Single-verdict
+    // modes: blocked when classifyAccountState says so (restricted, or the CC/credit
+    // column is NA/Used/etc.). Breakdown modes: blocked when restricted OR no channel
+    // is Available (nothing usable for this campaign right now).
+    const _locked = _breakdown ? (_br.blocked || !_br.anyFree) : (_state.state === 'blocked');
+    // Defensive: a restored preset/schedule must not keep a now-unusable account
+    // selected — drop it (before building the tile so `checked` reflects reality).
     if (_locked && selectedProfileIds.includes(p.id)) {
       selectedProfileIds = selectedProfileIds.filter(id => id !== p.id);
       delete selectedProfileNames[p.id];
     }
-    if (selectedProfileIds.includes(p.id)) {
-      selectedProfileNames[p.id] = p.name;
-    }
-    // v2.112.10: cleaned two-zone tile (.jt). classifyAccountState collapses SoO
-    // assignee + status + live-use + the campaign passover into one of four
-    // states; a tinted stat zone (FREE/ASSIGNED/IN USE/BLOCKED) + a single
-    // sentence-case sub line replace the old verdict wall. `who` is already
-    // cleaned in classifyAccountState.
-    const _SMAP = {
-      'free':     { cls: 'free',     word: 'FREE' },
-      'assigned': { cls: 'assigned', word: 'ASSIGNED' },
-      'in-use':   { cls: 'inuse',    word: 'IN USE' },
-      'blocked':  { cls: 'stop',     word: 'BLOCKED' },
-    };
-    const _sm = _SMAP[_state.state] || _SMAP.free;
-    const _who = escHtml(_state.who || '');
-    // 'blocked' covers three reasons, each greyed + non-selectable but worded
-    // from what the SoO actually says (no invented copy):
-    //   restricted → LinkedIn status block · na → channel credit = NA (no credits)
-    //   unavailable → channel credit = Used / - / Partial Inaccessible (show it).
-    const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
-    const _label = escHtml(_state.label || '');           // raw SoO credit value
-    const _word = (_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word;
-    let _sub;
-    if (_state.state === 'assigned') {
-      _sub = _who ? `Assigned to <b>${_who}</b>.` : 'Assigned to another operator.';
-    } else if (_state.state === 'in-use') {
-      _sub = _who ? `In use by <b>${_who}</b>.` : 'In use.';
-    } else if (_state.state === 'blocked') {
-      if (_reason === 'na') _sub = 'No credits for this campaign.';
-      else if (_reason === 'unavailable') _sub = _label ? `Not available — <b>${_label}</b>.` : 'Not available for this campaign.';
-      else _sub = 'Restricted by LinkedIn.';
-    } else {
-      _sub = 'Anyone can use.';
-    }
-    const item = document.createElement('label');
-    item.className = 'profile-item jt ' + _state.state
-      + (selectedProfileIds.includes(p.id) ? ' selected' : '')
-      + (_state.state === 'in-use' ? ' muted-soft' : '')
-      + (_locked ? ' muted is-restricted' : '');
-    item.dataset.profileId = p.id;
+    if (selectedProfileIds.includes(p.id)) selectedProfileNames[p.id] = p.name;
+    const _checked = selectedProfileIds.includes(p.id) ? 'checked' : '';
+    const _disabled = _locked ? 'disabled' : '';
     const _dup = p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : '';
-    item.innerHTML = `
+
+    let _classes, _inner;
+    if (_breakdown) {
+      // Variant C — clean per-channel breakdown: thin accent (green if any channel
+      // free) + email + a 3-cell row showing each channel's RAW SoO status verbatim.
+      const _cells = (_br.channels || []).map((c) => {
+        const v = (c.status || '').toLowerCase().trim();
+        const dot = v === 'available' ? 'd-avail'
+          : v === 'in use' ? 'd-inuse'
+          : (v === 'na' || v === 'n/a' || v.includes('inaccessible')) ? 'd-na'
+          : 'd-spent'; // used / - / blank / other
+        const txt = c.status ? escHtml(c.status) : '—';
+        const who = c.who ? ' · ' + escHtml(c.who) : '';
+        const title = c.who ? `In use by ${escHtml(c.who)}` : escHtml(c.status || '—');
+        return `<div class="brk-col"><div class="brk-k">${escHtml(c.label)}</div>`
+          + `<div class="brk-v" title="${title}"><i class="brk-vdot ${dot}"></i><span class="brk-vt">${txt}${who}</span></div></div>`;
+      }).join('');
+      _classes = 'profile-item jt jt-brk'
+        + (_checked ? ' selected' : '')
+        + (_locked ? ' muted' : '')
+        + (_br.blocked ? ' is-restricted' : '');
+      _inner = `
+      <div class="brk-accent${_br.anyFree ? ' free' : ''}"></div>
+      <div class="jt-det">
+        <div class="jt-top">
+          <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
+          <span class="jt-email">${escHtml(p.name)}${_dup}</span>
+        </div>
+        <div class="brk-grid">${_cells}</div>
+      </div>`;
+    } else {
+      // Two-zone tile: classifyAccountState collapses SoO assignee + status +
+      // live-use + passover into one of four states; tinted stat zone + one sub line.
+      const _SMAP = {
+        'free':     { cls: 'free',     word: 'FREE' },
+        'assigned': { cls: 'assigned', word: 'ASSIGNED' },
+        'in-use':   { cls: 'inuse',    word: 'IN USE' },
+        'blocked':  { cls: 'stop',     word: 'BLOCKED' },
+      };
+      const _sm = _SMAP[_state.state] || _SMAP.free;
+      const _who = escHtml(_state.who || '');
+      // 'blocked' worded from what the SoO actually says (no invented copy):
+      //   restricted → LinkedIn block · na → CC/credit = NA · unavailable → Used/-/Partial.
+      const _reason = (_state.state === 'blocked') ? (_state.reason || 'restricted') : '';
+      const _label = escHtml(_state.label || '');
+      const _word = (_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word;
+      let _sub;
+      if (_state.state === 'assigned') _sub = _who ? `Assigned to <b>${_who}</b>.` : 'Assigned to another operator.';
+      else if (_state.state === 'in-use') _sub = _who ? `In use by <b>${_who}</b>.` : 'In use.';
+      else if (_state.state === 'blocked') {
+        if (_reason === 'na') _sub = 'No credits for this campaign.';
+        else if (_reason === 'unavailable') _sub = _label ? `Not available — <b>${_label}</b>.` : 'Not available for this campaign.';
+        else _sub = 'Restricted by LinkedIn.';
+      } else _sub = 'Anyone can use.';
+      _classes = 'profile-item jt ' + _state.state
+        + (_checked ? ' selected' : '')
+        + (_state.state === 'in-use' ? ' muted-soft' : '')
+        + (_locked ? ' muted is-restricted' : '');
+      _inner = `
       <div class="jt-stat s-${_sm.cls}">
         <span class="jt-dot"></span>
         <span class="jt-word">${_word}</span>
       </div>
       <div class="jt-det">
         <div class="jt-top">
-          <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${_locked ? 'disabled' : ''} />
+          <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
           <span class="jt-email">${escHtml(p.name)}${_dup}</span>
         </div>
         <div class="jt-sub">${_sub}</div>
-      </div>
-    `;
+      </div>`;
+    }
+
+    const item = document.createElement('label');
+    item.className = _classes;
+    item.dataset.profileId = p.id;
+    item.innerHTML = _inner;
     const cb = item.querySelector('input');
     cb.addEventListener('change', () => {
       if (_locked) { cb.checked = false; return; } // blocked / NA — never selectable
