@@ -81,6 +81,21 @@ export function mapModeToChannel(mode) {
   return null; // message_only / check_status / introduce_back consume no credits
 }
 
+/**
+ * The exact SoO credit COLUMN a campaign mode draws from. Finer-grained than
+ * mapModeToChannel (which only buckets into cc/monthly for passover): NA gating
+ * needs the specific column, since open-profile and inmail share the monthly
+ * passover but consume different credits.
+ *   Connect* → CC (Credits) | open_profile_only → Linkedin (OP Credits)
+ *   inmail_only → Inmail Credits | credit-free modes → null
+ */
+export function mapModeToCreditField(mode) {
+  if (CC_MODES.has(mode)) return 'ccCredits';
+  if (mode === 'open_profile_only') return 'linkedinCredits';
+  if (mode === 'inmail_only') return 'inmailCredits';
+  return null;
+}
+
 /** Mode-aware passover warning. passover = getPassoverStatus() → { monthly, cc }. */
 export function passoverWarning(mode, passover) {
   const channel = mapModeToChannel(mode);
@@ -125,7 +140,18 @@ export function classifyAccountState(soo, me, mode, passover) {
   if (!soo || !me) return FREE;
 
   // 2. Blocked: SoO Status is restricted or inaccessible
-  if (isRestrictedStatus(soo.Status || soo.status)) return { state: 'blocked', who: '', frees: '' };
+  if (isRestrictedStatus(soo.Status || soo.status)) return { state: 'blocked', who: '', frees: '', reason: 'restricted' };
+
+  // 2b. Blocked (NA): the campaign's own credit channel shows "NA" → no credits
+  // for this campaign, so the account can't run it. Channel-aware: only the
+  // column this mode consumes is checked (an OP=NA account is still fine for a
+  // Connect campaign). Beats in-use/assigned — if there are no credits, who has
+  // it or who it's assigned to is moot. Credit-free modes (null) skip this.
+  const creditField = mapModeToCreditField(mode);
+  if (creditField) {
+    const v = norm(soo[creditField]);
+    if (v === 'na' || v === 'n/a') return { state: 'blocked', who: '', frees: '', reason: 'na' };
+  }
 
   // 3. In use: scan credit channels; first "In Use" by a different operator wins
   const meN = norm(me);

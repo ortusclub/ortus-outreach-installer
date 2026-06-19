@@ -1264,6 +1264,9 @@ select {
 .browse-card .profile-item.jt:hover { background:var(--card-bg); border-color:var(--card-border); box-shadow:none; opacity:1; }
 .browse-card .profile-item.jt.selected { border-color:var(--ink); background:var(--card-bg-hover); }
 .browse-card .profile-item.jt.muted { opacity:0.5; }
+/* In-use tiles are de-emphasised but the gold must still read clearly — a
+   lighter dim than the heavy 0.5 used for blocked/NA so the yellow shows. */
+.browse-card .profile-item.jt.muted-soft { opacity:0.82; }
 .browse-card .profile-item.jt.is-restricted input[type="checkbox"] { cursor:not-allowed; }
 .browse-card .profile-item.jt .jt-stat {
   width:108px; flex:none; display:flex; flex-direction:column;
@@ -1271,7 +1274,7 @@ select {
 }
 .browse-card .profile-item.jt .jt-stat.s-free { background:rgba(63,185,80,0.10); }
 .browse-card .profile-item.jt .jt-stat.s-assigned { background:rgba(58,110,165,0.12); }
-.browse-card .profile-item.jt .jt-stat.s-inuse { background:rgba(247,190,104,0.13); }
+.browse-card .profile-item.jt .jt-stat.s-inuse { background:rgba(247,190,104,0.24); }
 .browse-card .profile-item.jt .jt-stat.s-stop { background:rgba(248,81,73,0.10); }
 .browse-card .profile-item.jt .jt-dot { width:9px; height:9px; border-radius:50%; }
 .browse-card .profile-item.jt .s-free .jt-dot { background:var(--green); }

@@ -1049,13 +1049,16 @@ function renderProfiles(profiles) {
     // programmatic selection (preset load, schedule restore, etc.) was leaving
     // the name map empty — the right pane then fell back to raw GoLogin IDs.
     const soo = findSoOForProfile(p.name);
-    // v2.102.0: SoO column B "Status" = restricted/inaccessible → block selection.
-    // Case-tolerant on the header key (getSoO preserves raw case → 'Status').
-    const sooStatus = soo ? (soo['Status'] || soo['status'] || '').toString().trim() : '';
-    const restricted = isRestrictedStatus(sooStatus);
-    // Defensive: a restored preset/schedule must not keep a now-restricted
+    // A 'blocked' state is never selectable: greyed + disabled. classifyAccountState
+    // collapses two reasons into 'blocked' — (a) SoO Status restricted/inaccessible
+    // (v2.102.0, case-tolerant on the 'Status' header), and (b) the campaign's own
+    // credit channel showing NA. NA is mode-aware: it only blocks when it's the
+    // channel THIS campaign consumes (a CC-only account with OP=NA is still fine
+    // for a Connect campaign). `_state.reason` distinguishes them for the label.
+    const _locked = (_state.state === 'blocked');
+    // Defensive: a restored preset/schedule must not keep a now-unusable
     // account selected — drop it so a blocked account can't slip through.
-    if (restricted && selectedProfileIds.includes(p.id)) {
+    if (_locked && selectedProfileIds.includes(p.id)) {
       selectedProfileIds = selectedProfileIds.filter(id => id !== p.id);
       delete selectedProfileNames[p.id];
     }
@@ -1075,32 +1078,36 @@ function renderProfiles(profiles) {
     };
     const _sm = _SMAP[_state.state] || _SMAP.free;
     const _who = escHtml(_state.who || '');
+    // NA reuses the blocked (greyed + non-selectable) treatment, but it means
+    // "no credits for this campaign", not a LinkedIn restriction — so it gets
+    // its own word + sub line rather than reading "BLOCKED / Restricted".
+    const _isNA = (_state.state === 'blocked' && _state.reason === 'na');
+    const _word = _isNA ? 'N/A' : _sm.word;
     let _sub;
     if (_state.state === 'assigned') {
       _sub = `Assigned to <b>${_who}</b>.`;
     } else if (_state.state === 'in-use') {
       _sub = `In use by <b>${_who}</b>.`;
     } else if (_state.state === 'blocked') {
-      _sub = 'Restricted by LinkedIn.';
+      _sub = _isNA ? 'No credits for this campaign.' : 'Restricted by LinkedIn.';
     } else {
       _sub = 'Anyone can use.';
     }
-    const _muted = (_state.state === 'in-use' || _state.state === 'blocked');
     const item = document.createElement('label');
     item.className = 'profile-item jt ' + _state.state
       + (selectedProfileIds.includes(p.id) ? ' selected' : '')
-      + (_muted ? ' muted' : '')
-      + (restricted ? ' is-restricted' : '');
+      + (_state.state === 'in-use' ? ' muted-soft' : '')
+      + (_locked ? ' muted is-restricted' : '');
     item.dataset.profileId = p.id;
     const _dup = p._dupHidden ? ` <span class="dup-flag" title="${escHtml(p._dupHidden + ' other GoLogin profile(s) share this email — hidden here. Delete the duplicate(s) in GoLogin.')}">⚠ dup</span>` : '';
     item.innerHTML = `
       <div class="jt-stat s-${_sm.cls}">
         <span class="jt-dot"></span>
-        <span class="jt-word">${_sm.word}</span>
+        <span class="jt-word">${_word}</span>
       </div>
       <div class="jt-det">
         <div class="jt-top">
-          <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${restricted ? 'disabled' : ''} />
+          <input type="checkbox" value="${p.id}" ${selectedProfileIds.includes(p.id) ? 'checked' : ''} ${_locked ? 'disabled' : ''} />
           <span class="jt-email">${escHtml(p.name)}${_dup}</span>
         </div>
         <div class="jt-sub">${_sub}</div>
@@ -1108,7 +1115,7 @@ function renderProfiles(profiles) {
     `;
     const cb = item.querySelector('input');
     cb.addEventListener('change', () => {
-      if (restricted) { cb.checked = false; return; } // blocked — never selectable
+      if (_locked) { cb.checked = false; return; } // blocked / NA — never selectable
       if (cb.checked) {
         if (!selectedProfileIds.includes(p.id)) {
           selectedProfileIds.push(p.id);
