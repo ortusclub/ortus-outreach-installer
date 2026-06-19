@@ -24,6 +24,19 @@ export function isRestrictedStatus(status) {
   return /restricted/.test(s) || s === 'inaccessible';
 }
 
+/**
+ * Accounts living under the "Construction" section header (column A of the SoO)
+ * must never appear in the GoLogin launcher window. The section is derived by
+ * handleGetSoO straight from the sheet's column-A header rows, so this stays
+ * correct even as the section's starting row moves over time — we key on the
+ * section name, not a row number. Substring + case-insensitive so a header like
+ * "Construction Accounts" still matches. No SoO record → cannot identify the
+ * section → not hidden (we only hide what the SoO positively tells us to).
+ */
+export function isHiddenSection(soo) {
+  return norm(soo && soo.section).includes('construction');
+}
+
 const IN_USE = 'in use';
 // [creditField, reserverField|null] — ccCredits falls back to linkedinUser (the OP User column).
 const CREDIT_FIELDS = [

@@ -28,7 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
-import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus } from '/js/account-guardrails.mjs';
+import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection } from '/js/account-guardrails.mjs';
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
@@ -1032,7 +1032,11 @@ function renderProfiles(profiles) {
   const _meId = getMyIdentifier();
   const _stateOf = (p) => classifyAccountState(findSoOForProfile(p.name), _meId, _mode, _passover);
   const _RANK = { 'free': 0, 'assigned': 1, 'in-use': 2, 'blocked': 3 };
-  const _ordered = profiles
+  // Accounts under the SoO "Construction" section never show in the launcher.
+  // SoO loads after the first render, so pre-SoO these can't be identified yet;
+  // the post-SoO re-render (loadProfiles) drops them once their section is known.
+  const _visible = profiles.filter((p) => !isHiddenSection(findSoOForProfile(p.name)));
+  const _ordered = _visible
     .map((p, i) => ({ p, i, st: _stateOf(p) }))
     .sort((a, b) => {
       const r = (_RANK[a.st.state] ?? 9) - (_RANK[b.st.state] ?? 9);
@@ -1450,10 +1454,13 @@ function applyPreset(preset) {
 }
 
 function updateChipCounts() {
-  const counts = { all: allProfilesData.length, available: 0, 'in-use': 0, selected: selectedProfileIds.length };
+  // Construction-section accounts are hidden from the grid, so they must not be
+  // counted here either — otherwise the totals/pills wouldn't match what's shown.
+  const visibleProfiles = allProfilesData.filter((p) => !isHiddenSection(findSoOForProfile(p.name)));
+  const counts = { all: visibleProfiles.length, available: 0, 'in-use': 0, selected: selectedProfileIds.length };
   const me = getMyIdentifier();
   let assignedToMeCount = 0, poolCount = 0, availableNowCount = 0;
-  allProfilesData.forEach((p) => {
+  visibleProfiles.forEach((p) => {
     const soo = findSoOForProfile(p.name);
     if (!soo) return;
     const vals = [soo.linkedinCredits, soo.inmailCredits, soo.salesNavCredits, soo.ccCredits].map((v) => (v || '').toLowerCase());
