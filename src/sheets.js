@@ -3,7 +3,8 @@
  * The sheet must be set to "Anyone with the link can view".
  */
 
-import { extractSheetId, extractSheetGid } from './utils.js';
+import { extractSheetId, extractSheetGid, spreadsheetIdFromUrl } from './utils.js';
+import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 
 /**
  * Parses a CSV string into an array of objects using the first row as headers.
@@ -139,9 +140,10 @@ async function fetchSheetCsv(sheetUrl) {
   // first sheet when no gid is given, which silently pulls the wrong data
   // for any spreadsheet with multiple tabs.
   const gid = extractSheetGid(sheetUrl);
-  const csvUrl = gid
-    ? `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`
-    : `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+  if (!gid) {
+    throw new Error('NO_GID: multi-tab-unsafe — sheet URL is missing #gid=');
+  }
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
 
   console.log(`[sheets] Fetching CSV from: ${csvUrl}`);
 
@@ -189,4 +191,117 @@ export async function fetchSheetWithRows(sheetUrl) {
   const rows = parseCSVWithRowNumbers(await fetchSheetCsv(sheetUrl));
   console.log(`[sheets] Parsed ${rows.length} non-empty row(s) with row numbers.`);
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Tab-guard helpers (pure, exported for unit tests and campaign run-guard)
+// ---------------------------------------------------------------------------
+
+const _SYSTEM_TAB_NAMES = new Set([
+  'recent connections',
+  'recent messages',
+  'savedsearch/batches',
+  'savedsearch',
+  'batches',
+  'soo',
+  'linkedin accounts',
+  'ops log',
+  'events',
+  'config',
+]);
+
+/**
+ * Returns true when the tab name matches a known system/sidecar tab that is
+ * never a lead list. Check is case-insensitive and trims whitespace.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isSystemTabName(name) {
+  return _SYSTEM_TAB_NAMES.has(String(name || '').trim().toLowerCase());
+}
+
+/**
+ * Returns true when `rows` looks like a lead list: non-empty, has a
+ * recognizable First-Name header AND a column whose header or first-row value
+ * indicates a LinkedIn URL.
+ *
+ * Inline URL detection mirrors extractLinkedInUrl's fallback scan so this
+ * module stays free of a campaign.js import (which would create a cycle).
+ *
+ * @param {Record<string, string>[]} rows
+ * @returns {boolean}
+ */
+export function looksLikeLeadRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return false;
+  const keys = Object.keys(rows[0]);
+
+  // Require a recognizable First Name column
+  const hasFirstName = keys.some((k) => /^first ?name$/i.test(k.trim()) || /^first_name$/i.test(k.trim()));
+  if (!hasFirstName) return false;
+
+  // Require a column whose header suggests LinkedIn/URL OR whose first value
+  // contains a LinkedIn URL (handles columns named "Profile", "Slug", etc.)
+  const hasLinkedIn = keys.some((k) => {
+    if (/linkedin|url|profile|slug/i.test(k)) return true;
+    const v = rows[0][k] || '';
+    return /linkedin\.com\/(in|sales\/lead)\//i.test(v) || /\/in\//.test(v);
+  });
+
+  return hasLinkedIn;
+}
+
+/**
+ * Enumerates the tabs of a Google Sheet workbook by calling the Apps Script
+ * `listTabs` action (same transport as sheets-writer.js).
+ *
+ * @param {string} sheetUrl - Any Google Sheets URL; the spreadsheet ID is extracted.
+ * @returns {Promise<Array<{ name: string, gid: string, rowCount: number, header: string[] }>>}
+ */
+export async function listSheetTabs(sheetUrl) {
+  const webAppUrl = SHEETS_WEBAPP_URL;
+  if (!webAppUrl) {
+    throw new Error('listSheetTabs: SHEETS_WEBAPP_URL is not configured');
+  }
+
+  const sheetId = spreadsheetIdFromUrl(sheetUrl);
+  if (!sheetId) {
+    throw new Error(`listSheetTabs: could not extract spreadsheet ID from URL: ${sheetUrl}`);
+  }
+
+  const body = JSON.stringify({ action: 'listTabs', sheetId });
+
+  // Mirror the redirect-aware POST pattern from sheets-writer.js
+  let res;
+  try {
+    const initial = await fetch(webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15000),
+    });
+    if (initial.status >= 300 && initial.status < 400) {
+      const location = initial.headers.get('location');
+      res = await fetch(location, { signal: AbortSignal.timeout(15000) });
+    } else {
+      res = initial;
+    }
+  } catch (err) {
+    throw new Error(`listSheetTabs: network error — ${err.message}`);
+  }
+
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`listSheetTabs: non-JSON response from Apps Script — redeploy may be needed`);
+  }
+
+  if (!data.ok || !Array.isArray(data.tabs)) {
+    throw new Error(`listSheetTabs: Apps Script returned error — ${data.error || JSON.stringify(data)}`);
+  }
+
+  return data.tabs;
 }
