@@ -1143,24 +1143,39 @@ export async function sendConnectionRequest(page, noteArg) {
         // We read the counter, the typed length, AND the Send disabled-state in
         // ALL its forms, and log all of it so a future miss is diagnosable.
         const noteState = await page.evaluate(() => {
-          const modal = document.querySelector('.artdeco-modal')
-            || document.querySelector('[role="dialog"]')
-            || document.body;
-          // Character counter "N/M" — take the LAST match (it sits at the bottom
-          // of the note field, after any "N personalized invitations" text).
+          // The invite modal renders inside a web-component SHADOW ROOT (same as
+          // why typeIntoField's findField falls back to shadow hosts). A plain
+          // document.querySelector reads all-empty (the v2.112.42 miss), so walk
+          // the light DOM AND every shadow root (recursively) and query across
+          // all of them.
+          const roots = [];
+          const collect = (root) => {
+            roots.push(root);
+            let hosts; try { hosts = root.querySelectorAll('*'); } catch { return; }
+            for (const el of hosts) if (el.shadowRoot) collect(el.shadowRoot);
+          };
+          collect(document);
+          const deepAll = (sel) => {
+            const out = [];
+            for (const r of roots) { try { out.push(...r.querySelectorAll(sel)); } catch { /* */ } }
+            return out;
+          };
+          // Character counter — an element whose entire text is "<current>/<max>"
+          // (203/200 free, 250/300 Premium). This is the platform-truth signal.
           let counterCurrent = null, counterMax = null, counter = '';
-          const matches = [...(modal.innerText || '').matchAll(/(\d{2,4})\s*\/\s*(\d{2,4})/g)];
-          if (matches.length) {
-            const last = matches[matches.length - 1];
-            counterCurrent = Number(last[1]); counterMax = Number(last[2]); counter = `${last[1]}/${last[2]}`;
+          for (const el of deepAll('*')) {
+            const t = (el.textContent || '').replace(/\s+/g, '');
+            const m = t.match(/^(\d{2,4})\/(\d{2,4})$/);
+            if (m) { counterCurrent = Number(m[1]); counterMax = Number(m[2]); counter = `${m[1]}/${m[2]}`; }
           }
+          // Typed note length (fallback signal).
           let typedLen = 0;
-          for (const sel of ['textarea[name="message"]', 'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]']) {
-            const el = modal.querySelector(sel) || document.querySelector(sel);
+          for (const sel of ['textarea[name="message"]', 'textarea#custom-message', 'div[aria-label*="Add a note"]', 'div[role="dialog"] textarea', 'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]']) {
+            const el = deepAll(sel)[0];
             if (el) { typedLen = ((el.value != null ? el.value : el.textContent) || '').length; break; }
           }
-          const btns = Array.from(modal.querySelectorAll('button'));
-          const send = btns.find((b) => {
+          // Send button + disabled in ALL forms (property / aria / artdeco class).
+          const send = deepAll('button').find((b) => {
             const t = (b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
             const a = (b.getAttribute('aria-label') || '').trim().toLowerCase();
             return t === 'send' || a === 'send' || a.startsWith('send ');
@@ -1171,8 +1186,8 @@ export async function sendConnectionRequest(page, noteArg) {
             || send.hasAttribute('disabled')
             || /\bdisabled\b|artdeco-button--disabled/.test(send.className || '')
           );
-          const upsell = !!modal.querySelector('.connect-button-send-invite__premium-upsell-message');
-          return { counter, counterCurrent, counterMax, typedLen, sendFound: !!send, sendDisabled, upsell };
+          const upsell = deepAll('.connect-button-send-invite__premium-upsell-message').length > 0;
+          return { counter, counterCurrent, counterMax, typedLen, sendFound: !!send, sendDisabled, upsell, rootCount: roots.length };
         });
         console.log(`[actions] note-limit check → ${JSON.stringify(noteState)}`);
         if (isNoteOverFreeLimit({
