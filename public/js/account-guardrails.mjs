@@ -176,19 +176,29 @@ export function passoverWarning(mode, passover) {
  * classifyAccountState (mode-aware + passover-aware) — NOT classifyAccountFlag,
  * which ignored both and warned about passover-freed assignments and channels
  * the campaign never touches (the luigic regression: tile FREE, banner warned).
- * An account is flagged only when its tile shows IN-USE or ASSIGNED.
+ * An account is flagged only when its tile shows IN-USE or ASSIGNED. The
+ * passover note is only attached when at least one ASSIGNED account is selected.
  */
 export function summarizeSelection(selectedSooList, me, mode, passover) {
   const flagged = [];
+  let hasAssigned = false;
   for (const entry of (selectedSooList || [])) {
     const st = classifyAccountState(entry.soo, me, mode, passover);
+    if (st.state === 'assigned') hasAssigned = true;
     if (st.state === 'in-use' || st.state === 'assigned') {
       const verb = st.state === 'in-use' ? 'in use by' : 'assigned to';
       const label = st.who ? `${verb} ${st.who}` : (st.state === 'in-use' ? 'in use' : 'assigned');
       flagged.push({ email: entry.email, label });
     }
   }
-  const pw = passoverWarning(mode, passover);
+  // The passover note belongs to an ASSIGNED (blue) account only — it tells the
+  // operator WHEN that owner-locked account frees up. A FREE/pool account isn't
+  // owned by anyone, so the credit-cycle timing is irrelevant noise for it (the
+  // pravin case: pool account, closed CC window, tile FREE → no warning). Gating
+  // on the assigned state is coherent: classifyAccountState only returns
+  // 'assigned' for a real channel when passover[channel].active === false, which
+  // is exactly when passoverWarning would fire — they can't desync.
+  const pw = hasAssigned ? passoverWarning(mode, passover) : null;
   return { flagged, passover: pw, hasWarnings: flagged.length > 0 || !!pw };
 }
 

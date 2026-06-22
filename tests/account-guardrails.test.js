@@ -104,3 +104,27 @@ test('summarizeSelection: assigned + passover NOT lifted → still flagged', () 
   assert.equal(s.flagged.length, 1);
   assert.equal(s.flagged[0].label, 'assigned to Marigona');
 });
+
+// v2.112.29 — the passover note belongs ONLY to an ASSIGNED (blue) account: it
+// says when that owner-locked account frees up. For a FREE/pool account the
+// CC/monthly credit-cycle timing is irrelevant noise (the pravin case: a pool
+// account selected on a Monday, CC window closed, but tile FREE → no warning).
+test('summarizeSelection: passover note suppressed for a FREE/pool account', () => {
+  // PO.cc.active === false (closed CC window), but the only selected account is
+  // an unassigned pool account → tile FREE → NO passover note.
+  const sel = [{ email: 'pravin.bisen@ortus.solutions', soo: { section: 'Unassigned Pool' } }];
+  const s = summarizeSelection(sel, 'antonio', 'connect_only', PO);
+  assert.equal(s.passover, null);
+  assert.equal(s.flagged.length, 0);
+  assert.equal(s.hasWarnings, false);
+});
+
+test('summarizeSelection: passover note shows when an ASSIGNED (blue) account is selected', () => {
+  // Same closed CC window, but the selected account is assigned to someone else
+  // → tile ASSIGNED → the passover note (when it frees up) IS relevant.
+  const sel = [{ email: 'x@y', soo: { Assignee: 'Marigona', section: 'Team A' } }];
+  const s = summarizeSelection(sel, 'antonio', 'connect_only', PO);
+  assert.ok(s.passover, 'passover note should be present');
+  assert.equal(s.passover.channel, 'cc');
+  assert.equal(s.flagged.length, 1); // assigned → also flagged
+});

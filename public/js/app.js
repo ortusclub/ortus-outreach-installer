@@ -1246,7 +1246,16 @@ function renderGuardrailAlert() {
   if (!s.hasWarnings) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   const bits = [];
   if (s.flagged.length) bits.push(`<b>${s.flagged.length} of your selected accounts are assigned to / in use</b>`);
-  if (s.passover) bits.push(`this campaign's <b>${s.passover.channel === 'cc' ? 'CC' : 'monthly'} credits are in passover (${escHtml(s.passover.label)})</b>`);
+  if (s.passover) {
+    // v2.112.29: plain, actionable wording (dropped the contradictory "in
+    // passover"). CC reopens Thursday; the monthly channels reopen on the 16th.
+    // The label already carries the "(in Nd)" countdown. Only shown when an
+    // ASSIGNED account is selected, so it reads as "that locked account frees up".
+    const _isCc = s.passover.channel === 'cc';
+    const _when = _isCc ? 'Thursday' : 'the 16th';
+    const _chan = _isCc ? "this week's CC credits" : "this month's OP/InMail/Sales Nav credits";
+    bits.push(`<b>${_chan} open ${_when} (${escHtml(s.passover.label)})</b> — that cycle hasn't started yet (you can still launch)`);
+  }
   el.innerHTML = `<span class="big">⚠</span><span class="txt">${bits.join(', and ')}.</span>`;
   el.classList.remove('hidden');
 }
