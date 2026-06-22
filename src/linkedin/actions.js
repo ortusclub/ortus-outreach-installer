@@ -14,7 +14,7 @@
  *   document.getElementById('interop-outlet').shadowRoot.querySelector(...)
  */
 
-import { randomDelay, clickByAria, clickByText } from './helpers.js';
+import { randomDelay, clickByAria, clickByText, isNoteOverFreeLimit } from './helpers.js';
 
 // Matches Sales Navigator profile URLs (/sales/people/… or /sales/lead/…).
 // Kept in sync with the identical constant in outreach.js — duplication here
@@ -1128,6 +1128,41 @@ export async function sendConnectionRequest(page, noteArg) {
         }
         console.log('[actions] Note typed and verified.');
         await new Promise(r => setTimeout(r, 5000));
+
+        // v2.112.x: free accounts cap the custom note at 200 chars — a longer
+        // note leaves Send DISABLED (the red "291/200" counter). Detect it HERE
+        // instead of "clicking" the dead Send button and then burning ~60s + 3
+        // retries verifying a send that never happens. Premium accounts allow a
+        // longer note and keep Send ENABLED, so we key on the ACTUAL disabled
+        // state (isNoteOverFreeLimit), not a hard-coded 200 → a Premium account
+        // sending a longer note is never mis-skipped.
+        const noteState = await page.evaluate(() => {
+          const fieldSels = ['textarea[name="message"]', 'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]'];
+          let typedLen = 0;
+          for (const sel of fieldSels) {
+            const el = document.querySelector(sel);
+            if (el) { typedLen = ((el.value != null ? el.value : el.textContent) || '').length; break; }
+          }
+          const all = Array.from(document.querySelectorAll('button'));
+          const outlet = document.getElementById('interop-outlet');
+          if (outlet?.shadowRoot) all.push(...outlet.shadowRoot.querySelectorAll('button'));
+          const send = all.find((b) => {
+            const t = (b.textContent || '').trim().toLowerCase();
+            const a = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+            return t === 'send' || a === 'send' || a === 'send invitation' || a === 'send now';
+          });
+          const sendDisabled = !!send && (send.disabled || send.getAttribute('aria-disabled') === 'true' || send.hasAttribute('disabled'));
+          let counter = '';
+          const m = (document.body?.innerText || '').match(/(\d{2,4})\s*\/\s*200\b/);
+          if (m) counter = m[0];
+          return { typedLen, sendFound: !!send, sendDisabled, counter };
+        });
+        if (noteState.sendFound && isNoteOverFreeLimit({ sendDisabled: noteState.sendDisabled, typedLen: noteState.typedLen })) {
+          console.warn(`[actions] Note over the free 200-char limit (${noteState.counter || noteState.typedLen + ' chars'}, Send disabled) — account not Premium. Skipping noted invite.`);
+          await clickByText(page, 'Cancel').catch(() => {});
+          await page.keyboard.press('Escape').catch(() => {});
+          throw new Error('NOTE_TOO_LONG: note exceeds the free 200-char custom-note limit (account not Premium)');
+        }
       }
 
       // ── Click Send — all via JS ──

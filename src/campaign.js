@@ -394,7 +394,7 @@ function bumpCampaignCount(profileId) {
 // 2.9.8: normalize any skip/failure reason to a "Skipped: <reason>" form
 // for consistent display in the dashboard log and the Audit-Log "Action"
 // column. Success messages pass through untouched.
-function normalizeSkipReason(msg) {
+export function normalizeSkipReason(msg) {
   if (!msg) return msg;
   const s = String(msg);
   if (s.startsWith('Skipped:')) return s;
@@ -426,6 +426,9 @@ function normalizeSkipReason(msg) {
     if (statusMatch && statusMatch[1] === '429') return 'Skipped: Rate-limited (HTTP 429) — confirming…';
     return statusMatch ? `Skipped: LinkedIn rejected (HTTP ${statusMatch[1]})` : 'Skipped: LinkedIn rejected';
   }
+  // v2.112.x — note longer than LinkedIn's free 200-char custom-invite cap: the
+  // sending account isn't Premium, so Send stayed disabled. Operator wording.
+  if (lower.includes('note_too_long')) return 'Skipped: Profile not premium, custom notes limit';
   if (lower.includes('weekly invitation limit') || lower.includes('weekly_limit')) return 'Skipped: Weekly limit reached';
   if (lower.includes('inmail credits') || lower.includes('inmail_no_credits')) return 'Skipped: InMail credits exhausted';
   if (lower.includes('not yet connected')) return 'Skipped: Not yet connected';
@@ -4191,6 +4194,23 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
                 auditAction: 'Skipped: Account out of free notes',
+              }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('NOTE_TOO_LONG')) {
+              // v2.112.x — the sending account is NOT Premium and the rendered
+              // note exceeds LinkedIn's free 200-char custom-note cap, so Send
+              // stayed disabled. Operator choice (2026-06-22): per-lead SKIP +
+              // visible flag — do NOT bench the account (a mixed pool may hold a
+              // Premium account that CAN send it) and do NOT retry (the same
+              // template is the same length every attempt). Stamp the visible
+              // Stage/Status so the operator sees exactly which leads were hit;
+              // the real fix is to shorten the note ≤200 chars or use Premium.
+              log(`  ⚠ ${pName}: note over the free 200-char limit (account not Premium) — skipping "${data.firstName || '?'}", not retrying.`);
+              state.processed[url] = { profileId, profileName: pName, action: 'note_too_long', date: now };
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                ...buildSkipSheetData(mode, normalizeSkipReason('NOTE_TOO_LONG'), pName),
+                dateLastAction: now,
+                auditAction: normalizeSkipReason('NOTE_TOO_LONG'),
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('INMAIL_NO_CREDITS_NOT_OP')) {
               // v2.11.3: dual-fact signal — account is out of InMail credits

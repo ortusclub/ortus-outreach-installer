@@ -573,6 +573,22 @@ export function inviteAriaMatchesLeadName(ariaLabel, leadName) {
   return true;
 }
 
+// v2.112.x — free LinkedIn accounts cap custom-invite notes at 200 chars; a
+// longer note leaves the connect modal's Send button DISABLED (the red
+// "291/200" counter), so the old flow "clicked" a dead button, then burned ~60s
+// + 3 retries verifying a send that never happened. Premium accounts allow a
+// longer note and keep Send ENABLED. Decide "this is the free length cap → skip
+// the lead" by combining the ACTUAL disabled state with the typed length, NOT a
+// hard-coded 200: a Premium account sending a 250-char note (Send enabled) is
+// never mis-skipped, and a Send disabled for some OTHER reason while the note is
+// short isn't mislabeled "note too long". Pure — caller reads the two facts off
+// the modal and passes them in.
+export function isNoteOverFreeLimit({ sendDisabled, typedLen, freeLimit = 200 } = {}) {
+  if (!sendDisabled) return false;
+  if (!Number.isFinite(typedLen)) return false;
+  return typedLen > freeLimit;
+}
+
 // v2.112.31 — choose the TARGET profile entity from a Voyager `included` array.
 // The array carries BOTH the viewer's own profile (often FIRST) and the lead's,
 // so taking the first profile entity grabs the SENDER (the 2026-06-22 Candice/
