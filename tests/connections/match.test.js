@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { annotate } from '../../src/connections/match.js';
+import { annotate, matchesCriteria } from '../../src/connections/match.js';
 
 const index = new Map([
   ['elson-chia', [{ colleague: 'bea.talusan@ortus.solutions', connectedOn: '16 Oct 2025' }]],
@@ -30,4 +30,12 @@ test('annotates warm matches, drops DNC, dedupes by slug', () => {
   assert.strictEqual(elson.contact.id, '2');            // kept the newer record
   assert.ok(rows.find(r => r.slug === 'nobody-x' && !r.hasWarm)); // cold result still returned
   assert.strictEqual(rows.length, 2);                   // DNC row dropped, dupe merged
+});
+
+test('matchesCriteria: country exact, title/company substring, empty lists pass', () => {
+  const c = { country: 'Singapore', jobtitle: 'Digital Marketing Director', company: 'Kimberly-Clark' };
+  assert.ok(matchesCriteria(c, { countries: ['singapore'], jobTitles: ['director'] }));
+  assert.ok(matchesCriteria(c, {}));
+  assert.ok(!matchesCriteria(c, { countries: ['Malaysia'] }));
+  assert.ok(!matchesCriteria(c, { jobTitles: ['Engineer'] }));
 });

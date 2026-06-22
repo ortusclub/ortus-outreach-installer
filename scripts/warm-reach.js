@@ -6,8 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ingestFolder } from '../src/connections/csv-ingest.js';
-import { searchContacts } from '../src/connections/hubspot-client.js';
-import { annotate } from '../src/connections/match.js';
+import { lookupBySlugs } from '../src/connections/hubspot-client.js';
+import { annotate, matchesCriteria } from '../src/connections/match.js';
 import { writeLeadCsv } from '../src/connections/export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,10 +22,9 @@ function die(msg) { console.error('ERROR:', msg); process.exit(1); }
 function parseArgs() {
   const a = process.argv.slice(2);
   const lists = { country: [], region: [], city: [], title: [], company: [] };
-  const o = { ...lists, all: false, 'csv-dir': undefined, out: undefined };
+  const o = { ...lists, 'csv-dir': undefined, out: undefined };
   for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
-    if (k === 'all') { o.all = true; continue; }
     if (k === 'csv-dir' || k === 'out') { const v = a[++i]; if (v == null || v.startsWith('--')) die(`--${k} needs a value`); o[k] = v; continue; }
     if (k in lists) { const v = a[++i]; if (v == null || v.startsWith('--')) die(`--${k} needs a value`); o[k].push(v); continue; }
     die(`unknown flag --${k}`);
@@ -42,22 +41,21 @@ function parseArgs() {
   const { index, stats } = ingestFolder(dir);
   if (stats.files === 0) die(`No .csv files in ${dir} — nothing to match against.`);
   console.log('Ingested networks:', JSON.stringify(stats, null, 2));
-  if (o.title.length > 5) console.log(`! ${o.title.length} titles given; HubSpot caps at 5 — using the first 5.`);
 
-  const contacts = await searchContacts({
-    countries: o.country, regions: o.region, cities: o.city, jobTitles: o.title, companies: o.company,
-  });
-  console.log(`HubSpot returned ${contacts.length} contacts`);
+  const criteria = { countries: o.country, regions: o.region, cities: o.city, jobTitles: o.title, companies: o.company };
 
-  const annotated = annotate(contacts, index);
-  const warm = annotated.filter(r => r.hasWarm);
-  console.log(`\n${warm.length} warm / ${annotated.length} total (after DNC + dedupe)\n`);
-  for (const r of warm.slice(0, 25)) {
-    console.log(`  • ${r.contact.firstname || ''} ${r.contact.lastname || ''} — ${r.contact.company || '?'}  →  via ${r.warmVia.join(', ')}`);
+  const slugs = [...index.keys()];
+  console.log(`Looking up ${slugs.length} connections in HubSpot (network-first)…`);
+  const contacts = await lookupBySlugs(slugs, {});
+  console.log(`HubSpot has ${contacts.length} of these connections as contacts`);
+
+  const annotated = annotate(contacts, index);                  // dedupe + DNC + warmVia
+  const filtered = annotated.filter((r) => matchesCriteria(r.contact, criteria));
+  console.log(`\n${filtered.length} match your criteria (of ${annotated.length} warm-and-in-HubSpot)\n`);
+  for (const r of filtered.slice(0, 25)) {
+    console.log(`  • ${r.contact.firstname || ''} ${r.contact.lastname || ''} — ${r.contact.company || '?'} — ${r.contact.jobtitle || '?'}  →  via ${r.warmVia.join(', ')}`);
   }
-
-  const rowsToWrite = o.all ? annotated : warm;
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  writeLeadCsv(rowsToWrite, out, colleagues);
-  console.log(`\nWrote ${rowsToWrite.length} rows (${o.all ? 'all results' : 'warm only'}) → ${out}`);
+  writeLeadCsv(filtered, out, colleagues);
+  console.log(`\nWrote ${filtered.length} rows → ${out}`);
 })().catch((e) => { console.error('ERROR:', e.message); process.exit(1); });

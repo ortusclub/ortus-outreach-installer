@@ -11,6 +11,13 @@ export function isDnc(c) {
   return false;
 }
 
+export function matchesCriteria(c, { countries = [], regions = [], cities = [], jobTitles = [], companies = [] } = {}) {
+  const eqAny = (v, list) => !list.length || list.some((x) => (v || '').toLowerCase() === x.toLowerCase());
+  const hasAny = (v, list) => !list.length || list.some((x) => (v || '').toLowerCase().includes(x.toLowerCase()));
+  return eqAny(c.country, countries) && eqAny(c.state, regions) && eqAny(c.city, cities)
+    && hasAny(c.jobtitle, jobTitles) && hasAny(c.company, companies);
+}
+
 export function annotate(contacts, index) {
   const byKey = new Map();
   for (const c of contacts) {
