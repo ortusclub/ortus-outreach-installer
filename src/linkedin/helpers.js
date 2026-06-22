@@ -525,6 +525,38 @@ export async function waitForProfileRender(page, { timeoutMs = 10000 } = {}) {
  * scans the rendered HTML for a URN pattern. Network info (degree) is
  * a separate Voyager call and falls back to the existing helper.
  */
+// v2.112.31 — choose the TARGET profile entity from a Voyager `included` array.
+// The array carries BOTH the viewer's own profile (often FIRST) and the lead's,
+// so taking the first profile entity grabs the SENDER (the 2026-06-22 Candice/
+// Pravin false-skip). Match by the page's publicId instead: a vanity slug matches
+// `publicIdentifier`; an encoded /in/AC?AA token matches by member-token body
+// prefix (same-member ACwAA/ACoAA forms share ≥6 leading body chars, per
+// profile-identity.js). Returns the entity object, or null when nothing matches
+// (caller falls back to its previous best-effort pick). Pure — no DOM/I/O.
+export function pickTargetProfile(included, publicId) {
+  if (!Array.isArray(included) || !publicId) return null;
+  const isProfileUrn = (s) => typeof s === 'string'
+    && (s.indexOf('urn:li:fsd_profile:') === 0
+        || s.indexOf('urn:li:fs_miniProfile:') === 0
+        || s.indexOf('urn:li:fs_profile:') === 0);
+  const tokenBody = (s) => { const m = String(s || '').match(/AC[ow]AA([A-Za-z0-9_-]+)/); return m ? m[1] : ''; };
+  const encoded = /^AC[ow]AA/i.test(publicId);
+  const pidLow = String(publicId).toLowerCase();
+  const pidBody = encoded ? tokenBody(publicId) : '';
+  let prefixMatch = null;
+  for (const it of included) {
+    if (!it || !isProfileUrn(it.entityUrn)) continue;
+    if (!encoded && it.publicIdentifier && String(it.publicIdentifier).toLowerCase() === pidLow) return it;
+    if (encoded && pidBody && !prefixMatch) {
+      const eBody = tokenBody(it.entityUrn);
+      let n = 0; const len = Math.min(eBody.length, pidBody.length);
+      while (n < len && eBody[n] === pidBody[n]) n++;
+      if (n >= 6) prefixMatch = it;
+    }
+  }
+  return prefixMatch;
+}
+
 export async function captureProfileMeta(page) {
   const out = { urn: '', memberId: '', memberNumber: '', name: '', isOpenProfile: null, connectionDegree: null };
 
@@ -573,12 +605,12 @@ export async function captureProfileMeta(page) {
         }
         return null;
       }
-      // v2.112.30 — the lead's display name straight from the Voyager profile
-      // JSON we already fetched. Pre-send identity needs a name to confirm an
-      // encoded /in/ACwAA… lead whose URL token won't prefix-match the live URN
-      // (the Candice case: profile loaded, but no DOM <h1>, no member#, URL
-      // token ≠ URN → zero positive signals → false skip). Prefer the entity
-      // matching the chosen profile URN; fall back to any named fsd_profile.
+      // v2.112.30/31 — the lead's display name straight from the Voyager JSON we
+      // already fetched, for the chosen TARGET URN only. Used as the fallback
+      // when pickTargetProfile didn't supply a name directly. Deliberately does
+      // NOT scan for "any named profile": the response also holds the viewer's
+      // (sender's) profile, and a loose scan grabbed it (the Pravin false-skip).
+      // No match → '' (caller treats an empty name as no signal → safe skip).
       function extractProfileName(d, profileUrn) {
         function nameOf(o) {
           if (!o || typeof o !== 'object') return '';
@@ -586,18 +618,9 @@ export async function captureProfileMeta(page) {
           const ln = typeof o.lastName === 'string' ? o.lastName.trim() : '';
           return (fn + ' ' + ln).trim();
         }
-        let n = nameOf(d) || nameOf(d && d.data) || nameOf(d && d.profile) || nameOf(d && d.miniProfile);
-        if (n) return n;
-        if (Array.isArray(d && d.included)) {
-          if (profileUrn) {
-            for (const it of d.included) {
-              if (it && it.entityUrn === profileUrn) { n = nameOf(it); if (n) return n; }
-            }
-          }
+        if (Array.isArray(d && d.included) && profileUrn) {
           for (const it of d.included) {
-            if (it && typeof it.entityUrn === 'string' && it.entityUrn.indexOf('fsd_profile') !== -1 && (it.firstName || it.lastName)) {
-              n = nameOf(it); if (n) return n;
-            }
+            if (it && it.entityUrn === profileUrn) { const n = nameOf(it); if (n) return n; }
           }
         }
         return '';
@@ -660,11 +683,45 @@ export async function captureProfileMeta(page) {
             if (isProfileUrn(ref)) urnCandidates.push(ref);
           }
         }
-        const urn = urnCandidates[0] || '';
+        // v2.112.31 — pick the TARGET entity (NOT the viewer). `included` carries
+        // both the sender's own profile (often first) and the lead's; matching by
+        // the page's publicId selects the right one. In-browser twin of the tested
+        // pickTargetProfile() in this file — keep the two in sync.
+        let targetEntity = null;
+        {
+          const enc = /^AC[ow]AA/i.test(publicId);
+          const pidLow = String(publicId).toLowerCase();
+          const body = (s) => { const mm = String(s || '').match(/AC[ow]AA([A-Za-z0-9_-]+)/); return mm ? mm[1] : ''; };
+          const pidBody = enc ? body(publicId) : '';
+          let pre = null;
+          if (Array.isArray(data?.included)) {
+            for (const it of data.included) {
+              if (!it || !isProfileUrn(it.entityUrn)) continue;
+              if (!enc && it.publicIdentifier && String(it.publicIdentifier).toLowerCase() === pidLow) { targetEntity = it; break; }
+              if (enc && pidBody && !pre) {
+                const eb = body(it.entityUrn);
+                let n = 0; const len = Math.min(eb.length, pidBody.length);
+                while (n < len && eb[n] === pidBody[n]) n++;
+                if (n >= 6) pre = it;
+              }
+            }
+          }
+          if (!targetEntity) targetEntity = pre;
+        }
+        // urn drives memberId + memberNumber + name, so selecting the target
+        // entity's URN fixes all of them at once. Fall back to the old best-effort
+        // pick only when no entity matched the publicId.
+        const urn = (targetEntity && targetEntity.entityUrn) || urnCandidates[0] || '';
         const memberId = extractMemberId(urn);
         const memberNumber = extractTargetMemberNumber(data, urn);
         const openProfile = findOpenProfileFlag(data, 0); // true | null
-        const name = extractProfileName(data, urn);
+        let name = '';
+        if (targetEntity) {
+          const fn = (targetEntity.firstName || '').toString().trim();
+          const ln = (targetEntity.lastName || '').toString().trim();
+          name = (fn + ' ' + ln).trim();
+        }
+        if (!name) name = extractProfileName(data, urn);
         return { urn, memberId, memberNumber, openProfile, name, reason: 'ok' };
       } catch (err) {
         return { reason: 'evaluate-threw', message: String(err && err.message || err) };
