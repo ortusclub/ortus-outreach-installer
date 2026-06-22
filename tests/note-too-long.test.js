@@ -49,6 +49,35 @@ test('custom freeLimit is respected (Premium ~300 cap)', () => {
   assert.equal(isNoteOverFreeLimit({ sendDisabled: true, typedLen: 310, freeLimit: 300 }), true);
 });
 
+// ── counter path (primary signal, from the 2026-06-22 DOM capture) ──────────
+test('counter 203/200 → over limit (the real captured DOM)', () => {
+  assert.equal(isNoteOverFreeLimit({ counterCurrent: 203, counterMax: 200 }), true);
+});
+
+test('counter 200/200 → allowed (exactly at the cap)', () => {
+  assert.equal(isNoteOverFreeLimit({ counterCurrent: 200, counterMax: 200 }), false);
+});
+
+test('REGRESSION: counter wins even when Send reads enabled (the v2.112.40 miss)', () => {
+  // v2.112.40 keyed on the Send button's disabled property, but LinkedIn greys
+  // Send via a CSS class → sendDisabled read false and the typed length read 0,
+  // so it let the dead send proceed. The counter must override both.
+  assert.equal(isNoteOverFreeLimit({ counterCurrent: 203, counterMax: 200, sendDisabled: false, typedLen: 0 }), true);
+});
+
+test('Premium counter 250/300 → NOT over (250 > 200 but under the real cap)', () => {
+  assert.equal(isNoteOverFreeLimit({ counterCurrent: 250, counterMax: 300 }), false);
+});
+
+test('Premium counter 310/300 → over its own cap', () => {
+  assert.equal(isNoteOverFreeLimit({ counterCurrent: 310, counterMax: 300 }), true);
+});
+
+test('counter unreadable (null) → falls back to sendDisabled + length', () => {
+  assert.equal(isNoteOverFreeLimit({ counterCurrent: null, counterMax: null, sendDisabled: true, typedLen: 291 }), true);
+  assert.equal(isNoteOverFreeLimit({ counterCurrent: null, counterMax: null, sendDisabled: false, typedLen: 291 }), false);
+});
+
 // normalizeSkipReason mapping — the operator's exact wording (2026-06-22).
 test('NOTE_TOO_LONG maps to the not-premium custom-notes skip wording', () => {
   assert.equal(

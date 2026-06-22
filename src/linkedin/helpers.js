@@ -573,17 +573,26 @@ export function inviteAriaMatchesLeadName(ariaLabel, leadName) {
   return true;
 }
 
-// v2.112.x — free LinkedIn accounts cap custom-invite notes at 200 chars; a
-// longer note leaves the connect modal's Send button DISABLED (the red
-// "291/200" counter), so the old flow "clicked" a dead button, then burned ~60s
-// + 3 retries verifying a send that never happened. Premium accounts allow a
-// longer note and keep Send ENABLED. Decide "this is the free length cap → skip
-// the lead" by combining the ACTUAL disabled state with the typed length, NOT a
-// hard-coded 200: a Premium account sending a 250-char note (Send enabled) is
-// never mis-skipped, and a Send disabled for some OTHER reason while the note is
-// short isn't mislabeled "note too long". Pure — caller reads the two facts off
-// the modal and passes them in.
-export function isNoteOverFreeLimit({ sendDisabled, typedLen, freeLimit = 200 } = {}) {
+// v2.112.x — LinkedIn caps custom-invite notes (free = 200 chars, Premium ~300);
+// a longer note greys out Send so the invite can't go. The old flow "clicked"
+// the dead Send, then burned ~60s + 3 retries verifying a send that never
+// happened — on every lead, since the template length is the same for all.
+//
+// PRIMARY signal (v2.112.x, after the 2026-06-22 DOM capture): LinkedIn's own
+// character counter "<current>/<max>" (e.g. 203/200 free, 250/300 Premium). The
+// note is over the platform's limit ⇔ current > max. This is exactly the
+// condition that greys Send, needs NO hard-coded number, and is Premium-safe
+// (250/300 is under → not skipped). It also fixes the v2.112.40 miss: that
+// version keyed on the Send button's `disabled` property, but LinkedIn greys
+// Send via a CSS class, so `sendDisabled` read false and it never tripped.
+//
+// FALLBACK (counter unreadable): a disabled Send + an over-`freeLimit` typed
+// note. Caller reads `sendDisabled` in all its forms (property / aria / class).
+// Pure — caller reads the facts off the modal and passes them in.
+export function isNoteOverFreeLimit({ counterCurrent, counterMax, sendDisabled, typedLen, freeLimit = 200 } = {}) {
+  if (Number.isFinite(counterMax) && counterMax > 0 && Number.isFinite(counterCurrent)) {
+    return counterCurrent > counterMax;
+  }
   if (!sendDisabled) return false;
   if (!Number.isFinite(typedLen)) return false;
   return typedLen > freeLimit;

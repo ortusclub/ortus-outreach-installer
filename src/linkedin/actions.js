@@ -1129,39 +1129,62 @@ export async function sendConnectionRequest(page, noteArg) {
         console.log('[actions] Note typed and verified.');
         await new Promise(r => setTimeout(r, 5000));
 
-        // v2.112.x: free accounts cap the custom note at 200 chars — a longer
-        // note leaves Send DISABLED (the red "291/200" counter). Detect it HERE
-        // instead of "clicking" the dead Send button and then burning ~60s + 3
-        // retries verifying a send that never happens. Premium accounts allow a
-        // longer note and keep Send ENABLED, so we key on the ACTUAL disabled
-        // state (isNoteOverFreeLimit), not a hard-coded 200 → a Premium account
-        // sending a longer note is never mis-skipped.
+        // v2.112.x: LinkedIn caps custom-invite notes (free 200, Premium ~300);
+        // a longer note greys out Send so the invite can't fire. Detect it HERE
+        // instead of "clicking" the dead Send and then burning ~60s + 3 retries
+        // verifying a send that never happens — on every lead, since the
+        // template length is the same for all.
+        //
+        // PRIMARY signal (2026-06-22 DOM capture): LinkedIn's own character
+        // counter "<current>/<max>" (203/200 free, 250/300 Premium). Over ⇔
+        // current > max — exactly what greys Send, no hard-coded number, and
+        // Premium-safe. v2.112.40 keyed on the Send button's `disabled` property
+        // instead, but LinkedIn greys Send via a CSS class, so it never tripped.
+        // We read the counter, the typed length, AND the Send disabled-state in
+        // ALL its forms, and log all of it so a future miss is diagnosable.
         const noteState = await page.evaluate(() => {
-          const fieldSels = ['textarea[name="message"]', 'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]'];
+          const modal = document.querySelector('.artdeco-modal')
+            || document.querySelector('[role="dialog"]')
+            || document.body;
+          // Character counter "N/M" — take the LAST match (it sits at the bottom
+          // of the note field, after any "N personalized invitations" text).
+          let counterCurrent = null, counterMax = null, counter = '';
+          const matches = [...(modal.innerText || '').matchAll(/(\d{2,4})\s*\/\s*(\d{2,4})/g)];
+          if (matches.length) {
+            const last = matches[matches.length - 1];
+            counterCurrent = Number(last[1]); counterMax = Number(last[2]); counter = `${last[1]}/${last[2]}`;
+          }
           let typedLen = 0;
-          for (const sel of fieldSels) {
-            const el = document.querySelector(sel);
+          for (const sel of ['textarea[name="message"]', 'textarea', 'div[contenteditable="true"]', 'div[role="textbox"]']) {
+            const el = modal.querySelector(sel) || document.querySelector(sel);
             if (el) { typedLen = ((el.value != null ? el.value : el.textContent) || '').length; break; }
           }
-          const all = Array.from(document.querySelectorAll('button'));
-          const outlet = document.getElementById('interop-outlet');
-          if (outlet?.shadowRoot) all.push(...outlet.shadowRoot.querySelectorAll('button'));
-          const send = all.find((b) => {
-            const t = (b.textContent || '').trim().toLowerCase();
+          const btns = Array.from(modal.querySelectorAll('button'));
+          const send = btns.find((b) => {
+            const t = (b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
             const a = (b.getAttribute('aria-label') || '').trim().toLowerCase();
-            return t === 'send' || a === 'send' || a === 'send invitation' || a === 'send now';
+            return t === 'send' || a === 'send' || a.startsWith('send ');
           });
-          const sendDisabled = !!send && (send.disabled || send.getAttribute('aria-disabled') === 'true' || send.hasAttribute('disabled'));
-          let counter = '';
-          const m = (document.body?.innerText || '').match(/(\d{2,4})\s*\/\s*200\b/);
-          if (m) counter = m[0];
-          return { typedLen, sendFound: !!send, sendDisabled, counter };
+          const sendDisabled = !!send && (
+            send.disabled
+            || send.getAttribute('aria-disabled') === 'true'
+            || send.hasAttribute('disabled')
+            || /\bdisabled\b|artdeco-button--disabled/.test(send.className || '')
+          );
+          const upsell = !!modal.querySelector('.connect-button-send-invite__premium-upsell-message');
+          return { counter, counterCurrent, counterMax, typedLen, sendFound: !!send, sendDisabled, upsell };
         });
-        if (noteState.sendFound && isNoteOverFreeLimit({ sendDisabled: noteState.sendDisabled, typedLen: noteState.typedLen })) {
-          console.warn(`[actions] Note over the free 200-char limit (${noteState.counter || noteState.typedLen + ' chars'}, Send disabled) — account not Premium. Skipping noted invite.`);
+        console.log(`[actions] note-limit check → ${JSON.stringify(noteState)}`);
+        if (isNoteOverFreeLimit({
+          counterCurrent: noteState.counterCurrent,
+          counterMax: noteState.counterMax,
+          sendDisabled: noteState.sendDisabled,
+          typedLen: noteState.typedLen,
+        })) {
+          console.warn(`[actions] Note over LinkedIn's note limit (counter=${noteState.counter || 'n/a'}, typed=${noteState.typedLen}, sendDisabled=${noteState.sendDisabled}, upsell=${noteState.upsell}) — account not Premium. Skipping noted invite.`);
           await clickByText(page, 'Cancel').catch(() => {});
           await page.keyboard.press('Escape').catch(() => {});
-          throw new Error('NOTE_TOO_LONG: note exceeds the free 200-char custom-note limit (account not Premium)');
+          throw new Error('NOTE_TOO_LONG: note exceeds LinkedIn\'s custom-note character limit (account not Premium)');
         }
       }
 
