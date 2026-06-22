@@ -573,6 +573,35 @@ export async function captureProfileMeta(page) {
         }
         return null;
       }
+      // v2.112.30 — the lead's display name straight from the Voyager profile
+      // JSON we already fetched. Pre-send identity needs a name to confirm an
+      // encoded /in/ACwAA… lead whose URL token won't prefix-match the live URN
+      // (the Candice case: profile loaded, but no DOM <h1>, no member#, URL
+      // token ≠ URN → zero positive signals → false skip). Prefer the entity
+      // matching the chosen profile URN; fall back to any named fsd_profile.
+      function extractProfileName(d, profileUrn) {
+        function nameOf(o) {
+          if (!o || typeof o !== 'object') return '';
+          const fn = typeof o.firstName === 'string' ? o.firstName.trim() : '';
+          const ln = typeof o.lastName === 'string' ? o.lastName.trim() : '';
+          return (fn + ' ' + ln).trim();
+        }
+        let n = nameOf(d) || nameOf(d && d.data) || nameOf(d && d.profile) || nameOf(d && d.miniProfile);
+        if (n) return n;
+        if (Array.isArray(d && d.included)) {
+          if (profileUrn) {
+            for (const it of d.included) {
+              if (it && it.entityUrn === profileUrn) { n = nameOf(it); if (n) return n; }
+            }
+          }
+          for (const it of d.included) {
+            if (it && typeof it.entityUrn === 'string' && it.entityUrn.indexOf('fsd_profile') !== -1 && (it.firstName || it.lastName)) {
+              n = nameOf(it); if (n) return n;
+            }
+          }
+        }
+        return '';
+      }
       try {
         const m = window.location.pathname.match(/\/in\/([^/]+)/);
         if (!m) return { reason: 'not-on-profile-url', url: window.location.href };
@@ -635,7 +664,8 @@ export async function captureProfileMeta(page) {
         const memberId = extractMemberId(urn);
         const memberNumber = extractTargetMemberNumber(data, urn);
         const openProfile = findOpenProfileFlag(data, 0); // true | null
-        return { urn, memberId, memberNumber, openProfile, reason: 'ok' };
+        const name = extractProfileName(data, urn);
+        return { urn, memberId, memberNumber, openProfile, name, reason: 'ok' };
       } catch (err) {
         return { reason: 'evaluate-threw', message: String(err && err.message || err) };
       }
@@ -643,6 +673,10 @@ export async function captureProfileMeta(page) {
     if (voyResult && voyResult.urn) out.urn = voyResult.urn;
     if (voyResult && voyResult.memberId) out.memberId = voyResult.memberId;
     if (voyResult && voyResult.memberNumber) out.memberNumber = voyResult.memberNumber;
+    // v2.112.30 — seed the name from Voyager; the DOM <h1> read below still
+    // overrides it when present (so the literal displayed name wins), but this
+    // recovers the name when the <h1> scrape comes back empty.
+    if (voyResult && voyResult.name) out.name = voyResult.name;
     if (voyResult && voyResult.openProfile === true) out.isOpenProfile = true;
     // Track whether Voyager actually returned data — used at the end to
     // default isOpenProfile to false (definitive negative) only when we
