@@ -1,5 +1,7 @@
 import { normalizeSlug } from './slug.js';
 
+const ts = (v) => Number(v) || Date.parse(v) || 0;
+
 // Lead-status values that mean do-not-contact. Confirm against HubSpot during Task 3 Step 1.
 const DNC_LEAD_STATUSES = new Set(['UNSUBSCRIBED', 'DNC']);
 
@@ -20,7 +22,7 @@ export function annotate(contacts, index) {
     else {
       const e = byKey.get(key);
       warm.forEach(w => e.warmVia.add(w));
-      if ((c.lastmodifieddate || '') > (e.contact.lastmodifieddate || '')) e.contact = c;
+      if (ts(c.lastmodifieddate) > ts(e.contact.lastmodifieddate)) e.contact = c;
     }
   }
   return [...byKey.values()].map(v => ({

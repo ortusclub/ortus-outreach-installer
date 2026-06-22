@@ -6,6 +6,16 @@ const index = new Map([
   ['elson-chia', [{ colleague: 'bea.talusan@ortus.solutions', connectedOn: '16 Oct 2025' }]],
 ]);
 
+test('keeps the numerically-newer record when lastmodifieddate is epoch-millis strings', () => {
+  const contacts = [
+    { id: 'old', firstname: 'X', linkedinbio: 'https://www.linkedin.com/in/dupe-x', lastmodifieddate: '999999999999' },
+    { id: 'new', firstname: 'X', linkedinbio: 'https://www.linkedin.com/in/dupe-x', lastmodifieddate: '1700000000000' },
+  ];
+  const rows = annotate(contacts, new Map());
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].contact.id, 'new');
+});
+
 test('annotates warm matches, drops DNC, dedupes by slug', () => {
   const contacts = [
     { id: '1', firstname: 'Elson', linkedinbio: 'https://www.linkedin.com/in/elson-chia', lastmodifieddate: '2025-01-01' },

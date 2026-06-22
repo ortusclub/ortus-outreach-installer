@@ -4,7 +4,7 @@ export const HEADER = ['First Name', 'Last Name', 'LinkedIn URL', 'Company', 'Jo
 
 function csvCell(v) {
   const s = v == null ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export function writeLeadCsv(rows, outPath, colleagues = {}) {
