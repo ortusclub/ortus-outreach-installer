@@ -16,6 +16,14 @@ const PREFS_FILE = dataPath('operator-prefs.json');
 
 const DEFAULTS = Object.freeze({
   tz: '',
+  // v2.113.x: pre-send identity safeguard. DEFAULT OFF (operator decision
+  // 2026-06-22): the wrong-person send was a connect-BUTTON bug (now fixed in
+  // sendConnectionRequest's top-card binding), never a mis-loaded URL — so the
+  // pre-send name/member gate was friction, not protection. OFF = behave like
+  // pre-gate v2.97 (connect straight to the sheet URL, no name/member matching,
+  // no retry loop), keeping ONLY the 404 dead-profile skip. true = re-enable the
+  // full verify gate. Per-operator + sticky; operators flip it from the sidebar.
+  identityGate: false,
 });
 
 async function readAll() {

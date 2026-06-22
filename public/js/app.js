@@ -7553,6 +7553,32 @@ async function onNotifPrefChange(key, value) {
 }
 window.onNotifPrefChange = onNotifPrefChange;
 
+// ── v2.113 — pre-send identity safeguard toggle ────────────────────────
+// Sticky per-operator pref. ON (default) verifies each profile matches the
+// sheet row before connecting; OFF connects straight to the sheet URL (the
+// 404 dead-profile skip stays on regardless). Persisted via /api/operator-prefs
+// and read by startCampaign() into campaign.identityGateEnabled.
+function _renderIdentityGateState(on) {
+  const st = document.getElementById('op-identity-gate-state');
+  if (!st) return;
+  st.textContent = on ? 'On' : 'Off';
+  st.classList.toggle('ok', on);
+  st.classList.toggle('bad', !on);
+}
+async function onIdentityGateChange(value) {
+  _renderIdentityGateState(!!value);
+  try {
+    await fetch('/api/operator-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identityGate: !!value }),
+    });
+  } catch (err) {
+    console.warn('[identity-gate] save failed:', err?.message || err);
+  }
+}
+window.onIdentityGateChange = onIdentityGateChange;
+
 // ── v2.58.x — Per-operator timezone ────────────────────────────────────
 // Confirms on first launch after this update lands (skippable; re-prompts
 // next launch). Saving stores the choice via /api/operator-prefs and the
@@ -7660,6 +7686,14 @@ async function loadOperatorPrefs() {
     if (cur) {
       cur.textContent = _tzDisplayLabel(tz);
       cur.dataset.tz = tz;
+    }
+    // v2.113.x: reflect the stored identity-safeguard choice (default OFF —
+    // only ON when the operator explicitly turned it on).
+    const _ig = document.getElementById('op-identity-gate');
+    if (_ig) {
+      const _on = data?.prefs?.identityGate === true;
+      _ig.checked = _on;
+      _renderIdentityGateState(_on);
     }
     // First-launch behavior: blank stored tz → show modal pre-filled with
     // the detected OS zone. Skip-link in the modal just dismisses; nothing
@@ -7819,6 +7853,14 @@ function applyPresetConfig(config) {
     if (typeof onModeChange === 'function') onModeChange();
   }
   setV('sheet-url', config.sheetUrl || '');
+  // v2.113: setV sets .value programmatically, which does NOT fire the
+  // input/blur listeners that drive the multi-tab picker. The one-shot
+  // auto-trigger in _wireTabPicker only runs at page load, so re-opening a
+  // saved campaign left the tab picker stale/hidden for multi-tab workbooks.
+  // Re-run it here (it self-hides for single-tab sheets, so always safe).
+  if (config.sheetUrl && typeof refreshSheetTabPicker === 'function') {
+    Promise.resolve(refreshSheetTabPicker()).catch(() => {});
+  }
 
   // v2.11.0: pacing knobs (ratePerHour, batchesPerHour) removed. Old presets
   // carrying these fields silently lose them on load — backend pacing is now

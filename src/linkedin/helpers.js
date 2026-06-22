@@ -525,6 +525,54 @@ export async function waitForProfileRender(page, { timeoutMs = 10000 } = {}) {
  * scans the rendered HTML for a URN pattern. Network info (degree) is
  * a separate Voyager call and falls back to the existing helper.
  */
+// v2.113.x — does an "Invite <name> to connect" aria-label refer to THIS lead?
+// A profile page renders many such labels (the lead's own Connect button PLUS
+// every "People you may know" / "More profiles for you" recommendation). The
+// connect flow must bind its click to the lead, or a note for "Mary" fires on a
+// recommended "Dr David Foo" (the 2026-06-22 wrong-send).
+//
+// `leadName` is the FULL profile name (from the top-card h1). The label must
+// carry the lead's FIRST and LAST name (as whole words) — first-name-only would
+// let a recommended "David Foo" satisfy a lead "David Smith"; requiring every
+// token would break on credential suffixes ("Pauline Loo MBA, MSc") or a dropped
+// middle name. Word-boundary + unicode-aware so "mary" never matches "Rosemary"
+// and an accented name counts as a whole word. Initials (<2 chars, e.g. "L.")
+// are ignored. Returns false when either side is empty (cannot confirm → caller
+// must skip, never guess). Pure — no DOM/I/O. Mirrored inline inside
+// sendConnectionRequest's page.evaluate (keep the two in sync).
+// v2.113.x — recover the lead's name from the page <title> when the profile
+// <h1> comes back empty (lazy paint / shadow DOM — the 2026-06-22 Choon case
+// where her visible Connect was never clicked because the name read "").
+// Strips a "(3)" unread-count prefix and the " | LinkedIn" / " - <headline>"
+// tail, leaving just the name. Hyphenated names survive (the split requires
+// spaces around the separator). Mirrors getConnectionStatus's title fallback;
+// mirrored inline in sendConnectionRequest's page.evaluate. Pure — no DOM/I/O.
+export function leadNameFromTitle(title) {
+  return String(title || '')
+    .replace(/^\(\d+\)\s*/, '')
+    .split(/\s[|–-]\s/)[0]
+    .trim();
+}
+
+export function inviteAriaMatchesLeadName(ariaLabel, leadName) {
+  const aria = String(ariaLabel || '').toLowerCase();
+  if (!aria.includes('invite') || !aria.includes('to connect')) return false;
+  const tokens = String(leadName || '').toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length >= 2);
+  if (!tokens.length) return false;
+  const hasWord = (t) => {
+    const safe = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    try { return new RegExp(`(^|\\P{L})${safe}(\\P{L}|$)`, 'u').test(aria); }
+    catch { return aria.includes(t); }
+  };
+  const first = tokens[0];
+  const last = tokens[tokens.length - 1];
+  if (!hasWord(first)) return false;
+  if (last !== first && !hasWord(last)) return false;
+  return true;
+}
+
 // v2.112.31 — choose the TARGET profile entity from a Voyager `included` array.
 // The array carries BOTH the viewer's own profile (often FIRST) and the lead's,
 // so taking the first profile entity grabs the SENDER (the 2026-06-22 Candice/

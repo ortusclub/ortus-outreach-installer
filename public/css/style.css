@@ -4467,6 +4467,10 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
 .sb-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .sb-line-k { font-size: 0.82rem; color: var(--ink); }
 .sb-line-v { display: inline-flex; align-items: center; gap: 8px; }
+/* v2.113 — pre-send identity safeguard toggle: its own hairline-separated
+   block, bolder label, so it stands apart from the notification toggles. */
+.sb-safeguard { margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.sb-safeguard .sb-line-k { font-weight: 600; }
 .sb-icon-btn {
   width: 24px; height: 24px; border: 1px solid var(--hairline); border-radius: 50%;
   background: transparent; color: var(--gray); cursor: pointer; font-size: 0.72rem;

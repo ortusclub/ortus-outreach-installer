@@ -113,6 +113,23 @@
             <span class="notif-pref-slider"></span>
           </label>
         </div>
+
+        <!-- v2.113 — pre-send identity safeguard. Hairline-separated into its
+             own block so it's not mistaken for a notification toggle. ON
+             (default) = confirm each loaded profile matches the sheet row
+             before connecting (blocks wrong-person sends). OFF = send straight
+             to the sheet URL like pre-v2.97; the dead-profile (404) skip stays
+             on either way. Sticky per-operator (stored via /api/operator-prefs). -->
+        <div class="sb-line sb-safeguard" title="ON: before each connection, confirm the open profile matches the sheet row (blocks wrong-person sends). OFF: connect straight to the sheet URL like older versions. The dead-profile (404) skip stays on either way.">
+          <span class="sb-line-k">Identity safeguard</span>
+          <span class="sb-line-v">
+            <span id="op-identity-gate-state" class="notif-row-v bad">Off</span>
+            <label class="notif-pref-toggle">
+              <input type="checkbox" id="op-identity-gate" onchange="onIdentityGateChange(this.checked)">
+              <span class="notif-pref-slider"></span>
+            </label>
+          </span>
+        </div>
       </div>
 
       <div class="sidebar-footer">

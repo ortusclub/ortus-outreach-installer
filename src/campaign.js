@@ -595,11 +595,34 @@ async function pageShowsProfileNotFound(page) {
   } catch { return false; }
 }
 
-export async function gateConnectIdentity(page, { url, row, sourceName = '', log = () => {} }) {
+export async function gateConnectIdentity(page, { url, row, sourceName = '', log = () => {}, verifyIdentity = true }) {
   const sourceMemberId = readSourceMemberId(row);
   // Verify the same profile performOutreach will connect on: a /sales/ lead URL
   // is rewritten to /in/<urn> before the connect, so gate the /in/ form.
   const navUrl = salesNavToInUrl(url);
+  // v2.113: operator disabled the identity safeguard (sidebar toggle, sticky
+  // per-operator pref, default ON). Behave like pre-gate v2.97 — navigate to the
+  // sheet URL and let the connect fire on whatever loads — BUT keep the 404
+  // dead-profile short-circuit so a bad URL is still stamped "Profile not found"
+  // instead of burning a connect attempt (operator-confirmed: 404 stays on).
+  // No name/member matching, no 5× retry loop, no skip-on-doubt.
+  if (!verifyIdentity) {
+    try {
+      await page.goto(navUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const _landed = page.url();
+      if (is404Url(_landed) || await pageShowsProfileNotFound(page)) {
+        return { ok: false, reason: 'profile_not_found_404', notFound: true, loaded: { name: '', memberNumber: '' } };
+      }
+    } catch (e) {
+      // Navigation glitched (context destroyed mid-nav, timeout). Don't skip the
+      // lead — just don't claim the page is on the profile. The caller treats
+      // navigated:false as "performOutreach must navigate itself" (skipNavigation
+      // off), exactly the v2.97 send path.
+      return { ok: true, reason: `identity-gate-disabled (nav failed: ${e.message})`, loaded: { name: '', memberNumber: '' }, navigated: false };
+    }
+    // Page is on the lead's profile already → let the send reuse this navigation.
+    return { ok: true, reason: 'identity-gate-disabled', loaded: { name: '', memberNumber: '' }, navigated: true };
+  }
   let last = { ok: false, reason: 'not-attempted', loaded: { name: '', memberNumber: '' } };
   // v2.112.26 (#5): Stop must interrupt this loop immediately. The 20s
   // inter-attempt wait polls campaign._abort so a mid-wait Stop breaks out fast
@@ -1781,7 +1804,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   try {
     const prefs = createdBy ? await getOperatorPrefs(createdBy) : null;
     setOperatorTz(prefs?.tz || '');
-  } catch { setOperatorTz(''); }
+    // v2.113.x: cache the operator's identity-safeguard choice for this run so
+    // the per-lead gate doesn't hit the prefs file on every lead. Default OFF
+    // (2026-06-22) — the gate only runs when an operator explicitly turns it ON
+    // (identityGate === true). No operator / missing pref / read failure all
+    // resolve to OFF, matching the v2.97 connect-straight-to-URL path (404 skip
+    // is preserved inside gateConnectIdentity's blind branch regardless).
+    campaign.identityGateEnabled = prefs ? prefs.identityGate === true : false;
+  } catch { setOperatorTz(''); campaign.identityGateEnabled = false; }
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._skipCleanup = false;
@@ -3361,7 +3391,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           const _gateableUrl = /\/in\//i.test(url) || /\/sales\/(?:lead|people)\//i.test(url);
           if (_isConnectHint && _gateableUrl) {
             const _srcName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
-            const _gate = await gateConnectIdentity(page, { url, row, sourceName: _srcName, log });
+            // v2.113: pass the operator's safeguard choice. When OFF the gate
+            // blind-passes (404-check only) and returns navigated:true/false.
+            const _gate = await gateConnectIdentity(page, { url, row, sourceName: _srcName, log, verifyIdentity: campaign.identityGateEnabled !== false });
             if (!_gate.ok) {
               // v2.112.26 (#4): a dead profile (404 / "this page doesn't exist")
               // is a DATA problem, not a degrading session. Stamp it clearly and
@@ -3448,7 +3480,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               }
               continue;
             }
-            _identityVerified = true;
+            // Reuse the gate's navigation for the send UNLESS blind mode hit a
+            // nav glitch (navigated:false) — then let performOutreach navigate.
+            // The full-verify path returns no `navigated` field → defaults to
+            // reuse (skipNavigation:true), preserving prior behavior.
+            _identityVerified = _gate.navigated !== false;
           }
 
           // performOutreach with retry
@@ -3588,9 +3624,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             if (_isConnectHint && _gateableUrl) {
               await page.goto('about:blank', { timeout: 5000 }).catch(() => {});
               const _srcNameRetry = `${data.firstName || ''} ${data.lastName || ''}`.trim();
-              const _gateRetry = await gateConnectIdentity(page, { url, row, sourceName: _srcNameRetry, log });
+              const _gateRetry = await gateConnectIdentity(page, { url, row, sourceName: _srcNameRetry, log, verifyIdentity: campaign.identityGateEnabled !== false });
               if (_gateRetry.ok) {
-                _identityVerified = true;
+                _identityVerified = _gateRetry.navigated !== false;
               } else if (_gateRetry.notFound) {
                 // v2.112.26 (#4): the profile went dead (404) on the re-load —
                 // a 'profile_not_found_404' error routes through normalizeSkipReason

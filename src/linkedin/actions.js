@@ -327,7 +327,33 @@ async function typeIntoField(page, text) {
           if (el) break;
         }
       }
-      if (!el) return { ok: false, reason: 'field-not-found' };
+      if (!el) {
+        // v2.112.33 DIAGNOSTIC (temporary): capture what's ACTUALLY on screen when
+        // the note field isn't found — dialog text, buttons, editable fields, and
+        // iframe presence (the out-of-notes Premium upsell may render in an iframe,
+        // which would explain why both the field AND the text scan miss it).
+        const dump = { dialogs: [], fields: [], iframes: 0, bodyHasNoteText: false };
+        dump.iframes = document.querySelectorAll('iframe').length;
+        const bodyText = (document.body?.innerText || '').toLowerCase();
+        dump.bodyHasNoteText = bodyText.includes('out of free custom notes') || bodyText.includes('personalized invites') || bodyText.includes('premium');
+        for (const d of document.querySelectorAll('[role="dialog"], .artdeco-modal, [data-test-modal]')) {
+          const r = d.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) continue;
+          const btns = [];
+          for (const b of d.querySelectorAll('button')) {
+            btns.push((b.getAttribute('aria-label') || b.textContent || '').trim().slice(0, 36));
+            if (btns.length >= 14) break;
+          }
+          dump.dialogs.push({ text: (d.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 320), iframes: d.querySelectorAll('iframe').length, buttons: btns });
+          if (dump.dialogs.length >= 4) break;
+        }
+        for (const f of document.querySelectorAll('textarea, input, [contenteditable="true"], [role="textbox"]')) {
+          const r = f.getBoundingClientRect();
+          dump.fields.push({ tag: f.tagName, id: f.id || '', name: f.getAttribute('name') || '', aria: f.getAttribute('aria-label') || '', ce: f.getAttribute('contenteditable') || '', vis: r.width > 0 && r.height > 0 });
+          if (dump.fields.length >= 15) break;
+        }
+        return { ok: false, reason: 'field-not-found', dump };
+      }
 
       el.focus();
 
@@ -395,6 +421,7 @@ async function typeIntoField(page, text) {
 
     if (!injected.ok) {
       console.warn(`[actions] Field not found on attempt ${attempt}: ${injected.reason}`);
+      if (injected.dump) console.warn(`[actions] NOTE-FIELD DEBUG: ${JSON.stringify(injected.dump)}`);
       await new Promise(r => setTimeout(r, 500));
       continue;
     }
@@ -634,62 +661,110 @@ export async function sendConnectionRequest(page, noteArg) {
   const startTime = Date.now();
 
   while (!connectClicked && (Date.now() - startTime) < MAX_WAIT_MS) {
-    const directClicked = await page.evaluate(() => {
-      const h1 = document.querySelector('h1');
-      const profileName = h1 ? h1.textContent.trim().split('\n')[0].trim().toLowerCase() : '';
-      const firstName = profileName.split(/\s+/)[0] || '';
+    const direct = await page.evaluate(() => {
+      // Lead identity comes from the TOP CARD, not document.querySelector('h1').
+      // The first <h1> on a LinkedIn profile can be a hidden/nav heading → empty
+      // name → METHOD 1 silently skipped (the 2026-06-22 Choon regression: a
+      // visible "Invite Choon Khee Koh to connect" was never clicked). `main h1`
+      // is the profile owner's name.
+      const main = document.querySelector('main');
+      const nameEl = (main && main.querySelector('h1'))
+                  || document.querySelector('h1.text-heading-xlarge')
+                  || document.querySelector('h1');
+      let leadName = nameEl ? (nameEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      if (!leadName) {
+        // The profile <h1> can be empty (lazy paint / shadow DOM) — the
+        // 2026-06-22 Choon case where her visible Connect was never clicked
+        // because the name read "". Fall back to the page title (mirrors
+        // leadNameFromTitle() in helpers.js + getConnectionStatus's rescue):
+        // strip a "(3)" unread count and the " | LinkedIn" / " - headline" tail.
+        leadName = (document.title || '').replace(/^\(\d+\)\s*/, '').split(/\s[|–-]\s/)[0].trim();
+      }
+      const nameTokens = leadName.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((t) => t.length >= 2);
 
-      // METHOD 1: aria-label "Invite [name] to connect" — name MUST match
-      if (firstName) {
+      // v2.113.x wrong-person guard. A profile page is full of OTHER people's
+      // Connect buttons — the "People you may know" / "More profiles for you"
+      // recommendation strips. Clicking one sends the lead's note to a stranger
+      // (the 2026-06-22 Mary→Dr David Foo incident: a page-wide custom-invite
+      // scan grabbed a recommendation). Reject anything inside such a container.
+      const isSidebarOrSuggestion = (el) => !!el.closest([
+        'aside',
+        '[role="complementary"]',
+        '.scaffold-layout__aside',
+        '.scaffold-layout__sidebar',
+        '[aria-label*="People also viewed"]',
+        '[aria-label*="People you may know"]',
+        '[aria-label*="Similar profiles"]',
+        '[aria-label*="More profiles for you"]',
+        '[aria-label*="Other profiles viewed"]',
+      ].join(','));
+
+      // Does an "Invite <name> to connect" label refer to THIS lead? Mirrors
+      // inviteAriaMatchesLeadName() in helpers.js (unit-tested there) — keep in
+      // sync. Requires the lead's FIRST and LAST name as whole words, so a
+      // recommended "David Foo" can't satisfy a lead "David Smith".
+      const ariaMatchesLead = (ariaLabel) => {
+        const a = String(ariaLabel || '').toLowerCase();
+        if (!a.includes('invite') || !a.includes('to connect')) return false;
+        if (!nameTokens.length) return false;
+        const hasWord = (t) => {
+          const safe = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          try { return new RegExp(`(^|\\P{L})${safe}(\\P{L}|$)`, 'u').test(a); }
+          catch { return a.includes(t); }
+        };
+        const first = nameTokens[0];
+        const last = nameTokens[nameTokens.length - 1];
+        if (!hasWord(first)) return false;
+        if (last !== first && !hasWord(last)) return false;
+        return true;
+      };
+
+      // Top-card region = the lead's own action bar. Scopes METHODs 2 & 3 to the
+      // profile owner so neither can reach a recommendation card.
+      const topCard = nameEl?.closest(
+        '.pv-top-card, .pv-profile-card, .ph5.pb5, section.artdeco-card, section, article'
+      );
+
+      // METHOD 1: aria-label "Invite [name] to connect" — name MUST match the
+      // lead (first + last) AND the button must NOT live in a recommendation.
+      if (nameTokens.length) {
         const allInvites = document.querySelectorAll('[aria-label*="Invite"][aria-label*="to connect"]');
         for (const el of allInvites) {
-          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-          if (aria.includes(firstName)) {
+          if (isSidebarOrSuggestion(el)) continue;
+          if (ariaMatchesLead(el.getAttribute('aria-label'))) {
             el.click();
-            return 'aria-invite-matched';
+            return { method: 'aria-invite-matched', name: leadName };
           }
         }
       }
 
-      // METHOD 2: <a href="...custom-invite..."> link — unique to profile owner
-      const allLinks = Array.from(document.querySelectorAll('a'));
-      document.querySelectorAll('*').forEach(el => {
-        if (el.shadowRoot) allLinks.push(...Array.from(el.shadowRoot.querySelectorAll('a')));
-      });
-      for (const el of allLinks) {
-        const href = (el.getAttribute('href') || '');
-        if (href.includes('custom-invite')) {
+      // METHOD 2: profile-owner custom-invite <a> link — MUST be inside the top
+      // card, never a recommendation. If the link names someone, it has to be
+      // the lead.
+      if (topCard) {
+        const links = Array.from(topCard.querySelectorAll('a'));
+        topCard.querySelectorAll('*').forEach((el) => {
+          if (el.shadowRoot) links.push(...Array.from(el.shadowRoot.querySelectorAll('a')));
+        });
+        for (const el of links) {
+          if (isSidebarOrSuggestion(el)) continue;
+          const href = el.getAttribute('href') || '';
+          if (!href.includes('custom-invite')) continue;
+          const aria = el.getAttribute('aria-label') || '';
+          // Name guard only when we actually resolved a name; otherwise trust
+          // the top-card scope (recommendations are never inside the top card).
+          if (nameTokens.length && /invite/i.test(aria) && /to connect/i.test(aria) && !ariaMatchesLead(aria)) continue;
           el.click();
-          return 'custom-invite-link';
+          return { method: 'custom-invite-link', name: leadName };
         }
       }
 
-      // METHOD 3 (v2.14.x): DOM-anchored structural fallback.
-      // Ported from LinkedIn QuickConnect extension's findProfileActionButton.
-      // Anchors search to the profile top-card region (derived from main h1)
-      // and rejects sidebar / recommendation containers. Catches the case
-      // where LinkedIn renders the Connect CTA without an "Invite ... to
-      // connect" aria-label (e.g. profile re-layouts, A/B test variants) —
-      // METHOD 1+2 would miss those. Less bot-detectable approaches first
-      // (aria-scan), DOM walking only when those fail.
-      const main = document.querySelector('main');
-      const topCardH1 = main?.querySelector('h1');
-      const topCard = topCardH1?.closest(
-        '.pv-top-card, .pv-profile-card, .ph5.pb5, section.artdeco-card, section, article'
-      );
+      // METHOD 3 (v2.14.x): DOM-anchored structural fallback within the top card,
+      // sidebar-excluded. Catches a Connect CTA rendered without an "Invite … to
+      // connect" aria-label (profile re-layouts / A/B variants). Less
+      // bot-detectable approaches first; DOM walking only when those fail.
       const structuralRoot = topCard || main;
       if (structuralRoot) {
-        const isSidebarOrSuggestion = (el) => !!el.closest([
-          'aside',
-          '[role="complementary"]',
-          '.scaffold-layout__aside',
-          '.scaffold-layout__sidebar',
-          '[aria-label*="People also viewed"]',
-          '[aria-label*="People you may know"]',
-          '[aria-label*="Similar profiles"]',
-          '[aria-label*="More profiles for you"]',
-          '[aria-label*="Other profiles viewed"]',
-        ].join(','));
         const candidates = Array.from(
           structuralRoot.querySelectorAll('button, a[role="button"]')
         );
@@ -702,17 +777,19 @@ export async function sendConnectionRequest(page, noteArg) {
           const a = (b.getAttribute('aria-label') || '').toLowerCase();
           if (t === 'connect' || a === 'connect') {
             b.click();
-            return 'top-card-structural';
+            return { method: 'top-card-structural', name: leadName };
           }
         }
       }
 
-      // NO OTHER FALLBACKS — if neither matched, go to More dropdown
-      return null;
+      // NO OTHER FALLBACKS — if nothing matched, go to More dropdown (also
+      // top-card anchored). A Follow lead with no own Connect ends here → its
+      // own More→Connect, or skipped. Never mis-sent.
+      return { method: null, name: leadName };
     });
 
-    if (directClicked) {
-      console.log(`[actions] ✓ Direct Connect button clicked (${directClicked}).`);
+    if (direct.method) {
+      console.log(`[actions] ✓ Direct Connect button clicked (${direct.method}) — lead "${direct.name}".`);
       connectClicked = true;
       console.log('[actions] Waiting 5s for modal…');
       await new Promise(r => setTimeout(r, 5000));
@@ -720,7 +797,7 @@ export async function sendConnectionRequest(page, noteArg) {
     }
 
     // PRIORITY 2: Only try More dropdown if direct button wasn't found
-    console.log(`[actions] No direct Connect — trying More dropdown… (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
+    console.log(`[actions] No direct Connect for "${direct.name}" — trying More dropdown… (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
     const moreResult = await clickConnectFromMore(page);
     if (moreResult === 'connect') {
       connectClicked = true;

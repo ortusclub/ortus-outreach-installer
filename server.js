@@ -3960,6 +3960,10 @@ app.post('/api/operator-prefs', async (req, res) => {
     if (patch.tz !== undefined && typeof patch.tz !== 'string') {
       return res.status(400).json({ error: 'tz must be a string' });
     }
+    // v2.113: pre-send identity safeguard toggle (boolean, sticky per-operator).
+    if (patch.identityGate !== undefined && typeof patch.identityGate !== 'boolean') {
+      return res.status(400).json({ error: 'identityGate must be a boolean' });
+    }
     const next = await setOperatorPrefs(req.user, patch);
     res.json({ ok: true, prefs: next });
   } catch (err) {
