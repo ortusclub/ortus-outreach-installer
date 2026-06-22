@@ -4196,21 +4196,30 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 auditAction: 'Skipped: Account out of free notes',
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('NOTE_TOO_LONG')) {
-              // v2.112.x — the sending account is NOT Premium and the rendered
-              // note exceeds LinkedIn's free 200-char custom-note cap, so Send
-              // stayed disabled. Operator choice (2026-06-22): per-lead SKIP +
-              // visible flag — do NOT bench the account (a mixed pool may hold a
-              // Premium account that CAN send it) and do NOT retry (the same
-              // template is the same length every attempt). Stamp the visible
-              // Stage/Status so the operator sees exactly which leads were hit;
-              // the real fix is to shorten the note ≤200 chars or use Premium.
-              log(`  ⚠ ${pName}: note over the free 200-char limit (account not Premium) — skipping "${data.firstName || '?'}", not retrying.`);
-              state.processed[url] = { profileId, profileName: pName, action: 'note_too_long', date: now };
+              // v2.112.x — the note exceeds LinkedIn's free 200-char custom-note
+              // cap and this account isn't Premium, so it can NEVER send this (or
+              // any) noted invite — the template length is the same for every
+              // lead. Operator choice (2026-06-22, revised): BENCH the account on
+              // the first hit (mirrors NOTE_LIMIT_REACHED) so the run halts loudly
+              // with "shorten the note / not Premium" instead of stamping a whole
+              // column of skips. Leave the lead RETRYABLE (audit breadcrumb only,
+              // no terminal Stage/Status) so a Premium account in the pool — or a
+              // later run with a shortened note — can still take it.
+              log(`  ⚠ ${pName}: note over LinkedIn's 200-char limit (account not Premium) — benching account (can't send noted invites). Lead stays retryable.`);
+              weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, 'Not Premium — custom note over 200-char limit');
+              pushSoftWarning(campaign, {
+                profileId,
+                pName,
+                kind: 'note_too_long',
+                message: 'Not Premium — custom note over 200 chars',
+              });
+              // Audit breadcrumb ONLY (no terminal Stage/Status) so the row stays
+              // eligible for another account/run — mirrors the note-limit path.
+              delete state.processed[url];
               await saveState(state);
               await updateSheetRow(sheetUrl, url, {
-                ...buildSkipSheetData(mode, normalizeSkipReason('NOTE_TOO_LONG'), pName),
-                dateLastAction: now,
-                auditAction: normalizeSkipReason('NOTE_TOO_LONG'),
+                auditAction: 'Skipped: Profile not premium, custom notes limit',
               }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('INMAIL_NO_CREDITS_NOT_OP')) {
               // v2.11.3: dual-fact signal — account is out of InMail credits
