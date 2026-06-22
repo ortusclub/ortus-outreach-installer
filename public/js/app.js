@@ -5732,6 +5732,14 @@ function setCampaignButtons(running, paused = false, pauseRequested = false) {
   if (typeof window.updateEditingBanner === 'function') {
     try { window.updateEditingBanner(); } catch (_) {}
   }
+  // v2.112.x: re-apply the viewing-active lock AFTER the base button states are
+  // set, every poll. This keeps the lock/hint in sync and — because the lock
+  // now gates on real live state — auto-releases the launch buttons the instant
+  // a campaign finishes/stops, so the Start button can never be left disabled
+  // (or, with the old code, hidden) on a campaign that's no longer running.
+  if (typeof applyViewingActiveLock === 'function') {
+    try { applyViewingActiveLock(); } catch (_) {}
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9554,7 +9562,35 @@ function stopWizardPolling() {
 window.__viewingActiveCampaign = window.__viewingActiveCampaign || false;
 function applyViewingActiveLock() {
   const panel = document.getElementById('launch-actions');
-  if (panel) panel.style.display = window.__viewingActiveCampaign ? 'none' : '';
+  if (!panel) return;
+  // v2.112.x: NEVER hide the launch panel. A missing Start button is the worst
+  // failure mode — the operator can't relaunch and assumes the app broke. The
+  // old code set the whole panel to display:none while __viewingActiveCampaign
+  // was true, and any wizard-entry path that forgot to clear the flag left the
+  // button GONE. Now the panel is always visible; we only DISABLE the launch
+  // buttons, and only while a campaign is GENUINELY live (running / paused /
+  // monitoring). A finished or stopped campaign frees the single-campaign slot
+  // → the buttons re-enable for a one-click re-run. Gating on real live state
+  // (not just the view flag) also self-heals a stuck flag: when the campaign
+  // ends, the lock releases on the next setCampaignButtons() poll regardless of
+  // which entry path was taken.
+  panel.style.display = ''; // belt-and-suspenders: undo any legacy display:none
+  const live = !!(typeof __cockpit !== 'undefined' && __cockpit &&
+    (__cockpit.running || __cockpit.paused || __cockpit.state === 'monitoring'));
+  const locked = !!window.__viewingActiveCampaign && live;
+  // Queue / Schedule / Save-as-draft have no other disabler, so the lock owns
+  // them outright — you're viewing the live campaign, not staging a new one.
+  ['btn-queue', 'btn-schedule', 'btn-save-draft'].forEach((id) => {
+    const b = document.getElementById(id);
+    if (b) b.disabled = locked;
+  });
+  // btn-start also obeys the run-state mutex (setCampaignButtons) + config
+  // validation. Only ADD the lock's disable here — never force-enable — so we
+  // don't stomp those owners; they enable it once the campaign is gone.
+  const startBtn = document.getElementById('btn-start');
+  if (startBtn && locked) startBtn.disabled = true;
+  const hint = document.getElementById('launch-lock-hint');
+  if (hint) hint.style.display = locked ? '' : 'none';
 }
 window.applyViewingActiveLock = applyViewingActiveLock;
 

@@ -2966,6 +2966,16 @@ body.theme-light .launch-actions.launch-actions--four #btn-start {
 }
 .launch-right .launch-mode-toggle { align-self: flex-end; }
 
+/* v2.112.x: explains the disabled launch buttons when you're viewing the LIVE
+   campaign (applyViewingActiveLock). Muted, right-aligned under the buttons. */
+.launch-lock-hint {
+  align-self: flex-end;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: var(--gray);
+  margin-top: -8px;
+}
+
 /* Overlapping panel stage — Now and Schedule share the same grid cell. The
    cell auto-sizes to the taller panel, so there's no layout jump on switch. */
 .launch-panel-stage {

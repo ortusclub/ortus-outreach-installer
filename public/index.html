@@ -1560,6 +1560,10 @@
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
             <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
           </div>
+          <!-- v2.112.x: shown by applyViewingActiveLock when you've opened the
+               LIVE campaign to view it — the launch buttons are disabled (never
+               hidden), this explains why. Hidden once the campaign stops. -->
+          <div class="launch-lock-hint" id="launch-lock-hint" style="display:none">A campaign is live — stop it to launch another.</div>
 
           <!-- Hidden legacy elements — kept in the DOM so app.js handlers
                (button-mutex, setLaunchMode null-guards, btn-pause/stop
