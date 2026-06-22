@@ -38,3 +38,7 @@ apps-script/
 
 # Superpowers brainstorm visual-companion scratch
 .superpowers/
+
+# Team Connections (local-only, PII)
+data/connections/
+out/
