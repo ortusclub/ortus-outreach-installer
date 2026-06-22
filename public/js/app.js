@@ -5894,6 +5894,9 @@ function renderAccountQueue(names, currentName, status, profileIds) {
       if (k === 'weekly_limit') {
         return { label: 'LinkedIn cap · invites', stateClass: 'chip-li-invites', detail: 'Weekly invite cap reached' };
       }
+      if (k === 'note_limit') {
+        return { label: 'Out of note credits', stateClass: 'chip-li-invites', detail: 'Out of free custom notes (monthly cap) — benched for noted invites' };
+      }
       if (k === 'rate_limited') {
         return { label: 'Rate limited', stateClass: 'chip-rate-limited', detail: 'LinkedIn rate-limit page shown' };
       }
@@ -8829,6 +8832,7 @@ window.toggleParkedDetail = toggleParkedDetail;
 function _prettyWarningKind(k) {
   switch (k) {
     case 'weekly_limit': return 'Weekly limit';
+    case 'note_limit': return 'Out of note credits';
     case 'rate_limited': return 'Rate limited';
     case 'email_required': return 'Email required';
     case 'how_do_you_know': return 'Know-them prompt';
@@ -13049,11 +13053,13 @@ function _activeProfileChip(name, status) {
   }
   if (warningHit) {
     if (warningHit.kind === 'weekly_limit') return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
+    if (warningHit.kind === 'note_limit')   return { label: 'Out of note credits', cls: 'is-warn' };
     if (warningHit.kind === 'rate_limited') return { label: 'Rate limited', cls: 'is-warn' };
     return { label: 'Action needed', cls: 'is-warn' };
   }
   if (endHit) {
     const r = String(endHit.reason || '');
+    if (/note credit/i.test(r))     return { label: 'Out of note credits', cls: 'is-warn' };
     if (/InMail/i.test(r))          return { label: 'LinkedIn cap·InMail', cls: 'is-warn' };
     if (/weekly|429/i.test(r))      return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
     if (/session expired/i.test(r)) return { label: 'Needs login', cls: 'is-warn' };

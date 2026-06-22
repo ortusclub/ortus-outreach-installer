@@ -25,6 +25,18 @@ const SALES_NAV_URL_RE = /\/sales\/(people|lead)\//;
 // Detect modal — checks both regular DOM and Shadow DOM
 // ─────────────────────────────────────────────────────────────────────────────
 
+// v2.112.32 — free LinkedIn accounts have a monthly cap on personalized (noted)
+// invites. When it's exhausted, clicking "Add a note" shows a Premium upsell
+// ("You're out of free custom notes" / "Send unlimited personalized invites with
+// Premium") INSTEAD of the note field, so a noted invite can't be sent. Pure +
+// tested; the in-browser detectModal mirrors this check. Distinct from the
+// weekly INVITATION cap (hasWeeklyLimit), which blocks invites of any kind.
+export function isNoteLimitModalText(text) {
+  const t = String(text || '').toLowerCase();
+  return t.includes('out of free custom notes')
+      || t.includes('send unlimited personalized invites');
+}
+
 async function detectModal(page) {
   return page.evaluate(() => {
     // Collect buttons from regular DOM + ALL Shadow DOM roots
@@ -70,7 +82,13 @@ async function detectModal(page) {
                              pageText.includes('verify this member knows you') ||
                              pageText.includes('email address to connect');
 
-    const found = !!(sendWithout || addNote || send || withdraw || hasHowDoYouKnow || hasWeeklyLimit || hasEmailRequired);
+    // v2.112.32 — "out of free custom notes" Premium upsell (mirrors the tested
+    // isNoteLimitModalText). Shown when the monthly noted-invite cap is hit, so a
+    // note can't be added. Distinct from the weekly invitation cap above.
+    const hasNoteLimit = pageText.includes('out of free custom notes') ||
+                         pageText.includes('send unlimited personalized invites');
+
+    const found = !!(sendWithout || addNote || send || withdraw || hasHowDoYouKnow || hasWeeklyLimit || hasEmailRequired || hasNoteLimit);
 
     return {
       found,
@@ -81,6 +99,7 @@ async function detectModal(page) {
       hasHowDoYouKnow,
       hasWeeklyLimit,
       hasEmailRequired,
+      hasNoteLimit,
     };
   });
 }
@@ -907,6 +926,17 @@ export async function sendConnectionRequest(page, noteArg) {
         console.log('[actions] Clicking "Add a note"…');
         await clickByAria(page, 'Add a note');
         await new Promise(r => setTimeout(r, 5000));
+        // v2.112.32 — out of free custom notes? Clicking "Add a note" then shows
+        // LinkedIn's Premium upsell instead of the note field. Operator rule: do
+        // NOT silently send without a note — bench the account (caller handles it)
+        // and leave the lead retryable for an account that still has note credits.
+        const afterAddNote = await detectModal(page);
+        if (afterAddNote.hasNoteLimit) {
+          console.warn('[actions] Out of free custom notes — Premium upsell shown. Cannot send a noted invite; benching account.');
+          await clickByAria(page, 'Dismiss').catch(() => {});
+          await page.keyboard.press('Escape').catch(() => {});
+          throw new Error('NOTE_LIMIT_REACHED: account out of free custom notes — cannot send a noted invite');
+        }
         const noteTyped = await typeIntoField(page, note);
         if (!noteTyped) {
           console.warn('[actions] Note typing failed after 3 attempts. Clearing field and sending without a note.');

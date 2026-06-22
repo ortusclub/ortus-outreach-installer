@@ -4133,6 +4133,29 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Weekly invitation limit reached'),
               }, linkedinColumn).catch(() => {});
+            } else if (errorMsg.includes('NOTE_LIMIT_REACHED')) {
+              // v2.112.32 — account is out of FREE custom notes (monthly cap on
+              // personalized invites). Distinct from the weekly invite cap: the
+              // account can still send note-LESS invites, just not noted ones.
+              // Operator rule: when a note is required, do NOT silently send
+              // without it — bench the account and leave the lead RETRYABLE so an
+              // account that still has note credits sends it (this run or next).
+              log(`  ⚠ ${pName}: out of free custom notes — benching account (can't send noted invites). Lead stays retryable.`);
+              weeklyLimited.add(profileId);
+              recordProfileEnd(profileId, pName, 'Out of note credits');
+              pushSoftWarning(campaign, {
+                profileId,
+                pName,
+                kind: 'note_limit',
+                message: 'Out of note credits',
+              });
+              // Audit breadcrumb ONLY (no terminal Stage/Status) so the row stays
+              // eligible for another account/run — mirrors the identity-skip path.
+              delete state.processed[url];
+              await saveState(state);
+              await updateSheetRow(sheetUrl, url, {
+                auditAction: 'Skipped: Account out of free notes',
+              }, linkedinColumn).catch(() => {});
             } else if (errorMsg.includes('INMAIL_NO_CREDITS_NOT_OP')) {
               // v2.11.3: dual-fact signal — account is out of InMail credits
               // (eject for run) AND lead is confirmed non-OP (mark in sheet).
