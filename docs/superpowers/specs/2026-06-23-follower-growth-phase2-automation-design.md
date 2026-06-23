@@ -24,7 +24,11 @@ Node ≥22, puppeteer-core (via the GoLogin Orbita profile), Express 4, vanilla-
 - **The invite modal** opens at `https://www.linkedin.com/company/<pageSlug>/?invite=true` (equivalent to Page "…" → "Invite connections"). It is an `artdeco-modal` in `#artdeco-modal-outlet`; body gets class `artdeco-modal-is-open`.
 - **Live credit cap:** the modal shows "**X/30 credits available · Credit refill <date>**". The pool is **30/month**, refilling monthly. The automation **reads the live X** and treats it as the authoritative cap (never relies on a hardcoded number).
 - **Modal contents:** a "**Search by name**" input, filter chips (Locations / Current company / School — not used), and a scrollable list of the operator's 1st-degree connections, each a row with **name + headline + photo + a checkbox**, and an **Invite** button (disabled until ≥1 selected).
-- **Match precision (LOCKED): verify headline, skip on doubt.** Tick a search result only if its headline/title or company matches what the FG row holds for that person; if a name returns multiple results and none clearly matches, **skip** (log `FG Note: ambiguous in modal`) rather than risk the wrong connection.
+- **Match precision (LOCKED):** search by full name, then among the **invitable** results (`--can-invite`):
+  - **exactly one name match → select it directly** (no headline check needed — a unique name is unambiguous);
+  - **multiple same-name matches → disambiguate by headline** (the result whose headline contains the FG row's job-title token or company); if none/several still match → **skip** (log `FG Note: ambiguous in modal`);
+  - **zero name matches → skip** (`FG Note: not found in modal`).
+  Headline verification only kicks in when there's genuine name ambiguity, so we never wrongly skip a uniquely-named person, and never risk the wrong connection on duplicates.
 - **Source of who to invite:** that operator's **`Queued`** rows in the FG sheet (Phase-1 output), capped at the live credit count.
 - **On send:** the bot **marks the sent people `Invited`** (via `markFgInvited`) + decrements budget — it knows exactly who it ticked.
 - **Concurrency:** one operator/session at a time (the app's one-campaign-at-a-time rule).
@@ -38,7 +42,7 @@ Node ≥22, puppeteer-core (via the GoLogin Orbita profile), Express 4, vanilla-
 Exports (mirroring post-amplification's testable-helper + orchestrator split):
 - `openInviteModal(page, pageSlug, { log })` → navigates to `?invite=true`, waits for the modal, returns `{ ok }`.
 - `readCreditsAvailable(page)` → parses "X/30 credits available" → integer `X` (0 if unreadable).
-- `searchAndMatch(page, person, { log })` → types `person.name` in the search box, waits for results, returns the matching row handle or `null`. **Verification:** a row matches if its headline (lowercased) includes the person's job-title token OR company token from the FG row; on multiple results with no confident match → return `null` (skip). Pure-ish matching logic extracted as `headlineMatches(headlineText, { jobTitle, company })` for unit testing.
+- `searchAndMatch(page, person, { log })` → types `person.name` in the search box, waits for results, returns the matching row handle or `null`. **Selection rule:** collect the invitable results (`--can-invite`) whose name matches `person.name`; **one** match → that row; **several** → the one whose headline verifies via `headlineMatches`; if still 0 or >1 → `null` (skip, logged). The pure decision is extracted as `pickInviteResult(results, person)` (results = `[{name, headline, canInvite}]`) for unit testing, alongside `headlineMatches(headlineText, { jobTitle, company })`.
 - `tickRow(page, rowHandle)` → clicks the row's checkbox; returns success.
 - `clickInvite(page)` → clicks the modal's Invite button (via `clickByText(page, 'Invite')` scoped to the modal), confirms it was enabled.
 - `runFollowerInvites({ profileId, token, pageSlug, operator, queued, log, shouldAbort })` → the orchestrator: launch is done by the caller (route) which passes the `page`; loops queued people up to live credits, human-paced (`randomDelay`), tick-verified, clicks Invite once, returns `{ invited: [...memberIds], skipped: [...], creditsBefore, creditsAfter }`.
