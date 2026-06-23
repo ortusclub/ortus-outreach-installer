@@ -50,12 +50,20 @@ export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) 
   return { ok: true };
 }
 
-export async function readCredits(page) {
-  const txt = await page.$$eval(`${SEL.modal} *`, (els) => {
-    const hit = els.find((e) => /\d+\s*\/\s*\d+\s*credits available/i.test(e.textContent || '') && e.children.length === 0);
-    return hit ? hit.textContent : '';
-  }).catch(() => '');
-  return parseCreditsAvailable(txt);
+export async function readCredits(page, { log = () => {} } = {}) {
+  // Read the WHOLE modal's visible text, not a single leaf node. LinkedIn often
+  // splits "30/30 credits available" across child spans, so a leaf-only match
+  // (the old approach) found nothing and returned 0 → the run thought the cap was
+  // reached and bailed instantly. innerText concatenates the spans, so the regex
+  // in parseCreditsAvailable still matches.
+  const txt = await page.$eval(SEL.modal, (m) => m.innerText || '').catch(() => '');
+  const credits = parseCreditsAvailable(txt);
+  if (!credits) {
+    // Couldn't parse a number — surface the real wording so the regex/selector can
+    // be tuned (or confirm the account genuinely has 0 invite credits / isn't admin).
+    log(`credits parse miss — modal text: "${String(txt).replace(/\s+/g, ' ').trim().slice(0, 240)}"`);
+  }
+  return credits;
 }
 
 export async function scrapeResults(page) {
@@ -116,7 +124,7 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
     ...(deps || {}),
   };
   if (inviteUrl) await d.openModal(page, inviteUrl, { log });
-  const creditsBefore = await d.readCredits(page);
+  const creditsBefore = await d.readCredits(page, { log });
   log(`credits available: ${creditsBefore}`);
   const invited = [], skipped = [];
   for (const person of queued) {
