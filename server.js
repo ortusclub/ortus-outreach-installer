@@ -71,7 +71,8 @@ import {
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
   isEmailAllowed, deleteUser,
 } from './src/auth.js';
-import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators } from './src/connections/search-service.js';
+import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues } from './src/connections/search-service.js';
+import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
 import { getFgState, queueFgInvites, markFgInvited, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
@@ -1394,6 +1395,12 @@ app.get('/api/fg/operators', (_req, res) => {
   }
 });
 
+// Employee roster for the Team Launch board (colleagues with DB coverage + counts).
+app.get('/api/fg/colleagues', (_req, res) => {
+  try { res.json({ colleagues: listFgColleagues() }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // In-app database view: the central FG sheet, rendered in the campaign tab.
 app.get('/api/fg/db', async (_req, res) => {
   try {
@@ -1502,6 +1509,75 @@ app.post('/api/fg/send/start', async (req, res) => {
       _fgSend = { ..._fgSend, running: false, phase: 'error', error: err.message };
     } finally {
       try { if (launchedProfile) { await (profileId === 'local-browser' ? closeLocalBrowser() : _closeProfile(profileId)); } } catch (_) {}
+      try { allowSleep(); } catch (_) {}
+    }
+  })();
+});
+
+// ── Follower Growth — Team Launch (sequential multi-account batch) ──────────
+// Replaces the build→queue→send queue. For each employee→profile pair, build
+// targets fresh, launch ONE browser, send, write back (append invited rows then
+// flip to Invited — no permanent Queued rows), then the next pair. One browser
+// open at a time (multi-browser crash constraint).
+let _fgTeam = { running: false, phase: 'idle', totalAccounts: 0, doneAccounts: 0, currentAccount: null, sent: 0, skipped: 0, invitesTotal: 0, perAccount: [], logs: [], error: null };
+let _fgTeamAbort = false;
+
+app.get('/api/fg/team-launch/status', (_req, res) => res.json(_fgTeam));
+app.post('/api/fg/team-launch/stop', (_req, res) => { _fgTeamAbort = true; res.json({ ok: true }); });
+
+app.post('/api/fg/team-launch/start', async (req, res) => {
+  if (_fgTeam.running) return res.status(409).json({ error: 'A team launch is already running.' });
+  const b = req.body || {};
+  const pairs = Array.isArray(b.pairs) ? b.pairs.filter((p) => p && p.operator && p.account && p.profileId) : [];
+  if (!pairs.length) return res.status(400).json({ error: 'At least one paired account is required.' });
+  const month = b.month || fgMonth();
+  const keywords = Array.isArray(b.keywords) ? b.keywords : [];
+  res.json({ started: true });
+
+  _fgTeam = makeInitialStatus(pairs);
+  _fgTeam.phase = 'launching';
+  _fgTeamAbort = false;
+  const token = process.env.GOLOGIN_API_TOKEN;
+  const { closeProfile } = await import('./src/gologin-launcher.js');
+  preventSleep('fg-team-launch');
+
+  let _fgTeamSnap = { invites: [], budgets: [] };
+  const deps = {
+    // Build this account's targets fresh (DNC-safe, keyword-filtered, deduped vs
+    // already-invited, budget-capped) immediately before its send.
+    buildTargets: (pair) => {
+      // NOTE: getFgState is async; we snapshot it once per account via the closure below.
+      const snap = _fgTeamSnap;
+      const alreadyInvited = (snap.invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+      const budget = fgRemaining(snap.budgets, pair.account, month);
+      return buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
+    },
+    launch: async (pair) => {
+      const isLocal = pair.profileId === 'local-browser';
+      campaignLog(`[FG-team] Launching ${isLocal ? 'local browser' : `profile ${pair.profileId}`} for ${pair.account}`);
+      const launched = isLocal ? await launchLocalBrowser() : await launchProfile(pair.profileId, token);
+      return { page: launched.page, close: async () => { await (isLocal ? closeLocalBrowser() : closeProfile(pair.profileId)); } };
+    },
+    send: ({ page, queued, log, shouldAbort }) => runFollowerInvites({ page, inviteUrl: ORTUS_PAGE_INVITE_URL, queued, log, shouldAbort }),
+    // Write-back: append the invited rows then flip them to Invited (+bump budget).
+    // End state has NO Queued rows; reuses existing Apps Script actions.
+    record: async ({ rows, invitedIds, account, operator }) => {
+      const set = new Set(invitedIds.map(String));
+      const invitedRows = rows.filter((r) => set.has(String(r[2])));
+      if (invitedRows.length) { await queueFgInvites(invitedRows); await markFgInvited({ memberIds: invitedIds, account, operator, month }); }
+      _fgTeamSnap = await getFgState(); // refresh so the next account dedups against these
+    },
+    log: (m) => { try { campaignLog(`[FG-team] ${m}`); } catch (_) {} },
+    now: () => new Date().toISOString(),
+  };
+
+  (async () => {
+    try {
+      _fgTeamSnap = await getFgState();
+      await runTeamLaunch(pairs, { keywords, month, getAbort: () => _fgTeamAbort }, deps, _fgTeam);
+    } catch (err) {
+      _fgTeam.running = false; _fgTeam.phase = 'error'; _fgTeam.error = err.message;
+    } finally {
       try { allowSleep(); } catch (_) {}
     }
   })();
