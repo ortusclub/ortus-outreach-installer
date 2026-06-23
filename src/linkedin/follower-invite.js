@@ -71,7 +71,9 @@ export async function scrapeResults(page) {
     const text = (li.innerText || '').trim();
     const canInvite = !!li.querySelector('.invitee-picker-connections-result-item--can-invite');
     const m = text.match(/\b(?:1st|2nd|3rd)\s*•\s*/);
-    const name = (m ? text.slice(0, m.index) : text).split('\n')[0].trim();
+    // LinkedIn prepends the checkbox a11y label "Select <Name>" to each result's
+    // first line — strip it so the name equals the queued person's name.
+    const name = (m ? text.slice(0, m.index) : text).split('\n')[0].trim().replace(/^select\s+/i, '').trim();
     const headline = m ? text.slice(m.index).replace(/^\s*(?:1st|2nd|3rd)\s*•\s*/, '').trim() : '';
     // raw + class captured for diagnosing skips (name-match / can-invite detection).
     return { name, headline, canInvite, raw: text.replace(/\s+/g, ' ').slice(0, 140), cls: (li.className || '').slice(0, 120) };
@@ -87,8 +89,10 @@ export async function selectPerson(page, person, { log = () => {} } = {}) {
   const choice = pickInviteResult(results, person);
   if (!choice) { log(`skip "${person.name}" — scraped ${JSON.stringify(results.slice(0, 2))}`); return false; }
   const clicked = await page.evaluate((sel, targetName) => {
+    // Match on the first line minus the "Select " a11y prefix (same as scrapeResults).
+    const norm = (s) => (s || '').split('\n')[0].trim().replace(/^select\s+/i, '').trim().toLowerCase();
     const lis = [...document.querySelectorAll(sel)];
-    const li = lis.find((l) => (l.innerText || '').trim().toLowerCase().startsWith(targetName.toLowerCase()));
+    const li = lis.find((l) => norm(l.innerText).startsWith(targetName.toLowerCase()));
     if (!li) return false;
     const box = li.querySelector('input[type="checkbox"], [role="checkbox"]') || li;
     box.click();
