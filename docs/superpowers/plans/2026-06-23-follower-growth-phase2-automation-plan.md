@@ -163,26 +163,34 @@ function fakePage(resultsByName) {
 
 test('runFollowerInvites caps at credits, selects, skips ambiguous, invites once', async () => {
   const queued = [
-    { name: 'Mara Lee', jobTitle: 'Head of Marketing', company: 'Acme', memberId: '1' },
-    { name: 'Dan Roe', jobTitle: 'Brand Lead', company: 'Initech', memberId: '2' },
-    { name: 'Amb Ig', jobTitle: 'Marketing', company: 'X', memberId: '3' }, // ambiguous → skip
-    { name: 'Over Budget', jobTitle: 'CMO', company: 'Y', memberId: '4' },   // beyond credit cap
+    { name: 'Mara Lee', jobTitle: 'Head of Marketing', company: 'Acme', memberId: '1' }, // select
+    { name: 'Dan Roe', jobTitle: 'Brand Lead', company: 'Initech', memberId: '2' },      // select
+    { name: 'Amb Ig', jobTitle: 'Marketing', company: 'X', memberId: '3' },              // skip (no match)
+    { name: 'Phil Roe', jobTitle: 'Growth', company: 'Z', memberId: '4' },               // select (fills 3rd credit)
+    { name: 'Quinn Vee', jobTitle: 'CMO', company: 'Y', memberId: '5' },                 // never reached (cap hit)
   ];
-  // Injected fakes (see implementation: runFollowerInvites accepts a `deps` seam).
+  const calls = { invites: 0 };
   const deps = {
     readCredits: async () => 3,
-    selectPerson: async (_page, person) => {
-      if (person.name === 'Amb Ig') return false; // pickInviteResult returned null
-      return true;
-    },
-    clickInvite: async () => true,
+    selectPerson: async (_page, person) => person.name !== 'Amb Ig', // ambiguous one returns false
+    clickInvite: async () => { calls.invites += 1; return true; },
     sleep: async () => {},
   };
   const res = await runFollowerInvites({ page: {}, queued, log: () => {}, shouldAbort: () => false, deps });
-  assert.deepEqual(res.invited.sort(), ['1', '2']);        // Mara + Dan selected
-  assert.ok(res.skipped.includes('3'));                    // ambiguous skipped
-  assert.ok(!res.invited.includes('4') && !res.skipped.includes('4')); // never reached (cap 3 → tried 1,2,3 then stop? see note)
+  assert.deepEqual(res.invited, ['1', '2', '4']); // 3 selected, in order, fills the 3-credit cap
+  assert.deepEqual(res.skipped, ['3']);           // ambiguous skipped (skips don't consume credit)
+  assert.ok(!res.invited.includes('5') && !res.skipped.includes('5')); // never reached — cap hit before it
   assert.equal(res.creditsBefore, 3);
+  assert.equal(res.creditsAfter, 0);
+  assert.equal(calls.invites, 1);                 // Invite clicked exactly once
+});
+
+test('runFollowerInvites: nothing selected → no Invite click, all reported skipped', async () => {
+  const deps = { readCredits: async () => 5, selectPerson: async () => false, clickInvite: async () => { throw new Error('should not click'); }, sleep: async () => {} };
+  const res = await runFollowerInvites({ page: {}, queued: [{ name: 'A', memberId: '1' }], deps });
+  assert.deepEqual(res.invited, []);
+  assert.deepEqual(res.skipped, ['1']);
+  assert.equal(res.sent, false);
 });
 ```
 
@@ -271,7 +279,7 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
     openModal: openInviteModal, readCredits, selectPerson, clickInvite, sleep,
     ...(deps || {}),
   };
-  if (inviteUrl && d.openModal !== undefined && deps == null) await d.openModal(page, inviteUrl, { log });
+  if (inviteUrl) await d.openModal(page, inviteUrl, { log }); // real runs pass inviteUrl; unit tests omit it
   const creditsBefore = await d.readCredits(page);
   log(`credits available: ${creditsBefore}`);
   const invited = [], skipped = [];
@@ -289,7 +297,7 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
 }
 ```
 
-> The orchestrator imports `parseCreditsAvailable`/`pickInviteResult` from the same file (already defined in Task 1). Adjust the Task-1 test's fake-page wiring if needed so `deps` is the seam (the test passes `deps` and a `{}` page; `openModal` is skipped when `deps` is provided).
+> The orchestrator uses `parseCreditsAvailable`/`pickInviteResult` from the same file (defined in Task 1). `deps` is the unit-test seam (defaults to the real page fns). The modal is opened only when `inviteUrl` is passed, so unit tests (which omit `inviteUrl` and pass `page: {}`) never touch a browser.
 
 - [ ] **Step 4: Run both follower-invite tests; confirm pass. Then `node --check src/linkedin/follower-invite.js`.**
 - [ ] **Step 5: Commit** — `git add src/linkedin/follower-invite.js tests/linkedin/follower-invite-run.test.js && git commit -m "feat(fg): Phase 2 modal-driving fns + runFollowerInvites orchestrator"`
