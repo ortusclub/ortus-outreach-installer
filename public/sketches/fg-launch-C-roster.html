@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FG team launch · C — Roster</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .sk-wrap { max-width: 860px; margin: 0 auto; padding: 28px 28px 150px; }
+    .sk-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:6px; }
+    .sk-badge { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 12px; }
+    .sk-nav a { font-family:var(--mono); font-size:11px; color:var(--gray); text-decoration:none; margin-left:14px; }
+    .sk-nav a:hover, .sk-nav a.on { color:var(--ink); }
+    h1.sk-h { font-family:var(--display); font-weight:400; letter-spacing:.02em; font-size:2.1rem; margin:10px 0 2px; }
+    .sk-lead { color:var(--gray); font-size:13.5px; max-width:680px; margin-bottom:16px; }
+
+    .add { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+    .add select { background:var(--bg-soft); border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:9px 14px; font-family:var(--body); font-size:13px; min-width:240px; }
+    .add button { background:none; border:1px solid var(--gold); color:var(--gold); border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; }
+
+    .card { border:1px solid var(--hairline); border-radius:14px; padding:14px 16px; margin-bottom:12px; display:grid; grid-template-columns: 4px 1fr auto; gap:14px; align-items:center; position:relative; overflow:hidden; }
+    .card .rail { position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--hairline); }
+    .card.running .rail { background:var(--gold); }
+    .card.done .rail { background:var(--green); }
+    .card.skipped .rail { background:var(--red); }
+    .card .body { grid-column:2; }
+    .card .nm { font-weight:600; color:var(--ink); font-size:15px; }
+    .card .ml { font-family:var(--mono); font-size:11.5px; color:var(--gray); margin-top:1px; }
+    .meta { display:flex; gap:18px; margin-top:9px; align-items:center; flex-wrap:wrap; }
+    .meta .blk small { display:block; font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); }
+    .meta .blk b { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+    .meta .pair-auto b { color:var(--green); }
+    .meta select { background:var(--bg-soft); border:1px solid var(--gold); color:var(--ink); border-radius:9px; padding:6px 9px; font-family:var(--mono); font-size:11.5px; }
+    .card .right { grid-column:3; text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+    .pill { font-family:var(--mono); font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:9999px; }
+    .pill.waiting { color:var(--gray); border:1px solid var(--hairline); }
+    .pill.running { color:var(--gold); border:1px solid var(--gold); animation:pp 1s infinite; }
+    .pill.done { color:var(--green); border:1px solid var(--green); }
+    .pill.skipped { color:var(--red); border:1px solid var(--red); }
+    .pill.ready { color:var(--gold); border:1px solid var(--gold); }
+    .pill.gap { color:var(--red); border:1px solid var(--red); }
+    .rm { background:none; border:none; color:var(--gray); cursor:pointer; font-size:16px; line-height:1; }
+    @keyframes pp { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .empty { color:var(--gray); font-size:13px; padding:28px; text-align:center; border:1px dashed var(--hairline); border-radius:14px; }
+
+    .dock { position:fixed; left:0; right:0; bottom:0; background:rgba(10,10,10,.88); backdrop-filter:blur(10px); border-top:1px solid var(--hairline); }
+    .dock-in { max-width:860px; margin:0 auto; padding:14px 28px; display:flex; align-items:center; gap:18px; }
+    .dock-n { font-family:var(--display); font-size:1.7rem; color:var(--ink); line-height:1; }
+    .dock-sub { color:var(--gray); font-size:12px; margin-top:3px; }
+    .seq { margin-left:auto; color:var(--gray); font-family:var(--mono); font-size:11px; }
+    .go { background:var(--gold); color:#1a1300; border:none; border-radius:9999px; padding:13px 26px; font-family:var(--mono); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+    .go:disabled { opacity:.45; cursor:default; }
+  </style>
+</head>
+<body data-dashboard="v3">
+  <div class="sk-wrap">
+    <div class="sk-bar">
+      <span class="sk-badge">Prototype · not wired</span>
+      <span class="sk-nav"><a href="fg-launch-A-table.html">A · Table</a><a href="fg-launch-B-board.html">B · Board</a><a href="fg-launch-C-roster.html" class="on">C · Roster</a></span>
+    </div>
+    <h1 class="sk-h">Team follower-growth launch</h1>
+    <p class="sk-lead">Build a roster of the employees you want to run. Each card pulls their connections from the DB and auto-pairs a GoLogin profile by email. Launch runs the roster top-to-bottom, one account at a time.</p>
+
+    <div class="add">
+      <select id="pick"></select>
+      <button id="addbtn">+ Add to roster</button>
+    </div>
+    <div id="roster"></div>
+  </div>
+
+  <div class="dock">
+    <div class="dock-in">
+      <div><div class="dock-n" id="dn">0</div><div class="dock-sub" id="ds">roster empty</div></div>
+      <span class="seq" id="seq">Runs sequentially · ~1 account at a time</span>
+      <button class="go" id="go" disabled>Launch roster</button>
+    </div>
+  </div>
+
+  <script src="fg-launch-core.js"></script>
+  <script>
+    const roster = []; // { empId, profileName, status }
+    let launching = false;
+    const pick = document.getElementById('pick');
+
+    function refreshPicker(){
+      const inRoster = new Set(roster.map((r)=>r.empId));
+      const avail = FGL.employees.filter((e)=>!inRoster.has(e.id));
+      pick.innerHTML = avail.length ? avail.map((e)=>`<option value="${e.id}">${FGL.esc(e.name)} · ${e.connInDb.toLocaleString()} in db</option>`).join('') : '<option value="">All employees added</option>';
+      document.getElementById('addbtn').disabled = !avail.length;
+    }
+
+    document.getElementById('addbtn').onclick=()=>{
+      const id=pick.value; if(!id) return;
+      const emp=FGL.employees.find((e)=>e.id===id); const a=FGL.autoPair(emp);
+      roster.push({ empId:id, profileName:a?a.name:'', status:null });
+      render();
+    };
+
+    function render(){
+      const el=document.getElementById('roster');
+      if(!roster.length){ el.innerHTML='<div class="empty">No employees yet — add one above to build the launch roster.</div>'; refreshPicker(); updateDock(); return; }
+      el.innerHTML='';
+      roster.forEach((r,idx)=>{
+        const emp=FGL.employees.find((e)=>e.id===r.empId); const a=FGL.autoPair(emp);
+        const prof=FGL.profiles.find((p)=>p.name===r.profileName)||null;
+        const left=FGL.creditsLeft(prof);
+        const card=document.createElement('div'); card.className='card'+(r.status?' '+r.status:'');
+        let pairBlk;
+        if (a && r.profileName===a.name) {
+          pairBlk=`<div class="blk pair-auto"><small>GoLogin · auto</small><b>${FGL.esc(a.name)}</b></div>`;
+        } else {
+          const opts=FGL.profiles.map((p)=>`<option value="${FGL.esc(p.name)}" ${r.profileName===p.name?'selected':''}>${FGL.esc(p.name)} · ${FGL.creditsLeft(p)} left</option>`).join('');
+          pairBlk=`<div class="blk"><small>GoLogin · pick</small><select data-i="${idx}">${r.profileName?'':'<option value="">— choose —</option>'}${opts}</select></div>`;
+        }
+        let statePill;
+        if(r.status){ statePill=`<span class="pill ${r.status}">${r.status}</span>`; }
+        else if(!r.profileName){ statePill='<span class="pill gap">needs profile</span>'; }
+        else if(left<=0){ statePill='<span class="pill gap">no credits</span>'; }
+        else { statePill='<span class="pill ready">ready</span>'; }
+        card.innerHTML=
+          `<span class="rail"></span>`+
+          `<div class="body"><div class="nm">${FGL.esc(emp.name)}</div><div class="ml">${FGL.esc(emp.email)}</div>`+
+          `<div class="meta"><div class="blk"><small>connections in db</small><b>${emp.connInDb.toLocaleString()}</b></div>`+
+          `${pairBlk}`+
+          `<div class="blk"><small>credits left</small><b>${prof?left:'—'}</b></div></div></div>`+
+          `<div class="right">${statePill}<button class="rm" data-rm="${idx}" title="Remove">✕</button></div>`;
+        el.appendChild(card);
+      });
+      el.querySelectorAll('select[data-i]').forEach((s)=> s.onchange=(e)=>{ roster[+e.target.dataset.i].profileName=e.target.value; render(); });
+      el.querySelectorAll('[data-rm]').forEach((b)=> b.onclick=(e)=>{ roster.splice(+e.target.dataset.rm,1); render(); });
+      refreshPicker(); updateDock();
+    }
+
+    function ready(r){ const p=FGL.profiles.find((x)=>x.name===r.profileName); return r.profileName && FGL.creditsLeft(p)>0; }
+    function updateDock(){
+      document.getElementById('dn').textContent=roster.length;
+      const gaps=roster.filter((r)=>!r.profileName).length;
+      const credits=roster.filter(ready).reduce((s,r)=>s+FGL.creditsLeft(FGL.profiles.find((p)=>p.name===r.profileName)),0);
+      document.getElementById('ds').textContent= roster.length? (gaps?`${gaps} still need a GoLogin profile`:`up to ${credits} invites this month`):'roster empty';
+      const go=document.getElementById('go'); go.disabled=launching||!roster.length||gaps>0;
+      go.textContent=launching?'Launching…':'Launch roster';
+    }
+
+    document.getElementById('go').onclick=()=>{
+      launching=true; updateDock();
+      FGL.simulateLaunch(roster.map((r)=>({empId:r.empId})),
+        (row)=>{ const r=roster.find((x)=>x.empId===row.empId); return FGL.creditsLeft(FGL.profiles.find((p)=>p.name===r.profileName)); },
+        (empId,status)=>{ const r=roster.find((x)=>x.empId===empId); r.status=status; render(); },
+        ()=>{ launching=false; document.getElementById('seq').textContent='Batch complete'; updateDock(); });
+    };
+
+    render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FG team launch · B — Match board</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .sk-wrap { max-width: 980px; margin: 0 auto; padding: 28px 28px 150px; }
+    .sk-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:6px; }
+    .sk-badge { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 12px; }
+    .sk-nav a { font-family:var(--mono); font-size:11px; color:var(--gray); text-decoration:none; margin-left:14px; }
+    .sk-nav a:hover, .sk-nav a.on { color:var(--ink); }
+    h1.sk-h { font-family:var(--display); font-weight:400; letter-spacing:.02em; font-size:2.1rem; margin:10px 0 2px; }
+    .sk-lead { color:var(--gray); font-size:13.5px; max-width:700px; margin-bottom:18px; }
+
+    .board { display:grid; grid-template-columns: 1fr 320px; gap:18px; align-items:start; }
+    .col-h { font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); margin-bottom:10px; }
+    .emp-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .search { flex:1; display:flex; align-items:center; gap:8px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:8px 14px; transition:border-color .15s; }
+    .search:focus-within { border-color:var(--gold); }
+    .search svg { flex:none; opacity:.55; }
+    .search input { flex:1; background:transparent; border:none; outline:none; color:var(--ink); font-family:var(--body); font-size:13px; }
+    .search input::placeholder { color:var(--gray); }
+    .search .clr { background:none; border:none; color:var(--gray); cursor:pointer; font-size:14px; line-height:1; display:none; }
+    .search .clr.show { display:block; }
+    .selall { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; padding:8px 13px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; transition:.12s; white-space:nowrap; }
+    .selall:hover { border-color:var(--gold); color:var(--gold); }
+    .no-match { color:var(--gray); font-size:13px; padding:22px; text-align:center; border:1px dashed var(--hairline); border-radius:12px; }
+
+    .emp { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:10px; cursor:pointer; transition:.12s; }
+    .emp:hover { background:var(--card-bg); }
+    .emp.on { border-color:var(--gold); background:var(--card-bg-hover); }
+    .emp input { width:17px; height:17px; accent-color:var(--gold); margin:0; }
+    .emp .nm { font-weight:600; color:var(--ink); font-size:14px; }
+    .emp .ml { font-family:var(--mono); font-size:11.5px; color:var(--gray); }
+    .emp .cn { margin-left:auto; text-align:right; }
+    .emp .cn b { font-family:var(--display); font-size:1.2rem; color:var(--ink); }
+    .emp .cn small { display:block; font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); }
+    .link-state { font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; padding:3px 9px; border-radius:9999px; }
+    .ls-auto { color:var(--green); border:1px solid var(--green); }
+    .ls-manual { color:var(--gold); border:1px solid var(--gold); }
+    .ls-gap { color:var(--red); border:1px solid var(--red); }
+    .emp.on .picker { display:block; }
+    .picker { display:none; grid-column:1 / -1; margin-top:10px; padding-top:10px; border-top:1px solid var(--hairline-soft); }
+    .picker select { width:100%; background:var(--bg-soft); border:1px solid var(--gold); color:var(--ink); border-radius:9px; padding:8px 10px; font-family:var(--mono); font-size:12px; }
+    .emp { flex-wrap:wrap; }
+
+    .panel { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
+    .gl { display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px solid var(--hairline-soft); }
+    .gl:first-of-type { border-top:none; }
+    .gl .band { width:6px; align-self:stretch; border-radius:3px; }
+    .gl .gn { font-family:var(--mono); font-size:11.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+    .gl .gc { font-family:var(--mono); font-size:10.5px; color:var(--gray); }
+    .gl.used .gn { color:var(--gray); text-decoration:line-through; }
+    .gl .who { font-family:var(--mono); font-size:9px; color:var(--gold); }
+
+    /* Step 1 — function/title filter, prettified */
+    .step { display:flex; align-items:flex-start; gap:12px; margin-bottom:8px; }
+    .step-n { flex:none; width:22px; height:22px; border-radius:50%; border:1px solid var(--hairline); color:var(--gray); font-family:var(--mono); font-size:11px; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+    .step-t { font-weight:600; color:var(--ink); font-size:14px; }
+    .step-s { color:var(--gray); font-size:12px; margin-top:2px; max-width:560px; }
+    .filter-card { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:22px; }
+    .chips { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:var(--bg-soft); transition:border-color .15s; }
+    .chips:focus-within { border-color:var(--gold); }
+    .chip { display:inline-flex; align-items:center; gap:7px; padding:6px 6px 6px 13px; border-radius:9999px; background:var(--card-bg); border:1px solid var(--hairline); color:var(--ink); font-size:12.5px; font-family:var(--body); animation:chipIn .16s ease; }
+    .chip b { font-weight:600; }
+    .chip .x { width:17px; height:17px; border-radius:50%; border:none; background:transparent; color:var(--gray); cursor:pointer; font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; transition:.12s; }
+    .chip .x:hover { background:var(--red); color:#fff; }
+    .chips input { flex:1; min-width:140px; background:transparent; border:none; outline:none; color:var(--ink); font-family:var(--body); font-size:13px; padding:5px 2px; }
+    .chips input::placeholder { color:var(--gray); }
+    @keyframes chipIn { from{ opacity:0; transform:scale(.85); } to{ opacity:1; transform:scale(1); } }
+    .presets { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:11px; }
+    .presets .lbl { font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); }
+    .preset { background:none; border:1px dashed var(--hairline); color:var(--gray); border-radius:9999px; padding:4px 11px; font-size:12px; cursor:pointer; transition:.12s; }
+    .preset:hover { border-color:var(--gold); border-style:solid; color:var(--gold); }
+    .preset:disabled { opacity:.3; cursor:default; }
+    .filter-foot { display:flex; align-items:center; justify-content:space-between; margin-top:11px; }
+    .filter-foot .hint { color:var(--gray); font-size:11.5px; }
+    .filter-foot .match { font-family:var(--mono); font-size:11px; color:var(--gold); }
+
+    /* Live-status card reuses the real .vj-* campaign-card styles from the linked CSS. */
+    #fgLaunchCard { margin-top:22px; }
+    .vj-log-empty { color:var(--gray); padding:14px 2px; font-family:var(--mono); font-size:12px; }
+    .vj-log-line .what .who { color:var(--gold); }
+
+    .dock { position:fixed; left:0; right:0; bottom:0; background:rgba(10,10,10,.88); backdrop-filter:blur(10px); border-top:1px solid var(--hairline); }
+    .dock-in { max-width:980px; margin:0 auto; padding:14px 28px; display:flex; align-items:center; gap:18px; }
+    .dock-n { font-family:var(--display); font-size:1.7rem; color:var(--ink); line-height:1; }
+    .dock-sub { color:var(--gray); font-size:12px; margin-top:3px; }
+    .seq { margin-left:auto; color:var(--gray); font-family:var(--mono); font-size:11px; }
+    .go { background:var(--gold); color:#1a1300; border:none; border-radius:9999px; padding:13px 26px; font-family:var(--mono); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+    .go:disabled { opacity:.45; cursor:default; }
+    .pill { font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; padding:2px 8px; border-radius:9999px; margin-left:8px; }
+    .pill.running { color:var(--gold); border:1px solid var(--gold); animation:pp 1s infinite; }
+    .pill.done { color:var(--green); border:1px solid var(--green); }
+    .pill.skipped { color:var(--red); border:1px solid var(--red); }
+    @keyframes pp { 0%,100%{opacity:1} 50%{opacity:.4} }
+  </style>
+</head>
+<body data-dashboard="v3">
+  <div class="sk-wrap">
+    <div class="sk-bar">
+      <span class="sk-badge">Prototype · not wired</span>
+      <span class="sk-nav"><a href="fg-launch-A-table.html">A · Table</a><a href="fg-launch-B-board.html" class="on">B · Board</a><a href="fg-launch-C-roster.html">C · Roster</a></span>
+    </div>
+    <h1 class="sk-h">Team follower-growth launch</h1>
+    <p class="sk-lead">Set the roles you want to invite, tick the employees whose networks to pull from, and launch the whole board in one sequential batch.</p>
+
+    <div class="filter-card">
+      <div class="step">
+        <span class="step-n">1</span>
+        <div><div class="step-t">Which roles to invite</div><div class="step-s">Targets come from the Connections DB (DNC-safe), deduped against everyone already invited, capped at each account's monthly budget. Each chip matches anywhere in the job title.</div></div>
+      </div>
+      <div class="chips" id="chips">
+        <input id="chipInput" placeholder="add a role keyword…" autocomplete="off">
+      </div>
+      <div class="presets" id="presets"><span class="lbl">Quick add</span></div>
+      <div class="filter-foot">
+        <span class="hint">Defaults toward marketers. Applies to every selected network below.</span>
+        <span class="match" id="matchCount"></span>
+      </div>
+    </div>
+
+    <div class="board">
+      <div>
+        <div class="col-h">Ortus employees · connections from the DB</div>
+        <div class="emp-toolbar">
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            <input id="empSearch" placeholder="Search by name, email or GoLogin account…" autocomplete="off">
+            <button class="clr" id="empSearchClr" title="Clear">×</button>
+          </div>
+          <button class="selall" id="selAll">Select all</button>
+        </div>
+        <div id="emps"></div>
+      </div>
+      <div class="panel">
+        <div class="col-h">GoLogin profiles · this workspace</div>
+        <div id="gls"></div>
+      </div>
+    </div>
+
+    <section class="vj-card is-detailed" id="fgLaunchCard" aria-labelledby="fg-card-name">
+      <div class="vj-eyebrow">
+        <span class="vj-tag"><span class="dot"></span><span id="fgEyebrow">Ready to launch</span></span>
+        <span class="vj-when" id="fgWhen"></span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true">⌁</div>
+      <h2 class="vj-name" id="fg-card-name"><span>Team Follower Growth</span></h2>
+      <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Launch progress"><i id="fgBar" style="width:0%"></i></div>
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span id="fgPct">0</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b id="fgSent">0</b> of <span id="fgTotal">0</span> accounts sent</span>
+            <span>Runs <b>sequentially</b> · 1 account at a time</span>
+          </div>
+        </div>
+        <div class="vj-stats" aria-live="polite">
+          <span><b id="fgAccts">0</b> accounts</span>
+          <span><b id="fgInv">0</b> invites sent</span>
+          <span>· <b id="fgSeq">Idle</b></span>
+        </div>
+      </div>
+      <div class="vj-details">
+        <div>
+          <div class="vj-log-head">
+            <span class="vj-details-head" id="fgLogHead">Live log · last 15 events</span>
+            <span class="vj-log-acts">
+              <button type="button" class="vj-log-act" id="logCopy" title="Copy the full log to your clipboard">Copy all</button>
+              <button type="button" class="vj-log-act" title="Open the Follower Growth sheet">Open sheet</button>
+            </span>
+          </div>
+          <div class="vj-log" id="logBody"><div class="vj-log-empty">Waiting to launch — events stream here, one account at a time.</div></div>
+        </div>
+        <div class="vj-bulk">
+          <div class="vj-details-head">Batch summary</div>
+          <div class="vj-bulk-status">Sent · <b id="fgSumSent">—</b> · <span id="fgSumSkip">0</span> skipped</div>
+          <div class="vj-bulk-hint">Each account opens its profiles and sends follow invites to its own connections, then the next account starts. Capped at each account's monthly invite budget.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="dock">
+    <div class="dock-in">
+      <div><div class="dock-n" id="dn">0</div><div class="dock-sub" id="ds">no employees selected</div></div>
+      <span class="seq" id="seq">Runs sequentially · ~1 account at a time</span>
+      <button class="go" id="go" disabled>Launch all</button>
+    </div>
+  </div>
+
+  <script src="fg-launch-core.js"></script>
+  <script>
+    const state = {}; let launching = false;
+    const empsEl = document.getElementById('emps');
+    const glsEl = document.getElementById('gls');
+
+    // ---- Step 1: function/title filter chips ----
+    const keywords = ['marketing','brand','growth','content','demand','comms','cmo'];
+    const ALL_PRESETS = ['marketing','brand','growth','content','demand','comms','cmo','sales','product','events','partnerships'];
+    const chipsEl = document.getElementById('chips');
+    const chipInput = document.getElementById('chipInput');
+    const presetsEl = document.getElementById('presets');
+
+    function renderChips(){
+      chipsEl.querySelectorAll('.chip').forEach((c)=>c.remove());
+      keywords.forEach((k)=>{
+        const span=document.createElement('span'); span.className='chip';
+        span.innerHTML=`<b>${FGL.esc(k)}</b><button class="x" title="remove">×</button>`;
+        span.querySelector('.x').onclick=()=>{ const i=keywords.indexOf(k); if(i>-1)keywords.splice(i,1); renderChips(); };
+        chipsEl.insertBefore(span, chipInput);
+      });
+      // presets = remaining suggestions
+      presetsEl.querySelectorAll('.preset').forEach((p)=>p.remove());
+      ALL_PRESETS.filter((p)=>!keywords.includes(p)).forEach((p)=>{
+        const b=document.createElement('button'); b.className='preset'; b.textContent='+ '+p;
+        b.onclick=()=>{ keywords.push(p); renderChips(); };
+        presetsEl.appendChild(b);
+      });
+      document.getElementById('matchCount').textContent = keywords.length ? `${keywords.length} role${keywords.length>1?'s':''} · matches in title` : 'no filter — all connections';
+    }
+    function addKeyword(raw){ const k=raw.trim().toLowerCase(); if(k && !keywords.includes(k)) keywords.push(k); chipInput.value=''; renderChips(); }
+    chipInput.addEventListener('keydown',(e)=>{
+      if(e.key==='Enter'||e.key===','){ e.preventDefault(); addKeyword(chipInput.value); }
+      else if(e.key==='Backspace' && !chipInput.value && keywords.length){ keywords.pop(); renderChips(); }
+    });
+    chipsEl.addEventListener('click',()=>chipInput.focus());
+
+    // ---- colleague search + select-all ----
+    const empSearch = document.getElementById('empSearch');
+    const empSearchClr = document.getElementById('empSearchClr');
+    empSearch.addEventListener('input',()=>{ empQuery=empSearch.value; empSearchClr.classList.toggle('show', !!empQuery); renderEmps(); });
+    empSearchClr.onclick=()=>{ empSearch.value=''; empQuery=''; empSearchClr.classList.remove('show'); renderEmps(); empSearch.focus(); };
+    document.getElementById('selAll').onclick=function(){
+      const vis=visibleEmployees(); const allOn=vis.every((e)=>state[e.id].selected);
+      vis.forEach((e)=>{ state[e.id].selected=!allOn; });
+      this.textContent = allOn ? 'Select all' : 'Clear';
+      renderEmps(); renderGls(); updateDock();
+    };
+
+    function init(){ FGL.employees.forEach((e)=>{ const a=FGL.autoPair(e); state[e.id]={selected:false, profileName:a?a.name:'', status:null}; }); }
+
+    function linkState(emp){ const a=FGL.autoPair(emp); const st=state[emp.id];
+      if (st.profileName && a && st.profileName===a.name) return ['ls-auto','auto'];
+      if (st.profileName) return ['ls-manual','manual'];
+      return ['ls-gap','needs pick']; }
+
+    let empQuery = '';
+    function visibleEmployees(){
+      const q = empQuery.trim().toLowerCase();
+      if(!q) return FGL.employees;
+      return FGL.employees.filter((e)=> e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q) || (state[e.id].profileName||'').toLowerCase().includes(q));
+    }
+
+    function renderEmps(){
+      empsEl.innerHTML='';
+      const list = visibleEmployees();
+      if(!list.length){ empsEl.innerHTML='<div class="no-match">No colleagues match that search.</div>'; return; }
+      list.forEach((emp)=>{
+        const st=state[emp.id]; const [cls,label]=linkState(emp);
+        const div=document.createElement('div'); div.className='emp'+(st.selected?' on':'');
+        const opts=FGL.profiles.map((p)=>`<option value="${FGL.esc(p.name)}" ${st.profileName===p.name?'selected':''}>${FGL.esc(p.name)} · ${FGL.creditsLeft(p)}/${p.creditsTotal} left</option>`).join('');
+        div.innerHTML =
+          `<input type="checkbox" ${st.selected?'checked':''}>`+
+          `<div><div class="nm">${FGL.esc(emp.name)}${st.status?`<span class="pill ${st.status}">${st.status}</span>`:''}</div><div class="ml">${FGL.esc(emp.email)}</div></div>`+
+          `<div class="cn"><b>${emp.connInDb.toLocaleString()}</b><small>in db</small></div>`+
+          `<span class="link-state ${cls}">${label}</span>`+
+          `<div class="picker"><select>${st.profileName?'':'<option value="">— pick GoLogin profile —</option>'}${opts}</select></div>`;
+        div.querySelector('input').onclick=(e)=>{ e.stopPropagation(); st.selected=e.target.checked; renderEmps(); renderGls(); updateDock(); };
+        div.onclick=()=>{ st.selected=!st.selected; renderEmps(); renderGls(); updateDock(); };
+        div.querySelector('select').onclick=(e)=>e.stopPropagation();
+        div.querySelector('select').onchange=(e)=>{ st.profileName=e.target.value; renderEmps(); renderGls(); updateDock(); };
+        empsEl.appendChild(div);
+      });
+    }
+
+    function renderGls(){
+      const usedBy={}; FGL.employees.forEach((e)=>{ if(state[e.id].selected && state[e.id].profileName) usedBy[state[e.id].profileName]=e.name; });
+      glsEl.innerHTML='';
+      FGL.profiles.forEach((p)=>{
+        const left=FGL.creditsLeft(p); const who=usedBy[p.name];
+        const band = left<=0?'var(--red)':(who?'var(--gold)':'var(--green)');
+        const div=document.createElement('div'); div.className='gl'+(left<=0?' used':'');
+        div.innerHTML=`<span class="band" style="background:${band}"></span><span class="gn">${FGL.esc(p.name)}</span>`+
+          (who?`<span class="who">→ ${FGL.esc(who.split(' ')[0])}</span>`:'')+
+          `<span class="gc">${left}/${p.creditsTotal}</span>`;
+        glsEl.appendChild(div);
+      });
+    }
+
+    function selected(){ return FGL.employees.filter((e)=>state[e.id].selected); }
+    function updateDock(){
+      const sel=selected(); const gaps=sel.filter((e)=>!state[e.id].profileName).length;
+      document.getElementById('dn').textContent=sel.length;
+      const credits=sel.filter((e)=>state[e.id].profileName).reduce((s,e)=>s+FGL.creditsLeft(FGL.profiles.find((p)=>p.name===state[e.id].profileName)),0);
+      document.getElementById('ds').textContent= sel.length? (gaps?`${gaps} still need a GoLogin profile`:`${sel.length} paired · up to ${credits} invites this month`):'no employees selected';
+      const go=document.getElementById('go'); go.disabled=launching||!sel.length||gaps>0;
+      go.textContent=launching?'Launching…':(sel.length>1?`Launch all ${sel.length}`:'Launch');
+    }
+
+    document.getElementById('go').onclick=()=>{
+      const sel=selected(); const rows=sel.map((e)=>({empId:e.id})); if(!rows.length) return;
+      launching=true; updateDock();
+      logBody.innerHTML=''; logLines.length=0;
+      fgCard.classList.add('is-monitor'); fgCard.classList.remove('is-empty');
+      document.getElementById('fgEyebrow').textContent='● Launching';
+      document.getElementById('fgWhen').textContent='started '+ts();
+      let sent=0, skipped=0, invites=0, processed=0;
+      setCardProgress(0, rows.length, 0, 'Launching…');
+      log('info', `▶ Batch started · ${rows.length} account(s) · roles: ${FGL.esc(keywords.join(', ')||'all')}`);
+      FGL.simulateLaunch(rows,
+        (r)=>FGL.creditsLeft(FGL.profiles.find((p)=>p.name===state[r.empId].profileName)),
+        (empId,status)=>{
+          state[empId].status=status; renderEmps();
+          const emp=FGL.employees.find((e)=>e.id===empId); const prof=state[empId].profileName;
+          if(status==='running') log('log', `🔄 ${who(prof)} Opening profiles & sending follow invites — ${emp.name}'s network…`);
+          else if(status==='done'){ const n=FGL.creditsLeft(FGL.profiles.find((p)=>p.name===prof)); sent++; processed++; invites+=n; log('ok', `✓ ${who(prof)} Invites sent · ${n} credits remaining this month`); setCardProgress(processed, rows.length, invites, 'Sending'); }
+          else if(status==='skipped'){ skipped++; processed++; log('err', `✗ ${who(prof)} Skipped — no invite credits left this month`); setCardProgress(processed, rows.length, invites, 'Sending'); }
+        },
+        ()=>{
+          launching=false; document.getElementById('seq').textContent='Batch complete';
+          fgCard.classList.remove('is-monitor');
+          document.getElementById('fgEyebrow').textContent='✓ Complete';
+          logTtl.textContent=`Live log · ${logBody.children.length} events (finished)`;
+          setCardProgress(processed, rows.length, invites, 'Finished');
+          document.getElementById('fgSumSent').textContent=sent;
+          document.getElementById('fgSumSkip').textContent=skipped;
+          log('info', `■ Batch complete — ${sent} account(s) sent, ${skipped} skipped`);
+          updateDock();
+        });
+    };
+
+    // ---- live log (rendered as the real campaign card's vj-log lines) ----
+    const fgCard = document.getElementById('fgLaunchCard');
+    const logBody = document.getElementById('logBody');
+    const logTtl = document.getElementById('fgLogHead');
+    const logLines = [];
+    function ts(){ const d=new Date(); const p=(n)=>String(n).padStart(2,'0'); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
+    // level: 'log' | 'ok' | 'err' | 'info' → maps to vj-log-line classes
+    function log(level, msg, plain){
+      const t=ts(); const cls = level==='ok'?'is-ok':level==='err'?'is-err':level==='warn'?'is-warn':'';
+      logLines.push(`${t}  ${plain!=null?plain:msg.replace(/<[^>]+>/g,'')}`);
+      if(logBody.querySelector('.vj-log-empty')) logBody.innerHTML='';
+      const row=document.createElement('div'); row.className='vj-log-line '+cls;
+      row.innerHTML=`<span class="time">${t}</span><span class="evt">${level}</span><span class="what">${msg}</span>`;
+      logBody.appendChild(row);
+      while(logBody.children.length>15) logBody.removeChild(logBody.firstChild);
+      logBody.scrollTop=logBody.scrollHeight;
+    }
+    document.getElementById('logCopy').onclick=function(){ navigator.clipboard && navigator.clipboard.writeText(logLines.join('\n')); const o=this.textContent; this.textContent='Copied'; setTimeout(()=>this.textContent=o,1200); };
+    function who(name){ return `<span class="who">[${FGL.esc(name)}]</span>`; }
+    function setCardProgress(sent, total, invites, label){
+      const pct = total? Math.round((sent/total)*100):0;
+      document.getElementById('fgBar').style.width=pct+'%';
+      document.getElementById('fgPct').textContent=pct;
+      document.getElementById('fgSent').textContent=sent;
+      document.getElementById('fgTotal').textContent=total;
+      document.getElementById('fgAccts').textContent=total;
+      document.getElementById('fgInv').textContent=invites;
+      document.getElementById('fgSeq').textContent=label;
+    }
+
+    init(); renderChips(); renderEmps(); renderGls(); updateDock();
+  </script>
+</body>
+</html>
