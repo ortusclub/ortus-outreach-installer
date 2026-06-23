@@ -13142,7 +13142,8 @@ function fgRenderSendStatus(s) {
   const credits = (s.creditsBefore == null) ? '' : ` · credits ${s.creditsBefore}→${s.creditsAfter == null ? '?' : s.creditsAfter}`;
   const counts = `invited ${s.invited || 0} · skipped ${s.skipped || 0}`;
   const phase = s.error ? `error — ${escHtml(s.error)}` : escHtml(s.phase || '');
-  el.innerHTML = `<span class="fg-send-phase">${phase}</span> <span class="fg-send-counts">${counts}${credits}</span>`;
+  const note = s.note ? `<div class="fg-send-note">${escHtml(s.note)}</div>` : '';
+  el.innerHTML = `<span class="fg-send-phase">${phase}</span> <span class="fg-send-counts">${counts}${credits}</span>${note}`;
 }
 
 async function fgSendStart() {

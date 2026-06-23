@@ -1471,7 +1471,8 @@ app.post('/api/fg/send/start', async (req, res) => {
         .filter((r) => r['Status'] === 'Queued' && r['Account'] === operator)
         .map((r) => ({ name: r['Target Name'], jobTitle: r['Job Title'], company: r['Company'], memberId: String(r['Member ID'] || '') }));
       if (!queued.length) {
-        _fgSend = { running: false, phase: 'done', invited: 0, skipped: 0, creditsBefore: 0, creditsAfter: 0, error: null };
+        _fgSend = { running: false, phase: 'done', invited: 0, skipped: 0, creditsBefore: 0, creditsAfter: 0, error: null,
+          note: `No queued invites for ${operator}. The send only fires rows already saved to the sheet as “Queued” for this operator — click “Queue these invites” first, and make sure the operator selected matches the one you queued under.` };
         return;
       }
       const token = process.env.GOLOGIN_API_TOKEN;
@@ -1491,7 +1492,9 @@ app.post('/api/fg/send/start', async (req, res) => {
       });
       _fgSend = { ..._fgSend, phase: 'marking', invited: out.invited.length, skipped: out.skipped.length, creditsBefore: out.creditsBefore, creditsAfter: out.creditsAfter };
       if (out.invited.length) await markFgInvited({ memberIds: out.invited, account: operator, operator, month });
-      _fgSend = { running: false, phase: 'done', invited: out.invited.length, skipped: out.skipped.length, creditsBefore: out.creditsBefore, creditsAfter: out.creditsAfter, error: null };
+      const nothing = (out.invited.length + out.skipped.length) === 0;
+      _fgSend = { running: false, phase: 'done', invited: out.invited.length, skipped: out.skipped.length, creditsBefore: out.creditsBefore, creditsAfter: out.creditsAfter, error: null,
+        note: nothing ? `Opened the browser for ${queued.length} queued invite(s) but matched none — the page "Invite to follow" modal may not have opened. Is this account logged in AND an admin of the Ortus Club page? Check the log for [FG-invite] lines.` : null };
     } catch (err) {
       _fgSend = { ..._fgSend, running: false, phase: 'error', error: err.message };
     } finally {
