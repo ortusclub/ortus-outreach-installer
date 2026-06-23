@@ -51,3 +51,10 @@ export const CAMPAIGN_LOG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfyc
 // domains is on the team and can sign up. SOO_BYPASS_EMAILS env stays as
 // an escape hatch for emergency / non-domain access.
 export const SIGNUP_ALLOWED_DOMAINS = ['ortusclub.com', 'ortus.solutions'];
+
+// v2.113 — Follower Growth campaign. SEPARATE Apps Script deployment from the
+// master outreach script: it owns the central FG sheet (FG Invites / FG Budgets
+// / FG Funnel). Paste fg-apps-script.js into a NEW Apps Script project, deploy
+// as a web app ("execute as me", "anyone with the link"), and put its /exec URL
+// here. Until then the app surfaces a friendly "not configured" error.
+export const FG_WEBAPP_URL = '';
