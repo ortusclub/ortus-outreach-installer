@@ -7,7 +7,10 @@
 var FG_HEADER = ['Target Name','LinkedIn URL','Member ID','Company','Job Title',
   'Function Match','Geo','Invited By','Account','Status','Invited At','FG Note','Month'];
 var BUDGET_HEADER = ['Account','Operator','Month','Allowance','Sent','Remaining'];
-var DEFAULT_ALLOWANCE = 250; // keep in sync with FG_DEFAULT_MONTHLY_ALLOWANCE
+// Fallback when an account has no budget row yet. Page admins get 250/month,
+// everyone else 75 — set the real per-account number in the Allowance column;
+// this default is the SAFE FLOOR (75). Keep in sync with FG_DEFAULT_MONTHLY_ALLOWANCE.
+var DEFAULT_ALLOWANCE = 75;
 
 function doPost(e) {
   var lock = LockService.getScriptLock();

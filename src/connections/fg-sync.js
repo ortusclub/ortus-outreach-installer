@@ -5,10 +5,13 @@
 // (Apps Script answers POST with a 302 that Node's fetch would turn into a GET).
 import { FG_WEBAPP_URL } from '../sheets-webapp-url.js';
 
-// LinkedIn's per-account monthly "Invite to follow" allowance. CONFIRM the real
-// current figure before launch (open item in the design doc). Used as the
-// fallback when an account has no FG Budgets row yet for the month.
-export const FG_DEFAULT_MONTHLY_ALLOWANCE = 250;
+// LinkedIn's per-account monthly "Invite to follow" allowance depends on the
+// account's role on the page: PAGE ADMINS get 250/month, everyone else 75
+// (LinkedIn shows the real number per account). The true figure lives per-account
+// in the FG Budgets `Allowance` column (set 250 for admins); this constant is only
+// the fallback when an account has no budget row yet — kept at the SAFE FLOOR (75)
+// so the app under-promises rather than over-promises for a non-admin.
+export const FG_DEFAULT_MONTHLY_ALLOWANCE = 75;
 
 async function postFg(payload, { timeoutMs = 30000 } = {}) {
   if (!FG_WEBAPP_URL) return { error: 'FG_WEBAPP_URL not configured — deploy fg-apps-script.js and set its URL in src/sheets-webapp-url.js' };
