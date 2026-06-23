@@ -12875,16 +12875,24 @@ function onFgChipKey(e) {
 }
 
 async function fgPopulateOperators() {
-  const sel = document.getElementById('fg-operator');
-  if (!sel) return;
+  if (!document.getElementById('fg-operator')) return;
   try {
     const r = await fetch('/api/fg/operators').then((x) => x.json());
     const ops = (r && r.operators) || [];
+    // Re-query the <select> AFTER the await. On the very first FG view the static
+    // #fg-operator node can be swapped out by initial-load hydration while this
+    // fetch is in flight; a reference captured before the await would be detached,
+    // so the options would land on a dead node and the on-screen picker stays
+    // empty (until you leave and re-enter). Querying again here guarantees we
+    // write to whatever node is live when the data actually arrives.
+    const sel = document.getElementById('fg-operator');
+    if (!sel) return;
     sel.innerHTML = ops.length
       ? ops.map((o) => `<option value="${escHtml(o.email)}">${escHtml(o.name)}</option>`).join('')
       : '<option value="">No operators found — seed colleagues.json</option>';
   } catch (e) {
-    sel.innerHTML = '<option value="">Failed to load operators</option>';
+    const sel = document.getElementById('fg-operator');
+    if (sel) sel.innerHTML = '<option value="">Failed to load operators</option>';
   }
 }
 
@@ -13105,7 +13113,18 @@ function initFollowerGrowth() {
   renderFgChips();
   fgPopulateOperators();
   fgPopulateAccounts();
-  if (!_fgViewReady) { _fgViewReady = true; fgLoadDb(); }
+  if (!_fgViewReady) {
+    _fgViewReady = true;
+    fgLoadDb();
+    // The first FG view usually coincides with initial-load hydration, which can
+    // strand the first populate on a detached node (see fgPopulateOperators).
+    // Self-heal once after the load settles — both populates are idempotent, so
+    // re-running them is harmless and guarantees the live pickers end up filled.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      fgPopulateOperators();
+      fgPopulateAccounts();
+    }));
+  }
 }
 
 window.focusFgInput = focusFgInput;
