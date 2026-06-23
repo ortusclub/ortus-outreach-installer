@@ -71,6 +71,9 @@ import {
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
   isEmailAllowed, deleteUser,
 } from './src/auth.js';
+import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets } from './src/connections/search-service.js';
+import { getFgState, queueFgInvites, markFgInvited, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
+import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1285,6 +1288,144 @@ app.post('/api/queue/:id/move', async (req, res) => {
     res.json({ ok: true, newIndex });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Team Connections (warm-reach) ──────────────────────────────────
+// In-app search over colleagues' ingested LinkedIn networks joined to HubSpot
+// (DNC-filtered), backed by the local cache (scripts/build-connections-cache.js).
+// Read-only; emits a lead-schema CSV ready to launch as an Introduce Back campaign.
+function connectionsCriteria(b = {}) {
+  return {
+    countries: b.countries || [], regions: b.regions || [], cities: b.cities || [],
+    jobTitles: b.jobTitles || [], companies: b.companies || [], geo: b.geo || [],
+  };
+}
+
+app.get('/api/connections/stats', (_req, res) => {
+  try {
+    res.json({ ...getConnectionsStats(), sync: getConnectionsSyncState() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pull new/changed network CSVs from the Q2 2026 Drive folder (via the central
+// Apps Script), then refresh the HubSpot cache for new slugs. Runs in the
+// background; the UI polls /api/connections/stats (sync.*) for progress.
+app.post('/api/connections/sync', (_req, res) => {
+  try {
+    res.json(startConnectionsSync({}));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/connections/search', (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(searchConnections(connectionsCriteria(b), { limit: b.limit || 1000 }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/connections/export', (req, res) => {
+  try {
+    const b = req.body || {};
+    const urls = Array.isArray(b.urls) ? b.urls : undefined;
+    res.json(exportConnections(connectionsCriteria(b), { urls }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Build a warm-reach lead list and write it to a NEW Google Sheet via the
+// central Apps Script (createLeadTab), returning its URL — the campaign
+// "Build & attach a warm list" flow then sets it as the campaign source.
+// Requires the Apps Script redeployed with the createLeadTab handler.
+app.post('/api/connections/to-workbook', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const urls = Array.isArray(b.urls) ? b.urls : undefined;
+    const { header, rows, count } = buildLeadRows(connectionsCriteria(b), { urls });
+    if (!count) return res.status(400).json({ error: 'No leads selected to write.' });
+    const name = (b.name && String(b.name).trim()) || `Warm ICB list — ${new Date().toISOString().slice(0, 10)}`;
+    const result = await createWorkbookTab({ name, header, rows });
+    res.json({ ...result, count });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Follower Growth campaign ───────────────────────────────────────
+// Targets come from the Connections DB scoped to ONE operator's network
+// (warmVia), function/title filtered, DNC-safe, deduped vs already-invited,
+// capped at the account's remaining monthly budget. Results live in the central
+// FG sheet (FG Invites / FG Budgets / FG Funnel) via the FG Apps Script.
+const FG_MARKETER_KEYWORDS = ['marketing', 'brand', 'growth', 'content', 'demand', 'comms', 'cmo'];
+function fgCriteria(b = {}) {
+  // Function/title filter rides the jobTitles chip mechanism. Default toward
+  // marketers when the operator hasn't set their own chips.
+  const jobTitles = Array.isArray(b.jobTitles) && b.jobTitles.length ? b.jobTitles : FG_MARKETER_KEYWORDS;
+  return { jobTitles, companies: b.companies || [], geo: b.geo || [] };
+}
+const fgMonth = () => new Date().toISOString().slice(0, 7); // YYYY-MM
+
+// Remaining budget for an account this month = allowance − sent (from FG Budgets).
+function fgRemaining(budgets, account, month) {
+  const row = (budgets || []).find((r) => r.Account === account && r.Month === month);
+  const allowance = row ? Number(row.Allowance) || FG_DEFAULT_MONTHLY_ALLOWANCE : FG_DEFAULT_MONTHLY_ALLOWANCE;
+  const sent = row ? Number(row.Sent) || 0 : 0;
+  return Math.max(0, allowance - sent);
+}
+
+// In-app database view: the central FG sheet, rendered in the campaign tab.
+app.get('/api/fg/db', async (_req, res) => {
+  try {
+    res.json(await getFgState());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Build (preview) a queued invite list for an operator/account — does NOT write.
+app.post('/api/fg/build', async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.operator) return res.status(400).json({ error: 'operator (colleague email) is required' });
+    const account = b.account || b.operator;
+    const month = b.month || fgMonth();
+    const { invites, budgets } = await getFgState();
+    const alreadyInvited = (invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+    const budget = fgRemaining(budgets, account, month);
+    const out = buildFgTargets(fgCriteria(b), { operator: b.operator, operatorName: b.operatorName, account, month, alreadyInvited, budget });
+    res.json({ ...out, account, month, budget });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Persist a built list to FG Invites as Queued.
+app.post('/api/fg/queue', async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+    if (!rows || !rows.length) return res.status(400).json({ error: 'No rows to queue.' });
+    res.json(await queueFgInvites(rows));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Flip Queued → Invited (manual send done) + bump the account budget.
+app.post('/api/fg/mark-invited', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const memberIds = Array.isArray(b.memberIds) ? b.memberIds : null;
+    if (!memberIds || !memberIds.length) return res.status(400).json({ error: 'memberIds required' });
+    res.json(await markFgInvited({ memberIds, account: b.account, operator: b.operator, month: b.month || fgMonth() }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
