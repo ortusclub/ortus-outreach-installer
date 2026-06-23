@@ -97,10 +97,25 @@ function toRow(r, colleagues) {
 
 // Operator roster for the Follower Growth picker: [{ email, name }] from
 // colleagues.json. The email is the exact key warmVia scoping matches on.
-export function listOperators() {
+// Operators for the Follower Growth picker = everyone whose 1st-degree network
+// has actually been ingested (one <email>.csv per colleague in data/connections),
+// UNIONed with colleagues.json. We key on the INGESTED networks — not the small
+// hand-maintained colleagues.json — so every synced network is selectable, not
+// just the couple with a curated display name. colleagues.json only supplies a
+// nicer name when present; otherwise we humanize the email local-part.
+export function listOperators({ dir } = {}) {
   const colleagues = getColleagues();
-  return Object.entries(colleagues)
-    .map(([email, m]) => ({ email, name: (m && m.name) || email }))
+  let ingested = [];
+  try { ingested = Object.keys(getIndex(dir).stats.perColleague || {}); } catch { ingested = []; }
+  const emails = new Set([...ingested, ...Object.keys(colleagues)]);
+  const displayName = (email) => {
+    const m = colleagues[email];
+    if (m && m.name) return m.name;
+    const local = String(email).split('@')[0].replace(/[._-]+/g, ' ').trim();
+    return local ? local.replace(/\b\w/g, (c) => c.toUpperCase()) : email;
+  };
+  return [...emails]
+    .map((email) => ({ email, name: displayName(email) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

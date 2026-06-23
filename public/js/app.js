@@ -12906,7 +12906,9 @@ function fgRenderBudget(b) {
 }
 
 async function fgBuild() {
-  const operator = document.getElementById('fg-operator')?.value || '';
+  const opSel = document.getElementById('fg-operator');
+  const operator = opSel?.value || '';
+  const operatorName = opSel?.selectedOptions?.[0]?.textContent || '';
   if (!operator) { showCampaignToast('Pick an operator first.', 2500); return; }
   const btn = document.getElementById('fg-build-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Building…'; }
@@ -12914,7 +12916,7 @@ async function fgBuild() {
     const r = await fetch('/api/fg/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operator, jobTitles: fgChips }),
+      body: JSON.stringify({ operator, operatorName, jobTitles: fgChips }),
     }).then((x) => x.json());
     if (r.error) { showCampaignToast(r.error, 4000); return; }
     _fgBuilt = r;
@@ -13111,20 +13113,34 @@ function initFollowerGrowth() {
   // fired before the DOM/session was ready. Only the network DB load is once-per-session.
   if (!fgChips.length) fgChips = FG_DEFAULT_CHIPS.slice();
   renderFgChips();
-  fgPopulateOperators();
-  fgPopulateAccounts();
-  if (!_fgViewReady) {
-    _fgViewReady = true;
-    fgLoadDb();
-    // The first FG view usually coincides with initial-load hydration, which can
-    // strand the first populate on a detached node (see fgPopulateOperators).
-    // Self-heal once after the load settles — both populates are idempotent, so
-    // re-running them is harmless and guarantees the live pickers end up filled.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      fgPopulateOperators();
-      fgPopulateAccounts();
-    }));
+  fgFillPickers();
+  if (!_fgViewReady) { _fgViewReady = true; fgLoadDb(); }
+}
+
+// Robust picker fill. The first FG view coincides with initial-load hydration,
+// which can swap the static #fg-operator / #fg-send-account nodes out WHILE the
+// first populate fetch is in flight — so a single populate sometimes lands on a
+// detached node and the on-screen <select> stays empty until you leave and come
+// back. This re-queries + re-populates (both populates are idempotent) until the
+// LIVE selects actually have options AND the profile list has loaded, with a
+// bounded number of tries so it can never spin forever. The [FG] console lines
+// make the outcome visible without any manual probing.
+async function fgFillPickers(maxTries = 12) {
+  for (let i = 0; i < maxTries; i++) {
+    await fgPopulateOperators();
+    fgPopulateAccounts();
+    const ops = document.getElementById('fg-operator');
+    const opsOk = !!(ops && ops.options.length);
+    const profilesLoaded = Array.isArray(allProfilesData) && allProfilesData.length > 0;
+    if (opsOk && profilesLoaded) {
+      if (i) console.log('[FG] pickers ready after retry', i, '— operators:', ops.options.length);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 250));
   }
+  console.warn('[FG] pickers not fully ready after', maxTries, 'tries — operators:',
+    document.getElementById('fg-operator')?.options.length,
+    '· profiles:', Array.isArray(allProfilesData) ? allProfilesData.length : 'n/a');
 }
 
 window.focusFgInput = focusFgInput;
