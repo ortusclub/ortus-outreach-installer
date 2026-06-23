@@ -13127,6 +13127,9 @@ function fgtlRenderChips() {
       presetsEl.appendChild(b);
     });
   }
+  // Update match counter
+  const matchEl = document.getElementById('fgtl-match');
+  if (matchEl) matchEl.textContent = fgtlChips.length ? `${fgtlChips.length} role${fgtlChips.length > 1 ? 's' : ''} · matches in title` : 'no filter — all connections';
 }
 
 /** Returns fgtlEmployees filtered by current #fgtl-search value. */
@@ -13497,7 +13500,7 @@ async function initFollowerGrowth() {
   }
 
   // 5. Init keyword chips (default audience targeting keywords)
-  fgtlChips = FG_DEFAULT_CHIPS.slice();
+  if (!fgtlChips.length) fgtlChips = FG_DEFAULT_CHIPS.slice();
 
   // 6. Render board
   fgtlRenderChips();
