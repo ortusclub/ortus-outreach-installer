@@ -2082,7 +2082,9 @@ function onModeChange() {
     if (dailyKnob) dailyKnob.style.display = 'none';
     if (navLaunch) navLaunch.style.display = 'none';
     if (runBar) runBar.style.display = 'none';
-    try { initFollowerGrowth(); } catch (_) {}
+    // Surface failures instead of swallowing them — a silent catch here hid a
+    // TDZ crash (fgChips accessed before init) for an entire debugging session.
+    try { initFollowerGrowth(); } catch (e) { console.error('[FG] initFollowerGrowth failed:', e && e.message); }
   }
 
   // Persist last-used mode
@@ -7771,7 +7773,15 @@ initMyIdentifier();
 restoreCollapsedSections();
 restoreLastMode();
 loadProfiles();
-onModeChange();
+// Defer the first onModeChange to a microtask so the ENTIRE module finishes
+// evaluating first. onModeChange -> initFollowerGrowth touches module state
+// (fgChips et al.) that's declared far below this bootstrap; calling it inline
+// during evaluation throws a TDZ "Cannot access 'fgChips' before initialization"
+// whenever the restored mode is follower_growth — which the silent catch in the
+// FG block swallowed, leaving the picker permanently empty until you switched
+// modes and back. The microtask runs after evaluation completes, so all state
+// is initialized and every mode (incl. follower_growth) sets up correctly.
+queueMicrotask(onModeChange);
 pollStatus();
 fetchTemplateList();
 fetchHistory();
