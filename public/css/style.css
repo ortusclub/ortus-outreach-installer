@@ -7662,3 +7662,9 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .fg-db-tab.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .fg-refresh { background: none; border: none; color: var(--gray); font-size: 15px; cursor: pointer; margin-left: 8px; }
 .fg-refresh:hover { color: var(--ink); }
+.fg-send-block { border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; margin: 14px 0 10px; }
+.fg-send-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+.fg-send-status { font-size: 12px; color: var(--ink); margin: 8px 0; padding: 8px 10px; border: 1px solid var(--hairline-soft); border-radius: 8px; background: var(--bg-soft); }
+.fg-send-phase { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--gray); margin-right: 10px; }
+.fg-send-counts { color: var(--ink); }
+.fg-manual { margin-top: 12px; }

@@ -13027,12 +13027,83 @@ function renderFgDb() {
   }
 }
 
+// ── Automated send (Phase 2): drive the operator's GoLogin browser through the
+// page invite modal. Mirrors the post-amplification start/poll/stop pattern. ──
+let _fgSendPoll = null;
+
+function fgPopulateAccounts() {
+  const sel = document.getElementById('fg-send-account');
+  if (!sel) return;
+  const profiles = Array.isArray(allProfilesData) ? allProfilesData : [];
+  sel.innerHTML = profiles.length
+    ? profiles.map((p) => `<option value="${escHtml(p.id)}">${escHtml(p.name || p.id)}</option>`).join('')
+    : '<option value="">No LinkedIn accounts loaded</option>';
+}
+
+function fgRenderSendStatus(s) {
+  const el = document.getElementById('fg-send-status');
+  if (!el) return;
+  el.hidden = false;
+  const credits = (s.creditsBefore == null) ? '' : ` · credits ${s.creditsBefore}→${s.creditsAfter == null ? '?' : s.creditsAfter}`;
+  const counts = `invited ${s.invited || 0} · skipped ${s.skipped || 0}`;
+  const phase = s.error ? `error — ${escHtml(s.error)}` : escHtml(s.phase || '');
+  el.innerHTML = `<span class="fg-send-phase">${phase}</span> <span class="fg-send-counts">${counts}${credits}</span>`;
+}
+
+async function fgSendStart() {
+  const operator = document.getElementById('fg-operator')?.value || '';
+  const profileId = document.getElementById('fg-send-account')?.value || '';
+  if (!operator) { showCampaignToast('Pick an operator first.', 2500); return; }
+  if (!profileId) { showCampaignToast('Pick a LinkedIn account to send from.', 3000); return; }
+  const btn = document.getElementById('fg-send-btn');
+  const stop = document.getElementById('fg-send-stop');
+  try {
+    const r = await fetch('/api/fg/send/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operator, profileId }),
+    }).then((x) => x.json());
+    if (r.error) { showCampaignToast(r.error, 4000); return; }
+    if (btn) btn.disabled = true;
+    if (stop) stop.hidden = false;
+    fgRenderSendStatus({ phase: 'launching', invited: 0, skipped: 0 });
+    fgStartSendPolling();
+  } catch (e) {
+    showCampaignToast('Send failed to start — ' + String(e?.message || e), 4000);
+  }
+}
+
+function fgStartSendPolling() {
+  if (_fgSendPoll) clearInterval(_fgSendPoll);
+  _fgSendPoll = setInterval(async () => {
+    try {
+      const s = await fetch('/api/fg/send/status').then((x) => x.json());
+      fgRenderSendStatus(s);
+      if (!s.running) {
+        clearInterval(_fgSendPoll); _fgSendPoll = null;
+        const btn = document.getElementById('fg-send-btn');
+        const stop = document.getElementById('fg-send-stop');
+        if (btn) btn.disabled = false;
+        if (stop) stop.hidden = true;
+        if (s.phase === 'done') showCampaignToast(`Sent ${s.invited} invite(s) · ${s.skipped} skipped.`, 4000);
+        fgLoadDb();
+      }
+    } catch (_) { /* keep polling */ }
+  }, 2000);
+}
+
+async function fgSendStop() {
+  try { await fetch('/api/fg/send/stop', { method: 'POST' }); showCampaignToast('Stopping after the current step…', 3000); }
+  catch (_) {}
+}
+
 function initFollowerGrowth() {
   if (_fgViewReady) return;
   _fgViewReady = true;
   if (!fgChips.length) fgChips = FG_DEFAULT_CHIPS.slice();
   renderFgChips();
   fgPopulateOperators();
+  fgPopulateAccounts();
   fgLoadDb();
 }
 
@@ -13044,6 +13115,8 @@ window.fgQueue = fgQueue;
 window.fgMarkInvited = fgMarkInvited;
 window.fgLoadDb = fgLoadDb;
 window.setFgTab = setFgTab;
+window.fgSendStart = fgSendStart;
+window.fgSendStop = fgSendStop;
 window.initFollowerGrowth = initFollowerGrowth;
 
 // ─────────────────────────────────────────────────────────────────────────────

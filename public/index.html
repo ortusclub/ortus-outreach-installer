@@ -1489,9 +1489,27 @@
         </div>
         <div class="fg-actions">
           <button type="button" class="btn" id="fg-queue-btn" onclick="fgQueue()">Queue these invites</button>
-          <button type="button" class="btn btn-ghost" id="fg-mark-btn" onclick="fgMarkInvited()" hidden>Mark all as invited</button>
         </div>
-        <p class="cx-hint" id="fg-queue-note">Queuing writes them to the central FG sheet as “Queued”. Send the invites on LinkedIn, then “Mark all as invited” to log them and decrement the budget.</p>
+        <p class="cx-hint" id="fg-queue-note">Queuing writes them to the central FG sheet as “Queued”. Then send them automatically below — or invite by hand on LinkedIn and use “Mark all as invited”.</p>
+
+        <!-- Automated send: drives the operator's GoLogin browser through the page
+             "Invite to follow" modal, ticking confident matches up to the live credit cap. -->
+        <div class="fg-send-block" id="fg-send-block">
+          <div class="fg-send-row">
+            <label class="fg-field">
+              <span class="fg-field-label">Send from account</span>
+              <select id="fg-send-account" class="fg-select"></select>
+            </label>
+            <button type="button" class="btn" id="fg-send-btn" onclick="fgSendStart()">Send invites automatically</button>
+            <button type="button" class="btn btn-ghost" id="fg-send-stop" onclick="fgSendStop()" hidden>Stop</button>
+          </div>
+          <div class="fg-send-status" id="fg-send-status" hidden></div>
+          <span class="cx-hint">The bot opens the page invite modal in that account's browser, ticks the queued people it can confidently match (skipping ambiguous ones), and clicks Invite up to the live credit limit — then logs them as Invited automatically.</span>
+        </div>
+
+        <div class="fg-manual">
+          <button type="button" class="btn btn-ghost" id="fg-mark-btn" onclick="fgMarkInvited()" hidden>Mark all as invited (manual)</button>
+        </div>
       </div>
 
       <!-- 3 · Database view -->
