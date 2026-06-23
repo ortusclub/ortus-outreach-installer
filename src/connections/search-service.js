@@ -95,6 +95,15 @@ function toRow(r, colleagues) {
   };
 }
 
+// Operator roster for the Follower Growth picker: [{ email, name }] from
+// colleagues.json. The email is the exact key warmVia scoping matches on.
+export function listOperators() {
+  const colleagues = getColleagues();
+  return Object.entries(colleagues)
+    .map(([email, m]) => ({ email, name: (m && m.name) || email }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function getConnectionsStats({ dir, cachePath } = {}) {
   const { stats } = getIndex(dir);
   const { meta, contacts } = getCache(cachePath);

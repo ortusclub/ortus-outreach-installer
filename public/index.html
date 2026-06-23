@@ -40,6 +40,9 @@
         <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
         <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
 
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connections</button>
+
         <div class="nav-section-label">Review</div>
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
 
@@ -209,6 +212,7 @@
              Badge visibility + name tooltip + count handled by
              renderResumeDraftBadge() in app.js. -->
         <div class="dashboard-new-wrap">
+          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connections</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
                indicator (drafts remain reachable via the Drafts & Stops section).
@@ -469,6 +473,126 @@
           </div>
           <div role="grid" aria-labelledby="sect-past" id="pastList"><!-- Phase 4 fills --></div>
         </div>
+      </section>
+    </div>
+
+    <!-- ── Connections view (route #/connections) — warm-reach finder ──
+         Rebuilt 2026-06-23 to the team-connections-v2 sketch structure
+         (chip inputs · 3 numbered steps · rich rows · Sheets-realistic
+         export preview), monochrome (no gold — Bugatti). Client logic in
+         app.js (Connections section). -->
+    <div id="connections-view" class="route-view">
+      <div class="wizard-back-row">
+        <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+      </div>
+
+      <div class="dashboard-header">
+        <h1 class="dashboard-title">Connections</h1>
+      </div>
+      <p class="cx-lede" id="cx-lede">Build a warm ICB lead list — search HubSpot, join it to the team's LinkedIn networks, pick who's warmly reachable, export.</p>
+
+      <!-- Stats / cache / Drive sync -->
+      <section class="dashboard-section">
+        <div class="conn-stats" id="conn-stats" aria-live="polite">
+          <div class="conn-stat"><span class="conn-stat-num" id="conn-stat-networks">—</span><span class="conn-stat-lbl">Networks</span></div>
+          <div class="conn-stat"><span class="conn-stat-num" id="conn-stat-slugs">—</span><span class="conn-stat-lbl">Unique profiles</span></div>
+          <div class="conn-stat"><span class="conn-stat-num" id="conn-stat-hubspot">—</span><span class="conn-stat-lbl">In HubSpot</span></div>
+        </div>
+        <div class="conn-cache" id="conn-cache" aria-live="polite"></div>
+
+        <!-- Live progress for the slow jobs (Drive download + HubSpot cache build).
+             Hidden unless a sync is running or the cache is still warming. -->
+        <div class="conn-progress" id="conn-progress" hidden aria-live="polite">
+          <div class="conn-progress-head">
+            <span class="conn-progress-dot" aria-hidden="true"></span>
+            <span class="conn-progress-label" id="conn-progress-label">Working…</span>
+            <span class="conn-progress-pct" id="conn-progress-pct"></span>
+          </div>
+          <div class="conn-progress-track"><div class="conn-progress-fill" id="conn-progress-fill"></div></div>
+          <div class="conn-progress-quip" id="conn-progress-quip">Don't worry, I'm still working :)</div>
+        </div>
+
+        <div class="conn-actions">
+          <button type="button" class="btn btn-secondary" id="conn-sync-btn" onclick="syncConnectionsFromDrive()">Sync from Drive</button>
+          <span class="conn-cache" id="conn-sync-status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <!-- 1 · Find people -->
+      <section class="dashboard-section cx-section">
+        <h2 class="cx-h2"><span class="cx-num">1</span> Find people</h2>
+        <div class="cx-stack">
+          <div class="cx-cf">
+            <div class="cx-lbl"><label>Where are they based?</label></div>
+            <div class="cx-box" onclick="focusChipInput('geo', event)">
+              <span class="cx-chips" id="cx-chips-geo"></span>
+              <input class="cx-in" id="cx-in-geo" autocomplete="off" placeholder="e.g. United Kingdom · London · Bavaria …" onkeydown="onChipKey(event,'geo')" />
+            </div>
+            <div class="cx-hint">Type a country, city or region and press <b>Enter</b>. We match it against all three.</div>
+          </div>
+          <div class="cx-cf">
+            <div class="cx-lbl"><label>What do they do?</label></div>
+            <div class="cx-box" onclick="focusChipInput('titles', event)">
+              <span class="cx-chips" id="cx-chips-titles"></span>
+              <input class="cx-in" id="cx-in-titles" autocomplete="off" placeholder="e.g. Marketing Director · Head of Sales …" onkeydown="onChipKey(event,'titles')" />
+            </div>
+            <div class="cx-hint">Add one or more job titles. A title matches on a partial — “Director” finds “Marketing Director”.</div>
+          </div>
+          <div class="cx-cf">
+            <div class="cx-lbl"><label>Which companies? <span class="cx-opt">(optional)</span></label></div>
+            <div class="cx-box" onclick="focusChipInput('companies', event)">
+              <span class="cx-chips" id="cx-chips-companies"></span>
+              <input class="cx-in" id="cx-in-companies" autocomplete="off" placeholder="e.g. Salesforce · SAP …" onkeydown="onChipKey(event,'companies')" />
+            </div>
+            <div class="cx-hint">Narrow to specific companies, or leave this blank to search everywhere.</div>
+          </div>
+          <div class="cx-find-row">
+            <button type="button" class="btn" id="conn-search-btn" onclick="runConnectionsSearch()">Find warm reach</button>
+            <span class="cx-logic">Within a field, <b>any</b> value matches · the three fields are combined (<b>AND</b>).</span>
+          </div>
+        </div>
+        <p class="cx-source" id="cx-source"></p>
+        <div class="conn-error" id="conn-error" hidden></div>
+
+        <!-- How it works — shown until the first search, then replaced by results. -->
+        <div class="cx-guide" id="cx-guide">
+          <div class="cx-guide-step"><span class="cx-guide-n">1</span><span>Describe who you want — a place, a role, maybe a company.</span></div>
+          <div class="cx-guide-step"><span class="cx-guide-n">2</span><span>We show the people <b>in HubSpot</b> a colleague can <b>warmly introduce</b> you to — not cold leads.</span></div>
+          <div class="cx-guide-step"><span class="cx-guide-n">3</span><span>Tick who to keep, then export the list — ready to run as an Introduce Back campaign.</span></div>
+        </div>
+      </section>
+
+      <!-- 2 · Pick who goes on the list -->
+      <section class="dashboard-section cx-section" id="cx-pick-section" hidden>
+        <h2 class="cx-h2"><span class="cx-num">2</span> Pick who goes on the list</h2>
+        <div class="cx-bar">
+          <label class="cx-selall"><input type="checkbox" id="conn-select-all" onchange="toggleAllConnections(this)"> Select all warm</label>
+          <span class="cx-count" id="cx-count"></span>
+          <div class="cx-toggle" id="cx-toggle">
+            <button type="button" class="active" data-filter="warm" onclick="setConnFilter('warm')">Only warm reach</button>
+            <button type="button" data-filter="all" onclick="setConnFilter('all')">All matches</button>
+          </div>
+        </div>
+        <p class="cx-guard" id="cx-guard" hidden><b>⛉ Do-Not-Contact &amp; Unsubscribed</b> (HubSpot Lead Status = DNC) can't be selected — shown greyed.</p>
+        <div id="conn-results"></div>
+
+        <div class="cx-export" id="cx-export" hidden>
+          <div>
+            <div class="cx-export-lbl"><b id="cx-sel-count">0 people</b> selected for the list</div>
+            <div class="cx-export-sub" id="cx-export-sub">DNC / unsubscribed automatically left out · each row keeps its warm connector as the primary</div>
+          </div>
+          <span class="cx-spacer"></span>
+          <button type="button" class="btn" id="cx-to-campaign-btn" onclick="useConnectionsForCampaign()" hidden>Use as this campaign's leads →</button>
+          <button type="button" class="btn btn-secondary" id="conn-export-btn" onclick="exportConnections()">Export CSV ↓</button>
+        </div>
+      </section>
+
+      <!-- 3 · The exported sheet (live preview of the current selection) -->
+      <section class="dashboard-section cx-section" id="cx-sheet-section" hidden>
+        <h2 class="cx-h2"><span class="cx-num">3</span> The exported sheet</h2>
+        <div class="gs-title" id="cx-sheet-title"></div>
+        <div class="gs" id="cx-sheet-preview"></div>
+        <p class="gs-note">Columns are the real lead-sheet schema (<b>First Name + LinkedIn URL</b> required), plus a <b>Primary</b> column = the colleague who can warmly reach each person. <b>Stage</b> is left blank for the campaign to fill.</p>
       </section>
     </div>
 
@@ -847,6 +971,23 @@
              the LinkedIn URL Column mapping (also filled by previewSheet)
              gets the gold-tint banner treatment. All existing IDs and event
              handlers preserved. -->
+        <!-- Entry C — build the lead list from the team's warm connections.
+             Mode-gated (Message Campaign + Introduction Campaign) by onModeChange.
+             (i) Build & attach → creates a Sheet of the picked people and sets it
+             as this campaign's source. (ii) Open builder → just opens Connections. -->
+        <div id="conn-source-block" class="conn-source-block" style="display:none;">
+          <div class="conn-source-head">◆ Build from warm connections</div>
+          <div class="conn-source-sub">Find people your team can warmly introduce — by geography, title or company — instead of pasting a sheet.</div>
+          <div class="conn-source-actions">
+            <button type="button" class="btn" onclick="buildWarmListForCampaign()">Build &amp; attach a warm list →</button>
+            <button type="button" class="btn btn-secondary" onclick="openConnectionsBuilder()">Open the Connections builder</button>
+          </div>
+          <div class="conn-source-hint">
+            <b>Build &amp; attach</b> creates a new Google Sheet of the people you pick and sets it as this campaign's source automatically.
+            <b>Open the builder</b> just opens Connections — export a CSV, drop it in your own sheet, and paste the URL below.
+          </div>
+        </div>
+
         <div class="sheet-hero">
           <div class="sheet-hero-top">
             <div class="sheet-hero-url-block">
@@ -1304,6 +1445,65 @@
           <ul id="pa-templates-list"></ul>
           <div id="pa-templates-empty" style="font-size:12px; color:var(--gray);">No saved templates yet. Use "Save as template" next to any comment text.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Follower Growth (follower_growth) — self-contained, like Sales Nav Scrape.
+         Phase 1: build a vetted per-operator invite list from the Connections DB,
+         queue it to the central FG sheet, send invites manually on LinkedIn, then
+         mark them done. Phase 2 will automate the "Invite to follow" click. ── -->
+    <div class="section" id="nav-follower-growth" style="display:none">
+      <h2><span data-edit="h2-fg">Follower Growth</span></h2>
+      <p class="fg-lede">Invite an operator's own 1st-degree connections to follow the Ortus Club page. Targets come from the Connections database (DNC-safe), filtered by function/title, deduped against everyone already invited, and capped at the account's monthly invite budget. The app builds the vetted list — you send the invites on LinkedIn, then mark them done.</p>
+
+      <!-- 1 · Build -->
+      <div class="fg-step">
+        <div class="fg-step-head"><span class="fg-step-num">1</span> Build the invite list</div>
+        <div class="fg-build-row">
+          <label class="fg-field">
+            <span class="fg-field-label">Operator — whose network to invite from</span>
+            <select id="fg-operator" class="fg-select"></select>
+          </label>
+          <div class="fg-field fg-field-grow">
+            <span class="fg-field-label">Function / title filter</span>
+            <div class="cx-box" id="fg-fn-box" onclick="focusFgInput()">
+              <span class="cx-chips" id="fg-fn-chips"></span>
+              <input id="fg-fn-input" class="cx-in" placeholder="marketing, brand, growth…" onkeydown="onFgChipKey(event)">
+            </div>
+            <span class="cx-hint">Defaults toward marketers. Each chip matches anywhere in the job title.</span>
+          </div>
+        </div>
+        <div class="fg-budget" id="fg-budget"></div>
+        <button type="button" class="btn" id="fg-build-btn" onclick="fgBuild()">Build list</button>
+      </div>
+
+      <!-- 2 · Review + queue -->
+      <div class="fg-step" id="fg-review-step" hidden>
+        <div class="fg-step-head"><span class="fg-step-num">2</span> Review &amp; queue <span id="fg-review-count" class="fg-count"></span></div>
+        <div class="fg-results-wrap">
+          <table class="fg-table">
+            <thead><tr><th>Name</th><th>Title</th><th>Function</th><th>Company</th></tr></thead>
+            <tbody id="fg-results"></tbody>
+          </table>
+        </div>
+        <div class="fg-actions">
+          <button type="button" class="btn" id="fg-queue-btn" onclick="fgQueue()">Queue these invites</button>
+          <button type="button" class="btn btn-ghost" id="fg-mark-btn" onclick="fgMarkInvited()" hidden>Mark all as invited</button>
+        </div>
+        <p class="cx-hint" id="fg-queue-note">Queuing writes them to the central FG sheet as “Queued”. Send the invites on LinkedIn, then “Mark all as invited” to log them and decrement the budget.</p>
+      </div>
+
+      <!-- 3 · Database view -->
+      <div class="fg-step">
+        <div class="fg-step-head"><span class="fg-step-num">3</span> Follower Growth database
+          <span class="fg-db-tabs">
+            <button type="button" class="fg-db-tab active" data-fgtab="invites" onclick="setFgTab('invites')">Invites</button>
+            <button type="button" class="fg-db-tab" data-fgtab="budgets" onclick="setFgTab('budgets')">Budgets</button>
+            <button type="button" class="fg-db-tab" data-fgtab="funnel" onclick="setFgTab('funnel')">Funnel</button>
+          </span>
+          <button type="button" class="fg-refresh" onclick="fgLoadDb()" title="Refresh">↻</button>
+        </div>
+        <div id="fg-db-body"><p class="cx-hint">Pick this campaign type to load the database.</p></div>
       </div>
     </div>
 

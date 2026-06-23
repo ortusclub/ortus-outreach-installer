@@ -1894,6 +1894,16 @@ function onModeChange() {
     if (introModeBlock) introModeBlock.style.display = (mode === 'introduce_back') ? '' : 'none';
   } catch (_) {}
 
+  // Entry C — "Build from warm connections" offered only for the two modes that
+  // run on a sheet of already-connected leads: Message Campaign (open_profile_only)
+  // and Introduction Campaign (introduce_back).
+  try {
+    const connSourceBlock = document.getElementById('conn-source-block');
+    if (connSourceBlock) {
+      connSourceBlock.style.display = (mode === 'open_profile_only' || mode === 'introduce_back') ? '' : 'none';
+    }
+  } catch (_) {}
+
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
   // the connect_only Yes/No toggle. See applyTemplateUIVisibility.
   applyTemplateUIVisibility(mode, localStorage.getItem('ortus-add-note') === '1');
@@ -2056,6 +2066,23 @@ function onModeChange() {
     if (navLaunch) navLaunch.style.display = '';
     if (runBar) runBar.style.display = '';
     try { stopScrapePolling(); } catch (_) {}
+  }
+
+  // Follower Growth — self-contained like Sales Nav Scrape: hide the campaign
+  // apparatus (accounts, pace, templates, sheet, daily limit, launch, run bar)
+  // and show the dedicated FG workspace wired to /api/fg/*.
+  const isFollowerGrowth = (mode === 'follower_growth');
+  const fgPanel = document.getElementById('nav-follower-growth');
+  if (fgPanel) fgPanel.style.display = isFollowerGrowth ? '' : 'none';
+  if (isFollowerGrowth) {
+    if (navAccounts) navAccounts.style.display = 'none';
+    if (navPace) navPace.style.display = 'none';
+    if (navTemplates) navTemplates.style.display = 'none';
+    if (navSheet) navSheet.style.display = 'none';
+    if (dailyKnob) dailyKnob.style.display = 'none';
+    if (navLaunch) navLaunch.style.display = 'none';
+    if (runBar) runBar.style.display = 'none';
+    try { initFollowerGrowth(); } catch (_) {}
   }
 
   // Persist last-used mode
@@ -3116,6 +3143,15 @@ const MODE_LIST = [
       'Scan LinkedIn inboxes for new replies',
       'Append new messages to the Replies tab',
       'Bump lead Stage to "Replied" on inbound',
+    ],
+  },
+  {
+    value: 'follower_growth',
+    name: 'Follower Growth',
+    bullets: [
+      'Invite your 1st-degree connections to follow the Ortus Club page',
+      'Targets from the Connections DB — function-filtered, DNC-safe, budget-capped',
+      'Phase 1: app builds the list, you send the invites manually',
     ],
   },
   {
@@ -9595,9 +9631,25 @@ function applyViewingActiveLock() {
 window.applyViewingActiveLock = applyViewingActiveLock;
 
 function applyRoute() {
-  const isWizard = (window.location.hash || '#/').startsWith('#/new');
-  document.body.classList.toggle('route-wizard', isWizard);
-  document.body.classList.toggle('route-dashboard', !isWizard);
+  const hash = window.location.hash || '#/';
+  const isWizard = hash.startsWith('#/new');
+  const isConnections = hash.startsWith('#/connections');
+  document.body.classList.toggle('route-connections', isConnections);
+  document.body.classList.toggle('route-wizard', isWizard && !isConnections);
+  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections);
+  if (isConnections) {
+    // Connections (warm-reach) screen — its own route-view. Stop the other
+    // routes' pollers and kick off the screen's own load/poll loop.
+    stopDashboardPolling();
+    stopWizardPolling();
+    if (typeof initConnectionsView === 'function') initConnectionsView();
+    try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
+    return;
+  }
+  if (typeof stopConnectionsPolling === 'function') stopConnectionsPolling();
+  // Leaving the Connections route: reset the load latch so a later return
+  // re-fetches fresh stats (and re-arms the build poller if still warming).
+  if (typeof resetConnectionsView === 'function') resetConnectionsView();
   if (!isWizard) {
     // v2.86.1 (port): leaving the wizard clears the "Open log" override so the
     // next idle visit starts hidden again (auto-show still applies when live).
@@ -9671,6 +9723,7 @@ async function updateWizardQueueState() {
 window.updateWizardQueueState = updateWizardQueueState;
 function goCreateCampaign() { window.location.hash = '#/new'; }
 function goDashboard()      { window.location.hash = '#/'; }
+function goConnections()    { window.location.hash = '#/connections'; }
 
 async function refreshDashboard() {
   await Promise.all([refreshActiveCampaign(), refreshDashboardQueue(), refreshDashboardSchedules(), refreshDashboardDrafts(), refreshPastCampaigns()]);
@@ -12154,10 +12207,844 @@ document.addEventListener('click', (e) => {
 
 window.addEventListener('hashchange', applyRoute);
 document.addEventListener('DOMContentLoaded', applyRoute);
-if (document.readyState !== 'loading') applyRoute();
+// Defer the initial sync route so the rest of this module (incl. the
+// Connections state `let`s + helpers below) has finished evaluating before
+// applyRoute() can dispatch into initConnectionsView() — avoids a TDZ crash
+// when the app loads directly on #/connections.
+if (document.readyState !== 'loading') { queueMicrotask(() => applyRoute()); }
 
 window.goCreateCampaign = goCreateCampaign;
 window.goDashboard = goDashboard;
+window.goConnections = goConnections;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Connections (warm-reach finder) — route #/connections
+// Backend: GET /api/connections/stats, POST /api/connections/search,
+//          POST /api/connections/export. Same-origin JSON (cookies auto-sent).
+// ─────────────────────────────────────────────────────────────────────────────
+let connStatsTimer = null;        // poll handle while the cache is still building
+let connLastResults = [];         // last search's live (non-DNC) results
+let connDncResults = [];          // last search's DNC results (greyed, unselectable)
+let connLastMeta = { count: 0, warmCount: 0, dncExcluded: 0, total: 0 };
+let connStatsLoaded = false;      // only auto-load stats once per route entry
+let connFilterMode = 'warm';      // 'warm' (only warm reach) | 'all' (all matches)
+let connColleagueCount = 0;       // # colleague networks (for the source line)
+const connSelected = new Set();   // selected lead urls (survives the warm/all toggle)
+
+// Chip inputs — geography carries a level (country/region/city); titles/companies are flat.
+const connChips = { geo: [], titles: [], companies: [] };
+
+function addChip(field, value) {
+  const v = (value || '').trim();
+  if (!v || !connChips[field]) return;
+  if (connChips[field].some((c) => c.value.toLowerCase() === v.toLowerCase())) return;
+  connChips[field].push({ value: v });
+  renderChips(field);
+}
+
+function removeChip(field, idx) {
+  if (!connChips[field]) return;
+  connChips[field].splice(idx, 1);
+  renderChips(field);
+}
+
+function renderChips(field) {
+  const host = document.getElementById('cx-chips-' + field);
+  if (!host) return;
+  host.innerHTML = connChips[field].map((c, i) =>
+    `<span class="cx-chip">${escHtml(c.value)} <button type="button" class="x" onclick="removeChip('${field}',${i})" aria-label="Remove ${escHtml(c.value)}">×</button></span>`,
+  ).join('');
+}
+
+function onChipKey(e, field) {
+  const input = e.target;
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    addChip(field, input.value);
+    input.value = '';
+  } else if (e.key === 'Backspace' && !input.value && connChips[field] && connChips[field].length) {
+    connChips[field].pop();
+    renderChips(field);
+  }
+}
+
+// Focus the field's text input when the pill box is clicked — but not when the
+// click lands on the level <select> or a chip's × (those handle themselves).
+function focusChipInput(field, ev) {
+  if (ev && ev.target && ev.target.closest && ev.target.closest('.cx-level, .cx-chip')) return;
+  const el = document.getElementById('cx-in-' + field);
+  if (el) el.focus();
+}
+
+// Build the search/export body from the chip state. Any half-typed text still in
+// an input is committed first so a forgotten Enter doesn't silently drop a term.
+function readConnectionsCriteria() {
+  ['geo', 'titles', 'companies'].forEach((f) => {
+    const el = document.getElementById('cx-in-' + f);
+    if (el && el.value.trim()) { addChip(f, el.value); el.value = ''; }
+  });
+  return {
+    geo: connChips.geo.map((c) => c.value),
+    jobTitles: connChips.titles.map((c) => c.value),
+    companies: connChips.companies.map((c) => c.value),
+  };
+}
+
+function setConnError(msg) {
+  const el = document.getElementById('conn-error');
+  if (!el) return;
+  if (msg) { el.textContent = msg; el.hidden = false; }
+  else { el.textContent = ''; el.hidden = true; }
+}
+
+// Pull an { error } message off a non-OK response, falling back to status text.
+async function connErrorMessage(res) {
+  try {
+    const body = await res.json();
+    if (body && body.error) return String(body.error);
+  } catch (_) { /* not JSON */ }
+  return `Request failed (${res.status})`;
+}
+
+// Route entry — load stats once and begin polling if the cache is still warming.
+function initConnectionsView() {
+  // Campaign-aware lede: when we arrived here via "Build & attach a warm list",
+  // tell the operator the picked people will be turned into the campaign's sheet.
+  let target = false;
+  try { target = sessionStorage.getItem('connTarget') === '1'; } catch (_) {}
+  const lede = document.getElementById('cx-lede');
+  if (lede) {
+    lede.textContent = target
+      ? 'Pick the warm-reachable people for your campaign — then “Use as this campaign’s leads” creates the sheet and attaches it.'
+      : 'Build a warm ICB lead list — search HubSpot, join it to the team’s LinkedIn networks, pick who’s warmly reachable, export.';
+  }
+  if (!connStatsLoaded) {
+    connStatsLoaded = true;
+    refreshConnectionsStats();
+  }
+}
+
+function stopConnectionsPolling() {
+  if (connStatsTimer) { clearInterval(connStatsTimer); connStatsTimer = null; }
+}
+
+// Called when navigating away from #/connections so the next entry reloads.
+function resetConnectionsView() {
+  connStatsLoaded = false;
+  stopConnQuips();
+}
+
+async function refreshConnectionsStats() {
+  try {
+    const res = await fetch('/api/connections/stats');
+    if (!res.ok) { renderConnectionsCache(null, await connErrorMessage(res)); return; }
+    const stats = await res.json();
+    renderConnectionsStats(stats);
+  } catch (e) {
+    renderConnectionsCache(null, 'Could not load stats — ' + (e?.message || e));
+  }
+}
+
+function renderConnectionsStats(stats) {
+  const setNum = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = (typeof v === 'number') ? v.toLocaleString() : '—';
+  };
+  setNum('conn-stat-networks', stats.networks);
+  setNum('conn-stat-slugs', stats.uniqueSlugs);
+  // Third stat = how many ingested profiles matched a HubSpot contact (the
+  // searchable universe). "Networks" and "Colleagues" were the same count by
+  // construction, so this replaces the redundant colleague tile.
+  setNum('conn-stat-hubspot', stats.cache && stats.cache.contacts);
+
+  const cache = stats.cache || { built: false };
+  const sync = stats.sync || { running: false };
+  renderConnectionsSync(sync);
+
+  connColleagueCount = stats.networks || stats.colleagues || 0;
+  renderConnSource();
+
+  const cacheReady = cache.built && cache.complete;
+  if (cacheReady) {
+    const n = (typeof cache.contacts === 'number') ? cache.contacts.toLocaleString() : '0';
+    renderConnectionsCache(`Cache ready · ${n} HubSpot contacts matched`);
+  } else if (cache.built) {
+    renderConnectionsCache('Warming the HubSpot cache — search already works on the partial cache.');
+  } else {
+    renderConnectionsCache('No cache yet — run “Sync from Drive” to build it.');
+  }
+
+  updateConnProgress(cache, sync);
+
+  // Keep polling while the cache is still building OR a Drive sync is running;
+  // stop only when BOTH are settled. Reuse the single existing interval handle.
+  if (cacheReady && !sync.running) {
+    stopConnectionsPolling();
+  } else if (!connStatsTimer) {
+    connStatsTimer = setInterval(refreshConnectionsStats, 4000);
+  }
+}
+
+// The "Searching HubSpot, joined to N networks" provenance line under step 1.
+function renderConnSource() {
+  const el = document.getElementById('cx-source');
+  if (!el) return;
+  if (!connColleagueCount) { el.innerHTML = ''; return; }
+  const noun = connColleagueCount === 1 ? 'network' : 'networks';
+  el.innerHTML = `Searching <b>HubSpot</b> (Job Title · Company · Country/Region/City), joined to <b>${escHtml(String(connColleagueCount))} LinkedIn ${noun}</b> on the LinkedIn profile URL. Do-Not-Contact &amp; unsubscribed contacts are excluded automatically.`;
+}
+
+// Render the Drive-sync result/error line and keep the sync button in step.
+// While a sync is running the live detail is carried by the progress bar
+// (updateConnProgress), so this line stays quiet to avoid duplication.
+function renderConnectionsSync(sync) {
+  const btn = document.getElementById('conn-sync-btn');
+  if (btn) {
+    btn.disabled = !!sync.running;
+    btn.textContent = sync.running ? 'Syncing…' : 'Sync from Drive';
+  }
+
+  let text = '';
+  if (sync.phase === 'error' || sync.error) {
+    text = `Sync error: ${escHtml(String(sync.error || 'unknown error'))}`;
+  } else if (!sync.running && sync.lastResult) {
+    const r = sync.lastResult;
+    const added = Array.isArray(r.added) ? r.added.length : 0;
+    const updated = Array.isArray(r.updated) ? r.updated.length : 0;
+    const unchanged = r.unchanged || 0;
+    text = `Last sync: +${escHtml(String(added))} new, ${escHtml(String(updated))} updated, ${escHtml(String(unchanged))} unchanged`;
+    const nErrors = Array.isArray(r.errors) ? r.errors.length : 0;
+    if (nErrors) text += ` · ${escHtml(String(nErrors))} errors`;
+  }
+  setConnSyncStatus(text);
+}
+
+// Live progress bar + rotating "still working" quips for the two slow jobs:
+// Drive download, then the HubSpot cache build (slugsProcessed climbs as the
+// background buildCache checkpoints each chunk).
+function updateConnProgress(cache, sync) {
+  const wrap = document.getElementById('conn-progress');
+  if (!wrap) return;
+  const fill = document.getElementById('conn-progress-fill');
+  const label = document.getElementById('conn-progress-label');
+  const pct = document.getElementById('conn-progress-pct');
+  const running = !!sync.running;
+  let active = false, frac = 0, labelText = '';
+  if (running && sync.phase === 'downloading') {
+    active = true;
+    const t = sync.total || 0, d = sync.downloaded || 0;
+    frac = t ? d / t : 0;
+    labelText = `Downloading networks from Drive · ${d}/${t} files`;
+  } else if (running && sync.phase === 'caching') {
+    active = true;
+    const t = cache.totalSlugs || 0, d = cache.slugsProcessed || 0;
+    frac = t ? d / t : 0;
+    labelText = `Matching profiles to HubSpot · ${d.toLocaleString()}/${t.toLocaleString()}`;
+  } else if (running) {
+    active = true; labelText = 'Reading the Drive folder…';
+  } else if (cache.built && !cache.complete) {
+    active = true;
+    const t = cache.totalSlugs || 0, d = cache.slugsProcessed || 0;
+    frac = t ? d / t : 0;
+    labelText = `Building the HubSpot cache · ${d.toLocaleString()}/${t.toLocaleString()}`;
+  }
+  if (!active) { wrap.hidden = true; stopConnQuips(); return; }
+  wrap.hidden = false;
+  const indeterminate = !frac;
+  wrap.classList.toggle('indeterminate', indeterminate);
+  if (label) label.textContent = labelText;
+  if (pct) pct.textContent = indeterminate ? '' : Math.round(frac * 100) + '%';
+  if (fill && !indeterminate) fill.style.width = Math.max(2, Math.min(100, Math.round(frac * 100))) + '%';
+  startConnQuips();
+}
+
+const CONN_QUIPS = [
+  "Don't worry, I'm still working :)",
+  'Still digging through the team’s networks…',
+  'Matching slugs to HubSpot — this is the slow bit.',
+  'Big networks take a minute. Grab a coffee ☕',
+  'Counting how many warm intros we can make…',
+  'Cross-referencing thousands of profiles…',
+  'Almost there… (probably).',
+  'Hang tight — no need to refresh.',
+];
+let connQuipTimer = null, connQuipIdx = 0;
+function startConnQuips() {
+  if (connQuipTimer) return;
+  const el = document.getElementById('conn-progress-quip');
+  if (el) el.textContent = CONN_QUIPS[connQuipIdx % CONN_QUIPS.length];
+  connQuipTimer = setInterval(() => {
+    connQuipIdx += 1;
+    const e = document.getElementById('conn-progress-quip');
+    if (e) e.textContent = CONN_QUIPS[connQuipIdx % CONN_QUIPS.length];
+  }, 3500);
+}
+function stopConnQuips() {
+  if (connQuipTimer) { clearInterval(connQuipTimer); connQuipTimer = null; }
+}
+
+function setConnSyncStatus(html) {
+  const el = document.getElementById('conn-sync-status');
+  if (el) el.innerHTML = html || '';
+}
+
+function renderConnectionsCache(text, errText) {
+  const el = document.getElementById('conn-cache');
+  if (!el) return;
+  el.textContent = errText ? errText : (text || '');
+}
+
+async function runConnectionsSearch() {
+  setConnError('');
+  const results = document.getElementById('conn-results');
+  const btn = document.getElementById('conn-search-btn');
+  const body = { ...readConnectionsCriteria() };
+  if (results) results.innerHTML = '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Searching…'; }
+  try {
+    const res = await fetch('/api/connections/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) { setConnError(await connErrorMessage(res)); return; }
+    const data = await res.json();
+    renderConnectionsResults(data);
+  } catch (e) {
+    setConnError('Search failed — ' + (e?.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Find warm reach'; }
+  }
+}
+
+function renderConnectionsResults(data) {
+  connLastResults = Array.isArray(data.results) ? data.results : [];
+  connDncResults = Array.isArray(data.dncResults) ? data.dncResults : [];
+  connLastMeta = {
+    count: data.count || 0,
+    warmCount: data.warmCount || 0,
+    dncExcluded: data.dncExcluded || 0,
+    total: data.totalInHubSpot || 0,
+  };
+
+  // Default selection = every warm-reachable person (matches the sketch's
+  // "Select all warm" checked state). Tracked by url so it survives re-renders
+  // when the warm/all toggle flips.
+  connSelected.clear();
+  connLastResults.forEach((r) => { if (r.hasWarm && r.url) connSelected.add(r.url); });
+
+  const guide = document.getElementById('cx-guide');
+  if (guide) guide.hidden = true;
+  const pick = document.getElementById('cx-pick-section');
+  if (pick) pick.hidden = false;
+
+  const countEl = document.getElementById('cx-count');
+  if (countEl) {
+    const parts = [`${connLastMeta.count} match`, `<b>${connLastMeta.warmCount} warmly reachable</b>`];
+    if (connLastMeta.dncExcluded) parts.push(`${connLastMeta.dncExcluded} excluded (DNC)`);
+    countEl.innerHTML = parts.join(' · ');
+  }
+  const guard = document.getElementById('cx-guard');
+  if (guard) guard.hidden = !(connLastMeta.dncExcluded || connDncResults.length);
+
+  renderConnRows();
+  syncSelectAllCheckbox();
+  updateConnSelection();
+}
+
+// Earliest "Connected On" date carried through annotate→warmDetails (for the
+// "1st-degree · Jul 2024" sub-line).
+function firstConnDate(r) {
+  const d = (r.warmDetails || []).map((x) => x.connectedOn).filter(Boolean);
+  return d.length ? d[0] : '';
+}
+
+function connRowHtml(r, isDnc) {
+  const name = `${r.firstName || ''} ${r.lastName || ''}`.trim() || '—';
+  const roleBits = [];
+  if (r.jobTitle) roleBits.push(`<b>${escHtml(r.jobTitle)}</b>`);
+  if (r.company) roleBits.push(escHtml(r.company));
+  const role = roleBits.join(' · ') || '—';
+  const place = [r.city, r.region, r.country].filter(Boolean).map(escHtml).join(', ');
+  const locBits = [];
+  if (place) locBits.push(`📍 ${place}`);
+  if (r.linkedinId) locBits.push(`LinkedIn ID ${escHtml(String(r.linkedinId))}`);
+  const loc = locBits.join(' · ');
+
+  const names = Array.isArray(r.warmVia) ? r.warmVia : [];
+  let warmHtml, warmClass = 'cx-warm';
+  if (isDnc) {
+    const who = names.length ? `${escHtml(names.join(' · '))} can reach` : 'In HubSpot';
+    warmHtml = `<div class="lead">${who}</div><div class="deg">excluded · DNC</div>`;
+    warmClass = 'cx-warm cold';
+  } else if (r.hasWarm) {
+    const date = firstConnDate(r);
+    const deg = names.length > 1 ? `1st-degree (${names.length} of us)` : (date ? `1st-degree · ${escHtml(date)}` : '1st-degree');
+    warmHtml = `<div class="lead">${escHtml(names.join(' · '))} can reach</div><div class="deg">${deg}</div>`;
+  } else {
+    warmHtml = '<div class="lead">No warm path</div><div class="deg">in HubSpot only</div>';
+    warmClass = 'cx-warm cold';
+  }
+  const hsLink = r.id
+    ? `<a class="cx-hs" href="https://app.hubspot.com/contacts/2748825/contact/${encodeURIComponent(r.id)}" target="_blank" rel="noopener">Open in HubSpot ↗</a>`
+    : '';
+
+  const cb = isDnc
+    ? `<input type="checkbox" disabled aria-label="${escHtml(name)} — DNC, can't be selected">`
+    : `<input type="checkbox" class="conn-row-check" value="${escHtml(r.url || '')}" ${connSelected.has(r.url) ? 'checked' : ''} onchange="onConnRowToggle(this)" aria-label="Select ${escHtml(name)}">`;
+  const tag = isDnc ? ' <span class="tag">DNC · unsubscribed</span>' : '';
+
+  return `
+    <div class="cx-row${isDnc ? ' dnc' : ''}">
+      ${cb}
+      <div>
+        <div class="cx-name">${escHtml(name)}${tag}</div>
+        <div class="cx-role">${role}</div>
+        ${loc ? `<div class="cx-loc">${loc}</div>` : ''}
+      </div>
+      <div class="${warmClass}">${warmHtml}${hsLink}</div>
+    </div>`;
+}
+
+function renderConnRows() {
+  const host = document.getElementById('conn-results');
+  if (!host) return;
+  const warmOnly = connFilterMode === 'warm';
+  const live = warmOnly ? connLastResults.filter((r) => r.hasWarm) : connLastResults;
+  const dnc = warmOnly ? connDncResults.filter((r) => r.hasWarm) : connDncResults;
+  if (!live.length && !dnc.length) {
+    host.innerHTML = `<div class="conn-empty">${warmOnly ? 'No warmly-reachable matches — try “All matches”.' : 'No matches.'}</div>`;
+    return;
+  }
+  host.innerHTML = live.map((r) => connRowHtml(r, false)).join('') + dnc.map((r) => connRowHtml(r, true)).join('');
+}
+
+function setConnFilter(mode) {
+  connFilterMode = (mode === 'all') ? 'all' : 'warm';
+  document.querySelectorAll('#cx-toggle button').forEach((b) => {
+    b.classList.toggle('active', b.getAttribute('data-filter') === connFilterMode);
+  });
+  renderConnRows();
+  syncSelectAllCheckbox();
+}
+
+function onConnRowToggle(cb) {
+  if (cb && cb.value) {
+    if (cb.checked) connSelected.add(cb.value); else connSelected.delete(cb.value);
+  }
+  syncSelectAllCheckbox();
+  updateConnSelection();
+}
+
+// Select-all toggles every *visible, enabled* row (respects the warm/all filter).
+function toggleAllConnections(master) {
+  document.querySelectorAll('#conn-results .conn-row-check').forEach((cb) => {
+    cb.checked = master.checked;
+    if (!cb.value) return;
+    if (master.checked) connSelected.add(cb.value); else connSelected.delete(cb.value);
+  });
+  updateConnSelection();
+}
+
+function syncSelectAllCheckbox() {
+  const master = document.getElementById('conn-select-all');
+  if (!master) return;
+  const boxes = Array.from(document.querySelectorAll('#conn-results .conn-row-check'));
+  master.checked = boxes.length > 0 && boxes.every((cb) => cb.checked);
+}
+
+function updateConnSelection() {
+  const selectedRows = connLastResults.filter((r) => r.url && connSelected.has(r.url));
+  const n = selectedRows.length;
+  const selCount = document.getElementById('cx-sel-count');
+  if (selCount) selCount.textContent = `${n} ${n === 1 ? 'person' : 'people'}`;
+  const exportBar = document.getElementById('cx-export');
+  if (exportBar) exportBar.hidden = false;
+  const exportBtn = document.getElementById('conn-export-btn');
+  if (exportBtn) exportBtn.disabled = n === 0;
+  // "Use as this campaign's leads" only when we came from a campaign Data step.
+  const toCampaignBtn = document.getElementById('cx-to-campaign-btn');
+  if (toCampaignBtn) {
+    let target = false;
+    try { target = sessionStorage.getItem('connTarget') === '1'; } catch (_) {}
+    toCampaignBtn.hidden = !target;
+    toCampaignBtn.disabled = n === 0;
+  }
+  renderSheetPreview(selectedRows);
+}
+
+// Sheets-realistic live preview of the current selection (the real lead schema).
+function renderSheetPreview(rows) {
+  const sheet = document.getElementById('cx-sheet-section');
+  const title = document.getElementById('cx-sheet-title');
+  const host = document.getElementById('cx-sheet-preview');
+  if (sheet) sheet.hidden = false;
+  if (title) {
+    title.innerHTML = rows.length
+      ? `Lead list preview · <b>${rows.length} ${rows.length === 1 ? 'lead' : 'leads'}</b> · columns match the real lead-sheet schema`
+      : 'Tick people above to preview the lead list.';
+  }
+  if (!host) return;
+  if (!rows.length) { host.innerHTML = ''; host.style.display = 'none'; return; }
+  host.style.display = '';
+  const head = ['First Name', 'Last Name', 'LinkedIn URL', 'Company', 'Job Title', 'Country', 'Primary', 'Stage'];
+  const shown = rows.slice(0, 8);
+  let body = shown.map((r) => {
+    const shortUrl = (r.url || '').replace(/^https?:\/\/(www\.)?/, '');
+    const primary = r.primaryName || (Array.isArray(r.warmVia) && r.warmVia[0]) || '';
+    return `<tr>
+      <td>${escHtml(r.firstName || '')}</td>
+      <td>${escHtml(r.lastName || '')}</td>
+      <td class="url">${escHtml(shortUrl || '—')}</td>
+      <td>${escHtml(r.company || '')}</td>
+      <td>${escHtml(r.jobTitle || '')}</td>
+      <td>${escHtml(r.country || '')}</td>
+      <td class="primary">${escHtml(primary)}</td>
+      <td class="empty">—</td>
+    </tr>`;
+  }).join('');
+  if (rows.length > shown.length) {
+    body += `<tr><td colspan="8" style="color:#5f6368;font-style:italic">…${rows.length - shown.length} more</td></tr>`;
+  }
+  host.innerHTML = `<table><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function exportConnections() {
+  setConnError('');
+  const btn = document.getElementById('conn-export-btn');
+  const sub = document.getElementById('cx-export-sub');
+  const body = { ...readConnectionsCriteria() };
+  // Scope the export to the ticked rows (the export button is disabled at zero).
+  const urls = connLastResults.filter((r) => r.url && connSelected.has(r.url)).map((r) => r.url);
+  if (urls.length) body.urls = urls;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/connections/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) { setConnError(await connErrorMessage(res)); return; }
+    const data = await res.json();
+    downloadConnectionsCsv(data.csv || '', 'warm-reach.csv');
+    if (sub) sub.innerHTML = `Downloaded <b>${escHtml(String(data.count || 0))}</b> rows as <b>warm-reach.csv</b> · DNC / unsubscribed left out.`;
+  } catch (e) {
+    setConnError('Export failed — ' + (e?.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function downloadConnectionsCsv(csv, filename) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Entry C — campaign Data step ↔ Connections handoff ──────────────────────
+// (i) Full pipe: open Connections in "for this campaign" mode; the picked people
+// are written to a new Sheet and attached as the campaign source.
+function buildWarmListForCampaign() {
+  try {
+    sessionStorage.setItem('connTarget', '1');
+    const nameInput = document.getElementById('campaign-name-input');
+    sessionStorage.setItem('connTargetName', (nameInput && nameInput.value.trim()) || '');
+  } catch (_) {}
+  goConnections();
+}
+// (ii) Bridge: just open the Connections builder (export a CSV, paste the URL).
+function openConnectionsBuilder() {
+  try { sessionStorage.removeItem('connTarget'); } catch (_) {}
+  goConnections();
+}
+
+// Write the current selection to a new Google Sheet (via the Apps Script
+// createLeadTab action) and hand it to the wizard's Data step as the source.
+async function useConnectionsForCampaign() {
+  const sub = document.getElementById('cx-export-sub');
+  const btn = document.getElementById('cx-to-campaign-btn');
+  const urls = connLastResults.filter((r) => r.url && connSelected.has(r.url)).map((r) => r.url);
+  if (!urls.length) { if (sub) sub.textContent = 'Pick at least one person first.'; return; }
+  const body = { ...readConnectionsCriteria(), urls };
+  let nm = '';
+  try { nm = sessionStorage.getItem('connTargetName') || ''; } catch (_) {}
+  if (nm) body.name = `ICB — ${nm}`;
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating sheet…'; }
+  try {
+    const res = await fetch('/api/connections/to-workbook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) { if (sub) sub.textContent = await connErrorMessage(res); return; }
+    const data = await res.json();
+    try { sessionStorage.removeItem('connTarget'); } catch (_) {}
+    // Hand the freshly-created sheet to the wizard's Data step, then preview it.
+    const urlInput = document.getElementById('sheet-url');
+    if (urlInput && data.url) {
+      urlInput.value = data.url;
+      try { if (typeof updateSheetTabHint === 'function') updateSheetTabHint(); } catch (_) {}
+    }
+    goCreateCampaign();
+    setTimeout(() => { try { if (typeof previewSheet === 'function') previewSheet(); } catch (_) {} }, 80);
+  } catch (e) {
+    if (sub) sub.textContent = 'Could not create the sheet — ' + (e?.message || e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Use as this campaign's leads →"; }
+  }
+}
+
+// Kick off a background Drive→HubSpot sync; progress surfaces via the stats poll.
+async function syncConnectionsFromDrive() {
+  setConnSyncStatus('');
+  const btn = document.getElementById('conn-sync-btn');
+  try {
+    const res = await fetch('/api/connections/sync', { method: 'POST' });
+    if (!res.ok) { setConnSyncStatus(escHtml(await connErrorMessage(res))); return; }
+    const data = await res.json();
+    if (data.started === false) {
+      setConnSyncStatus(escHtml(String(data.reason || 'Sync already running')));
+      return;
+    }
+    // Started: disable immediately and make sure the poller is showing progress.
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+    setConnSyncStatus('Syncing… reading Drive folder');
+    if (!connStatsTimer) connStatsTimer = setInterval(refreshConnectionsStats, 4000);
+    refreshConnectionsStats();
+  } catch (e) {
+    setConnSyncStatus('Sync failed — ' + escHtml(String(e?.message || e)));
+  }
+}
+
+window.initConnectionsView = initConnectionsView;
+window.stopConnectionsPolling = stopConnectionsPolling;
+window.runConnectionsSearch = runConnectionsSearch;
+window.exportConnections = exportConnections;
+window.toggleAllConnections = toggleAllConnections;
+window.syncConnectionsFromDrive = syncConnectionsFromDrive;
+window.focusChipInput = focusChipInput;
+window.onChipKey = onChipKey;
+window.removeChip = removeChip;
+window.setConnFilter = setConnFilter;
+window.onConnRowToggle = onConnRowToggle;
+window.buildWarmListForCampaign = buildWarmListForCampaign;
+window.openConnectionsBuilder = openConnectionsBuilder;
+window.useConnectionsForCampaign = useConnectionsForCampaign;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Follower Growth campaign (follower_growth) — Phase 1 client. Self-contained:
+// build a per-operator invite list from the Connections DB, queue it to the
+// central FG sheet, then mark it sent (manual LinkedIn invite). All wired to
+// /api/fg/*. Mirrors the Connections chip-input + monochrome table conventions.
+// ─────────────────────────────────────────────────────────────────────────────
+const FG_DEFAULT_CHIPS = ['marketing', 'brand', 'growth', 'content', 'demand', 'comms', 'cmo'];
+let fgChips = [];
+let _fgBuilt = null;     // last /api/fg/build response { rows, count, eligible, budget, account, month, ... }
+let _fgDb = null;        // last /api/fg/db response { invites, budgets, funnel }
+let _fgTab = 'invites';
+let _fgViewReady = false;
+
+function renderFgChips() {
+  const wrap = document.getElementById('fg-fn-chips');
+  if (!wrap) return;
+  wrap.innerHTML = fgChips.map((c, i) =>
+    `<span class="cx-chip">${escHtml(c)}<button type="button" class="cx-chip-x" onclick="removeFgChip(${i})" aria-label="remove">×</button></span>`,
+  ).join('');
+}
+function addFgChip(v) {
+  const t = String(v || '').trim().toLowerCase();
+  if (t && !fgChips.includes(t)) { fgChips.push(t); renderFgChips(); }
+}
+function removeFgChip(i) { fgChips.splice(i, 1); renderFgChips(); }
+function focusFgInput() { document.getElementById('fg-fn-input')?.focus(); }
+function onFgChipKey(e) {
+  const input = e.target;
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    addFgChip(input.value);
+    input.value = '';
+  } else if (e.key === 'Backspace' && !input.value && fgChips.length) {
+    removeFgChip(fgChips.length - 1);
+  }
+}
+
+async function fgPopulateOperators() {
+  const sel = document.getElementById('fg-operator');
+  if (!sel) return;
+  try {
+    const r = await fetch('/api/fg/operators').then((x) => x.json());
+    const ops = (r && r.operators) || [];
+    sel.innerHTML = ops.length
+      ? ops.map((o) => `<option value="${escHtml(o.email)}">${escHtml(o.name)}</option>`).join('')
+      : '<option value="">No operators found — seed colleagues.json</option>';
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load operators</option>';
+  }
+}
+
+function fgRenderBudget(b) {
+  const el = document.getElementById('fg-budget');
+  if (!el) return;
+  if (!b || typeof b.budget !== 'number') { el.textContent = ''; return; }
+  el.innerHTML = `<span class="fg-budget-label">Remaining budget this month</span>
+    <span class="fg-budget-num">${b.budget}</span>
+    <span class="fg-budget-sub">invites · ${escHtml(b.account || '')} · ${escHtml(b.month || '')}</span>`;
+}
+
+async function fgBuild() {
+  const operator = document.getElementById('fg-operator')?.value || '';
+  if (!operator) { showCampaignToast('Pick an operator first.', 2500); return; }
+  const btn = document.getElementById('fg-build-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Building…'; }
+  try {
+    const r = await fetch('/api/fg/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operator, jobTitles: fgChips }),
+    }).then((x) => x.json());
+    if (r.error) { showCampaignToast(r.error, 4000); return; }
+    _fgBuilt = r;
+    fgRenderBudget(r);
+    fgRenderResults(r);
+    const step = document.getElementById('fg-review-step');
+    if (step) step.hidden = false;
+    document.getElementById('fg-mark-btn')?.setAttribute('hidden', '');
+  } catch (e) {
+    showCampaignToast('Build failed — ' + String(e?.message || e), 4000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Build list'; }
+  }
+}
+
+function fgRenderResults(r) {
+  const tbody = document.getElementById('fg-results');
+  const count = document.getElementById('fg-review-count');
+  if (count) count.textContent = `${r.count} of ${r.eligible} eligible (budget ${r.budget})`;
+  if (!tbody) return;
+  // FG_HEADER row order: [Name, URL, MemberId, Company, Title, FunctionMatch, Geo, ...]
+  tbody.innerHTML = (r.rows || []).map((row) =>
+    `<tr><td>${escHtml(row[0])}</td><td>${escHtml(row[4])}</td><td>${escHtml(row[5])}</td><td>${escHtml(row[3])}</td></tr>`,
+  ).join('') || '<tr><td colspan="4" class="cx-hint">No eligible connections for this operator + filter.</td></tr>';
+  const queueBtn = document.getElementById('fg-queue-btn');
+  if (queueBtn) queueBtn.disabled = !(r.rows && r.rows.length);
+}
+
+async function fgQueue() {
+  if (!_fgBuilt || !_fgBuilt.rows || !_fgBuilt.rows.length) return;
+  const btn = document.getElementById('fg-queue-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Queuing…'; }
+  try {
+    const r = await fetch('/api/fg/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: _fgBuilt.rows }),
+    }).then((x) => x.json());
+    if (r.error) { showCampaignToast(r.error, 4000); return; }
+    showCampaignToast(`Queued ${r.queued} invite(s)${r.skippedDuplicates ? ` · skipped ${r.skippedDuplicates} duplicate(s)` : ''}.`, 4000);
+    document.getElementById('fg-mark-btn')?.removeAttribute('hidden');
+    fgLoadDb();
+  } catch (e) {
+    showCampaignToast('Queue failed — ' + String(e?.message || e), 4000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Queue these invites'; }
+  }
+}
+
+async function fgMarkInvited() {
+  if (!_fgBuilt || !_fgBuilt.rows || !_fgBuilt.rows.length) return;
+  // FG_HEADER: Member ID is col index 2.
+  const memberIds = _fgBuilt.rows.map((row) => row[2]).filter(Boolean);
+  if (!memberIds.length) { showCampaignToast('No Member IDs to mark.', 3000); return; }
+  const btn = document.getElementById('fg-mark-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Marking…'; }
+  try {
+    const r = await fetch('/api/fg/mark-invited', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberIds, account: _fgBuilt.account, operator: document.getElementById('fg-operator')?.value, month: _fgBuilt.month }),
+    }).then((x) => x.json());
+    if (r.error) { showCampaignToast(r.error, 4000); return; }
+    showCampaignToast(`Marked ${r.invited} invited · ${r.remaining} budget left.`, 4000);
+    fgLoadDb();
+  } catch (e) {
+    showCampaignToast('Mark failed — ' + String(e?.message || e), 4000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Mark all as invited'; }
+  }
+}
+
+async function fgLoadDb() {
+  const body = document.getElementById('fg-db-body');
+  if (body) body.innerHTML = '<p class="cx-hint">Loading…</p>';
+  try {
+    const res = await fetch('/api/fg/db');
+    const r = await res.json();
+    if (!res.ok || r.error) {
+      if (body) body.innerHTML = `<p class="cx-hint">${escHtml(r.error || 'Could not load the FG database.')}<br>Deploy the FG Apps Script and set FG_WEBAPP_URL to enable this view.</p>`;
+      _fgDb = null;
+      return;
+    }
+    _fgDb = r;
+    renderFgDb();
+  } catch (e) {
+    if (body) body.innerHTML = `<p class="cx-hint">Could not load the FG database — ${escHtml(String(e?.message || e))}</p>`;
+  }
+}
+
+function setFgTab(tab) {
+  _fgTab = tab;
+  document.querySelectorAll('.fg-db-tab').forEach((b) => b.classList.toggle('active', b.dataset.fgtab === tab));
+  renderFgDb();
+}
+
+function fgTable(headers, rows) {
+  if (!rows.length) return '<p class="cx-hint">Nothing yet.</p>';
+  return `<div class="fg-results-wrap"><table class="fg-table"><thead><tr>${
+    headers.map((h) => `<th>${escHtml(h)}</th>`).join('')
+  }</tr></thead><tbody>${
+    rows.map((r) => `<tr>${r.map((c) => `<td>${escHtml(c == null ? '' : String(c))}</td>`).join('')}</tr>`).join('')
+  }</tbody></table></div>`;
+}
+
+function renderFgDb() {
+  const body = document.getElementById('fg-db-body');
+  if (!body || !_fgDb) return;
+  if (_fgTab === 'invites') {
+    const rows = (_fgDb.invites || []).map((o) => [o['Target Name'], o['Job Title'], o['Account'], o['Status'], o['Invited At'], o['Month']]);
+    body.innerHTML = fgTable(['Name', 'Title', 'Account', 'Status', 'Invited At', 'Month'], rows);
+  } else if (_fgTab === 'budgets') {
+    const rows = (_fgDb.budgets || []).map((o) => [o['Account'], o['Operator'], o['Month'], o['Allowance'], o['Sent'], o['Remaining']]);
+    body.innerHTML = fgTable(['Account', 'Operator', 'Month', 'Allowance', 'Sent', 'Remaining'], rows);
+  } else {
+    const rows = (_fgDb.funnel || []).map((o) => [o.operator, o.invited]);
+    body.innerHTML = fgTable(['Operator', 'Invites sent'], rows);
+  }
+}
+
+function initFollowerGrowth() {
+  if (_fgViewReady) return;
+  _fgViewReady = true;
+  if (!fgChips.length) fgChips = FG_DEFAULT_CHIPS.slice();
+  renderFgChips();
+  fgPopulateOperators();
+  fgLoadDb();
+}
+
+window.focusFgInput = focusFgInput;
+window.onFgChipKey = onFgChipKey;
+window.removeFgChip = removeFgChip;
+window.fgBuild = fgBuild;
+window.fgQueue = fgQueue;
+window.fgMarkInvited = fgMarkInvited;
+window.fgLoadDb = fgLoadDb;
+window.setFgTab = setFgTab;
+window.initFollowerGrowth = initFollowerGrowth;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign Name — top-of-wizard text input. Source-of-truth precedence on

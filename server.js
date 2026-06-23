@@ -71,7 +71,7 @@ import {
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
   isEmailAllowed, deleteUser,
 } from './src/auth.js';
-import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets } from './src/connections/search-service.js';
+import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators } from './src/connections/search-service.js';
 import { getFgState, queueFgInvites, markFgInvited, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 
@@ -1379,6 +1379,15 @@ function fgRemaining(budgets, account, month) {
   const sent = row ? Number(row.Sent) || 0 : 0;
   return Math.max(0, allowance - sent);
 }
+
+// Operator roster for the Follower Growth picker (from colleagues.json).
+app.get('/api/fg/operators', (_req, res) => {
+  try {
+    res.json({ operators: listOperators() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // In-app database view: the central FG sheet, rendered in the campaign tab.
 app.get('/api/fg/db', async (_req, res) => {
