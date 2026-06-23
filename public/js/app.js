@@ -12860,6 +12860,14 @@ let _fgDb = null;        // last /api/fg/db response { invites, budgets, funnel 
 let _fgTab = 'invites';
 let _fgViewReady = false;
 
+// ── Team Launch board state (fgtl* = Follower Growth Team Launch) ──
+let fgtlEmployees = [];   // [{ email, name, connInDb }]
+let fgtlProfiles = [];    // [{ id, name, creditsTotal, creditsUsed }]
+let fgtlChips = [];       // active keyword chips
+let fgtlSelected = new Set(); // selected employee emails
+let fgtlAssigned = {};    // email -> profile id (manual overrides)
+const FGTL_ALL_PRESETS = ['marketing','brand','growth','content','demand','comms','cmo','sales','product','events','partnerships'];
+
 function renderFgChips() {
   const wrap = document.getElementById('fg-fn-chips');
   if (!wrap) return;
@@ -13074,6 +13082,274 @@ function fgAccountCredit(profile) {
   return { remaining: Math.max(0, Number.isFinite(remaining) ? remaining : allowance), allowance };
 }
 
+// ── Team Launch board helpers (fgtl*) ────────────────────────────────────────
+
+/** Auto-pair: find the profile whose name matches the employee email (case-insensitive). */
+function fgtlAutoPair(email) {
+  const e = String(email || '').toLowerCase();
+  return fgtlProfiles.find((p) => String(p.name || '').toLowerCase() === e) || null;
+}
+
+/** Compute credits remaining for a profile (creditsTotal - creditsUsed). */
+function fgtlCreditsLeft(profile) {
+  if (!profile) return 0;
+  return Math.max(0, (profile.creditsTotal || 0) - (profile.creditsUsed || 0));
+}
+
+/** Render keyword chips in #fgtl-chips. */
+function fgtlRenderChips() {
+  const container = document.getElementById('fgtl-chips');
+  if (!container) return;
+  // Remove existing chip-tag elements only
+  container.querySelectorAll('.chip-tag').forEach((c) => c.remove());
+  const input = document.getElementById('fgtl-chip-input');
+  fgtlChips.forEach((k) => {
+    const span = document.createElement('span');
+    span.className = 'chip-tag';
+    span.innerHTML = `<b>${escHtml(k)}</b><button class="x" title="remove">×</button>`;
+    span.querySelector('.x').onclick = () => {
+      const i = fgtlChips.indexOf(k);
+      if (i > -1) fgtlChips.splice(i, 1);
+      fgtlRenderChips();
+    };
+    if (input) container.insertBefore(span, input);
+    else container.appendChild(span);
+  });
+  // Render preset buttons
+  const presetsEl = document.getElementById('fgtl-presets');
+  if (presetsEl) {
+    presetsEl.querySelectorAll('.fgtl-preset').forEach((p) => p.remove());
+    FGTL_ALL_PRESETS.filter((p) => !fgtlChips.includes(p)).forEach((p) => {
+      const b = document.createElement('button');
+      b.className = 'fgtl-preset preset';
+      b.textContent = '+ ' + p;
+      b.onclick = () => { if (!fgtlChips.includes(p)) fgtlChips.push(p); fgtlRenderChips(); };
+      presetsEl.appendChild(b);
+    });
+  }
+}
+
+/** Returns fgtlEmployees filtered by current #fgtl-search value. */
+function fgtlFilteredEmployees() {
+  const searchEl = document.getElementById('fgtl-search');
+  const q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+  if (!q) return fgtlEmployees;
+  return fgtlEmployees.filter((emp) => {
+    const paired = fgtlAssigned[emp.email] ? (fgtlProfiles.find((p) => p.id === fgtlAssigned[emp.email]) || {}).name || '' : (fgtlAutoPair(emp.email) || {}).name || '';
+    return emp.name.toLowerCase().includes(q) ||
+      emp.email.toLowerCase().includes(q) ||
+      paired.toLowerCase().includes(q);
+  });
+}
+
+/** Render the GoLogin profiles panel in #fgtl-gls. */
+function fgtlRenderGls() {
+  const glsEl = document.getElementById('fgtl-gls');
+  if (!glsEl) return;
+  // Build usedBy map: profileId → employee name
+  const usedBy = {};
+  fgtlSelected.forEach((email) => {
+    const autoPaired = fgtlAutoPair(email);
+    const assignedId = fgtlAssigned[email];
+    const profileId = assignedId || (autoPaired ? autoPaired.id : null);
+    if (profileId) {
+      const emp = fgtlEmployees.find((e) => e.email === email);
+      usedBy[profileId] = emp ? emp.name : email;
+    }
+  });
+  glsEl.innerHTML = '';
+  if (!fgtlProfiles.length) {
+    glsEl.innerHTML = '<div style="color:var(--gray);font-size:12px;padding:10px 0">No profiles loaded yet…</div>';
+    return;
+  }
+  fgtlProfiles.forEach((p) => {
+    const left = fgtlCreditsLeft(p);
+    const who = usedBy[p.id];
+    const band = left <= 0 ? 'var(--red)' : (who ? 'var(--gold)' : 'var(--green)');
+    const div = document.createElement('div');
+    div.className = 'fgtl-gl gl' + (left <= 0 ? ' used' : '');
+    div.innerHTML =
+      `<span class="band" style="background:${band};width:6px;align-self:stretch;border-radius:3px;display:inline-block"></span>` +
+      `<span class="gn fgtl-gl-name">${escHtml(p.name || p.id)}</span>` +
+      (who ? `<span class="who" style="font-family:var(--mono);font-size:9px;color:var(--gold)">→ ${escHtml(who.split(' ')[0])}</span>` : '') +
+      `<span class="gc" style="font-family:var(--mono);font-size:10.5px;color:var(--gray)">${left}/${p.creditsTotal}</span>`;
+    glsEl.appendChild(div);
+  });
+}
+
+/** Update the dock: selected count and status text. */
+function fgtlRenderDock() {
+  const dnEl = document.getElementById('fgtl-dn');
+  const dsEl = document.getElementById('fgtl-ds');
+  const goEl = document.getElementById('fgtl-go');
+  const sel = Array.from(fgtlSelected);
+  const gaps = sel.filter((email) => {
+    const autoPaired = fgtlAutoPair(email);
+    return !fgtlAssigned[email] && !autoPaired;
+  }).length;
+  if (dnEl) dnEl.textContent = sel.length;
+  if (dsEl) {
+    if (!sel.length) {
+      dsEl.textContent = 'no employees selected';
+    } else if (gaps) {
+      dsEl.textContent = `${gaps} still need a GoLogin profile`;
+    } else {
+      const totalCredits = sel.reduce((sum, email) => {
+        const assignedId = fgtlAssigned[email];
+        const autoPaired = fgtlAutoPair(email);
+        const profileId = assignedId || (autoPaired ? autoPaired.id : null);
+        const profile = fgtlProfiles.find((p) => p.id === profileId);
+        return sum + fgtlCreditsLeft(profile);
+      }, 0);
+      dsEl.textContent = `${sel.length} paired · up to ${totalCredits} invites this month`;
+    }
+  }
+  if (goEl) goEl.disabled = !sel.length || gaps > 0;
+}
+
+/** Render employee rows in #fgtl-emps. */
+function fgtlRenderBoard() {
+  const empsEl = document.getElementById('fgtl-emps');
+  if (!empsEl) return;
+  empsEl.innerHTML = '';
+  const list = fgtlFilteredEmployees();
+  if (!list.length) {
+    empsEl.innerHTML = '<div class="no-match" style="color:var(--gray);font-size:13px;padding:22px;text-align:center;border:1px dashed var(--hairline);border-radius:12px">No colleagues match that search.</div>';
+    fgtlRenderGls();
+    fgtlRenderDock();
+    return;
+  }
+  list.forEach((emp) => {
+    const isSelected = fgtlSelected.has(emp.email);
+    const autoPaired = fgtlAutoPair(emp.email);
+    const assignedId = fgtlAssigned[emp.email];
+
+    const div = document.createElement('div');
+    div.className = 'fgtl-emp-row emp' + (isSelected ? ' on' : '');
+    div.dataset.email = emp.email;
+
+    // Build profile select options
+    const opts = fgtlProfiles.map((p) => {
+      const left = fgtlCreditsLeft(p);
+      const selected = (assignedId === p.id) ? 'selected' : '';
+      return `<option value="${escHtml(p.id)}" ${selected}>${escHtml(p.name || p.id)} · ${left}/${p.creditsTotal} left</option>`;
+    }).join('');
+
+    // Determine link state badge
+    let badgeHtml;
+    if (autoPaired && !assignedId) {
+      // Auto-paired
+      badgeHtml = `<span class="fgtl-profile-badge link-state ls-auto fgtl-paired">${escHtml(autoPaired.name)} ✓</span>`;
+    } else if (assignedId) {
+      const manualProfile = fgtlProfiles.find((p) => p.id === assignedId);
+      badgeHtml = `<span class="fgtl-profile-badge link-state ls-manual">${escHtml((manualProfile && manualProfile.name) || assignedId)}</span>`;
+    } else {
+      badgeHtml = `<span class="link-state ls-gap">needs pick</span>`;
+    }
+
+    // Show picker when selected
+    const pickerHtml = isSelected
+      ? `<div class="picker" style="display:block;grid-column:1 / -1;margin-top:10px;padding-top:10px;border-top:1px solid var(--hairline-soft)"><select class="fgtl-profile-sel" data-email="${escHtml(emp.email)}"><option value="">— pick GoLogin profile —</option>${opts}</select></div>`
+      : '';
+
+    div.innerHTML =
+      `<input type="checkbox" class="fgtl-emp-cb" data-email="${escHtml(emp.email)}" ${isSelected ? 'checked' : ''}>` +
+      `<div><div class="fgtl-emp-name nm">${escHtml(emp.name)}</div><div class="fgtl-emp-email ml">${escHtml(emp.email)}</div></div>` +
+      `<div class="fgtl-emp-conn cn"><b>${(emp.connInDb || 0).toLocaleString()}</b><small>in db</small></div>` +
+      badgeHtml +
+      pickerHtml;
+
+    // Checkbox click
+    const cb = div.querySelector('.fgtl-emp-cb');
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (e.target.checked) fgtlSelected.add(emp.email);
+      else fgtlSelected.delete(emp.email);
+      fgtlRenderBoard();
+    });
+
+    // Row click (toggle)
+    div.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
+      if (fgtlSelected.has(emp.email)) fgtlSelected.delete(emp.email);
+      else fgtlSelected.add(emp.email);
+      fgtlRenderBoard();
+    });
+
+    // Profile select change
+    const sel = div.querySelector('.fgtl-profile-sel');
+    if (sel) {
+      sel.addEventListener('click', (e) => e.stopPropagation());
+      sel.addEventListener('change', (e) => {
+        if (e.target.value) fgtlAssigned[emp.email] = e.target.value;
+        else delete fgtlAssigned[emp.email];
+        fgtlRenderBoard();
+      });
+    }
+
+    empsEl.appendChild(div);
+  });
+
+  fgtlRenderGls();
+  fgtlRenderDock();
+}
+
+/** Bind UI events for the board (safe to call once). */
+function fgtlBindBoard() {
+  // Chip input
+  const chipInput = document.getElementById('fgtl-chip-input');
+  if (chipInput && !chipInput._fgtlBound) {
+    chipInput._fgtlBound = true;
+    chipInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const k = chipInput.value.trim().toLowerCase();
+        if (k && !fgtlChips.includes(k)) fgtlChips.push(k);
+        chipInput.value = '';
+        fgtlRenderChips();
+      } else if (e.key === 'Backspace' && !chipInput.value && fgtlChips.length) {
+        fgtlChips.pop();
+        fgtlRenderChips();
+      }
+    });
+  }
+
+  // Search
+  const searchEl = document.getElementById('fgtl-search');
+  const clearEl = document.getElementById('fgtl-search-clear');
+  if (searchEl && !searchEl._fgtlBound) {
+    searchEl._fgtlBound = true;
+    searchEl.addEventListener('input', () => {
+      if (clearEl) clearEl.classList.toggle('show', !!searchEl.value);
+      fgtlRenderBoard();
+    });
+  }
+  if (clearEl && !clearEl._fgtlBound) {
+    clearEl._fgtlBound = true;
+    clearEl.addEventListener('click', () => {
+      if (searchEl) { searchEl.value = ''; searchEl.focus(); }
+      clearEl.classList.remove('show');
+      fgtlRenderBoard();
+    });
+  }
+
+  // Select-all
+  const selAllEl = document.getElementById('fgtl-selall');
+  if (selAllEl && !selAllEl._fgtlBound) {
+    selAllEl._fgtlBound = true;
+    selAllEl.addEventListener('click', () => {
+      const vis = fgtlFilteredEmployees();
+      const allOn = vis.every((e) => fgtlSelected.has(e.email));
+      vis.forEach((e) => {
+        if (allOn) fgtlSelected.delete(e.email);
+        else fgtlSelected.add(e.email);
+      });
+      selAllEl.textContent = allOn ? 'Select all' : 'Clear';
+      fgtlRenderBoard();
+    });
+  }
+}
+
 // Single-select GoLogin account chooser for FG sends. Same monochrome tile look
 // as the CC account grid, but each tile carries a credit pill: GREEN = none used
 // (full), AMBER = some used, RED = all done (0 left). Clicking a tile selects the
@@ -13193,14 +13469,44 @@ async function fgSendStop() {
   catch (_) {}
 }
 
-function initFollowerGrowth() {
-  // Idempotent: the operator/account pickers are (re)populated every time the FG
-  // view is shown — a one-shot guard could leave them empty if the first call
-  // fired before the DOM/session was ready. Only the network DB load is once-per-session.
-  if (!fgChips.length) fgChips = FG_DEFAULT_CHIPS.slice();
-  renderFgChips();
+async function initFollowerGrowth() {
+  // 1. Load FG DB (once guard already in fgLoadDb)
+  await fgLoadDb();
+
+  // 2. Wait for allProfilesData to be populated (bounded retry)
+  let tries = 0;
+  while ((!allProfilesData || !allProfilesData.length) && tries < 20) {
+    await new Promise((r) => setTimeout(r, 300));
+    tries++;
+  }
+
+  // 3. Build fgtlProfiles from allProfilesData + fgAccountCredit
+  fgtlProfiles = (allProfilesData || []).map((p) => {
+    const c = fgAccountCredit(p);
+    return { id: p.id, name: p.name || p.id, creditsTotal: c.allowance, creditsUsed: c.allowance - c.remaining };
+  });
+
+  // 4. Fetch colleagues from /api/fg/colleagues
+  try {
+    const r = await fetch('/api/fg/colleagues');
+    const data = await r.json();
+    fgtlEmployees = (data.colleagues || []).map((c) => ({ email: c.email, name: c.name, connInDb: c.connCount || 0 }));
+  } catch (e) {
+    console.warn('[fgtl] colleagues fetch failed', e);
+    fgtlEmployees = [];
+  }
+
+  // 5. Init keyword chips (default audience targeting keywords)
+  fgtlChips = FG_DEFAULT_CHIPS.slice();
+
+  // 6. Render board
+  fgtlRenderChips();
+  fgtlRenderBoard();
+  fgtlBindBoard();
+
+  // 7. Also keep legacy single-send pickers populated (idempotent)
   fgFillPickers();
-  if (!_fgViewReady) { _fgViewReady = true; fgLoadDb(); }
+  if (!_fgViewReady) { _fgViewReady = true; }
 }
 
 // Robust picker fill. The first FG view can run before the operator fetch and
@@ -13239,6 +13545,14 @@ window.setFgTab = setFgTab;
 window.fgSendStart = fgSendStart;
 window.fgSendStop = fgSendStop;
 window.initFollowerGrowth = initFollowerGrowth;
+// Team Launch board
+window.fgtlRenderChips = fgtlRenderChips;
+window.fgtlRenderBoard = fgtlRenderBoard;
+window.fgtlRenderGls = fgtlRenderGls;
+window.fgtlRenderDock = fgtlRenderDock;
+window.fgtlAutoPair = fgtlAutoPair;
+window.fgtlFilteredEmployees = fgtlFilteredEmployees;
+window.fgtlBindBoard = fgtlBindBoard;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign Name — top-of-wizard text input. Source-of-truth precedence on
