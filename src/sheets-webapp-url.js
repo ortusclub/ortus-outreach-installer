@@ -60,6 +60,6 @@ export const SIGNUP_ALLOWED_DOMAINS = ['ortusclub.com', 'ortus.solutions'];
 export const FG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwagvm0xI3Vh4kx4Mx8l7qIwqlFvS068ozudzvYQYPE0iscsr_99AxlntT4tL2GTzgrGA/exec';
 
 // Follower Growth Phase 2 — the Ortus Club page "Invite to follow" modal URL.
-// CONFIRM the exact page slug. <ORTUS_SLUG> is a placeholder — Antonio will
-// replace it with the real company-page slug before live use.
-export const ORTUS_PAGE_INVITE_URL = 'https://www.linkedin.com/company/<ORTUS_SLUG>/?invite=true';
+// The ?invite=true query opens the invite modal directly; the /posts/ path +
+// feedView=all is the exact URL confirmed to open it for this page (slug ortus-club).
+export const ORTUS_PAGE_INVITE_URL = 'https://www.linkedin.com/company/ortus-club/posts/?feedView=all&invite=true';
