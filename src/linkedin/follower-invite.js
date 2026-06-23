@@ -73,7 +73,8 @@ export async function scrapeResults(page) {
     const m = text.match(/\b(?:1st|2nd|3rd)\s*•\s*/);
     const name = (m ? text.slice(0, m.index) : text).split('\n')[0].trim();
     const headline = m ? text.slice(m.index).replace(/^\s*(?:1st|2nd|3rd)\s*•\s*/, '').trim() : '';
-    return { name, headline, canInvite };
+    // raw + class captured for diagnosing skips (name-match / can-invite detection).
+    return { name, headline, canInvite, raw: text.replace(/\s+/g, ' ').slice(0, 140), cls: (li.className || '').slice(0, 120) };
   })).catch(() => []);
 }
 
@@ -84,7 +85,7 @@ export async function selectPerson(page, person, { log = () => {} } = {}) {
   await randomDelay(900, 1600);
   const results = await scrapeResults(page);
   const choice = pickInviteResult(results, person);
-  if (!choice) { log(`skip "${person.name}" (${results.length} results, no confident match)`); return false; }
+  if (!choice) { log(`skip "${person.name}" — scraped ${JSON.stringify(results.slice(0, 2))}`); return false; }
   const clicked = await page.evaluate((sel, targetName) => {
     const lis = [...document.querySelectorAll(sel)];
     const li = lis.find((l) => (l.innerText || '').trim().toLowerCase().startsWith(targetName.toLowerCase()));
