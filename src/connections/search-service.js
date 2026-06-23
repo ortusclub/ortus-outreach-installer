@@ -217,3 +217,22 @@ export function buildFgTargets(criteria = {}, { operator, operatorName, account,
   const rows = capped.map((r) => fgRow(r, colleagues, { operatorName: opName, account, month, keywords }));
   return { header: FG_HEADER, rows, count: rows.length, eligible: eligible.length };
 }
+
+// Test seam: when set, listFgColleagues uses these instead of the real DB.
+let _fgColleaguesFixtures = null;
+export function __setFgColleaguesFixtures(f) { _fgColleaguesFixtures = f; }
+
+// Distinct warm-via owners (the Ortus colleagues whose networks are in the DB)
+// with their non-DNC connection counts — the employee roster for Team Launch.
+export function listFgColleagues({ dir, cachePath } = {}) {
+  const annotated = _fgColleaguesFixtures ? _fgColleaguesFixtures.annotated : getAnnotated(dir, cachePath);
+  const colleagues = _fgColleaguesFixtures ? _fgColleaguesFixtures.colleagues : getColleagues();
+  const counts = new Map();
+  for (const r of annotated) {
+    if (r.dnc) continue;
+    for (const email of (r.warmVia || [])) counts.set(email, (counts.get(email) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([email, connCount]) => ({ email, name: colleagues[email]?.name || email, connCount }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
