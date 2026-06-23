@@ -13508,8 +13508,6 @@ async function initFollowerGrowth() {
   fgtlBindBoard();
   fgtlBindLaunch();
 
-  // 7. Also keep legacy single-send pickers populated (idempotent)
-  fgFillPickers();
   if (!_fgViewReady) { _fgViewReady = true; }
 }
 
