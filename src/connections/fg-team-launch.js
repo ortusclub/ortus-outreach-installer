@@ -28,7 +28,7 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
     for (let i = 0; i < pairs.length; i++) {
       const pair = pairs[i];
       const slot = status.perAccount[i];
-      if (ctx.getAbort()) { slot.status = 'skipped'; slot.reason = 'stopped'; status.skipped++; stamp(`✗ [${pair.account}] Skipped — stopped`); continue; }
+      if (ctx.getAbort()) { slot.status = 'skipped'; slot.reason = 'stopped'; status.skipped++; status.doneAccounts++; stamp(`✗ [${pair.account}] Skipped — stopped`); continue; }
       status.currentAccount = pair.account;
       const { rows, count } = deps.buildTargets(pair, ctx);
       if (!count) { slot.status = 'skipped'; slot.reason = 'no targets'; status.skipped++; stamp(`✗ [${pair.account}] Skipped — no targets (filtered/budget/already-invited)`); status.doneAccounts++; continue; }

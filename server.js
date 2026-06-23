@@ -1567,7 +1567,20 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         record: async ({ rows, invitedIds, account, operator }) => {
           const set = new Set(invitedIds.map(String));
           const invitedRows = rows.filter((r) => set.has(String(r[2])));
-          if (invitedRows.length) { await queueFgInvites(invitedRows); await markFgInvited({ memberIds: invitedIds, account, operator, month }); }
+          if (invitedRows.length) {
+            await queueFgInvites(invitedRows);
+            try {
+              await markFgInvited({ memberIds: invitedIds, account, operator, month });
+            } catch (e1) {
+              try {
+                await markFgInvited({ memberIds: invitedIds, account, operator, month }); // retry (idempotent)
+              } catch (e2) {
+                const warn = `[${new Date().toISOString()}] ⚠ STRANDED: ${invitedIds.length} invite(s) sent for ${account} were queued but NOT marked Invited — flip them manually in the FG sheet (${e2.message})`;
+                try { _fgTeam.logs.push(warn); if (_fgTeam.logs.length > 200) _fgTeam.logs.shift(); } catch (_) {}
+                try { campaignLog(`[FG-team] ${warn}`); } catch (_) {}
+              }
+            }
+          }
           _fgTeamSnap = await getFgState(); // refresh so the next account dedups against these
         },
         log: (m) => { try { campaignLog(`[FG-team] ${m}`); } catch (_) {} },
@@ -1579,6 +1592,7 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
     } catch (err) {
       _fgTeam.running = false; _fgTeam.phase = 'error'; _fgTeam.error = err.message;
     } finally {
+      _fgTeam.running = false;
       try { allowSleep(); } catch (_) {}
     }
   })();

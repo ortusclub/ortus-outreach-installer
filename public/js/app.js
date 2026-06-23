@@ -13675,7 +13675,7 @@ function fgtlRenderCard(status) {
   setTxt('fgtl-inv', status.invitesTotal != null ? status.invitesTotal : 0);
 
   // Phase label
-  const phaseLabels = { launching: 'Launching', sending: 'Sending', done: 'Finished', error: 'Error', idle: 'Idle' };
+  const phaseLabels = { launching: 'Launching', inviting: 'Sending', sending: 'Sending', done: 'Finished', error: 'Error', idle: 'Idle' };
   setTxt('fgtl-seq', phaseLabels[status.phase] || (status.phase || 'Idle'));
 
   // Summary
