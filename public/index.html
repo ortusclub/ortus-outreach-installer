@@ -1471,7 +1471,7 @@
       #nav-follower-growth .emp { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:10px; cursor:pointer; transition:.12s; flex-wrap:wrap; }
       #nav-follower-growth .emp:hover { background:var(--card-bg); }
       #nav-follower-growth .emp.on { border-color:var(--gold); background:var(--card-bg-hover); }
-      #nav-follower-growth .emp input[type=”checkbox”] { width:17px; height:17px; accent-color:var(--gold); margin:0; }
+      #nav-follower-growth .emp input[type="checkbox"] { width:17px; height:17px; accent-color:var(--gold); margin:0; }
       #nav-follower-growth .emp .nm { font-weight:600; color:var(--ink); font-size:14px; }
       #nav-follower-growth .emp .ml { font-family:var(--mono); font-size:11.5px; color:var(--gray); }
       #nav-follower-growth .emp .cn { margin-left:auto; text-align:right; }
@@ -1528,97 +1528,97 @@
       #nav-follower-growth .fgtl-go-btn { background:var(--gold); color:#1a1300; border:none; border-radius:9999px; padding:13px 26px; font-family:var(--mono); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
       #nav-follower-growth .fgtl-go-btn:disabled { opacity:.45; cursor:default; }
     </style>
-    <div class=”section” id=”nav-follower-growth” style=”display:none”>
-      <h2><span data-edit=”h2-fg”>Follower Growth</span></h2>
+    <div class="section" id="nav-follower-growth" style="display:none">
+      <h2><span data-edit="h2-fg">Follower Growth</span></h2>
 
       <!-- Step 1 · Role filter chips -->
-      <div class=”filter-card”>
-        <div class=”fgtl-step”>
-          <span class=”fgtl-step-n”>1</span>
-          <div><div class=”fgtl-step-t”>Which roles to invite</div><div class=”fgtl-step-s”>Targets come from the Connections DB (DNC-safe), deduped against everyone already invited, capped at each account's monthly budget. Each chip matches anywhere in the job title.</div></div>
+      <div class="filter-card">
+        <div class="fgtl-step">
+          <span class="fgtl-step-n">1</span>
+          <div><div class="fgtl-step-t">Which roles to invite</div><div class="fgtl-step-s">Targets come from the Connections DB (DNC-safe), deduped against everyone already invited, capped at each account's monthly budget. Each chip matches anywhere in the job title.</div></div>
         </div>
-        <div class=”chips” id=”fgtl-chips”>
-          <input id=”fgtl-chip-input” placeholder=”add a role keyword…” autocomplete=”off”>
+        <div class="chips" id="fgtl-chips">
+          <input id="fgtl-chip-input" placeholder="add a role keyword…" autocomplete="off">
         </div>
-        <div class=”presets” id=”fgtl-presets”><span class=”lbl”>Quick add</span></div>
-        <div class=”filter-foot”>
-          <span class=”hint”>Defaults toward marketers. Applies to every selected network below.</span>
-          <span class=”match” id=”fgtl-match”></span>
+        <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
+        <div class="filter-foot">
+          <span class="hint">Defaults toward marketers. Applies to every selected network below.</span>
+          <span class="match" id="fgtl-match"></span>
         </div>
       </div>
 
       <!-- Step 2 · Match board -->
-      <div class=”board”>
+      <div class="board">
         <div>
-          <div class=”col-h”>Ortus employees · connections from the DB</div>
-          <div class=”emp-toolbar”>
-            <div class=”fgtl-search”>
-              <svg width=”14” height=”14” viewBox=”0 0 24 24” fill=”none” stroke=”currentColor” stroke-width=”2”><circle cx=”11” cy=”11” r=”7”/><line x1=”16.5” y1=”16.5” x2=”21” y2=”21”/></svg>
-              <input id=”fgtl-search” placeholder=”Search by name, email or GoLogin account…” autocomplete=”off”>
-              <button class=”clr” id=”fgtl-search-clear” title=”Clear”>×</button>
+          <div class="col-h">Ortus employees · connections from the DB</div>
+          <div class="emp-toolbar">
+            <div class="fgtl-search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+              <input id="fgtl-search" placeholder="Search by name, email or GoLogin account…" autocomplete="off">
+              <button class="clr" id="fgtl-search-clear" title="Clear">×</button>
             </div>
-            <button class=”fgtl-selall” id=”fgtl-selall”>Select all</button>
+            <button class="fgtl-selall" id="fgtl-selall">Select all</button>
           </div>
-          <div id=”fgtl-emps”></div>
+          <div id="fgtl-emps"></div>
         </div>
-        <div class=”fgtl-panel”>
-          <div class=”col-h”>GoLogin profiles · this workspace</div>
-          <div id=”fgtl-gls”></div>
+        <div class="fgtl-panel">
+          <div class="col-h">GoLogin profiles · this workspace</div>
+          <div id="fgtl-gls"></div>
         </div>
       </div>
 
       <!-- Live campaign card (reuses global .vj-* classes) -->
-      <section class=”vj-card is-detailed” id=”fgtl-card” aria-labelledby=”fgtl-card-name”>
-        <div class=”vj-eyebrow”>
-          <span class=”vj-tag”><span class=”dot”></span><span id=”fgtl-eyebrow”>Ready to launch</span></span>
-          <span class=”vj-when” id=”fgtl-when”></span>
+      <section class="vj-card is-detailed" id="fgtl-card" aria-labelledby="fgtl-card-name">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span id="fgtl-eyebrow">Ready to launch</span></span>
+          <span class="vj-when" id="fgtl-when"></span>
         </div>
-        <div class=”vj-glyph-circle” aria-hidden=”true”>⌁</div>
-        <h2 class=”vj-name” id=”fgtl-card-name”><span>Team Follower Growth</span></h2>
-        <div class=”vj-hbar” role=”progressbar” aria-valuenow=”0” aria-valuemax=”100” aria-label=”Launch progress”><i id=”fgtl-bar” style=”width:0%”></i></div>
-        <div class=”vj-hero”>
-          <div class=”vj-hero-row”>
-            <div class=”num”><span id=”fgtl-pct”>0</span><span class=”sub”>%</span></div>
-            <div class=”vj-meta”>
-              <span><b id=”fgtl-sent”>0</b> of <span id=”fgtl-total”>0</span> accounts sent</span>
+        <div class="vj-glyph-circle" aria-hidden="true">⌁</div>
+        <h2 class="vj-name" id="fgtl-card-name"><span>Team Follower Growth</span></h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Launch progress"><i id="fgtl-bar" style="width:0%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span id="fgtl-pct">0</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b id="fgtl-sent">0</b> of <span id="fgtl-total">0</span> accounts sent</span>
               <span>Runs <b>sequentially</b> · 1 account at a time</span>
             </div>
           </div>
-          <div class=”vj-stats” aria-live=”polite”>
-            <span><b id=”fgtl-accts”>0</b> accounts</span>
-            <span><b id=”fgtl-inv”>0</b> invites sent</span>
-            <span>· <b id=”fgtl-seq”>Idle</b></span>
+          <div class="vj-stats" aria-live="polite">
+            <span><b id="fgtl-accts">0</b> accounts</span>
+            <span><b id="fgtl-inv">0</b> invites sent</span>
+            <span>· <b id="fgtl-seq">Idle</b></span>
           </div>
         </div>
-        <div class=”vj-details”>
+        <div class="vj-details">
           <div>
-            <div class=”vj-log-head”>
-              <span class=”vj-details-head” id=”fgtl-loghead”>Live log · last 15 events</span>
-              <span class=”vj-log-acts”>
-                <button type=”button” class=”vj-log-act” id=”fgtl-copy” title=”Copy the full log to your clipboard”>Copy all</button>
-                <button type=”button” class=”vj-log-act” title=”Open the Follower Growth sheet”>Open sheet</button>
+            <div class="vj-log-head">
+              <span class="vj-details-head" id="fgtl-loghead">Live log · last 15 events</span>
+              <span class="vj-log-acts">
+                <button type="button" class="vj-log-act" id="fgtl-copy" title="Copy the full log to your clipboard">Copy all</button>
+                <button type="button" class="vj-log-act" title="Open the Follower Growth sheet">Open sheet</button>
               </span>
             </div>
-            <div class=”vj-log” id=”fgtl-logbody”><div class=”vj-log-empty”>Waiting to launch — events stream here, one account at a time.</div></div>
+            <div class="vj-log" id="fgtl-logbody"><div class="vj-log-empty">Waiting to launch — events stream here, one account at a time.</div></div>
           </div>
-          <div class=”vj-bulk”>
-            <div class=”vj-details-head”>Batch summary</div>
-            <div class=”vj-bulk-status”>Sent · <b id=”fgtl-sum-sent”>—</b> · <span id=”fgtl-sum-skip”>0</span> skipped</div>
-            <div class=”vj-bulk-hint”>Each account opens its profiles and sends follow invites to its own connections, then the next account starts. Capped at each account's monthly invite budget.</div>
+          <div class="vj-bulk">
+            <div class="vj-details-head">Batch summary</div>
+            <div class="vj-bulk-status">Sent · <b id="fgtl-sum-sent">—</b> · <span id="fgtl-sum-skip">0</span> skipped</div>
+            <div class="vj-bulk-hint">Each account opens its profiles and sends follow invites to its own connections, then the next account starts. Capped at each account's monthly invite budget.</div>
           </div>
         </div>
       </section>
 
       <!-- Launch dock (in-flow, not fixed) -->
-      <div class=”fgtl-dock”>
-        <div><div class=”fgtl-dock-n” id=”fgtl-dn”>0</div><div class=”fgtl-dock-sub” id=”fgtl-ds”>no employees selected</div></div>
-        <span class=”fgtl-seq-label” id=”fgtl-seq-label”>Runs sequentially · ~1 account at a time</span>
-        <button class=”fgtl-go-btn” id=”fgtl-go” disabled>Launch all</button>
+      <div class="fgtl-dock">
+        <div><div class="fgtl-dock-n" id="fgtl-dn">0</div><div class="fgtl-dock-sub" id="fgtl-ds">no employees selected</div></div>
+        <span class="fgtl-seq-label" id="fgtl-seq-label">Runs sequentially · ~1 account at a time</span>
+        <button class="fgtl-go-btn" id="fgtl-go" disabled>Launch all</button>
       </div>
 
       <!-- 2 · Database view -->
-      <div class=”fg-step”>
-        <div class=”fg-step-head”><span class=”fg-step-num”>2</span> Follower Growth database
+      <div class="fg-step">
+        <div class="fg-step-head"><span class="fg-step-num">2</span> Follower Growth database
           <span class="fg-db-tabs">
             <button type="button" class="fg-db-tab active" data-fgtab="invites" onclick="setFgTab('invites')">Invites</button>
             <button type="button" class="fg-db-tab" data-fgtab="budgets" onclick="setFgTab('budgets')">Budgets</button>
