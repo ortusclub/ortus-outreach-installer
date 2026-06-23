@@ -13012,6 +13012,7 @@ async function fgLoadDb() {
     }
     _fgDb = r;
     renderFgDb();
+    fgRenderSendAccounts(); // budgets just arrived — recolour the account tiles
   } catch (e) {
     if (body) body.innerHTML = `<p class="cx-hint">Could not load the FG database — ${escHtml(String(e?.message || e))}</p>`;
   }
@@ -13051,13 +13052,55 @@ function renderFgDb() {
 // page invite modal. Mirrors the post-amplification start/poll/stop pattern. ──
 let _fgSendPoll = null;
 
-function fgPopulateAccounts() {
-  const sel = document.getElementById('fg-send-account');
-  if (!sel) return;
+// Currently-chosen GoLogin profile id for the FG send (single-select tiles).
+let _fgSendProfileId = '';
+
+// This account's invite-credit standing for the current month, from FG Budgets.
+// Profile names carry the account email (profiles are deduped by email) and FG
+// Budgets is keyed by that same operator email — so we match on the email
+// embedded in the profile name. No matching row yet ⇒ fresh full allowance.
+function fgAccountCredit(profile) {
+  const ALLOW = 30; // FG_DEFAULT_MONTHLY_ALLOWANCE (page invite cap / month)
+  const nm = String((profile && (profile.name || profile.id)) || '');
+  const m = nm.match(/[\w.+-]+@[\w.-]+\.\w+/);
+  const email = (m ? m[0] : nm).toLowerCase();
+  const month = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const budgets = (_fgDb && _fgDb.budgets) || [];
+  const row = budgets.find((b) => String(b.Account || '').toLowerCase() === email && String(b.Month || '') === month);
+  const allowance = row ? (Number(row.Allowance) || ALLOW) : ALLOW;
+  const remaining = row
+    ? (row.Remaining !== '' && row.Remaining != null ? Number(row.Remaining) : allowance - (Number(row.Sent) || 0))
+    : allowance;
+  return { remaining: Math.max(0, Number.isFinite(remaining) ? remaining : allowance), allowance };
+}
+
+// Single-select GoLogin account chooser for FG sends. Same monochrome tile look
+// as the CC account grid, but each tile carries a credit pill: GREEN = none used
+// (full), AMBER = some used, RED = all done (0 left). Clicking a tile selects the
+// account to send from. Re-render on profile load + when FG Budgets arrive.
+function fgRenderSendAccounts() {
+  const grid = document.getElementById('fg-send-accounts');
+  if (!grid) return;
   const profiles = Array.isArray(allProfilesData) ? allProfilesData : [];
-  sel.innerHTML = profiles.length
-    ? profiles.map((p) => `<option value="${escHtml(p.id)}">${escHtml(p.name || p.id)}</option>`).join('')
-    : '<option value="">No LinkedIn accounts loaded</option>';
+  if (!profiles.length) {
+    grid.innerHTML = '<p class="cx-hint">No LinkedIn accounts loaded yet…</p>';
+    return;
+  }
+  grid.innerHTML = profiles.map((p) => {
+    const { remaining, allowance } = fgAccountCredit(p);
+    let cls = 'fg-acct-amber';
+    let label = `${remaining}/${allowance} left`;
+    if (remaining >= allowance) cls = 'fg-acct-green';
+    else if (remaining <= 0) { cls = 'fg-acct-red'; label = `0/${allowance} · done`; }
+    const sel = p.id === _fgSendProfileId ? ' selected' : '';
+    return `<button type="button" class="fg-acct-tile${sel}" data-pid="${escHtml(p.id)}">
+      <span class="fg-acct-name">${escHtml(p.name || p.id)}</span>
+      <span class="fg-acct-credit ${cls}">${escHtml(label)}</span>
+    </button>`;
+  }).join('');
+  grid.querySelectorAll('.fg-acct-tile').forEach((b) => {
+    b.addEventListener('click', () => { _fgSendProfileId = b.dataset.pid; fgRenderSendAccounts(); });
+  });
 }
 
 function fgRenderSendStatus(s) {
@@ -13072,7 +13115,7 @@ function fgRenderSendStatus(s) {
 
 async function fgSendStart() {
   const operator = document.getElementById('fg-operator')?.value || '';
-  const profileId = document.getElementById('fg-send-account')?.value || '';
+  const profileId = _fgSendProfileId || '';
   if (!operator) { showCampaignToast('Pick an operator first.', 2500); return; }
   if (!profileId) { showCampaignToast('Pick a LinkedIn account to send from.', 3000); return; }
   const btn = document.getElementById('fg-send-btn');
@@ -13127,18 +13170,15 @@ function initFollowerGrowth() {
   if (!_fgViewReady) { _fgViewReady = true; fgLoadDb(); }
 }
 
-// Robust picker fill. The first FG view coincides with initial-load hydration,
-// which can swap the static #fg-operator / #fg-send-account nodes out WHILE the
-// first populate fetch is in flight — so a single populate sometimes lands on a
-// detached node and the on-screen <select> stays empty until you leave and come
-// back. This re-queries + re-populates (both populates are idempotent) until the
-// LIVE selects actually have options AND the profile list has loaded, with a
-// bounded number of tries so it can never spin forever. The [FG] console lines
-// make the outcome visible without any manual probing.
+// Robust picker fill. The first FG view can run before the operator fetch and
+// the GoLogin profile list have settled. This re-populates the operator <select>
+// and re-renders the account tiles (both idempotent) until the operator list has
+// options AND the profiles have loaded, bounded so it can never spin forever.
+// The [FG] console lines make the outcome visible without any manual probing.
 async function fgFillPickers(maxTries = 12) {
   for (let i = 0; i < maxTries; i++) {
     await fgPopulateOperators();
-    fgPopulateAccounts();
+    fgRenderSendAccounts();
     const ops = document.getElementById('fg-operator');
     const opsOk = !!(ops && ops.options.length);
     const profilesLoaded = Array.isArray(allProfilesData) && allProfilesData.length > 0;

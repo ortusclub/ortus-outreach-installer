@@ -7664,6 +7664,20 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .fg-refresh:hover { color: var(--ink); }
 .fg-send-block { border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; margin: 14px 0 10px; }
 .fg-send-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+/* Single-select GoLogin account chooser for FG sends (monochrome tiles + a
+   credit pill coloured by this month's FG Budgets standing). */
+.fg-acct-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
+.fg-acct-tile { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left;
+  min-width: 180px; padding: 9px 12px; cursor: pointer; font-family: var(--mono);
+  background: var(--card-bg); color: var(--ink); border: 1px solid var(--card-border); border-radius: 0; }
+.fg-acct-tile:hover { background: var(--card-bg-hover); }
+.fg-acct-tile.selected { border-color: var(--ink); background: var(--card-bg-hover); }
+.fg-acct-name { font-size: 0.74rem; line-height: 1.25; word-break: break-all; }
+.fg-acct-credit { font-size: 0.62rem; letter-spacing: .04em; }
+.fg-acct-credit::before { content: "● "; }
+.fg-acct-green { color: var(--green); }
+.fg-acct-amber { color: var(--gold); }
+.fg-acct-red { color: var(--red); }
 .fg-send-status { font-size: 12px; color: var(--ink); margin: 8px 0; padding: 8px 10px; border: 1px solid var(--hairline-soft); border-radius: 8px; background: var(--bg-soft); }
 .fg-send-phase { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--gray); margin-right: 10px; }
 .fg-send-counts { color: var(--ink); }

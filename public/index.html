@@ -1495,11 +1495,12 @@
         <!-- Automated send: drives the operator's GoLogin browser through the page
              "Invite to follow" modal, ticking confident matches up to the live credit cap. -->
         <div class="fg-send-block" id="fg-send-block">
+          <div class="fg-field">
+            <span class="fg-field-label">Send from account — pick the GoLogin account to invite from</span>
+            <div id="fg-send-accounts" class="fg-acct-grid"></div>
+            <span class="cx-hint">Colour = this account's invite credits this month · <span class="fg-acct-green">green</span> none used · <span class="fg-acct-amber">amber</span> some used · <span class="fg-acct-red">red</span> all done.</span>
+          </div>
           <div class="fg-send-row">
-            <label class="fg-field">
-              <span class="fg-field-label">Send from account</span>
-              <select id="fg-send-account" class="fg-select"></select>
-            </label>
             <button type="button" class="btn" id="fg-send-btn" onclick="fgSendStart()">Send invites automatically</button>
             <button type="button" class="btn btn-ghost" id="fg-send-stop" onclick="fgSendStop()" hidden>Stop</button>
           </div>
@@ -2628,7 +2629,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.114.5"></script>
+  <script type="module" src="/js/app.js?v=2.115.0"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
