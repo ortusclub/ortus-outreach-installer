@@ -55,10 +55,32 @@ function asObjects_(sh) {
 }
 function keyOf_(memberId, url) { return String(memberId || '') || String(url || ''); }
 
+// Coerce a Month cell (a Date object from getValues, a tz-shifted ISO string, or
+// a plain "YYYY-MM") to a plain "YYYY-MM". Sheets turns a "2026-06" string into a
+// Date at midnight on the 1st in the sheet timezone, which over UTC reads back as
+// the last day of the previous month — nudge +12h before taking the UTC
+// year-month so any ±12h offset rounds back to the intended month. Keep in sync
+// with normMonth() in src/connections/fg-export.js.
+function normMonth_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  var ms;
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    ms = value.getTime();
+  } else {
+    var s = String(value);
+    if (/^\d{4}-\d{2}$/.test(s)) return s;
+    ms = Date.parse(s);
+    if (isNaN(ms)) return s;
+  }
+  var d = new Date(ms + 12 * 60 * 60 * 1000);
+  return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2);
+}
+
 function fgState_() {
   var inv = sheet_('FG Invites', FG_HEADER);
   var bud = sheet_('FG Budgets', BUDGET_HEADER);
-  return { invites: asObjects_(inv), budgets: asObjects_(bud), funnel: fgFunnel_() };
+  var budgets = asObjects_(bud).map(function (o) { o['Month'] = normMonth_(o['Month']); return o; });
+  return { invites: asObjects_(inv), budgets: budgets, funnel: fgFunnel_() };
 }
 
 // Append rows that aren't already present (by Member-ID-or-URL).
@@ -97,17 +119,22 @@ function bumpBudget_(account, operator, month, sentDelta) {
   var sh = sheet_('FG Budgets', BUDGET_HEADER);
   var r = rows_(sh);
   for (var i = 0; i < r.data.length; i++) {
-    if (r.data[i][0] === account && r.data[i][2] === month) {
+    if (r.data[i][0] === account && normMonth_(r.data[i][2]) === month) {
       var allowance = Number(r.data[i][3]) || DEFAULT_ALLOWANCE;
       var sent = (Number(r.data[i][4]) || 0) + sentDelta;
-      sh.getRange(i + 2, 5).setValue(sent);       // Sent
+      sh.getRange(i + 2, 3).setNumberFormat('@').setValue(month); // self-heal Month -> plain text
+      sh.getRange(i + 2, 5).setValue(sent);             // Sent
       sh.getRange(i + 2, 6).setValue(allowance - sent); // Remaining
       return allowance - sent;
     }
   }
-  // No row yet -> create one.
+  // No row yet -> create one. Force the Month cell to plain text so Sheets never
+  // coerces "2026-06" into a tz-shifted Date that breaks future matching.
   var allowance = DEFAULT_ALLOWANCE;
-  sh.appendRow([account, operator || '', month, allowance, sentDelta, allowance - sentDelta]);
+  var newRow = sh.getLastRow() + 1;
+  sh.getRange(newRow, 1, 1, BUDGET_HEADER.length)
+    .setValues([[account, operator || '', month, allowance, sentDelta, allowance - sentDelta]]);
+  sh.getRange(newRow, 3).setNumberFormat('@').setValue(month);
   return allowance - sentDelta;
 }
 

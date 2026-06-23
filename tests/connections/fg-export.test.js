@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FG_HEADER, fgRow, functionMatch, inviteKey } from '../../src/connections/fg-export.js';
+import { FG_HEADER, fgRow, functionMatch, inviteKey, normMonth } from '../../src/connections/fg-export.js';
 
 const MARKETER_KEYWORDS = ['marketing', 'brand', 'growth', 'content', 'demand', 'comms', 'cmo'];
 
@@ -23,6 +23,25 @@ test('inviteKey prefers Member ID, falls back to URL', () => {
   assert.equal(inviteKey({ linkedin_membership_id: '4185', linkedinbio: 'https://x/in/a' }), '4185');
   assert.equal(inviteKey({ linkedin_membership_id: '', linkedinbio: 'https://x/in/a' }), 'https://x/in/a');
   assert.equal(inviteKey({}), '');
+});
+
+test('normMonth passes through a plain YYYY-MM and blanks empties', () => {
+  assert.equal(normMonth('2026-06'), '2026-06');
+  assert.equal(normMonth(''), '');
+  assert.equal(normMonth(null), '');
+  assert.equal(normMonth(undefined), '');
+});
+
+test('normMonth recovers the intended month from a tz-shifted ISO date', () => {
+  // What the FG sheet currently serializes for a "June 2026" budget row: midnight
+  // on June 1 in a +2 tz reads back as the last day of May at 22:00Z.
+  assert.equal(normMonth('2026-05-31T22:00:00.000Z'), '2026-06');
+  assert.equal(normMonth('2026-06-15'), '2026-06');
+  assert.equal(normMonth('2025-12-31T23:00:00.000Z'), '2026-01');
+});
+
+test('normMonth leaves an unparseable string untouched', () => {
+  assert.equal(normMonth('not a date'), 'not a date');
 });
 
 test('fgRow builds a rectangular all-string row in FG_HEADER order', () => {

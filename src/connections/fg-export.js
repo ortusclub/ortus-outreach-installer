@@ -10,6 +10,21 @@ export const FG_HEADER = [
   'Invited At', 'FG Note', 'Month',
 ];
 
+// Coerce any Month cell value to a plain "YYYY-MM" string for budget matching.
+// Google Sheets silently turns a "2026-06" string into a Date cell; read back over
+// JSON that's an ISO instant ("2026-05-31T22:00:00.000Z" = midnight June 1 in a
+// +2 tz), so a naive `=== "2026-06"` compare misses the row. Nudge +12h before
+// taking the UTC year-month so any ±12h tz offset rounds back to the intended
+// month. A plain "YYYY-MM" is returned as-is; an unparseable value is left intact.
+export function normMonth(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}$/.test(value)) return value;
+  const ms = value instanceof Date ? value.getTime() : Date.parse(value);
+  if (Number.isNaN(ms)) return typeof value === 'string' ? value : '';
+  const d = new Date(ms + 12 * 60 * 60 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 // Which function/title keyword matched this job title (first hit), for the
 // Function Match column. v1 function filter = keyword-on-title.
 export function functionMatch(jobTitle, keywords = []) {

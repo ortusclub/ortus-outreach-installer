@@ -1,6 +1,43 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCreditsAvailable, headlineMatches, pickInviteResult } from '../../src/linkedin/follower-invite.js';
+import { parseCreditsAvailable, headlineMatches, pickInviteResult, waitForModalContent } from '../../src/linkedin/follower-invite.js';
+
+// A fake puppeteer page that returns scripted modal text / result-row presence
+// on successive poll rounds. One round advances per $eval call (the first call
+// each loop iteration); $ reflects the same round.
+function fakePage(rounds) {
+  let i = -1;
+  const cur = () => rounds[Math.min(i, rounds.length - 1)] || {};
+  return {
+    polls: () => i + 1,
+    $eval: async () => { i++; return cur().text || ''; },
+    $: async () => (cur().hasRow ? {} : null),
+  };
+}
+
+test('waitForModalContent resolves "credits" once the credits text renders late', async () => {
+  const page = fakePage([{ text: '' }, { text: 'Dialog content start. Invite to follow' }, { text: '30/30 credits available' }]);
+  const r = await waitForModalContent(page, { sleep: async () => {} });
+  assert.equal(r.ready, true);
+  assert.equal(r.via, 'credits');
+  assert.equal(r.polls, 3);
+});
+
+test('waitForModalContent resolves "rows" when a result row appears (no credits text)', async () => {
+  const page = fakePage([{ text: '' }, { text: '', hasRow: true }]);
+  const r = await waitForModalContent(page, { sleep: async () => {} });
+  assert.equal(r.ready, true);
+  assert.equal(r.via, 'rows');
+  assert.equal(r.polls, 2);
+});
+
+test('waitForModalContent times out when neither credits nor rows ever render', async () => {
+  const page = fakePage([{ text: 'Dialog content start. Invite to follow Dialog content end.' }]);
+  let clock = 0;
+  const r = await waitForModalContent(page, { timeoutMs: 1000, pollMs: 250, sleep: async () => {}, now: () => { const v = clock; clock += 250; return v; } });
+  assert.equal(r.ready, false);
+  assert.equal(r.via, 'timeout');
+});
 
 test('parseCreditsAvailable reads the leading number', () => {
   assert.equal(parseCreditsAvailable('30/30 credits available · Credit refill: June 30, 2026'), 30);

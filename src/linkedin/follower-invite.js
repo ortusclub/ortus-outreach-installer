@@ -43,11 +43,36 @@ const SEL = {
 };
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The modal SHELL (SEL.modal) mounts before LinkedIn renders its contents, so a
+// read fired right after waitForSelector saw only "Dialog content start. Invite
+// to follow Dialog content end." → 0 credits → instant bail (first send always
+// failed; the retry worked because content had rendered by then). Poll until the
+// real content is present: the credits line OR at least one result row. Node-side
+// poll (not page.waitForFunction) so it reuses the tested parseCreditsAvailable
+// and is unit-testable with a fake page. Returns after `timeoutMs` regardless so
+// readCredits still runs and logs its parse-miss diagnostic if truly empty.
+export async function waitForModalContent(page, { timeoutMs = 12000, pollMs = 250, log = () => {}, sleep = _sleep, now = () => Date.now() } = {}) {
+  const deadline = now() + timeoutMs;
+  let polls = 0;
+  while (now() <= deadline) {
+    polls++;
+    const txt = await page.$eval(SEL.modal, (m) => m.innerText || '').catch(() => '');
+    if (parseCreditsAvailable(txt) > 0) return { ready: true, via: 'credits', polls };
+    const hasRow = await page.$(SEL.result).then(Boolean).catch(() => false);
+    if (hasRow) return { ready: true, via: 'rows', polls };
+    await sleep(pollMs);
+  }
+  return { ready: false, via: 'timeout', polls };
+}
+
 export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) {
   await page.goto(inviteUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForSelector(SEL.modal, { timeout: 15000 });
-  log('invite modal open');
-  return { ok: true };
+  const content = await waitForModalContent(page, { log });
+  log(content.ready
+    ? `invite modal ready (${content.via}, ${content.polls} polls)`
+    : `invite modal content did not render within ${content.polls} polls — proceeding anyway`);
+  return { ok: true, contentReady: content.ready };
 }
 
 export async function readCredits(page, { log = () => {} } = {}) {

@@ -73,6 +73,7 @@ import {
 } from './src/auth.js';
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators } from './src/connections/search-service.js';
 import { getFgState, queueFgInvites, markFgInvited, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
+import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
 import { ORTUS_PAGE_INVITE_URL } from './src/sheets-webapp-url.js';
@@ -1375,8 +1376,10 @@ function fgCriteria(b = {}) {
 const fgMonth = () => new Date().toISOString().slice(0, 7); // YYYY-MM
 
 // Remaining budget for an account this month = allowance − sent (from FG Budgets).
+// Month is compared via normMonth because the sheet may serialize it as a
+// tz-shifted ISO date rather than the plain "YYYY-MM" we query with.
 function fgRemaining(budgets, account, month) {
-  const row = (budgets || []).find((r) => r.Account === account && r.Month === month);
+  const row = (budgets || []).find((r) => r.Account === account && normMonth(r.Month) === month);
   const allowance = row ? Number(row.Allowance) || FG_DEFAULT_MONTHLY_ALLOWANCE : FG_DEFAULT_MONTHLY_ALLOWANCE;
   const sent = row ? Number(row.Sent) || 0 : 0;
   return Math.max(0, allowance - sent);
