@@ -44,7 +44,7 @@ import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { spreadsheetIdFromUrl, extractSheetGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
-import { closeLocalBrowser } from './src/local-launcher.js';
+import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
 import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
 import { unhideByPids } from './src/mac-window.js';
@@ -1475,9 +1475,10 @@ app.post('/api/fg/send/start', async (req, res) => {
         return;
       }
       const token = process.env.GOLOGIN_API_TOKEN;
+      const isLocal = profileId === 'local-browser';
       preventSleep('fg-invite');
-      campaignLog(`[FG-invite] Launching profile ${profileId} for ${operator} — ${queued.length} queued invite(s)`);
-      const launched = await launchProfile(profileId, token);
+      campaignLog(`[FG-invite] Launching ${isLocal ? 'local browser' : `profile ${profileId}`} for ${operator} — ${queued.length} queued invite(s)`);
+      const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId, token);
       launchedProfile = true;
       const page = launched.page;
       _fgSend.phase = 'inviting';
@@ -1494,7 +1495,7 @@ app.post('/api/fg/send/start', async (req, res) => {
     } catch (err) {
       _fgSend = { ..._fgSend, running: false, phase: 'error', error: err.message };
     } finally {
-      try { if (launchedProfile) { await _closeProfile(profileId); } } catch (_) {}
+      try { if (launchedProfile) { await (profileId === 'local-browser' ? closeLocalBrowser() : _closeProfile(profileId)); } } catch (_) {}
       try { allowSleep(); } catch (_) {}
     }
   })();

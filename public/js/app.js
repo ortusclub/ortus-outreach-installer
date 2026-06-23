@@ -13078,28 +13078,60 @@ function fgAccountCredit(profile) {
 // as the CC account grid, but each tile carries a credit pill: GREEN = none used
 // (full), AMBER = some used, RED = all done (0 left). Clicking a tile selects the
 // account to send from. Re-render on profile load + when FG Budgets arrive.
+let _fgAcctFilter = 'all'; // all | available | done
+
+function fgSetAcctFilter(f) {
+  _fgAcctFilter = f;
+  document.querySelectorAll('#fg-acct-filters .chip').forEach((c) => c.classList.toggle('active', c.dataset.fgfilter === f));
+  fgRenderSendAccounts();
+}
+
+// Single-select GoLogin account chooser for FG sends. Same monochrome two-zone
+// card as the CC "Browse accounts" picker (search + filter chips + a colored
+// status band), but the band reflects this month's invite credits from FG
+// Budgets: GREEN = all free, AMBER = some used, RED = all done. Local Browser is
+// always offered first. Clicking a card selects the single account to send from.
 function fgRenderSendAccounts() {
   const grid = document.getElementById('fg-send-accounts');
   if (!grid) return;
-  const profiles = Array.isArray(allProfilesData) ? allProfilesData : [];
-  if (!profiles.length) {
-    grid.innerHTML = '<p class="cx-hint">No LinkedIn accounts loaded yet…</p>';
-    return;
+  const all = Array.isArray(allProfilesData) ? allProfilesData : [];
+  const rows = all.map((p) => ({ p, c: fgAccountCredit(p) }));
+  const availN = rows.filter((x) => x.c.remaining > 0).length;
+  const doneN = rows.filter((x) => x.c.remaining <= 0).length;
+  const setN = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
+  setN('fg-chip-all', all.length); setN('fg-chip-available', availN); setN('fg-chip-done', doneN);
+
+  if (!all.length) { grid.innerHTML = '<p class="cx-hint">No LinkedIn accounts loaded yet…</p>'; return; }
+
+  const q = (document.getElementById('fg-acct-search')?.value || '').trim().toLowerCase();
+  let list = rows;
+  if (_fgAcctFilter === 'available') list = list.filter((x) => x.c.remaining > 0);
+  else if (_fgAcctFilter === 'done') list = list.filter((x) => x.c.remaining <= 0);
+  if (q) list = list.filter((x) => String((x.p && (x.p.name || x.p.id)) || '').toLowerCase().includes(q));
+
+  const card = (pid, band, word, name, sub) => {
+    const sel = pid === _fgSendProfileId ? ' selected' : '';
+    return `<label class="profile-item jt fg-acct-card${sel}" data-pid="${escHtml(pid)}">
+      <div class="jt-stat ${band}"><span class="jt-dot"></span><span class="jt-word">${escHtml(word)}</span></div>
+      <div class="jt-det"><div class="jt-top"><input type="checkbox" ${sel ? 'checked' : ''} tabindex="-1"><span class="jt-email">${escHtml(name)}</span></div>
+      <div class="jt-sub">${escHtml(sub)}</div></div></label>`;
+  };
+
+  const cards = [];
+  // Local Browser — always first (your system Chrome), unless filtered/searched out.
+  if (_fgAcctFilter !== 'done' && (!q || 'local browser'.includes(q))) {
+    cards.push(card('local-browser', 's-local', 'LOCAL', 'Local Browser', 'Your system Chrome — log in when it opens.'));
   }
-  grid.innerHTML = profiles.map((p) => {
-    const { remaining, allowance } = fgAccountCredit(p);
-    let cls = 'fg-acct-amber';
-    let label = `${remaining}/${allowance} left`;
-    if (remaining >= allowance) cls = 'fg-acct-green';
-    else if (remaining <= 0) { cls = 'fg-acct-red'; label = `0/${allowance} · done`; }
-    const sel = p.id === _fgSendProfileId ? ' selected' : '';
-    return `<button type="button" class="fg-acct-tile${sel}" data-pid="${escHtml(p.id)}">
-      <span class="fg-acct-name">${escHtml(p.name || p.id)}</span>
-      <span class="fg-acct-credit ${cls}">${escHtml(label)}</span>
-    </button>`;
-  }).join('');
-  grid.querySelectorAll('.fg-acct-tile').forEach((b) => {
-    b.addEventListener('click', () => { _fgSendProfileId = b.dataset.pid; fgRenderSendAccounts(); });
+  for (const { p, c } of list) {
+    const { remaining, allowance } = c;
+    let band = 's-inuse', word = `${remaining}/${allowance}`, sub = `${remaining} of ${allowance} invites left`;
+    if (remaining >= allowance) { band = 's-free'; word = `${allowance}/${allowance}`; sub = `Full — ${allowance} invites available`; }
+    else if (remaining <= 0) { band = 's-stop'; word = 'DONE'; sub = 'All invites used this month'; }
+    cards.push(card(p.id, band, word, p.name || p.id, sub));
+  }
+  grid.innerHTML = cards.length ? cards.join('') : '<p class="cx-hint">No accounts match.</p>';
+  grid.querySelectorAll('.fg-acct-card').forEach((el) => {
+    el.addEventListener('click', (e) => { e.preventDefault(); _fgSendProfileId = el.dataset.pid; fgRenderSendAccounts(); });
   });
 }
 
@@ -13197,6 +13229,8 @@ window.focusFgInput = focusFgInput;
 window.onFgChipKey = onFgChipKey;
 window.removeFgChip = removeFgChip;
 window.fgBuild = fgBuild;
+window.fgRenderSendAccounts = fgRenderSendAccounts;
+window.fgSetAcctFilter = fgSetAcctFilter;
 window.fgQueue = fgQueue;
 window.fgMarkInvited = fgMarkInvited;
 window.fgLoadDb = fgLoadDb;

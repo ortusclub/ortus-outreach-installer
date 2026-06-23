@@ -1497,8 +1497,16 @@
         <div class="fg-send-block" id="fg-send-block">
           <div class="fg-field">
             <span class="fg-field-label">Send from account — pick the GoLogin account to invite from</span>
-            <div id="fg-send-accounts" class="fg-acct-grid"></div>
-            <span class="cx-hint">Colour = this account's invite credits this month · <span class="fg-acct-green">green</span> none used · <span class="fg-acct-amber">amber</span> some used · <span class="fg-acct-red">red</span> all done.</span>
+            <input id="fg-acct-search" class="fg-acct-search" type="text" placeholder="Search accounts by name or email…" oninput="fgRenderSendAccounts()">
+            <div class="chip-row" id="fg-acct-filters">
+              <button type="button" class="chip active" data-fgfilter="all" onclick="fgSetAcctFilter('all')">All <span class="count" id="fg-chip-all">0</span></button>
+              <button type="button" class="chip" data-fgfilter="available" onclick="fgSetAcctFilter('available')">Available <span class="count" id="fg-chip-available">0</span></button>
+              <button type="button" class="chip" data-fgfilter="done" onclick="fgSetAcctFilter('done')">Done <span class="count" id="fg-chip-done">0</span></button>
+            </div>
+            <div class="browse-card fg-acct-browse">
+              <div class="profile-grid" id="fg-send-accounts"></div>
+            </div>
+            <span class="cx-hint">Band colour = invite credits left this month · <span class="fg-acct-green">green</span> all free · <span class="fg-acct-amber">amber</span> some used · <span class="fg-acct-red">red</span> all done.</span>
           </div>
           <div class="fg-send-row">
             <button type="button" class="btn" id="fg-send-btn" onclick="fgSendStart()">Send invites automatically</button>
@@ -2629,7 +2637,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.115.0"></script>
+  <script type="module" src="/js/app.js?v=2.115.1"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
