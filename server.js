@@ -1538,41 +1538,42 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
   _fgTeam.phase = 'launching';
   _fgTeamAbort = false;
   const token = process.env.GOLOGIN_API_TOKEN;
-  const { closeProfile } = await import('./src/gologin-launcher.js');
-  preventSleep('fg-team-launch');
-
-  let _fgTeamSnap = { invites: [], budgets: [] };
-  const deps = {
-    // Build this account's targets fresh (DNC-safe, keyword-filtered, deduped vs
-    // already-invited, budget-capped) immediately before its send.
-    buildTargets: (pair) => {
-      // NOTE: getFgState is async; we snapshot it once per account via the closure below.
-      const snap = _fgTeamSnap;
-      const alreadyInvited = (snap.invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
-      const budget = fgRemaining(snap.budgets, pair.account, month);
-      return buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
-    },
-    launch: async (pair) => {
-      const isLocal = pair.profileId === 'local-browser';
-      campaignLog(`[FG-team] Launching ${isLocal ? 'local browser' : `profile ${pair.profileId}`} for ${pair.account}`);
-      const launched = isLocal ? await launchLocalBrowser() : await launchProfile(pair.profileId, token);
-      return { page: launched.page, close: async () => { await (isLocal ? closeLocalBrowser() : closeProfile(pair.profileId)); } };
-    },
-    send: ({ page, queued, log, shouldAbort }) => runFollowerInvites({ page, inviteUrl: ORTUS_PAGE_INVITE_URL, queued, log, shouldAbort }),
-    // Write-back: append the invited rows then flip them to Invited (+bump budget).
-    // End state has NO Queued rows; reuses existing Apps Script actions.
-    record: async ({ rows, invitedIds, account, operator }) => {
-      const set = new Set(invitedIds.map(String));
-      const invitedRows = rows.filter((r) => set.has(String(r[2])));
-      if (invitedRows.length) { await queueFgInvites(invitedRows); await markFgInvited({ memberIds: invitedIds, account, operator, month }); }
-      _fgTeamSnap = await getFgState(); // refresh so the next account dedups against these
-    },
-    log: (m) => { try { campaignLog(`[FG-team] ${m}`); } catch (_) {} },
-    now: () => new Date().toISOString(),
-  };
 
   (async () => {
     try {
+      const { closeProfile } = await import('./src/gologin-launcher.js');
+      preventSleep('fg-team-launch');
+
+      let _fgTeamSnap = { invites: [], budgets: [] };
+      const deps = {
+        // Build this account's targets fresh (DNC-safe, keyword-filtered, deduped vs
+        // already-invited, budget-capped) immediately before its send.
+        buildTargets: (pair) => {
+          // NOTE: getFgState is async; we snapshot it once per account via the closure below.
+          const snap = _fgTeamSnap;
+          const alreadyInvited = (snap.invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+          const budget = fgRemaining(snap.budgets, pair.account, month);
+          return buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
+        },
+        launch: async (pair) => {
+          const isLocal = pair.profileId === 'local-browser';
+          campaignLog(`[FG-team] Launching ${isLocal ? 'local browser' : `profile ${pair.profileId}`} for ${pair.account}`);
+          const launched = isLocal ? await launchLocalBrowser() : await launchProfile(pair.profileId, token);
+          return { page: launched.page, close: async () => { await (isLocal ? closeLocalBrowser() : closeProfile(pair.profileId)); } };
+        },
+        send: ({ page, queued, log, shouldAbort }) => runFollowerInvites({ page, inviteUrl: ORTUS_PAGE_INVITE_URL, queued, log, shouldAbort }),
+        // Write-back: append the invited rows then flip them to Invited (+bump budget).
+        // End state has NO Queued rows; reuses existing Apps Script actions.
+        record: async ({ rows, invitedIds, account, operator }) => {
+          const set = new Set(invitedIds.map(String));
+          const invitedRows = rows.filter((r) => set.has(String(r[2])));
+          if (invitedRows.length) { await queueFgInvites(invitedRows); await markFgInvited({ memberIds: invitedIds, account, operator, month }); }
+          _fgTeamSnap = await getFgState(); // refresh so the next account dedups against these
+        },
+        log: (m) => { try { campaignLog(`[FG-team] ${m}`); } catch (_) {} },
+        now: () => new Date().toISOString(),
+      };
+
       _fgTeamSnap = await getFgState();
       await runTeamLaunch(pairs, { keywords, month, getAbort: () => _fgTeamAbort }, deps, _fgTeam);
     } catch (err) {
