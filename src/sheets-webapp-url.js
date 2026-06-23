@@ -57,4 +57,4 @@ export const SIGNUP_ALLOWED_DOMAINS = ['ortusclub.com', 'ortus.solutions'];
 // / FG Funnel). Paste fg-apps-script.js into a NEW Apps Script project, deploy
 // as a web app ("execute as me", "anyone with the link"), and put its /exec URL
 // here. Until then the app surfaces a friendly "not configured" error.
-export const FG_WEBAPP_URL = '';
+export const FG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwagvm0xI3Vh4kx4Mx8l7qIwqlFvS068ozudzvYQYPE0iscsr_99AxlntT4tL2GTzgrGA/exec';
