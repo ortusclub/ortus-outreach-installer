@@ -13098,13 +13098,14 @@ async function fgSendStop() {
 }
 
 function initFollowerGrowth() {
-  if (_fgViewReady) return;
-  _fgViewReady = true;
+  // Idempotent: the operator/account pickers are (re)populated every time the FG
+  // view is shown — a one-shot guard could leave them empty if the first call
+  // fired before the DOM/session was ready. Only the network DB load is once-per-session.
   if (!fgChips.length) fgChips = FG_DEFAULT_CHIPS.slice();
   renderFgChips();
   fgPopulateOperators();
   fgPopulateAccounts();
-  fgLoadDb();
+  if (!_fgViewReady) { _fgViewReady = true; fgLoadDb(); }
 }
 
 window.focusFgInput = focusFgInput;
