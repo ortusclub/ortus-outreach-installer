@@ -58,3 +58,8 @@ export const SIGNUP_ALLOWED_DOMAINS = ['ortusclub.com', 'ortus.solutions'];
 // as a web app ("execute as me", "anyone with the link"), and put its /exec URL
 // here. Until then the app surfaces a friendly "not configured" error.
 export const FG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwagvm0xI3Vh4kx4Mx8l7qIwqlFvS068ozudzvYQYPE0iscsr_99AxlntT4tL2GTzgrGA/exec';
+
+// Follower Growth Phase 2 — the Ortus Club page "Invite to follow" modal URL.
+// CONFIRM the exact page slug. <ORTUS_SLUG> is a placeholder — Antonio will
+// replace it with the real company-page slug before live use.
+export const ORTUS_PAGE_INVITE_URL = 'https://www.linkedin.com/company/<ORTUS_SLUG>/?invite=true';

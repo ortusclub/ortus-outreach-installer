@@ -74,6 +74,8 @@ import {
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators } from './src/connections/search-service.js';
 import { getFgState, queueFgInvites, markFgInvited, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
+import { runFollowerInvites } from './src/linkedin/follower-invite.js';
+import { ORTUS_PAGE_INVITE_URL } from './src/sheets-webapp-url.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1436,6 +1438,66 @@ app.post('/api/fg/mark-invited', async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Follower Growth Phase 2 — automated browser-driven invite send.
+// Launches a GoLogin profile for the given operator account, runs
+// runFollowerInvites against the Ortus Club page invite modal, then marks
+// all successfully-invited member IDs as Invited in the FG sheet.
+// ---------------------------------------------------------------------------
+let _fgSend = { running: false, phase: 'idle', invited: 0, skipped: 0, creditsBefore: null, creditsAfter: null, error: null };
+let _fgAbort = false;
+
+app.get('/api/fg/send/status', (_req, res) => res.json(_fgSend));
+app.post('/api/fg/send/stop', (_req, res) => { _fgAbort = true; res.json({ ok: true }); });
+
+app.post('/api/fg/send/start', async (req, res) => {
+  if (_fgSend.running) return res.status(409).json({ error: 'A send is already running.' });
+  const b = req.body || {};
+  const profileId = b.profileId;
+  const operator = b.operator;
+  if (!profileId || !operator) return res.status(400).json({ error: 'profileId and operator are required' });
+  const month = b.month || new Date().toISOString().slice(0, 7);
+  res.json({ started: true });
+  _fgSend = { running: true, phase: 'launching', invited: 0, skipped: 0, creditsBefore: null, creditsAfter: null, error: null };
+  _fgAbort = false;
+  (async () => {
+    let launchedProfile = false;
+    const { closeProfile: _closeProfile } = await import('./src/gologin-launcher.js');
+    try {
+      const { invites } = await getFgState();
+      const queued = (invites || [])
+        .filter((r) => r['Status'] === 'Queued' && r['Account'] === operator)
+        .map((r) => ({ name: r['Target Name'], jobTitle: r['Job Title'], company: r['Company'], memberId: String(r['Member ID'] || '') }));
+      if (!queued.length) {
+        _fgSend = { running: false, phase: 'done', invited: 0, skipped: 0, creditsBefore: 0, creditsAfter: 0, error: null };
+        return;
+      }
+      const token = process.env.GOLOGIN_API_TOKEN;
+      preventSleep('fg-invite');
+      campaignLog(`[FG-invite] Launching profile ${profileId} for ${operator} — ${queued.length} queued invite(s)`);
+      const launched = await launchProfile(profileId, token);
+      launchedProfile = true;
+      const page = launched.page;
+      _fgSend.phase = 'inviting';
+      const out = await runFollowerInvites({
+        page,
+        inviteUrl: ORTUS_PAGE_INVITE_URL,
+        queued,
+        log: (m) => { try { campaignLog(`[FG-invite] ${m}`); } catch (_) {} },
+        shouldAbort: () => _fgAbort,
+      });
+      _fgSend = { ..._fgSend, phase: 'marking', invited: out.invited.length, skipped: out.skipped.length, creditsBefore: out.creditsBefore, creditsAfter: out.creditsAfter };
+      if (out.invited.length) await markFgInvited({ memberIds: out.invited, account: operator, operator, month });
+      _fgSend = { running: false, phase: 'done', invited: out.invited.length, skipped: out.skipped.length, creditsBefore: out.creditsBefore, creditsAfter: out.creditsAfter, error: null };
+    } catch (err) {
+      _fgSend = { ..._fgSend, running: false, phase: 'error', error: err.message };
+    } finally {
+      try { if (launchedProfile) { await _closeProfile(profileId); } } catch (_) {}
+      try { allowSleep(); } catch (_) {}
+    }
+  })();
 });
 
 // v2.59.x — Atomic full-order reorder for drag-and-drop in the dashboard.
