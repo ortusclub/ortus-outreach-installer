@@ -13506,6 +13506,7 @@ async function initFollowerGrowth() {
   fgtlRenderChips();
   fgtlRenderBoard();
   fgtlBindBoard();
+  fgtlBindLaunch();
 
   // 7. Also keep legacy single-send pickers populated (idempotent)
   fgFillPickers();
@@ -13556,6 +13557,181 @@ window.fgtlRenderDock = fgtlRenderDock;
 window.fgtlAutoPair = fgtlAutoPair;
 window.fgtlFilteredEmployees = fgtlFilteredEmployees;
 window.fgtlBindBoard = fgtlBindBoard;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 6: Team Launch — launch, poll, drive the vj-card live log + summary
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Build the launch payload pairs from current selection + pairing state. */
+function fgtlPairs() {
+  return Array.from(fgtlSelected).map((email) => {
+    const emp = fgtlEmployees.find((e) => e.email === email);
+    const prof = fgtlAssigned[email]
+      ? fgtlProfiles.find((p) => p.id === fgtlAssigned[email])
+      : fgtlAutoPair(email);
+    if (!prof) return null;
+    return {
+      operator: email,
+      operatorName: (emp && emp.name) || email,
+      account: prof.name,
+      profileId: prof.id,
+    };
+  }).filter(Boolean);
+}
+
+/** Snapshot of last polled status (used by #fgtl-copy). */
+let _fgtlLastStatus = null;
+
+/** POST to /api/fg/team-launch/start, then begin polling. */
+async function fgtlLaunch() {
+  const pairs = fgtlPairs();
+  if (!pairs.length) return;
+  const goBtn = document.getElementById('fgtl-go');
+  if (goBtn) goBtn.disabled = true;
+  let res;
+  try {
+    res = await fetch('/api/fg/team-launch/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        keywords: fgtlChips,
+        pairs,
+        month: new Date().toISOString().slice(0, 7),
+      }),
+    });
+  } catch (err) {
+    alert('Launch failed: ' + (err && err.message ? err.message : String(err)));
+    if (goBtn) goBtn.disabled = false;
+    return;
+  }
+  if (!res.ok) {
+    let errMsg = 'Launch failed';
+    try { const body = await res.json(); errMsg = body.error || errMsg; } catch (_) {}
+    alert(errMsg);
+    if (goBtn) goBtn.disabled = false;
+    return;
+  }
+  fgtlPoll();
+}
+
+/** Poll /api/fg/team-launch/status every 2 s; stop when running===false. */
+function fgtlPoll() {
+  const tick = async () => {
+    let status = null;
+    try {
+      const r = await fetch('/api/fg/team-launch/status');
+      if (r.ok) status = await r.json();
+    } catch (_) {}
+    if (!status) return;
+    _fgtlLastStatus = status;
+    fgtlRenderCard(status);
+    if (status.running) {
+      setTimeout(tick, 2000);
+    } else {
+      fgtlRenderDock();
+    }
+  };
+  tick();
+}
+
+/** Map status object onto #fgtl-* card elements. */
+function fgtlRenderCard(status) {
+  function setTxt(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val != null ? String(val) : '';
+  }
+  function setHtml(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = val || '';
+  }
+
+  const card = document.getElementById('fgtl-card');
+  if (!card) return;
+
+  // is-monitor class while running
+  if (status.running) card.classList.add('is-monitor');
+  else card.classList.remove('is-monitor');
+
+  // Eyebrow
+  let eyebrow = 'Ready to launch';
+  if (status.phase === 'error') eyebrow = '✗ Error';
+  else if (status.running) eyebrow = '● Launching';
+  else if (status.phase === 'done') eyebrow = '✓ Complete';
+  setTxt('fgtl-eyebrow', eyebrow);
+
+  // Timestamp
+  setTxt('fgtl-when', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+  // Progress bar
+  const total = status.totalAccounts || 0;
+  const done = status.doneAccounts || 0;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const bar = document.getElementById('fgtl-bar');
+  if (bar) bar.style.width = pct + '%';
+  setTxt('fgtl-pct', pct);
+
+  // Counts
+  setTxt('fgtl-sent', done);
+  setTxt('fgtl-total', total);
+  setTxt('fgtl-accts', total);
+  setTxt('fgtl-inv', status.invitesTotal != null ? status.invitesTotal : 0);
+
+  // Phase label
+  const phaseLabels = { launching: 'Launching', sending: 'Sending', done: 'Finished', error: 'Error', idle: 'Idle' };
+  setTxt('fgtl-seq', phaseLabels[status.phase] || (status.phase || 'Idle'));
+
+  // Summary
+  setTxt('fgtl-sum-sent', status.sent != null ? status.sent : 0);
+  setTxt('fgtl-sum-skip', status.skipped != null ? status.skipped : 0);
+
+  // Log body — reuse v3RenderLogLine
+  const logs = Array.isArray(status.logs) ? status.logs : [];
+  const lastN = logs.slice(-15);
+  setHtml('fgtl-logbody', lastN.map((l) => v3RenderLogLine(l)).join(''));
+  const logHeadEl = document.getElementById('fgtl-loghead');
+  if (logHeadEl) {
+    logHeadEl.textContent = status.running
+      ? `Live log · last ${lastN.length} events`
+      : `Live log · last ${lastN.length} events (finished)`;
+  }
+}
+
+/** Copy the last poll's logs to clipboard. */
+async function fgtlCopyLog() {
+  const logs = (_fgtlLastStatus && Array.isArray(_fgtlLastStatus.logs)) ? _fgtlLastStatus.logs : [];
+  try {
+    await navigator.clipboard.writeText(logs.join('\n'));
+  } catch (_) {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = logs.join('\n');
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+
+/** Bind #fgtl-go and #fgtl-copy (idempotent). */
+function fgtlBindLaunch() {
+  const goBtn = document.getElementById('fgtl-go');
+  if (goBtn && !goBtn._fgtlLaunchBound) {
+    goBtn._fgtlLaunchBound = true;
+    goBtn.addEventListener('click', fgtlLaunch);
+  }
+  const copyBtn = document.getElementById('fgtl-copy');
+  if (copyBtn && !copyBtn._fgtlCopyBound) {
+    copyBtn._fgtlCopyBound = true;
+    copyBtn.addEventListener('click', fgtlCopyLog);
+  }
+}
+
+window.fgtlPairs = fgtlPairs;
+window.fgtlLaunch = fgtlLaunch;
+window.fgtlPoll = fgtlPoll;
+window.fgtlRenderCard = fgtlRenderCard;
+window.fgtlCopyLog = fgtlCopyLog;
+window.fgtlBindLaunch = fgtlBindLaunch;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign Name — top-of-wizard text input. Source-of-truth precedence on
