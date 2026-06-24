@@ -12687,6 +12687,9 @@ function updateConnSelection() {
     makeSheetBtn.hidden = target;
     makeSheetBtn.disabled = n === 0;
   }
+  // Seed a sensible default sheet name (operator can edit to add event/city tags).
+  const nameInput = document.getElementById('cx-sheet-name');
+  if (nameInput && !nameInput.value.trim()) nameInput.value = defaultConnSheetName();
   renderSheetPreview(selectedRows);
 }
 
@@ -12789,9 +12792,8 @@ async function useConnectionsForCampaign() {
   const urls = connLastResults.filter((r) => r.url && connSelected.has(r.url)).map((r) => r.url);
   if (!urls.length) { if (sub) sub.textContent = 'Pick at least one person first.'; return; }
   const body = { ...readConnectionsCriteria(), urls };
-  let nm = '';
-  try { nm = sessionStorage.getItem('connTargetName') || ''; } catch (_) {}
-  if (nm) body.name = `ICB — ${nm}`;
+  const nm = (document.getElementById('cx-sheet-name')?.value || '').trim();
+  if (nm) body.name = nm;
   if (btn) { btn.disabled = true; btn.textContent = 'Creating sheet…'; }
   try {
     const res = await fetch('/api/connections/to-workbook', {
@@ -12817,6 +12819,16 @@ async function useConnectionsForCampaign() {
   }
 }
 
+// Default name for the sheet a connections list will be written to. Operators
+// edit it to tag event / city. ICB + campaign name when entered from a campaign,
+// else a dated warm-list name.
+function defaultConnSheetName() {
+  let nm = '';
+  try { nm = sessionStorage.getItem('connTargetName') || ''; } catch (_) {}
+  const date = new Date().toISOString().slice(0, 10);
+  return nm ? `ICB — ${nm}` : `Warm list — ${date}`;
+}
+
 // Standalone path (NOT entered from a campaign): turn the current selection into
 // a brand-new Google Sheet, then offer to jump straight into a campaign with it.
 let connLastCreatedSheetUrl = '';
@@ -12826,6 +12838,8 @@ async function createSheetFromConnections() {
   const urls = connLastResults.filter((r) => r.url && connSelected.has(r.url)).map((r) => r.url);
   if (!urls.length) { if (sub) sub.textContent = 'Pick at least one person first.'; return; }
   const body = { ...readConnectionsCriteria(), urls };
+  const nm = (document.getElementById('cx-sheet-name')?.value || '').trim();
+  if (nm) body.name = nm;
   if (btn) { btn.disabled = true; btn.textContent = 'Creating sheet…'; }
   try {
     const res = await fetch('/api/connections/to-workbook', {

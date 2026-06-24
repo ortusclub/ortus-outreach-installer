@@ -581,6 +581,9 @@
             <div class="cx-export-lbl"><b id="cx-sel-count">0 people</b> selected for the list</div>
             <div class="cx-export-sub" id="cx-export-sub">DNC / unsubscribed automatically left out · each row keeps its warm connector as the primary</div>
           </div>
+          <input type="text" id="cx-sheet-name" placeholder="Sheet name — e.g. ICB · London · Q3 event"
+                 title="Name of the Google Sheet that will be created"
+                 style="flex:1;min-width:220px;max-width:360px;padding:8px 14px;border:1px solid var(--hairline);font:inherit;border-radius:9999px;background:#fff;">
           <span class="cx-spacer"></span>
           <button type="button" class="btn" id="cx-to-campaign-btn" onclick="useConnectionsForCampaign()" hidden>Use as this campaign's leads →</button>
           <button type="button" class="btn" id="cx-make-sheet-btn" onclick="createSheetFromConnections()" hidden>Create a Google Sheet →</button>
