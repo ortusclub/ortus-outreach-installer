@@ -1482,8 +1482,14 @@
       #nav-follower-growth .ls-manual { color:var(--gold); border:1px solid var(--gold); }
       #nav-follower-growth .ls-gap { color:var(--red); border:1px solid var(--red); }
       #nav-follower-growth .emp.on .picker { display:block; }
-      #nav-follower-growth .picker { display:none; grid-column:1 / -1; width:100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--hairline-soft); }
-      #nav-follower-growth .picker select { width:100%; background:var(--bg-soft); border:1px solid var(--gold); color:var(--ink); border-radius:9px; padding:8px 10px; font-family:var(--mono); font-size:12px; }
+      #nav-follower-growth .picker { display:block; grid-column:1 / -1; width:100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--hairline-soft); }
+      #nav-follower-growth .picker .aa-acct-search { width:100%; margin:0 0 8px 0; }
+      #nav-follower-growth .picker .aa-acct-grid { margin-left:0; max-height:180px; }
+      #nav-follower-growth .fgtl-change { background:none; border:none; color:var(--gray); font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; text-decoration:underline; margin-left:8px; }
+      #nav-follower-growth .fgtl-change:hover { color:var(--gold); }
+      /* Fixed-height scroll boxes so hundreds of accounts don't run off-screen */
+      #nav-follower-growth #fgtl-emps { max-height:520px; overflow-y:auto; padding-right:6px; }
+      #nav-follower-growth #fgtl-gls { max-height:520px; overflow-y:auto; }
       #nav-follower-growth .fgtl-panel { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
       #nav-follower-growth .gl { display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px solid var(--hairline-soft); }
       #nav-follower-growth .gl:first-of-type { border-top:none; }

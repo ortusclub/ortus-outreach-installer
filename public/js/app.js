@@ -12866,6 +12866,7 @@ let fgtlProfiles = [];    // [{ id, name, creditsTotal, creditsUsed }]
 let fgtlChips = [];       // active keyword chips
 let fgtlSelected = new Set(); // selected employee emails
 let fgtlAssigned = {};    // email -> profile id (manual overrides)
+let fgtlPickerOpen = new Set(); // emails whose inline profile picker is expanded
 const FGTL_ALL_PRESETS = ['marketing','brand','growth','content','demand','comms','cmo','sales','product','events','partnerships'];
 
 function renderFgChips() {
@@ -13231,29 +13232,39 @@ function fgtlRenderBoard() {
     div.className = 'fgtl-emp-row emp' + (isSelected ? ' on' : '');
     div.dataset.email = emp.email;
 
-    // Build profile select options
-    const opts = fgtlProfiles.map((p) => {
-      const left = fgtlCreditsLeft(p);
-      const selected = (assignedId === p.id) ? 'selected' : '';
-      return `<option value="${escHtml(p.id)}" ${selected}>${escHtml(p.name || p.id)} · ${left}/${p.creditsTotal} left</option>`;
-    }).join('');
-
-    // Determine link state badge
+    // Determine link state badge (+ a "change" affordance to re-open the picker)
     let badgeHtml;
     if (autoPaired && !assignedId) {
       // Auto-paired
-      badgeHtml = `<span class="fgtl-profile-badge link-state ls-auto fgtl-paired">${escHtml(autoPaired.name)} ✓</span>`;
+      badgeHtml = `<span class="fgtl-profile-badge link-state ls-auto fgtl-paired">${escHtml(autoPaired.name)} ✓</span>` +
+        (isSelected ? `<button type="button" class="fgtl-change" data-email="${escHtml(emp.email)}">change</button>` : '');
     } else if (assignedId) {
       const manualProfile = fgtlProfiles.find((p) => p.id === assignedId);
-      badgeHtml = `<span class="fgtl-profile-badge link-state ls-manual">${escHtml((manualProfile && manualProfile.name) || assignedId)}</span>`;
+      badgeHtml = `<span class="fgtl-profile-badge link-state ls-manual">${escHtml((manualProfile && manualProfile.name) || assignedId)}</span>` +
+        (isSelected ? `<button type="button" class="fgtl-change" data-email="${escHtml(emp.email)}">change</button>` : '');
     } else {
       badgeHtml = `<span class="link-state ls-gap">needs pick</span>`;
     }
 
-    // Show picker when selected
-    const pickerHtml = isSelected
-      ? `<div class="picker" style="display:block;grid-column:1 / -1;margin-top:10px;padding-top:10px;border-top:1px solid var(--hairline-soft)"><select class="fgtl-profile-sel" data-email="${escHtml(emp.email)}"><option value="">— pick GoLogin profile —</option>${opts}</select></div>`
-      : '';
+    // Inline picker: search box + scrollable radio-card grid (like the GoLogin
+    // account selector elsewhere — no native dropdown). Shown when the row needs
+    // a pick, or the user clicked "change". Auto-paired rows stay collapsed.
+    const needsPick = isSelected && !autoPaired && !assignedId;
+    const showPicker = isSelected && (needsPick || fgtlPickerOpen.has(emp.email));
+    let pickerHtml = '';
+    if (showPicker) {
+      const cards = fgtlProfiles.map((p) => {
+        const left = fgtlCreditsLeft(p);
+        const nm = p.name || p.id;
+        const checked = (assignedId === p.id) ? 'checked' : '';
+        return `<label class="aa-acct-row${assignedId === p.id ? ' sel' : ''}" data-name="${escHtml(String(nm).toLowerCase())}">` +
+          `<input type="radio" name="fgtl-pick-${escHtml(emp.email)}" value="${escHtml(p.id)}" ${checked}>` +
+          `<span class="body"><span class="name">${escHtml(nm)}</span><span class="id">${left}/${p.creditsTotal} left</span></span></label>`;
+      }).join('');
+      pickerHtml = `<div class="picker fgtl-picker" data-email="${escHtml(emp.email)}">` +
+        `<input type="text" class="aa-acct-search fgtl-pick-search" placeholder="Search by name or email…">` +
+        `<div class="aa-acct-grid fgtl-pick-grid">${cards || '<div class="id">No GoLogin profiles available</div>'}</div></div>`;
+    }
 
     div.innerHTML =
       `<input type="checkbox" class="fgtl-emp-cb" data-email="${escHtml(emp.email)}" ${isSelected ? 'checked' : ''}>` +
@@ -13271,23 +13282,50 @@ function fgtlRenderBoard() {
       fgtlRenderBoard();
     });
 
-    // Row click (toggle)
+    // Row click (toggle) — ignore clicks inside the inline picker / change button
     div.addEventListener('click', (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
-      if (fgtlSelected.has(emp.email)) fgtlSelected.delete(emp.email);
-      else fgtlSelected.add(emp.email);
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+      if (e.target.closest('.fgtl-picker') || e.target.closest('.fgtl-change')) return;
+      if (fgtlSelected.has(emp.email)) {
+        fgtlSelected.delete(emp.email);
+        fgtlPickerOpen.delete(emp.email);
+      } else {
+        fgtlSelected.add(emp.email);
+      }
       fgtlRenderBoard();
     });
 
-    // Profile select change
-    const sel = div.querySelector('.fgtl-profile-sel');
-    if (sel) {
-      sel.addEventListener('click', (e) => e.stopPropagation());
-      sel.addEventListener('change', (e) => {
-        if (e.target.value) fgtlAssigned[emp.email] = e.target.value;
-        else delete fgtlAssigned[emp.email];
+    // "change" button → expand the picker for an already-paired row
+    const changeBtn = div.querySelector('.fgtl-change');
+    if (changeBtn) {
+      changeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fgtlPickerOpen.add(emp.email);
         fgtlRenderBoard();
       });
+    }
+
+    // Inline picker: radio pick + per-row search filter
+    const picker = div.querySelector('.fgtl-picker');
+    if (picker) {
+      picker.addEventListener('click', (e) => e.stopPropagation());
+      picker.addEventListener('change', (e) => {
+        if (e.target.matches('input[type="radio"]')) {
+          fgtlAssigned[emp.email] = e.target.value;
+          fgtlPickerOpen.delete(emp.email);
+          fgtlRenderBoard();
+        }
+      });
+      const search = picker.querySelector('.fgtl-pick-search');
+      const grid = picker.querySelector('.fgtl-pick-grid');
+      if (search && grid) {
+        search.addEventListener('input', () => {
+          const q = search.value.trim().toLowerCase();
+          grid.querySelectorAll('.aa-acct-row').forEach((row) => {
+            row.style.display = (!q || (row.dataset.name || '').includes(q)) ? '' : 'none';
+          });
+        });
+      }
     }
 
     empsEl.appendChild(div);
