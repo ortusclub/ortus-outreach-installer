@@ -66,8 +66,10 @@ export async function waitForModalContent(page, { timeoutMs = 12000, pollMs = 25
 }
 
 export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) {
-  await page.goto(inviteUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForSelector(SEL.modal, { timeout: 15000 });
+  // Operators run on slow/overloaded laptops; the invite page + modal can take a
+  // while. Quadrupled from 30s/15s after a real run timed out at 30s.
+  await page.goto(inviteUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  await page.waitForSelector(SEL.modal, { timeout: 60000 });
   const content = await waitForModalContent(page, { log });
   log(content.ready
     ? `invite modal ready (${content.via}, ${content.polls} polls)`
