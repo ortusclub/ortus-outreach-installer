@@ -1454,55 +1454,53 @@
          queue it to the central FG sheet, send invites manually on LinkedIn, then
          mark them done. Phase 2 will automate the "Invite to follow" click. ── -->
     <style>
-      /* ── Follower Growth Team Launch — scoped under #nav-follower-growth ── */
-      #nav-follower-growth .board { display:grid; grid-template-columns: 1fr 320px; gap:18px; align-items:start; }
-      #nav-follower-growth .col-h { font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); margin-bottom:10px; }
-      #nav-follower-growth .emp-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-      #nav-follower-growth .fgtl-search { flex:1; display:flex; align-items:center; gap:8px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:8px 14px; transition:border-color .15s; }
-      #nav-follower-growth .fgtl-search:focus-within { border-color:var(--gold); }
-      #nav-follower-growth .fgtl-search svg { flex:none; opacity:.55; }
-      #nav-follower-growth .fgtl-search input { flex:1; background:transparent; border:none; outline:none; color:var(--ink); font-family:var(--body); font-size:13px; }
-      #nav-follower-growth .fgtl-search input::placeholder { color:var(--gray); }
-      #nav-follower-growth .fgtl-search .clr { background:none; border:none; color:var(--gray); cursor:pointer; font-size:14px; line-height:1; display:none; }
+      /* ── Follower Growth Team Launch (variant A: browse + cart) — scoped under #nav-follower-growth ── */
+      #nav-follower-growth .fgtl-roles { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:22px; }
+      #nav-follower-growth .fgtl-step-eyebrow { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin-bottom:12px; }
+      #nav-follower-growth .fgtl-board2 { display:grid; grid-template-columns:1fr 360px; gap:18px; align-items:start; }
+      #nav-follower-growth .fgtl-search { display:flex; align-items:center; gap:9px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:9px 15px; margin-bottom:14px; }
+      #nav-follower-growth .fgtl-search input { flex:1; border:none; background:none; outline:none; color:var(--ink); font-size:13px; font-family:var(--body); }
+      #nav-follower-growth .fgtl-search .clr { background:none; border:none; color:var(--gray); cursor:pointer; font-size:14px; display:none; }
       #nav-follower-growth .fgtl-search .clr.show { display:block; }
-      #nav-follower-growth .fgtl-selall { background:none; border:1px solid var(--hairline); color:var(--gray); border-radius:9999px; padding:8px 13px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; transition:.12s; white-space:nowrap; }
-      #nav-follower-growth .fgtl-selall:hover { border-color:var(--gold); color:var(--gold); }
-      #nav-follower-growth .no-match { color:var(--gray); font-size:13px; padding:22px; text-align:center; border:1px dashed var(--hairline); border-radius:12px; }
-      #nav-follower-growth .emp { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:10px; cursor:pointer; transition:.12s; flex-wrap:wrap; }
-      #nav-follower-growth .emp:hover { background:var(--card-bg); }
-      #nav-follower-growth .emp.on { border-color:var(--gold); background:var(--card-bg-hover); }
-      #nav-follower-growth .emp input[type="checkbox"] { width:17px; height:17px; accent-color:var(--gold); margin:0; }
-      #nav-follower-growth .emp .nm { font-weight:600; color:var(--ink); font-size:14px; }
-      #nav-follower-growth .emp .ml { font-family:var(--mono); font-size:11.5px; color:var(--gray); }
-      #nav-follower-growth .emp .cn { margin-left:auto; text-align:right; }
-      #nav-follower-growth .emp .cn b { font-family:var(--display); font-size:1.2rem; color:var(--ink); }
-      #nav-follower-growth .emp .cn small { display:block; font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); }
-      #nav-follower-growth .link-state { font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; padding:3px 9px; border-radius:9999px; }
-      #nav-follower-growth .ls-auto { color:var(--green); border:1px solid var(--green); }
-      #nav-follower-growth .ls-manual { color:var(--gold); border:1px solid var(--gold); }
-      #nav-follower-growth .ls-gap { color:var(--red); border:1px solid var(--red); }
-      #nav-follower-growth .emp.on .picker { display:block; }
-      #nav-follower-growth .picker { display:block; grid-column:1 / -1; width:100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--hairline-soft); }
-      #nav-follower-growth .picker .aa-acct-search { width:100%; margin:0 0 8px 0; }
-      #nav-follower-growth .picker .aa-acct-grid { margin-left:0; max-height:180px; }
-      #nav-follower-growth .fgtl-change { background:none; border:none; color:var(--gray); font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; text-decoration:underline; margin-left:8px; }
-      #nav-follower-growth .fgtl-change:hover { color:var(--gold); }
-      /* Fixed-height scroll boxes so hundreds of accounts don't run off-screen */
-      #nav-follower-growth #fgtl-emps { max-height:520px; overflow-y:auto; padding-right:6px; }
-      #nav-follower-growth #fgtl-gls { max-height:520px; overflow-y:auto; }
-      #nav-follower-growth .fgtl-panel { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
-      #nav-follower-growth .gl { display:flex; align-items:center; gap:10px; padding:9px 0; border-top:1px solid var(--hairline-soft); }
-      #nav-follower-growth .gl:first-of-type { border-top:none; }
-      #nav-follower-growth .gl .band { width:6px; align-self:stretch; border-radius:3px; }
-      #nav-follower-growth .gl .gn { font-family:var(--mono); font-size:11.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
-      #nav-follower-growth .gl .gc { font-family:var(--mono); font-size:10.5px; color:var(--gray); }
-      #nav-follower-growth .gl.used .gn { color:var(--gray); text-decoration:line-through; }
-      #nav-follower-growth .gl .who { font-family:var(--mono); font-size:9px; color:var(--gold); }
-      #nav-follower-growth .fgtl-step { display:flex; align-items:flex-start; gap:12px; margin-bottom:8px; }
-      #nav-follower-growth .fgtl-step-n { flex:none; width:22px; height:22px; border-radius:50%; border:1px solid var(--hairline); color:var(--gray); font-family:var(--mono); font-size:11px; display:flex; align-items:center; justify-content:center; margin-top:1px; }
-      #nav-follower-growth .fgtl-step-t { font-weight:600; color:var(--ink); font-size:14px; }
-      #nav-follower-growth .fgtl-step-s { color:var(--gray); font-size:12px; margin-top:2px; max-width:560px; }
-      #nav-follower-growth .filter-card { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:22px; }
+      #nav-follower-growth .fgtl-people { max-height:520px; overflow-y:auto; padding-right:6px; }
+      #nav-follower-growth .fgtl-prow { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:16px; padding:13px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:9px; }
+      #nav-follower-growth .fgtl-prow.in { opacity:.45; }
+      #nav-follower-growth .fgtl-prow .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+      #nav-follower-growth .fgtl-prow .meta { font-family:var(--mono); font-size:10px; color:var(--gray); margin-top:3px; }
+      #nav-follower-growth .fgtl-mbox { text-align:right; }
+      #nav-follower-growth .fgtl-mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; color:var(--ink); }
+      #nav-follower-growth .fgtl-mbox.zero b { color:var(--gray); }
+      #nav-follower-growth .fgtl-mbox small { display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+      #nav-follower-growth .fgtl-addbtn { border:1px solid var(--ink); background:none; color:var(--ink); border-radius:9999px; padding:7px 15px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-addbtn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+      #nav-follower-growth .fgtl-cart { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
+      #nav-follower-growth .fgtl-cart h3 { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 12px; }
+      #nav-follower-growth .fgtl-cart .empty { color:var(--gray); font-size:12.5px; text-align:center; padding:30px 10px; border:1px dashed var(--hairline); border-radius:10px; }
+      #nav-follower-growth .fgtl-pick { display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:11px 0; border-top:1px solid var(--hairline-soft); }
+      #nav-follower-growth .fgtl-pick:first-child { border-top:none; }
+      #nav-follower-growth .fgtl-pick .em { font-family:var(--mono); font-size:11.5px; color:var(--ink); }
+      #nav-follower-growth .fgtl-pick .acct { font-family:var(--mono); font-size:9.5px; color:var(--green); margin-top:3px; cursor:pointer; }
+      #nav-follower-growth .fgtl-pick .acct.gap { color:var(--red); }
+      #nav-follower-growth .fgtl-pick .acct.local { color:var(--gold); }
+      #nav-follower-growth .fgtl-pick .inv { text-align:right; font-family:var(--display); font-size:1.1rem; color:var(--ink); }
+      #nav-follower-growth .fgtl-pick .inv small { display:block; font-family:var(--mono); font-size:8px; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgtl-pick .rm { grid-column:2; justify-self:end; background:none; border:none; color:var(--gray); cursor:pointer; font-size:11px; font-family:var(--mono); }
+      #nav-follower-growth .fgtl-acctsel { grid-column:1 / -1; margin-top:8px; border:1px solid var(--gold); border-radius:10px; padding:8px; background:var(--bg-soft); }
+      #nav-follower-growth .fgtl-acctsel .psearch { width:100%; box-sizing:border-box; background:var(--card-bg); border:1px solid var(--hairline); border-radius:9999px; padding:7px 12px; font-family:var(--mono); font-size:11px; color:var(--ink); outline:none; margin-bottom:7px; }
+      #nav-follower-growth .fgtl-acctsel .plist { max-height:168px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+      #nav-follower-growth .fgtl-acctsel .popt { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--hairline); border-radius:8px; cursor:pointer; font-family:var(--mono); font-size:11px; }
+      #nav-follower-growth .fgtl-acctsel .popt:hover, #nav-follower-growth .fgtl-acctsel .popt.sel { border-color:var(--gold); background:var(--card-bg); }
+      #nav-follower-growth .fgtl-acctsel .popt .dot { width:7px; height:7px; border-radius:50%; border:1px solid var(--gray); flex:none; }
+      #nav-follower-growth .fgtl-acctsel .popt.sel .dot { background:var(--gold); border-color:var(--gold); }
+      #nav-follower-growth .fgtl-acctsel .popt.localopt { color:var(--gold); }
+      #nav-follower-growth .fgtl-acctsel .pnone { color:var(--gray); font-family:var(--mono); font-size:10px; padding:8px 10px; }
+      #nav-follower-growth .fgtl-cart-foot { border-top:1px solid var(--hairline); margin-top:14px; padding-top:14px; }
+      #nav-follower-growth .fgtl-cart-foot .tot { display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px; margin-bottom:6px; }
+      #nav-follower-growth .fgtl-cart-foot .tot b { font-family:var(--display); font-size:1.05rem; }
+      #nav-follower-growth .fgtl-go-btn { width:100%; margin-top:10px; background:var(--gold); color:#000; border:none; border-radius:9999px; padding:12px; font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; font-weight:600; }
+      #nav-follower-growth .fgtl-go-btn:disabled { background:var(--hairline); color:var(--gray); cursor:not-allowed; }
+      #nav-follower-growth .fgtl-dbwrap { margin-top:22px; }
+      #nav-follower-growth .fgtl-db-toggle { width:100%; text-align:left; background:none; border:none; color:var(--gray); font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; padding:8px 0; }
       #nav-follower-growth .chips { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:var(--bg-soft); transition:border-color .15s; }
       #nav-follower-growth .chips:focus-within { border-color:var(--gold); }
       #nav-follower-growth .chip-tag { display:inline-flex; align-items:center; gap:7px; padding:6px 6px 6px 13px; border-radius:9999px; background:var(--card-bg); border:1px solid var(--hairline); color:var(--ink); font-size:12.5px; font-family:var(--body); animation:fgtlChipIn .16s ease; }
@@ -1527,49 +1525,36 @@
       #nav-follower-growth .fgtl-pill.done { color:var(--green); border:1px solid var(--green); }
       #nav-follower-growth .fgtl-pill.skipped { color:var(--red); border:1px solid var(--red); }
       @keyframes fgtlPp { 0%,100%{opacity:1} 50%{opacity:.4} }
-      #nav-follower-growth .fgtl-dock { border:1px solid var(--hairline); border-radius:14px; padding:14px 20px; display:flex; align-items:center; gap:18px; margin-top:22px; background:var(--card-bg); }
-      #nav-follower-growth .fgtl-dock-n { font-family:var(--display); font-size:1.7rem; color:var(--ink); line-height:1; }
-      #nav-follower-growth .fgtl-dock-sub { color:var(--gray); font-size:12px; margin-top:3px; }
-      #nav-follower-growth .fgtl-seq-label { margin-left:auto; color:var(--gray); font-family:var(--mono); font-size:11px; }
-      #nav-follower-growth .fgtl-go-btn { background:var(--gold); color:#1a1300; border:none; border-radius:9999px; padding:13px 26px; font-family:var(--mono); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
-      #nav-follower-growth .fgtl-go-btn:disabled { opacity:.45; cursor:default; }
     </style>
     <div class="section" id="nav-follower-growth" style="display:none">
       <h2><span data-edit="h2-fg">Follower Growth</span></h2>
 
-      <!-- Step 1 · Role filter chips -->
-      <div class="filter-card">
-        <div class="fgtl-step">
-          <span class="fgtl-step-n">1</span>
-          <div><div class="fgtl-step-t">Which roles to invite</div><div class="fgtl-step-s">Targets come from the Connections DB (DNC-safe), deduped against everyone already invited, capped at each account's monthly budget. Each chip matches anywhere in the job title.</div></div>
-        </div>
-        <div class="chips" id="fgtl-chips">
-          <input id="fgtl-chip-input" placeholder="add a role keyword…" autocomplete="off">
-        </div>
+      <!-- Step 1 · role chips -->
+      <div class="fgtl-roles">
+        <div class="fgtl-step-eyebrow">&#9312; Which roles to invite &#8212; counts update live</div>
+        <div class="chips" id="fgtl-chips"><input id="fgtl-chip-input" placeholder="add a role keyword&#8230;" autocomplete="off"></div>
         <div class="presets" id="fgtl-presets"><span class="lbl">Quick add</span></div>
-        <div class="filter-foot">
-          <span class="hint">Defaults toward marketers. Applies to every selected network below.</span>
-          <span class="match" id="fgtl-match"></span>
-        </div>
+        <div class="filter-foot"><span class="hint">Defaults toward marketers. Applies to everyone below.</span><span class="match" id="fgtl-match"></span></div>
       </div>
 
-      <!-- Step 2 · Match board -->
-      <div class="board">
+      <!-- Step 2 · browse + cart -->
+      <div class="fgtl-board2">
         <div>
-          <div class="col-h">Ortus employees · connections from the DB</div>
-          <div class="emp-toolbar">
-            <div class="fgtl-search">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-              <input id="fgtl-search" placeholder="Search by name, email or GoLogin account…" autocomplete="off">
-              <button class="clr" id="fgtl-search-clear" title="Clear">×</button>
-            </div>
-            <button class="fgtl-selall" id="fgtl-selall">Select all</button>
+          <div class="fgtl-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            <input id="fgtl-search" placeholder="Search the team by name or email&#8230;" autocomplete="off">
+            <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
           </div>
-          <div id="fgtl-emps"></div>
+          <div class="fgtl-people" id="fgtl-people"></div>
         </div>
-        <div class="fgtl-panel">
-          <div class="col-h">GoLogin profiles · this workspace</div>
-          <div id="fgtl-gls"></div>
+        <div class="fgtl-cart">
+          <h3>Your launch list</h3>
+          <div id="fgtl-cart"></div>
+          <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
+            <div class="tot"><span>People</span><b id="fgtl-t-people">0</b></div>
+            <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv">0</b></div>
+            <button class="fgtl-go-btn" id="fgtl-go" disabled>Launch all sequentially</button>
+          </div>
         </div>
       </div>
 
@@ -1579,7 +1564,7 @@
           <span class="vj-tag"><span class="dot"></span><span id="fgtl-eyebrow">Ready to launch</span></span>
           <span class="vj-when" id="fgtl-when"></span>
         </div>
-        <div class="vj-glyph-circle" aria-hidden="true">⌁</div>
+        <div class="vj-glyph-circle" aria-hidden="true">&#8961;</div>
         <h2 class="vj-name" id="fgtl-card-name"><span>Team Follower Growth</span></h2>
         <div class="vj-hbar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Launch progress"><i id="fgtl-bar" style="width:0%"></i></div>
         <div class="vj-hero">
@@ -1587,52 +1572,51 @@
             <div class="num"><span id="fgtl-pct">0</span><span class="sub">%</span></div>
             <div class="vj-meta">
               <span><b id="fgtl-sent">0</b> of <span id="fgtl-total">0</span> accounts sent</span>
-              <span>Runs <b>sequentially</b> · 1 account at a time</span>
+              <span>Runs <b>sequentially</b> &#183; 1 account at a time</span>
             </div>
           </div>
           <div class="vj-stats" aria-live="polite">
             <span><b id="fgtl-accts">0</b> accounts</span>
             <span><b id="fgtl-inv">0</b> invites sent</span>
-            <span>· <b id="fgtl-seq">Idle</b></span>
+            <span>&#183; <b id="fgtl-seq">Idle</b></span>
           </div>
         </div>
         <div class="vj-details">
           <div>
             <div class="vj-log-head">
-              <span class="vj-details-head" id="fgtl-loghead">Live log · last 15 events</span>
+              <span class="vj-details-head" id="fgtl-loghead">Live log &#183; last 15 events</span>
               <span class="vj-log-acts">
                 <button type="button" class="vj-log-act" id="fgtl-copy" title="Copy the full log to your clipboard">Copy all</button>
                 <button type="button" class="vj-log-act" title="Open the Follower Growth sheet">Open sheet</button>
               </span>
             </div>
-            <div class="vj-log" id="fgtl-logbody"><div class="vj-log-empty">Waiting to launch — events stream here, one account at a time.</div></div>
+            <div class="vj-log" id="fgtl-logbody"><div class="vj-log-empty">Waiting to launch &#8212; events stream here, one account at a time.</div></div>
           </div>
           <div class="vj-bulk">
             <div class="vj-details-head">Batch summary</div>
-            <div class="vj-bulk-status">Sent · <b id="fgtl-sum-sent">—</b> · <span id="fgtl-sum-skip">0</span> skipped</div>
+            <div class="vj-bulk-status">Sent &#183; <b id="fgtl-sum-sent">&#8212;</b> &#183; <span id="fgtl-sum-skip">0</span> skipped</div>
             <div class="vj-bulk-hint">Each account opens its profiles and sends follow invites to its own connections, then the next account starts. Capped at each account's monthly invite budget.</div>
           </div>
         </div>
       </section>
 
-      <!-- Launch dock (in-flow, not fixed) -->
-      <div class="fgtl-dock">
-        <div><div class="fgtl-dock-n" id="fgtl-dn">0</div><div class="fgtl-dock-sub" id="fgtl-ds">no employees selected</div></div>
-        <span class="fgtl-seq-label" id="fgtl-seq-label">Runs sequentially · ~1 account at a time</span>
-        <button class="fgtl-go-btn" id="fgtl-go" disabled>Launch all</button>
-      </div>
-
-      <!-- 2 · Database view -->
-      <div class="fg-step">
-        <div class="fg-step-head"><span class="fg-step-num">2</span> Follower Growth database
-          <span class="fg-db-tabs">
-            <button type="button" class="fg-db-tab active" data-fgtab="invites" onclick="setFgTab('invites')">Invites</button>
-            <button type="button" class="fg-db-tab" data-fgtab="budgets" onclick="setFgTab('budgets')">Budgets</button>
-            <button type="button" class="fg-db-tab" data-fgtab="funnel" onclick="setFgTab('funnel')">Funnel</button>
-          </span>
-          <button type="button" class="fg-refresh" onclick="fgLoadDb()" title="Refresh">↻</button>
+      <!-- DB collapsible -->
+      <div class="fgtl-dbwrap">
+        <button class="fgtl-db-toggle" id="fgtl-db-toggle">&#9658; View Follower Growth database (invites &#183; budgets &#183; funnel)</button>
+        <div class="fgtl-db-body" id="fgtl-db-body" style="display:none">
+          <!-- existing Invites/Budgets/Funnel tabs + tables -->
+          <div class="fg-step">
+            <div class="fg-step-head"><span class="fg-step-num">2</span> Follower Growth database
+              <span class="fg-db-tabs">
+                <button type="button" class="fg-db-tab active" data-fgtab="invites" onclick="setFgTab('invites')">Invites</button>
+                <button type="button" class="fg-db-tab" data-fgtab="budgets" onclick="setFgTab('budgets')">Budgets</button>
+                <button type="button" class="fg-db-tab" data-fgtab="funnel" onclick="setFgTab('funnel')">Funnel</button>
+              </span>
+              <button type="button" class="fg-refresh" onclick="fgLoadDb()" title="Refresh">&#8635;</button>
+            </div>
+            <div id="fg-db-body"><p class="cx-hint">Pick this campaign type to load the database.</p></div>
+          </div>
         </div>
-        <div id="fg-db-body"><p class="cx-hint">Pick this campaign type to load the database.</p></div>
       </div>
     </div>
 
