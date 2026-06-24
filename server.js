@@ -71,7 +71,7 @@ import {
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
   isEmailAllowed, deleteUser,
 } from './src/auth.js';
-import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues } from './src/connections/search-service.js';
+import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
 import { getFgState, queueFgInvites, markFgInvited, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
 import { normMonth } from './src/connections/fg-export.js';
@@ -1396,9 +1396,14 @@ app.get('/api/fg/operators', (_req, res) => {
 });
 
 // Employee roster for the Team Launch board (colleagues with DB coverage + counts).
-app.get('/api/fg/colleagues', (_req, res) => {
-  try { res.json({ colleagues: listFgColleagues() }); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+// Employee roster for the Team Launch board. With ?roles=a,b,c it also returns
+// matched (connections whose job title matches the roles) per colleague; without
+// it, matched === total (full roster — backward compatible).
+app.get('/api/fg/colleagues', (req, res) => {
+  try {
+    const roles = parseRolesParam(req.query.roles);
+    res.json({ colleagues: listFgColleaguesMatched(roles) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // In-app database view: the central FG sheet, rendered in the campaign tab.

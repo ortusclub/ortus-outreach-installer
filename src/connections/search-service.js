@@ -264,3 +264,8 @@ export function listFgColleaguesMatched(keywords = [], { dir, cachePath } = {}) 
     .map(([email, t]) => ({ email, name: colleagues[email]?.name || email, total: t, matched: matched.get(email) || 0 }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// Parse a comma-separated ?roles= query value into normalized keyword list.
+export function parseRolesParam(v) {
+  return String(v || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
