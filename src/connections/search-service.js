@@ -241,3 +241,26 @@ export function listFgColleagues({ dir, cachePath } = {}) {
     .map(([email, connCount]) => ({ email, name: colleagues[email]?.name || email, connCount }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// Like listFgColleagues but also counts, per owner, how many of their non-DNC
+// connections MATCH the role keywords (jobtitle substring). One pass over the
+// memoized annotated DB. Empty keywords => matched === total (matchesCriteria
+// returns true when the jobTitles list is empty). Sorted by name.
+export function listFgColleaguesMatched(keywords = [], { dir, cachePath } = {}) {
+  const annotated = _fgColleaguesFixtures ? _fgColleaguesFixtures.annotated : getAnnotated(dir, cachePath);
+  const colleagues = _fgColleaguesFixtures ? _fgColleaguesFixtures.colleagues : getColleagues();
+  const norm = normCriteria({ jobTitles: keywords || [] });
+  const total = new Map();
+  const matched = new Map();
+  for (const r of annotated) {
+    if (r.dnc) continue;
+    const isMatch = matchesCriteria(r.contact, norm);
+    for (const email of (r.warmVia || [])) {
+      total.set(email, (total.get(email) || 0) + 1);
+      if (isMatch) matched.set(email, (matched.get(email) || 0) + 1);
+    }
+  }
+  return [...total.entries()]
+    .map(([email, t]) => ({ email, name: colleagues[email]?.name || email, total: t, matched: matched.get(email) || 0 }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
