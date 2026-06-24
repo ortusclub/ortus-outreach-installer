@@ -205,17 +205,22 @@ export function buildFgTargets(criteria = {}, { operator, operatorName, account,
   const norm = normCriteria(criteria);
   const invitedKeys = new Set((alreadyInvited || []).map(String));
   const keywords = norm.jobTitles;
-  const eligible = annotated.filter((r) =>
+  // matched = in this operator's network, not DNC, matches the role keywords
+  // (before deduping against already-invited). eligible = matched minus already
+  // invited. count = eligible capped at remaining budget. The three counts let
+  // callers report exactly WHY a result is empty (no role match / all already
+  // invited / budget used up).
+  const matched = annotated.filter((r) =>
     !r.dnc
     && r.warmVia.includes(operator)
-    && matchesCriteria(r.contact, norm)
-    && !invitedKeys.has(inviteKey(r.contact)),
+    && matchesCriteria(r.contact, norm),
   );
+  const eligible = matched.filter((r) => !invitedKeys.has(inviteKey(r.contact)));
   eligible.sort((a, b) => (a.contact.company || '').localeCompare(b.contact.company || ''));
   const capped = Number.isFinite(budget) ? eligible.slice(0, Math.max(0, budget)) : eligible;
   const opName = operatorName || colleagues[operator]?.name || operator || '';
   const rows = capped.map((r) => fgRow(r, colleagues, { operatorName: opName, account, month, keywords }));
-  return { header: FG_HEADER, rows, count: rows.length, eligible: eligible.length };
+  return { header: FG_HEADER, rows, count: rows.length, eligible: eligible.length, matched: matched.length };
 }
 
 // Test seam: when set, listFgColleagues uses these instead of the real DB.

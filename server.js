@@ -1553,7 +1553,15 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
           const snap = _fgTeamSnap;
           const alreadyInvited = (snap.invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
           const budget = fgRemaining(snap.budgets, pair.account, month);
-          return buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
+          const out = buildFgTargets(fgCriteria({ jobTitles: keywords }), { operator: pair.operator, operatorName: pair.operatorName, account: pair.account, month, alreadyInvited, budget });
+          // Specific skip reason so the live log isn't a vague catch-all.
+          let reason = '';
+          if (!out.count) {
+            if (out.matched === 0) reason = 'no connections match these roles';
+            else if (out.eligible === 0) reason = 'all matching connections already invited';
+            else reason = 'monthly budget used up — no invites remaining this month';
+          }
+          return { rows: out.rows, count: out.count, reason };
         },
         launch: async (pair) => {
           const isLocal = pair.profileId === 'local-browser';

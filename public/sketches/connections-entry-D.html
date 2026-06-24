@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connections entry · D — co-equal workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Throwaway brainstorm chrome only. Shell, sidebar, page-header, dashboard-*,
+       btn, theme-toggle are all the app's real monochrome classes. STRICTLY
+       MONOCHROME — --ink / --gray / --hairline only, no gold, no accents. */
+
+    /* caption strip at the very top of the main area */
+    .bx-caption {
+      font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--gray);
+      border: 1px dashed var(--hairline); border-radius: 9999px;
+      padding: 7px 16px; display: inline-block; margin-bottom: 26px;
+    }
+    .bx-caption b { color: var(--ink); font-weight: 500; }
+
+    /* the top-level workspace switcher — segmented, sits above page-header.
+       Mirrors the sidebar .theme-toggle: active = filled with --ink, inactive
+       = --gray ghost. Two co-equal segments. */
+    .ws-switch {
+      display: inline-flex; border: 1px solid var(--hairline);
+      border-radius: 9999px; overflow: hidden; margin-bottom: 26px;
+    }
+    .ws-switch button {
+      font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--gray); background: transparent;
+      border: none; padding: 11px 30px; cursor: pointer;
+      transition: opacity 0.2s, color 0.2s, background 0.2s; opacity: 0.7;
+    }
+    .ws-switch button:hover { opacity: 1; color: var(--ink); }
+    .ws-switch button.active {
+      background: var(--ink); color: var(--bg); opacity: 1; font-weight: 500;
+    }
+    .ws-switch .ws-div { width: 1px; background: var(--hairline); }
+
+    /* a tiny eyebrow over the switcher to name what it is */
+    .ws-eyebrow {
+      font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em;
+      text-transform: uppercase; color: var(--gray); margin-bottom: 11px;
+    }
+
+    /* stats line — built from real .conn-stat tokens, monochrome */
+    .ws-meta { margin-top: 6px; }
+    .ws-illus {
+      font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--gray); margin-top: 18px;
+    }
+
+    /* faint placeholder of the workspace body so the header sits in context */
+    .ws-ghost {
+      border: 1px dashed var(--hairline); border-radius: 12px;
+      padding: 26px; margin-top: 8px; color: var(--gray);
+      font-family: var(--mono); font-size: 0.72rem; line-height: 1.9;
+    }
+    .ws-ghost b { color: var(--ink); font-weight: 500; }
+    .ws-ghost .row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 0; border-bottom: 1px solid var(--hairline-soft);
+    }
+    .ws-ghost .row:last-child { border-bottom: none; }
+    .ws-ghost .pip {
+      width: 8px; height: 8px; border-radius: 9999px;
+      border: 1px solid var(--gray); flex: 0 0 auto;
+    }
+    .nav-item.cx-on { color: var(--ink); }
+    .nav-item.cx-on .nav-num { color: var(--ink); }
+  </style>
+</head>
+<body class="theme-dark" data-dashboard="v3">
+  <div class="app">
+
+    <!-- ── Real sidebar (verbatim shell) ── -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · v2.112.44</div>
+      </div>
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+        <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+        <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+        <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+        <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+        <button type="button" class="nav-item">Live Status</button>
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item cx-on"><span class="nav-num">◆</span>Connections</button>
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item">Open log</button>
+        <div class="nav-section-label">Help</div>
+        <button type="button" class="nav-item nav-item-help"><span class="nav-num">?</span>Help</button>
+      </nav>
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button type="button" class="operator-chip"><span class="operator-chip-label">Operating as</span><strong>ortus@ortusclub.com</strong></button>
+        <div class="user-chip"><strong>info@ortus.solutions</strong></div>
+        <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- ── Main ── -->
+    <main class="main">
+      <div class="container">
+
+        <div class="bx-caption">D · Connections as a co-equal <b>top-level workspace</b> (header switch)</div>
+
+        <!-- The workspace switcher: top of the main area, above page-header -->
+        <div class="ws-eyebrow">Workspace</div>
+        <div class="ws-switch" role="tablist" aria-label="Workspace">
+          <button type="button" role="tab" onclick="pickWs('campaigns')" id="ws-campaigns">Campaigns</button>
+          <span class="ws-div" aria-hidden="true"></span>
+          <button type="button" role="tab" class="active" aria-selected="true" onclick="pickWs('connections')" id="ws-connections">Connections</button>
+        </div>
+
+        <!-- Connections workspace header (shown because Connections is selected) -->
+        <div class="page-header">
+          <div class="page-header-title">
+            <div class="greeting-wordmark">Connections</div>
+            <div class="greeting-subtitle">Find warm contacts across the team's networks</div>
+          </div>
+          <div class="ws-meta">
+            <div class="conn-stats">
+              <div class="conn-stat"><span class="conn-stat-num">73</span><span class="conn-stat-lbl">Networks</span></div>
+              <div class="conn-stat"><span class="conn-stat-num">94,503</span><span class="conn-stat-lbl">Connections</span></div>
+              <div class="conn-stat"><span class="conn-stat-num">73,055</span><span class="conn-stat-lbl">In HubSpot</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ws-illus">Illustrative · figures from the real warm-reach index</div>
+
+        <!-- Faint body so the header sits in real context -->
+        <div class="ws-ghost">
+          <div class="row"><span class="pip"></span><span><b>Search warm contacts</b> — country, region, job title, company</span></div>
+          <div class="row"><span class="pip"></span><span>Pick who's <b>warmly reachable</b> and not on Do-Not-Contact</span></div>
+          <div class="row"><span class="pip"></span><span>Export the list to a Google Sheet · run as Introduce Back</span></div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function setTheme(mode) {
+      var light = mode === 'light';
+      document.body.classList.toggle('theme-light', light);
+      document.body.classList.toggle('theme-dark', !light);
+      var d = document.getElementById('theme-btn-dark'), l = document.getElementById('theme-btn-light');
+      if (d) d.classList.toggle('active', !light); if (l) l.classList.toggle('active', light);
+    }
+    // segmented switch — purely illustrative toggle
+    function pickWs(which) {
+      var c = document.getElementById('ws-campaigns'), x = document.getElementById('ws-connections');
+      var onC = which === 'campaigns';
+      c.classList.toggle('active', onC); c.setAttribute('aria-selected', onC);
+      x.classList.toggle('active', !onC); x.setAttribute('aria-selected', !onC);
+    }
+  </script>
+</body>
+</html>

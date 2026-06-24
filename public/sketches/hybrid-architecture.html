@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ortus Outreach — Current vs Hybrid architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 30px 24px 90px; }
+    .tag { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px;
+      display: inline-block; margin-bottom: 8px; }
+    h1.t { font-family: var(--display); font-size: 2rem; letter-spacing: 0.04em; margin: 8px 0 4px; color: var(--ink); }
+    .lede { font-family: var(--mono); font-size: 0.74rem; color: var(--gray); margin: 0 0 30px; max-width: 70ch; line-height: 1.5; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+    @media (max-width: 880px) { .cols { grid-template-columns: 1fr; } }
+
+    .col h2 { font-family: var(--display); font-size: 1.25rem; letter-spacing: 0.05em; margin: 0 0 2px; color: var(--ink); }
+    .col .sub { font-family: var(--mono); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--gray); margin: 0 0 14px; }
+
+    /* a "zone" = a deployment boundary (cloud / machine / external) */
+    .zone { border: 1px dashed var(--card-border); border-radius: 12px; padding: 14px 14px 16px; margin-bottom: 12px; background: var(--bg-soft); }
+    .zone-h { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    .zone-h .pin { width: 6px; height: 6px; border-radius: 9999px; background: var(--gray); }
+    .zone.cloud { border-color: rgba(58,110,165,0.55); } .zone.cloud .zone-h { color: var(--blue); } .zone.cloud .pin { background: var(--blue); }
+    .zone.local { border-color: rgba(217,119,6,0.5); } .zone.local .zone-h { color: #d97706; } .zone.local .pin { background: #d97706; }
+    .zone.ext   { border-color: var(--hairline); }
+
+    .node { border: 1px solid var(--card-border); border-radius: 8px; background: var(--card-bg);
+      padding: 9px 11px; margin: 7px 0; box-shadow: var(--card-shadow); }
+    .node .nm { font-family: var(--body); font-size: 0.82rem; font-weight: 600; color: var(--ink); }
+    .node .ds { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 3px; line-height: 1.45; }
+    .node.heavy { border-color: #d97706; } /* the bulky thing */
+    .node.thin  { border-color: var(--green); }
+    .node.key   { border-left: 3px solid var(--blue); }
+
+    .flow { text-align: center; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--gray); margin: 2px 0; }
+    .flow b { color: var(--ink); font-weight: 600; }
+
+    .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 26px 0 0; font-family: var(--mono); font-size: 0.62rem; color: var(--gray); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 22px; height: 0; border-top: 1px solid; display: inline-block; }
+
+    .foot { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 30px; }
+    @media (max-width: 880px) { .foot { grid-template-columns: 1fr; } }
+    .panel { border: 1px solid var(--card-border); border-radius: 10px; padding: 16px 18px; background: var(--card-bg); }
+    .panel h3 { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; margin: 0 0 10px; }
+    .panel.win h3 { color: var(--green); } .panel.cost h3 { color: #d97706; }
+    .panel ul { margin: 0; padding-left: 16px; }
+    .panel li { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); line-height: 1.7; }
+    .panel li span { color: var(--gray); }
+
+    .stamp { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 24px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <div class="tag">Sketch · backlog #16 · architecture, not UI · concept only</div>
+    <h1 class="t">Current vs Hybrid</h1>
+    <p class="lede">The one thing that must stay local is the browser work — GoLogin profiles + logged-in
+      LinkedIn sessions on each operator's own machine/IP (that's the anti-detection story). The hybrid keeps
+      exactly that local and moves everything else — UI, data, the pooled connection graph — to one cloud service.</p>
+
+    <div class="cols">
+      <!-- ===================== TODAY ===================== -->
+      <div class="col">
+        <h2>Today — monolith desktop</h2>
+        <p class="sub">Every laptop runs the whole thing</p>
+
+        <div class="zone local">
+          <div class="zone-h"><span class="pin"></span>Each operator's Mac (×3)</div>
+          <div class="node heavy">
+            <div class="nm">Electron app — the whole stack</div>
+            <div class="ds">UI + Express server + campaign loop + GoLogin/puppeteer automation + local JSON (state / history / primary-status). Heavy on RAM/CPU.</div>
+          </div>
+          <div class="flow">drives ↓</div>
+          <div class="node">
+            <div class="nm">GoLogin browser → LinkedIn</div>
+            <div class="ds">Local IP + real fingerprint + logged-in session.</div>
+          </div>
+        </div>
+
+        <div class="flow">read / write ↕</div>
+        <div class="zone ext">
+          <div class="zone-h"><span class="pin"></span>Shared (Google)</div>
+          <div class="node">
+            <div class="nm">One Apps Script + Sheet</div>
+            <div class="ds">SoO + lead sheets + Recent Connections. Hitting cell limits; data scattered per sheet.</div>
+          </div>
+        </div>
+        <div class="flow">ship via <b>DMG → GitHub Releases</b> · auto-update broken (#15)</div>
+      </div>
+
+      <!-- ===================== HYBRID ===================== -->
+      <div class="col">
+        <h2>Hybrid — dashboard + thin runners</h2>
+        <p class="sub">Heavy stuff central; browser stays local</p>
+
+        <div class="zone cloud">
+          <div class="zone-h"><span class="pin"></span>Cloud (hosted, one service)</div>
+          <div class="node thin">
+            <div class="nm">Web dashboard</div>
+            <div class="ds">Operators log in from any browser — campaign setup, live monitoring, reports. Updates instantly (no DMG).</div>
+          </div>
+          <div class="node">
+            <div class="nm">API / orchestrator</div>
+            <div class="ds">Dispatches jobs to runners, collects results + telemetry.</div>
+          </div>
+          <div class="node key">
+            <div class="nm">Central database</div>
+            <div class="ds">Campaigns · events · SoO · primary-status · <b style="color:var(--blue)">the pooled connection graph</b> (warm-intro lookups live here).</div>
+          </div>
+        </div>
+
+        <div class="flow">jobs ↓ &nbsp;&nbsp; results / detected connections ↑ &nbsp; <b>secure channel</b></div>
+
+        <div class="zone local">
+          <div class="zone-h"><span class="pin"></span>Each operator's machine — thin runner</div>
+          <div class="node thin">
+            <div class="nm">Local runner (lightweight agent)</div>
+            <div class="ds">Holds GoLogin profiles + LinkedIn sessions, pulls jobs, drives the browser, reports back. No bundled UI → light on the laptop.</div>
+          </div>
+          <div class="flow">drives ↓</div>
+          <div class="node">
+            <div class="nm">GoLogin browser → LinkedIn</div>
+            <div class="ds">Still local IP + real fingerprint — <b>stealth unchanged</b>.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i style="border-color:#d97706"></i> bulky / heavy</span>
+      <span><i style="border-color:var(--green)"></i> light</span>
+      <span><i style="border-color:var(--blue);border-top-width:3px"></i> the connection-DB you asked about</span>
+      <span><i style="border-style:dashed;border-color:var(--card-border)"></i> deployment boundary</span>
+    </div>
+
+    <div class="foot">
+      <div class="panel win">
+        <h3>What it buys you</h3>
+        <ul>
+          <li>Auto-update fixed <span>— the heavy app is now the cloud dashboard; the runner is tiny (#15 dissolves)</span></li>
+          <li>Lighter laptops <span>— no Electron UI/server per machine, just a browser + thin agent</span></li>
+          <li>The connection DB falls out for free <span>— every runner's detected connections flow into one central graph; warm-intro lookups are a query</span></li>
+          <li>Scales <span>— add an operator = install one light runner; dashboard already there</span></li>
+          <li>Central visibility <span>— dedup, reporting, cross-operator state in one place</span></li>
+        </ul>
+      </div>
+      <div class="panel cost">
+        <h3>What it costs</h3>
+        <ul>
+          <li>It's a rebuild <span>— cloud infra, auth, DB, API, and rewriting the engine as a runner</span></li>
+          <li>You now run servers <span>— hosting cost + ops + uptime</span></li>
+          <li>Security surface <span>— a central DB of LinkedIn activity + the runner↔cloud channel must be locked down</span></li>
+          <li>Runner still needs installing/updating <span>— but far lighter than today's app</span></li>
+          <li>Non-negotiable <span>— the browser MUST stay local, or you lose the stealth that justifies any of this</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="stamp">Concept sketch for the #16 platform discussion. Not a commitment — a picture of the "best architecture" end-state, useful for framing the conversation with Sam.</p>
+  </div>
+</body>
+</html>

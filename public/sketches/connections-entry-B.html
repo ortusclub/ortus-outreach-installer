@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connections entry · B — home dashboard module</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Throwaway brainstorm — STRICTLY MONOCHROME. No gold (reserved for the real Start CTA). */
+    .sk-cap {
+      font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px;
+      padding: 8px 16px; display: inline-block; margin: 18px 0 4px;
+    }
+    .sk-cap b { color: var(--ink); font-weight: 600; }
+
+    /* The Connections module — a bordered dashboard panel on the home screen. */
+    .sk-conn-card {
+      border: 1px solid var(--hairline);
+      border-radius: 12px;
+      padding: 26px 28px;
+      display: flex; align-items: center; gap: 36px; flex-wrap: wrap;
+    }
+    .sk-conn-card .sk-headline { flex: 1 1 240px; min-width: 220px; }
+    .sk-conn-card .sk-headline .sk-kicker {
+      font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gray);
+    }
+    .sk-conn-card .sk-headline .sk-title {
+      font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; color: var(--ink);
+      text-transform: uppercase; line-height: 1; margin: 8px 0 6px;
+    }
+    .sk-conn-card .sk-headline .sk-sub {
+      font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.6;
+    }
+    .sk-stats { display: flex; gap: 40px; }
+    .sk-stat { display: flex; flex-direction: column; gap: 5px; }
+    .sk-stat .num {
+      font-family: var(--display); font-weight: 400; font-size: 2.1rem; letter-spacing: 0.02em;
+      color: var(--ink); line-height: 1;
+    }
+    .sk-stat .lbl {
+      font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gray);
+    }
+    .sk-conn-actions { display: flex; gap: 12px; flex: 0 0 auto; }
+    .sk-illus {
+      font-family: var(--mono); font-size: 0.54rem; color: var(--gray);
+      margin-top: 14px; letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body class="theme-dark" data-dashboard="v3">
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · v2.112.44</div>
+      </div>
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+        <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+        <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+        <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+        <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+        <button type="button" class="nav-item">Live Status</button>
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item">Open log</button>
+        <div class="nav-section-label">Help</div>
+        <button type="button" class="nav-item nav-item-help"><span class="nav-num">?</span>Help</button>
+      </nav>
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button type="button" class="operator-chip"><span class="operator-chip-label">Operating as</span><strong>ortus@ortusclub.com</strong></button>
+        <div class="user-chip"><strong>info@ortus.solutions</strong></div>
+        <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="container">
+
+        <span class="sk-cap"><b>B</b> · Connections as a module on the home screen</span>
+
+        <div class="dashboard-header">
+          <h1 class="dashboard-title">Campaigns</h1>
+          <div class="dashboard-new-wrap">
+            <button type="button" class="btn btn-secondary dashboard-new-btn">Connections</button>
+            <button type="button" class="btn btn-start dashboard-new-btn">+ New campaign</button>
+          </div>
+        </div>
+
+        <!-- NEW: Connections surfaced as a module near the top of the home content -->
+        <section class="dashboard-section">
+          <div class="dashboard-section-title">Connections · warm reach</div>
+          <div class="sk-conn-card">
+            <div class="sk-headline">
+              <div class="sk-kicker">Team network</div>
+              <div class="sk-title">Build a warm list</div>
+              <div class="sk-sub">Search the team's combined LinkedIn networks, joined to HubSpot, and turn warm contacts into a ready-to-run ICB lead sheet.</div>
+            </div>
+            <div class="sk-stats">
+              <div class="sk-stat"><span class="num">73</span><span class="lbl">Networks</span></div>
+              <div class="sk-stat"><span class="num">94,503</span><span class="lbl">Connections</span></div>
+              <div class="sk-stat"><span class="num">73,055</span><span class="lbl">In HubSpot</span></div>
+            </div>
+            <div class="sk-conn-actions">
+              <button type="button" class="btn">Build warm list →</button>
+              <button type="button" class="btn btn-secondary">Sync from Drive</button>
+            </div>
+          </div>
+          <div class="sk-illus">Illustrative · figures from the current team-network cache.</div>
+        </section>
+
+        <section class="vj-card">
+          <div class="vj-eyebrow">
+            <span class="vj-tag"><span class="dot"></span>No campaign running</span>
+            <span class="vj-when"></span>
+          </div>
+          <h2 class="vj-name">No campaign running</h2>
+          <div class="vj-hbar" role="progressbar"><i style="width:0%"></i></div>
+          <div class="vj-hero">
+            <div class="vj-hero-row">
+              <div class="num"><span>0</span><span class="sub">%</span></div>
+              <div class="vj-meta">
+                <span><b>0</b> of 0 sent</span>
+                <span>Next batch in <b>—</b></span>
+              </div>
+            </div>
+            <div class="vj-stats">
+              <span><b>0</b> accounts</span>
+              <span><b>0</b> accepted</span>
+              <span>· <b>Idle</b></span>
+            </div>
+          </div>
+          <div class="vj-controls">
+            <button class="btn-pill">Open</button>
+          </div>
+        </section>
+
+        <section class="section-band is-past">
+          <div class="section-rail">
+            <h2>Past <small>12 campaigns</small></h2>
+            <div class="section-rail-line"></div>
+            <button class="section-rail-action">Show all</button>
+          </div>
+          <div class="past-frame">
+            <div class="past-collapsed past-header" role="button" tabindex="0">
+              <div class="pc-count">12<span class="pc-lbl">past</span></div>
+              <div class="pc-summary">DACH_FINANCE_III · UK_MKTG_II · NORDICS_OPS_I …</div>
+              <span class="past-chev" aria-hidden="true"></span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function setTheme(mode) {
+      var light = mode === 'light';
+      document.body.classList.toggle('theme-light', light);
+      document.body.classList.toggle('theme-dark', !light);
+      var d = document.getElementById('theme-btn-dark'), l = document.getElementById('theme-btn-light');
+      if (d) d.classList.toggle('active', !light); if (l) l.classList.toggle('active', light);
+    }
+  </script>
+</body>
+</html>

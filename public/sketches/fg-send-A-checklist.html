@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FG send · A — Checklist</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .sk-wrap { max-width: 860px; margin: 0 auto; padding: 28px 28px 140px; }
+    .sk-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+    .sk-badge { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 12px; }
+    .sk-nav a { font-family:var(--mono); font-size:11px; color:var(--gray); text-decoration:none; margin-left:14px; }
+    .sk-nav a:hover, .sk-nav a.on { color:var(--ink); }
+
+    .skA-controls { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:6px; }
+    .skA-controls .fg-field { margin:0; }
+    .skA-search { background:var(--bg-soft); border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:9px 16px; font-family:var(--body); font-size:13px; min-width:220px; }
+    .skA-selall { font-family:var(--mono); font-size:11px; color:var(--gold); background:none; border:none; cursor:pointer; padding:8px 2px; letter-spacing:.04em; }
+
+    .skA-list { border:1px solid var(--hairline); border-radius:14px; overflow:hidden; margin-top:14px; }
+    .skA-row { display:flex; align-items:center; gap:14px; padding:13px 16px; border-top:1px solid var(--hairline-soft); cursor:pointer; transition:background .12s; }
+    .skA-row:first-child { border-top:none; }
+    .skA-row:hover { background:var(--card-bg); }
+    .skA-row.on { background:var(--card-bg-hover); }
+    .skA-row input { flex:none; width:17px; height:17px; accent-color:var(--gold); margin:0; }
+    .skA-id { min-width:0; flex:1; }
+    .skA-name { font-weight:600; color:var(--ink); font-size:14px; }
+    .skA-meta { color:var(--gray); font-size:12.5px; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .skA-fn { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:2px 9px; flex:none; }
+    .skA-view { color:var(--gray); text-decoration:none; font-size:13px; flex:none; padding:2px 6px; }
+    .skA-view:hover { color:var(--ink); }
+    .skA-pill { flex:none; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:9999px; display:none; }
+    .skA-pill.show { display:inline-block; }
+    .skA-pill.queued { color:var(--gray); border:1px solid var(--hairline); }
+    .skA-pill.opening { color:var(--gold); border:1px solid var(--gold); animation:skpulse 1s infinite; }
+    .skA-pill.invited { color:var(--green); border:1px solid var(--green); }
+    .skA-pill.skipped { color:var(--red); border:1px solid var(--red); }
+    @keyframes skpulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .skA-dock { position:fixed; left:0; right:0; bottom:0; background:rgba(10,10,10,.86); backdrop-filter:blur(10px); border-top:1px solid var(--hairline); }
+    .skA-dock-in { max-width:860px; margin:0 auto; padding:14px 28px; display:flex; align-items:center; gap:18px; }
+    .skA-count { font-family:var(--display); font-size:1.7rem; letter-spacing:.04em; line-height:1; color:var(--ink); }
+    .skA-sub { color:var(--gray); font-size:12px; margin-top:3px; }
+    .skA-from { display:flex; align-items:center; gap:8px; margin-left:auto; }
+    .skA-from select { background:var(--bg-soft); border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:8px 12px; font-family:var(--body); font-size:12.5px; }
+    .skA-go { background:var(--gold); color:#1a1300; border:none; border-radius:9999px; padding:13px 26px; font-family:var(--mono); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+    .skA-go:disabled { opacity:.45; cursor:default; }
+    .skA-clear { background:none; border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:13px 18px; font-family:var(--mono); font-size:12px; cursor:pointer; }
+    .skA-done { color:var(--green); font-family:var(--mono); font-size:12px; }
+  </style>
+</head>
+<body data-dashboard="v3">
+  <div class="sk-wrap">
+    <div class="sk-bar">
+      <span class="sk-badge">Prototype · not wired</span>
+      <span class="sk-nav"><a href="fg-send-A-checklist.html" class="on">A · Checklist</a><a href="fg-send-B-cards.html">B · Cards</a><a href="fg-send-C-pipeline.html">C · Pipeline</a></span>
+    </div>
+
+    <div class="section">
+      <h2>Follower Growth</h2>
+      <p class="fg-lede">Tick the people you want to invite from <b id="opname"></b>'s network — then hit send once. The app opens each profile, follows the page-invite, and records them to the FG sheet automatically. No separate queue step.</p>
+
+      <div class="fg-step" style="border:none;padding-top:8px;">
+        <div class="fg-step-head"><span class="fg-step-num">1</span> Pick who to invite</div>
+        <div class="skA-controls">
+          <label class="fg-field"><span class="fg-field-label">Operator</span>
+            <select class="fg-select"><option>Beatrice Talusan — bea.talusan@ortusclub.com</option></select>
+          </label>
+          <input class="skA-search" type="text" placeholder="Filter by name, company, title…" oninput="filter(this.value)">
+          <button class="skA-selall" onclick="selectAllVisible()">Select all visible</button>
+        </div>
+        <div class="skA-list" id="list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="skA-dock">
+    <div class="skA-dock-in">
+      <div>
+        <div class="skA-count" id="count">0 selected</div>
+        <div class="skA-sub" id="sub"></div>
+      </div>
+      <div class="skA-from">
+        <span style="color:var(--gray);font-size:12px;">From</span>
+        <select><option>Local Browser — bea.talusan@ortusclub.com ✓ logged in</option><option>GoLogin · Bea (profile)</option></select>
+      </div>
+      <button class="skA-clear" onclick="clearAll()">Clear</button>
+      <button class="skA-go" id="go" onclick="run()" disabled>Open profiles &amp; send</button>
+    </div>
+  </div>
+
+  <script src="fg-send-core.js"></script>
+  <script>
+    const S = FG_SAMPLE, X = FGX;
+    const sel = new Set();
+    let visible = S.candidates.map((c) => c.id);
+    let sending = false;
+    document.getElementById('opname').textContent = S.operator;
+
+    function render() {
+      document.getElementById('list').innerHTML = S.candidates
+        .filter((c) => visible.includes(c.id))
+        .map((c) => `
+          <label class="skA-row ${sel.has(c.id) ? 'on' : ''}" data-id="${c.id}">
+            <input type="checkbox" ${sel.has(c.id) ? 'checked' : ''} onchange="toggle('${c.id}', this.checked)">
+            <span class="skA-id">
+              <span class="skA-name">${X.esc(c.name)}</span>
+              <span class="skA-meta">${X.esc(c.title)} · ${X.esc(c.company)} · ${X.esc(c.geo)}</span>
+            </span>
+            <span class="skA-fn">${X.esc(c.fn)}</span>
+            <span class="skA-pill" id="p-${c.id}"></span>
+            <a class="skA-view" href="#" title="View on LinkedIn" onclick="return false">↗</a>
+          </label>`).join('');
+    }
+    function toggle(id, on) { if (sending) return; on ? sel.add(id) : sel.delete(id); syncBar(); render(); }
+    function selectAllVisible() { if (sending) return; visible.forEach((id) => sel.add(id)); syncBar(); render(); }
+    function clearAll() { if (sending) return; sel.clear(); syncBar(); render(); document.getElementById('sub').textContent = ''; }
+    function filter(q) { q = q.trim().toLowerCase(); visible = S.candidates.filter((c) => !q || (c.name + c.company + c.title + c.geo).toLowerCase().includes(q)).map((c) => c.id); render(); }
+    function syncBar() {
+      const n = sel.size, left = X.creditsLeft();
+      document.getElementById('count').textContent = `${n} selected`;
+      document.getElementById('sub').textContent = n ? `≈ ${n} of ${left} invite credits left this month` : `${left} of ${S.creditsTotal} credits left this month`;
+      document.getElementById('go').disabled = n === 0 || n > left;
+      document.getElementById('go').textContent = n > left ? `Over credit limit (${n}/${left})` : 'Open profiles & send';
+    }
+    function run() {
+      if (!sel.size) return; sending = true;
+      const chosen = S.candidates.filter((c) => sel.has(c.id));
+      document.getElementById('go').disabled = true; document.getElementById('go').textContent = 'Sending…';
+      let done = 0, invited = 0;
+      X.simulateSend(chosen, (id, st) => {
+        const p = document.getElementById('p-' + id);
+        if (!p) return; p.className = `skA-pill show ${st}`;
+        p.textContent = st === 'opening' ? 'opening…' : st;
+        if (st === 'invited') invited++;
+        if (st === 'invited' || st === 'skipped') { done++; document.getElementById('sub').textContent = `${done}/${chosen.length} processed`; }
+      }, () => {
+        sending = false;
+        document.getElementById('count').innerHTML = `<span class="skA-done">✓ ${invited} invited</span>`;
+        document.getElementById('sub').textContent = `Auto-recorded to the FG sheet · ${chosen.length - invited} skipped`;
+        document.getElementById('go').textContent = 'Done';
+      });
+    }
+    render(); syncBar();
+  </script>
+</body>
+</html>

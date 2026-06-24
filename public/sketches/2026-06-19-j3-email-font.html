@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J3 email font — 3 treatments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 760px; margin: 0 auto; padding: 24px 24px 90px; }
+    .sec { font-family: var(--display); font-size: 1.25rem; letter-spacing: 0.05em; color: var(--ink); margin: 30px 0 3px; display:flex; align-items:center; gap:10px; }
+    .rec { font-family: var(--mono); font-size: 0.56rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--green); border:1px solid var(--green); border-radius:9999px; padding:2px 8px; }
+    .lead { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); line-height: 1.5; margin: 0 0 14px; }
+    .lead b{color:var(--ink);}
+
+    .fxgrid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .fxtile { display:flex; align-items:stretch; min-height:60px; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); overflow:hidden; }
+    .fxtile.dim { opacity:0.55; }
+    .fxstat { width:90px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:8px 6px; }
+    .fxstat.s-free { background:rgba(63,185,80,0.10); }
+    .fxstat.s-inuse { background:rgba(247,190,104,0.13); }
+    .fxstat.s-stop { background:rgba(248,81,73,0.10); }
+    .fxdot { width:9px; height:9px; border-radius:9999px; }
+    .fxword { font-family:var(--display); font-size:1.05rem; letter-spacing:0.07em; line-height:1; }
+    .s-free .fxdot{background:var(--green);} .s-free .fxword{color:var(--green);}
+    .s-inuse .fxdot{background:var(--gold);} .s-inuse .fxword{color:var(--gold);}
+    .s-stop .fxdot{background:var(--red);} .s-stop .fxword{color:var(--red);}
+    .fxdet { flex:1; min-width:0; padding:9px 13px; display:flex; flex-direction:column; justify-content:center; gap:3px; }
+    .fxtop { display:flex; align-items:center; gap:9px; min-width:0; }
+    .fxtop input { margin:0; flex:none; }
+    .fxsub { font-family:var(--body); font-size:0.72rem; color:var(--gray); text-transform:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:27px; }
+    .fxsub b { color:var(--ink); font-weight:600; }
+
+    /* base email */
+    .em { text-transform:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+    .em .dom { color:var(--gray); font-weight:400; }
+
+    /* A — JetBrains Mono, full */
+    .a .em { font-family:'JetBrains Mono', monospace; font-size:0.76rem; font-weight:400; color:var(--ink); letter-spacing:-0.01em; }
+    /* B — Hanken, local bold + faded domain */
+    .b .em { font-family:var(--body); font-size:0.85rem; font-weight:600; color:var(--ink); }
+    /* C — JetBrains Mono, local + faded domain */
+    .c .em { font-family:'JetBrains Mono', monospace; font-size:0.76rem; font-weight:500; color:var(--ink); letter-spacing:-0.01em; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <p class="lead" style="margin-top:8px;">Same fixed tile, three email treatments. The two tiles you flagged (IN USE / BLOCKED) plus a FREE one in each.</p>
+
+    <!-- A -->
+    <div class="sec">A — JetBrains Mono (monospace) <span class="rec">recommended</span></div>
+    <p class="lead">A real monospace (already loaded) — emails read as clean technical identifiers, evenly spaced. Full address shown.</p>
+    <div class="fxgrid a">
+      <label class="fxtile"><div class="fxstat s-inuse"><span class="fxdot"></span><span class="fxword">IN USE</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="em">janne@ortusclub.com</span></div><div class="fxsub">In use by <b>mae</b> right now — pick another.</div></div></label>
+      <label class="fxtile dim"><div class="fxstat s-stop"><span class="fxdot"></span><span class="fxword">BLOCKED</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox" disabled><span class="em">jhopet.maquirang@klabber.co</span></div><div class="fxsub">Restricted by LinkedIn.</div></div></label>
+      <label class="fxtile"><div class="fxstat s-free"><span class="fxdot"></span><span class="fxword">FREE</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="em">daniel.ogeto@ortusclub.com</span></div><div class="fxsub">Anyone can use it.</div></div></label>
+    </div>
+
+    <!-- B -->
+    <div class="sec">B — Hanken, name bold + faded domain</div>
+    <p class="lead">Sans-serif but the meaningful part (<b>name</b>) is bold ink and the repetitive <span style="color:var(--gray)">@domain</span> fades back, so the eye lands on the person.</p>
+    <div class="fxgrid b">
+      <label class="fxtile"><div class="fxstat s-inuse"><span class="fxdot"></span><span class="fxword">IN USE</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="em">janne<span class="dom">@ortusclub.com</span></span></div><div class="fxsub">In use by <b>mae</b> right now — pick another.</div></div></label>
+      <label class="fxtile dim"><div class="fxstat s-stop"><span class="fxdot"></span><span class="fxword">BLOCKED</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox" disabled><span class="em">jhopet.maquirang<span class="dom">@klabber.co</span></span></div><div class="fxsub">Restricted by LinkedIn.</div></div></label>
+      <label class="fxtile"><div class="fxstat s-free"><span class="fxdot"></span><span class="fxword">FREE</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="em">daniel.ogeto<span class="dom">@ortusclub.com</span></span></div><div class="fxsub">Anyone can use it.</div></div></label>
+    </div>
+
+    <!-- C -->
+    <div class="sec">C — JetBrains Mono + faded domain</div>
+    <p class="lead">Monospace (A) plus the faded-domain trick (B) — technical and de-cluttered at once.</p>
+    <div class="fxgrid c">
+      <label class="fxtile"><div class="fxstat s-inuse"><span class="fxdot"></span><span class="fxword">IN USE</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="em">janne<span class="dom">@ortusclub.com</span></span></div><div class="fxsub">In use by <b>mae</b> right now — pick another.</div></div></label>
+      <label class="fxtile dim"><div class="fxstat s-stop"><span class="fxdot"></span><span class="fxword">BLOCKED</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox" disabled><span class="em">jhopet.maquirang<span class="dom">@klabber.co</span></span></div><div class="fxsub">Restricted by LinkedIn.</div></div></label>
+      <label class="fxtile"><div class="fxstat s-free"><span class="fxdot"></span><span class="fxword">FREE</span></div><div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="em">daniel.ogeto<span class="dom">@ortusclub.com</span></span></div><div class="fxsub">Anyone can use it.</div></div></label>
+    </div>
+  </div>
+</body>
+</html>

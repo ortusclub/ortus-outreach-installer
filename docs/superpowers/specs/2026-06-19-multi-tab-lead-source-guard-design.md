@@ -59,6 +59,10 @@ When the operator enters/pastes a sheet URL in the Data step:
 5. On selection, show a **3-row preview + detected columns** so the operator
    confirms it's the lead list, and **write the chosen gid into the stored
    `sheetUrl`** (and a parallel explicit `sheetGid` field — see Layer 2).
+6. **Rerun tab-change confirmation:** on a rerun/restore, if the operator picks a
+   tab whose gid differs from the saved one, require an explicit confirm —
+   *"You changed the tab from `<old name>` to `<new name>` — are you sure?"* — so a
+   tab switch is never silent.
 
 ### Layer 2 — Lock the gid everywhere (correctness)
 

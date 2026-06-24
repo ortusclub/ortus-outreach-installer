@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connections — team graph (brainstorm mockup)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Minimal additions ONLY for components the app has no exact equivalent of
+       (warm-path rows, the data table, the connected-badge inset). Everything
+       else — shell, sidebar, page-header, sections, h2, header-stats — is the
+       app's real chrome/classes. */
+    .cx-seg { display: flex; gap: 4px; border-bottom: 1px solid var(--hairline); margin: 2px 0 18px; }
+    .cx-seg button { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--gray); background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 13px; cursor: pointer; }
+    .cx-seg button.active { color: var(--ink); border-bottom-color: var(--gold); }
+    .cx-seg button:hover { color: var(--ink); }
+
+    .cx-search { display: flex; gap: 10px; margin: 4px 0 6px; }
+    .cx-search input { flex: 1; font-family: var(--mono); font-size: 0.82rem; color: var(--ink);
+      background: var(--input-bg, var(--bg-soft)); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px 13px; }
+    .cx-search button { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+      background: var(--gold); color: #1a1a1a; border: none; border-radius: 8px; padding: 0 18px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+
+    .cx-src { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin: 8px 0 12px; line-height: 1.7; }
+    .cx-src b { color: var(--ink); } .cx-src .fresh { color: var(--green); } .cx-src .static { color: var(--blue); }
+    .cx-note { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); margin: 14px 0 8px; }
+    .cx-note b { color: var(--ink); }
+
+    .cx-path { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; align-items: center; gap: 13px;
+      padding: 13px 2px; border-bottom: 1px solid var(--hairline-soft); }
+    .cx-path:last-child { border-bottom: none; }
+    .cx-path .led { width: 9px; height: 9px; border-radius: 9999px; margin-top: 4px; align-self: start; }
+    .cx-path .led.fresh { background: var(--green); } .cx-path .led.csv { background: var(--blue); }
+    .cx-path .who { font-family: var(--mono); font-size: 0.8rem; color: var(--ink); }
+    .cx-path .who b { font-weight: 600; }
+    .cx-path .meta { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 3px; line-height: 1.5; }
+    .cx-path .meta .via { color: var(--blue); } .cx-path .meta .viafresh { color: var(--green); }
+    .cx-act { display: flex; gap: 6px; }
+    .cx-pill { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.07em; text-transform: uppercase;
+      color: var(--ink); border: 1px solid var(--card-border); background: none; border-radius: 9999px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+    .cx-pill.gold { background: var(--gold); color: #1a1a1a; border-color: var(--gold); font-weight: 600; }
+
+    table.cx-grid { width: 100%; border-collapse: collapse; font-family: var(--mono); }
+    table.cx-grid th { font-size: 0.52rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray);
+      text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--hairline); font-weight: 500; }
+    table.cx-grid td { font-size: 0.68rem; color: var(--ink); padding: 10px 10px; border-bottom: 1px solid var(--hairline-soft); vertical-align: top; }
+    table.cx-grid td .sub { color: var(--gray); font-size: 0.58rem; }
+    table.cx-grid tr:hover td { background: var(--bg-soft); }
+    .cx-net { color: var(--blue); font-size: 0.6rem; } .cx-net.multi { color: var(--ink); font-weight: 600; }
+
+    .cx-filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .cx-filters .f { font-family: var(--mono); font-size: 0.66rem; color: var(--ink);
+      background: var(--input-bg, var(--bg-soft)); border: 1px solid var(--card-border); border-radius: 8px; padding: 9px 11px; }
+
+    .cx-health { display: grid; grid-template-columns: minmax(0,1.4fr) auto auto minmax(0,1.4fr); }
+    .cx-health .c { font-family: var(--mono); font-size: 0.66rem; color: var(--ink); padding: 11px 10px; border-bottom: 1px solid var(--hairline-soft); }
+    .cx-health .hd { color: var(--gray); font-size: 0.52rem; letter-spacing: 0.1em; text-transform: uppercase; border-bottom: 1px solid var(--hairline); }
+    .cx-health .c .sub { color: var(--gray); font-size: 0.56rem; }
+    .st.ok { color: var(--green); } .st.warn { color: #c89b3c; } .st.off { color: var(--gray); }
+
+    .cx-acct { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 11px; padding: 11px 2px; border-bottom: 1px solid var(--hairline-soft); }
+    .cx-acct:last-child { border-bottom: none; }
+    .cx-acct .dot { width: 9px; height: 9px; border-radius: 9999px; }
+    .cx-acct .dot.on { background: var(--green); } .cx-acct .dot.chk { background: var(--gray); opacity: 0.5; }
+    .cx-acct .nm { font-family: var(--mono); font-size: 0.74rem; color: var(--ink); }
+    .cx-cbadge { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.04em; padding: 5px 11px; border-radius: 9999px; white-space: nowrap; }
+    .cx-cbadge.yes { color: var(--green); border: 1px solid rgba(60,170,110,0.4); }
+    .cx-cbadge.chk { color: var(--gray); border: 1px solid var(--hairline); }
+
+    .cx-hint { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin: 12px 2px 0; line-height: 1.7; }
+    .cx-hint b { color: var(--ink); }
+    .cx-panel { display: none; } .cx-panel.active { display: block; }
+    .cx-step { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin: 16px 0 8px; }
+    .cx-step b { color: var(--ink); }
+    .cx-badge { color: var(--blue); border: 1px solid rgba(58,110,165,0.5); border-radius: 9999px; padding: 1px 8px; font-size: 0.5rem; font-family: var(--mono); letter-spacing: 0.08em; text-transform: uppercase; vertical-align: middle; margin-left: 8px; }
+    .cx-badge.warn { color: #c89b3c; border-color: rgba(200,155,60,0.5); }
+    .cx-inset { border: 1px dashed var(--card-border); border-radius: 10px; padding: 14px 16px; background: var(--bg-soft); margin-top: 8px; }
+    .cx-inset .lbl { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+    .cx-stamp { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin: 26px 0 0; border-top: 1px solid var(--hairline); padding-top: 14px; line-height: 1.8; }
+    .cx-stamp b { color: var(--ink); }
+    .nav-item.cx-on { color: var(--ink); }
+    .nav-item.cx-on .nav-num { color: var(--gold); }
+  </style>
+</head>
+<body class="theme-dark" data-dashboard="v3">
+  <div class="app">
+
+    <!-- ── Sidebar (real app chrome) ── -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · v2.112.44</div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+        <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+        <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+        <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+        <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+        <button type="button" class="nav-item">Live Status</button>
+
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item cx-on"><span class="nav-num">◆</span>Connections</button>
+
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item">Open log</button>
+        <div class="nav-section-label">Help</div>
+        <button type="button" class="nav-item nav-item-help"><span class="nav-num">?</span>Help</button>
+      </nav>
+
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button type="button" class="operator-chip">
+          <span class="operator-chip-label">Operating as</span>
+          <strong>ortus@ortusclub.com</strong>
+        </button>
+        <div class="user-chip"><strong>info@ortus.solutions</strong></div>
+        <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- ── Main (real app chrome) ── -->
+    <main class="main">
+      <div class="container">
+
+        <div class="page-header">
+          <div class="page-header-title">
+            <div class="greeting-wordmark">Connections</div>
+            <div class="greeting-subtitle">Team connection graph <small style="margin-left:12px;color:var(--gray)">brainstorm mockup · illustrative data</small></div>
+          </div>
+          <div class="header-stats">
+            <div class="header-stat"><span class="k">Colleague networks</span><span class="v">18</span></div>
+            <div class="header-stat"><span class="k">Connections pooled</span><span class="v">41,207</span></div>
+            <div class="header-stat"><span class="k">Unique people</span><span class="v">33,940</span></div>
+            <div class="header-stat"><span class="k">Reachable by 2+</span><span class="v">1,240</span></div>
+            <div class="header-stat"><span class="k">Live-detected</span><span class="v">312</span></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="cx-seg">
+            <button class="active" data-tab="reach">Who can reach…?</button>
+            <button data-tab="browse">Browse the graph</button>
+            <button data-tab="seed">Seed Introduce Back</button>
+            <button data-tab="health">Data health</button>
+          </div>
+
+          <!-- ═══════ WHO CAN REACH ═══════ -->
+          <div class="cx-panel active" id="reach">
+            <h2>Who can reach…? <span class="cx-badge">pooled connection graph</span></h2>
+            <div class="cx-search">
+              <input type="text" value="Schneider Electric — VP / Director Marketing" />
+              <button>Find warm paths</button>
+            </div>
+            <p class="cx-src">
+              Searching two sources together &nbsp;
+              <span class="static">●</span> <b>CSV network exports</b> (each colleague's full 1st-degree list — static snapshot) &nbsp;&nbsp;
+              <span class="fresh">●</span> <b>live campaign-detected</b> (fresh, from the "Recent Connections" sweep)
+            </p>
+            <p class="cx-note"><b>4 of the team's networks</b> reach someone at Schneider Electric — route a warm intro instead of cold-contacting.</p>
+
+            <div class="cx-path">
+              <span class="led csv"></span>
+              <span>
+                <span class="who"><b>Chris Quinn</b> · VP Marketing Communications, Schneider Electric</span>
+                <span class="meta"><span class="via">in Marco's network</span> · connected 30 Jul 2024 · from CSV export</span>
+              </span>
+              <span class="cx-act"><button class="cx-pill gold">Use for Introduce Back →</button><button class="cx-pill">Open profile</button></span>
+            </div>
+            <div class="cx-path">
+              <span class="led fresh"></span>
+              <span>
+                <span class="who"><b>Maite Morales</b> · Chief Digital Officer, Schneider</span>
+                <span class="meta"><span class="viafresh">in Olivia's network</span> · connected 6 Jan 2025 · live-detected during a campaign</span>
+              </span>
+              <span class="cx-act"><button class="cx-pill gold">Use for Introduce Back →</button><button class="cx-pill">Open profile</button></span>
+            </div>
+            <div class="cx-path">
+              <span class="led csv"></span>
+              <span>
+                <span class="who"><b>Greg Barker</b> · Field Marketing Manager, Oceania</span>
+                <span class="meta"><span class="via">in Sam's network</span> · connected 28 Aug 2024 · <span style="color:var(--ink)">also in Marco's network</span></span>
+              </span>
+              <span class="cx-act"><button class="cx-pill gold">Use for Introduce Back →</button><button class="cx-pill">Open profile</button></span>
+            </div>
+            <p class="cx-hint">Each result is a <b>real person in a colleague's network</b> — name / company / position / connected-on come straight from the CSV columns. Blue dot = static CSV export · green dot = freshly detected. "Use for Introduce Back" drops them into an IB campaign with the connected colleague pre-set as the primary.</p>
+          </div>
+
+          <!-- ═══════ BROWSE ═══════ -->
+          <div class="cx-panel" id="browse">
+            <h2>Browse the graph <span class="cx-badge">CSV columns, exactly</span></h2>
+            <div class="cx-filters">
+              <select class="f"><option>Whose network · all 18 colleagues</option><option>Marco</option><option>Olivia</option><option>Sam</option></select>
+              <input class="f" placeholder="Company contains…" value="Salesforce" />
+              <input class="f" placeholder="Title contains…" />
+              <input class="f" placeholder="Connected after… (yyyy)" />
+            </div>
+            <table class="cx-grid">
+              <thead><tr><th>Name</th><th>Company</th><th>Position</th><th>Connected on</th><th>In whose network</th></tr></thead>
+              <tbody>
+                <tr><td>Sarah Brennauer</td><td>Salesforce</td><td>Field Marketing Manager, Nonprofit</td><td>31 Jul 2024</td><td><span class="cx-net">Marco</span></td></tr>
+                <tr><td>Vanessa Ng</td><td>Salesforce</td><td>Sr Marketing Mgr, Trailblazer Growth</td><td>27 Dec 2023</td><td><span class="cx-net multi">Marco · Sam</span></td></tr>
+                <tr><td>Jamal El Biyadi</td><td>Salesforce</td><td>Sr Regional VP Sales — Enterprise</td><td>19 Dec 2023</td><td><span class="cx-net">Sam</span></td></tr>
+                <tr><td><span class="sub">name hidden in export</span></td><td>Salesforce</td><td><span class="sub">—</span></td><td>08 Jan 2024</td><td><span class="cx-net">Olivia</span></td></tr>
+              </tbody>
+            </table>
+            <p class="cx-hint">Columns are exactly the CSV's — <b>First/Last Name · URL · Email · Company · Position · Connected On</b> — plus a derived "in whose network." Rows connected to <b>2+ colleagues</b> are the strongest warm paths. Privacy-hidden export rows shown honestly, not dropped.</p>
+          </div>
+
+          <!-- ═══════ SEED INTRODUCE BACK ═══════ -->
+          <div class="cx-panel" id="seed">
+            <h2>Seed Introduce Back <span class="cx-badge">from who we already know</span></h2>
+            <p class="cx-step"><b>1 · Mine whose network</b> — pick the colleague whose connections become the lead pool.</p>
+            <div class="cx-filters"><select class="f"><option>Marco — marco@ortusclub.com (4,812 connections)</option><option>Olivia</option><option>Sam</option></select></div>
+            <p class="cx-step"><b>2 · Narrow the pool</b> — by company / title / how recent the connection is.</p>
+            <div class="cx-filters">
+              <input class="f" placeholder="Title contains…" value="Marketing" />
+              <input class="f" placeholder="Company contains…" />
+              <input class="f" placeholder="Connected after…" value="2023" />
+            </div>
+            <p class="cx-note"><b>428 people</b> in Marco's network match — these become IB leads, with Marco auto-set as the primary.</p>
+            <table class="cx-grid">
+              <thead><tr><th>Name</th><th>Company</th><th>Position</th><th>Connected on</th></tr></thead>
+              <tbody>
+                <tr><td>Clara Tay</td><td>OutSystems</td><td>Sr Manager, Demand Generation</td><td>29 Aug 2024</td></tr>
+                <tr><td>Priya Mishra</td><td>Corporality</td><td>CEO / Chief Marketing Officer</td><td>29 Aug 2024</td></tr>
+                <tr><td>Hosanna Neri</td><td>Lexer</td><td>Event Marketing Manager</td><td>29 Aug 2024</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:14px;display:flex;gap:8px">
+              <button class="cx-pill gold">Create Introduce Back campaign · 428 leads →</button>
+              <button class="cx-pill">Export to a sheet tab</button>
+            </div>
+            <p class="cx-hint">⚠ One thing to settle: these people <b>already know Marco</b>. So "Introduce Back" here means <b>Marco re-engages people he already knows</b> — not the usual cold-lead → intro-to-a-primary. Worth deciding whether that's the intent, or whether you'd rather mine <i>other</i> colleagues' networks so Marco gets introduced to people he <i>doesn't</i> yet know.</p>
+          </div>
+
+          <!-- ═══════ DATA HEALTH ═══════ -->
+          <div class="cx-panel" id="health">
+            <h2>Data health <span class="cx-badge warn">static snapshots — need re-export</span></h2>
+            <div class="cx-health">
+              <div class="c hd">Colleague / file</div><div class="c hd">Connections</div><div class="c hd">Exported</div><div class="c hd">Status</div>
+
+              <div class="c">marco@ortusclub.com<div class="sub">Connections.csv</div></div>
+              <div class="c">4,812</div><div class="c">12 Jan 2025</div>
+              <div class="c"><span class="st ok">✓ Loaded · URL + company present</span></div>
+
+              <div class="c">johnpaul.m@ortus.solutions<div class="sub">johnpaul.m… - connections.csv</div></div>
+              <div class="c">3,190</div><div class="c">13 Jan 2025</div>
+              <div class="c"><span class="st ok">✓ Loaded</span></div>
+
+              <div class="c">sam@ortusclub.com<div class="sub">Connections.csv (2022)</div></div>
+              <div class="c">1,904</div><div class="c">08 Jun 2022</div>
+              <div class="c"><span class="st warn">⚠ No URL column — names only, can't match by profile</span></div>
+
+              <div class="c"><span class="sub">owner unknown</span><div class="sub">Connections.csv (folder root)</div></div>
+              <div class="c">2,640</div><div class="c">01 Sep 2024</div>
+              <div class="c"><span class="st warn">⚠ Whose network? mapped by Drive folder — confirm</span></div>
+
+              <div class="c">charles.y@ortusclub.com<div class="sub">— not imported —</div></div>
+              <div class="c">—</div><div class="c">—</div>
+              <div class="c"><span class="st off">○ Not loaded</span></div>
+            </div>
+            <p class="cx-hint">Honest about the real export quirks in your Drive: <b>schema drift</b> (older files have no URL column), <b>owner mapping</b> (some files are just "Connections.csv" — whose?), and <b>staleness</b> (a 2022 export misses 3 years). The CSV layer is a <b>snapshot</b>; the live "Recent Connections" sweep keeps the campaign-detected slice fresh on its own.</p>
+          </div>
+        </div>
+
+        <!-- ═══════ POINT 1 · CONNECTED-TO-PRIMARY ═══════ -->
+        <div class="section">
+          <h2>Point 1 · "already connected to the primary" — visible &amp; remembered</h2>
+          <div class="cx-inset">
+            <div class="lbl">In the account picker / live panel (CC+IC)</div>
+            <div class="cx-acct">
+              <span class="dot on"></span><span class="nm">gologin · Marco — Tech founders Q3</span>
+              <span class="cx-cbadge yes">✓ Connected to Antonio · remembered — won't re-send</span>
+            </div>
+            <div class="cx-acct">
+              <span class="dot on"></span><span class="nm">gologin · Olivia — Tech founders Q3</span>
+              <span class="cx-cbadge yes">✓ Connected to Antonio · remembered</span>
+            </div>
+            <div class="cx-acct">
+              <span class="dot chk"></span><span class="nm">gologin · Sara — Tech founders Q3</span>
+              <span class="cx-cbadge chk">↻ not yet connected — will send once</span>
+            </div>
+          </div>
+          <p class="cx-hint">The store that backs this already exists (<code>data/primary-status.json</code>, built 18 Jun). The asks: make "connected" <b>survive stop/resume/restart/re-run</b> (skip the re-send), show it <b>visibly</b> here, and — the new part — <b>share it across operators</b> so it's a team fact, not one laptop's local file.</p>
+        </div>
+
+        <p class="cx-stamp">
+          <b>Brainstorm mockup — not built.</b> Now rendered inside the <b>real app shell</b> (sidebar, page-header, sections) with real <code>style.css</code> + <code>dashboard-v0.3.css</code>; every field maps to a real source column (CSV export, the existing "Recent Connections" tab, or <code>primary-status.json</code>). Names &amp; numbers illustrative.
+          This is the <b>"destination" treatment</b> (Connections as its own sidebar section). I can also sketch the <b>"embedded"</b> treatment (lookup inside campaign setup + the lead row) or the <b>"lives in the Google Sheet"</b> treatment — say which.
+        </p>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    document.querySelectorAll('.cx-seg button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.cx-seg button').forEach(function (x) { x.classList.remove('active'); });
+        document.querySelectorAll('.cx-panel').forEach(function (p) { p.classList.remove('active'); });
+        b.classList.add('active');
+        document.getElementById(b.dataset.tab).classList.add('active');
+      });
+    });
+    // theme toggle mirrors the app
+    function setTheme(mode) {
+      var light = mode === 'light';
+      document.body.classList.toggle('theme-light', light);
+      document.body.classList.toggle('theme-dark', !light);
+      var d = document.getElementById('theme-btn-dark'), l = document.getElementById('theme-btn-light');
+      if (d) d.classList.toggle('active', !light); if (l) l.classList.toggle('active', light);
+    }
+  </script>
+</body>
+</html>

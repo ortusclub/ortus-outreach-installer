@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FG send · B — Cards</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .sk-wrap { max-width: 1120px; margin: 0 auto; padding: 28px; }
+    .sk-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+    .sk-badge { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 12px; }
+    .sk-nav a { font-family:var(--mono); font-size:11px; color:var(--gray); text-decoration:none; margin-left:14px; }
+    .sk-nav a:hover, .sk-nav a.on { color:var(--ink); }
+
+    .skB-cols { display:grid; grid-template-columns:1fr 320px; gap:22px; align-items:start; }
+    .skB-search { background:var(--bg-soft); border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:9px 16px; font-family:var(--body); font-size:13px; width:100%; margin-bottom:14px; }
+    .skB-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+    @media (max-width:1240px){ .skB-grid{ grid-template-columns:1fr; } }
+    .skB-card { border:1px solid var(--hairline); border-radius:14px; padding:14px 16px; cursor:pointer; position:relative; transition:border-color .12s, background .12s; background:var(--card-bg); }
+    .skB-card:hover { background:var(--card-bg-hover); }
+    .skB-card.on { border-color:var(--gold); box-shadow:0 0 0 1px var(--gold) inset; }
+    .skB-tick { position:absolute; top:12px; right:12px; width:20px; height:20px; border-radius:9999px; border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-size:12px; color:transparent; }
+    .skB-card.on .skB-tick { background:var(--gold); border-color:var(--gold); color:#1a1300; }
+    .skB-name { font-weight:600; color:var(--ink); font-size:14px; padding-right:26px; }
+    .skB-title { color:var(--ink); opacity:.85; font-size:12.5px; margin-top:3px; }
+    .skB-co { color:var(--gray); font-size:12.5px; }
+    .skB-tags { display:flex; gap:8px; align-items:center; margin-top:10px; }
+    .skB-fn { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:2px 9px; }
+    .skB-geo { color:var(--gray); font-size:11.5px; }
+    .skB-view { margin-left:auto; color:var(--gray); text-decoration:none; font-size:13px; }
+    .skB-view:hover { color:var(--ink); }
+
+    .skB-panel { border:1px solid var(--hairline); border-radius:16px; padding:18px; position:sticky; top:24px; background:var(--card-bg); }
+    .skB-ph { font-family:var(--display); font-size:1.5rem; letter-spacing:.04em; color:var(--ink); display:flex; align-items:baseline; gap:8px; }
+    .skB-ph small { font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--gray); }
+    .skB-meter { height:6px; border-radius:9999px; background:var(--hairline-soft); margin:14px 0 6px; overflow:hidden; display:flex; }
+    .skB-meter .used { background:var(--gray); }
+    .skB-meter .add { background:var(--gold); }
+    .skB-mlbl { font-family:var(--mono); font-size:11px; color:var(--gray); margin-bottom:12px; }
+    .skB-items { list-style:none; margin:0; padding:0; max-height:300px; overflow-y:auto; }
+    .skB-items li { display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--hairline-soft); font-size:13px; color:var(--ink); }
+    .skB-items li:first-child { border-top:none; }
+    .skB-x { margin-left:auto; cursor:pointer; color:var(--gray); border:none; background:none; font-size:15px; }
+    .skB-x:hover { color:var(--red); }
+    .skB-st { margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; padding:2px 8px; border-radius:9999px; }
+    .skB-st.opening { color:var(--gold); border:1px solid var(--gold); animation:skpulse 1s infinite; }
+    .skB-st.invited { color:var(--green); border:1px solid var(--green); }
+    .skB-st.skipped { color:var(--red); border:1px solid var(--red); }
+    @keyframes skpulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .skB-empty { color:var(--gray); font-size:12.5px; padding:18px 0; text-align:center; }
+    .skB-go { width:100%; margin-top:14px; background:var(--gold); color:#1a1300; border:none; border-radius:9999px; padding:13px; font-family:var(--mono); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+    .skB-go:disabled { opacity:.45; cursor:default; }
+    .skB-from { width:100%; margin-top:10px; background:var(--bg-soft); border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:9px 12px; font-family:var(--body); font-size:12px; }
+    .skB-note { color:var(--green); font-family:var(--mono); font-size:11px; margin-top:10px; text-align:center; }
+  </style>
+</head>
+<body data-dashboard="v3">
+  <div class="sk-wrap">
+    <div class="sk-bar">
+      <span class="sk-badge">Prototype · not wired</span>
+      <span class="sk-nav"><a href="fg-send-A-checklist.html">A · Checklist</a><a href="fg-send-B-cards.html" class="on">B · Cards</a><a href="fg-send-C-pipeline.html">C · Pipeline</a></span>
+    </div>
+
+    <div class="section">
+      <h2>Follower Growth</h2>
+      <p class="fg-lede">Browse <b id="opname"></b>'s connections as cards, tap the ones worth inviting — they drop into your invite list on the right. One send opens each profile, follows the page-invite, and records them to the FG sheet.</p>
+
+      <div class="skB-cols">
+        <div>
+          <input class="skB-search" type="text" placeholder="Filter by name, company, title…" oninput="filter(this.value)">
+          <div class="skB-grid" id="grid"></div>
+        </div>
+
+        <aside class="skB-panel">
+          <div class="skB-ph">Invite list <small id="pcount">0</small></div>
+          <div class="skB-meter" id="meter"></div>
+          <div class="skB-mlbl" id="mlbl"></div>
+          <ul class="skB-items" id="items"></ul>
+          <div class="skB-empty" id="empty">Tap cards to add people here.</div>
+          <select class="skB-from"><option>From: Local Browser — bea.talusan ✓</option><option>From: GoLogin · Bea</option></select>
+          <button class="skB-go" id="go" onclick="run()" disabled>Open profiles &amp; send</button>
+          <div class="skB-note" id="note" style="display:none"></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <script src="fg-send-core.js"></script>
+  <script>
+    const S = FG_SAMPLE, X = FGX;
+    const sel = new Set();
+    let visible = S.candidates.map((c) => c.id);
+    let sending = false;
+    document.getElementById('opname').textContent = S.operator;
+
+    function renderGrid() {
+      document.getElementById('grid').innerHTML = S.candidates.filter((c) => visible.includes(c.id)).map((c) => `
+        <div class="skB-card ${sel.has(c.id) ? 'on' : ''}" onclick="toggle('${c.id}')">
+          <span class="skB-tick">✓</span>
+          <div class="skB-name">${X.esc(c.name)}</div>
+          <div class="skB-title">${X.esc(c.title)}</div>
+          <div class="skB-co">${X.esc(c.company)}</div>
+          <div class="skB-tags"><span class="skB-fn">${X.esc(c.fn)}</span><span class="skB-geo">${X.esc(c.geo)}</span>
+            <a class="skB-view" href="#" title="View on LinkedIn" onclick="event.stopPropagation();return false">↗</a></div>
+        </div>`).join('');
+    }
+    function renderPanel() {
+      const chosen = S.candidates.filter((c) => sel.has(c.id));
+      document.getElementById('pcount').textContent = chosen.length;
+      document.getElementById('empty').style.display = chosen.length ? 'none' : 'block';
+      document.getElementById('items').innerHTML = chosen.map((c) => `
+        <li data-id="${c.id}"><span>${X.esc(c.name)} <span style="color:var(--gray)">· ${X.esc(c.company)}</span></span>
+          ${sending ? `<span class="skB-st" id="s-${c.id}"></span>` : `<button class="skB-x" onclick="toggle('${c.id}')">×</button>`}</li>`).join('');
+      const used = S.creditsUsed, add = chosen.length, total = S.creditsTotal;
+      document.getElementById('meter').innerHTML = `<span class="used" style="width:${used / total * 100}%"></span><span class="add" style="width:${Math.min(add, total - used) / total * 100}%"></span>`;
+      document.getElementById('mlbl').textContent = `${used} used · selecting ${add} → ${Math.max(0, total - used - add)} of ${total} credits left`;
+      document.getElementById('go').disabled = !chosen.length || used + add > total;
+      document.getElementById('go').textContent = used + add > total ? 'Over monthly credit limit' : 'Open profiles & send';
+    }
+    function toggle(id) { if (sending) return; sel.has(id) ? sel.delete(id) : sel.add(id); renderGrid(); renderPanel(); }
+    function filter(q) { q = q.trim().toLowerCase(); visible = S.candidates.filter((c) => !q || (c.name + c.company + c.title + c.geo).toLowerCase().includes(q)).map((c) => c.id); renderGrid(); }
+    function run() {
+      const chosen = S.candidates.filter((c) => sel.has(c.id)); if (!chosen.length) return;
+      sending = true; renderPanel();
+      document.getElementById('go').disabled = true; document.getElementById('go').textContent = 'Sending…';
+      let invited = 0;
+      X.simulateSend(chosen, (id, st) => {
+        const el = document.getElementById('s-' + id); if (!el) return;
+        el.className = `skB-st ${st}`; el.textContent = st === 'opening' ? 'opening…' : (st === 'queued' ? 'queued' : st);
+        if (st === 'invited') invited++;
+      }, () => {
+        sending = false;
+        const note = document.getElementById('note'); note.style.display = 'block';
+        note.textContent = `✓ ${invited} invited · ${chosen.length - invited} skipped · auto-recorded to FG sheet`;
+        document.getElementById('go').textContent = 'Done';
+      });
+    }
+    renderGrid(); renderPanel();
+  </script>
+</body>
+</html>

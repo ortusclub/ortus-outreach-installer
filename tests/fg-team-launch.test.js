@@ -50,6 +50,24 @@ test('runTeamLaunch runs accounts sequentially, skips empty/zero-target, records
     ['launch:a@x', 'close:a@x', 'launch:c@x', 'close:c@x']);
 });
 
+test('runTeamLaunch surfaces a specific skip reason from buildTargets', async () => {
+  const pairs = [{ operator: 'a@x', operatorName: 'A', account: 'a@x', profileId: 'p1' }];
+  const deps = {
+    buildTargets: () => ({ rows: [], count: 0, reason: 'monthly budget used up — no invites remaining this month' }),
+    launch: async () => ({ page: {}, close: async () => {} }),
+    send: async () => ({ invited: [], skipped: [], creditsBefore: 0, creditsAfter: 0 }),
+    record: async () => {},
+    log: () => {},
+    now: () => '2026-06-23T00:00:00.000Z',
+  };
+  const ctx = { keywords: [], month: '2026-06', getAbort: () => false };
+  const status = makeInitialStatus(pairs);
+  await runTeamLaunch(pairs, ctx, deps, status);
+  assert.equal(status.perAccount[0].status, 'skipped');
+  assert.equal(status.perAccount[0].reason, 'monthly budget used up — no invites remaining this month');
+  assert.ok(status.logs.some((l) => l.includes('monthly budget used up')));
+});
+
 test('runTeamLaunch aborts before the next account when getAbort flips', async () => {
   const pairs = [
     { operator: 'a@x', operatorName: 'A', account: 'a@x', profileId: 'p1' },

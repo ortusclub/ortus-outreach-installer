@@ -41,4 +41,5 @@ apps-script/
 
 # Team Connections (local-only, PII)
 data/connections/
+data/connections-cache.json
 out/

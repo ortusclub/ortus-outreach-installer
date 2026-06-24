@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connections entry · E — search-first command bar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Throwaway brainstorm chrome only. Shell, sidebar, page-header, dashboard-*,
+       btn are the app's real monochrome classes. STRICTLY MONOCHROME —
+       --ink / --gray / --hairline only, no gold, no accents. */
+
+    .bx-caption {
+      font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--gray);
+      border: 1px dashed var(--hairline); border-radius: 9999px;
+      padding: 7px 16px; display: inline-block; margin-bottom: 26px;
+    }
+    .bx-caption b { color: var(--ink); font-weight: 500; }
+
+    /* The hero command bar */
+    .cmd-hero { margin: 6px 0 14px; }
+    .cmd-eyebrow {
+      font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.22em;
+      text-transform: uppercase; color: var(--gray); margin-bottom: 12px;
+    }
+    .cmd-bar {
+      display: flex; align-items: center; gap: 16px;
+      border: 1px solid var(--card-border); border-radius: 14px;
+      background: var(--bg-soft); padding: 20px 22px;
+      transition: border-color 0.2s;
+    }
+    .cmd-bar:focus-within { border-color: var(--ink); }
+    .cmd-bar .ico {
+      flex: 0 0 auto; width: 22px; height: 22px; color: var(--gray);
+    }
+    .cmd-bar input {
+      flex: 1; min-width: 0; border: none; background: none; outline: none;
+      font-family: var(--mono); font-size: 1.05rem; color: var(--ink);
+      letter-spacing: 0.01em;
+    }
+    .cmd-bar input::placeholder { color: var(--gray); }
+    .cmd-kbd {
+      flex: 0 0 auto; font-family: var(--mono); font-size: 0.6rem;
+      letter-spacing: 0.1em; color: var(--gray);
+      border: 1px solid var(--hairline); border-radius: 8px;
+      padding: 6px 11px; text-transform: uppercase;
+    }
+    .cmd-hint {
+      font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em;
+      color: var(--gray); margin-top: 14px;
+    }
+    .cmd-hint b { color: var(--ink); font-weight: 500; }
+
+    /* greyed example query chips below the bar */
+    .cmd-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .cmd-chip {
+      font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.02em;
+      color: var(--gray); background: transparent;
+      border: 1px solid var(--hairline); border-radius: 9999px;
+      padding: 8px 15px; cursor: pointer; transition: color 0.2s, border-color 0.2s;
+    }
+    .cmd-chip:hover { color: var(--ink); border-color: var(--ink); }
+    .cmd-chip .lead {
+      font-size: 0.5rem; letter-spacing: 0.14em; text-transform: uppercase;
+      margin-right: 8px; opacity: 0.7;
+    }
+    .cmd-illus {
+      font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--gray); margin-top: 24px;
+    }
+
+    .nav-item.cx-on { color: var(--ink); }
+    .nav-item.cx-on .nav-num { color: var(--ink); }
+  </style>
+</head>
+<body class="theme-dark" data-dashboard="v3">
+  <div class="app">
+
+    <!-- ── Real sidebar (verbatim shell) ── -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · v2.112.44</div>
+      </div>
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+        <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+        <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+        <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+        <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+        <button type="button" class="nav-item">Live Status</button>
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item cx-on"><span class="nav-num">◆</span>Connections</button>
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item">Open log</button>
+        <div class="nav-section-label">Help</div>
+        <button type="button" class="nav-item nav-item-help"><span class="nav-num">?</span>Help</button>
+      </nav>
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button type="button" class="operator-chip"><span class="operator-chip-label">Operating as</span><strong>ortus@ortusclub.com</strong></button>
+        <div class="user-chip"><strong>info@ortus.solutions</strong></div>
+        <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- ── Main (the home / dashboard) ── -->
+    <main class="main">
+      <div class="container">
+
+        <div class="bx-caption">E · Connections as a <b>search-first command bar</b> on the home</div>
+
+        <!-- Real home page-header / greeting -->
+        <div class="page-header">
+          <div class="page-header-title">
+            <div class="greeting-wordmark">Welcome</div>
+            <div class="greeting-subtitle">info@ortus.solutions</div>
+          </div>
+        </div>
+
+        <!-- The hero command bar — the prominent way into warm contacts -->
+        <div class="cmd-hero">
+          <div class="cmd-eyebrow">Find warm reach</div>
+          <div class="cmd-bar">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" placeholder="Find warm contacts — job title, company, country…" aria-label="Find warm contacts" />
+            <span class="cmd-kbd">⌘K</span>
+          </div>
+          <div class="cmd-hint">Searches your team's <b>94,503</b> warm connections in HubSpot · <b>73</b> networks · <b>73,055</b> in HubSpot</div>
+
+          <!-- greyed example queries — start typing and it launches the warm-results list -->
+          <div class="cmd-chips">
+            <button type="button" class="cmd-chip"><span class="lead">try</span>VP Marketing · United Kingdom</button>
+            <button type="button" class="cmd-chip"><span class="lead">try</span>Head of Sales · Salesforce</button>
+            <button type="button" class="cmd-chip"><span class="lead">try</span>CFO · DACH region</button>
+          </div>
+
+          <div class="cmd-illus">Illustrative · figures from the real warm-reach index</div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function setTheme(mode) {
+      var light = mode === 'light';
+      document.body.classList.toggle('theme-light', light);
+      document.body.classList.toggle('theme-dark', !light);
+      var d = document.getElementById('theme-btn-dark'), l = document.getElementById('theme-btn-light');
+      if (d) d.classList.toggle('active', !light); if (l) l.classList.toggle('active', light);
+    }
+    // chips just pre-fill the bar (illustrative)
+    document.querySelectorAll('.cmd-chip').forEach(function (c) {
+      c.addEventListener('click', function () {
+        var input = document.querySelector('.cmd-bar input');
+        input.value = c.textContent.replace(/^try/i, '').trim();
+        input.focus();
+      });
+    });
+  </script>
+</body>
+</html>

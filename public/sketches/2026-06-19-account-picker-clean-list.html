@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Account picker — clean scannable list</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 22px 24px 90px; }
+    .lead { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.55; margin: 0 0 16px; max-width: 880px; }
+    .lead b { color: var(--ink); }
+
+    /* group header */
+    .grp { display:flex; align-items:center; gap:10px; margin:20px 0 9px; }
+    .grp .t { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--gray); }
+    .grp .t b { color:var(--ink); }
+    .grp .ln { flex:1; height:1px; background:var(--hairline-soft); }
+
+    .lst { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+    /* override the global label{} rule (uppercase + 0.22em spacing + margin) that was making emails ugly */
+    .r { display:flex; align-items:center; gap:11px; padding:8px 14px; border:1px solid var(--hairline); border-radius:8px; background:var(--card-bg); cursor:pointer; min-width:0; margin:0; text-transform:none; letter-spacing:normal; font-family:var(--body); }
+    .r:hover { background:var(--card-bg-hover); }
+    .r.sel { border-color:var(--ink); background:var(--card-bg-hover); }
+    .r.muted { opacity:0.5; }
+    .r input { flex:none; margin:0; }
+    .r .dot { width:8px; height:8px; border-radius:50%; flex:none; }
+    .dot.free{background:var(--green);} .dot.assigned{background:var(--blue);} .dot.inuse{background:var(--gold);} .dot.blocked{background:var(--red);}
+    .r .main { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+    .r .email { font-family:var(--body); font-size:0.86rem; font-weight:500; color:var(--ink); text-transform:none; letter-spacing:normal; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .r .meta { font-family:var(--body); font-size:0.72rem; color:var(--gray); text-transform:none; letter-spacing:normal; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .r .meta b { color:var(--ink); font-weight:600; }
+    .r .meta.blue b{color:var(--blue);}
+    .tag { font-family:var(--mono); font-size:0.55rem; letter-spacing:0.1em; text-transform:uppercase; flex:none; padding:2px 8px; border-radius:9999px; border:1px solid var(--hairline); }
+    .tag.inuse{color:var(--gold); border-color:var(--gold);}
+    .tag.assigned{color:var(--blue); border-color:var(--blue);}
+    .tag.blocked{color:var(--red); border-color:var(--red);}
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+    <p class="lead">Same data, fixed. Compact one-line rows, clean lowercase emails (no log dumps, no shouting), a single colour dot for state, and <b>free-first ordering</b>. <b>Stale "in use" recovered:</b> any account whose last stamp is older than ~today is shown as FREE with a quiet "last used by…" note — the June-1/2/15 stamps aren't live, so they stop pretending to be. Live in-use & blocked are dimmed at the bottom.</p>
+
+    <!-- FREE / AVAILABLE -->
+    <div class="grp"><span class="t"><b>Available</b> · ready to use</span><span class="ln"></span></div>
+    <div class="lst">
+      <label class="r sel"><input type="checkbox" checked><span class="dot free"></span><div class="main"><div class="email">neil@ortus.solutions</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">kobwimana@ortusclub.com</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">autridah@ortusclub.com</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">celasoie@ortusclub.com</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">rapha.v@ortusclub.com</div><div class="meta">last used by rapha.v · 17d ago</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">mishy@ortusclub.com</div><div class="meta">last used by mishy · 18d ago</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">roman@ortus.live</div><div class="meta">last used by janne · 4d ago</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">eljesa@ortusclub.com</div><div class="meta">last used by eljesa · 18d ago</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">mefanier@ortus.solutions</div><div class="meta">last used by fluturai · 8d ago</div></div></label>
+      <label class="r"><input type="checkbox"><span class="dot free"></span><div class="main"><div class="email">camillec@ortus.solutions</div><div class="meta">last used by janne · 4d ago</div></div></label>
+    </div>
+
+    <!-- ASSIGNED TO OTHERS -->
+    <div class="grp"><span class="t"><b>Assigned to others</b> · leave for them this cycle</span><span class="ln"></span></div>
+    <div class="lst">
+      <label class="r"><input type="checkbox"><span class="dot assigned"></span><div class="main"><div class="email">rockey.sheikh@ortus.solutions</div><div class="meta blue">assigned to <b>antigona</b> · frees in 3d</div></div><span class="tag assigned">Assigned</span></label>
+      <label class="r"><input type="checkbox"><span class="dot assigned"></span><div class="main"><div class="email">nathaliev@ortus.solutions</div><div class="meta blue">assigned to <b>bleron</b> · frees in 3d</div></div><span class="tag assigned">Assigned</span></label>
+    </div>
+
+    <!-- LIVE IN USE -->
+    <div class="grp"><span class="t"><b>In use right now</b> · someone's on it</span><span class="ln"></span></div>
+    <div class="lst">
+      <label class="r muted"><input type="checkbox"><span class="dot inuse"></span><div class="main"><div class="email">md.ameen@ortus.solutions</div><div class="meta">in use by <b>mishy</b> — pick another</div></div><span class="tag inuse">In use</span></label>
+    </div>
+
+    <!-- BLOCKED -->
+    <div class="grp"><span class="t"><b>Restricted</b> · can't be used</span><span class="ln"></span></div>
+    <div class="lst">
+      <label class="r muted"><input type="checkbox" disabled><span class="dot blocked"></span><div class="main"><div class="email">micha.cunanan@klabber.co</div><div class="meta">restricted by LinkedIn</div></div><span class="tag blocked">Blocked</span></label>
+      <label class="r muted"><input type="checkbox" disabled><span class="dot blocked"></span><div class="main"><div class="email">jhopet.maquirang@klabber.co</div><div class="meta">restricted by LinkedIn</div></div><span class="tag blocked">Blocked</span></label>
+    </div>
+
+    <p class="lead" style="margin-top:24px;"><b>The big idea:</b> with staleness applied, the "287 in use" collapses to the few that are <i>actually</i> live right now. The rest move to Available with a quiet history note. The operator scans the green list and picks — instead of wading through cream walls of timestamps.</p>
+    <p class="lead" style="margin-top:4px;"><b>To confirm:</b> how recent must an "In Use" stamp be to count as <i>live</i> (vs recovered to Available)? e.g. within the last <b>3 hours</b> / since <b>today</b> / since this morning. This is the one number that decides how many stay amber.</p>
+  </div>
+</body>
+</html>

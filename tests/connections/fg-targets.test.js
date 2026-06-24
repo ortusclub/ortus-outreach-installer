@@ -62,3 +62,23 @@ test('caps at remaining budget', () => {
   assert.equal(r.count, 1);
   assert.equal(r.eligible, 2);
 });
+
+test('reports matched/eligible/count so callers can explain empties', () => {
+  // No role match: Carol (Engineer) is the only bob@ connection.
+  const noRole = buildFgTargets({ jobTitles: MARKETER }, { operator: 'bob@ortus.solutions', ...opts });
+  assert.equal(noRole.matched, 0);
+  assert.equal(noRole.eligible, 0);
+  assert.equal(noRole.count, 0);
+
+  // All matches already invited: alice's two marketers (100, 300) invited.
+  const allInvited = buildFgTargets({ jobTitles: MARKETER }, { operator: 'alice@ortus.solutions', alreadyInvited: ['100', '300'], ...opts });
+  assert.equal(allInvited.matched, 2);
+  assert.equal(allInvited.eligible, 0);
+  assert.equal(allInvited.count, 0);
+
+  // Budget used up: matches exist, none already invited, but budget 0.
+  const noBudget = buildFgTargets({ jobTitles: MARKETER }, { operator: 'alice@ortus.solutions', budget: 0, ...opts });
+  assert.equal(noBudget.matched, 2);
+  assert.equal(noBudget.eligible, 2);
+  assert.equal(noBudget.count, 0);
+});

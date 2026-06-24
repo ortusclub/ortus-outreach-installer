@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connections entry · A — sidebar destination</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Throwaway brainstorm — STRICTLY MONOCHROME. No gold (reserved for the real Start CTA). */
+    .sk-cap {
+      font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px;
+      padding: 8px 16px; display: inline-block; margin: 18px 0 4px;
+    }
+    .sk-cap b { color: var(--ink); font-weight: 600; }
+
+    /* The NEW Team-group nav item, highlighted but MONOCHROME (override the app's gold active state). */
+    .nav-item.sk-conn {
+      opacity: 1;
+      background: var(--hairline-soft);
+      border-color: var(--hairline);
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .nav-item.sk-conn .nav-num { color: var(--ink); }
+  </style>
+</head>
+<body class="theme-dark" data-dashboard="v3">
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · v2.112.44</div>
+      </div>
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+        <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+        <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+        <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+        <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+        <button type="button" class="nav-item">Live Status</button>
+
+        <!-- NEW: a permanent "Team" group with Connections as the active destination -->
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item sk-conn"><span class="nav-num">◆</span>Connections</button>
+
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item">Open log</button>
+        <div class="nav-section-label">Help</div>
+        <button type="button" class="nav-item nav-item-help"><span class="nav-num">?</span>Help</button>
+      </nav>
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button type="button" class="operator-chip"><span class="operator-chip-label">Operating as</span><strong>ortus@ortusclub.com</strong></button>
+        <div class="user-chip"><strong>info@ortus.solutions</strong></div>
+        <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="container">
+
+        <span class="sk-cap"><b>A</b> · Connections as a sidebar destination (under a new Team group)</span>
+
+        <!-- Real home/dashboard, untouched: the campaigns view -->
+        <div class="dashboard-header">
+          <h1 class="dashboard-title">Campaigns</h1>
+          <div class="dashboard-new-wrap">
+            <button type="button" class="btn btn-secondary dashboard-new-btn">Connections</button>
+            <button type="button" class="btn btn-start dashboard-new-btn">+ New campaign</button>
+          </div>
+        </div>
+
+        <section class="vj-card">
+          <div class="vj-eyebrow">
+            <span class="vj-tag"><span class="dot"></span>No campaign running</span>
+            <span class="vj-when"></span>
+          </div>
+          <h2 class="vj-name">No campaign running</h2>
+          <div class="vj-hbar" role="progressbar"><i style="width:0%"></i></div>
+          <div class="vj-hero">
+            <div class="vj-hero-row">
+              <div class="num"><span>0</span><span class="sub">%</span></div>
+              <div class="vj-meta">
+                <span><b>0</b> of 0 sent</span>
+                <span>Next batch in <b>—</b></span>
+              </div>
+            </div>
+            <div class="vj-stats">
+              <span><b>0</b> accounts</span>
+              <span><b>0</b> accepted</span>
+              <span>· <b>Idle</b></span>
+            </div>
+          </div>
+          <div class="vj-controls">
+            <button class="btn-pill">Open</button>
+          </div>
+        </section>
+
+        <section class="section-band is-queue">
+          <div class="section-rail">
+            <h2>Up Next <small>0 waiting</small></h2>
+            <div class="section-rail-line"></div>
+            <button class="section-rail-action">+ Add to queue</button>
+          </div>
+          <div role="grid"></div>
+        </section>
+
+        <section class="section-band is-past">
+          <div class="section-rail">
+            <h2>Past <small>12 campaigns</small></h2>
+            <div class="section-rail-line"></div>
+            <button class="section-rail-action">Show all</button>
+          </div>
+          <div class="past-frame">
+            <div class="past-collapsed past-header" role="button" tabindex="0">
+              <div class="pc-count">12<span class="pc-lbl">past</span></div>
+              <div class="pc-summary">DACH_FINANCE_III · UK_MKTG_II · NORDICS_OPS_I …</div>
+              <span class="past-chev" aria-hidden="true"></span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function setTheme(mode) {
+      var light = mode === 'light';
+      document.body.classList.toggle('theme-light', light);
+      document.body.classList.toggle('theme-dark', !light);
+      var d = document.getElementById('theme-btn-dark'), l = document.getElementById('theme-btn-light');
+      if (d) d.classList.toggle('active', !light); if (l) l.classList.toggle('active', light);
+    }
+  </script>
+</body>
+</html>

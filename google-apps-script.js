@@ -350,6 +350,21 @@ function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
 
+    // Team Connections — Drive folder sync. These read a Drive folder, not a
+    // spreadsheet, so they're routed BEFORE the sheetId guard below.
+    // Requires the advanced "Drive" service enabled in the Apps Script editor.
+    if (data.action === 'listConnections') {
+      return handleListConnections(data);
+    }
+    if (data.action === 'getConnection') {
+      return handleGetConnection(data);
+    }
+    // Team Connections — write a warm-reach lead list to a NEW spreadsheet and
+    // return its URL. Creates its own spreadsheet, so no sheetId is required.
+    if (data.action === 'createLeadTab') {
+      return handleCreateLeadTab(data);
+    }
+
     // Validate required field
     if (!data.sheetId) {
       return jsonResponse({ error: 'sheetId is required' });
@@ -444,6 +459,96 @@ function handleListTabs(spreadsheet) {
     return jsonResponse({ ok: true, tabs: tabs });
   } catch (err) {
     return jsonResponse({ ok: false, error: err.message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Team Connections — Drive folder sync (warm-reach)
+// Requires the advanced "Drive" service enabled: Apps Script editor →
+// Services (+) → Drive API → Add. Uses Drive API v3 (files[], name, modifiedTime).
+// supportsAllDrives + includeItemsFromAllDrives so it reads Shared Drive folders.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function handleListConnections(data) {
+  try {
+    var folderId = data.folderId;
+    if (!folderId) return jsonResponse({ error: 'folderId is required', errorCode: 'BAD_REQUEST' });
+    var files = [];
+    var pageToken = null;
+    do {
+      var resp = Drive.Files.list({
+        q: "'" + folderId + "' in parents and trashed = false",
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        corpora: 'allDrives',
+        pageSize: 1000,
+        fields: 'nextPageToken, files(id, name, modifiedTime, size, mimeType)',
+        pageToken: pageToken || undefined
+      });
+      var list = resp.files || resp.items || [];
+      for (var i = 0; i < list.length; i++) {
+        var f = list[i];
+        var name = f.name || f.title || '';
+        if (!/\.csv$/i.test(name)) continue;
+        files.push({
+          id: f.id,
+          name: name,
+          modifiedTime: f.modifiedTime || f.modifiedDate || '',
+          size: f.size || f.fileSize || ''
+        });
+      }
+      pageToken = resp.nextPageToken;
+    } while (pageToken);
+    return jsonResponse({ ok: true, count: files.length, files: files });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.message, stack: err.stack });
+  }
+}
+
+function handleGetConnection(data) {
+  try {
+    var id = data.id;
+    if (!id) return jsonResponse({ error: 'id is required', errorCode: 'BAD_REQUEST' });
+    // DriveApp.getFileById works for Shared Drive files the deployer can access.
+    var blob = DriveApp.getFileById(id).getBlob();
+    var base64 = Utilities.base64Encode(blob.getBytes());
+    return jsonResponse({ ok: true, id: id, base64: base64 });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.message, stack: err.stack });
+  }
+}
+
+// Team Connections — write a warm-reach lead list to a brand-new Google Sheet
+// and return its URL. Used by the campaign "Build & attach a warm list" flow.
+// Creates a standalone spreadsheet owned by the deployer (no central-workbook id
+// needed); header row bold + frozen. Returns { url, gid, tabName, count }.
+function handleCreateLeadTab(data) {
+  try {
+    var name = (data.name || 'Warm ICB list').toString().substring(0, 95);
+    var header = data.header || [];
+    var rows = data.rows || [];
+    var ss = SpreadsheetApp.create(name);
+    var sheet = ss.getSheets()[0];
+    sheet.setName('Leads');
+    var all = (header.length ? [header] : []).concat(rows);
+    if (all.length && all[0] && all[0].length) {
+      sheet.getRange(1, 1, all.length, all[0].length).setValues(all);
+      if (header.length) {
+        sheet.getRange(1, 1, 1, header.length).setFontWeight('bold');
+        sheet.setFrozenRows(1);
+      }
+    }
+    var gid = sheet.getSheetId();
+    return jsonResponse({
+      ok: true,
+      url: ss.getUrl() + '#gid=' + gid,
+      gid: gid,
+      tabName: 'Leads',
+      spreadsheetId: ss.getId(),
+      count: rows.length
+    });
+  } catch (err) {
+    return jsonResponse({ ok: false, error: err.message, stack: err.stack });
   }
 }
 

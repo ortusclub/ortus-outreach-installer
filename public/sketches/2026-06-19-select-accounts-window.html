@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3. Select GoLogin Accounts — full window overhaul</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    body { background: var(--bg); }
+    .page { max-width: 1500px; margin: 0 auto; padding: 28px 30px 90px; }
+
+    /* section heading like the app */
+    .sechead { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.03em; color: var(--ink); display:flex; align-items:center; gap:12px; margin: 0 0 18px; }
+    .sechead .car { color: var(--gold); font-size: 1rem; }
+
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; box-shadow: var(--card-shadow); }
+
+    /* ── summary stat bar ── */
+    .sum { display:grid; grid-template-columns: 1fr 1fr 1fr 1.5fr; padding: 18px 8px; margin-bottom: 4px; }
+    .sum > *:not(:first-child){ border-left:1px solid var(--hairline-soft); }
+    .stat { padding: 4px 22px; display:flex; flex-direction:column; gap:7px; cursor:pointer; border-radius:10px; }
+    .stat.on { background: var(--gold-tint-bg); border:1.5px solid var(--gold); padding:2.5px 20.5px; }
+    .stat .l { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--gray); font-weight:600; }
+    .stat.on .l { color: var(--ink); }
+    .stat .n { font-family:var(--display); font-size:2rem; line-height:0.9; color:var(--ink); }
+    .stat.on .n { color: var(--gold); }
+    .stat .d { font-family:var(--mono); font-size:0.56rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--gray); }
+
+    .matchwrap { padding: 0 30px 22px; }
+    .matchlab { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.2em; text-transform:uppercase; color:var(--gray); display:flex; gap:14px; align-items:center; margin-bottom:6px; }
+    .matchlab a { color: var(--gold); text-decoration:none; font-size:0.56rem; }
+    .matchin { font-family:var(--body); font-size:1.05rem; color:var(--ink); border:none; border-bottom:1px solid var(--hairline); background:transparent; padding:4px 0; width:340px; outline:none; }
+    .hint { font-family:var(--body); font-size:0.78rem; color:var(--gray); margin: 10px 4px 26px; }
+
+    /* ── browse card ── */
+    .bhead { font-family:var(--display); font-size:1.2rem; letter-spacing:0.02em; color:var(--ink); display:flex; align-items:center; gap:12px; padding:16px 24px; border-bottom:1px solid var(--hairline-soft); }
+    .bhead .car { color: var(--gold); font-size:0.85rem; }
+    .btoolbar { display:flex; align-items:center; gap:16px; padding:18px 24px 14px; }
+    .search { flex:1; display:flex; align-items:center; gap:10px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:13px 20px; }
+    .search input { flex:1; border:none; background:transparent; outline:none; font-family:var(--body); font-size:0.9rem; color:var(--ink); }
+    .search .ic { color:var(--gray); }
+    .chips { display:flex; gap:8px; }
+    .chip2 { display:flex; align-items:center; gap:8px; padding:9px 16px; border:1px solid var(--hairline); border-radius:9999px; font-family:var(--mono); font-size:0.62rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--gray); cursor:pointer; }
+    .chip2.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+    .chip2 .ct { opacity:0.6; }
+    .iconbtn { width:38px;height:38px;border-radius:9999px;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;color:var(--gray);cursor:pointer; }
+
+    .subbar { display:flex; align-items:center; justify-content:space-between; padding:6px 24px 14px; }
+    .passline { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--gray); }
+    .passline .ok { color: var(--green); }
+    .bulkbtns { display:flex; gap:10px; }
+    .bulk { padding:11px 22px; border:1px solid var(--hairline); border-radius:9999px; font-family:var(--mono); font-size:0.66rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink); background:transparent; cursor:pointer; }
+
+    .localrow { display:flex; align-items:center; gap:12px; margin:0 24px 16px; padding:14px 18px; border:1px solid var(--hairline); border-radius:10px; }
+    .localrow .nm { font-family:var(--body); font-weight:600; font-size:0.92rem; color:var(--ink); }
+    .localrow .ds { font-family:var(--body); font-size:0.8rem; color:var(--gray); }
+
+    /* ── group + cleaned big tile ── */
+    .grpbar { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--gray); margin:6px 24px 8px; display:flex; align-items:center; gap:9px; }
+    .grpbar b{color:var(--ink);} .grpbar .ln{flex:1;height:1px;background:var(--hairline-soft);}
+    .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(310px, 1fr)); gap:8px; padding:0 24px 22px; }
+
+    .jt { display:flex; align-items:stretch; min-height:62px; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); overflow:hidden; cursor:pointer; text-transform:none; letter-spacing:normal; }
+    .jt:hover { background:var(--card-bg-hover); }
+    .jt.sel { border-color:var(--ink); background:var(--card-bg-hover); }
+    .jt.muted { opacity:0.5; }
+    .jt-stat { width:100px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; padding:8px 6px; text-align:center; }
+    .s-free{background:rgba(63,185,80,0.10);} .s-inuse{background:rgba(247,190,104,0.13);} .s-assigned{background:rgba(58,110,165,0.12);} .s-stop{background:rgba(248,81,73,0.10);}
+    .jt-dot{width:8px;height:8px;border-radius:50%;}
+    .s-free .jt-dot{background:var(--green);} .s-inuse .jt-dot{background:var(--gold);} .s-assigned .jt-dot{background:var(--blue);} .s-stop .jt-dot{background:var(--red);}
+    .jt-word{font-family:var(--display);font-size:1.02rem;letter-spacing:0.06em;line-height:1;}
+    .s-free .jt-word{color:var(--green);} .s-inuse .jt-word{color:var(--gold);} .s-assigned .jt-word{color:var(--blue);} .s-stop .jt-word{color:var(--red);}
+    .jt-det{flex:1;min-width:0;padding:10px 14px;display:flex;flex-direction:column;justify-content:center;gap:2px;}
+    .jt-top{display:flex;align-items:center;gap:10px;min-width:0;}
+    .jt-top input{flex:none;margin:0;}
+    .jt-email{font-family:var(--body);font-size:0.85rem;font-weight:500;color:var(--ink);text-transform:none;letter-spacing:normal;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .jt-sub{font-family:var(--body);font-size:0.72rem;color:var(--gray);text-transform:none;letter-spacing:normal;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:28px;}
+    .jt-sub b{color:var(--ink);font-weight:600;}
+    .footer { font-family:var(--mono); font-size:0.66rem; color:var(--gray); padding:0 24px; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="page">
+    <div class="sechead"><span class="car">▾</span> 3. Select GoLogin Accounts</div>
+
+    <!-- summary card -->
+    <div class="card">
+      <div class="sum">
+        <div class="stat"><div class="l">Assigned to me</div><div class="n">1</div><div class="d">Profiles where assignee matches my identifier</div></div>
+        <div class="stat"><div class="l">Unassigned pool</div><div class="n">116</div><div class="d">Shared</div></div>
+        <div class="stat"><div class="l">Available now</div><div class="n">100</div><div class="d">Ready to use — not restricted, has free credits</div></div>
+        <div class="stat on"><div class="l">All</div><div class="n">415</div><div class="d">Show every profile</div></div>
+      </div>
+      <div class="matchwrap">
+        <div class="matchlab">Match name <a href="#">Override</a></div>
+        <input class="matchin" value="Antonio" readonly>
+      </div>
+    </div>
+    <div class="hint">Match name is your ID in the lead sheet — it links you to your assigned LinkedIn accounts. Click Override to edit.</div>
+
+    <!-- browse card -->
+    <div class="card">
+      <div class="bhead"><span class="car">▾</span> Browse accounts</div>
+      <div class="btoolbar">
+        <div class="search"><span class="ic">⌕</span><input placeholder="Search by name or email…"></div>
+        <div class="chips">
+          <div class="chip2 on">All</div>
+          <div class="chip2">Available <span class="ct">100</span></div>
+          <div class="chip2">In use <span class="ct">287</span></div>
+          <div class="chip2">Selected <span class="ct">0</span></div>
+        </div>
+        <div class="iconbtn">⟳</div>
+        <div class="iconbtn">✓</div>
+      </div>
+      <div class="subbar">
+        <div class="passline">OP · InMail · Sales Nav <span class="ok">— passover active, closes in 12d</span> &nbsp;&nbsp; CC <span class="ok">— passover active, closes in 3d</span></div>
+        <div class="bulkbtns"><button class="bulk">Select all visible</button><button class="bulk">Deselect all</button></div>
+      </div>
+      <div class="localrow"><input type="checkbox"><span class="nm">Local Browser</span><span class="ds">· Your system Chrome. If this is your first time, you'll log in to LinkedIn when it pops up.</span></div>
+
+      <!-- AVAILABLE -->
+      <div class="grpbar"><b>Available</b> · ready to use<span class="ln"></span></div>
+      <div class="grid">
+        <label class="jt sel"><div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox" checked><span class="jt-email">neil@ortus.solutions</span></div><div class="jt-sub">Anyone can use.</div></div></label>
+        <label class="jt"><div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">kobwimana@ortusclub.com</span></div><div class="jt-sub">Anyone can use.</div></div></label>
+        <label class="jt"><div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">autridah@ortusclub.com</span></div><div class="jt-sub">Anyone can use.</div></div></label>
+        <label class="jt"><div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">celasoie@ortusclub.com</span></div><div class="jt-sub">Anyone can use.</div></div></label>
+      </div>
+
+      <!-- ASSIGNED -->
+      <div class="grpbar"><b>Assigned to others</b> · leave for them<span class="ln"></span></div>
+      <div class="grid">
+        <label class="jt"><div class="jt-stat s-assigned"><span class="jt-dot"></span><span class="jt-word">ASSIGNED</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">rockey.sheikh@ortus.solutions</span></div><div class="jt-sub">Assigned to <b>antigona</b>.</div></div></label>
+        <label class="jt"><div class="jt-stat s-assigned"><span class="jt-dot"></span><span class="jt-word">ASSIGNED</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">nathaliev@ortus.solutions</span></div><div class="jt-sub">Assigned to <b>bleron</b>.</div></div></label>
+      </div>
+
+      <!-- IN USE -->
+      <div class="grpbar"><b>In use</b> · taken this week<span class="ln"></span></div>
+      <div class="grid">
+        <label class="jt muted"><div class="jt-stat s-inuse"><span class="jt-dot"></span><span class="jt-word">IN USE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">angelom@ortusclub.com</span></div><div class="jt-sub">In use by <b>eljesa</b>.</div></div></label>
+        <label class="jt muted"><div class="jt-stat s-inuse"><span class="jt-dot"></span><span class="jt-word">IN USE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">roman@ortus.live</span></div><div class="jt-sub">In use by <b>janne</b>.</div></div></label>
+        <label class="jt muted"><div class="jt-stat s-inuse"><span class="jt-dot"></span><span class="jt-word">IN USE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">mefanier@ortus.solutions</span></div><div class="jt-sub">In use by <b>fluturai</b>.</div></div></label>
+        <label class="jt muted"><div class="jt-stat s-inuse"><span class="jt-dot"></span><span class="jt-word">IN USE</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">camillec@ortus.solutions</span></div><div class="jt-sub">In use by <b>janne</b>.</div></div></label>
+      </div>
+
+      <!-- RESTRICTED -->
+      <div class="grpbar"><b>Restricted</b> · can't be used<span class="ln"></span></div>
+      <div class="grid">
+        <label class="jt muted"><div class="jt-stat s-stop"><span class="jt-dot"></span><span class="jt-word">BLOCKED</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox" disabled><span class="jt-email">micha.cunanan@klabber.co</span></div><div class="jt-sub">Restricted by LinkedIn.</div></div></label>
+        <label class="jt muted"><div class="jt-stat s-stop"><span class="jt-dot"></span><span class="jt-word">BLOCKED</span></div><div class="jt-det"><div class="jt-top"><input type="checkbox" disabled><span class="jt-email">jhopet.maquirang@klabber.co</span></div><div class="jt-sub">Restricted by LinkedIn.</div></div></label>
+      </div>
+      <div class="footer">0 selected / 415 total</div>
+    </div>
+  </div>
+</body>
+</html>

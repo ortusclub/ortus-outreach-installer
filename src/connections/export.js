@@ -7,14 +7,19 @@ function csvCell(v) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// One lead row in the HEADER column order, every cell coerced to a string.
+// Shared by writeLeadCsv (CSV download) and the workbook-tab write (setValues
+// needs rectangular string data — no undefineds).
+export function leadRow({ contact: c, warmVia }, colleagues = {}) {
+  const connector = warmVia[0];
+  const meta = connector ? colleagues[connector] || {} : {};
+  return [c.firstname, c.lastname, c.linkedinbio, c.company, c.jobtitle, c.country,
+    meta.name || connector || '', meta.linkedinUrl || '', ''].map((v) => (v == null ? '' : String(v)));
+}
+
 export function writeLeadCsv(rows, outPath, colleagues = {}) {
   const lines = [HEADER.join(',')];
-  for (const { contact: c, warmVia } of rows) {
-    const connector = warmVia[0];
-    const meta = connector ? colleagues[connector] || {} : {};
-    lines.push([c.firstname, c.lastname, c.linkedinbio, c.company, c.jobtitle, c.country,
-      meta.name || connector || '', meta.linkedinUrl || '', ''].map(csvCell).join(','));
-  }
+  for (const r of rows) lines.push(leadRow(r, colleagues).map(csvCell).join(','));
   fs.writeFileSync(outPath, lines.join('\n') + '\n', 'utf8');
   return outPath;
 }

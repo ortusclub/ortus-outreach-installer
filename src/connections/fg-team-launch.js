@@ -30,8 +30,8 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
       const slot = status.perAccount[i];
       if (ctx.getAbort()) { slot.status = 'skipped'; slot.reason = 'stopped'; status.skipped++; status.doneAccounts++; stamp(`✗ [${pair.account}] Skipped — stopped`); continue; }
       status.currentAccount = pair.account;
-      const { rows, count } = deps.buildTargets(pair, ctx);
-      if (!count) { slot.status = 'skipped'; slot.reason = 'no targets'; status.skipped++; stamp(`✗ [${pair.account}] Skipped — no targets (filtered/budget/already-invited)`); status.doneAccounts++; continue; }
+      const { rows, count, reason } = deps.buildTargets(pair, ctx);
+      if (!count) { const why = reason || 'no targets'; slot.status = 'skipped'; slot.reason = why; status.skipped++; stamp(`✗ [${pair.account}] Skipped — ${why}`); status.doneAccounts++; continue; }
       slot.status = 'running'; status.phase = 'inviting';
       stamp(`🔄 [${pair.account}] Opening profiles & sending follow invites — ${count} target(s)…`);
       let handle = null;

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FG send · C — Pipeline</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .sk-wrap { max-width: 1240px; margin: 0 auto; padding: 28px; }
+    .sk-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+    .sk-badge { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 12px; }
+    .sk-nav a { font-family:var(--mono); font-size:11px; color:var(--gray); text-decoration:none; margin-left:14px; }
+    .sk-nav a:hover, .sk-nav a.on { color:var(--ink); }
+
+    .skC-cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start; }
+    @media (max-width:980px){ .skC-cols{ grid-template-columns:1fr; } }
+    .skC-col { border:1px solid var(--hairline); border-radius:16px; background:var(--card-bg); display:flex; flex-direction:column; min-height:420px; }
+    .skC-head { display:flex; align-items:baseline; gap:8px; padding:16px 16px 10px; border-bottom:1px solid var(--hairline-soft); }
+    .skC-head .t { font-family:var(--display); font-size:1.35rem; letter-spacing:.05em; color:var(--ink); }
+    .skC-head .n { font-family:var(--mono); font-size:11px; color:var(--gray); }
+    .skC-head .step { margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); }
+    .skC-body { padding:8px; overflow-y:auto; flex:1; }
+    .skC-search { width:100%; background:var(--bg-soft); border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:8px 14px; font-family:var(--body); font-size:12.5px; margin:8px; width:calc(100% - 16px); }
+
+    .skC-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; cursor:pointer; transition:background .12s; }
+    .skC-item:hover { background:var(--card-bg-hover); }
+    .skC-item .nm { font-weight:600; color:var(--ink); font-size:13px; }
+    .skC-item .mt { color:var(--gray); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .skC-item .id { min-width:0; flex:1; }
+    .skC-move { flex:none; width:22px; height:22px; border-radius:9999px; border:1px solid var(--hairline); background:none; color:var(--ink); cursor:pointer; font-size:13px; line-height:1; }
+    .skC-move:hover { border-color:var(--gold); color:var(--gold); }
+
+    .skC-st { flex:none; font-family:var(--mono); font-size:9.5px; letter-spacing:.05em; text-transform:uppercase; padding:3px 8px; border-radius:9999px; color:var(--gray); border:1px solid var(--hairline); }
+    .skC-st.opening { color:var(--gold); border-color:var(--gold); animation:skpulse 1s infinite; }
+    .skC-st.invited { color:var(--green); border-color:var(--green); }
+    .skC-st.skipped { color:var(--red); border-color:var(--red); }
+    @keyframes skpulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    .skC-foot { padding:12px 14px; border-top:1px solid var(--hairline-soft); }
+    .skC-meter { height:6px; border-radius:9999px; background:var(--hairline-soft); overflow:hidden; display:flex; margin-bottom:6px; }
+    .skC-meter .used { background:var(--gray); } .skC-meter .add { background:var(--gold); }
+    .skC-mlbl { font-family:var(--mono); font-size:10.5px; color:var(--gray); margin-bottom:10px; }
+    .skC-from { width:100%; background:var(--bg-soft); border:1px solid var(--hairline); color:var(--ink); border-radius:9999px; padding:8px 12px; font-family:var(--body); font-size:12px; margin-bottom:10px; }
+    .skC-run { width:100%; background:var(--gold); color:#1a1300; border:none; border-radius:9999px; padding:12px; font-family:var(--mono); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+    .skC-run:disabled { opacity:.45; cursor:default; }
+    .skC-empty { color:var(--gray); font-size:12px; text-align:center; padding:40px 16px; line-height:1.6; }
+    .skC-sum { font-family:var(--mono); font-size:11px; color:var(--green); padding:12px 14px; border-top:1px solid var(--hairline-soft); }
+  </style>
+</head>
+<body data-dashboard="v3">
+  <div class="sk-wrap">
+    <div class="sk-bar">
+      <span class="sk-badge">Prototype · not wired</span>
+      <span class="sk-nav"><a href="fg-send-A-checklist.html">A · Checklist</a><a href="fg-send-B-cards.html">B · Cards</a><a href="fg-send-C-pipeline.html" class="on">C · Pipeline</a></span>
+    </div>
+
+    <div class="section">
+      <h2>Follower Growth</h2>
+      <p class="fg-lede">A live console for <b id="opname"></b>'s network: pull people from the pool into your invite list, then Run — the right column shows each profile opening and the invite firing, and everything is recorded to the FG sheet.</p>
+
+      <div class="skC-cols">
+        <!-- Pool -->
+        <div class="skC-col">
+          <div class="skC-head"><span class="t">Pool</span><span class="n" id="poolN"></span><span class="step">1 · pick</span></div>
+          <input class="skC-search" type="text" placeholder="Filter…" oninput="filter(this.value)">
+          <div class="skC-body" id="pool"></div>
+        </div>
+        <!-- Invite list -->
+        <div class="skC-col">
+          <div class="skC-head"><span class="t">Invite list</span><span class="n" id="listN">0</span><span class="step">2 · confirm</span></div>
+          <div class="skC-body" id="list"></div>
+          <div class="skC-foot">
+            <div class="skC-meter" id="meter"></div>
+            <div class="skC-mlbl" id="mlbl"></div>
+            <select class="skC-from"><option>From: Local Browser — bea.talusan ✓</option><option>From: GoLogin · Bea</option></select>
+            <button class="skC-run" id="go" onclick="run()" disabled>Open profiles &amp; send</button>
+          </div>
+        </div>
+        <!-- Sending -->
+        <div class="skC-col">
+          <div class="skC-head"><span class="t">Sending</span><span class="n" id="sendN"></span><span class="step">3 · run</span></div>
+          <div class="skC-body" id="send"><div class="skC-empty" id="sendEmpty">Press <b>Run</b> and each person<br>opens &amp; gets invited here, in order.</div></div>
+          <div class="skC-sum" id="sum" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="fg-send-core.js"></script>
+  <script>
+    const S = FG_SAMPLE, X = FGX;
+    const list = new Set();
+    let visible = S.candidates.map((c) => c.id);
+    let sending = false;
+    document.getElementById('opname').textContent = S.operator;
+    const meta = (c) => `${X.esc(c.title)} · ${X.esc(c.company)} · ${X.esc(c.fn)}`;
+
+    function renderPool() {
+      const pool = S.candidates.filter((c) => visible.includes(c.id) && !list.has(c.id));
+      document.getElementById('poolN').textContent = `${pool.length} eligible`;
+      document.getElementById('pool').innerHTML = pool.map((c) => `
+        <div class="skC-item" onclick="add('${c.id}')">
+          <span class="id"><span class="nm">${X.esc(c.name)}</span><div class="mt">${meta(c)}</div></span>
+          <button class="skC-move" title="Add to invite list" onclick="event.stopPropagation();add('${c.id}')">+</button>
+        </div>`).join('');
+    }
+    function renderList() {
+      const chosen = S.candidates.filter((c) => list.has(c.id));
+      document.getElementById('listN').textContent = chosen.length;
+      document.getElementById('list').innerHTML = chosen.length ? chosen.map((c) => `
+        <div class="skC-item">
+          <span class="id"><span class="nm">${X.esc(c.name)}</span><div class="mt">${meta(c)}</div></span>
+          <button class="skC-move" title="Remove" onclick="remove('${c.id}')" ${sending ? 'disabled' : ''}>−</button>
+        </div>`).join('') : '<div class="skC-empty">Click people in the pool<br>to build your list.</div>';
+      const used = S.creditsUsed, add = chosen.length, total = S.creditsTotal;
+      document.getElementById('meter').innerHTML = `<span class="used" style="width:${used / total * 100}%"></span><span class="add" style="width:${Math.min(add, total - used) / total * 100}%"></span>`;
+      document.getElementById('mlbl').textContent = `${used} used · +${add} → ${Math.max(0, total - used - add)} of ${total} credits left`;
+      const go = document.getElementById('go');
+      go.disabled = sending || !chosen.length || used + add > total;
+      go.textContent = used + add > total ? 'Over credit limit' : 'Open profiles & send';
+    }
+    function add(id) { if (sending) return; list.add(id); renderPool(); renderList(); }
+    function remove(id) { if (sending) return; list.delete(id); renderPool(); renderList(); }
+    function filter(q) { q = q.trim().toLowerCase(); visible = S.candidates.filter((c) => !q || (c.name + c.company + c.title + c.geo).toLowerCase().includes(q)).map((c) => c.id); renderPool(); }
+    function run() {
+      const chosen = S.candidates.filter((c) => list.has(c.id)); if (!chosen.length) return;
+      sending = true; renderList();
+      document.getElementById('go').textContent = 'Sending…';
+      document.getElementById('sendEmpty').style.display = 'none';
+      document.getElementById('send').innerHTML = chosen.map((c) => `
+        <div class="skC-item"><span class="id"><span class="nm">${X.esc(c.name)}</span><div class="mt">${X.esc(c.company)}</div></span>
+        <span class="skC-st" id="s-${c.id}">queued</span></div>`).join('');
+      let invited = 0;
+      X.simulateSend(chosen, (id, st) => {
+        const el = document.getElementById('s-' + id); if (!el) return;
+        el.className = `skC-st ${st}`; el.textContent = st === 'opening' ? 'opening…' : st;
+        if (st === 'invited') invited++;
+        document.getElementById('sendN').textContent = `${invited} invited`;
+      }, () => {
+        const sum = document.getElementById('sum'); sum.style.display = 'block';
+        sum.textContent = `✓ ${invited} invited · ${chosen.length - invited} skipped · auto-recorded to FG sheet`;
+        document.getElementById('go').textContent = 'Done';
+      });
+    }
+    renderPool(); renderList();
+  </script>
+</body>
+</html>

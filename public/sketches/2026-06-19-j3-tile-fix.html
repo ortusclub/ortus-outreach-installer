@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J3 tile — fix the ugliness</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 24px 90px; }
+    .sec { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.04em; color: var(--ink); margin: 30px 0 4px; }
+    .lead { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.55; margin: 0 0 16px; max-width: 820px; }
+    .lead b { color: var(--ink); }
+    .badtag { color: var(--red); }
+
+    /* ════ FIXED tile ════ */
+    .fxgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:8px; }
+    .fxtile { display:flex; align-items:stretch; min-height:60px; border:1px solid var(--hairline); border-radius:10px; background:var(--card-bg); overflow:hidden; cursor:pointer; }
+    .fxtile:hover { background:var(--card-bg-hover); }
+    .fxtile.sel { border-color:var(--ink); }
+    .fxtile.dim { opacity:0.55; }
+    .fxstat { width:90px; flex:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:8px 6px; text-align:center; }
+    .fxstat.s-free { background:rgba(63,185,80,0.10); }
+    .fxstat.s-assigned { background:rgba(58,110,165,0.12); }
+    .fxstat.s-inuse { background:rgba(247,190,104,0.13); }
+    .fxstat.s-stop { background:rgba(248,81,73,0.10); }
+    .fxdot { width:9px; height:9px; border-radius:9999px; }
+    .fxword { font-family:var(--display); font-size:1.05rem; letter-spacing:0.07em; line-height:1; }
+    .s-free .fxdot{background:var(--green);} .s-free .fxword{color:var(--green);}
+    .s-assigned .fxdot{background:var(--blue);} .s-assigned .fxword{color:var(--blue);}
+    .s-inuse .fxdot{background:var(--gold);} .s-inuse .fxword{color:var(--gold);}
+    .s-stop .fxdot{background:var(--red);} .s-stop .fxword{color:var(--red);}
+    .fxdet { flex:1; min-width:0; padding:9px 13px; display:flex; flex-direction:column; justify-content:center; gap:3px; }
+    .fxtop { display:flex; align-items:center; gap:9px; min-width:0; }
+    .fxtop input { margin:0; flex:none; }
+    .fxemail { font-family:var(--body); font-size:0.84rem; font-weight:500; color:var(--ink); text-transform:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+    .fxsub { font-family:var(--body); font-size:0.72rem; color:var(--gray); text-transform:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:27px; }
+    .fxsub b { color:var(--ink); font-weight:600; }
+  </style>
+</head>
+<body class="theme-light" data-dashboard="v3">
+  <div class="wrap">
+
+    <!-- ════════ AS-IS (real app CSS) ════════ -->
+    <div class="sec">As-is <span class="badtag">— what's live now</span></div>
+    <p class="lead">Rendered with the real <code>/css/style.css</code> J3 classes + the real messy data. Problems: <b>ragged heights</b> (the in-use/blocked verdicts wrap to 4 lines), the <b>"who" is a raw dump</b> (<code>ivy@ortusclub.com, 2026-06-17 07:05, In Use</code>), the verdict <b>repeats</b> the status word, and it reads <b>shouty</b>.</p>
+    <div class="browse-card" style="border:1px solid var(--card-border);">
+      <div class="collapsible-body browse-card-body">
+        <div class="profile-grid" style="max-height:none;">
+          <label class="profile-item j3 in-use">
+            <div class="j3-status st-inuse"><span class="j3-dot dot-inuse"></span><span class="j3-word w-inuse">IN USE</span><span class="j3-when">ivy@ortusclub.com, 2026-06-17 07:05, In Use · right now</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">aiza.chua@ortusclub.com</span></div><div class="j3-verdict"><b>In use by ivy@ortusclub.com, 2026-06-17 07:05, In Use</b> right now — pick another.</div></div>
+          </label>
+          <label class="profile-item j3 free">
+            <div class="j3-status st-free"><span class="j3-dot dot-free"></span><span class="j3-word w-free">FREE</span><span class="j3-when">Anyone can use</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">verina@ortusclub.com</span></div><div class="j3-verdict"><b>Free to use.</b></div></div>
+          </label>
+          <label class="profile-item j3 blocked">
+            <div class="j3-status st-stop"><span class="j3-dot dot-stop"></span><span class="j3-word w-stop">BLOCKED</span><span class="j3-when">Restricted</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox" disabled><span class="j3-email">micha.cunanan@klabber.co</span></div><div class="j3-verdict"><b>Restricted by LinkedIn</b> — can't be used.</div></div>
+          </label>
+          <label class="profile-item j3 free">
+            <div class="j3-status st-free"><span class="j3-dot dot-free"></span><span class="j3-word w-free">FREE</span><span class="j3-when">Anyone can use</span></div>
+            <div class="j3-detail"><div class="j3-top"><input type="checkbox"><span class="j3-email">daniel.ogeto@ortusclub.com</span></div><div class="j3-verdict"><b>Free to use.</b></div></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ FIXED ════════ -->
+    <div class="sec">Fixed</div>
+    <p class="lead">Uniform height (one email line + one detail line), <b>cleaned "who"</b> (just the operator, no timestamp/status), no redundant verdict, smaller status panel, proper sentence case. Same states &amp; colours, far calmer.</p>
+    <div class="fxgrid">
+      <label class="fxtile sel">
+        <div class="fxstat s-free"><span class="fxdot"></span><span class="fxword">FREE</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox" checked><span class="fxemail">verina@ortusclub.com</span></div><div class="fxsub">Anyone can use it.</div></div>
+      </label>
+      <label class="fxtile">
+        <div class="fxstat s-inuse"><span class="fxdot"></span><span class="fxword">IN USE</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="fxemail">aiza.chua@ortusclub.com</span></div><div class="fxsub">In use by <b>ivy</b> right now — pick another.</div></div>
+      </label>
+      <label class="fxtile">
+        <div class="fxstat s-assigned"><span class="fxdot"></span><span class="fxword">ASSIGNED</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="fxemail">jeremiah@ortusclub.com</span></div><div class="fxsub">Assigned to <b>Cathy</b> · frees in 3d.</div></div>
+      </label>
+      <label class="fxtile dim">
+        <div class="fxstat s-stop"><span class="fxdot"></span><span class="fxword">BLOCKED</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox" disabled><span class="fxemail">micha.cunanan@klabber.co</span></div><div class="fxsub">Restricted by LinkedIn.</div></div>
+      </label>
+      <label class="fxtile">
+        <div class="fxstat s-free"><span class="fxdot"></span><span class="fxword">FREE</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="fxemail">daniel.ogeto@ortusclub.com</span></div><div class="fxsub">Anyone can use it.</div></div>
+      </label>
+      <label class="fxtile">
+        <div class="fxstat s-free"><span class="fxdot"></span><span class="fxword">FREE</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="fxemail">profile 193</span></div><div class="fxsub">Anyone can use it.</div></div>
+      </label>
+      <label class="fxtile">
+        <div class="fxstat s-inuse"><span class="fxdot"></span><span class="fxword">IN USE</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox"><span class="fxemail">janne@ortusclub.com</span></div><div class="fxsub">In use by <b>mae</b> right now — pick another.</div></div>
+      </label>
+      <label class="fxtile dim">
+        <div class="fxstat s-stop"><span class="fxdot"></span><span class="fxword">BLOCKED</span></div>
+        <div class="fxdet"><div class="fxtop"><input type="checkbox" disabled><span class="fxemail">jhopet.maquirang@klabber.co</span></div><div class="fxsub">Restricted by LinkedIn.</div></div>
+      </label>
+    </div>
+
+    <p class="lead" style="margin-top:24px;">Real tokens. "who" cleaned to the part before the first comma (and for in-use, just the local part of the email — e.g. <code>ivy</code>). Heights equal because each tile is exactly email + one detail line.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connections — build an ICB lead list (v2)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Minimal additions — shell, sidebar, page-header, section, h2 are the app's real chrome. */
+    .cx-stack { display: flex; flex-direction: column; gap: 15px; }
+    .cx-cf .cx-lbl { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+    .cx-cf label { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
+    .cx-cf .save { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); background: none; border: none; cursor: pointer; }
+    .cx-box { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; background: var(--input-bg, var(--bg-soft)); border: 1px solid var(--card-border); border-radius: 8px; padding: 9px 10px; min-height: 46px; }
+    .cx-chip { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.7rem; color: var(--ink); border: 1px solid var(--card-border); border-radius: 9999px; padding: 5px 11px; }
+    .cx-chip .lvl { color: var(--gray); font-size: 0.5rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .cx-chip .x { color: var(--gray); cursor: pointer; line-height: 1; font-size: 0.85rem; }
+    .cx-in { flex: 1; min-width: 150px; border: none; background: none; outline: none; font-family: var(--mono); font-size: 0.78rem; color: var(--ink); padding: 4px; }
+    .cx-in::placeholder { color: var(--gray); }
+    .cx-go { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; background: var(--gold); color: #1a1a1a; border: none; border-radius: 8px; padding: 13px 22px; font-weight: 600; cursor: pointer; }
+    .cx-logic { font-family: var(--mono); font-size: 0.54rem; color: var(--gray); }
+    .cx-source { font-family: var(--mono); font-size: 0.56rem; color: var(--gray); margin: 12px 2px 0; line-height: 1.6; }
+    .cx-source b { color: var(--ink); }
+    .cx-dot { display: inline-block; width: 7px; height: 7px; border-radius: 9999px; vertical-align: middle; margin-right: 5px; }
+    .cx-dot.csv { background: var(--blue); } .cx-dot.live { background: var(--green); }
+
+    .cx-bar { display: flex; align-items: center; gap: 12px; margin: 26px 0 6px; }
+    .cx-bar .selall { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.62rem; color: var(--ink); cursor: pointer; }
+    .cx-bar .count { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); } .cx-bar .count b { color: var(--green); }
+    .cx-toggle { margin-left: auto; display: flex; border: 1px solid var(--card-border); border-radius: 9999px; overflow: hidden; }
+    .cx-toggle button { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); background: none; border: none; padding: 7px 14px; cursor: pointer; }
+    .cx-toggle button.active { background: var(--ink); color: var(--bg, #0e0e0e); }
+    .cx-guard { font-family: var(--mono); font-size: 0.56rem; color: var(--gray); margin: 0 2px 6px; } .cx-guard b { color: var(--ink); }
+
+    .cx-row { display: grid; grid-template-columns: 22px minmax(0,1fr) auto; gap: 16px; align-items: center; padding: 14px 4px; border-bottom: 1px solid var(--hairline-soft); }
+    .cx-row:last-child { border-bottom: none; }
+    .cx-row.dnc { opacity: 0.6; }
+    .cx-row input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--gold); }
+    .cx-name { font-family: var(--display); font-size: 1.0rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1.1; }
+    .cx-name .tag { font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.08em; text-transform: uppercase; vertical-align: middle; margin-left: 9px; padding: 2px 8px; border-radius: 9999px; }
+    .cx-name .tag.dnc { color: #d2654f; border: 1px solid rgba(210,101,79,0.5); }
+    .cx-role { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); margin-top: 5px; } .cx-role b { color: var(--ink); font-weight: 500; }
+    .cx-loc { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 4px; }
+    .cx-warm { font-family: var(--mono); font-size: 0.62rem; text-align: right; line-height: 1.5; }
+    .cx-warm .lead { color: var(--green); font-weight: 500; } .cx-warm .lead.multi { color: var(--ink); }
+    .cx-warm .deg { color: var(--gray); font-size: 0.54rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .cx-warm.cold .lead { color: var(--gray); }
+    .cx-hs { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray); text-decoration: none; display: inline-block; margin-top: 5px; }
+
+    /* the export action bar — the new primary action */
+    .cx-export { display: flex; align-items: center; gap: 16px; margin: 18px 0 4px; padding: 16px; border: 1px solid var(--card-border); border-radius: 10px; background: var(--bg-soft); }
+    .cx-export .lbl { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); } .cx-export .lbl b { color: var(--green); }
+    .cx-export .sub { font-family: var(--mono); font-size: 0.54rem; color: var(--gray); margin-top: 3px; }
+    .cx-export .spacer { margin-left: auto; }
+    .cx-export .go { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; background: var(--gold); color: #1a1a1a; border: none; border-radius: 8px; padding: 13px 20px; font-weight: 600; cursor: pointer; }
+
+    /* Sheets-realistic export preview (light, like an actual Google Sheet) */
+    .gs-wrap { margin-top: 12px; }
+    .gs-title { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-bottom: 8px; } .gs-title b { color: var(--ink); }
+    .gs { background: #ffffff; border: 1px solid #c4c7c5; border-radius: 4px; overflow: hidden; font-family: Arial, 'Helvetica Neue', sans-serif; }
+    .gs table { width: 100%; border-collapse: collapse; }
+    .gs th, .gs td { border: 1px solid #d9dcdf; padding: 6px 9px; font-size: 11px; color: #202124; text-align: left; white-space: nowrap; }
+    .gs th { background: #f1f3f4; font-weight: 600; color: #5f6368; }
+    .gs td.url { color: #1a73e8; } .gs td.empty { background: #fafafa; color: #bdc1c6; }
+    .gs td.primary { background: #e8f0fe; color: #1a3a6b; font-weight: 600; }
+    .gs-note { font-family: var(--mono); font-size: 0.56rem; color: var(--gray); margin-top: 10px; line-height: 1.7; } .gs-note b { color: var(--ink); }
+    .gs-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .gs-btn { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.07em; text-transform: uppercase; border-radius: 8px; padding: 11px 16px; cursor: pointer; }
+    .gs-btn.gold { background: var(--gold); color: #1a1a1a; border: none; font-weight: 600; } .gs-btn.ghost { background: none; color: var(--ink); border: 1px solid var(--card-border); }
+
+    .cx-foot { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin: 28px 0 0; border-top: 1px solid var(--hairline); padding-top: 14px; line-height: 1.8; } .cx-foot b { color: var(--ink); }
+    .nav-item.cx-on { color: var(--ink); } .nav-item.cx-on .nav-num { color: var(--gold); }
+  </style>
+</head>
+<body class="theme-dark" data-dashboard="v3">
+  <div class="app">
+
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+        <div class="sidebar-sub">LinkedIn · v2.112.44</div>
+      </div>
+      <nav class="sidebar-nav">
+        <button type="button" class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+        <div class="nav-section-label">Campaign</div>
+        <button type="button" class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+        <button type="button" class="nav-item"><span class="nav-num">II.</span>Data</button>
+        <button type="button" class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+        <button type="button" class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+        <button type="button" class="nav-item"><span class="nav-num">V.</span>Launch</button>
+        <button type="button" class="nav-item">Live Status</button>
+        <div class="nav-section-label">Team</div>
+        <button type="button" class="nav-item cx-on"><span class="nav-num">◆</span>Connections</button>
+        <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item">Open log</button>
+        <div class="nav-section-label">Help</div>
+        <button type="button" class="nav-item nav-item-help"><span class="nav-num">?</span>Help</button>
+      </nav>
+      <div class="theme-toggle-group">
+        <div class="theme-toggle-label">Theme</div>
+        <div class="theme-toggle">
+          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
+          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <button type="button" class="operator-chip"><span class="operator-chip-label">Operating as</span><strong>ortus@ortusclub.com</strong></button>
+        <div class="user-chip"><strong>info@ortus.solutions</strong></div>
+        <button type="button" class="btn btn-sm sidebar-signout">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="container">
+
+        <div class="page-header">
+          <div class="page-header-title">
+            <div class="greeting-wordmark">Connections</div>
+            <div class="greeting-subtitle">Build a warm ICB lead list <small style="margin-left:12px;color:var(--gray)">brainstorm mockup · illustrative data</small></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>1 · Find people</h2>
+
+          <div class="cx-stack">
+            <div class="cx-cf">
+              <div class="cx-lbl"><label>Geography — country, region or city</label><button class="save">＋ save as list</button></div>
+              <div class="cx-box">
+                <span class="cx-chip">United Kingdom <span class="lvl">country</span> <span class="x">×</span></span>
+                <span class="cx-chip">Ireland <span class="lvl">country</span> <span class="x">×</span></span>
+                <span class="cx-chip">Bavaria <span class="lvl">region</span> <span class="x">×</span></span>
+                <span class="cx-chip">London <span class="lvl">city</span> <span class="x">×</span></span>
+                <input class="cx-in" placeholder="add a country, region or city…" />
+              </div>
+            </div>
+            <div class="cx-cf">
+              <div class="cx-lbl"><label>Job titles</label><button class="save">＋ save as list</button></div>
+              <div class="cx-box">
+                <span class="cx-chip">VP Marketing <span class="x">×</span></span>
+                <span class="cx-chip">Director of Marketing <span class="x">×</span></span>
+                <span class="cx-chip">Head of Marketing <span class="x">×</span></span>
+                <span class="cx-chip">CMO <span class="x">×</span></span>
+                <span class="cx-chip">Marketing Manager <span class="x">×</span></span>
+                <input class="cx-in" placeholder="add a title…" />
+              </div>
+            </div>
+            <div class="cx-cf">
+              <div class="cx-lbl"><label>Companies <span style="text-transform:none;letter-spacing:0;color:var(--gray)">(optional)</span></label><button class="save">＋ save as list</button></div>
+              <div class="cx-box">
+                <span class="cx-chip">Salesforce <span class="x">×</span></span>
+                <span class="cx-chip">Schneider Electric <span class="x">×</span></span>
+                <span class="cx-chip">SAP <span class="x">×</span></span>
+                <input class="cx-in" placeholder="add a company…" />
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <button class="cx-go">Find warm reach</button>
+              <span class="cx-logic">Any value within a field · all three fields combined (AND)</span>
+            </div>
+          </div>
+
+          <p class="cx-source">
+            Searching <b>HubSpot</b> (Job Title · Company Name · Country/Region/City), joined to <b>18 colleagues' LinkedIn networks</b>
+            on <b>LinkedIn Membership ID / URL</b>. &nbsp; <span class="cx-dot csv"></span>network export &nbsp; <span class="cx-dot live"></span>freshly detected.
+          </p>
+        </div>
+
+        <div class="section">
+          <h2>2 · Pick who goes on the list</h2>
+          <div class="cx-bar">
+            <label class="selall"><input type="checkbox" checked> Select all warm</label>
+            <span class="count">243 match · <b>18 warmly reachable</b> · 1 excluded (DNC)</span>
+            <div class="cx-toggle"><button class="active">Only warm reach</button><button>All matches</button></div>
+          </div>
+          <p class="cx-guard"><b>⛉ Do-Not-Contact &amp; Unsubscribed</b> (HubSpot Lead Status / Priority = DNC) can't be selected — shown greyed.</p>
+
+          <div class="cx-row">
+            <input type="checkbox" checked>
+            <div>
+              <div class="cx-name">Chris Quinn</div>
+              <div class="cx-role"><b>VP Marketing Communications</b> · Schneider Electric · schneider-electric.com</div>
+              <div class="cx-loc">📍 London, United Kingdom · LinkedIn ID 41857…</div>
+            </div>
+            <div class="cx-warm"><div class="lead"><span class="cx-dot csv"></span>Marco can reach</div><div class="deg">1st-degree · Jul 2024</div><a class="cx-hs" href="#">Open in HubSpot ↗</a></div>
+          </div>
+
+          <div class="cx-row">
+            <input type="checkbox" checked>
+            <div>
+              <div class="cx-name">Sarah Brennauer</div>
+              <div class="cx-role"><b>Field Marketing Director</b> · Salesforce · salesforce.com</div>
+              <div class="cx-loc">📍 Manchester, United Kingdom</div>
+            </div>
+            <div class="cx-warm"><div class="lead multi"><span class="cx-dot csv"></span>Marco · Sam can reach</div><div class="deg">1st-degree (2 of us)</div><a class="cx-hs" href="#">Open in HubSpot ↗</a></div>
+          </div>
+
+          <div class="cx-row dnc">
+            <input type="checkbox" disabled>
+            <div>
+              <div class="cx-name">Geert Kiesekoms <span class="tag dnc">DNC · unsubscribed</span></div>
+              <div class="cx-role"><b>Chief Commercial Officer</b> · IRCA S.p.A · irca.eu</div>
+              <div class="cx-loc">📍 Milan, Italy · LinkedIn ID 6452952</div>
+            </div>
+            <div class="cx-warm"><div class="lead"><span class="cx-dot live"></span>Olivia can reach</div><div class="deg">excluded · DNC</div></div>
+          </div>
+
+          <div class="cx-row">
+            <input type="checkbox" checked>
+            <div>
+              <div class="cx-name">Maite Morales</div>
+              <div class="cx-role"><b>Marketing Director</b> · Dataiku · dataiku.com</div>
+              <div class="cx-loc">📍 Reading, United Kingdom</div>
+            </div>
+            <div class="cx-warm"><div class="lead"><span class="cx-dot live"></span>Olivia can reach</div><div class="deg">live-detected · Jan 2025</div><a class="cx-hs" href="#">Open in HubSpot ↗</a></div>
+          </div>
+
+          <!-- the export action -->
+          <div class="cx-export">
+            <div>
+              <div class="lbl"><b>17 people</b> selected for the list</div>
+              <div class="sub">DNC / unsubscribed automatically left out · each row keeps its warm connector as the primary</div>
+            </div>
+            <span class="spacer"></span>
+            <button class="go">Export to Google Sheet →</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>3 · The exported sheet — ready to run as Introduce Back</h2>
+          <div class="gs-wrap">
+            <div class="gs-title">New tab created in your central workbook · <b>“ICB — UK Marketing leaders · 17 leads”</b></div>
+            <div class="gs">
+              <table>
+                <thead><tr><th>First Name</th><th>Last Name</th><th>LinkedIn URL</th><th>Company</th><th>Job Title</th><th>Country</th><th>Primary</th><th>Stage</th></tr></thead>
+                <tbody>
+                  <tr><td>Chris</td><td>Quinn</td><td class="url">linkedin.com/in/chris-quinn-…</td><td>Schneider Electric</td><td>VP Marketing Communications</td><td>United Kingdom</td><td class="primary">Marco</td><td class="empty">—</td></tr>
+                  <tr><td>Sarah</td><td>Brennauer</td><td class="url">linkedin.com/in/sarahbrennauer</td><td>Salesforce</td><td>Field Marketing Director</td><td>United Kingdom</td><td class="primary">Marco</td><td class="empty">—</td></tr>
+                  <tr><td>Maite</td><td>Morales</td><td class="url">linkedin.com/in/maitemorales</td><td>Dataiku</td><td>Marketing Director</td><td>United Kingdom</td><td class="primary">Olivia</td><td class="empty">—</td></tr>
+                  <tr><td colspan="8" style="color:#5f6368;font-style:italic">…14 more</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="gs-note">
+              Columns are the real lead-sheet schema (<b>First Name + LinkedIn URL</b> required), plus context and a <b>Primary</b> column = the colleague who can warmly reach them.
+              <b>Stage</b> is left blank for the ICB campaign to fill. Because different people are reachable by different colleagues, the list carries the connector per row —
+              so it can either run as <b>one ICB campaign grouped by Primary</b>, or split into a tab per colleague. (Open question for you.)
+            </p>
+            <div class="gs-actions">
+              <button class="gs-btn gold">Launch as Introduce Back →</button>
+              <button class="gs-btn ghost">Open in Google Sheets ↗</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="cx-foot">
+          <b>Brainstorm mockup — not built.</b> Real app shell + CSS; the exported preview is Sheets-realistic. Flow: <b>search HubSpot (multi-value geo/title/company) → join to the team's LinkedIn networks → pick the warm-reachable people → export to a Google Sheet → run as ICB.</b>
+          DNC / unsubscribed are excluded; the join is on LinkedIn Membership ID / URL. Names &amp; numbers illustrative.
+        </p>
+
+      </div>
+    </main>
+  </div>
+
+  <script>
+    function setTheme(mode) {
+      var light = mode === 'light';
+      document.body.classList.toggle('theme-light', light);
+      document.body.classList.toggle('theme-dark', !light);
+      var d = document.getElementById('theme-btn-dark'), l = document.getElementById('theme-btn-light');
+      if (d) d.classList.toggle('active', !light); if (l) l.classList.toggle('active', light);
+    }
+    document.querySelectorAll('.cx-toggle button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.cx-toggle button').forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

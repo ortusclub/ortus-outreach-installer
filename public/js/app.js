@@ -12867,6 +12867,10 @@ let fgtlChips = [];       // active keyword chips
 let fgtlSelected = new Set(); // selected employee emails
 let fgtlAssigned = {};    // email -> profile id (manual overrides)
 let fgtlPickerOpen = new Set(); // emails whose inline profile picker is expanded
+// Synthetic "Local Browser" pseudo-profile — pinned as an option in every picker
+// so the human operator (e.g. Antonio) can run on their own Chrome instead of a
+// GoLogin profile. The engine already handles profileId === 'local-browser'.
+const FGTL_LOCAL = { id: 'local-browser', name: 'Local Browser', local: true };
 const FGTL_ALL_PRESETS = ['marketing','brand','growth','content','demand','comms','cmo','sales','product','events','partnerships'];
 
 function renderFgChips() {
@@ -13239,7 +13243,7 @@ function fgtlRenderBoard() {
       badgeHtml = `<span class="fgtl-profile-badge link-state ls-auto fgtl-paired">${escHtml(autoPaired.name)} ✓</span>` +
         (isSelected ? `<button type="button" class="fgtl-change" data-email="${escHtml(emp.email)}">change</button>` : '');
     } else if (assignedId) {
-      const manualProfile = fgtlProfiles.find((p) => p.id === assignedId);
+      const manualProfile = assignedId === 'local-browser' ? FGTL_LOCAL : fgtlProfiles.find((p) => p.id === assignedId);
       badgeHtml = `<span class="fgtl-profile-badge link-state ls-manual">${escHtml((manualProfile && manualProfile.name) || assignedId)}</span>` +
         (isSelected ? `<button type="button" class="fgtl-change" data-email="${escHtml(emp.email)}">change</button>` : '');
     } else {
@@ -13253,7 +13257,11 @@ function fgtlRenderBoard() {
     const showPicker = isSelected && (needsPick || fgtlPickerOpen.has(emp.email));
     let pickerHtml = '';
     if (showPicker) {
-      const cards = fgtlProfiles.map((p) => {
+      // Local Browser is pinned first in every picker.
+      const localCard = `<label class="aa-acct-row${assignedId === 'local-browser' ? ' sel' : ''}" data-name="local browser your own chrome">` +
+        `<input type="radio" name="fgtl-pick-${escHtml(emp.email)}" value="local-browser" ${assignedId === 'local-browser' ? 'checked' : ''}>` +
+        `<span class="body"><span class="name">Local Browser</span><span class="id">your own Chrome · no GoLogin credits</span></span></label>`;
+      const cards = localCard + fgtlProfiles.map((p) => {
         const left = fgtlCreditsLeft(p);
         const nm = p.name || p.id;
         const checked = (assignedId === p.id) ? 'checked' : '';
