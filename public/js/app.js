@@ -12864,7 +12864,6 @@ let _fgViewReady = false;
 let fgtlPeople = [];      // [{ email, name, total, matched, paired }]
 let fgtlPicked = {};      // email -> { profile, pq, changing }
 let fgtlChips = [];       // active role keyword chips
-let fgtlBudgets = [];     // FG Budgets rows (for invites-left)
 const FGTL_LOCAL = { id: 'local-browser', name: 'Local Browser' };
 let _fgtlRefreshTimer = null;
 const FGTL_ALL_PRESETS = ['marketing','brand','growth','content','demand','comms','cmo','sales','product','events','partnerships'];
@@ -13092,7 +13091,7 @@ function fgtlAutoPairName(email) {
 }
 function fgtlBudgetLeft(profileName) {
   if (!profileName || profileName === 'Local Browser') return Infinity;
-  try { return fgAccountCredit(profileName); } catch (_) { return 30; }
+  try { return fgAccountCredit({ name: profileName }).remaining; } catch (_) { return 30; }
 }
 function fgtlInvitesLeft(person, profileName) {
   if (!profileName) return 0;
