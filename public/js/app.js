@@ -13521,9 +13521,12 @@ function fgtlRenderCard(status) {
   const card = document.getElementById('fgtl-card');
   if (!card) return;
 
-  // is-monitor class while running
-  if (status.running) card.classList.add('is-monitor');
-  else card.classList.remove('is-monitor');
+  // NOTE: do NOT add the `is-monitor` class here. That class is for the main
+  // dashboard's single live-campaign card, whose DOM has a `.vj-monitor` element
+  // in the hero grid-area; on this detailed FG card it hides the progress hero
+  // entirely, leaving an empty log ("No events yet"). Keep the is-detailed
+  // layout so the hero + streaming log both render.
+  card.classList.remove('is-monitor');
 
   // Eyebrow
   let eyebrow = 'Ready to launch';
