@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FG Overhaul · A · Browse + Cart</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); margin: 0; padding: 40px 48px; }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+  h1 { font-family: var(--display); letter-spacing: .04em; font-size: 2rem; margin: 0 0 6px; }
+  .sub { color: var(--gray); font-size: 13px; margin-bottom: 26px; }
+  .card { border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; }
+  .eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); margin-bottom: 12px; }
+  /* roles */
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  .chip-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 11px; font-family: var(--mono); font-size: 11px; }
+  .chip-tag .x { cursor: pointer; color: var(--gray); border: none; background: none; font-size: 13px; }
+  .chip-add { border: 1px dashed var(--hairline); background: none; color: var(--gray); border-radius: 9999px; padding: 5px 11px; font-family: var(--mono); font-size: 11px; }
+  /* layout */
+  .board { display: grid; grid-template-columns: 1fr 360px; gap: 18px; align-items: start; }
+  .search { display: flex; align-items: center; gap: 9px; background: var(--bg-soft); border: 1px solid var(--hairline); border-radius: 9999px; padding: 9px 15px; margin-bottom: 14px; }
+  .search input { flex: 1; border: none; background: none; outline: none; color: var(--ink); font-size: 13px; font-family: var(--body); }
+  .people { max-height: 520px; overflow-y: auto; padding-right: 6px; }
+  .row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px; padding: 13px 14px; border: 1px solid var(--hairline); border-radius: 12px; margin-bottom: 9px; transition: .12s; }
+  .row.in { opacity: .45; }
+  .row .who .em { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+  .row .who .meta { font-family: var(--mono); font-size: 10px; color: var(--gray); margin-top: 3px; }
+  .row .matchbox { text-align: right; }
+  .row .matchbox b { font-family: var(--display); font-size: 1.5rem; line-height: 1; color: var(--ink); }
+  .row .matchbox.zero b { color: var(--gray); }
+  .row .matchbox small { display: block; font-family: var(--mono); font-size: 8.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--gray); margin-top: 2px; }
+  .addbtn { border: 1px solid var(--ink); background: none; color: var(--ink); border-radius: 9999px; padding: 7px 15px; font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+  .addbtn.dis { border-color: var(--hairline); color: var(--hairline); cursor: not-allowed; }
+  /* cart */
+  .cart { border: 1px solid var(--hairline); border-radius: 14px; padding: 16px; position: sticky; top: 20px; }
+  .cart h3 { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); margin: 0 0 12px; }
+  .cart .empty { color: var(--gray); font-size: 12.5px; text-align: center; padding: 30px 10px; border: 1px dashed var(--hairline); border-radius: 10px; }
+  .pick { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 11px 0; border-top: 1px solid var(--hairline-soft); }
+  .pick:first-child { border-top: none; }
+  .pick .em { font-family: var(--mono); font-size: 11.5px; color: var(--ink); }
+  .pick .acct { font-family: var(--mono); font-size: 9.5px; color: var(--green); margin-top: 3px; }
+  .pick .acct.gap { color: var(--red); }
+  .pick .acct.local { color: var(--gold); }
+  .pick .inv { text-align: right; font-family: var(--display); font-size: 1.1rem; color: var(--ink); }
+  .pick .inv small { display: block; font-family: var(--mono); font-size: 8px; text-transform: uppercase; color: var(--gray); }
+  .pick .rm { grid-column: 2; justify-self: end; background: none; border: none; color: var(--gray); cursor: pointer; font-size: 11px; font-family: var(--mono); }
+  .acctsel { grid-column: 1 / -1; margin-top: 8px; border: 1px solid var(--gold); border-radius: 10px; padding: 8px; background: var(--bg-soft); }
+  .acctsel .psearch { width: 100%; box-sizing: border-box; background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 9999px; padding: 7px 12px; font-family: var(--mono); font-size: 11px; color: var(--ink); outline: none; margin-bottom: 7px; }
+  .acctsel .plist { max-height: 168px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .acctsel .popt { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; font-family: var(--mono); font-size: 11px; transition: .1s; }
+  .acctsel .popt:hover { border-color: var(--gold); background: var(--card-bg); }
+  .acctsel .popt.sel { border-color: var(--gold); background: var(--card-bg); }
+  .acctsel .popt .dot { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--gray); flex: none; }
+  .acctsel .popt.sel .dot { background: var(--gold); border-color: var(--gold); }
+  .acctsel .popt.localopt { color: var(--gold); }
+  .acctsel .pnone { color: var(--gray); font-family: var(--mono); font-size: 10px; padding: 8px 10px; }
+  .cart-foot { border-top: 1px solid var(--hairline); margin-top: 14px; padding-top: 14px; }
+  .tot { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; margin-bottom: 6px; }
+  .tot b { font-family: var(--display); font-size: 1.05rem; }
+  .launch { width: 100%; margin-top: 10px; background: var(--gold); color: #000; border: none; border-radius: 9999px; padding: 12px; font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; font-weight: 600; }
+  .launch:disabled { background: var(--hairline); color: var(--gray); cursor: not-allowed; }
+  /* db accordion */
+  .db-toggle { width: 100%; text-align: left; background: none; border: none; color: var(--gray); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; padding: 4px 0; }
+  .db-body { display: none; margin-top: 12px; }
+  .db-body.open { display: block; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tabs button { background: none; border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 13px; font-family: var(--mono); font-size: 10px; text-transform: uppercase; color: var(--gray); cursor: pointer; }
+  .tabs button.on { border-color: var(--ink); color: var(--ink); }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <h1>Follower Growth</h1>
+  <div class="sub">Variant A · Browse the team on the left, build your launch list on the right.</div>
+
+  <!-- roles -->
+  <div class="card">
+    <div class="eyebrow">① Which roles to invite — counts update live</div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="board">
+    <!-- left: browse -->
+    <div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+        <input id="q" placeholder="Search the team by name or email…">
+      </div>
+      <div class="people" id="people"></div>
+    </div>
+    <!-- right: cart -->
+    <div class="cart">
+      <h3>Your launch list</h3>
+      <div id="cart"></div>
+      <div class="cart-foot" id="foot" style="display:none">
+        <div class="tot"><span>People</span><b id="t-people">0</b></div>
+        <div class="tot"><span>Invites this run</span><b id="t-inv">0</b></div>
+        <button class="launch" id="launch">Launch all sequentially</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live campaign card (reuses the real .vj-* classes) — appears on launch -->
+  <section class="vj-card is-detailed" id="card" style="display:none;margin-top:18px">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span id="c-eyebrow">Ready to launch</span></span>
+      <span class="vj-when" id="c-when"></span>
+    </div>
+    <div class="vj-glyph-circle" aria-hidden="true">⌁</div>
+    <h2 class="vj-name"><span>Team Follower Growth</span></h2>
+    <div class="vj-hbar" role="progressbar"><i id="c-bar" style="width:0%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span id="c-pct">0</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b id="c-sent">0</b> of <span id="c-total">0</span> accounts done</span>
+          <span>Runs <b>sequentially</b> · 1 account at a time</span>
+        </div>
+      </div>
+      <div class="vj-stats" aria-live="polite">
+        <span><b id="c-accts">0</b> accounts</span>
+        <span><b id="c-inv">0</b> invites sent</span>
+        <span>· <b id="c-seq">Idle</b></span>
+      </div>
+    </div>
+    <div class="vj-details">
+      <div>
+        <div class="vj-log-head">
+          <span class="vj-details-head">Live log · last 15 events</span>
+          <span class="vj-log-acts"><button type="button" class="vj-log-act">Copy all</button><button type="button" class="vj-log-act">Open sheet</button></span>
+        </div>
+        <div class="vj-log" id="c-log"><div class="vj-log-empty">Waiting to launch — events stream here, one account at a time.</div></div>
+      </div>
+      <div class="vj-bulk">
+        <div class="vj-details-head">Batch summary</div>
+        <div class="vj-bulk-status">Sent · <b id="c-sum-sent">—</b> · <span id="c-sum-skip">0</span> skipped</div>
+        <div class="vj-bulk-hint">Each account opens its profile and sends follow invites to its own connections, then the next account starts. Capped at each account's monthly budget.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- db hidden by default -->
+  <div class="card" style="margin-top:18px">
+    <button class="db-toggle" id="dbtoggle">▸ View Follower Growth database (invites · budgets · funnel)</button>
+    <div class="db-body" id="dbbody">
+      <div class="tabs"><button class="on">Invites</button><button>Budgets</button><button>Funnel</button></div>
+      <div style="color:var(--gray);font-size:12px;font-family:var(--mono)">The full invites/budgets/funnel tables live here, out of the way until you ask for them.</div>
+    </div>
+  </div>
+</div>
+
+<script src="/sketches/fg-overhaul-data.js"></script>
+<script>
+  const picked = {}; // email -> {profile}
+  function renderChips() {
+    const el = document.getElementById('chips');
+    el.innerHTML = FG_ROLES.map(r => `<span class="chip-tag"><b>${r}</b><button class="x">×</button></span>`).join('') + '<button class="chip-add">+ add role…</button>';
+  }
+  function renderPeople() {
+    const q = document.getElementById('q').value.toLowerCase();
+    const el = document.getElementById('people');
+    el.innerHTML = FG_PEOPLE.filter(p => p.email.toLowerCase().includes(q)).map(p => {
+      const isIn = !!picked[p.email];
+      const zero = p.matched === 0;
+      return `<div class="row ${isIn ? 'in' : ''}">
+        <div class="who"><div class="em">${p.email}</div><div class="meta">${p.total.toLocaleString()} total in DB${p.paired ? ' · auto-pairs ✓' : ' · needs a profile'}</div></div>
+        <div class="matchbox ${zero ? 'zero' : ''}"><b>${p.matched.toLocaleString()}</b><small>match roles</small></div>
+        <button class="addbtn ${zero ? 'dis' : ''}" data-add="${p.email}" ${zero ? 'disabled' : ''}>${isIn ? 'added ✓' : zero ? 'no match' : '+ add'}</button>
+      </div>`;
+    }).join('');
+  }
+  function renderCart() {
+    const el = document.getElementById('cart');
+    const emails = Object.keys(picked);
+    const card = document.getElementById('card');
+    if (card) card.style.display = emails.length ? 'block' : 'none';
+    if (!emails.length) { el.innerHTML = '<div class="empty">Add colleagues from the left.<br>You\'ll see their paired account and how many invites they can send.</div>'; document.getElementById('foot').style.display = 'none'; return; }
+    el.innerHTML = emails.map(em => {
+      const p = FG_PEOPLE.find(x => x.email === em);
+      const prof = picked[em].profile || p.paired;
+      const inv = prof ? Math.min(p.matched, p.budget) : 0;
+      const acctCls = !prof ? 'gap' : prof === 'Local Browser' ? 'local' : '';
+      const acctTxt = prof ? prof : 'needs a profile ▾';
+      const showSel = !p.paired || picked[em].changing;
+      return `<div class="pick">
+        <div><div class="em">${em}</div><div class="acct ${acctCls}" data-change="${em}" style="cursor:pointer">${acctTxt}${p.paired && !picked[em].changing ? ' · change' : ''}</div></div>
+        <div class="inv">${inv}<small>${p.budget === 0 ? 'budget 0' : 'invites'}</small></div>
+        <button class="rm" data-rm="${em}">remove</button>
+        ${showSel ? `<div class="acctsel">
+          <input class="psearch" data-psearch="${em}" placeholder="Search profiles by name…" value="${picked[em].pq || ''}">
+          <div class="plist" data-plist="${em}">${renderProfileOpts(em, prof, picked[em].pq || '')}</div>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+    const totInv = emails.reduce((s, em) => { const p = FG_PEOPLE.find(x => x.email === em); const prof = picked[em].profile || p.paired; return s + (prof ? Math.min(p.matched, p.budget) : 0); }, 0);
+    document.getElementById('t-people').textContent = emails.length;
+    document.getElementById('t-inv').textContent = totInv.toLocaleString();
+    document.getElementById('foot').style.display = 'block';
+    const gaps = emails.some(em => { const p = FG_PEOPLE.find(x => x.email === em); return !(picked[em].profile || p.paired); });
+    document.getElementById('launch').disabled = gaps;
+    document.getElementById('launch').textContent = gaps ? 'Pick a profile for everyone first' : `Launch ${emails.length} sequentially`;
+  }
+  // Searchable profile picker (no native dropdown — type to find by name).
+  function renderProfileOpts(em, prof, pq) {
+    const q = (pq || '').toLowerCase();
+    const hits = FG_PROFILES.filter(n => n.toLowerCase().includes(q));
+    if (!hits.length) return '<div class="pnone">No profiles match that name</div>';
+    return hits.map(n => `<div class="popt ${prof === n ? 'sel' : ''} ${n === 'Local Browser' ? 'localopt' : ''}" data-popt="${em}" data-name="${n}"><span class="dot"></span>${n}</div>`).join('');
+  }
+  document.addEventListener('click', e => {
+    const add = e.target.closest('[data-add]'); if (add && !add.disabled) { picked[add.dataset.add] = {}; renderPeople(); renderCart(); }
+    const rm = e.target.closest('[data-rm]'); if (rm) { delete picked[rm.dataset.rm]; renderPeople(); renderCart(); }
+    const ch = e.target.closest('[data-change]'); if (ch) { picked[ch.dataset.change].changing = true; renderCart(); }
+    const opt = e.target.closest('[data-popt]'); if (opt) { const em = opt.dataset.popt; picked[em].profile = opt.dataset.name; picked[em].changing = false; picked[em].pq = ''; renderCart(); }
+    if (e.target.id === 'dbtoggle') { document.getElementById('dbbody').classList.toggle('open'); e.target.textContent = e.target.textContent.startsWith('▸') ? e.target.textContent.replace('▸', '▾') : e.target.textContent.replace('▾', '▸'); }
+  });
+  // Filter the picker list in place (keep input focus — don't re-render the whole cart).
+  document.addEventListener('input', e => {
+    const ps = e.target.closest('[data-psearch]'); if (ps) { const em = ps.dataset.psearch; picked[em].pq = ps.value; const list = document.querySelector(`[data-plist="${em}"]`); if (list) { const prof = picked[em].profile || (FG_PEOPLE.find(x => x.email === em).paired); list.innerHTML = renderProfileOpts(em, prof, ps.value); } }
+  });
+  document.getElementById('q').addEventListener('input', renderPeople);
+
+  // --- Simulated launch driving the live vj-card ---
+  let logLines = [];
+  function pushLog(evt, what, cls) {
+    const t = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    logLines.unshift({ t, evt, what, cls });
+    logLines = logLines.slice(0, 15);
+    document.getElementById('c-log').innerHTML = logLines.map(l =>
+      `<div class="vj-log-line ${l.cls || ''}"><span class="t">${l.t}</span><span class="evt">${l.evt}</span><span class="what">${l.what}</span></div>`).join('');
+  }
+  async function simulateLaunch() {
+    const emails = Object.keys(picked);
+    if (!emails.length) return;
+    const card = document.getElementById('card'); card.style.display = 'block'; card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    logLines = []; document.getElementById('c-log').innerHTML = '';
+    const total = emails.length; let done = 0, sent = 0, skipped = 0, invitesSent = 0;
+    document.getElementById('c-total').textContent = total;
+    document.getElementById('c-seq').textContent = 'Running';
+    document.getElementById('c-eyebrow').textContent = 'Running…';
+    document.getElementById('launch').disabled = true;
+    pushLog('▶', `Team launch started · ${total} account(s)`, '');
+    for (const em of emails) {
+      const p = FG_PEOPLE.find(x => x.email === em);
+      const prof = picked[em].profile || p.paired;
+      const inv = prof ? Math.min(p.matched, p.budget) : 0;
+      await new Promise(r => setTimeout(r, 650));
+      if (inv === 0) {
+        skipped++;
+        pushLog('✗', `[${prof}] Skipped — ${p.budget === 0 ? 'monthly budget used up' : 'no connections match these roles'}`, 'is-warn');
+      } else {
+        pushLog('🔄', `[${prof}] Opening profile & sending ${inv} follow invites…`, '');
+        await new Promise(r => setTimeout(r, 900));
+        sent++; invitesSent += inv;
+        pushLog('✓', `[${prof}] Invites sent · ${inv} sent`, 'is-ok');
+      }
+      done++;
+      const pct = Math.round(done / total * 100);
+      document.getElementById('c-bar').style.width = pct + '%';
+      document.getElementById('c-pct').textContent = pct;
+      document.getElementById('c-sent').textContent = done;
+      document.getElementById('c-accts').textContent = done;
+      document.getElementById('c-inv').textContent = invitesSent.toLocaleString();
+      document.getElementById('c-sum-sent').textContent = invitesSent;
+      document.getElementById('c-sum-skip').textContent = skipped;
+    }
+    document.getElementById('c-seq').textContent = 'Done';
+    document.getElementById('c-eyebrow').textContent = 'Complete';
+    pushLog('■', `Team launch complete — ${sent} sent, ${skipped} skipped`, '');
+    document.getElementById('launch').disabled = false;
+  }
+  document.getElementById('launch').addEventListener('click', simulateLaunch);
+
+  renderChips(); renderPeople(); renderCart();
+</script>
+</body>
+</html>

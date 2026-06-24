@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FG Overhaul · B · Sortable table</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); margin: 0; padding: 40px 48px 120px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-family: var(--display); letter-spacing: .04em; font-size: 2rem; margin: 0 0 6px; }
+  .sub { color: var(--gray); font-size: 13px; margin-bottom: 26px; }
+  .card { border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; }
+  .eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); margin-bottom: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 11px; font-family: var(--mono); font-size: 11px; }
+  .chip-tag .x { cursor: pointer; color: var(--gray); border: none; background: none; font-size: 13px; }
+  .chip-add { border: 1px dashed var(--hairline); background: none; color: var(--gray); border-radius: 9999px; padding: 5px 11px; font-family: var(--mono); font-size: 11px; }
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .search { flex: 1; display: flex; align-items: center; gap: 9px; background: var(--bg-soft); border: 1px solid var(--hairline); border-radius: 9999px; padding: 9px 15px; }
+  .search input { flex: 1; border: none; background: none; outline: none; color: var(--ink); font-size: 13px; font-family: var(--body); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; font-family: var(--mono); font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--gray); padding: 8px 10px; border-bottom: 1px solid var(--hairline); cursor: pointer; user-select: none; }
+  thead th.num { text-align: right; }
+  thead th .arr { opacity: .5; }
+  tbody td { padding: 11px 10px; border-bottom: 1px solid var(--hairline-soft); font-size: 13px; vertical-align: middle; }
+  tbody tr.on { background: var(--card-bg); }
+  tbody tr.zero { opacity: .5; }
+  .em { font-family: var(--mono); font-size: 12.5px; }
+  .num { text-align: right; font-family: var(--mono); }
+  .matched { font-family: var(--display); font-size: 1.25rem; }
+  .total { color: var(--gray); }
+  td input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--gold); }
+  .acctpill { font-family: var(--mono); font-size: 10px; padding: 3px 9px; border-radius: 9999px; border: 1px solid var(--green); color: var(--green); cursor: pointer; white-space: nowrap; }
+  .acctpill.gap { border-color: var(--red); color: var(--red); }
+  .acctpill.local { border-color: var(--gold); color: var(--gold); }
+  .invleft { font-family: var(--mono); font-size: 12px; }
+  .invleft.zero { color: var(--red); }
+  select.inlinesel { background: var(--bg-soft); border: 1px solid var(--gold); color: var(--ink); border-radius: 7px; padding: 4px 6px; font-family: var(--mono); font-size: 11px; max-width: 200px; }
+  /* sticky launch bar */
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card-bg); border-top: 1px solid var(--hairline); padding: 16px 48px; display: flex; align-items: center; gap: 26px; transform: translateY(120%); transition: transform .2s; }
+  .bar.show { transform: none; }
+  .bar .stat { font-family: var(--mono); font-size: 11px; color: var(--gray); }
+  .bar .stat b { font-family: var(--display); font-size: 1.3rem; color: var(--ink); display: block; }
+  .bar .spacer { flex: 1; }
+  .bar .launch { background: var(--gold); color: #000; border: none; border-radius: 9999px; padding: 12px 28px; font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; font-weight: 600; }
+  .bar .launch:disabled { background: var(--hairline); color: var(--gray); cursor: not-allowed; }
+  .db-toggle { width: 100%; text-align: left; background: none; border: none; color: var(--gray); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; padding: 4px 0; }
+  .db-body { display: none; margin-top: 12px; color: var(--gray); font-size: 12px; font-family: var(--mono); }
+  .db-body.open { display: block; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <h1>Follower Growth</h1>
+  <div class="sub">Variant B · One table. Sort by matches, tick who you want, launch from the bar.</div>
+
+  <div class="card">
+    <div class="eyebrow">① Which roles to invite — counts update live</div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+        <input id="q" placeholder="Search by name or email…">
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:34px"></th>
+        <th data-sort="email">Employee</th>
+        <th class="num" data-sort="matched">Matched ▾</th>
+        <th class="num" data-sort="total">Total in DB</th>
+        <th>GoLogin account</th>
+        <th class="num">Invites left</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <button class="db-toggle" id="dbtoggle">▸ View Follower Growth database (invites · budgets · funnel)</button>
+    <div class="db-body" id="dbbody">The full invites/budgets/funnel tables live here, hidden until you ask.</div>
+  </div>
+</div>
+
+<div class="bar" id="bar">
+  <div class="stat">Selected<b id="s-people">0</b></div>
+  <div class="stat">Matched connections<b id="s-matched">0</b></div>
+  <div class="stat">Invites this run<b id="s-inv">0</b></div>
+  <div class="spacer"></div>
+  <button class="launch" id="launch">Launch all sequentially</button>
+</div>
+
+<script src="/sketches/fg-overhaul-data.js"></script>
+<script>
+  const sel = {}; // email -> {profile}
+  let sortKey = 'matched', sortDir = -1;
+  function renderChips() {
+    document.getElementById('chips').innerHTML = FG_ROLES.map(r => `<span class="chip-tag"><b>${r}</b><button class="x">×</button></span>`).join('') + '<button class="chip-add">+ add role…</button>';
+  }
+  function sorted() {
+    const q = document.getElementById('q').value.toLowerCase();
+    return FG_PEOPLE.filter(p => p.email.toLowerCase().includes(q)).sort((a, b) => {
+      const va = a[sortKey], vb = b[sortKey];
+      if (typeof va === 'string') return sortDir * va.localeCompare(vb);
+      return sortDir * (va - vb);
+    });
+  }
+  function renderRows() {
+    document.getElementById('rows').innerHTML = sorted().map(p => {
+      const on = !!sel[p.email];
+      const prof = on ? (sel[p.email].profile || p.paired) : p.paired;
+      const inv = prof ? Math.min(p.matched, p.budget) : 0;
+      const acctCls = !prof ? 'gap' : prof === 'Local Browser' ? 'local' : '';
+      const changing = on && sel[p.email].changing;
+      const acctCell = changing
+        ? `<select class="inlinesel" data-sel="${p.email}"><option value="">— pick —</option>${FG_PROFILES.map(n => `<option ${prof === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`
+        : `<span class="acctpill ${acctCls}" data-change="${p.email}">${prof || 'needs pick'} ▾</span>`;
+      return `<tr class="${on ? 'on' : ''} ${p.matched === 0 ? 'zero' : ''}">
+        <td><input type="checkbox" data-cb="${p.email}" ${on ? 'checked' : ''} ${p.matched === 0 ? 'disabled' : ''}></td>
+        <td class="em">${p.email}</td>
+        <td class="num"><span class="matched">${p.matched.toLocaleString()}</span></td>
+        <td class="num total">${p.total.toLocaleString()}</td>
+        <td>${on ? acctCell : '<span style="color:var(--gray);font-family:var(--mono);font-size:10px">—</span>'}</td>
+        <td class="num invleft ${p.budget === 0 ? 'zero' : ''}">${on ? (p.budget === 0 ? 'budget 0' : inv) : '—'}</td>
+      </tr>`;
+    }).join('');
+  }
+  function renderBar() {
+    const emails = Object.keys(sel);
+    const people = emails.map(e => FG_PEOPLE.find(p => p.email === e));
+    const matched = people.reduce((s, p) => s + p.matched, 0);
+    const inv = emails.reduce((s, e) => { const p = FG_PEOPLE.find(x => x.email === e); const prof = sel[e].profile || p.paired; return s + (prof ? Math.min(p.matched, p.budget) : 0); }, 0);
+    document.getElementById('s-people').textContent = emails.length;
+    document.getElementById('s-matched').textContent = matched.toLocaleString();
+    document.getElementById('s-inv').textContent = inv.toLocaleString();
+    document.getElementById('bar').classList.toggle('show', emails.length > 0);
+    const gaps = emails.some(e => { const p = FG_PEOPLE.find(x => x.email === e); return !(sel[e].profile || p.paired); });
+    const btn = document.getElementById('launch');
+    btn.disabled = gaps; btn.textContent = gaps ? 'Pick a profile for everyone' : `Launch ${emails.length} sequentially`;
+  }
+  function rerender() { renderRows(); renderBar(); }
+  document.addEventListener('change', e => {
+    const cb = e.target.closest('[data-cb]'); if (cb) { if (cb.checked) sel[cb.dataset.cb] = {}; else delete sel[cb.dataset.cb]; rerender(); }
+    const s = e.target.closest('[data-sel]'); if (s) { sel[s.dataset.sel].profile = s.value; sel[s.dataset.sel].changing = false; rerender(); }
+  });
+  document.addEventListener('click', e => {
+    const ch = e.target.closest('[data-change]'); if (ch) { sel[ch.dataset.change].changing = true; renderRows(); }
+    const th = e.target.closest('[data-sort]'); if (th) { const k = th.dataset.sort; if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = k === 'email' ? 1 : -1; } renderRows(); document.querySelectorAll('th[data-sort]').forEach(h => h.textContent = h.textContent.replace(/ [▾▴]/, '')); th.textContent += sortDir < 0 ? ' ▾' : ' ▴'; }
+    if (e.target.id === 'dbtoggle') { document.getElementById('dbbody').classList.toggle('open'); e.target.textContent = e.target.textContent[0] === '▸' ? e.target.textContent.replace('▸', '▾') : e.target.textContent.replace('▾', '▸'); }
+  });
+  document.getElementById('q').addEventListener('input', renderRows);
+  renderChips(); rerender();
+</script>
+</body>
+</html>

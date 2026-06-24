@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FG Overhaul · C · Staging</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); margin: 0; padding: 40px 48px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-family: var(--display); letter-spacing: .04em; font-size: 2rem; margin: 0 0 6px; }
+  .sub { color: var(--gray); font-size: 13px; margin-bottom: 26px; }
+  .card { border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; }
+  .eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); margin-bottom: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 11px; font-family: var(--mono); font-size: 11px; }
+  .chip-tag .x { cursor: pointer; color: var(--gray); border: none; background: none; font-size: 13px; }
+  .chip-add { border: 1px dashed var(--hairline); background: none; color: var(--gray); border-radius: 9999px; padding: 5px 11px; font-family: var(--mono); font-size: 11px; }
+  /* add box */
+  .addwrap { position: relative; }
+  .search { display: flex; align-items: center; gap: 9px; background: var(--bg-soft); border: 1px solid var(--hairline); border-radius: 9999px; padding: 11px 16px; }
+  .search input { flex: 1; border: none; background: none; outline: none; color: var(--ink); font-size: 14px; font-family: var(--body); }
+  .dropdown { position: absolute; left: 0; right: 0; top: 52px; background: var(--card-bg); border: 1px solid var(--hairline); border-radius: 12px; max-height: 320px; overflow-y: auto; z-index: 10; box-shadow: 0 12px 30px rgba(0,0,0,.18); display: none; }
+  .dropdown.open { display: block; }
+  .dd-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; padding: 11px 16px; border-bottom: 1px solid var(--hairline-soft); cursor: pointer; }
+  .dd-row:hover { background: var(--bg-soft); }
+  .dd-row.dis { opacity: .4; cursor: not-allowed; }
+  .dd-row .em { font-family: var(--mono); font-size: 12.5px; }
+  .dd-row .meta { font-family: var(--mono); font-size: 10px; color: var(--gray); margin-top: 2px; }
+  .dd-row .m { font-family: var(--display); font-size: 1.2rem; }
+  .dd-row .m small { font-family: var(--mono); font-size: 8px; text-transform: uppercase; color: var(--gray); display: block; text-align: right; }
+  /* staging */
+  .stage-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .stage-head .ttl { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); }
+  .stage-head .sum { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  .stage-head .sum b { font-family: var(--display); font-size: 1.15rem; }
+  .empty { color: var(--gray); font-size: 13px; text-align: center; padding: 40px 10px; border: 1px dashed var(--hairline); border-radius: 12px; }
+  .scard { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 18px; padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 12px; margin-bottom: 10px; }
+  .scard .em { font-family: var(--mono); font-size: 13px; }
+  .scard .meta { font-family: var(--mono); font-size: 10px; color: var(--gray); margin-top: 3px; }
+  .scard .stat { text-align: right; }
+  .scard .stat b { font-family: var(--display); font-size: 1.2rem; }
+  .scard .stat.zero b { color: var(--red); }
+  .scard .stat small { display: block; font-family: var(--mono); font-size: 8px; text-transform: uppercase; color: var(--gray); }
+  .acctpill { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 9999px; border: 1px solid var(--green); color: var(--green); cursor: pointer; white-space: nowrap; }
+  .acctpill.gap { border-color: var(--red); color: var(--red); }
+  .acctpill.local { border-color: var(--gold); color: var(--gold); }
+  .rm { background: none; border: none; color: var(--gray); cursor: pointer; font-size: 14px; }
+  .selrow { grid-column: 1 / -1; margin-top: 8px; }
+  .selrow select { width: 100%; background: var(--bg-soft); border: 1px solid var(--gold); color: var(--ink); border-radius: 8px; padding: 7px 9px; font-family: var(--mono); font-size: 12px; }
+  .launch { width: 100%; margin-top: 6px; background: var(--gold); color: #000; border: none; border-radius: 9999px; padding: 14px; font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; font-weight: 600; }
+  .launch:disabled { background: var(--hairline); color: var(--gray); cursor: not-allowed; }
+  .db-toggle { width: 100%; text-align: left; background: none; border: none; color: var(--gray); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; padding: 4px 0; }
+  .db-body { display: none; margin-top: 12px; color: var(--gray); font-size: 12px; font-family: var(--mono); }
+  .db-body.open { display: block; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <h1>Follower Growth</h1>
+  <div class="sub">Variant C · Search to add colleagues; everyone you pick stacks below with their numbers.</div>
+
+  <div class="card">
+    <div class="eyebrow">① Which roles to invite — counts update live</div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="card">
+    <div class="eyebrow">② Add colleagues to this launch</div>
+    <div class="addwrap">
+      <div class="search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+        <input id="q" placeholder="Type a name or email to add…" autocomplete="off">
+      </div>
+      <div class="dropdown" id="dd"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="stage-head">
+      <span class="ttl">Launch list</span>
+      <span class="sum" id="sum"></span>
+    </div>
+    <div id="stage"></div>
+    <button class="launch" id="launch" style="display:none">Launch sequentially</button>
+  </div>
+
+  <div class="card">
+    <button class="db-toggle" id="dbtoggle">▸ View Follower Growth database (invites · budgets · funnel)</button>
+    <div class="db-body" id="dbbody">The full invites/budgets/funnel tables live here, hidden until you ask.</div>
+  </div>
+</div>
+
+<script src="/sketches/fg-overhaul-data.js"></script>
+<script>
+  const picked = {};
+  function renderChips() {
+    document.getElementById('chips').innerHTML = FG_ROLES.map(r => `<span class="chip-tag"><b>${r}</b><button class="x">×</button></span>`).join('') + '<button class="chip-add">+ add role…</button>';
+  }
+  function renderDropdown() {
+    const q = document.getElementById('q').value.toLowerCase();
+    const dd = document.getElementById('dd');
+    if (!q) { dd.classList.remove('open'); return; }
+    const hits = FG_PEOPLE.filter(p => p.email.toLowerCase().includes(q)).slice(0, 8);
+    dd.innerHTML = hits.map(p => {
+      const inList = !!picked[p.email]; const zero = p.matched === 0;
+      return `<div class="dd-row ${inList || zero ? 'dis' : ''}" data-add="${inList || zero ? '' : p.email}">
+        <div><div class="em">${p.email}</div><div class="meta">${p.total.toLocaleString()} in DB${p.paired ? ' · auto-pairs ✓' : ' · needs profile'}${inList ? ' · already added' : zero ? ' · no role match' : ''}</div></div>
+        <div class="m">${p.matched.toLocaleString()}<small>match</small></div>
+      </div>`;
+    }).join('') || '<div class="dd-row dis"><div class="em">No matches</div></div>';
+    dd.classList.add('open');
+  }
+  function renderStage() {
+    const el = document.getElementById('stage');
+    const emails = Object.keys(picked);
+    if (!emails.length) { el.innerHTML = '<div class="empty">Nobody added yet.<br>Search above — you\'ll see each person\'s matching connections and invites left before you commit.</div>'; document.getElementById('sum').textContent = ''; document.getElementById('launch').style.display = 'none'; return; }
+    el.innerHTML = emails.map(em => {
+      const p = FG_PEOPLE.find(x => x.email === em);
+      const prof = picked[em].profile || p.paired;
+      const inv = prof ? Math.min(p.matched, p.budget) : 0;
+      const acctCls = !prof ? 'gap' : prof === 'Local Browser' ? 'local' : '';
+      const changing = !p.paired || picked[em].changing;
+      return `<div class="scard">
+        <div><div class="em">${em}</div><div class="meta">${p.total.toLocaleString()} total in DB</div></div>
+        <div class="stat"><b>${p.matched.toLocaleString()}</b><small>match roles</small></div>
+        <div class="stat ${p.budget === 0 ? 'zero' : ''}"><b>${p.budget === 0 ? '0' : inv}</b><small>invites left</small></div>
+        <div style="display:flex;align-items:center;gap:12px">
+          ${changing ? '' : `<span class="acctpill ${acctCls}" data-change="${em}">${prof} · change</span>`}
+          <button class="rm" data-rm="${em}" title="remove">✕</button>
+        </div>
+        ${changing ? `<div class="selrow"><select data-sel="${em}"><option value="">— pick GoLogin profile —</option>${FG_PROFILES.map(n => `<option ${prof === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : ''}
+      </div>`;
+    }).join('');
+    const totInv = emails.reduce((s, em) => { const p = FG_PEOPLE.find(x => x.email === em); const prof = picked[em].profile || p.paired; return s + (prof ? Math.min(p.matched, p.budget) : 0); }, 0);
+    document.getElementById('sum').innerHTML = `<b>${emails.length}</b> people · <b>${totInv.toLocaleString()}</b> invites this run`;
+    const launch = document.getElementById('launch'); launch.style.display = 'block';
+    const gaps = emails.some(em => { const p = FG_PEOPLE.find(x => x.email === em); return !(picked[em].profile || p.paired); });
+    launch.disabled = gaps; launch.textContent = gaps ? 'Pick a profile for everyone first' : `Launch ${emails.length} sequentially`;
+  }
+  document.addEventListener('click', e => {
+    const add = e.target.closest('[data-add]'); if (add && add.dataset.add) { picked[add.dataset.add] = {}; document.getElementById('q').value = ''; document.getElementById('dd').classList.remove('open'); renderStage(); }
+    const rm = e.target.closest('[data-rm]'); if (rm) { delete picked[rm.dataset.rm]; renderStage(); }
+    const ch = e.target.closest('[data-change]'); if (ch) { picked[ch.dataset.change].changing = true; renderStage(); }
+    if (e.target.id === 'dbtoggle') { document.getElementById('dbbody').classList.toggle('open'); e.target.textContent = e.target.textContent[0] === '▸' ? e.target.textContent.replace('▸', '▾') : e.target.textContent.replace('▾', '▸'); }
+  });
+  document.addEventListener('change', e => { const s = e.target.closest('[data-sel]'); if (s) { picked[s.dataset.sel].profile = s.value; picked[s.dataset.sel].changing = false; renderStage(); } });
+  document.getElementById('q').addEventListener('input', renderDropdown);
+  renderChips(); renderStage();
+</script>
+</body>
+</html>
