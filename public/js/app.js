@@ -13380,6 +13380,18 @@ async function initFollowerGrowth() {
   await fgtlRefreshMatched();
 
   if (!_fgViewReady) { _fgViewReady = true; }
+
+  // If a team launch is already running (operator navigated away and back),
+  // restore the running UI: show Stop, hide Launch, and resume polling.
+  try {
+    const st = await (await fetch('/api/fg/team-launch/status')).json();
+    if (st && st.running) {
+      const go = document.getElementById('fgtl-go'); const stop = document.getElementById('fgtl-stop');
+      if (go) go.style.display = 'none';
+      if (stop) { stop.style.display = ''; stop.disabled = false; stop.textContent = 'Stop after current account'; }
+      fgtlPoll();
+    }
+  } catch (_) {}
 }
 
 // Robust picker fill. The first FG view can run before the operator fetch and
