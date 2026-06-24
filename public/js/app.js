@@ -12673,12 +12673,19 @@ function updateConnSelection() {
   const exportBtn = document.getElementById('conn-export-btn');
   if (exportBtn) exportBtn.disabled = n === 0;
   // "Use as this campaign's leads" only when we came from a campaign Data step.
+  let target = false;
+  try { target = sessionStorage.getItem('connTarget') === '1'; } catch (_) {}
   const toCampaignBtn = document.getElementById('cx-to-campaign-btn');
   if (toCampaignBtn) {
-    let target = false;
-    try { target = sessionStorage.getItem('connTarget') === '1'; } catch (_) {}
     toCampaignBtn.hidden = !target;
     toCampaignBtn.disabled = n === 0;
+  }
+  // When NOT entered from a campaign, offer a standalone "create a sheet from
+  // this list" so the operator never has to export-CSV-then-import by hand.
+  const makeSheetBtn = document.getElementById('cx-make-sheet-btn');
+  if (makeSheetBtn) {
+    makeSheetBtn.hidden = target;
+    makeSheetBtn.disabled = n === 0;
   }
   renderSheetPreview(selectedRows);
 }
@@ -12810,6 +12817,49 @@ async function useConnectionsForCampaign() {
   }
 }
 
+// Standalone path (NOT entered from a campaign): turn the current selection into
+// a brand-new Google Sheet, then offer to jump straight into a campaign with it.
+let connLastCreatedSheetUrl = '';
+async function createSheetFromConnections() {
+  const sub = document.getElementById('cx-export-sub');
+  const btn = document.getElementById('cx-make-sheet-btn');
+  const urls = connLastResults.filter((r) => r.url && connSelected.has(r.url)).map((r) => r.url);
+  if (!urls.length) { if (sub) sub.textContent = 'Pick at least one person first.'; return; }
+  const body = { ...readConnectionsCriteria(), urls };
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating sheet…'; }
+  try {
+    const res = await fetch('/api/connections/to-workbook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) { if (sub) sub.textContent = await connErrorMessage(res); return; }
+    const data = await res.json();
+    connLastCreatedSheetUrl = data.url || '';
+    if (sub) {
+      sub.innerHTML = `✓ Created a Google Sheet with <b>${escHtml(String(data.count || urls.length))}</b> rows · `
+        + `<a href="${escHtml(connLastCreatedSheetUrl)}" target="_blank" rel="noopener">Open sheet ↗</a> · `
+        + `<a href="#" onclick="startCampaignWithCreatedSheet(); return false;"><b>Start a campaign with this list →</b></a>`;
+    }
+  } catch (e) {
+    if (sub) sub.textContent = 'Could not create the sheet — ' + (e?.message || e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create a Google Sheet →'; }
+  }
+}
+
+// Jump into the campaign wizard with the freshly-created sheet pre-attached.
+function startCampaignWithCreatedSheet() {
+  if (!connLastCreatedSheetUrl) return;
+  const urlInput = document.getElementById('sheet-url');
+  if (urlInput) {
+    urlInput.value = connLastCreatedSheetUrl;
+    try { if (typeof updateSheetTabHint === 'function') updateSheetTabHint(); } catch (_) {}
+  }
+  goCreateCampaign();
+  setTimeout(() => { try { if (typeof previewSheet === 'function') previewSheet(); } catch (_) {} }, 80);
+}
+
 // Kick off a background Drive→HubSpot sync; progress surfaces via the stats poll.
 async function syncConnectionsFromDrive() {
   setConnSyncStatus('');
@@ -12846,6 +12896,8 @@ window.onConnRowToggle = onConnRowToggle;
 window.buildWarmListForCampaign = buildWarmListForCampaign;
 window.openConnectionsBuilder = openConnectionsBuilder;
 window.useConnectionsForCampaign = useConnectionsForCampaign;
+window.createSheetFromConnections = createSheetFromConnections;
+window.startCampaignWithCreatedSheet = startCampaignWithCreatedSheet;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Follower Growth campaign (follower_growth) — Phase 1 client. Self-contained:
