@@ -1353,11 +1353,14 @@ app.post('/api/connections/to-workbook', async (req, res) => {
     const b = req.body || {};
     const urls = Array.isArray(b.urls) ? b.urls : undefined;
     const { header, rows, count } = buildLeadRows(connectionsCriteria(b), { urls });
+    console.log(`[to-workbook] request: ${urls ? urls.length : 0} urls in, ${count} leads to write`);
     if (!count) return res.status(400).json({ error: 'No leads selected to write.' });
     const name = (b.name && String(b.name).trim()) || `Warm ICB list — ${new Date().toISOString().slice(0, 10)}`;
     const result = await createWorkbookTab({ name, header, rows });
+    console.log(`[to-workbook] Apps Script returned: ${JSON.stringify(result).slice(0, 300)}`);
     res.json({ ...result, count });
   } catch (err) {
+    console.error(`[to-workbook] FAILED: ${err.message}`);
     res.status(400).json({ error: err.message });
   }
 });
