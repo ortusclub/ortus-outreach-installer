@@ -539,13 +539,25 @@ function handleCreateLeadTab(data) {
       }
     }
     var gid = sheet.getSheetId();
+    // Share anyone-with-link as editor so the app can read it (it fetches the
+    // public CSV — a private sheet returns HTTP 401) and operators can edit it.
+    var shared = false, shareError = '';
+    try {
+      DriveApp.getFileById(ss.getId())
+        .setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT);
+      shared = true;
+    } catch (shareErr) {
+      shareError = shareErr.message;
+    }
     return jsonResponse({
       ok: true,
       url: ss.getUrl() + '#gid=' + gid,
       gid: gid,
       tabName: 'Leads',
       spreadsheetId: ss.getId(),
-      count: rows.length
+      count: rows.length,
+      shared: shared,
+      shareError: shareError
     });
   } catch (err) {
     return jsonResponse({ ok: false, error: err.message, stack: err.stack });
