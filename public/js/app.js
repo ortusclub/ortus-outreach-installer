@@ -13466,6 +13466,9 @@ async function fgtlLaunch() {
     if (goBtn) goBtn.disabled = false;
     return;
   }
+  const stopBtn = document.getElementById('fgtl-stop');
+  if (goBtn) goBtn.style.display = 'none';
+  if (stopBtn) { stopBtn.style.display = ''; stopBtn.textContent = 'Stop after current account'; stopBtn.disabled = false; }
   fgtlPoll();
 }
 
@@ -13483,6 +13486,10 @@ function fgtlPoll() {
     if (status.running) {
       setTimeout(tick, 2000);
     } else {
+      const goBtn = document.getElementById('fgtl-go');
+      const stopBtn = document.getElementById('fgtl-stop');
+      if (stopBtn) stopBtn.style.display = 'none';
+      if (goBtn) goBtn.style.display = '';
       fgtlRenderCart();
     }
   };
@@ -13578,6 +13585,15 @@ function fgtlBindLaunch() {
   if (copyBtn && !copyBtn._fgtlCopyBound) {
     copyBtn._fgtlCopyBound = true;
     copyBtn.addEventListener('click', fgtlCopyLog);
+  }
+  const stopBtn = document.getElementById('fgtl-stop');
+  if (stopBtn && !stopBtn._b) {
+    stopBtn._b = true;
+    stopBtn.addEventListener('click', async () => {
+      stopBtn.textContent = 'Stopping…';
+      stopBtn.disabled = true;
+      try { await fetch('/api/fg/team-launch/stop', { method: 'POST' }); } catch (_) {}
+    });
   }
 }
 
