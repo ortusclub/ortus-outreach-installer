@@ -41,7 +41,7 @@
         <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
 
         <div class="nav-section-label">Team</div>
-        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connections</button>
+        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
 
         <div class="nav-section-label">Review</div>
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
@@ -212,7 +212,7 @@
              Badge visibility + name tooltip + count handled by
              renderResumeDraftBadge() in app.js. -->
         <div class="dashboard-new-wrap">
-          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connections</button>
+          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connection DB</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
                indicator (drafts remain reachable via the Drafts & Stops section).
@@ -487,7 +487,7 @@
       </div>
 
       <div class="dashboard-header">
-        <h1 class="dashboard-title">Connections</h1>
+        <h1 class="dashboard-title">Connection DB</h1>
       </div>
       <p class="cx-lede" id="cx-lede">Build a warm ICB lead list — search HubSpot, join it to the team's LinkedIn networks, pick who's warmly reachable, export.</p>
 
@@ -574,7 +574,7 @@
           </div>
         </div>
         <p class="cx-guard" id="cx-guard" hidden><b>⛉ Do-Not-Contact &amp; Unsubscribed</b> (HubSpot Lead Status = DNC) can't be selected — shown greyed.</p>
-        <div id="conn-results"></div>
+        <div id="conn-results" style="max-height:600px;overflow-y:auto"></div>
 
         <div class="cx-export" id="cx-export" hidden>
           <div>
