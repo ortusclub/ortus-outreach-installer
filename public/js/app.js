@@ -4412,7 +4412,7 @@ async function startCampaign(opts = {}) {
       : undefined,
     // Task 4 (2026-06-19): pause the account when LinkedIn returns 429.
     // Default true (ON) — operator can disable in Advanced section.
-    pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked !== false,
+    pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
   };
 
   // v2.58.x — IC preflight: catch "no sender column" / "no matching profile"
@@ -7911,7 +7911,7 @@ function collectCurrentConfig() {
     messageGap: getN('message-gap', 60),
     delayMin: getN('within-batch-min', 30),
     delayMax: getN('within-batch-max', 60),
-    pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked !== false,
+    pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
@@ -7964,10 +7964,12 @@ function applyPresetConfig(config) {
   setV('message-gap', config.messageGap ?? 60);
   setV('within-batch-min', config.delayMin ?? 30);
   setV('within-batch-max', config.delayMax ?? 60);
-  // Task 4 (2026-06-19): restore pause-on-throttle toggle; default ON when absent.
+  // Task 4 (2026-06-19): restore pause-on-throttle toggle; default OFF when absent
+  // (v2.119.18 — operator wants throttling protection opt-in, not opt-out).
   {
     const _pot = document.getElementById('pause-on-throttle');
-    if (_pot) _pot.checked = config.pauseOnThrottle !== false;
+    if (_pot) _pot.checked = config.pauseOnThrottle === true;
+    if (typeof syncPauseOnThrottleHelp === 'function') syncPauseOnThrottleHelp();
   }
   if (typeof checkDelayDanger === 'function') checkDelayDanger();
   // Render the sheet preview, THEN restore the column mapping. previewSheet()

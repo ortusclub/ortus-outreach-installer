@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Connection Note hint — 4 variants</title>
+<!-- 1:1 with the real app: pull in the live stylesheet + tokens -->
+<link rel="stylesheet" href="/css/style.css" />
+<style>
+  body { background: var(--bg); color: var(--ink); font-family: var(--body); padding: 40px; max-width: 760px; margin: 0 auto; }
+  h1 { font-family: var(--display); letter-spacing: .04em; font-size: 2rem; margin: 0 0 6px; }
+  .lede { color: var(--gray); font-size: .9rem; margin: 0 0 34px; }
+  .variant { margin: 0 0 46px; }
+  .vlabel { font-family: var(--mono); font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); margin: 0 0 12px; }
+  .vnote { font-size: .78rem; color: var(--gray); margin: 10px 0 0; }
+  /* reuse the real section chrome so each card reads like the live form */
+  .section.tpl-section { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 20px 22px; }
+  .section.tpl-section h2 { font-family: var(--display); letter-spacing: .03em; font-size: 1.3rem; margin: 0 0 12px; display: flex; align-items: baseline; gap: 8px; }
+  .section.tpl-section h2 small { font-family: var(--mono); font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; color: var(--gray); }
+  textarea { width: 100%; box-sizing: border-box; background: var(--bg-soft); border: 1px solid var(--hairline); border-radius: 8px; color: var(--ink); font-family: var(--body); font-size: .9rem; padding: 10px 12px; resize: vertical; }
+  .tpl-note-count { font-family: var(--mono); font-size: .7rem; color: var(--gray); text-align: right; margin-top: 4px; }
+
+  /* ── Variant A: gold-tinted inline callout, ABOVE the field, always visible ── */
+  .hintA { display: flex; gap: 10px; align-items: flex-start; background: var(--gold-tint-bg); border: 1px solid var(--gold); border-radius: 10px; padding: 11px 13px; margin: 0 0 12px; }
+  .hintA .ic { color: var(--gold); font-weight: 800; font-size: 1rem; line-height: 1.2; flex: 0 0 auto; }
+  .hintA .tx { font-size: .82rem; line-height: 1.45; color: var(--ink); }
+  .hintA .tx b { color: var(--gold); }
+
+  /* ── Variant B: left-accent bar, quieter but bigger ── */
+  .hintB { border-left: 3px solid var(--gold); padding: 4px 0 4px 13px; margin: 0 0 12px; }
+  .hintB .h { font-size: .9rem; font-weight: 700; color: var(--ink); margin: 0 0 3px; }
+  .hintB .s { font-size: .8rem; line-height: 1.45; color: var(--gray); }
+
+  /* ── Variant C: two-line emphasis under the field ── */
+  .hintC { margin: 10px 0 0; }
+  .hintC .h { font-size: .92rem; font-weight: 700; color: var(--gold); margin: 0 0 4px; letter-spacing: .01em; }
+  .hintC .s { font-size: .82rem; line-height: 1.5; color: var(--ink); }
+
+  /* ── Variant D: full pill banner with eyebrow ── */
+  .hintD { background: var(--gold-tint-bg); border: 1px solid var(--gold); border-radius: 9999px; padding: 12px 18px; margin: 0 0 12px; display: flex; gap: 10px; align-items: center; }
+  .hintD .eye { font-family: var(--mono); font-size: .56rem; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); border: 1px solid var(--gold); border-radius: 9999px; padding: 3px 8px; flex: 0 0 auto; }
+  .hintD .tx { font-size: .8rem; line-height: 1.4; color: var(--ink); }
+</style>
+</head>
+<body>
+  <h1>Connection Note — "you usually don't need one"</h1>
+  <p class="lede">Four treatments of the hint, bigger &amp; more visible than today's faint gray line. Same copy across all four so you're comparing the <em>styling</em>. All use real app tokens (gold accent, card chrome).</p>
+
+  <!-- VARIANT A -->
+  <div class="variant">
+    <p class="vlabel">A · Gold callout above the field</p>
+    <div class="section tpl-section">
+      <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
+      <div class="hintA">
+        <span class="ic">!</span>
+        <span class="tx"><b>You usually don't need a note.</b> Requests sent <em>without</em> one tend to get accepted more often and keep the intro thread clean. Only add one if it clearly helps this specific audience.</span>
+      </div>
+      <textarea rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
+      <div class="tpl-note-count">0 / 300</div>
+    </div>
+    <p class="vnote">Hard to miss, sits before the box so it's read first. Strongest nudge.</p>
+  </div>
+
+  <!-- VARIANT B -->
+  <div class="variant">
+    <p class="vlabel">B · Left-accent bar</p>
+    <div class="section tpl-section">
+      <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
+      <div class="hintB">
+        <div class="h">A blank note usually performs better.</div>
+        <div class="s">Note-less requests get accepted more often and keep the intro thread clean. Add one only if it clearly helps this audience.</div>
+      </div>
+      <textarea rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
+      <div class="tpl-note-count">0 / 300</div>
+    </div>
+    <p class="vnote">Bigger &amp; bolded but lower-key — no fill, just an accent edge. Calm but clear.</p>
+  </div>
+
+  <!-- VARIANT C -->
+  <div class="variant">
+    <p class="vlabel">C · Two-line emphasis under the field</p>
+    <div class="section tpl-section">
+      <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
+      <textarea rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
+      <div class="tpl-note-count">0 / 300</div>
+      <div class="hintC">
+        <div class="h">Leaving this blank usually works better.</div>
+        <div class="s">Requests without a note get accepted more often and keep the intro thread clean — only add one if it clearly helps this audience.</div>
+      </div>
+    </div>
+    <p class="vnote">Keeps the hint where it is today (below the box) but much bolder. Smallest layout change.</p>
+  </div>
+
+  <!-- VARIANT D -->
+  <div class="variant">
+    <p class="vlabel">D · Pill banner with eyebrow</p>
+    <div class="section tpl-section">
+      <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
+      <div class="hintD">
+        <span class="eye">Tip</span>
+        <span class="tx"><b>You usually don't need a note</b> — blank requests get accepted more often and keep the intro thread clean. Add one only if it clearly helps this audience.</span>
+      </div>
+      <textarea rows="2" placeholder="Hi {firstName}, I'd love to connect!"></textarea>
+      <div class="tpl-note-count">0 / 300</div>
+    </div>
+    <p class="vnote">Matches the rounded "pill" language used elsewhere in the app (update pill, tags).</p>
+  </div>
+</body>
+</html>
