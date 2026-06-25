@@ -13309,8 +13309,11 @@ function fgtlRenderPeople() {
         }
       }
     }
-    const blocked = zero || !elig.eligible || exhausted;
-    const label = isIn ? 'added' : !elig.eligible ? 'can’t invite' : exhausted ? '0 left' : zero ? 'no match' : '+ add';
+    // Don't block on a 0-credit SNAPSHOT — credits refill on accept/withdraw, so
+    // the account may have free slots again by run time (the live modal decides).
+    // Only a wrong-company (ineligible) account or a zero-match one is truly addable-never.
+    const blocked = zero || !elig.eligible;
+    const label = isIn ? 'added' : !elig.eligible ? 'can’t invite' : zero ? 'no match' : '+ add';
     return `<div class="fgtl-prow ${isIn ? 'in' : ''}">
       <div class="fgtl-rowmain">
         <div class="fgtl-emline"><span class="em">${escHtml(p.email)}</span>${pill}</div>
