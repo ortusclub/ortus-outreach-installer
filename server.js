@@ -1534,9 +1534,20 @@ app.post('/api/fg/send/start', async (req, res) => {
 // open at a time (multi-browser crash constraint).
 let _fgTeam = { running: false, phase: 'idle', totalAccounts: 0, doneAccounts: 0, currentAccount: null, sent: 0, skipped: 0, invitesTotal: 0, perAccount: [], logs: [], error: null };
 let _fgTeamAbort = false;
+// The browser handle of the account currently running, so Stop can force-close it
+// mid-operation (the in-flight page wait throws → the run aborts immediately
+// instead of waiting out a 2-min modal timeout).
+let _fgActiveHandle = null;
 
 app.get('/api/fg/team-launch/status', (_req, res) => res.json(_fgTeam));
-app.post('/api/fg/team-launch/stop', (_req, res) => { _fgTeamAbort = true; res.json({ ok: true }); });
+app.post('/api/fg/team-launch/stop', async (_req, res) => {
+  _fgTeamAbort = true;
+  // Force-close the running account's browser so any in-flight page wait (e.g. the
+  // up-to-2-min modal wait) rejects right away — a true stop, not stop-after-account.
+  const h = _fgActiveHandle; _fgActiveHandle = null;
+  try { if (h) await h.close(); } catch (_) {}
+  res.json({ ok: true });
+});
 
 app.post('/api/fg/team-launch/start', async (req, res) => {
   if (_fgTeam.running) return res.status(409).json({ error: 'A team launch is already running.' });
@@ -1615,7 +1626,12 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       };
 
       _fgTeamSnap = await getFgState();
-      await runTeamLaunch(pairs, { keywords, month, getAbort: () => _fgTeamAbort }, deps, _fgTeam);
+      await runTeamLaunch(pairs, {
+        keywords, month,
+        getAbort: () => _fgTeamAbort,
+        setActiveHandle: (h) => { _fgActiveHandle = h; },
+        clearActiveHandle: () => { _fgActiveHandle = null; },
+      }, deps, _fgTeam);
     } catch (err) {
       _fgTeam.running = false; _fgTeam.phase = 'error'; _fgTeam.error = err.message;
     } finally {

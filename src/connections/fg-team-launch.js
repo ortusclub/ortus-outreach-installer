@@ -37,6 +37,8 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
       let handle = null;
       try {
         handle = await deps.launch(pair);
+        // Register the live browser so Stop can force-close it mid-operation.
+        if (ctx.setActiveHandle) ctx.setActiveHandle(handle);
         const out = await deps.send({ page: handle.page, queued: pairToQueued(rows), log: (m) => stamp(`[${pair.account}] ${m}`), shouldAbort: ctx.getAbort });
         const invitedIds = out.invited || [];
         if (invitedIds.length) await deps.record({ rows, invitedIds, account: pair.account, operator: pair.operator, month: ctx.month });
@@ -52,12 +54,20 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
         slot.status = 'done'; slot.invited = invitedIds.length; status.sent++; status.invitesTotal += invitedIds.length;
         stamp(`✓ [${pair.account}] Invites sent · ${invitedIds.length} sent, ${out.creditsAfter} credits left`);
       } catch (err) {
-        // A soft-skip (e.g. the invite modal didn't open in time) is expected, not
-        // a failure — label it ⊘ so it reads clearly vs a real ✗ error.
-        slot.status = 'skipped'; slot.reason = err.message; status.skipped++;
-        slot.softSkip = !!err.softSkip;
-        stamp(err.softSkip ? `⊘ [${pair.account}] Skipped — ${err.message}` : `✗ [${pair.account}] Error — ${err.message}`);
+        if (ctx.getAbort()) {
+          // Stop was hit — the error is just the force-closed browser, not a real
+          // failure. Label it as a clean stop.
+          slot.status = 'skipped'; slot.reason = 'stopped'; status.skipped++;
+          stamp(`⊘ [${pair.account}] Stopped`);
+        } else {
+          // A soft-skip (e.g. the invite modal didn't open in time) is expected, not
+          // a failure — label it ⊘ so it reads clearly vs a real ✗ error.
+          slot.status = 'skipped'; slot.reason = err.message; status.skipped++;
+          slot.softSkip = !!err.softSkip;
+          stamp(err.softSkip ? `⊘ [${pair.account}] Skipped — ${err.message}` : `✗ [${pair.account}] Error — ${err.message}`);
+        }
       } finally {
+        if (ctx.clearActiveHandle) ctx.clearActiveHandle();
         try { if (handle) await handle.close(); } catch (_) {}
       }
       status.doneAccounts++;

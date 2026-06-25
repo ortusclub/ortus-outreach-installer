@@ -13587,7 +13587,7 @@ async function initFollowerGrowth() {
     if (st && st.running) {
       const go = document.getElementById('fgtl-go'); const stop = document.getElementById('fgtl-stop');
       if (go) go.style.display = 'none';
-      if (stop) { stop.style.display = ''; stop.disabled = false; stop.textContent = 'Stop after current account'; }
+      if (stop) { stop.style.display = ''; stop.disabled = false; stop.textContent = 'Stop now'; }
       fgtlPoll();
     }
   } catch (_) {}
@@ -13678,9 +13678,9 @@ async function fgtlLaunch() {
   }
   const stopBtn = document.getElementById('fgtl-stop');
   if (goBtn) goBtn.style.display = 'none';
-  if (stopBtn) { stopBtn.style.display = ''; stopBtn.textContent = 'Stop after current account'; stopBtn.disabled = false; }
+  if (stopBtn) { stopBtn.style.display = ''; stopBtn.textContent = 'Stop now'; stopBtn.disabled = false; }
   const cardStop = document.getElementById('fgtl-card-stop');
-  if (cardStop) { cardStop.style.display = ''; cardStop.textContent = 'Stop after current account'; cardStop.disabled = false; }
+  if (cardStop) { cardStop.style.display = ''; cardStop.textContent = 'Stop now'; cardStop.disabled = false; }
   fgtlPoll();
 }
 
