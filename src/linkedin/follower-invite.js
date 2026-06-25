@@ -112,23 +112,39 @@ export async function scrapeResults(page) {
 // crashed ("No element found for selector: input.artdeco-typeahead__input").
 // This dumps the modal's real input structure + innerHTML so the selector can
 // be fixed from evidence, not guesswork. Runs once per real run, before the loop.
-export async function probeSearchBox(page, { log = () => {} } = {}) {
-  const hasSearch = await page.$(SEL.search).then(Boolean).catch(() => false);
-  if (hasSearch) { log('search box present ✓'); return true; }
-  const diag = await page.$eval(SEL.modal, (m) => {
-    const fields = [...m.querySelectorAll('input, textarea, [role="combobox"], [role="searchbox"], [contenteditable="true"]')]
-      .map((i) => ({
-        tag: i.tagName.toLowerCase(),
-        cls: (i.className || '').slice(0, 120),
-        type: i.getAttribute('type') || '',
-        ph: i.getAttribute('placeholder') || '',
-        role: i.getAttribute('role') || '',
-        aria: i.getAttribute('aria-label') || '',
-      }));
-    return { fields, html: (m.innerHTML || '').replace(/\s+/g, ' ').slice(0, 2000) };
-  }).catch(() => null);
-  log(`⚠ search box NOT found (${SEL.search}). modal fields: ${JSON.stringify(diag?.fields || [])}`);
-  log(`⚠ modal html (first 2000 chars): ${diag?.html || '(modal not readable)'}`);
+export async function probeSearchBox(page, { log = () => {}, sleep = _sleep, tries = 10, gapMs = 1000 } = {}) {
+  // Poll: the invite-to-follow picker BODY (search box + invitee list) may render
+  // later than the credits/tooltip shell. Each tick reports counts so we can tell
+  // "renders late" (timing) from "no search box at all" (different modal variant),
+  // and dumps only the structurally interesting nodes — skipping the tooltip that
+  // otherwise eats the byte budget before the body.
+  for (let i = 1; i <= tries; i++) {
+    const snap = await page.$eval(SEL.modal, (m) => {
+      const q = (sel) => m.querySelectorAll(sel).length;
+      const interesting = [...m.querySelectorAll('*')].filter((el) => {
+        const c = String(el.className || '');
+        return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+          || el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'searchbox'
+          || el.getAttribute('contenteditable') === 'true'
+          || /typeahead|invitee|picker__search|search-bar|results-list|connections-result/i.test(c);
+      });
+      const nodes = interesting.slice(0, 30).map((el) => {
+        const cls = String(el.className || '').trim().split(/\s+/).slice(0, 4).join('.');
+        const ph = el.getAttribute('placeholder');
+        const role = el.getAttribute('role');
+        return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? '.' + cls : ''}${ph ? `[ph="${ph}"]` : ''}${role ? `[role=${role}]` : ''}`;
+      });
+      return { inputs: q('input'), buttons: q('button'), ul: q('ul'), li: q('li'), checkboxes: q('input[type="checkbox"]'), nodes, text: (m.innerText || '').replace(/\s+/g, ' ').slice(0, 500) };
+    }).catch(() => null);
+    if (!snap) { log(`probe ${i}/${tries}: modal not readable`); await sleep(gapMs); continue; }
+    log(`probe ${i}/${tries}: inputs=${snap.inputs} checkboxes=${snap.checkboxes} buttons=${snap.buttons} ul=${snap.ul} li=${snap.li}`);
+    if (snap.inputs > 0 || snap.li > 0 || i === tries) {
+      log(`probe nodes: ${JSON.stringify(snap.nodes)}`);
+      log(`modal text (500): ${snap.text}`);
+      return snap.inputs > 0;
+    }
+    await sleep(gapMs);
+  }
   return false;
 }
 
