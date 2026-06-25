@@ -1387,10 +1387,11 @@ const fgMonth = () => new Date().toISOString().slice(0, 7); // YYYY-MM
 // Month is compared via normMonth because the sheet may serialize it as a
 // tz-shifted ISO date rather than the plain "YYYY-MM" we query with.
 function fgRemaining(budgets, account, month) {
-  const row = (budgets || []).find((r) => r.Account === account && normMonth(r.Month) === month);
-  const allowance = row ? Number(row.Allowance) || FG_DEFAULT_MONTHLY_ALLOWANCE : FG_DEFAULT_MONTHLY_ALLOWANCE;
-  const sent = row ? Number(row.Sent) || 0 : 0;
-  return Math.max(0, allowance - sent);
+  // Credits refill on accept/withdraw, so a stable "remaining = allowance − sent"
+  // is wrong — an account that already sent 30 may have free slots again. We can't
+  // know the live balance until the invite modal opens, so build up to a full pool
+  // of candidates (30) and let the run cap actual sends to the real modal number.
+  return FG_DEFAULT_MONTHLY_ALLOWANCE;
 }
 
 // Operator roster for the Follower Growth picker (from colleagues.json).

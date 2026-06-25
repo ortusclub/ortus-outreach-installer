@@ -36,14 +36,25 @@ export function headlineMatches(headline, { jobTitle = '', company = '' } = {}) 
   return words.some((w) => h.includes(w));
 }
 
+function nameTokens(s) { return String(s || '').trim().toLowerCase().split(/\s+/).filter(Boolean); }
+// Same person despite a middle name LinkedIn shows but our record omits: first AND
+// last token match (e.g. "Katie Jackson" ↔ "Katie Whitty Jackson"). Still only used
+// to widen the candidate set — the single-result / headline guards below disambiguate.
+export function firstLastMatches(resultName, target) {
+  const rt = nameTokens(resultName), tt = nameTokens(target);
+  if (rt.length < 2 || tt.length < 2) return false;
+  return rt[0] === tt[0] && rt[rt.length - 1] === tt[tt.length - 1];
+}
+
 // Decide which search result to select for a queued person.
 // results: [{ name, headline, canInvite }]. Returns the chosen result or null (skip).
-// Rule: among invitable results whose name matches — exactly one -> take it (no
-// headline check); several -> the one whose headline verifies; else (0 or >1) -> null.
+// Rule: among invitable results whose name matches (exact OR first+last) — exactly
+// one -> take it; several -> the one whose headline verifies; else (0 or >1) -> null.
 export function pickInviteResult(results, person) {
   const target = ((person && person.name) || '').trim().toLowerCase();
   if (!target) return null;
-  const byName = (results || []).filter((r) => r.canInvite && (r.name || '').trim().toLowerCase() === target);
+  const byName = (results || []).filter((r) => r.canInvite
+    && ((r.name || '').trim().toLowerCase() === target || firstLastMatches(r.name, person.name)));
   if (byName.length === 1) return byName[0];
   if (byName.length === 0) return null;
   const verified = byName.filter((r) => headlineMatches(r.headline, { jobTitle: person.jobTitle, company: person.company }));

@@ -83,6 +83,21 @@ test('pickInviteResult: single name match selected without headline', () => {
   assert.equal(r, results[0]);
 });
 
+test('pickInviteResult: middle-name result matches first+last (single)', () => {
+  const results = [{ name: 'Katie Whitty Jackson', headline: 'MD at CIBC', canInvite: true }];
+  const r = pickInviteResult(results, { name: 'Katie Jackson', jobTitle: 'Growth', company: 'CIBC' });
+  assert.equal(r, results[0]);
+});
+
+test('pickInviteResult: two first+last matches disambiguated by headline', () => {
+  const results = [
+    { name: 'Katie Whitty Jackson', headline: 'Chef at Bistro', canInvite: true },
+    { name: 'Katie Marie Jackson', headline: 'Head of Marketing at Acme', canInvite: true },
+  ];
+  const r = pickInviteResult(results, { name: 'Katie Jackson', jobTitle: 'Head of Marketing', company: 'Acme' });
+  assert.equal(r, results[1]);
+});
+
 test('pickInviteResult: duplicate names disambiguated by headline', () => {
   const results = [
     { name: 'John Smith', headline: 'Chef at Bistro', canInvite: true },

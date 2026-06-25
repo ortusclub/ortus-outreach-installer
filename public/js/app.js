@@ -13029,9 +13029,9 @@ function fgRenderBudget(b) {
   const el = document.getElementById('fg-budget');
   if (!el) return;
   if (!b || typeof b.budget !== 'number') { el.textContent = ''; return; }
-  el.innerHTML = `<span class="fg-budget-label">Remaining budget this month</span>
+  el.innerHTML = `<span class="fg-budget-label">Max invites this run</span>
     <span class="fg-budget-num">${b.budget}</span>
-    <span class="fg-budget-sub">invites · ${escHtml(b.account || '')} · ${escHtml(b.month || '')}</span>`;
+    <span class="fg-budget-sub">capped live by credits · ${escHtml(b.account || '')} · ${escHtml(b.month || '')}</span>`;
 }
 
 async function fgBuild() {
@@ -13109,7 +13109,7 @@ async function fgMarkInvited() {
       body: JSON.stringify({ memberIds, account: _fgBuilt.account, operator: document.getElementById('fg-operator')?.value, month: _fgBuilt.month }),
     }).then((x) => x.json());
     if (r.error) { showCampaignToast(r.error, 4000); return; }
-    showCampaignToast(`Marked ${r.invited} invited · ${r.remaining} budget left.`, 4000);
+    showCampaignToast(`Marked ${r.invited} invited · ${r.sent} sent this month.`, 4000);
     fgLoadDb();
   } catch (e) {
     showCampaignToast('Mark failed — ' + String(e?.message || e), 4000);
@@ -13159,8 +13159,8 @@ function renderFgDb() {
     const rows = (_fgDb.invites || []).map((o) => [o['Target Name'], o['Job Title'], o['Account'], o['Status'], o['Invited At'], o['Month']]);
     body.innerHTML = fgTable(['Name', 'Title', 'Account', 'Status', 'Invited At', 'Month'], rows);
   } else if (_fgTab === 'budgets') {
-    const rows = (_fgDb.budgets || []).map((o) => [o['Account'], o['Operator'], o['Month'], o['Allowance'], o['Sent'], o['Remaining']]);
-    body.innerHTML = fgTable(['Account', 'Operator', 'Month', 'Allowance', 'Sent', 'Remaining'], rows);
+    const rows = (_fgDb.budgets || []).map((o) => [o['Account'], o['Operator'], o['Month'], o['Sent'], o['Credits Available'], o['Observed At']]);
+    body.innerHTML = fgTable(['Account', 'Operator', 'Month', 'Sent', 'Credits Available', 'Observed At'], rows);
   } else {
     const rows = (_fgDb.funnel || []).map((o) => [o.operator, o.invited]);
     body.innerHTML = fgTable(['Operator', 'Invites sent'], rows);
@@ -13179,23 +13179,21 @@ let _fgSendProfileId = '';
 // Budgets is keyed by that same operator email — so we match on the email
 // embedded in the profile name. No matching row yet ⇒ fresh full allowance.
 function fgAccountCredit(profile) {
-  const ALLOW = 30; // FG_DEFAULT_MONTHLY_ALLOWANCE (page invite cap / month)
   const nm = String((profile && (profile.name || profile.id)) || '');
   const m = nm.match(/[\w.+-]+@[\w.-]+\.\w+/);
   const email = (m ? m[0] : nm).toLowerCase();
   const month = new Date().toISOString().slice(0, 7); // YYYY-MM
   const budgets = (_fgDb && _fgDb.budgets) || [];
   const row = budgets.find((b) => String(b.Account || '').toLowerCase() === email && String(b.Month || '') === month);
-  const allowance = row ? (Number(row.Allowance) || ALLOW) : ALLOW;
-  const remaining = row
-    ? (row.Remaining !== '' && row.Remaining != null ? Number(row.Remaining) : allowance - (Number(row.Sent) || 0))
-    : allowance;
-  // `tracked` = we actually have a FG Budgets row for this account+month, i.e.
-  // the number is grounded in real app usage. No row ⇒ we're only assuming the
-  // full default allowance and must say so rather than imply a confirmed count.
+  // `sent` = factual count of invites the app sent this account this month.
+  // `available` = last live modal snapshot (credits free right now), or null if we
+  // haven't observed it yet. `tracked` = a row exists at all (the account has run).
+  const sent = row ? (Number(row.Sent) || 0) : 0;
+  const availRaw = row ? row['Credits Available'] : '';
+  const available = (availRaw !== '' && availRaw != null && Number.isFinite(Number(availRaw))) ? Number(availRaw) : null;
   return {
-    remaining: Math.max(0, Number.isFinite(remaining) ? remaining : allowance),
-    allowance,
+    sent,
+    available,
     tracked: !!row,
     observedAt: row ? String(row['Observed At'] || '') : '',
     refill: row ? String(row.Refill || '') : '',
@@ -13209,17 +13207,19 @@ function fgtlAutoPairName(email) {
   const hit = (allProfilesData || []).find((p) => String(p.name || '').toLowerCase() === e);
   return hit ? hit.name : null;
 }
+// Best estimate of how many invites this account could still send — the last
+// observed live snapshot if we have one, else the full pool (30). Only used to cap
+// the cart's invite estimate; the real cap is read live from the modal at run time.
 function fgtlBudgetLeft(profileName) {
   if (!profileName || profileName === 'Local Browser') return Infinity;
-  try { return fgAccountCredit({ name: profileName }).remaining; } catch (_) { return 30; }
+  try { const c = fgAccountCredit({ name: profileName }); return c.available != null ? c.available : 30; } catch (_) { return 30; }
 }
-// Like fgtlBudgetLeft but also reports whether the count is grounded in real
-// FG Budgets data (tracked) or just the assumed default (untracked). Used to
-// label launch-list rows we haven't run yet vs ones with confirmed usage.
+// Per-account figures for the launch-list row: factual sent-this-month, the last
+// live snapshot of credits available, and whether the account has run at all.
 function fgtlCredit(profileName) {
-  if (!profileName || profileName === 'Local Browser') return { remaining: Infinity, tracked: false, infinite: true };
-  try { const c = fgAccountCredit({ name: profileName }); return { remaining: c.remaining, tracked: c.tracked, observedAt: c.observedAt, infinite: false }; }
-  catch (_) { return { remaining: 30, tracked: false, observedAt: '', infinite: false }; }
+  if (!profileName || profileName === 'Local Browser') return { infinite: true };
+  try { const c = fgAccountCredit({ name: profileName }); return { sent: c.sent, available: c.available, observedAt: c.observedAt, tracked: c.tracked, infinite: false }; }
+  catch (_) { return { sent: 0, available: null, observedAt: '', tracked: false, infinite: false }; }
 }
 // Eligibility from SoO column AQ (Company) — which company this account is signed
 // into on LinkedIn. Only "The Ortus Club" accounts can send follow invites for the
@@ -13297,22 +13297,25 @@ function fgtlRenderPeople() {
       const c = fgtlCredit(p.paired);
       if (!c.infinite) {
         if (!c.tracked) {
-          // No confirmed usage yet — don't imply we know the balance. It'll
-          // start counting from real app usage once this account is run.
-          budgetStr = ' · <span class="fgtl-left untracked">invites left not tracked yet — run to start counting from app usage</span>';
+          // Hasn't run through the app yet — nothing factual to show.
+          budgetStr = ' · <span class="fgtl-left untracked">not run yet — invites sent will be tracked here</span>';
         } else {
-          exhausted = c.remaining === 0;
+          // Headline = factual invites sent this month; secondary = last live
+          // snapshot of credits available (stamped, since it drifts on accepts).
           const asOf = fgtlShortDate(c.observedAt);
-          const asOfStr = asOf ? ` <span class="fgtl-asof">(as of ${asOf})</span>` : '';
-          budgetStr = ` · <span class="fgtl-left ${exhausted ? 'out' : ''}">${exhausted ? '0 credits left' : `${c.remaining} credit${c.remaining === 1 ? '' : 's'} available`}</span>${asOfStr}`;
+          const snap = (c.available != null)
+            ? ` <span class="fgtl-asof">(${c.available} available${asOf ? ` as of ${asOf}` : ''})</span>`
+            : '';
+          const n = c.sent || 0;
+          budgetStr = ` · <span class="fgtl-left">${n} sent this month</span>${snap}`;
         }
       }
     }
-    const blocked = zero || exhausted || !elig.eligible;
+    const blocked = zero || !elig.eligible;
     return `<div class="fgtl-prow ${isIn ? 'in' : ''}">
       <div><div class="em">${escHtml(p.email)}</div><div class="meta">${p.total.toLocaleString()} total in DB${p.paired ? ' · auto-pairs' : ' · needs a profile'}${budgetStr}</div></div>
       <div class="fgtl-mbox ${zero ? 'zero' : ''}"><b>${p.matched.toLocaleString()}</b><small>match roles</small></div>
-      <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${isIn ? 'added' : !elig.eligible ? 'can’t invite' : zero ? 'no match' : exhausted ? '0 left' : '+ add'}</button>
+      <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${isIn ? 'added' : !elig.eligible ? 'can’t invite' : zero ? 'no match' : '+ add'}</button>
     </div>`;
   }).join('') || '<div class="empty" style="color:var(--gray);padding:22px;text-align:center">No colleagues match that search.</div>';
 }
