@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Follower Growth — declutter the colleague row (3 variants)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 760px; margin: 0 auto; padding: 22px 24px 90px; }
+    .lead { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.55; margin: 0 0 22px; }
+    .lead b { color: var(--ink); }
+    .block { margin: 0 0 38px; }
+    .vtitle { font-family:var(--mono); font-size:0.64rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); margin:0 0 4px; }
+    .vtitle b { color:var(--ink); }
+    .vdesc { font-family:var(--body); font-size:0.82rem; color:var(--gray); margin:0 0 14px; }
+    .tag-now { display:inline-block; font-family:var(--mono); font-size:0.55rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:2px 9px; margin-left:8px; }
+    .tag-pick { color:#F7BE68; border-color:#F7BE68; }
+
+    /* ── shared base (real fgtl-prow) ── */
+    .row { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:16px; padding:13px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:9px; }
+    .row .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+    .mbox { text-align:right; } .mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; } .mbox small { display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+    .mbox.zero b { color:var(--gray); }
+    .add { border:1px solid var(--ink); background:none; color:var(--ink); border-radius:9999px; padding:7px 15px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+    .add.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+
+    /* ── CURRENT (crowded) ── */
+    .cur .meta { font-family:var(--mono); font-size:10px; color:var(--gray); margin-top:3px; }
+    .cur .meta .s { color:var(--ink); } .cur .meta .out { color:#b00020; font-weight:700; } .cur .meta .un { color:var(--gray); font-style:italic; }
+
+    /* ── Variant A: status pill, quiet meta ── */
+    .vA .em-line { display:flex; align-items:center; gap:9px; }
+    .vA .pill { font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; padding:2px 9px; border-radius:9999px; border:1px solid var(--hairline); color:var(--gray); white-space:nowrap; }
+    .vA .pill.sent { color:var(--ink); border-color:var(--ink); }
+    .vA .pill.out { color:#b00020; border-color:#b00020; }
+    .vA .pill.new { color:var(--gray); border-style:dashed; }
+    .vA .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:4px; opacity:.8; }
+
+    /* ── Variant B: dot-coded single line ── */
+    .vB .em-line { display:flex; align-items:center; gap:9px; }
+    .vB .dot { width:8px; height:8px; border-radius:50%; flex:none; }
+    .vB .dot.ok{background:var(--green);} .vB .dot.bad{background:#b00020;} .vB .dot.new{background:var(--gray);} .vB .dot.gap{background:#F7BE68;}
+    .vB .st { font-family:var(--mono); font-size:10px; color:var(--gray); margin-top:3px; }
+    .vB .st b { color:var(--ink); font-weight:600; } .vB .st .bad { color:#b00020; font-weight:700; }
+
+    /* ── Variant C: dedicated status column ── */
+    .vC .row { grid-template-columns:1fr 150px auto auto; }
+    .vC .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:4px; opacity:.8; }
+    .vC .scol { text-align:right; font-family:var(--mono); font-size:10px; color:var(--ink); }
+    .vC .scol small { display:block; font-size:8px; letter-spacing:.06em; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+    .vC .scol.out { color:#b00020; font-weight:700; } .vC .scol.un { color:var(--gray); font-style:italic; font-weight:400; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <p class="lead">Just the <b>colleague row</b> in the Follower Growth launch list. Today everything is crammed into one mono line: <b>total-in-DB · pairing · status</b>. Below: the current row, then 3 decluttered treatments. Each shows the same 5 states — <b>sent</b>, <b>no credits</b>, <b>ineligible</b>, <b>not run yet</b>, <b>needs a profile</b>.</p>
+
+  <!-- CURRENT -->
+  <div class="block">
+    <p class="vtitle">Current <span class="tag-now">crowded</span></p>
+    <div class="cur">
+      <div class="row"><div><div class="em">antonio@ortusclub.com</div><div class="meta">1,071 total in DB · auto-pairs · <span class="s">26 sent this month</span></div></div><div class="mbox"><b>91</b><small>match roles</small></div><button class="add">+ add</button></div>
+      <div class="row"><div><div class="em">altini@ortus.solutions</div><div class="meta">915 total in DB · auto-pairs · <span class="out">no credits left this month</span></div></div><div class="mbox"><b>234</b><small>match roles</small></div><button class="add dis">0 left</button></div>
+      <div class="row"><div><div class="em">a.rifel@ortus.solutions</div><div class="meta">915 total in DB · auto-pairs · <span class="out">signed with Apex Strategy — can't invite for Ortus Club</span></div></div><div class="mbox"><b>234</b><small>match roles</small></div><button class="add dis">can't invite</button></div>
+      <div class="row"><div><div class="em">aaron.bagatsolon@ortus.solutions</div><div class="meta">58 total in DB · auto-pairs · <span class="un">not run yet — invites sent will be tracked here</span></div></div><div class="mbox"><b>1</b><small>match roles</small></div><button class="add">+ add</button></div>
+      <div class="row"><div><div class="em">adriana@ortusclub.com</div><div class="meta">1,262 total in DB · needs a profile</div></div><div class="mbox"><b>108</b><small>match roles</small></div><button class="add">+ add</button></div>
+    </div>
+  </div>
+
+  <!-- VARIANT A -->
+  <div class="block vA">
+    <p class="vtitle">A — <b>Status pill, quiet meta</b> <span class="tag-now tag-pick">recommended</span></p>
+    <p class="vdesc">Email + one small status <b>pill</b> on the same line (the thing you actually decide on). The DB count drops to a faint sub-line. "auto-pairs" disappears (it's the default — only "needs a profile" is worth flagging).</p>
+    <div class="row"><div><div class="em-line"><span class="em">antonio@ortusclub.com</span><span class="pill sent">26 sent</span></div><div class="sub">1,071 connections</div></div><div class="mbox"><b>91</b><small>match</small></div><button class="add">+ add</button></div>
+    <div class="row"><div><div class="em-line"><span class="em">altini@ortus.solutions</span><span class="pill out">no credits left</span></div><div class="sub">915 connections</div></div><div class="mbox"><b>234</b><small>match</small></div><button class="add dis">0 left</button></div>
+    <div class="row"><div><div class="em-line"><span class="em">a.rifel@ortus.solutions</span><span class="pill out">Apex Strategy · can't invite</span></div><div class="sub">915 connections</div></div><div class="mbox"><b>234</b><small>match</small></div><button class="add dis">can't invite</button></div>
+    <div class="row"><div><div class="em-line"><span class="em">aaron.bagatsolon@ortus.solutions</span><span class="pill new">not run yet</span></div><div class="sub">58 connections</div></div><div class="mbox"><b>1</b><small>match</small></div><button class="add">+ add</button></div>
+    <div class="row"><div><div class="em-line"><span class="em">adriana@ortusclub.com</span><span class="pill new">needs a profile</span></div><div class="sub">1,262 connections</div></div><div class="mbox"><b>108</b><small>match</small></div><button class="add">+ add</button></div>
+  </div>
+
+  <!-- VARIANT B -->
+  <div class="block vB">
+    <p class="vtitle">B — <b>Dot-coded, one status line</b></p>
+    <p class="vdesc">A colour dot carries the at-a-glance state (green ok · red blocked · gold needs-profile · grey new). Email on top, one plain status line under it. Scans fastest; the dot does the work so the words can be short.</p>
+    <div class="row"><div><div class="em-line"><span class="dot ok"></span><span class="em">antonio@ortusclub.com</span></div><div class="st"><b>26</b> sent this month · 1,071 connections</div></div><div class="mbox"><b>91</b><small>match</small></div><button class="add">+ add</button></div>
+    <div class="row"><div><div class="em-line"><span class="dot bad"></span><span class="em">altini@ortus.solutions</span></div><div class="st"><span class="bad">no credits left</span> · 915 connections</div></div><div class="mbox"><b>234</b><small>match</small></div><button class="add dis">0 left</button></div>
+    <div class="row"><div><div class="em-line"><span class="dot bad"></span><span class="em">a.rifel@ortus.solutions</span></div><div class="st"><span class="bad">signed with Apex Strategy</span> — can't invite</div></div><div class="mbox"><b>234</b><small>match</small></div><button class="add dis">can't invite</button></div>
+    <div class="row"><div><div class="em-line"><span class="dot new"></span><span class="em">aaron.bagatsolon@ortus.solutions</span></div><div class="st">not run yet · 58 connections</div></div><div class="mbox"><b>1</b><small>match</small></div><button class="add">+ add</button></div>
+    <div class="row"><div><div class="em-line"><span class="dot gap"></span><span class="em">adriana@ortusclub.com</span></div><div class="st">needs a profile · 1,262 connections</div></div><div class="mbox"><b>108</b><small>match</small></div><button class="add">+ add</button></div>
+  </div>
+
+  <!-- VARIANT C -->
+  <div class="block vC">
+    <p class="vtitle">C — <b>Status gets its own column</b></p>
+    <p class="vdesc">Stop cramming status into the email line — give it a dedicated column next to the match number. Email + faint connection count on the left; status reads cleanly on its own, aligned right.</p>
+    <div class="row"><div><div class="em">antonio@ortusclub.com</div><div class="sub">1,071 connections</div></div><div class="scol"><b>26</b><small>sent this month</small></div><div class="mbox"><b>91</b><small>match</small></div><button class="add">+ add</button></div>
+    <div class="row"><div><div class="em">altini@ortus.solutions</div><div class="sub">915 connections</div></div><div class="scol out">no credits<small>left this month</small></div><div class="mbox"><b>234</b><small>match</small></div><button class="add dis">0 left</button></div>
+    <div class="row"><div><div class="em">a.rifel@ortus.solutions</div><div class="sub">915 connections</div></div><div class="scol out">Apex Strategy<small>can't invite</small></div><div class="mbox"><b>234</b><small>match</small></div><button class="add dis">can't invite</button></div>
+    <div class="row"><div><div class="em">aaron.bagatsolon@ortus.solutions</div><div class="sub">58 connections</div></div><div class="scol un">—<small>not run yet</small></div><div class="mbox"><b>1</b><small>match</small></div><button class="add">+ add</button></div>
+    <div class="row"><div><div class="em">adriana@ortusclub.com</div><div class="sub">1,262 connections</div></div><div class="scol un">—<small>needs a profile</small></div><div class="mbox"><b>108</b><small>match</small></div><button class="add">+ add</button></div>
+  </div>
+</div>
+</body>
+</html>
