@@ -11,20 +11,19 @@ test('parseCreditsMeta returns nulls when the credits line is absent', () => {
   assert.deepEqual(parseCreditsMeta('Invite to follow Dialog content end.'), { available: null, allowance: null, refill: '' });
 });
 
-// A fake puppeteer page that returns scripted search-box / result-row presence on
-// successive poll rounds. One round advances per page.$ call (the search probe,
-// fired first each loop iteration). The selector string decides which signal the
-// round reports: SEL.search starts with "input", SEL.result does not.
+// A fake puppeteer page that returns scripted modal text / search-box / result-row
+// presence on successive poll rounds. One round advances per page.$eval call (the
+// modal-text read fired FIRST each loop iteration); the two $ calls that follow
+// reflect the same round. The selector string decides which signal $ reports:
+// SEL.search starts with "input", SEL.result does not.
 function fakePage(rounds) {
   let i = -1;
   const cur = () => rounds[Math.min(i, rounds.length - 1)] || {};
   return {
     polls: () => i + 1,
-    $eval: async () => cur().text || '',
+    $eval: async () => { i++; return cur().text || ''; },
     $: async (sel) => {
       const wantSearch = String(sel).startsWith('input');
-      // advance the round on the search probe (the first $ call per iteration)
-      if (wantSearch) i++;
       return (wantSearch ? cur().hasSearch : cur().hasRow) ? {} : null;
     },
   };
@@ -38,6 +37,14 @@ test('waitForModalContent waits for the search box, not the credits text', async
   assert.equal(r.ready, true);
   assert.equal(r.via, 'search');
   assert.equal(r.polls, 3);
+});
+
+test('waitForModalContent bails immediately on "No remaining invite credits"', async () => {
+  const page = fakePage([{ text: 'Invite to follow No remaining invite credits Credit refill: June 30, 2026' }]);
+  const r = await waitForModalContent(page, { sleep: async () => {} });
+  assert.equal(r.ready, true);
+  assert.equal(r.via, 'no-credits');
+  assert.equal(r.polls, 1);
 });
 
 test('waitForModalContent resolves "rows" when a result row appears (no search box)', async () => {

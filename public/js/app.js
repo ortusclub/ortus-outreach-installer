@@ -13355,7 +13355,12 @@ function fgtlPairs() {
     const profName = fgtlPicked[email].profile || p.paired; if (!profName) return null;
     const profileId = profName === 'Local Browser' ? 'local-browser' : ((allProfilesData || []).find((x) => x.name === profName) || {}).id;
     if (!profileId) return null;
-    return { operator: email, operatorName: p.name || email, account: profName, profileId };
+    // Attribute invites to the real LinkedIn ACCOUNT, never the launch method.
+    // Paired profiles are named by their account email; "Local Browser" isn't an
+    // account, so fall back to the operator's own email (the account it's signed
+    // into) — else budgets/FG-Invites get polluted with a bogus "Local Browser" row.
+    const account = profName === 'Local Browser' ? email : profName;
+    return { operator: email, operatorName: p.name || email, account, profileId };
   }).filter(Boolean);
 }
 

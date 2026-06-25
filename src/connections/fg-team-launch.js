@@ -52,7 +52,12 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
         slot.status = 'done'; slot.invited = invitedIds.length; status.sent++; status.invitesTotal += invitedIds.length;
         stamp(`✓ [${pair.account}] Invites sent · ${invitedIds.length} sent, ${out.creditsAfter} credits left`);
       } catch (err) {
-        slot.status = 'skipped'; slot.reason = err.message; status.skipped++; stamp(`✗ [${pair.account}] Error — ${err.message}`);
+        // A not-a-Page-admin account is an expected skip, not a failure — label it
+        // as such so the operator can see at a glance which accounts simply can't
+        // invite (vs a real error) and fix the account list.
+        slot.status = 'skipped'; slot.reason = err.message; status.skipped++;
+        slot.ineligible = !!err.notPageAdmin;
+        stamp(err.notPageAdmin ? `⊘ [${pair.account}] Skipped — ${err.message}` : `✗ [${pair.account}] Error — ${err.message}`);
       } finally {
         try { if (handle) await handle.close(); } catch (_) {}
       }

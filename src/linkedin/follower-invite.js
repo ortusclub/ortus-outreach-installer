@@ -72,6 +72,11 @@ export async function waitForModalContent(page, { timeoutMs = 12000, pollMs = 25
   let polls = 0;
   while (now() <= deadline) {
     polls++;
+    // Exhausted accounts render "No remaining invite credits" with NO search box /
+    // list, so don't wait the full window for a body that will never come — bail
+    // immediately; readCredits then parses 0 and the run skips the account.
+    const txt = await page.$eval(SEL.modal, (m) => m.innerText || '').catch(() => '');
+    if (/no remaining invite credits/i.test(txt)) return { ready: true, via: 'no-credits', polls };
     const hasSearch = await page.$(SEL.search).then(Boolean).catch(() => false);
     if (hasSearch) return { ready: true, via: 'search', polls };
     const hasRow = await page.$(SEL.result).then(Boolean).catch(() => false);
@@ -81,11 +86,24 @@ export async function waitForModalContent(page, { timeoutMs = 12000, pollMs = 25
   return { ready: false, via: 'timeout', polls };
 }
 
+// Thrown when the invite-to-follow modal never opens — almost always because the
+// account isn't an admin of the Ortus Club Page (only Page admins can invite to
+// follow). Carries a flag so the batch can label the skip clearly and move on.
+export class NotPageAdminError extends Error {
+  constructor(message) { super(message); this.name = 'NotPageAdminError'; this.notPageAdmin = true; }
+}
+
 export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) {
-  // Operators run on slow/overloaded laptops; the invite page + modal can take a
-  // while. Quadrupled from 30s/15s after a real run timed out at 30s.
+  // Operators run on slow/overloaded laptops; the invite page can take a while.
   await page.goto(inviteUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
-  await page.waitForSelector(SEL.modal, { timeout: 60000 });
+  // 30s is plenty for the modal to mount on a real admin account; non-admins never
+  // get a modal at all, so relabel the timeout instead of bubbling a cryptic
+  // "Waiting for selector … 60000ms exceeded" and burning a full minute per account.
+  try {
+    await page.waitForSelector(SEL.modal, { timeout: 30000 });
+  } catch (_) {
+    throw new NotPageAdminError('not a Page admin — this account can’t send follow invites (only Ortus Club Page admins can)');
+  }
   const content = await waitForModalContent(page, { log });
   log(content.ready
     ? `invite modal ready (${content.via}, ${content.polls} polls)`
