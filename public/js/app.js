@@ -13679,6 +13679,8 @@ async function fgtlLaunch() {
   const stopBtn = document.getElementById('fgtl-stop');
   if (goBtn) goBtn.style.display = 'none';
   if (stopBtn) { stopBtn.style.display = ''; stopBtn.textContent = 'Stop after current account'; stopBtn.disabled = false; }
+  const cardStop = document.getElementById('fgtl-card-stop');
+  if (cardStop) { cardStop.style.display = ''; cardStop.textContent = 'Stop after current account'; cardStop.disabled = false; }
   fgtlPoll();
 }
 
@@ -13699,6 +13701,8 @@ function fgtlPoll() {
       const goBtn = document.getElementById('fgtl-go');
       const stopBtn = document.getElementById('fgtl-stop');
       if (stopBtn) stopBtn.style.display = 'none';
+      const cardStop = document.getElementById('fgtl-card-stop');
+      if (cardStop) cardStop.style.display = 'none';
       if (goBtn) goBtn.style.display = '';
       // Reload budgets so the launch list reflects what this run just sent
       // (Sent counts / "no credits left") instead of stale pre-run data.
@@ -13735,6 +13739,10 @@ function fgtlRenderCard(status) {
   else if (status.running) eyebrow = '● Launching';
   else if (status.phase === 'done') eyebrow = '✓ Complete';
   setTxt('fgtl-eyebrow', eyebrow);
+
+  // Keep the on-card Stop button in sync (so it's there after navigate-away/back).
+  const cardStop = document.getElementById('fgtl-card-stop');
+  if (cardStop) cardStop.style.display = status.running ? '' : 'none';
 
   // Timestamp
   setTxt('fgtl-when', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -13801,14 +13809,22 @@ function fgtlBindLaunch() {
     copyBtn._fgtlCopyBound = true;
     copyBtn.addEventListener('click', fgtlCopyLog);
   }
+  const doStop = async (btn) => {
+    btn.textContent = 'Stopping…';
+    btn.disabled = true;
+    try { await fetch('/api/fg/team-launch/stop', { method: 'POST' }); } catch (_) {}
+  };
   const stopBtn = document.getElementById('fgtl-stop');
   if (stopBtn && !stopBtn._b) {
     stopBtn._b = true;
-    stopBtn.addEventListener('click', async () => {
-      stopBtn.textContent = 'Stopping…';
-      stopBtn.disabled = true;
-      try { await fetch('/api/fg/team-launch/stop', { method: 'POST' }); } catch (_) {}
-    });
+    stopBtn.addEventListener('click', () => doStop(stopBtn));
+  }
+  // Stop button living ON the live card — reachable once the run takes over the
+  // view and the launch-list cart (with its own Stop) is hidden.
+  const cardStop = document.getElementById('fgtl-card-stop');
+  if (cardStop && !cardStop._b) {
+    cardStop._b = true;
+    cardStop.addEventListener('click', () => doStop(cardStop));
   }
 }
 
