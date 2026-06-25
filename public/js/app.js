@@ -186,6 +186,10 @@ function gatherCampaignFormState() {
   const _tplFollow = document.getElementById('tpl-followup').value;
   const _primaryIntro = document.getElementById('primary-intro-body')?.value || '';
   const _icResolvedBody = _primaryIntro || _tplFollow; // mirror startCampaign:2668
+  // ICB full-mirror: the primary's name comes from the Primary Person block now,
+  // falling back to the legacy intro-name so saved ICB campaigns don't lose it.
+  const _icPrimaryName = (document.getElementById('primary-person-name')?.value?.trim() || '')
+    || (document.getElementById('intro-name')?.value?.trim() || '');
 
   const templates = {
     // v2.59: drop addNoteOn gate — textarea value IS the note.
@@ -203,7 +207,7 @@ function gatherCampaignFormState() {
     // v2.11.13: read from introModeActive (in-memory) instead of localStorage
     // because Chrome enterprise/privacy enforcement can block storage reads.
     introMode: _isIc,
-    introName: document.getElementById('intro-name')?.value?.trim() || '',
+    introName: _isIc ? _icPrimaryName : (document.getElementById('intro-name')?.value?.trim() || ''),
     // v2.13.x — Group conversation title is an intro-flow field only. Without
     // this gate it was sent (and previewed) in every mode — even falling back
     // to the hardcoded default — so CC+DM showed a phantom "Group conversation
@@ -226,9 +230,9 @@ function gatherCampaignFormState() {
     // active source. Prevents stale leftover values from one mode leaking
     // into the other's preview.
     primaryName: _isIc
-      ? (document.getElementById('intro-name')?.value?.trim() || '')
+      ? _icPrimaryName
       : (_isCcDm ? '' : (document.getElementById('primary-person-name')?.value?.trim() || '')),
-    primaryUrl:  (_isIc || _isCcDm)
+    primaryUrl:  _isCcDm
       ? ''
       : (document.getElementById('primary-person-url')?.value?.trim() || ''),
     // v2.91: CC+IC auto-accept + automated first follow-up. DOM-read, gated to
@@ -1826,7 +1830,7 @@ function onModeChange() {
   // IC now uses the same template section as CC+IC for the body: Title
   // appears first, Body second — matching CC+IC's order exactly.
   if (intro) intro.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
-  if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce') ? '' : 'none';
+  if (primaryBlock) primaryBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   // v2.91: Auto-accept + automated first follow-up cards are CC+IC-only —
   // same predicate as the primary-person block so they appear/disappear together.
   const _showCcIcCards = (mode === 'connect_and_introduce');
@@ -1847,10 +1851,24 @@ function onModeChange() {
   // right column spans full width when the left is hidden (e.g. CC+DM shows
   // only the cadence card).
   const _ccic = (mode === 'connect_and_introduce');
+  const _isIcMode = (mode === 'introduce_back');
+  const _showPrimaryCol = _ccic || _isIcMode;
   const _colLeft = document.getElementById('intro-config-col-left');
   const _colRight = document.getElementById('intro-config-col-right');
-  if (_colLeft) _colLeft.style.display = _ccic ? '' : 'none';
-  if (_colRight) _colRight.style.gridColumn = _ccic ? '' : '1 / -1';
+  // ICB shows the primary block (left col) but has nothing in the right col
+  // (auto-accept is CC+IC-only) → hide the right col and let the left span full.
+  if (_colLeft) {
+    _colLeft.style.display = _showPrimaryCol ? '' : 'none';
+    _colLeft.style.gridColumn = _isIcMode ? '1 / -1' : '';
+  }
+  if (_colRight) {
+    _colRight.style.display = _isIcMode ? 'none' : '';
+    _colRight.style.gridColumn = _showPrimaryCol ? '' : '1 / -1';
+  }
+  // Primary check timing is a CC+IC concept (connect/check to the primary).
+  // ICB leads are already connected, so hide it there.
+  const _ptf = document.getElementById('primary-timing-field');
+  if (_ptf) _ptf.style.display = _ccic ? '' : 'none';
   const cadenceBlock = document.getElementById('check-cadence-block');
   // Cadence applies to every monitoring mode (CC+IC + CC+DM). Same predicate
   // drives the launch payload read so visibility and persistence stay in lockstep.
@@ -1863,7 +1881,7 @@ function onModeChange() {
   // the row stays visible for CC+DM too — the empty primary slot will be
   // hidden by primaryBlock's own display:none.
   const introRow = document.getElementById('intro-config-row');
-  if (introRow) introRow.style.display = usesMonitoringCadence(mode) ? '' : 'none';
+  if (introRow) introRow.style.display = (usesMonitoringCadence(mode) || _showPrimaryCol) ? '' : 'none';
   const introTitleBlock = document.getElementById('intro-title-block');
   if (introTitleBlock) introTitleBlock.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
   // v2.62: CC+DM post-acceptance body — its own template section.
@@ -1890,8 +1908,11 @@ function onModeChange() {
     // picker, but must NOT ask for an "Intro person" — that's an Introduction
     // Campaign concept. Hide just the intro-person card for everything except IC;
     // the sender column (rest of #ic-extras) stays for message_only.
+    // ICB's primary now lives in the Primary Person block (full mirror of CC+IC),
+    // so the legacy intro-name card is retired. The rest of #ic-extras (sender
+    // column) stays for ICB.
     const introModeBlock = document.getElementById('intro-mode-block');
-    if (introModeBlock) introModeBlock.style.display = (mode === 'introduce_back') ? '' : 'none';
+    if (introModeBlock) introModeBlock.style.display = 'none';
   } catch (_) {}
 
   // Entry C — "Build from warm connections" offered only for the two modes that
@@ -4126,18 +4147,21 @@ async function startCampaign(opts = {}) {
   // (primary-intro-body) must both be filled. Same gate as CC+IC's primary
   // checks above but scoped to IC's actual fields.
   if (_mode === 'introduce_back') {
-    const _icName = (document.getElementById('intro-name')?.value || '').trim();
+    // Name now comes from the Primary Person block (full CC+IC mirror), falling
+    // back to the legacy intro-name for un-migrated campaigns.
+    const _icName = (document.getElementById('primary-person-name')?.value || '').trim()
+      || (document.getElementById('intro-name')?.value || '').trim();
     const _icBody = (document.getElementById('primary-intro-body')?.value || '').trim();
     if (!_icName || !_icBody) {
       const missing = [];
-      if (!_icName) missing.push('• Intro person — full LinkedIn name');
+      if (!_icName) missing.push('• Primary Person · Full name');
       if (!_icBody) missing.push('• Intro DM Body');
       alert(
         "Introduction Campaign can't start without these fields.\n\n" +
         'Missing:\n' + missing.join('\n') + '\n\n' +
         'Fill in the missing field(s) and try again.'
       );
-      const firstEmpty = !_icName ? 'intro-name' : 'primary-intro-body';
+      const firstEmpty = !_icName ? 'primary-person-name' : 'primary-intro-body';
       const el = document.getElementById(firstEmpty);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4147,10 +4171,12 @@ async function startCampaign(opts = {}) {
     }
   }
 
-  // v2.112: primary URL is REQUIRED to launch the intro modes — it's the identity
-  // the connected-to-primary check + auto-accept + the persistent store all key on.
+  // v2.112: primary URL is REQUIRED to launch CC+IC — it's the identity the
+  // connected-to-primary check + auto-accept + the persistent store all key on.
   // (Structural check only, no network lookup, so it can block without false-flagging.)
-  if (_mode === 'connect_and_introduce' || _mode === 'introduce_back') {
+  // v2.119: ICB does NOT require the URL — its leads are already connected, so the
+  // URL is only used for the {primary url} placeholder. Empty just omits the token.
+  if (_mode === 'connect_and_introduce') {
     const _pUrlEl = document.getElementById('primary-person-url');
     const _pUrlVal = (_pUrlEl?.value || '').trim();
     if (!_pUrlVal) {
@@ -4219,6 +4245,11 @@ async function startCampaign(opts = {}) {
   // gatherCampaignFormState's preview gating; backed by the sweep's mode gate
   // (post-campaign-bulk-check.js shouldFirePostCampaignIntro) as defense-in-depth.
   const _isIntroFlow = (mode === 'connect_and_introduce' || mode === 'introduce_back');
+  // ICB full-mirror: primary name from the Primary Person block, falling back to
+  // the legacy intro-name for un-migrated campaigns. Keeps introName (the value
+  // typed into LinkedIn's typeahead) populated.
+  const _icPrimaryName2 = (document.getElementById('primary-person-name')?.value?.trim() || '')
+    || (document.getElementById('intro-name')?.value?.trim() || '');
 
   // Phase 11.2 (D-02, D-07): within-batch gap comes from explicit steppers for
   // non-message modes. Message mode keeps the #message-gap stepper because
@@ -4260,7 +4291,7 @@ async function startCampaign(opts = {}) {
     // 2.8.50: Introduction Messages sub-mode (active only when mode is message_only)
     // v2.11.13: in-memory state instead of localStorage (storage may be blocked).
     introMode: mode === 'introduce_back',
-    introName: document.getElementById('intro-name')?.value?.trim() || '',
+    introName: (mode === 'introduce_back') ? _icPrimaryName2 : (document.getElementById('intro-name')?.value?.trim() || ''),
     // Intro-flows-only — blank for CC+DM / connect_only / message_only / InMail /
     // Open Profile so a leftover CC+IC config can't leak into the campaign
     // config or the post-campaign sweep.
@@ -4270,7 +4301,7 @@ async function startCampaign(opts = {}) {
     // Connect + Introduce Back: primary person + intro DM body. Backend
     // stores these on the campaign config; auto-send-after-acceptance is
     // the next chunk of work. Gated to intro flows for the same reason.
-    primaryName: _isIntroFlow ? (document.getElementById('primary-person-name')?.value?.trim() || '') : '',
+    primaryName: (mode === 'introduce_back') ? _icPrimaryName2 : (_isIntroFlow ? (document.getElementById('primary-person-name')?.value?.trim() || '') : ''),
     primaryUrl:  _isIntroFlow ? (document.getElementById('primary-person-url')?.value?.trim() || '') : '',
     primaryIntroBody: _isIntroFlow ? (document.getElementById('primary-intro-body')?.value || '') : '',
     // v2.91: CC+IC auto-accept + automated first follow-up. DOM-read at launch,
@@ -7973,6 +8004,10 @@ function applyPresetConfig(config) {
   setV('primary-person-name', t.primaryName || '');
   setV('primary-person-url', t.primaryUrl || '');
   setV('primary-intro-body', t.primaryIntroBody || '');
+  // ICB legacy migration: older Introduction Campaigns stored the primary only as
+  // introName (the retired intro-name field). Seed the Primary Person name from it
+  // when primaryName is absent so the migrated campaign shows the primary.
+  if (!t.primaryName && t.introName) setV('primary-person-name', t.introName);
   if (t.introTitle) setV('intro-title', t.introTitle);
 
   // v2.91: restore CC+IC auto-accept + automated first follow-up. Without these
