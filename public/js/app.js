@@ -2110,6 +2110,9 @@ function onModeChange() {
     // TDZ crash (fgChips accessed before init) for an entire debugging session.
     try { initFollowerGrowth(); } catch (e) { console.error('[FG] initFollowerGrowth failed:', e && e.message); }
   }
+  // Re-evaluate the generic Live Status section now that the mode changed — so a
+  // prior finished campaign's card hides the moment we enter FG view (v2.119.2).
+  try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
 
   // Persist last-used mode
   try { localStorage.setItem('ortus-last-mode', mode); } catch (_) {}
@@ -6400,7 +6403,11 @@ function syncLiveStatusVisibility() {
   // Running/monitoring are hidden while editing an unrelated draft; a FINISHED
   // campaign's log is shown regardless (the wizard resets to a fresh draft on
   // finish, so editingDraft is true — but the operator still wants the log).
-  const show = onNew && (liveStatusForcedOpen || ((running || monitoring) && !editingDraft) || finished);
+  // Follower Growth has its OWN self-contained log card (#fgtl-card); the generic
+  // campaign Live Status (#nav-status) must never appear in FG view, else a prior
+  // finished campaign's card lingers underneath the FG board (v2.119.2).
+  const inFollowerGrowth = (document.getElementById('campaign-mode')?.value === 'follower_growth');
+  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   const navBtn = document.querySelector('[data-nav="nav-status"]');
   if (navBtn) navBtn.style.display = show ? '' : 'none';
@@ -13241,10 +13248,23 @@ function fgtlRenderPeople() {
   const q = (document.getElementById('fgtl-search')?.value || '').toLowerCase();
   el.innerHTML = fgtlPeople.filter((p) => p.email.toLowerCase().includes(q)).map((p) => {
     const isIn = !!fgtlPicked[p.email]; const zero = p.matched === 0;
+    // Surface this account's monthly invite budget right in the row so an
+    // exhausted account (e.g. an operator who already used all their invites
+    // this month) is obvious BEFORE launching, not discovered mid-run (v2.119.2).
+    let budgetStr = '';
+    let exhausted = false;
+    if (p.paired) {
+      const left = fgtlBudgetLeft(p.paired);
+      if (left !== Infinity) {
+        exhausted = left === 0;
+        budgetStr = ` · <span class="fgtl-left ${exhausted ? 'out' : ''}">${exhausted ? '0 invites left this month' : `${left} invite${left === 1 ? '' : 's'} left`}</span>`;
+      }
+    }
+    const blocked = zero || exhausted;
     return `<div class="fgtl-prow ${isIn ? 'in' : ''}">
-      <div><div class="em">${escHtml(p.email)}</div><div class="meta">${p.total.toLocaleString()} total in DB${p.paired ? ' · auto-pairs' : ' · needs a profile'}</div></div>
+      <div><div class="em">${escHtml(p.email)}</div><div class="meta">${p.total.toLocaleString()} total in DB${p.paired ? ' · auto-pairs' : ' · needs a profile'}${budgetStr}</div></div>
       <div class="fgtl-mbox ${zero ? 'zero' : ''}"><b>${p.matched.toLocaleString()}</b><small>match roles</small></div>
-      <button class="fgtl-addbtn ${zero ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${zero ? 'disabled' : ''}>${isIn ? 'added' : zero ? 'no match' : '+ add'}</button>
+      <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${isIn ? 'added' : zero ? 'no match' : exhausted ? '0 left' : '+ add'}</button>
     </div>`;
   }).join('') || '<div class="empty" style="color:var(--gray);padding:22px;text-align:center">No colleagues match that search.</div>';
 }
