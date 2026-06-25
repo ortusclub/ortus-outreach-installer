@@ -3221,7 +3221,20 @@ function renderModeSelector() {
   const saved = loadEditsFromStorage();
   const nameFor = (m) => saved[`mode-name-${m.value}`] || m.name;
 
-  grid.innerHTML = MODE_LIST.map((m, i) => {
+  // v2.119.20: render available modes first, then the disabled/coming-soon
+  // ones, so the greyed cards sink to the end of the grid. Order is purely
+  // visual — onclick still passes each card's ORIGINAL index into MODE_LIST,
+  // so setModeByIndex/activeIdx stay correct.
+  const displayOrder = MODE_LIST
+    .map((m, i) => i)
+    .sort((a, b) => {
+      const ga = (MODE_LIST[a].disabled || MODE_LIST[a].comingSoon) ? 1 : 0;
+      const gb = (MODE_LIST[b].disabled || MODE_LIST[b].comingSoon) ? 1 : 0;
+      return ga - gb || a - b; // stable: keep original order within each group
+    });
+
+  grid.innerHTML = displayOrder.map((i) => {
+    const m = MODE_LIST[i];
     const bullets = m.bullets
       .map((b) => `<li>${escHtml(b)}</li>`)
       .join('');
