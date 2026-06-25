@@ -13300,14 +13300,12 @@ function fgtlRenderPeople() {
           // Hasn't run through the app yet — nothing factual to show.
           budgetStr = ' · <span class="fgtl-left untracked">not run yet — invites sent will be tracked here</span>';
         } else {
-          // Headline = factual invites sent this month; secondary = last live
-          // snapshot of credits available (stamped, since it drifts on accepts).
-          const asOf = fgtlShortDate(c.observedAt);
-          const snap = (c.available != null)
-            ? ` <span class="fgtl-asof">(${c.available} available${asOf ? ` as of ${asOf}` : ''})</span>`
-            : '';
+          // Just the factual count sent this month. If it sent nothing because the
+          // account is tapped out (observed 0 credits), say so plainly.
           const n = c.sent || 0;
-          budgetStr = ` · <span class="fgtl-left">${n} sent this month</span>${snap}`;
+          budgetStr = (n === 0 && c.available === 0)
+            ? ' · <span class="fgtl-left out">no credits left this month</span>'
+            : ` · <span class="fgtl-left">${n} sent this month</span>`;
         }
       }
     }
@@ -13685,7 +13683,9 @@ function fgtlPoll() {
       const stopBtn = document.getElementById('fgtl-stop');
       if (stopBtn) stopBtn.style.display = 'none';
       if (goBtn) goBtn.style.display = '';
-      fgtlRenderCart();
+      // Reload budgets so the launch list reflects what this run just sent
+      // (Sent counts / "no credits left") instead of stale pre-run data.
+      fgLoadDb().then(() => fgtlRenderAll()).catch(() => fgtlRenderCart());
     }
   };
   tick();
