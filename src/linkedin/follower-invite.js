@@ -43,21 +43,22 @@ const SEL = {
 };
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// The modal SHELL (SEL.modal) mounts before LinkedIn renders its contents, so a
-// read fired right after waitForSelector saw only "Dialog content start. Invite
-// to follow Dialog content end." → 0 credits → instant bail (first send always
-// failed; the retry worked because content had rendered by then). Poll until the
-// real content is present: the credits line OR at least one result row. Node-side
-// poll (not page.waitForFunction) so it reuses the tested parseCreditsAvailable
-// and is unit-testable with a fake page. Returns after `timeoutMs` regardless so
-// readCredits still runs and logs its parse-miss diagnostic if truly empty.
+// The modal renders in stages: the SHELL (header + "N/30 credits available" line)
+// mounts FIRST, then ~1.5s later the interactive BODY (search box + invitee list)
+// mounts. Waiting only for the credits text returned too early — selectPerson then
+// typed into a search box that didn't exist yet ("No element found for selector:
+// input.artdeco-typeahead__input"), the first send crashed. So wait for the actual
+// SEARCH BOX (or a result row), which is what selectPerson needs — credits are read
+// separately afterward. Node-side poll (not page.waitForFunction) so it is unit-
+// testable with a fake page. Returns after `timeoutMs` regardless so the caller can
+// still proceed (selectPerson guards against a missing box without throwing).
 export async function waitForModalContent(page, { timeoutMs = 12000, pollMs = 250, log = () => {}, sleep = _sleep, now = () => Date.now() } = {}) {
   const deadline = now() + timeoutMs;
   let polls = 0;
   while (now() <= deadline) {
     polls++;
-    const txt = await page.$eval(SEL.modal, (m) => m.innerText || '').catch(() => '');
-    if (parseCreditsAvailable(txt) > 0) return { ready: true, via: 'credits', polls };
+    const hasSearch = await page.$(SEL.search).then(Boolean).catch(() => false);
+    if (hasSearch) return { ready: true, via: 'search', polls };
     const hasRow = await page.$(SEL.result).then(Boolean).catch(() => false);
     if (hasRow) return { ready: true, via: 'rows', polls };
     await sleep(pollMs);
@@ -107,49 +108,13 @@ export async function scrapeResults(page) {
   })).catch(() => []);
 }
 
-// Diagnostic (v2.119.4): LinkedIn changed the invite-to-follow modal DOM — the
-// search typeahead selector (SEL.search) no longer matches, so selectPerson
-// crashed ("No element found for selector: input.artdeco-typeahead__input").
-// This dumps the modal's real input structure + innerHTML so the selector can
-// be fixed from evidence, not guesswork. Runs once per real run, before the loop.
-export async function probeSearchBox(page, { log = () => {}, sleep = _sleep, tries = 10, gapMs = 1000 } = {}) {
-  // Poll: the invite-to-follow picker BODY (search box + invitee list) may render
-  // later than the credits/tooltip shell. Each tick reports counts so we can tell
-  // "renders late" (timing) from "no search box at all" (different modal variant),
-  // and dumps only the structurally interesting nodes — skipping the tooltip that
-  // otherwise eats the byte budget before the body.
-  for (let i = 1; i <= tries; i++) {
-    const snap = await page.$eval(SEL.modal, (m) => {
-      const q = (sel) => m.querySelectorAll(sel).length;
-      const interesting = [...m.querySelectorAll('*')].filter((el) => {
-        const c = String(el.className || '');
-        return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
-          || el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'searchbox'
-          || el.getAttribute('contenteditable') === 'true'
-          || /typeahead|invitee|picker__search|search-bar|results-list|connections-result/i.test(c);
-      });
-      const nodes = interesting.slice(0, 30).map((el) => {
-        const cls = String(el.className || '').trim().split(/\s+/).slice(0, 4).join('.');
-        const ph = el.getAttribute('placeholder');
-        const role = el.getAttribute('role');
-        return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? '.' + cls : ''}${ph ? `[ph="${ph}"]` : ''}${role ? `[role=${role}]` : ''}`;
-      });
-      return { inputs: q('input'), buttons: q('button'), ul: q('ul'), li: q('li'), checkboxes: q('input[type="checkbox"]'), nodes, text: (m.innerText || '').replace(/\s+/g, ' ').slice(0, 500) };
-    }).catch(() => null);
-    if (!snap) { log(`probe ${i}/${tries}: modal not readable`); await sleep(gapMs); continue; }
-    log(`probe ${i}/${tries}: inputs=${snap.inputs} checkboxes=${snap.checkboxes} buttons=${snap.buttons} ul=${snap.ul} li=${snap.li}`);
-    if (snap.inputs > 0 || snap.li > 0 || i === tries) {
-      log(`probe nodes: ${JSON.stringify(snap.nodes)}`);
-      log(`modal text (500): ${snap.text}`);
-      return snap.inputs > 0;
-    }
-    await sleep(gapMs);
-  }
-  return false;
-}
-
 // Type a name, wait for results, decide via pickInviteResult, click the chosen row.
 export async function selectPerson(page, person, { log = () => {} } = {}) {
+  // Defence in depth: if the search box still isn't present (e.g. modal body never
+  // rendered within the wait window), skip this person instead of throwing — a
+  // missing-selector throw previously aborted the whole run mid-batch.
+  const hasSearch = await page.$(SEL.search).then(Boolean).catch(() => false);
+  if (!hasSearch) { log(`skip "${person.name}" — search box not present`); return false; }
   await page.click(SEL.search, { clickCount: 3 }).catch(() => {});
   await page.type(SEL.search, person.name, { delay: 40 });
   await randomDelay(900, 1600);
@@ -191,7 +156,6 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   const d = {
     openModal: openInviteModal,
     readCredits,
-    probeSearchBox,
     selectPerson,
     clickInvite,
     sleep: () => randomDelay(700, 1400),
@@ -200,9 +164,6 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   if (inviteUrl) await d.openModal(page, inviteUrl, { log });
   const creditsBefore = await d.readCredits(page, { log });
   log(`credits available: ${creditsBefore}`);
-  // One-time DOM evidence dump on real runs (omitted in unit tests, which pass
-  // no inviteUrl) so a changed search-box selector is diagnosable from the log.
-  if (inviteUrl) await d.probeSearchBox(page, { log });
   const invited = [], skipped = [];
   for (const person of queued) {
     if (shouldAbort()) { log('aborted'); break; }

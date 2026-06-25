@@ -2,36 +2,44 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCreditsAvailable, headlineMatches, pickInviteResult, waitForModalContent } from '../../src/linkedin/follower-invite.js';
 
-// A fake puppeteer page that returns scripted modal text / result-row presence
-// on successive poll rounds. One round advances per $eval call (the first call
-// each loop iteration); $ reflects the same round.
+// A fake puppeteer page that returns scripted search-box / result-row presence on
+// successive poll rounds. One round advances per page.$ call (the search probe,
+// fired first each loop iteration). The selector string decides which signal the
+// round reports: SEL.search starts with "input", SEL.result does not.
 function fakePage(rounds) {
   let i = -1;
   const cur = () => rounds[Math.min(i, rounds.length - 1)] || {};
   return {
     polls: () => i + 1,
-    $eval: async () => { i++; return cur().text || ''; },
-    $: async () => (cur().hasRow ? {} : null),
+    $eval: async () => cur().text || '',
+    $: async (sel) => {
+      const wantSearch = String(sel).startsWith('input');
+      // advance the round on the search probe (the first $ call per iteration)
+      if (wantSearch) i++;
+      return (wantSearch ? cur().hasSearch : cur().hasRow) ? {} : null;
+    },
   };
 }
 
-test('waitForModalContent resolves "credits" once the credits text renders late', async () => {
-  const page = fakePage([{ text: '' }, { text: 'Dialog content start. Invite to follow' }, { text: '30/30 credits available' }]);
+test('waitForModalContent waits for the search box, not the credits text', async () => {
+  // Credits render early (rounds 1-2) but the search box only mounts on round 3 —
+  // readiness must hold off until the box exists, else selectPerson types too soon.
+  const page = fakePage([{ text: '30/30 credits available' }, { text: '30/30 credits available' }, { hasSearch: true }]);
   const r = await waitForModalContent(page, { sleep: async () => {} });
   assert.equal(r.ready, true);
-  assert.equal(r.via, 'credits');
+  assert.equal(r.via, 'search');
   assert.equal(r.polls, 3);
 });
 
-test('waitForModalContent resolves "rows" when a result row appears (no credits text)', async () => {
-  const page = fakePage([{ text: '' }, { text: '', hasRow: true }]);
+test('waitForModalContent resolves "rows" when a result row appears (no search box)', async () => {
+  const page = fakePage([{}, { hasRow: true }]);
   const r = await waitForModalContent(page, { sleep: async () => {} });
   assert.equal(r.ready, true);
   assert.equal(r.via, 'rows');
   assert.equal(r.polls, 2);
 });
 
-test('waitForModalContent times out when neither credits nor rows ever render', async () => {
+test('waitForModalContent times out when neither search box nor rows ever render', async () => {
   const page = fakePage([{ text: 'Dialog content start. Invite to follow Dialog content end.' }]);
   let clock = 0;
   const r = await waitForModalContent(page, { timeoutMs: 1000, pollMs: 250, sleep: async () => {}, now: () => { const v = clock; clock += 250; return v; } });
