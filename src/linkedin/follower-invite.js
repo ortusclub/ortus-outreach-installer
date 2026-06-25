@@ -107,6 +107,31 @@ export async function scrapeResults(page) {
   })).catch(() => []);
 }
 
+// Diagnostic (v2.119.4): LinkedIn changed the invite-to-follow modal DOM — the
+// search typeahead selector (SEL.search) no longer matches, so selectPerson
+// crashed ("No element found for selector: input.artdeco-typeahead__input").
+// This dumps the modal's real input structure + innerHTML so the selector can
+// be fixed from evidence, not guesswork. Runs once per real run, before the loop.
+export async function probeSearchBox(page, { log = () => {} } = {}) {
+  const hasSearch = await page.$(SEL.search).then(Boolean).catch(() => false);
+  if (hasSearch) { log('search box present ✓'); return true; }
+  const diag = await page.$eval(SEL.modal, (m) => {
+    const fields = [...m.querySelectorAll('input, textarea, [role="combobox"], [role="searchbox"], [contenteditable="true"]')]
+      .map((i) => ({
+        tag: i.tagName.toLowerCase(),
+        cls: (i.className || '').slice(0, 120),
+        type: i.getAttribute('type') || '',
+        ph: i.getAttribute('placeholder') || '',
+        role: i.getAttribute('role') || '',
+        aria: i.getAttribute('aria-label') || '',
+      }));
+    return { fields, html: (m.innerHTML || '').replace(/\s+/g, ' ').slice(0, 2000) };
+  }).catch(() => null);
+  log(`⚠ search box NOT found (${SEL.search}). modal fields: ${JSON.stringify(diag?.fields || [])}`);
+  log(`⚠ modal html (first 2000 chars): ${diag?.html || '(modal not readable)'}`);
+  return false;
+}
+
 // Type a name, wait for results, decide via pickInviteResult, click the chosen row.
 export async function selectPerson(page, person, { log = () => {} } = {}) {
   await page.click(SEL.search, { clickCount: 3 }).catch(() => {});
@@ -150,6 +175,7 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   const d = {
     openModal: openInviteModal,
     readCredits,
+    probeSearchBox,
     selectPerson,
     clickInvite,
     sleep: () => randomDelay(700, 1400),
@@ -158,6 +184,9 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   if (inviteUrl) await d.openModal(page, inviteUrl, { log });
   const creditsBefore = await d.readCredits(page, { log });
   log(`credits available: ${creditsBefore}`);
+  // One-time DOM evidence dump on real runs (omitted in unit tests, which pass
+  // no inviteUrl) so a changed search-box selector is diagnosable from the log.
+  if (inviteUrl) await d.probeSearchBox(page, { log });
   const invited = [], skipped = [];
   for (const person of queued) {
     if (shouldAbort()) { log('aborted'); break; }
