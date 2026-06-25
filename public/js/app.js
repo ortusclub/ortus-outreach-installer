@@ -13363,13 +13363,23 @@ function fgtlRenderCart() {
 function fgtlRenderAll() { fgtlRenderPeople(); fgtlRenderCart(); }
 
 async function fgtlRefreshMatched() {
+  // Show a spinner while the (sometimes slow) colleagues fetch is in flight, so
+  // it's clear the counts are updating rather than stuck.
+  const spin = document.getElementById('fgtl-refresh-spin');
+  const peopleEl = document.getElementById('fgtl-people');
+  if (spin) spin.style.display = 'inline-block';
+  if (peopleEl && !peopleEl.children.length) peopleEl.innerHTML = '<div class="fgtl-loading"><span class="fgtl-spin"></span> Loading the team…</div>';
   try {
     const roles = encodeURIComponent(fgtlChips.join(','));
     const r = await fetch(`/api/fg/colleagues?roles=${roles}`);
     const j = await r.json();
     fgtlPeople = (j.colleagues || []).map((c) => ({ ...c, paired: fgtlAutoPairName(c.email) }));
     fgtlRenderAll();
-  } catch (_) {}
+  } catch (_) {
+    if (peopleEl) peopleEl.innerHTML = '<div class="fgtl-loading">Couldn’t load the team — try again.</div>';
+  } finally {
+    if (spin) spin.style.display = 'none';
+  }
 }
 
 function fgtlPairs() {
