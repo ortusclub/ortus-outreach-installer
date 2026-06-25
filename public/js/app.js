@@ -13190,7 +13190,10 @@ function fgAccountCredit(profile) {
   const remaining = row
     ? (row.Remaining !== '' && row.Remaining != null ? Number(row.Remaining) : allowance - (Number(row.Sent) || 0))
     : allowance;
-  return { remaining: Math.max(0, Number.isFinite(remaining) ? remaining : allowance), allowance };
+  // `tracked` = we actually have a FG Budgets row for this account+month, i.e.
+  // the number is grounded in real app usage. No row ⇒ we're only assuming the
+  // full default allowance and must say so rather than imply a confirmed count.
+  return { remaining: Math.max(0, Number.isFinite(remaining) ? remaining : allowance), allowance, tracked: !!row };
 }
 
 // ── Team Launch board helpers (fgtl*) ────────────────────────────────────────
@@ -13203,6 +13206,14 @@ function fgtlAutoPairName(email) {
 function fgtlBudgetLeft(profileName) {
   if (!profileName || profileName === 'Local Browser') return Infinity;
   try { return fgAccountCredit({ name: profileName }).remaining; } catch (_) { return 30; }
+}
+// Like fgtlBudgetLeft but also reports whether the count is grounded in real
+// FG Budgets data (tracked) or just the assumed default (untracked). Used to
+// label launch-list rows we haven't run yet vs ones with confirmed usage.
+function fgtlCredit(profileName) {
+  if (!profileName || profileName === 'Local Browser') return { remaining: Infinity, tracked: false, infinite: true };
+  try { const c = fgAccountCredit({ name: profileName }); return { remaining: c.remaining, tracked: c.tracked, infinite: false }; }
+  catch (_) { return { remaining: 30, tracked: false, infinite: false }; }
 }
 function fgtlInvitesLeft(person, profileName) {
   if (!profileName) return 0;
@@ -13254,10 +13265,16 @@ function fgtlRenderPeople() {
     let budgetStr = '';
     let exhausted = false;
     if (p.paired) {
-      const left = fgtlBudgetLeft(p.paired);
-      if (left !== Infinity) {
-        exhausted = left === 0;
-        budgetStr = ` · <span class="fgtl-left ${exhausted ? 'out' : ''}">${exhausted ? '0 invites left this month' : `${left} invite${left === 1 ? '' : 's'} left`}</span>`;
+      const c = fgtlCredit(p.paired);
+      if (!c.infinite) {
+        if (!c.tracked) {
+          // No confirmed usage yet — don't imply we know the balance. It'll
+          // start counting from real app usage once this account is run.
+          budgetStr = ' · <span class="fgtl-left untracked">invites left not tracked yet — run to start counting from app usage</span>';
+        } else {
+          exhausted = c.remaining === 0;
+          budgetStr = ` · <span class="fgtl-left ${exhausted ? 'out' : ''}">${exhausted ? '0 invites left this month' : `${c.remaining} invite${c.remaining === 1 ? '' : 's'} left`}</span>`;
+        }
       }
     }
     const blocked = zero || exhausted;
