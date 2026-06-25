@@ -13284,36 +13284,40 @@ function fgtlRenderPeople() {
   const q = (document.getElementById('fgtl-search')?.value || '').toLowerCase();
   el.innerHTML = fgtlPeople.filter((p) => p.email.toLowerCase().includes(q)).map((p) => {
     const isIn = !!fgtlPicked[p.email]; const zero = p.matched === 0;
-    // Surface this account's monthly invite budget right in the row so an
-    // exhausted account (e.g. an operator who already used all their invites
-    // this month) is obvious BEFORE launching, not discovered mid-run (v2.119.2).
+    // One small status pill (the thing you decide on) instead of cramming
+    // DB-count + pairing + status into one crowded line. Connection count drops to
+    // a faint sub-line; "auto-pairs" is the silent default — only flag a missing
+    // profile. (v2.119.12 — declutter)
     const elig = fgtlEligibility(p.email);
-    let budgetStr = '';
+    let pill = '';
     let exhausted = false;
     if (!elig.eligible) {
-      // Signed with a non-Ortus company on LinkedIn — can't invite for the Page.
-      budgetStr = ` · <span class="fgtl-left out">signed with ${escHtml(elig.company)} — can’t invite for Ortus Club</span>`;
-    } else if (p.paired) {
+      pill = `<span class="fgtl-pillst out">${escHtml(elig.company)} · can’t invite</span>`;
+    } else if (!p.paired) {
+      pill = '<span class="fgtl-pillst new">needs a profile</span>';
+    } else {
       const c = fgtlCredit(p.paired);
       if (!c.infinite) {
         if (!c.tracked) {
-          // Hasn't run through the app yet — nothing factual to show.
-          budgetStr = ' · <span class="fgtl-left untracked">not run yet — invites sent will be tracked here</span>';
+          pill = '<span class="fgtl-pillst new">not run yet</span>';
         } else {
-          // Just the factual count sent this month. If it sent nothing because the
-          // account is tapped out (observed 0 credits), say so plainly.
           const n = c.sent || 0;
-          budgetStr = (n === 0 && c.available === 0)
-            ? ' · <span class="fgtl-left out">no credits left this month</span>'
-            : ` · <span class="fgtl-left">${n} sent this month</span>`;
+          exhausted = c.available === 0;
+          pill = (n > 0)
+            ? `<span class="fgtl-pillst sent">${n} sent</span>`
+            : (exhausted ? '<span class="fgtl-pillst out">no credits left</span>' : '<span class="fgtl-pillst sent">0 sent</span>');
         }
       }
     }
-    const blocked = zero || !elig.eligible;
+    const blocked = zero || !elig.eligible || exhausted;
+    const label = isIn ? 'added' : !elig.eligible ? 'can’t invite' : exhausted ? '0 left' : zero ? 'no match' : '+ add';
     return `<div class="fgtl-prow ${isIn ? 'in' : ''}">
-      <div><div class="em">${escHtml(p.email)}</div><div class="meta">${p.total.toLocaleString()} total in DB${p.paired ? ' · auto-pairs' : ' · needs a profile'}${budgetStr}</div></div>
-      <div class="fgtl-mbox ${zero ? 'zero' : ''}"><b>${p.matched.toLocaleString()}</b><small>match roles</small></div>
-      <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${isIn ? 'added' : !elig.eligible ? 'can’t invite' : zero ? 'no match' : '+ add'}</button>
+      <div class="fgtl-rowmain">
+        <div class="fgtl-emline"><span class="em">${escHtml(p.email)}</span>${pill}</div>
+        <div class="fgtl-sub">${p.total.toLocaleString()} connections</div>
+      </div>
+      <div class="fgtl-mbox ${zero ? 'zero' : ''}"><b>${p.matched.toLocaleString()}</b><small>match</small></div>
+      <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${label}</button>
     </div>`;
   }).join('') || '<div class="empty" style="color:var(--gray);padding:22px;text-align:center">No colleagues match that search.</div>';
 }
