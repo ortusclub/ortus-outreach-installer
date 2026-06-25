@@ -13221,6 +13221,17 @@ function fgtlCredit(profileName) {
   try { const c = fgAccountCredit({ name: profileName }); return { remaining: c.remaining, tracked: c.tracked, observedAt: c.observedAt, infinite: false }; }
   catch (_) { return { remaining: 30, tracked: false, observedAt: '', infinite: false }; }
 }
+// Eligibility from SoO column AQ (Company) — which company this account is signed
+// into on LinkedIn. Only "The Ortus Club" accounts can send follow invites for the
+// Ortus Club Page; an account signed with a client (Apex Strategy, CCG Chatham…)
+// can't. Unknown/blank company ⇒ eligible (optimistic — the runtime "not a Page
+// admin" skip is the backstop; we don't block on missing SoO data).
+function fgtlEligibility(email) {
+  const acct = (typeof sooData !== 'undefined' && sooData) ? sooData[String(email || '').toLowerCase()] : null;
+  const company = acct ? String(acct.Company || '').trim() : '';
+  if (!company) return { eligible: true, company: '' };
+  return { eligible: company.toLowerCase() === 'the ortus club', company };
+}
 // "2026-06-25T..." → "Jun 25". Empty/garbage → ''.
 function fgtlShortDate(iso) {
   const s = String(iso || '');
@@ -13276,9 +13287,13 @@ function fgtlRenderPeople() {
     // Surface this account's monthly invite budget right in the row so an
     // exhausted account (e.g. an operator who already used all their invites
     // this month) is obvious BEFORE launching, not discovered mid-run (v2.119.2).
+    const elig = fgtlEligibility(p.email);
     let budgetStr = '';
     let exhausted = false;
-    if (p.paired) {
+    if (!elig.eligible) {
+      // Signed with a non-Ortus company on LinkedIn — can't invite for the Page.
+      budgetStr = ` · <span class="fgtl-left out">signed with ${escHtml(elig.company)} — can’t invite for Ortus Club</span>`;
+    } else if (p.paired) {
       const c = fgtlCredit(p.paired);
       if (!c.infinite) {
         if (!c.tracked) {
@@ -13293,11 +13308,11 @@ function fgtlRenderPeople() {
         }
       }
     }
-    const blocked = zero || exhausted;
+    const blocked = zero || exhausted || !elig.eligible;
     return `<div class="fgtl-prow ${isIn ? 'in' : ''}">
       <div><div class="em">${escHtml(p.email)}</div><div class="meta">${p.total.toLocaleString()} total in DB${p.paired ? ' · auto-pairs' : ' · needs a profile'}${budgetStr}</div></div>
       <div class="fgtl-mbox ${zero ? 'zero' : ''}"><b>${p.matched.toLocaleString()}</b><small>match roles</small></div>
-      <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${isIn ? 'added' : zero ? 'no match' : exhausted ? '0 left' : '+ add'}</button>
+      <button class="fgtl-addbtn ${blocked ? 'dis' : ''}" data-fgadd="${escHtml(p.email)}" ${blocked ? 'disabled' : ''}>${isIn ? 'added' : !elig.eligible ? 'can’t invite' : zero ? 'no match' : exhausted ? '0 left' : '+ add'}</button>
     </div>`;
   }).join('') || '<div class="empty" style="color:var(--gray);padding:22px;text-align:center">No colleagues match that search.</div>';
 }
@@ -13537,6 +13552,10 @@ async function initFollowerGrowth() {
   fgtlRenderChips();
   fgtlBindBoard();
   fgtlBindLaunch();
+
+  // 4b. Ensure SoO is loaded so launch-list eligibility (Company col AQ) is
+  // accurate on first render — else every account shows optimistically eligible.
+  if (!sooData || !Object.keys(sooData).length) { try { await loadSoOStatus(); } catch (_) {} }
 
   // 5. Fetch colleagues with matched counts
   await fgtlRefreshMatched();
