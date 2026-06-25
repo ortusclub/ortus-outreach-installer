@@ -2240,6 +2240,27 @@ table.mini td { padding: 5px 8px; color: var(--ink); border-bottom: 1px solid va
   line-height: 1.4;
 }
 
+/* v2.119.19 — variant A: gold callout for the "you usually don't need a note"
+   nudge. Shown only when the operator has typed into the note box (the .hidden
+   toggle is driven by shouldShowNoteHint). .hidden must win over the callout
+   display, hence the more-specific .note-hint-callout.hidden rule. */
+.note-hint.note-hint-callout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: var(--gold-tint-bg);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin-top: 8px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.note-hint.note-hint-callout.hidden { display: none; }
+.note-hint-callout .nh-ic { color: var(--gold); font-weight: 800; font-size: 1rem; line-height: 1.2; flex: 0 0 auto; }
+.note-hint-callout .nh-tx b { color: var(--gold); }
+
 /* Placeholder tags */
 .placeholder-tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 24px 0; }
 .placeholder-tags .tag {
