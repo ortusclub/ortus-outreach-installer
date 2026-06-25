@@ -882,6 +882,10 @@ function rejectIfBadPrimaryUrl(body, res) {
   if (mode !== 'connect_and_introduce' && mode !== 'introduce_back') return false;
   const url = ((body && body.templates && body.templates.primaryUrl) || '').toString().trim();
   if (!url) {
+    // v2.119: ICB's URL is optional (leads are already connected; the URL only
+    // feeds the {primary url} placeholder). Blank is allowed for introduce_back;
+    // CC+IC still requires it for the connected-to-primary check + auto-accept.
+    if (mode === 'introduce_back') return false;
     res.status(400).json({ error: 'Primary person URL is required for this mode.' });
     return true;
   }

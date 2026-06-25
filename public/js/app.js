@@ -1865,10 +1865,13 @@ function onModeChange() {
     _colRight.style.display = _isIcMode ? 'none' : '';
     _colRight.style.gridColumn = _showPrimaryCol ? '' : '1 / -1';
   }
-  // Primary check timing is a CC+IC concept (connect/check to the primary).
-  // ICB leads are already connected, so hide it there.
+  // Primary check timing + "Logged in via" source are CC+IC concepts (the
+  // connected-to-primary check / auto-accept / follow-up all act as the primary).
+  // ICB has none of those — its leads are already connected — so hide both there.
   const _ptf = document.getElementById('primary-timing-field');
   if (_ptf) _ptf.style.display = _ccic ? '' : 'none';
+  const _psf = document.getElementById('primary-source-field');
+  if (_psf) _psf.style.display = _ccic ? '' : 'none';
   const cadenceBlock = document.getElementById('check-cadence-block');
   // Cadence applies to every monitoring mode (CC+IC + CC+DM). Same predicate
   // drives the launch payload read so visibility and persistence stay in lockstep.
