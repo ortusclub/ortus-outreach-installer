@@ -97,23 +97,26 @@ export async function waitForModalContent(page, { timeoutMs = 12000, pollMs = 25
   return { ready: false, via: 'timeout', polls };
 }
 
-// Thrown when the invite-to-follow modal never opens — almost always because the
-// account isn't an admin of the Ortus Club Page (only Page admins can invite to
-// follow). Carries a flag so the batch can label the skip clearly and move on.
-export class NotPageAdminError extends Error {
-  constructor(message) { super(message); this.name = 'NotPageAdminError'; this.notPageAdmin = true; }
+// Thrown when the invite-to-follow modal never opens within the wait window. This
+// is NOT a reliable "not a Page admin" signal — a slow-loading modal for a real
+// admin looks identical to a missing one (a 30s wait mislabeled antonio, who is an
+// admin with 0 credits, as "not admin"). Eligibility is decided upfront from the
+// SoO Company column; this is just an honest "couldn't open it" soft-skip.
+export class InviteModalUnavailableError extends Error {
+  constructor(message) { super(message); this.name = 'InviteModalUnavailableError'; this.softSkip = true; }
 }
 
 export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) {
   // Operators run on slow/overloaded laptops; the invite page can take a while.
   await page.goto(inviteUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
-  // 30s is plenty for the modal to mount on a real admin account; non-admins never
-  // get a modal at all, so relabel the timeout instead of bubbling a cryptic
-  // "Waiting for selector … 60000ms exceeded" and burning a full minute per account.
+  // Up to 2 min: a real admin's modal can take a long time to mount on a slow/
+  // overloaded machine, and we must NOT cut it short and mislabel them. Even an
+  // exhausted admin gets a "No remaining invite credits" modal — let it appear,
+  // then read 0 credits.
   try {
-    await page.waitForSelector(SEL.modal, { timeout: 30000 });
+    await page.waitForSelector(SEL.modal, { timeout: 120000 });
   } catch (_) {
-    throw new NotPageAdminError('not a Page admin — this account can’t send follow invites (only Ortus Club Page admins can)');
+    throw new InviteModalUnavailableError('invite modal didn’t open in 2 min — slow load, or this account can’t access the Page invite tool. Skipped — try again.');
   }
   const content = await waitForModalContent(page, { log });
   log(content.ready
