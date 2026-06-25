@@ -40,6 +40,15 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
         const out = await deps.send({ page: handle.page, queued: pairToQueued(rows), log: (m) => stamp(`[${pair.account}] ${m}`), shouldAbort: ctx.getAbort });
         const invitedIds = out.invited || [];
         if (invitedIds.length) await deps.record({ rows, invitedIds, account: pair.account, operator: pair.operator, month: ctx.month });
+        // Write the modal's REAL post-run available count back to the sheet (even
+        // when 0 were sent — the credit reading is still authoritative). This
+        // supersedes the 30−Sent estimate so the shared budget self-corrects for
+        // accepts/withdrawals. Best-effort: a write-back failure never aborts the run.
+        if (deps.observeCredits && Number.isFinite(out.creditsAfter)) {
+          try {
+            await deps.observeCredits({ account: pair.account, operator: pair.operator, month: ctx.month, available: out.creditsAfter, allowance: out.allowance, refill: out.refill });
+          } catch (e) { stamp(`[${pair.account}] ⚠ credit write-back failed — ${e.message}`); }
+        }
         slot.status = 'done'; slot.invited = invitedIds.length; status.sent++; status.invitesTotal += invitedIds.length;
         stamp(`✓ [${pair.account}] Invites sent · ${invitedIds.length} sent, ${out.creditsAfter} credits left`);
       } catch (err) {

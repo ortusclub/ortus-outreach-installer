@@ -63,3 +63,13 @@ export async function markFgInvited({ memberIds, account, operator, month }) {
   if (r?.error) throw new Error(r.error);
   return r; // { invited, remaining }
 }
+
+// Write the modal's observed available-credit count straight to the account's FG
+// Budgets row (Remaining := available, Sent := allowance − available) plus the
+// refill date + an "Observed At" stamp. Authoritative over the 30−Sent estimate
+// because LinkedIn refills credits on accept/withdraw, which Sent can't see.
+export async function observeFgCredits({ account, operator, month, available, allowance, refill }) {
+  const r = await postFg({ action: 'fgObserveCredits', account, operator, month, available, allowance, refill }, { timeoutMs: 60000 });
+  if (r?.error) throw new Error(r.error);
+  return r; // { observed, remaining, allowance }
+}

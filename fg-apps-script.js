@@ -6,7 +6,7 @@
 
 var FG_HEADER = ['Target Name','LinkedIn URL','Member ID','Company','Job Title',
   'Function Match','Geo','Invited By','Account','Status','Invited At','FG Note','Month'];
-var BUDGET_HEADER = ['Account','Operator','Month','Allowance','Sent','Remaining'];
+var BUDGET_HEADER = ['Account','Operator','Month','Allowance','Sent','Remaining','Refill','Observed At'];
 // Fallback when an account has no budget row yet. LinkedIn's Invite-to-follow
 // pool is 30/month (shown live in the invite modal; refills monthly). Per-account
 // overrides live in the Allowance column. Keep in sync with FG_DEFAULT_MONTHLY_ALLOWANCE.
@@ -21,6 +21,7 @@ function doPost(e) {
     if (data.action === 'fgState') out = fgState_();
     else if (data.action === 'fgQueue') out = fgQueue_(data.rows || []);
     else if (data.action === 'fgMarkInvited') out = fgMarkInvited_(data);
+    else if (data.action === 'fgObserveCredits') out = fgObserveCredits_(data);
     else out = { error: 'Unknown action: ' + data.action };
     return json_(out);
   } catch (err) {
@@ -136,6 +137,50 @@ function bumpBudget_(account, operator, month, sentDelta) {
     .setValues([[account, operator || '', month, allowance, sentDelta, allowance - sentDelta]]);
   sh.getRange(newRow, 3).setNumberFormat('@').setValue(month);
   return allowance - sentDelta;
+}
+
+// Self-heal: ensure the FG Budgets header row carries the full BUDGET_HEADER
+// (older sheets predate the Refill / Observed At columns). Extends in place.
+function ensureBudgetHeader_(sh) {
+  var have = sh.getRange(1, 1, 1, BUDGET_HEADER.length).getValues()[0];
+  for (var i = 0; i < BUDGET_HEADER.length; i++) {
+    if (String(have[i] || '') !== BUDGET_HEADER[i]) {
+      sh.getRange(1, 1, 1, BUDGET_HEADER.length).setValues([BUDGET_HEADER]).setFontWeight('bold');
+      return;
+    }
+  }
+}
+
+// Authoritative write-back of the modal's observed credit state. Sets Remaining
+// to the REAL available number (not allowance−Sent) so accept/withdraw refills
+// are reflected; back-computes Sent for consistency; stamps Refill + Observed At.
+function fgObserveCredits_(data) {
+  var account = data.account, operator = data.operator, month = normMonth_(data.month);
+  var available = Number(data.available);
+  var allowance = Number(data.allowance) || DEFAULT_ALLOWANCE;
+  if (!account || !month || !isFinite(available)) return { error: 'fgObserveCredits: account, month, available required' };
+  var sh = sheet_('FG Budgets', BUDGET_HEADER);
+  ensureBudgetHeader_(sh);
+  var sent = Math.max(0, allowance - available);
+  var nowIso = new Date().toISOString();
+  var refill = String(data.refill || '');
+  var r = rows_(sh);
+  for (var i = 0; i < r.data.length; i++) {
+    if (r.data[i][0] === account && normMonth_(r.data[i][2]) === month) {
+      sh.getRange(i + 2, 3).setNumberFormat('@').setValue(month); // Month -> plain text
+      sh.getRange(i + 2, 4).setValue(allowance);   // Allowance
+      sh.getRange(i + 2, 5).setValue(sent);        // Sent (back-computed)
+      sh.getRange(i + 2, 6).setValue(available);   // Remaining := observed available
+      sh.getRange(i + 2, 7).setValue(refill);      // Refill
+      sh.getRange(i + 2, 8).setValue(nowIso);      // Observed At
+      return { observed: true, remaining: available, allowance: allowance };
+    }
+  }
+  var newRow = sh.getLastRow() + 1;
+  sh.getRange(newRow, 1, 1, BUDGET_HEADER.length)
+    .setValues([[account, operator || '', month, allowance, sent, available, refill, nowIso]]);
+  sh.getRange(newRow, 3).setNumberFormat('@').setValue(month);
+  return { observed: true, remaining: available, allowance: allowance };
 }
 
 // Funnel rollup per operator: eligible-pool isn't known here (lives in the app),

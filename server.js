@@ -73,7 +73,7 @@ import {
 } from './src/auth.js';
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam } from './src/connections/search-service.js';
 import { runTeamLaunch, makeInitialStatus } from './src/connections/fg-team-launch.js';
-import { getFgState, queueFgInvites, markFgInvited, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
+import { getFgState, queueFgInvites, markFgInvited, observeFgCredits, FG_DEFAULT_MONTHLY_ALLOWANCE } from './src/connections/fg-sync.js';
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
@@ -1602,6 +1602,12 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
             }
           }
           _fgTeamSnap = await getFgState(); // refresh so the next account dedups against these
+        },
+        // Authoritative credit write-back: store the modal's real available number
+        // so the shared budget self-corrects for accept/withdraw refills.
+        observeCredits: async ({ account, operator, month: m, available, allowance, refill }) => {
+          await observeFgCredits({ account, operator, month: m || month, available, allowance, refill });
+          _fgTeamSnap = await getFgState();
         },
         log: (m) => { try { campaignLog(`[FG-team] ${m}`); } catch (_) {} },
         now: () => new Date().toISOString(),

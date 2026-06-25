@@ -9,6 +9,21 @@ export function parseCreditsAvailable(text) {
   return m ? Number(m[1]) : 0;
 }
 
+// Full credit line → { available, allowance, refill }. The modal reads e.g.
+// "5/30 credits available · Credit refill: June 30, 2026" — the parking-lot truth
+// (available = 30 − pending-not-yet-accepted/withdrawn). We store THIS, not a
+// 30−Sent estimate, so the sheet self-corrects for accepts/withdrawals.
+export function parseCreditsMeta(text) {
+  const s = String(text || '');
+  const m = s.match(/(\d+)\s*\/\s*(\d+)\s*credits available/i);
+  const rm = s.match(/credit refill:?\s*([A-Za-z0-9 ,]+?\d{4})/i);
+  return {
+    available: m ? Number(m[1]) : null,
+    allowance: m ? Number(m[2]) : null,
+    refill: rm ? rm[1].trim() : '',
+  };
+}
+
 // Used ONLY to disambiguate duplicate same-name results. true if the headline
 // contains the company token, or a significant (>=4-char, non-generic) job-title word.
 const TITLE_STOP = new Set(['head', 'senior', 'chief', 'lead', 'manager', 'director', 'officer', 'global', 'group', 'team']);
@@ -94,6 +109,12 @@ export async function readCredits(page, { log = () => {} } = {}) {
   return credits;
 }
 
+// Read the full credit line (available + allowance + refill date) for write-back.
+export async function readCreditsMeta(page) {
+  const txt = await page.$eval(SEL.modal, (m) => m.innerText || '').catch(() => '');
+  return parseCreditsMeta(txt);
+}
+
 export async function scrapeResults(page) {
   return page.$$eval(SEL.result, (lis) => lis.map((li) => {
     const text = (li.innerText || '').trim();
@@ -156,6 +177,7 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   const d = {
     openModal: openInviteModal,
     readCredits,
+    readCreditsMeta,
     selectPerson,
     clickInvite,
     sleep: () => randomDelay(700, 1400),
@@ -164,6 +186,10 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   if (inviteUrl) await d.openModal(page, inviteUrl, { log });
   const creditsBefore = await d.readCredits(page, { log });
   log(`credits available: ${creditsBefore}`);
+  // Capture the modal's real allowance + refill date for write-back (real runs
+  // only; unit tests pass no inviteUrl). `available` here equals creditsBefore.
+  let allowance = null, refill = '';
+  if (inviteUrl) { const meta = await d.readCreditsMeta(page); allowance = meta.allowance; refill = meta.refill; }
   const invited = [], skipped = [];
   for (const person of queued) {
     if (shouldAbort()) { log('aborted'); break; }
@@ -175,5 +201,5 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   let sent = false;
   if (invited.length) sent = await d.clickInvite(page, { log });
   const creditsAfter = sent ? Math.max(0, creditsBefore - invited.length) : creditsBefore;
-  return { invited: sent ? invited : [], skipped: sent ? skipped : skipped.concat(invited), creditsBefore, creditsAfter, sent };
+  return { invited: sent ? invited : [], skipped: sent ? skipped : skipped.concat(invited), creditsBefore, creditsAfter, allowance, refill, sent };
 }

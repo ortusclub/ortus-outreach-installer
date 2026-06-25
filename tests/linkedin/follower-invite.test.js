@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCreditsAvailable, headlineMatches, pickInviteResult, waitForModalContent } from '../../src/linkedin/follower-invite.js';
+import { parseCreditsAvailable, parseCreditsMeta, headlineMatches, pickInviteResult, waitForModalContent } from '../../src/linkedin/follower-invite.js';
+
+test('parseCreditsMeta extracts available, allowance, and refill date', () => {
+  const t = 'Send your connections an invitation... 5/30 credits available · Credit refill: June 30, 2026 Locations';
+  assert.deepEqual(parseCreditsMeta(t), { available: 5, allowance: 30, refill: 'June 30, 2026' });
+});
+
+test('parseCreditsMeta returns nulls when the credits line is absent', () => {
+  assert.deepEqual(parseCreditsMeta('Invite to follow Dialog content end.'), { available: null, allowance: null, refill: '' });
+});
 
 // A fake puppeteer page that returns scripted search-box / result-row presence on
 // successive poll rounds. One round advances per page.$ call (the search probe,

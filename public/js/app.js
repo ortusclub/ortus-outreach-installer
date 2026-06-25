@@ -13193,7 +13193,13 @@ function fgAccountCredit(profile) {
   // `tracked` = we actually have a FG Budgets row for this account+month, i.e.
   // the number is grounded in real app usage. No row ⇒ we're only assuming the
   // full default allowance and must say so rather than imply a confirmed count.
-  return { remaining: Math.max(0, Number.isFinite(remaining) ? remaining : allowance), allowance, tracked: !!row };
+  return {
+    remaining: Math.max(0, Number.isFinite(remaining) ? remaining : allowance),
+    allowance,
+    tracked: !!row,
+    observedAt: row ? String(row['Observed At'] || '') : '',
+    refill: row ? String(row.Refill || '') : '',
+  };
 }
 
 // ── Team Launch board helpers (fgtl*) ────────────────────────────────────────
@@ -13212,8 +13218,16 @@ function fgtlBudgetLeft(profileName) {
 // label launch-list rows we haven't run yet vs ones with confirmed usage.
 function fgtlCredit(profileName) {
   if (!profileName || profileName === 'Local Browser') return { remaining: Infinity, tracked: false, infinite: true };
-  try { const c = fgAccountCredit({ name: profileName }); return { remaining: c.remaining, tracked: c.tracked, infinite: false }; }
-  catch (_) { return { remaining: 30, tracked: false, infinite: false }; }
+  try { const c = fgAccountCredit({ name: profileName }); return { remaining: c.remaining, tracked: c.tracked, observedAt: c.observedAt, infinite: false }; }
+  catch (_) { return { remaining: 30, tracked: false, observedAt: '', infinite: false }; }
+}
+// "2026-06-25T..." → "Jun 25". Empty/garbage → ''.
+function fgtlShortDate(iso) {
+  const s = String(iso || '');
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1] || '';
+  return mon ? `${mon} ${Number(m[3])}` : '';
 }
 function fgtlInvitesLeft(person, profileName) {
   if (!profileName) return 0;
@@ -13273,7 +13287,9 @@ function fgtlRenderPeople() {
           budgetStr = ' · <span class="fgtl-left untracked">invites left not tracked yet — run to start counting from app usage</span>';
         } else {
           exhausted = c.remaining === 0;
-          budgetStr = ` · <span class="fgtl-left ${exhausted ? 'out' : ''}">${exhausted ? '0 invites left this month' : `${c.remaining} invite${c.remaining === 1 ? '' : 's'} left`}</span>`;
+          const asOf = fgtlShortDate(c.observedAt);
+          const asOfStr = asOf ? ` <span class="fgtl-asof">(as of ${asOf})</span>` : '';
+          budgetStr = ` · <span class="fgtl-left ${exhausted ? 'out' : ''}">${exhausted ? '0 credits left' : `${c.remaining} credit${c.remaining === 1 ? '' : 's'} available`}</span>${asOfStr}`;
         }
       }
     }

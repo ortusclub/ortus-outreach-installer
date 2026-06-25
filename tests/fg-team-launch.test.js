@@ -89,3 +89,31 @@ test('runTeamLaunch aborts before the next account when getAbort flips', async (
   assert.equal(status.perAccount[1].status, 'skipped');
   assert.equal(status.perAccount[1].reason, 'stopped');
 });
+
+test('runTeamLaunch writes observed credits back per account (even 0 sent)', async () => {
+  const observed = [];
+  const pairs = [
+    { operator: 'a@x', operatorName: 'A', account: 'a@x', profileId: 'p1' }, // sends 1
+    { operator: 'b@x', operatorName: 'B', account: 'b@x', profileId: 'p2' }, // 0 sent but credits read
+  ];
+  const sendByOp = {
+    'a@x': { invited: ['m1'], skipped: [], creditsBefore: 5, creditsAfter: 4, allowance: 30, refill: 'June 30, 2026' },
+    'b@x': { invited: [], skipped: ['m2'], creditsBefore: 0, creditsAfter: 0, allowance: 30, refill: 'June 30, 2026' },
+  };
+  let idx = 0;
+  const deps = {
+    buildTargets: (pair) => ({ rows: [FG_ROW('X', pair.operator === 'a@x' ? 'm1' : 'm2')], count: 1 }),
+    launch: async () => ({ page: {}, close: async () => {} }),
+    send: async () => sendByOp[pairs[idx++].operator], // accounts run sequentially
+    record: async () => {},
+    observeCredits: async (o) => { observed.push(o); },
+    log: () => {},
+    now: () => '2026-06-23T00:00:00.000Z',
+  };
+  const ctx = { keywords: [], month: '2026-06', getAbort: () => false };
+  await runTeamLaunch(pairs, ctx, deps, makeInitialStatus(pairs));
+  assert.deepEqual(observed, [
+    { account: 'a@x', operator: 'a@x', month: '2026-06', available: 4, allowance: 30, refill: 'June 30, 2026' },
+    { account: 'b@x', operator: 'b@x', month: '2026-06', available: 0, allowance: 30, refill: 'June 30, 2026' },
+  ]);
+});
