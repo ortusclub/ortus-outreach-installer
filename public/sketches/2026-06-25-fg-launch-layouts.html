@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Follower Growth — launch screen layouts (3 variants)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 18px 24px 90px; }
+    .lead { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.55; margin: 0 0 14px; max-width: 980px; }
+    .lead b { color: var(--ink); }
+    /* variant switcher */
+    .vsw { display:flex; gap:8px; margin:0 0 22px; flex-wrap:wrap; position:sticky; top:0; background:var(--bg); padding:12px 0; z-index:5; border-bottom:1px solid var(--hairline-soft); }
+    .vsw button { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.08em; text-transform:uppercase; padding:9px 16px; border-radius:9999px; border:1px solid var(--hairline); background:none; color:var(--gray); cursor:pointer; }
+    .vsw button.on { border-color:var(--ink); color:var(--ink); background:var(--card-bg-hover); }
+    .vsw .note { margin-left:auto; align-self:center; font-family:var(--mono); font-size:0.6rem; color:var(--gray); }
+    .variant { display:none; }
+    .variant.on { display:block; }
+    .vtitle { font-family:var(--mono); font-size:0.64rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--gray); margin:0 0 4px; }
+    .vtitle b { color:var(--ink); }
+    .vdesc { font-family:var(--body); font-size:0.82rem; color:var(--gray); margin:0 0 18px; max-width:920px; }
+    /* scope the real FG styles into the sketch by reusing #nav-follower-growth id wrapper */
+    .fgwrap { }
+    /* shared row demo styles (mirror the real fgtl-prow) */
+    #nav-follower-growth .fgtl-prow { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:16px; padding:13px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:9px; }
+    #nav-follower-growth .fgtl-prow .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+    #nav-follower-growth .fgtl-prow .meta { font-family:var(--mono); font-size:10px; color:var(--gray); margin-top:3px; }
+    #nav-follower-growth .fgtl-prow .meta .fgtl-left { color:var(--ink); }
+    #nav-follower-growth .fgtl-prow .meta .fgtl-left.out { color:#b00020; font-weight:700; }
+    #nav-follower-growth .fgtl-prow .meta .fgtl-left.untracked { color:var(--gray); font-style:italic; }
+    #nav-follower-growth .fgtl-mbox { text-align:right; }
+    #nav-follower-growth .fgtl-mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; color:var(--ink); }
+    #nav-follower-growth .fgtl-mbox.zero b { color:var(--gray); }
+    #nav-follower-growth .fgtl-mbox small { display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+    #nav-follower-growth .fgtl-addbtn { border:1px solid var(--ink); background:none; color:var(--ink); border-radius:9999px; padding:7px 15px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+    #nav-follower-growth .fgtl-addbtn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+    #nav-follower-growth .fgtl-roles { border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; margin-bottom:18px; }
+    #nav-follower-growth .fgtl-step-eyebrow { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin-bottom:12px; }
+    #nav-follower-growth .chip-tag { display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:9999px; background:var(--card-bg); border:1px solid var(--hairline); color:var(--ink); font-size:12.5px; margin-right:6px; }
+    .fgtl-search { display:flex; align-items:center; gap:9px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:9px 15px; margin-bottom:14px; }
+    .fgtl-search input { flex:1; border:none; background:none; outline:none; color:var(--ink); font-size:13px; }
+    .fgtl-go-btn { width:100%; background:var(--gold); color:#000; border:none; border-radius:9999px; padding:12px; font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; cursor:pointer; font-weight:600; }
+    .fgtl-go-btn.stop { background:var(--red); color:#fff; }
+    .panel { border:1px solid var(--hairline); border-radius:14px; padding:16px; }
+    .panel h3 { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 12px; }
+    .tot { display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px; margin-bottom:6px; }
+    .tot b { font-family:var(--display); font-size:1.05rem; }
+    /* mini live-log */
+    .mlog { background:var(--bg-soft); border:1px solid var(--hairline); border-radius:10px; padding:10px 12px; font-family:var(--mono); font-size:11px; color:var(--gray); line-height:1.7; max-height:200px; overflow:auto; }
+    .mlog .who { color:var(--gold); }
+    .mlog .ok { color:var(--green); }
+    .hbar { height:4px; border-radius:9999px; background:var(--hairline); overflow:hidden; margin:12px 0; }
+    .hbar i { display:block; height:100%; background:var(--green); width:20%; }
+    .summary-strip { display:flex; align-items:center; gap:16px; border:1px solid var(--hairline); border-radius:12px; padding:12px 16px; margin-bottom:16px; font-family:var(--mono); font-size:11px; color:var(--gray); }
+    .summary-strip b { color:var(--ink); }
+    .summary-strip .edit { margin-left:auto; border:1px solid var(--hairline); border-radius:9999px; padding:6px 13px; background:none; color:var(--ink); cursor:pointer; font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.05em; }
+    .v3board { display:grid; grid-template-columns:1fr 340px; gap:18px; align-items:start; }
+    .v1grid { display:grid; grid-template-columns:1fr 400px; gap:20px; align-items:start; }
+    .dock { border:1px solid var(--ink); border-radius:14px; padding:0; overflow:hidden; box-shadow:0 -2px 24px rgba(0,0,0,.18); margin-top:18px; }
+    .dock-head { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--hairline); background:var(--card-bg-hover); }
+    .dock-head .lab { font-family:var(--mono); font-size:0.62rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink); }
+    .dock-head .pct { margin-left:auto; font-family:var(--display); font-size:1.2rem; }
+    .dock-body { padding:14px 16px; display:grid; grid-template-columns:1fr 260px; gap:18px; }
+    .stat-row { display:flex; gap:22px; font-family:var(--mono); font-size:11px; color:var(--gray); margin-top:8px; }
+    .stat-row b { color:var(--ink); font-family:var(--display); font-size:1rem; }
+  </style>
+</head>
+<body>
+<div class="wrap" id="nav-follower-growth">
+  <p class="lead">Three layouts for the <b>Follower Growth launch screen</b>. The problem today: setup (roles + team browse + launch list) and the live-run card are <b>separate full-width blocks stacked vertically</b>, so when a run starts the live card collides with the sticky launch panel above it. Each variant keeps <b>one</b> launch/monitor surface so nothing overlaps. Toggle below.</p>
+
+  <div class="vsw">
+    <button class="on" data-v="1" onclick="pick(1)">1 · Cockpit</button>
+    <button data-v="2" onclick="pick(2)">2 · Focus stepper</button>
+    <button data-v="3" onclick="pick(3)">3 · Docked log drawer</button>
+    <span class="note">sample data · real styles</span>
+  </div>
+
+  <!-- ───────────── VARIANT 1 — Cockpit ───────────── -->
+  <section class="variant on" id="v1">
+    <p class="vtitle">Variant 1 — <b>Cockpit</b></p>
+    <p class="vdesc">Setup on the left, a single sticky <b>launch panel on the right that becomes the live monitor in place</b>. No second card appears — the right panel just swaps its contents from "launch list" to "live log + progress" when you hit launch. The two never coexist, so there's nothing to overlap.</p>
+
+    <div class="fgtl-roles">
+      <div class="fgtl-step-eyebrow">&#9312; Which roles to invite — counts update live</div>
+      <span class="chip-tag"><b>marketing</b> ×</span><span class="chip-tag"><b>brand</b> ×</span><span class="chip-tag"><b>growth</b> ×</span><span class="chip-tag"><b>content</b> ×</span>
+    </div>
+
+    <div class="v1grid">
+      <div>
+        <div class="fgtl-search"><input placeholder="Search the team by name or email…"></div>
+        <div class="fgtl-prow"><div><div class="em">antonio@ortusclub.com</div><div class="meta">1,071 in DB · auto-pairs · <span class="fgtl-left">26 sent this month</span></div></div><div class="fgtl-mbox"><b>91</b><small>match roles</small></div><button class="fgtl-addbtn">+ add</button></div>
+        <div class="fgtl-prow"><div><div class="em">altini@ortus.solutions</div><div class="meta">915 in DB · auto-pairs · <span class="fgtl-left out">no credits left this month</span></div></div><div class="fgtl-mbox"><b>234</b><small>match roles</small></div><button class="fgtl-addbtn dis">0 left</button></div>
+        <div class="fgtl-prow"><div><div class="em">a.rifel@ortus.solutions</div><div class="meta">915 in DB · auto-pairs · <span class="fgtl-left out">signed with Apex Strategy — can't invite</span></div></div><div class="fgtl-mbox"><b>234</b><small>match roles</small></div><button class="fgtl-addbtn dis">can't invite</button></div>
+        <div class="fgtl-prow"><div><div class="em">aaron.bagatsolon@ortus.solutions</div><div class="meta">58 in DB · auto-pairs · <span class="fgtl-left untracked">not run yet</span></div></div><div class="fgtl-mbox"><b>1</b><small>match roles</small></div><button class="fgtl-addbtn">+ add</button></div>
+      </div>
+
+      <div class="panel" style="position:sticky;top:70px">
+        <h3>● Live · launching</h3>
+        <div class="tot"><span>Accounts</span><b>1 / 5</b></div>
+        <div class="hbar"><i style="width:20%"></i></div>
+        <div class="stat-row"><span><b>1</b> sent</span><span><b>0</b> skipped</span><span><b>antonio</b> now</span></div>
+        <div class="mlog" style="margin-top:12px">
+          <div><span class="who">[antonio]</span> opening profiles — 30 targets…</div>
+          <div><span class="who">[antonio]</span> invite modal ready</div>
+          <div><span class="ok">OK</span> credits available: 0</div>
+          <div><span class="who">[antonio]</span> no credits left — skipped</div>
+          <div><span class="who">[altini]</span> selected "Kiefer Roberts"</div>
+        </div>
+        <button class="fgtl-go-btn stop" style="margin-top:12px">Stop after current account</button>
+        <p style="font-family:var(--mono);font-size:9px;color:var(--gray);margin:10px 0 0;text-align:center">Before launch this panel shows your launch list + the gold Launch button.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────── VARIANT 2 — Focus stepper ───────────── -->
+  <section class="variant" id="v2">
+    <p class="vtitle">Variant 2 — <b>Focus stepper</b></p>
+    <p class="vdesc">Setup is a sequence of steps. The moment you launch, <b>all setup collapses into one thin summary strip</b> and the live log expands to full width underneath — a clean hand-off from "configure" to "monitor". One thing on screen at a time.</p>
+
+    <div class="summary-strip">
+      <span><b>5</b> accounts</span><span>·</span><span>roles: <b>marketing +6</b></span><span>·</span><span><b>211</b> invites this run (max)</span>
+      <button class="edit">✎ Edit setup</button>
+    </div>
+
+    <section class="panel" style="border-color:var(--ink)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-family:var(--mono);font-size:0.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--green)">● Launching</span>
+        <span style="font-family:var(--display);font-size:1.6rem;margin-left:auto">20<span style="font-size:0.8rem">%</span></span>
+      </div>
+      <h2 style="font-family:var(--display);font-size:1.8rem;margin:0 0 6px">Team Follower Growth</h2>
+      <div class="hbar"><i style="width:20%"></i></div>
+      <div class="stat-row" style="margin-bottom:14px"><span><b>1</b> / 5 accounts</span><span><b>1</b> invite sent</span><span>· sequential, 1 at a time</span></div>
+      <div style="display:grid;grid-template-columns:1fr 260px;gap:18px">
+        <div class="mlog" style="max-height:240px">
+          <div><span class="who">[antonio@ortusclub.com]</span> opening profiles &amp; sending — 30 targets…</div>
+          <div><span class="who">[antonio@ortusclub.com]</span> invite modal ready (no-credits)</div>
+          <div><span class="ok">OK</span> credits available: 0</div>
+          <div><span class="who">[antonio@ortusclub.com]</span> no credits left — 0 sent</div>
+          <div><span class="who">[altini@ortus.solutions]</span> credits available: 30</div>
+          <div><span class="who">[altini@ortus.solutions]</span> selected "Kiefer Roberts"</div>
+          <div><span class="who">[altini@ortus.solutions]</span> selected "Bradley Woodward"</div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Batch summary</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--gray);margin-bottom:10px">Sent · <b style="color:var(--ink)">1</b> · 0 skipped</div>
+          <div style="font-family:var(--body);font-size:0.78rem;color:var(--gray);line-height:1.5">Each account invites its own connections, then the next starts. Actual sends capped live by each account's available credits.</div>
+          <button class="fgtl-go-btn stop" style="margin-top:14px">Stop after current</button>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ───────────── VARIANT 3 — Docked log drawer ───────────── -->
+  <section class="variant" id="v3">
+    <p class="vtitle">Variant 3 — <b>Docked log drawer</b></p>
+    <p class="vdesc">Keeps today's browse + launch-list board, but the live log lives in a <b>visually distinct docked drawer below</b> (heavier border + shadow + progress in its header) that slides up when a run starts. Closest to today's layout — least change — but the dock can never visually collide with the cart because it's a separate, clearly-bounded surface.</p>
+
+    <div class="v3board">
+      <div>
+        <div class="fgtl-search"><input placeholder="Search the team by name or email…"></div>
+        <div class="fgtl-prow"><div><div class="em">antonio@ortusclub.com</div><div class="meta">1,071 in DB · auto-pairs · <span class="fgtl-left">26 sent this month</span></div></div><div class="fgtl-mbox"><b>91</b><small>match roles</small></div><button class="fgtl-addbtn">+ add</button></div>
+        <div class="fgtl-prow"><div><div class="em">a.rifel@ortus.solutions</div><div class="meta">915 in DB · <span class="fgtl-left out">signed with Apex Strategy — can't invite</span></div></div><div class="fgtl-mbox"><b>234</b><small>match roles</small></div><button class="fgtl-addbtn dis">can't invite</button></div>
+        <div class="fgtl-prow"><div><div class="em">aaron.bagatsolon@ortus.solutions</div><div class="meta">58 in DB · auto-pairs · <span class="fgtl-left untracked">not run yet</span></div></div><div class="fgtl-mbox"><b>1</b><small>match roles</small></div><button class="fgtl-addbtn">+ add</button></div>
+      </div>
+      <div class="panel" style="position:sticky;top:70px">
+        <h3>Your launch list</h3>
+        <div class="tot"><span>People</span><b>5</b></div>
+        <div class="tot"><span>Invites this run</span><b>211</b></div>
+        <button class="fgtl-go-btn stop" style="margin-top:10px">Stop after current account</button>
+      </div>
+    </div>
+
+    <div class="dock">
+      <div class="dock-head">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>
+        <span class="lab">Live log · Team Follower Growth · launching</span>
+        <span class="pct">20%</span>
+      </div>
+      <div class="dock-body">
+        <div class="mlog" style="max-height:170px">
+          <div><span class="who">[antonio@ortusclub.com]</span> invite modal ready (no-credits)</div>
+          <div><span class="ok">OK</span> credits available: 0 — no credits left</div>
+          <div><span class="who">[altini@ortus.solutions]</span> credits available: 30</div>
+          <div><span class="who">[altini@ortus.solutions]</span> selected "Kiefer Roberts"</div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Batch summary</div>
+          <div class="stat-row" style="flex-direction:column;gap:6px"><span><b>1</b> / 5 accounts</span><span><b>1</b> sent · 0 skipped</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  function pick(n){
+    document.querySelectorAll('.variant').forEach(v=>v.classList.remove('on'));
+    document.getElementById('v'+n).classList.add('on');
+    document.querySelectorAll('.vsw button').forEach(b=>b.classList.toggle('on', b.dataset.v==String(n)));
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+</script>
+</body>
+</html>
