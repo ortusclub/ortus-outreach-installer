@@ -3210,6 +3210,66 @@ function restoreLastMode() {
 // Introduce Back) are the active modes. Everything else is parked as
 // Coming Soon per operator request. Card markup + the existing comingSoon
 // flag + setModeByIndex's toast handle the grey-out + click-to-toast flow.
+
+// ── Follower Growth password lock ──────────────────────────────────────────
+// FG is gated behind a password so only people who have it can use it.
+// Client-side check (this is a low-stakes internal app, ~3 operators). To
+// change the password, edit FG_PASSWORD below. Unlock is remembered on this
+// machine (localStorage) so the password is entered once per laptop.
+const FG_PASSWORD = 'OP_FUNNEL_ORTUS.APP';
+const FG_UNLOCK_KEY = 'fg_unlocked';
+function fgUnlocked() {
+  try { return localStorage.getItem(FG_UNLOCK_KEY) === '1'; } catch { return false; }
+}
+function setFgUnlocked() {
+  try { localStorage.setItem(FG_UNLOCK_KEY, '1'); } catch {}
+}
+// True when a mode card should currently render in its locked state.
+function modeIsLocked(m) {
+  return !!(m && m.lock) && !fgUnlocked();
+}
+// Electron's BrowserWindow does NOT implement window.prompt(), so we use a
+// small in-app modal. Resolves to the typed string, or null if cancelled.
+function fgPasswordPrompt(title) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:24px';
+    overlay.innerHTML = `
+      <div style="background:var(--card-bg,#121212);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:24px 26px;max-width:380px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,.6)">
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">🔒 ${escHtml(title)}</div>
+        <div style="font-size:12.5px;opacity:.7;margin-bottom:14px">Enter the password to unlock this on this machine.</div>
+        <div style="position:relative">
+          <input type="password" id="fg-pw-input" autocomplete="off"
+            style="width:100%;padding:10px 44px 10px 12px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:rgba(255,255,255,.04);color:inherit;font-size:14px;box-sizing:border-box" />
+          <button type="button" id="fg-pw-toggle" title="Show password"
+            style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:inherit;opacity:.65;cursor:pointer;font-size:15px;padding:4px 6px">👁</button>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+          <button type="button" id="fg-pw-cancel" style="padding:8px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.25);background:transparent;color:inherit;cursor:pointer;font-size:13px">Cancel</button>
+          <button type="button" id="fg-pw-ok" style="padding:8px 18px;border-radius:999px;border:1px solid var(--gold,#F7BE68);background:var(--gold,#F7BE68);color:#111;cursor:pointer;font-size:13px;font-weight:600">Unlock</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#fg-pw-input');
+    const done = (val) => { overlay.remove(); resolve(val); };
+    overlay.querySelector('#fg-pw-cancel').onclick = () => done(null);
+    overlay.querySelector('#fg-pw-ok').onclick = () => done(input.value);
+    const toggle = overlay.querySelector('#fg-pw-toggle');
+    toggle.onclick = () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      toggle.style.opacity = showing ? '.65' : '1';
+      input.focus();
+    };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(null); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') done(input.value);
+      else if (e.key === 'Escape') done(null);
+    });
+    setTimeout(() => input.focus(), 30);
+  });
+}
+
 const MODE_LIST = [
   {
     value: 'connect_only',
@@ -3327,6 +3387,7 @@ const MODE_LIST = [
   {
     value: 'follower_growth',
     name: 'Follower Growth',
+    lock: true, // password-gated — see FG_PASSWORD / modeIsLocked
     bullets: [
       'Invite your 1st-degree connections to follow the Ortus Club page',
       'Targets from the Connections DB — function-filtered, DNC-safe, budget-capped',
@@ -3356,8 +3417,8 @@ function renderModeSelector() {
   // v2.100.2: never leave the active selection on a disabled/coming-soon mode
   // (connect_only is the select's default and is now under maintenance). Fall
   // through to the first available mode and sync the hidden select.
-  if (MODE_LIST[activeIdx] && (MODE_LIST[activeIdx].disabled || MODE_LIST[activeIdx].comingSoon)) {
-    const firstOk = MODE_LIST.findIndex((m) => !m.disabled && !m.comingSoon);
+  if (MODE_LIST[activeIdx] && (MODE_LIST[activeIdx].disabled || MODE_LIST[activeIdx].comingSoon || modeIsLocked(MODE_LIST[activeIdx]))) {
+    const firstOk = MODE_LIST.findIndex((m) => !m.disabled && !m.comingSoon && !modeIsLocked(m));
     if (firstOk >= 0) {
       activeIdx = firstOk;
       if (select.value !== MODE_LIST[firstOk].value) {
@@ -3385,13 +3446,17 @@ function renderModeSelector() {
 
   grid.innerHTML = displayOrder.map((i) => {
     const m = MODE_LIST[i];
+    const locked = modeIsLocked(m);
     const bullets = m.bullets
       .map((b) => `<li>${escHtml(b)}</li>`)
       .join('');
-    const isActive = i === activeIdx && !m.comingSoon && !m.disabled;
+    const isActive = i === activeIdx && !m.comingSoon && !m.disabled && !locked;
+    // Locked cards look like a normal available card (NOT greyed) — only the
+    // 🔒 badge distinguishes them. They stay clickable to prompt for the password.
     const stateClass = (m.comingSoon || m.disabled) ? 'is-coming-soon' : (isActive ? 'active' : '');
     const badge = m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>'
-      : (m.disabled ? `<span class="mode-card-badge">${m.maintenance ? 'Under maintenance' : 'Unavailable'}</span>` : '');
+      : (m.disabled ? `<span class="mode-card-badge">${m.maintenance ? 'Under maintenance' : 'Unavailable'}</span>`
+      : (locked ? '<span class="mode-card-badge">🔒 Locked</span>' : ''));
     return `
       <button type="button"
         class="mode-card ${stateClass}"
@@ -3405,7 +3470,7 @@ function renderModeSelector() {
   }).join('');
 }
 
-function setModeByIndex(i) {
+async function setModeByIndex(i) {
   const mode = MODE_LIST[(i + MODE_LIST.length) % MODE_LIST.length];
   if (mode.comingSoon) {
     showCampaignToast(`${mode.name} — coming soon.`, 3000);
@@ -3414,6 +3479,19 @@ function setModeByIndex(i) {
   if (mode.disabled) {
     showCampaignToast(mode.disabledReason || `${mode.name} is unavailable.`, 3500);
     return;
+  }
+  // Password-gated modes (Follower Growth): prompt once, remember on this
+  // machine. Wrong/cancelled → stay locked, don't switch mode.
+  if (modeIsLocked(mode)) {
+    const entry = await fgPasswordPrompt(`${mode.name} is locked`);
+    if (entry == null) return; // cancelled
+    if (entry !== FG_PASSWORD) {
+      showCampaignToast('Incorrect password.', 3000);
+      return;
+    }
+    setFgUnlocked();
+    showCampaignToast(`${mode.name} unlocked.`, 2500);
+    // fall through and select the now-unlocked mode
   }
   const select = document.getElementById('campaign-mode');
   if (!select) return;
