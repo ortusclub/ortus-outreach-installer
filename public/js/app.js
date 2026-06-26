@@ -2600,6 +2600,18 @@ async function pollScrapeLogs() {
   } catch (_) { /* keep last render */ }
 }
 
+// Queue position/ETA sub-line for a QUEUED job. The fields (position,
+// accountsAhead, etaMs) come from the engine's /api/jobs; they're absent on
+// older engines, so this renders nothing until the engine supplies them.
+function _scrapeQueueLine(j) {
+  if (!j || j.state !== 'queued' || !j.position) return '';
+  if (j.position <= 1) return '<div class="scrape-job-queue">Next up — starts when an account frees</div>';
+  const ahead = j.accountsAhead ? ` · ${j.accountsAhead} account${j.accountsAhead === 1 ? '' : 's'} ahead` : '';
+  let eta = '';
+  if (j.etaMs) eta = j.etaMs < 60000 ? ' · <1 min (est.)' : ` · ~${Math.round(j.etaMs / 60000)} min (est.)`;
+  return `<div class="scrape-job-queue">#${j.position} in queue${ahead}${eta}</div>`;
+}
+
 async function pollScrapeJobs() {
   const el = document.getElementById('scrape-jobs');
   if (!el) return;
@@ -2636,7 +2648,7 @@ async function pollScrapeJobs() {
           <span class="scrape-job-name">${escHtml(label)}</span>
           <span class="scrape-job-stat ${statClass(j.state)}">${escHtml(j.state || '')} · ${j.pages || 0}p · ${leadsHtml}</span>
           ${viewBtn}
-        </div>${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
+        </div>${_scrapeQueueLine(j)}${j.error ? `<div class="scrape-job-err">${escHtml(j.error)}</div>` : ''}`;
     }).join('');
     const totalLeads = jobs.reduce((a, j) => a + (j.profiles || 0), 0);
     const doneCount = jobs.filter((j) => j.state === 'done').length;
