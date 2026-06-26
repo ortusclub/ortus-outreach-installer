@@ -2537,10 +2537,13 @@ function setScrapeTab(tab) {
     b.classList.toggle('active', b.dataset.stab === tab);
   });
   const jobsEl = document.getElementById('scrape-tab-jobs');
+  const queueEl = document.getElementById('scrape-tab-queue');
   const logsEl = document.getElementById('scrape-tab-logs');
   if (jobsEl) jobsEl.style.display = tab === 'jobs' ? '' : 'none';
+  if (queueEl) queueEl.style.display = tab === 'queue' ? '' : 'none';
   if (logsEl) logsEl.style.display = tab === 'logs' ? '' : 'none';
   if (tab === 'logs') pollScrapeLogs();
+  if (tab === 'queue') pollScrapeJobs(); // refresh the ladder immediately
 }
 
 function clearScrapeLog() {
@@ -2612,6 +2615,138 @@ function _scrapeQueueLine(j) {
   return `<div class="scrape-job-queue">#${j.position} in queue${ahead}${eta}</div>`;
 }
 
+// ── Queue ladder (B1) — shared by the campaign Queue tab + the dashboard strip.
+// Engine gives only position, accountsAhead (a COUNT, the running job included),
+// and etaMs (until YOUR job starts). No identities — slots are anonymized.
+function _scrapeEtaText(ms) {
+  if (!ms || ms < 0) return '';
+  if (ms < 60000) return '<1 min';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+// Build the ladder for one queued job: running → (collapsed middle) → the slot
+// directly ahead → you. Never exceeds 4 rows.
+function _scrapeLadderHtml(j) {
+  const pos = j.position || 0;
+  const ahead = (j.accountsAhead != null) ? j.accountsAhead : Math.max(0, pos - 1);
+  const youLabel = escHtml(String(j.tabName || j.searchUrl || 'Your job'));
+  const eta = _scrapeEtaText(j.etaMs);
+  const rows = [];
+
+  // Named path: when the engine supplies `ahead` (ordered front→you, index 0 =
+  // the account scraping now), render real account names. Collapses the middle
+  // past 3. Falls through to the anonymized count path when absent.
+  if (Array.isArray(j.ahead) && j.ahead.length) {
+    const list = j.ahead;
+    const slot = (a, idx) => {
+      const running = a.state === 'running' || idx === 0;
+      const name = escHtml(String(a.label || a.account || a.operator || 'Account'));
+      const e = _scrapeEtaText(a.etaMs);
+      return `<div class="q-slot${running ? ' is-running' : ''}"><span class="q-pos">${running ? '▶' : '#' + (idx + 1)}</span> ${name}${running ? ' — scraping now' : ' — ahead of you'} <span class="q-eta">${running ? 'running' : (e ? '~' + e : '')}</span></div>`;
+    };
+    if (list.length <= 3) {
+      list.forEach((a, idx) => rows.push(slot(a, idx)));
+    } else {
+      rows.push(slot(list[0], 0));
+      rows.push(`<div class="q-slot is-mid">${list.length - 2} more account${list.length - 2 === 1 ? '' : 's'} ahead</div>`);
+      rows.push(slot(list[list.length - 1], list.length - 1));
+    }
+    rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos || (list.length + 1)}</span> ${youLabel} — your job <span class="q-eta">${eta ? 'est. ~' + eta : ''}</span></div>`);
+    return `<div class="q-ladder">${rows.join('')}</div>`;
+  }
+
+  if (ahead <= 0) {
+    rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos || 1}</span> ${youLabel} — your job <span class="q-eta">you're next ↑</span></div>`);
+    return `<div class="q-ladder">${rows.join('')}</div>`;
+  }
+  rows.push(`<div class="q-slot is-running"><span class="q-pos">▶</span> An account is scraping now <span class="q-eta">running</span></div>`);
+  const waiting = ahead - 1; // ahead of you, excluding the one running now
+  if (waiting > 2) {
+    rows.push(`<div class="q-slot is-mid">${waiting - 1} more account${waiting - 1 === 1 ? '' : 's'} ahead</div>`);
+    rows.push(`<div class="q-slot"><span class="q-pos">#${pos - 1}</span> Account ahead of you <span class="q-eta">${eta ? '~' + eta : ''}</span></div>`);
+  } else {
+    for (let k = 0; k < waiting; k++) {
+      const slotPos = pos - waiting + k;
+      const isLast = k === waiting - 1;
+      rows.push(`<div class="q-slot"><span class="q-pos">#${slotPos}</span> Account ahead of you <span class="q-eta">${isLast && eta ? '~' + eta : ''}</span></div>`);
+    }
+  }
+  rows.push(`<div class="q-slot is-you"><span class="q-pos">#${pos}</span> ${youLabel} — your job <span class="q-eta">${eta ? 'est. ~' + eta : ''}</span></div>`);
+  return `<div class="q-ladder">${rows.join('')}</div>`;
+}
+
+// "Your job" block (caption + ladder) for the Queue tab.
+function _scrapeQueueBlock(j) {
+  const pos = j.position || 0;
+  const ahead = (j.accountsAhead != null) ? j.accountsAhead : Math.max(0, pos - 1);
+  const eta = _scrapeEtaText(j.etaMs);
+  const cap = (`Your job · #${pos || 1} in queue${ahead ? ` · ${ahead} ahead` : ''}${eta ? ` · ~${eta} (est.)` : ''}`).toUpperCase();
+  return `<div class="sjq"><div class="sjq-cap">${escHtml(cap)}</div>${_scrapeLadderHtml(j)}</div>`;
+}
+
+// Fill the campaign panel's Queue tab from the same jobs the Jobs tab uses.
+function renderScrapeQueueTab(jobs) {
+  const el = document.getElementById('scrape-queue');
+  if (!el) return;
+  const queued = (jobs || []).filter((j) => j.state === 'queued' && j.position);
+  el.innerHTML = queued.length
+    ? queued.map(_scrapeQueueBlock).join('')
+    : '<div class="scrape-job-empty">Nothing in line — your jobs are running or done.</div>';
+}
+
+// Dashboard strip (A2): a compact, always-visible line above the campaign card,
+// shown only when a scrape is queued/running. Click expands the B1 ladder.
+// Polls /api/scrape/jobs itself (the scrape-view poll runs only in the wizard).
+let _dashScrapeOpen = false;
+async function renderDashScrapeStrip() {
+  const host = document.getElementById('dash-scrape-strip');
+  if (!host || document.hidden) return;
+  let jobs = [];
+  try {
+    const r = await fetch('/api/scrape/jobs');
+    const res = await r.json();
+    if (res && res.error) { host.hidden = true; host.innerHTML = ''; return; }
+    jobs = Array.isArray(res) ? res : (res.jobs || []);
+  } catch (_) { return; }
+  const active = jobs.filter((j) => j.state === 'queued' || j.state === 'running');
+  const queued = active.filter((j) => j.state === 'queued' && j.position);
+  if (!active.length) { host.hidden = true; host.innerHTML = ''; return; }
+  host.hidden = false;
+  if (queued.length) {
+    host.innerHTML = queued.map((j) => {
+      const pos = j.position || 0;
+      const ahead = (j.accountsAhead != null) ? j.accountsAhead : Math.max(0, pos - 1);
+      const eta = _scrapeEtaText(j.etaMs);
+      const label = escHtml(String(j.tabName || j.searchUrl || 'Scrape job'));
+      const q = `#<b>${pos || 1}</b> in queue${ahead ? ` · ${ahead} ahead` : ''}${eta ? ` · ~${eta}` : ''}`;
+      return `<div class="dash-scrape-wrap${_dashScrapeOpen ? ' open' : ''}">
+        <div class="scrape-strip" onclick="window.toggleDashScrapeStrip(this)">
+          <span class="ss-tag"><span class="dot"></span> Scrape</span>
+          <span class="ss-main">${label} · queued</span>
+          <span class="ss-q">${q}</span>
+          <span class="ss-caret">▾</span>
+        </div>
+        <div class="dash-scrape-ladder">${_scrapeLadderHtml(j)}</div>
+      </div>`;
+    }).join('');
+  } else {
+    const tot = active.reduce((a, j) => a + (j.profiles || 0), 0);
+    host.innerHTML = `<div class="dash-scrape-wrap"><div class="scrape-strip" style="cursor:default">
+      <span class="ss-tag"><span class="dot"></span> Scrape</span>
+      <span class="ss-main">${active.length} job${active.length === 1 ? '' : 's'} scraping now</span>
+      <span class="ss-q">${tot} leads</span></div></div>`;
+  }
+}
+window.toggleDashScrapeStrip = (elStrip) => {
+  const wrap = elStrip.closest('.dash-scrape-wrap');
+  if (!wrap) return;
+  wrap.classList.toggle('open');
+  _dashScrapeOpen = wrap.classList.contains('open');
+};
+
 async function pollScrapeJobs() {
   const el = document.getElementById('scrape-jobs');
   if (!el) return;
@@ -2620,6 +2755,7 @@ async function pollScrapeJobs() {
     const res = await r.json();
     if (res && res.error) {
       el.innerHTML = `<div style="color:var(--gray);font-size:12px;padding:10px 0;">${escHtml(res.error)}</div>`;
+      renderScrapeQueueTab([]);
       return;
     }
     let jobs = Array.isArray(res) ? res : (res.jobs || []);
@@ -2631,6 +2767,7 @@ async function pollScrapeJobs() {
     if (!jobs.length) {
       el.innerHTML = '<div class="scrape-job-empty">No scrape jobs yet.</div>';
       _setScrapeFoot(0, 0, 0);
+      renderScrapeQueueTab([]);
       return;
     }
     const statClass = (s) => (s === 'error' || s === 'cancelled') ? 'err'
@@ -2653,6 +2790,7 @@ async function pollScrapeJobs() {
     const totalLeads = jobs.reduce((a, j) => a + (j.profiles || 0), 0);
     const doneCount = jobs.filter((j) => j.state === 'done').length;
     _setScrapeFoot(totalLeads, doneCount, jobs.length);
+    renderScrapeQueueTab(jobs);
   } catch (_) { /* keep last render */ }
 }
 
@@ -7525,6 +7663,12 @@ function updateGreeting() {
 
 // Refresh greeting every 30s so the time ticks without a reload.
 setInterval(() => { try { updateGreeting(); } catch (_) {} }, 30_000);
+
+// Dashboard scrape-queue strip: refresh on a modest cadence (the in-wizard scrape
+// poll only runs in scrape view, so the strip needs its own tick). Skipped while
+// the tab is hidden (renderDashScrapeStrip guards on document.hidden).
+setInterval(() => { try { renderDashScrapeStrip(); } catch (_) {} }, 5000);
+try { renderDashScrapeStrip(); } catch (_) {}
 
 async function signOut() {
   try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}

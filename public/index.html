@@ -220,6 +220,11 @@
         </div>
       </div>
 
+      <!-- ── Sales Nav Scrape queue strip (A2) — shown only when a scrape job
+           is queued/running. Click to expand the B1 ladder. Rendered by
+           renderDashScrapeStrip() from the /api/scrape/jobs poll. ───────── -->
+      <div id="dash-scrape-strip" hidden></div>
+
       <!-- ── ACTIVE (Variant J) ──────────────────────────────────── -->
       <section class="vj-card" id="active-card" aria-labelledby="sect-active">
         <div class="vj-eyebrow">
@@ -1820,6 +1825,34 @@
         .ssc-foot-big { font-family:var(--display); font-size:40px; line-height:0.9; }
         .ssc-foot-cap { font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--gray); margin-top:4px; }
         .ssc-dock { display:flex; gap:10px; align-items:center; }
+        /* ── Queue: B1 ladder (shared by the campaign Queue tab + dashboard strip) ── */
+        .sjq { padding:12px 16px; }
+        .sjq + .sjq { border-top:1px solid var(--hairline-soft); }
+        .sjq-cap { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:11px; letter-spacing:0.04em; color:#b8860b; margin:0 0 8px; }
+        .q-ladder { display:flex; flex-direction:column; gap:6px; }
+        .q-slot { display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid var(--hairline); border-radius:9px; font-size:13px; color:var(--gray); background:var(--card-bg); }
+        .q-slot .q-pos { font-family:var(--display); font-size:18px; min-width:30px; }
+        .q-slot.is-running { border-color:var(--green); background:rgba(45,160,90,.06); color:var(--ink); }
+        .q-slot.is-running .q-pos { color:var(--green); }
+        .q-slot.is-you { border:2px solid #C5A255; background:rgba(247,190,104,.12); color:var(--ink); font-weight:600; }
+        .q-slot.is-you .q-pos { color:#b8860b; }
+        .q-slot .q-eta { margin-left:auto; font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:12px; color:var(--gray); }
+        .q-slot.is-mid { border-style:dashed; justify-content:center; color:var(--gray); font-size:12px; background:transparent; }
+        /* ── Dashboard strip (A2) — collapsed one-liner that expands the ladder ── */
+        .scrape-strip { display:flex; align-items:center; gap:14px; padding:12px 18px; border:1px solid var(--card-border); border-left:4px solid var(--green); border-radius:14px; background:var(--card-bg); box-shadow:var(--card-shadow); cursor:pointer; user-select:none; }
+        .scrape-strip + .scrape-strip { margin-top:8px; }
+        .scrape-strip:hover { border-color:#C5A255; }
+        .scrape-strip .ss-tag { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:10px; letter-spacing:0.16em; text-transform:uppercase; color:var(--green); display:flex; align-items:center; gap:6px; white-space:nowrap; }
+        .scrape-strip .ss-tag .dot { width:8px; height:8px; border-radius:50%; background:var(--green); }
+        .scrape-strip .ss-main { font-size:13px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .scrape-strip .ss-q { margin-left:auto; font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:12px; color:var(--gray); white-space:nowrap; }
+        .scrape-strip .ss-q b { color:#b8860b; }
+        .scrape-strip .ss-caret { color:var(--gray); font-size:12px; transition:transform .18s; }
+        .dash-scrape-wrap.open .scrape-strip { border-radius:14px 14px 0 0; }
+        .dash-scrape-wrap.open .ss-caret { transform:rotate(180deg); }
+        .dash-scrape-ladder { display:none; border:1px solid var(--card-border); border-top:0; border-left:4px solid var(--green); border-radius:0 0 14px 14px; background:var(--card-bg); padding:6px 12px 12px; }
+        .dash-scrape-wrap.open .dash-scrape-ladder { display:block; }
+        .dash-scrape-wrap { margin-bottom:14px; }
       </style>
       <h2 class="section-toggle"><span data-edit="h2-scrape-launch">6. Launch — Sales Nav Scrape</span></h2>
       <div class="collapsible-body">
@@ -1839,12 +1872,16 @@
           <div class="ssc-loghead">
             <div class="scrape-tabs">
               <button type="button" class="scrape-tab active" data-stab="jobs" onclick="setScrapeTab('jobs')">Jobs</button>
+              <button type="button" class="scrape-tab" data-stab="queue" onclick="setScrapeTab('queue')">Queue</button>
               <button type="button" class="scrape-tab" data-stab="logs" onclick="setScrapeTab('logs')">Logs</button>
             </div>
           </div>
 
           <div id="scrape-tab-jobs">
             <div id="scrape-jobs" class="scrape-joblist"><div class="scrape-job-empty">No scrape jobs yet.</div></div>
+          </div>
+          <div id="scrape-tab-queue" style="display:none">
+            <div id="scrape-queue" class="scrape-joblist"><div class="scrape-job-empty">Nothing in line.</div></div>
           </div>
           <div id="scrape-tab-logs" style="display:none">
             <div class="scrape-log-head"><span>Activity log</span><span style="display:flex; gap:8px;"><button type="button" class="ssc-pill" onclick="copyScrapeLog()">Copy all</button><button type="button" class="ssc-pill" onclick="clearScrapeLog()">Clear</button></span></div>

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scrape queue · inside the campaign panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  body { padding: 40px 32px 120px; background:#f7f7f5; }
+  .skwrap { max-width: 880px; margin: 0 auto; }
+  .skh1 { font-family:'Bebas Neue',sans-serif; letter-spacing:.03em; font-size:2rem; margin:0 0 4px; color:var(--ink); }
+  .sklede { color:var(--gray); font-size:.9rem; max-width:740px; line-height:1.5; margin:0 0 12px; }
+  .skhint { font-family:'JetBrains Mono',monospace; font-size:.62rem; letter-spacing:.14em; text-transform:uppercase; color:#C5A255; margin:26px 0 10px; }
+  h2.section-toggle { font-family:'Bebas Neue',sans-serif; letter-spacing:.02em; font-size:1.5rem; color:var(--ink); margin:0 0 14px; }
+
+  /* ── REAL scrape-panel CSS, copied verbatim from index.html's inline block ── */
+  .scrape-statuscard { position:relative; background:var(--card-bg); border:1px solid var(--card-border); border-radius:16px; box-shadow:var(--card-shadow); padding:26px 30px 22px; overflow:hidden; margin-top:6px; }
+  .scrape-statuscard::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--green); }
+  .ssc-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+  .ssc-kicker { display:flex; align-items:center; gap:9px; font-family:var(--display); letter-spacing:0.14em; text-transform:uppercase; font-size:13px; color:var(--ink); }
+  .ssc-dot { width:9px; height:9px; border-radius:9999px; background:var(--green); }
+  .ssc-title { font-family:var(--display); font-size:40px; line-height:1; margin:9px 0 0; letter-spacing:0.02em; }
+  .ssc-sub { font-size:12px; color:var(--gray); margin-top:7px; }
+  .ssc-statusline { font-size:12px; color:var(--gray); margin-top:10px; }
+  .ssc-divider { height:1px; background:var(--hairline-soft); margin:20px 0 14px; }
+  .ssc-loghead { display:flex; align-items:center; justify-content:space-between; }
+  .scrape-tabs { display:flex; gap:4px; }
+  .scrape-tab { font-size:12px; letter-spacing:0.04em; text-transform:uppercase; padding:8px 16px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--gray); cursor:pointer; }
+  .scrape-tab.active { color:var(--ink); border-bottom-color:var(--ink); }
+  .scrape-joblist { margin-top:12px; border:1px solid var(--hairline); border-radius:10px; background:var(--bg-soft); max-height:360px; overflow:auto; }
+  .scrape-job-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 16px; border-bottom:1px solid var(--hairline-soft); font-size:13px; }
+  .scrape-job-row:last-child { border-bottom:0; }
+  .scrape-job-name { font-weight:500; color:var(--ink); }
+  .scrape-job-stat { font-family:var(--mono,ui-monospace,Menlo,monospace); font-size:12px; color:var(--gray); white-space:nowrap; }
+  .scrape-job-stat.running { color:var(--ink); }
+  .scrape-job-stat.done { color:var(--green); }
+  .scrape-job-stat .leads { color:var(--green); }
+  .ssc-foot { display:flex; align-items:center; justify-content:space-between; margin-top:20px; padding-top:18px; border-top:1px solid var(--hairline-soft); }
+  .ssc-foot-big { font-family:var(--display); font-size:40px; line-height:0.9; }
+  .ssc-foot-cap { font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--gray); margin-top:4px; }
+  .ssc-dock { display:flex; gap:10px; align-items:center; }
+
+  /* ── NEW: the B1 ladder, shown for a QUEUED job inside the joblist ── */
+  .sjq { padding:12px 16px; border-bottom:1px solid var(--hairline-soft); }
+  .sjq-cap { font-family:var(--mono,'JetBrains Mono',monospace); font-size:11px; letter-spacing:.04em; color:#b8860b; margin:0 0 8px; }
+  .q-ladder { display:flex; flex-direction:column; gap:6px; }
+  .q-slot { display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid var(--hairline); border-radius:9px; font-size:13px; color:var(--gray); background:#fff; }
+  .q-slot .q-pos { font-family:var(--display); font-size:18px; width:28px; }
+  .q-slot.is-running { border-color:var(--green); background:rgba(45,160,90,.06); color:var(--ink); }
+  .q-slot.is-running .q-pos { color:var(--green); }
+  .q-slot.is-you { border:2px solid #C5A255; background:rgba(247,190,104,.12); color:var(--ink); font-weight:600; }
+  .q-slot.is-you .q-pos { color:#b8860b; }
+  .q-slot .q-eta { margin-left:auto; font-family:var(--mono,'JetBrains Mono',monospace); font-size:12px; color:var(--gray); }
+  .q-slot.is-mid { border-style:dashed; justify-content:center; color:var(--gray); font-size:12px; background:transparent; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="skwrap">
+  <h1 class="skh1">Same queue look — inside the campaign</h1>
+  <p class="sklede">The "6. Launch — Sales Nav Scrape" panel keeps everything — <b>activity log</b>, <b>leads-scraped footer</b>, <b>Start / Pause / Stop</b> — and gains a <b>new "Queue" tab</b> between Jobs and Logs. <b>Jobs</b> stays a clean list of all jobs; <b>Queue</b> holds the B1 ladder (where you are in line, same component as the dashboard). Nothing else changes.</p>
+
+  <div class="skhint">Queue tab (new) — the ladder</div>
+
+  <h2 class="section-toggle">6. Launch — Sales Nav Scrape</h2>
+  <div class="scrape-statuscard">
+    <div class="ssc-head">
+      <div>
+        <div class="ssc-kicker"><span class="ssc-dot"></span> Sales Nav Scrape</div>
+        <div class="ssc-title">3</div>
+        <div class="ssc-sub">URLs × accounts → parallel scrape jobs</div>
+      </div>
+    </div>
+
+    <div class="ssc-statusline">3 jobs · 1 running · 1 queued · 1 done</div>
+
+    <div class="ssc-divider"></div>
+
+    <div class="ssc-loghead">
+      <div class="scrape-tabs">
+        <button type="button" class="scrape-tab">Jobs</button>
+        <button type="button" class="scrape-tab active">Queue</button>
+        <button type="button" class="scrape-tab">Logs</button>
+      </div>
+    </div>
+
+    <!-- QUEUE tab (new) — the ladder -->
+    <div class="scrape-joblist">
+      <div class="sjq" style="border-bottom:0">
+        <div class="sjq-cap">YOUR JOB · #2 IN QUEUE · ~24 MIN (EST.)</div>
+        <div class="q-ladder">
+          <div class="q-slot is-running"><span class="q-pos">▶</span> An account is scraping now <span class="q-eta">running</span></div>
+          <div class="q-slot"><span class="q-pos">#1</span> Account ahead of you <span class="q-eta">~24 min</span></div>
+          <div class="q-slot is-you"><span class="q-pos">#2</span> Results 21 — your job <span class="q-eta">you're next ↑</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ssc-foot">
+      <div>
+        <div class="ssc-foot-big">315</div>
+        <div class="ssc-foot-cap">leads scraped</div>
+      </div>
+      <div class="ssc-dock">
+        <button type="button" class="btn btn-start">Start Scrape</button>
+        <button type="button" class="btn btn-secondary">Pause</button>
+        <button type="button" class="btn btn-secondary">Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="skhint">deep queue — you're #10 (middle collapses)</div>
+  <div class="scrape-statuscard">
+    <div class="scrape-joblist" style="margin-top:0">
+      <div class="sjq" style="border-bottom:0">
+        <div class="sjq-cap">YOUR JOB · #10 IN QUEUE · ~3H 10M (EST.)</div>
+        <div class="q-ladder">
+          <div class="q-slot is-running"><span class="q-pos">▶</span> An account is scraping now <span class="q-eta">running</span></div>
+          <div class="q-slot is-mid">8 more accounts ahead · ~2h 50m total</div>
+          <div class="q-slot"><span class="q-pos">#9</span> Account ahead of you <span class="q-eta">~3h 10m</span></div>
+          <div class="q-slot is-you"><span class="q-pos">#10</span> Results 21 — your job <span class="q-eta">est. ~3h 10m</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="sklede" style="margin-top:24px">Ladder never exceeds 4 rows: <code>running → collapsed middle → the one ahead → you</code>. Logs tab, footer, and controls identical to today.</p>
+</div>
+</body>
+</html>

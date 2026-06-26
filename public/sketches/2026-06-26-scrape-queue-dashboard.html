@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scrape queue → dashboard · 6 alternatives</title>
+<!-- 1:1 with the real app: same fonts + same stylesheets, scoped the same way -->
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  /* sketch chrome only — everything inside the cards uses the app's own classes */
+  body { padding: 40px 32px 120px; }
+  .skwrap { max-width: 920px; margin: 0 auto; }
+  .skh1 { font-family:'Bebas Neue',sans-serif; letter-spacing:.03em; font-size:2.2rem; margin:0 0 4px; color:var(--ink); }
+  .sklede { color:var(--gray); font-size:.9rem; max-width:760px; line-height:1.5; margin:0 0 8px; }
+  .skwarn { font-size:.8rem; color:#9a6a00; background:#fff7e6; border:1px solid #f0d699; border-radius:8px; padding:10px 14px; margin:14px 0 36px; line-height:1.5; }
+  .skgroup { font-family:'Bebas Neue',sans-serif; letter-spacing:.04em; font-size:1.4rem; color:var(--ink); margin:46px 0 4px; border-top:2px solid var(--ink); padding-top:14px; }
+  .skgroup-sub { color:var(--gray); font-size:.85rem; margin:0 0 24px; }
+  .skalt { margin:0 0 30px; }
+  .skcap { font-family:'JetBrains Mono',monospace; font-size:.62rem; letter-spacing:.14em; text-transform:uppercase; color:#C5A255; margin:0 0 4px; }
+  .sktitle { font-weight:600; font-size:1rem; color:var(--ink); margin:0 0 2px; }
+  .skwhy { color:var(--gray); font-size:.82rem; margin:0 0 14px; line-height:1.5; }
+
+  /* tiny sketch-only helpers (no app class exists yet for these) */
+  .q-ladder { display:flex; flex-direction:column; gap:6px; margin:6px 0; }
+  .q-slot { display:flex; align-items:center; gap:12px; padding:9px 14px; border:1px solid var(--hairline); border-radius:10px; font-size:.84rem; color:var(--gray); }
+  .q-slot .q-pos { font-family:'Bebas Neue',sans-serif; font-size:1.1rem; width:30px; color:var(--gray); }
+  .q-slot.is-running { border-color:var(--green); background:rgba(45,160,90,.06); color:var(--ink); }
+  .q-slot.is-running .q-pos { color:var(--green); }
+  .q-slot.is-you { border:2px solid var(--gold); background:rgba(247,190,104,.10); color:var(--ink); font-weight:600; }
+  .q-slot.is-you .q-pos { color:#b8860b; }
+  .q-slot .q-eta { margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--gray); }
+
+  .q-track { position:relative; height:8px; border-radius:999px; background:var(--hairline); margin:18px 0 8px; }
+  .q-track > i { position:absolute; left:0; top:0; bottom:0; border-radius:999px; background:var(--ink); }
+  .q-track .q-me { position:absolute; top:-5px; width:18px; height:18px; border-radius:50%; background:var(--gold); border:2px solid var(--ink); transform:translateX(-50%); }
+  .q-track .q-front { position:absolute; right:0; top:-22px; font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--gray); }
+
+  .q-pips { display:flex; gap:8px; align-items:center; margin:8px 0; }
+  .q-pips span { width:12px; height:12px; border-radius:50%; background:var(--hairline); }
+  .q-pips span.done { background:var(--green); }
+  .q-pips span.you { background:var(--gold); box-shadow:0 0 0 3px rgba(247,190,104,.25); }
+  .q-big { font-family:'Bebas Neue',sans-serif; font-size:3.4rem; line-height:.9; color:var(--ink); }
+  .q-bigcap { font-size:.74rem; letter-spacing:.2em; text-transform:uppercase; color:var(--gray); }
+  .q-eta-big { font-family:'JetBrains Mono',monospace; font-size:1.5rem; color:var(--ink); }
+
+  /* compact dashboard "strip" variant */
+  .scrape-strip { display:flex; align-items:center; gap:16px; padding:12px 18px; border:1px solid var(--hairline); border-left:4px solid var(--green); border-radius:12px; background:var(--card,#fff); margin-bottom:14px; }
+  .scrape-strip .ss-tag { font-family:'JetBrains Mono',monospace; font-size:.6rem; letter-spacing:.16em; text-transform:uppercase; color:var(--green); display:flex; align-items:center; gap:6px; }
+  .scrape-strip .ss-tag .dot { width:8px;height:8px;border-radius:50%;background:var(--green); }
+  .scrape-strip .ss-main { font-size:.88rem; color:var(--ink); }
+  .scrape-strip .ss-q { margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:.74rem; color:var(--gray); }
+  .scrape-strip .ss-q b { color:#b8860b; }
+
+  /* segmented toggle for the merged-card variant */
+  .seg { display:inline-flex; border:1px solid var(--hairline); border-radius:999px; overflow:hidden; margin-bottom:10px; }
+  .seg button { border:0; background:transparent; padding:5px 16px; font-size:.74rem; letter-spacing:.04em; color:var(--gray); cursor:default; }
+  .seg button.on { background:var(--ink); color:#fff; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="skwrap">
+
+  <h1 class="skh1">Sales Nav Scrape — queue on the dashboard</h1>
+  <p class="sklede">Six alternatives, built with the app's real cards &amp; CSS. Top three: where the scrape lives on the dashboard. Bottom three: making "where am I in the queue" legible. Pick one from each.</p>
+  <p class="skwarn"><b>Data honesty:</b> the scrape engine returns only your <b>position</b>, a <b>count</b> of jobs ahead (<code>accountsAhead</code>), and an <b>ETA</b>. It does <b>not</b> send the names of who's ahead. So the "who's above me" alts below show anonymized slots. A <i>named</i> ladder (Steven, Maria…) needs an engine change — flagged at the bottom.</p>
+
+  <!-- ════════════ GROUP A — WHERE IT LIVES ON THE DASHBOARD ════════════ -->
+  <div class="skgroup">A · Where the scrape shows on the dashboard</div>
+  <p class="skgroup-sub">Today the dashboard shows only campaigns; scrape lives in the wizard. These add it.</p>
+
+  <!-- A1 — dedicated second card -->
+  <div class="skalt">
+    <div class="skcap">A1 · Dedicated scrape card</div>
+    <div class="sktitle">A second card under the campaign card</div>
+    <p class="skwhy">Mirrors the existing monitoring-card pattern. Self-contained, full controls, never competes with the campaign hero. Most code-faithful.</p>
+    <section class="vj-card is-monitor" style="--accent:var(--green)">
+      <div class="vj-eyebrow">
+        <span class="vj-tag"><span class="dot" style="background:var(--green)"></span> Sales Nav Scrape</span>
+        <span class="vj-when">queued · 0p · 0 leads</span>
+      </div>
+      <h2 class="vj-name">Results 21</h2>
+      <div class="vj-monitor" aria-hidden="false" style="opacity:1">
+        <div class="vj-mon-hero">
+          <span class="vj-mon-count">#2</span>
+          <span class="vj-mon-cap">in queue · 1 account ahead</span>
+        </div>
+        <div class="vj-mon-line">~24 min (est.) until an account frees</div>
+      </div>
+      <div class="vj-hbar"><i style="width:8%"></i></div>
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <div class="dock"><button class="btn-pill">Pause</button><button class="btn-pill">Stop</button></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- A2 — compact strip pinned on top -->
+  <div class="skalt">
+    <div class="skcap">A2 · Compact queue strip</div>
+    <div class="sktitle">A thin strip pinned above the campaign card</div>
+    <p class="skwhy">Smallest footprint — one line, always visible, click to expand into the wizard. Good when scrape is secondary to the running campaign.</p>
+    <div class="scrape-strip">
+      <span class="ss-tag"><span class="dot"></span> Scrape</span>
+      <span class="ss-main"><b>Results 21</b> · queued · 0 leads</span>
+      <span class="ss-q">#<b>2</b> in queue · 1 ahead · ~24 min</span>
+    </div>
+    <section class="vj-card" style="opacity:.5">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot"></span> No campaign running</span></div>
+      <h2 class="vj-name">Your campaign card sits below, untouched</h2>
+    </section>
+  </div>
+
+  <!-- A3 — merged segmented card -->
+  <div class="skalt">
+    <div class="skcap">A3 · Merged card (segmented)</div>
+    <div class="sktitle">One card, toggle Campaign ⇄ Scrape</div>
+    <p class="skwhy">No new card — the existing active card gains a Scrape segment. Tightest layout, but the two contexts share one hero.</p>
+    <section class="vj-card is-monitor">
+      <div class="seg"><button>Campaign</button><button class="on">Scrape</button></div>
+      <div class="vj-eyebrow">
+        <span class="vj-tag"><span class="dot" style="background:var(--green)"></span> Sales Nav Scrape · Results 21</span>
+        <span class="vj-when">queued · 0p · 0 leads</span>
+      </div>
+      <div class="vj-monitor" style="opacity:1">
+        <div class="vj-mon-hero"><span class="vj-mon-count">#2</span><span class="vj-mon-cap">in queue · ~24 min</span></div>
+        <div class="vj-mon-line">1 account ahead of you</div>
+      </div>
+      <div class="vj-controls"><button class="btn-pill">Open</button><div class="dock"><button class="btn-pill">Stop</button></div></div>
+    </section>
+  </div>
+
+  <!-- ════════════ GROUP B — QUEUE LEGIBILITY / WHO'S ABOVE ME ════════════ -->
+  <div class="skgroup">B · Seeing where you are in the queue</div>
+  <p class="skgroup-sub">Same real data (position · count ahead · ETA), three ways to make it obvious at a glance.</p>
+
+  <!-- B1 — position ladder -->
+  <div class="skalt">
+    <div class="skcap">B1 · Position ladder</div>
+    <div class="sktitle">A vertical stack — you, highlighted, with what's ahead</div>
+    <p class="skwhy">Turns the number into space. "1 account ahead" becomes one real slot above you. Reads instantly; scales to N ahead. Anonymized (engine has no names).</p>
+    <section class="vj-card">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot" style="background:var(--green)"></span> Scrape queue · Results 21</span></div>
+      <div class="q-ladder">
+        <div class="q-slot is-running"><span class="q-pos">▶</span> An account is scraping now <span class="q-eta">running</span></div>
+        <div class="q-slot"><span class="q-pos">#1</span> Account ahead of you <span class="q-eta">~24 min</span></div>
+        <div class="q-slot is-you"><span class="q-pos">#2</span> Your job — Results 21 <span class="q-eta">starts next ↑</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- B2 — pipeline track -->
+  <div class="skalt">
+    <div class="skcap">B2 · Progress-to-front track</div>
+    <div class="sktitle">A pipeline with your marker moving toward the front</div>
+    <p class="skwhy">Frames the wait as motion: the dot slides right as accounts ahead clear. Big ETA countdown is the hero. Best for a single quick glance.</p>
+    <section class="vj-card">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot" style="background:var(--green)"></span> Scrape queue · Results 21</span><span class="vj-when">#2 of 2</span></div>
+      <div class="q-track"><i style="width:50%"></i><span class="q-me" style="left:50%"></span><span class="q-front">front of queue →</span></div>
+      <div style="display:flex; align-items:flex-end; justify-content:space-between; margin-top:14px">
+        <div><span class="q-eta-big">~24 min</span> <span class="q-bigcap" style="display:block">estimated wait · 1 account ahead</span></div>
+        <button class="btn-pill">Open</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- B3 — big number + pips -->
+  <div class="skalt">
+    <div class="skcap">B3 · Big position + pips</div>
+    <div class="sktitle">A giant "#2" with a dot per slot and a live ETA</div>
+    <p class="skwhy">Loudest version. The position is unmissable; pips show the line at a glance (●=ahead, gold=you). Live-counts the ETA down each second.</p>
+    <section class="vj-card">
+      <div class="vj-eyebrow"><span class="vj-tag"><span class="dot" style="background:var(--green)"></span> Scrape queue · Results 21</span></div>
+      <div style="display:flex; align-items:center; gap:24px; margin:6px 0">
+        <div><div class="q-big">#2</div><div class="q-bigcap">in queue</div></div>
+        <div>
+          <div class="q-pips"><span class="done"></span><span class="you"></span></div>
+          <div style="font-size:.82rem; color:var(--gray); margin-top:6px">1 account ahead · <b style="color:var(--ink)" class="q-eta-big" id="b3eta">24:00</b> est.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="skgroup" style="border-top-color:#9a6a00; color:#9a6a00">If you want named "who's above me"</div>
+  <p class="skgroup-sub">The GKE scraper would need to return, per queued job, an operator/account label for the jobs ahead (it currently returns only a count). That's a small backend change + a privacy call (do operators see each other's names?). Tell me and I'll spec it — the ladder (B1) already has the slots ready to hold real names.</p>
+
+</div>
+<script>
+  // B3 ETA just ticks down for the demo — real version reads etaMs.
+  let s = 24*60; const el = document.getElementById('b3eta');
+  setInterval(() => { if (s<=0) return; s--; el.textContent = String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }, 1000);
+</script>
+</body>
+</html>
