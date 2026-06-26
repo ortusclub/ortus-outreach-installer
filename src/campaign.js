@@ -52,7 +52,8 @@ import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
-import { resolveSoOTarget, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
+import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
+import { fetchSoOData } from './soo.js';
 import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
 import { readLastRun, writeLastRun } from './last-run-store.js';
@@ -2086,6 +2087,21 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // board, matched by Email == the account's GoLogin profile name.
     const _sooFlipped = new Set();      // accountNorm already flipped to In Use this run
     const _sooNeedsLogin = new Set();   // accountNorm already flagged Needs Login this run
+    let _sooEmailsCache = null;         // SoO Email column, fetched once per run (or [] on failure)
+
+    // The SoO's Email-column values, fetched once per run for fuzzy resolution.
+    // A failed fetch caches [] so we don't retry every account — the flip then
+    // falls back to the raw GoLogin label (exact match only, as before).
+    async function sooEmailList() {
+      if (_sooEmailsCache) return _sooEmailsCache;
+      try {
+        const soo = await fetchSoOData();
+        _sooEmailsCache = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+      } catch (_) {
+        _sooEmailsCache = [];
+      }
+      return _sooEmailsCache;
+    }
 
     async function flipSoOInUse(accountName, action) {
       try {
@@ -2101,16 +2117,53 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           perMachineEmail: getOperatorEmail(),
           loginEmail: campaign.createdBy || '',
         });
+        // Resolve the GoLogin label to the closest SoO Email (handles typos /
+        // ".solution" vs ".solutions" / stray spaces). Skip-on-doubt: a near-tie
+        // between two accounts falls back to the raw label rather than risk
+        // reserving the wrong person's account.
+        let matchEmail = accountName;
+        let fuzzyNote = '';
+        const _sooEmails = await sooEmailList();
+        if (_sooEmails.length) {
+          const r = resolveSoOEmail(accountName, _sooEmails);
+          if (r && r.email && !r.exact) {
+            matchEmail = r.email;
+            fuzzyNote = ` (≈ "${accountName}" → "${r.email}", ${Math.round(r.score * 100)}%)`;
+          } else if (r && r.email) {
+            matchEmail = r.email; // exact (normalized) — use the sheet's spelling
+          } else if (r && r.ambiguous) {
+            log(`  ⚠ SoO: "${accountName}" is too close to 2+ accounts (best ${Math.round(r.score * 100)}%) — refusing to guess, left as-is.`);
+            return;
+          }
+        }
         const res = await flipAccountInUse({
-          email: accountName,
+          email: matchEmail,
           creditHeader: target.creditHeader,
           userHeader: target.userHeader,
           operatorEmail: stampEmail,
         });
+        // Every outcome logs — a SoO write must never fail silently again.
+        // (These three branches used to be the only one that spoke; matched:false,
+        // write-back-off, and transport errors were all swallowed, which is how
+        // an account could sit on "Available" forever with no trace.)
         if (res && res.ok && res.matched && res.written && res.written.length) {
-          log(`  ⚑ SoO: ${accountName} → ${target.creditHeader} = In Use (${stampEmail || '—'}).`);
+          log(`  ⚑ SoO: ${accountName} → ${target.creditHeader} = In Use (${stampEmail || '—'})${fuzzyNote}.`);
         } else if (res && res.ok && res.matched) {
-          log(`  · SoO: ${accountName} ${target.creditHeader} not Available — left as-is.`);
+          // Row found, but the guard left the credit cell alone. `skipped` carries
+          // the real current value, e.g. 'CC (Credits) (not Available: "in use")'
+          // — surface it verbatim so a stuck "Available" is self-explaining.
+          const why = (Array.isArray(res.skipped) && res.skipped.length)
+            ? res.skipped.join('; ')
+            : `${target.creditHeader} not Available`;
+          log(`  · SoO: ${accountName} not flipped — ${why}.`);
+        } else if (res && res.ok && res.matched === false) {
+          // No SoO row whose Email equals this account. Almost always a GoLogin
+          // profile NOT named with the account's email (e.g. "test3").
+          log(`  ⚠ SoO: no row matched "${accountName}" — nothing flipped. Is the GoLogin profile named with the account's email?`);
+        } else if (res && res.disabled) {
+          log(`  ⚠ SoO: write-back is OFF on this machine (ORTUS_SOO_WRITEBACK) — ${accountName} left as-is.`);
+        } else if (!res || !res.ok) {
+          log(`  ⚠ SoO: flip failed for ${accountName} — ${(res && res.error) || 'unknown error'}.`);
         }
       } catch (err) {
         log(`  ⚠ SoO flip failed for ${accountName}: ${err.message}`);

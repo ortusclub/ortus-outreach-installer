@@ -55,6 +55,79 @@ export function resolveSoOTarget(mode, action) {
   return null;
 }
 
+// ── Fuzzy account → SoO row resolution ──────────────────────────────────────
+// GoLogin profile labels and SoO Email cells drift apart in practice: a stray
+// space, a trailing-dot typo, ".solution" vs ".solutions". An exact match drops
+// those on the floor silently. We resolve the GoLogin label to the closest SoO
+// Email BEFORE the write — but only when it is UNAMBIGUOUS. Identity is exactly
+// where a wrong guess reserves the wrong person's account, so this is
+// skip-on-doubt: a near-tie between two candidates resolves to null, never a coin
+// flip. The caller then sends the raw label (clean no-match) rather than guessing.
+
+/** lowercase, trim, drop ALL whitespace. Dots are kept — a.b@ ≠ ab@ as logins. */
+function normAccount(s) {
+  return String(s || '').toLowerCase().trim().replace(/\s+/g, '');
+}
+
+/** Levenshtein edit distance (iterative two-row, O(n·m) time, O(n) space). */
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let cur = new Array(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  return prev[b.length];
+}
+
+/** Similarity in [0,1]: 1 = identical, 0 = nothing in common. */
+function similarity(a, b) {
+  if (!a && !b) return 1;
+  const max = Math.max(a.length, b.length) || 1;
+  return 1 - levenshtein(a, b) / max;
+}
+
+/**
+ * Resolve a GoLogin account label to a SoO Email, fuzzily but safely.
+ *  - An exact (normalized) match always wins.
+ *  - Otherwise the single best candidate at or above `threshold` wins ONLY if it
+ *    is unambiguous: the runner-up must trail by at least `gap`. A near-tie
+ *    returns { ambiguous: true } so the caller can refuse + log, never misfire.
+ * @param {string}   accountName  the GoLogin profile label
+ * @param {string[]} sooEmails    SoO Email-column values
+ * @returns {{email:string, exact:boolean, score:number}|{ambiguous:true, score:number}|null}
+ */
+export function resolveSoOEmail(accountName, sooEmails, { threshold = 0.93, gap = 0.06 } = {}) {
+  const want = normAccount(accountName);
+  if (!want) return null;
+  const cands = [];
+  for (const raw of (sooEmails || [])) {
+    const norm = normAccount(raw);
+    if (norm) cands.push({ raw, norm });
+  }
+  for (const c of cands) {
+    if (c.norm === want) return { email: c.raw, exact: true, score: 1 };
+  }
+  let best = null, second = null;
+  for (const c of cands) {
+    const score = similarity(want, c.norm);
+    if (!best || score > best.score) { second = best; best = { raw: c.raw, score }; }
+    else if (!second || score > second.score) { second = { raw: c.raw, score }; }
+  }
+  if (!best || best.score < threshold) return null;
+  if (second && (best.score - second.score) < gap) {
+    return { ambiguous: true, score: best.score };
+  }
+  return { email: best.raw, exact: false, score: best.score };
+}
+
 /** Kill-switch: enabled unless ORTUS_SOO_WRITEBACK is off/0/false. Default on. */
 export function sooWritebackEnabled() {
   const v = (process.env.ORTUS_SOO_WRITEBACK || '').toString().trim().toLowerCase();
