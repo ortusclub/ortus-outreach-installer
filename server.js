@@ -1731,6 +1731,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
     preventSleep('reply-sweep');
     try {
       stamp(`▶ Reply sweep started · ${pids.length} account(s) · ${dryRun ? 'preview only' : 'WRITE-BACK ON'}`);
+      const launchedPids = new Set();   // profiles WE opened this sweep (for the close safety net)
       for (let i = 0; i < pids.length; i++) {
         const pid = pids[i];
         const slot = _replySweep.perProfile[i];
@@ -1744,6 +1745,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
         try {
           stamp(`📬 [${pName}] Scanning inbox…`);
           launched = isLocal ? await launchLocalBrowser() : await launchProfile(pid, token);
+          if (!isLocal) launchedPids.add(pid);
           handle = { close: async () => { try { await (isLocal ? closeLocalBrowser() : closeProfile(pid)); } catch (_) {} } };
           _replySweepHandle = handle;
 
@@ -1771,9 +1773,25 @@ app.post('/api/reply-sweep/start', async (req, res) => {
           else { slot.status = 'error'; slot.error = err.message; stamp(`✗ [${pName}] ${err.message}`); }
         } finally {
           _replySweepHandle = null;
-          if (!wasRunning && handle) { try { await handle.close(); } catch (_) {} }
+          // Always close what WE opened (sweep only runs when no campaign is active,
+          // so wasRunning should be false; we still respect an operator-opened browser).
+          if (!wasRunning && handle) {
+            stamp(`⏏ [${pName}] Closing browser…`);
+            try { await handle.close(); } catch (_) {}
+            if (!isLocal) {
+              await new Promise((r) => setTimeout(r, 1500));   // let kill/SIGKILL settle
+              if (getProfilePid(pid)) { try { await closeProfile(pid); } catch (_) {} }
+              if (!getProfilePid(pid)) launchedPids.delete(pid);
+            }
+            slot.closed = true;
+            stamp(`✓ [${pName}] Closed`);
+          }
           _replySweep.doneProfiles++;
         }
+      }
+      // Safety net: force-close any profile we opened that somehow survived its finally.
+      for (const pid of launchedPids) {
+        if (getProfilePid(pid)) { stamp(`⏏ Safety close — ${nameByProfileId.get(pid) || pid}`); try { await closeProfile(pid); } catch (_) {} }
       }
       _replySweep.phase = 'done';
       stamp(`■ Reply sweep complete — ${_replySweep.campaignReplies.length} reply(ies), ${_replySweep.unmatched.length} unmatched${dryRun ? '' : `, ${_replySweep.wrote} written`}`);
