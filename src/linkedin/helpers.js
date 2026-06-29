@@ -1554,6 +1554,150 @@ function normalizeConversation(raw, index = new Map()) {
   };
 }
 
+// ── Sales Navigator inbox (OP / InMail reply-check) ─────────────────────────
+// OPs and InMails are sent THROUGH Sales Navigator, so their replies live in the
+// Sales Nav inbox (/sales-api/salesApiMessagingThreads), NOT the regular
+// messengerConversations inbox. Different envelope, same downstream logic: we
+// normalize to the SAME internal conversation shape normalizeConversation emits,
+// so classifyConversations / matchConversationIdentitySafe / previewOf all work
+// unchanged. Schema captured live 2026-06-29 — see docs/salesnav-inbox-SCHEMA.md.
+
+/** Extract the ACwAA-style member token from a salesProfile URN. */
+function salesProfileToken(urn) {
+  const m = String(urn || '').match(/fs_salesProfile:\(([^,)]+)/);
+  return m ? m[1] : '';
+}
+
+/** Best-effort avatar URL from a Sales Nav profilePictureDisplayImage. */
+function buildSalesNavPhoto(pic) {
+  const root = pic?.rootUrl || '';
+  const seg = pic?.artifacts?.find(a => a.width === 100)?.fileIdentifyingUrlPathSegment
+           || pic?.artifacts?.[0]?.fileIdentifyingUrlPathSegment || '';
+  if (!seg) return '';
+  return /^https?:\/\//.test(seg) ? seg : `${root}${seg}`;
+}
+
+/** Sales Nav Profile included entity → flat identity (same fields as participantIdentity). */
+function salesNavIdentity(p) {
+  if (!p || typeof p !== 'object') return null;
+  const memberId = String(p.objectUrn || '').replace(/^urn:li:member:/, '');
+  const token = salesProfileToken(p.entityUrn || '');
+  return {
+    firstName: p.firstName || '',
+    lastName: p.lastName || '',
+    profileUrl: token ? `https://www.linkedin.com/in/${token}` : '',
+    fsdProfile: '',
+    memberId: /^\d+$/.test(memberId) ? memberId : '',
+    headline: '',
+    distance: p.degree ? `DISTANCE_${p.degree}` : '',
+    photoUrl: buildSalesNavPhoto(p.profilePictureDisplayImage),
+    salesUrn: String(p.entityUrn || ''),
+  };
+}
+
+/** Normalize ONE Sales Nav thread → internal conversation shape. `index` = entityUrn→Profile. */
+function normalizeSalesNavThread(thread, index = new Map()) {
+  if (!thread || typeof thread !== 'object') return null;
+  const threadId = String(thread.id || '');
+  // Oldest → newest. WE always send the opener (OP / InMail), so the first
+  // message's author is "me" — owner-agnostic, works for OP and InMail alike.
+  const msgs = (Array.isArray(thread.messages) ? thread.messages : [])
+    .slice().sort((a, b) => (a.deliveredAt || 0) - (b.deliveredAt || 0));
+  const firstMsg = msgs[0] || null;
+  const lastMsg = msgs[msgs.length - 1] || null;
+  const meUrn = firstMsg ? String(firstMsg.author || '') : '';
+
+  const allParticipants = (Array.isArray(thread.participants) ? thread.participants : [])
+    .map(ref => salesNavIdentity(typeof ref === 'string' ? index.get(ref) : ref))
+    .filter(Boolean);
+  // Exclude "me" → participants[0] is the lead; length===1 means a 1:1 thread.
+  const participants = meUrn ? allParticipants.filter(p => p.salesUrn !== meUrn) : allParticipants;
+
+  let lastMessage = null;
+  if (lastMsg) {
+    const actor = salesNavIdentity(typeof lastMsg.author === 'string' ? index.get(lastMsg.author) : lastMsg.author);
+    lastMessage = {
+      text: String(lastMsg.body || ''),
+      deliveredAt: lastMsg.deliveredAt || 0,
+      actor: actor || null,
+      // Inbound iff the last message's author is not the opener (us).
+      isInbound: !!(meUrn && lastMsg.author && String(lastMsg.author) !== meUrn),
+      type: lastMsg.type || '',
+      subject: lastMsg.subject || '',
+    };
+  }
+
+  return {
+    entityUrn: '',
+    threadId,
+    backendUrn: '',
+    conversationUrl: threadId ? `https://www.linkedin.com/sales/inbox/${threadId}` : '',
+    lastActivityAt: lastMsg?.deliveredAt || 0,
+    unreadCount: thread.unreadMessageCount || 0,
+    read: (thread.unreadMessageCount || 0) === 0,
+    groupChat: participants.length > 1,
+    meFsd: '',
+    participants,
+    lastMessage,
+  };
+}
+
+/** Pure: Sales Nav threads envelope → { elements, metadata } in internal shape. */
+export function normalizeSalesNavThreads(raw) {
+  if (!raw || typeof raw !== 'object') return { elements: [], metadata: null };
+  const threads = Array.isArray(raw.data?.elements) ? raw.data.elements : [];
+  const index = new Map();
+  for (const e of (Array.isArray(raw.included) ? raw.included : [])) {
+    if (e && e.entityUrn) index.set(e.entityUrn, e);
+  }
+  return {
+    elements: threads.map(t => normalizeSalesNavThread(t, index)).filter(Boolean),
+    metadata: null,
+  };
+}
+
+/**
+ * Fetch the Sales Navigator inbox thread list and normalize it. Mirrors
+ * getConversationsPage: replays the page's own salesApiMessagingThreads XHR
+ * (so the decoration/query params stay current) with the JSESSIONID csrf token.
+ * Requires the Sales Nav inbox to already be loaded so the XHR has fired.
+ */
+export async function getSalesNavThreadsPage(page) {
+  try {
+    const raw = await page.evaluate(async () => {
+      try {
+        const entries = performance.getEntriesByType('resource')
+          .filter(e => typeof e.name === 'string' && e.name.includes('salesApiMessagingThreads'))
+          .sort((a, b) => b.startTime - a.startTime);
+        if (entries.length === 0) return null; // inbox not loaded yet
+        // Use the list endpoint (no trailing /<threadId>) which embeds messages.
+        const listUrl = entries.map(e => e.name).find(u => !/salesApiMessagingThreads\/[^?]/.test(u));
+        if (!listUrl) return null;
+        const csrf = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('JSESSIONID='));
+        if (!csrf) return null;
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+        const resp = await fetch(listUrl, {
+          headers: {
+            'accept': 'application/json',
+            'csrf-token': token,
+            'x-restli-protocol-version': '2.0.0',
+          },
+          credentials: 'include',
+        });
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch {
+        return null;
+      }
+    });
+    if (!raw || typeof raw !== 'object') return null;
+    return normalizeSalesNavThreads(raw);
+  } catch (err) {
+    console.warn(`[helpers] getSalesNavThreadsPage failed: ${err.message || err}`);
+    return null;
+  }
+}
+
 /**
  * Extract a profile URN from a Voyager /identity/profiles/* response payload.
  *
