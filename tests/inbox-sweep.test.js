@@ -254,3 +254,37 @@ test('sweepProfileInbox: getConversationsPage null → clean error, no throw', a
   assert.equal(out.campaignReplies.length, 0);
   _setDeps(null);
 });
+
+// ── Group-thread (CC+IC 3-way) attribution — the real Luca Coppone case ──────
+// Sweeping Pavan's inbox: parser excludes "me" (Pavan), leaving [Antonio(primary), Luca(lead)].
+// participants[0] is the PRIMARY, not the lead — so the matcher must scan all participants.
+const groupConv = (lastActorMid) => ({
+  groupChat: true, threadId: 'g1', lastActivityAt: 100,
+  participants: [
+    { firstName: 'Antonio', lastName: 'Varlese', memberId: '420107047', fsdProfile: 'ACoAABkKUycB' }, // primary (participants[0])
+    { firstName: 'Luca', lastName: 'Coppone', memberId: '269709976', fsdProfile: 'ACoAABATcpgB' },      // lead
+  ],
+  lastMessage: { text: 'Buongiorno, scusate il ritardo…', deliveredAt: 99,
+    actor: { firstName: lastActorMid === '269709976' ? 'Luca' : 'Antonio', lastName: lastActorMid === '269709976' ? 'Coppone' : 'Varlese', memberId: lastActorMid } },
+});
+const leadRows = [{ 'First Name': 'Luca', 'Last Name': 'Coppone', 'Linkedin Membership ID': '269709976' }];
+
+test('group: matcher finds the LEAD even when it is not participants[0]', () => {
+  const m = matchConversationIdentitySafe(groupConv('269709976'), leadRows);
+  assert.equal(m.reason, 'identity');
+  assert.equal(m.row['First Name'], 'Luca');
+  assert.equal(m.lead.memberId, '269709976'); // attributed to Luca, not Antonio
+});
+
+test('group: lead replied → campaign reply attributed to the lead, not the primary', () => {
+  const { campaignReplies, unmatched } = classifyConversations([groupConv('269709976')], leadRows);
+  assert.equal(campaignReplies.length, 1);
+  assert.equal(campaignReplies[0].leadName, 'Luca Coppone');
+  assert.equal(unmatched.length, 0);
+  assert.equal(campaignReplies[0].isGroup, true);
+});
+
+test('group: primary spoke last → NOT counted as a lead reply', () => {
+  const { campaignReplies } = classifyConversations([groupConv('420107047')], leadRows);
+  assert.equal(campaignReplies.length, 0); // Antonio (primary) sent last — not Luca
+});

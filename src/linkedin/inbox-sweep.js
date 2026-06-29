@@ -89,78 +89,130 @@ export function isInboundConversation(conv) {
 }
 
 /**
- * Identity-first match. Token (URN/slug) exact match first; name only when the
- * token side is empty on either party. >1 candidate at any stage → ambiguous
- * (skip-on-doubt) so we never stamp the wrong row.
+ * Match ONE participant against the candidate rows. memberId → fsd → slug → name,
+ * each: 1 hit → identity (name for the last stage), >1 → ambiguous, 0 → next.
  */
-export function matchConversationIdentitySafe(conv, candidateRows, linkedinColumn) {
-  const rows = Array.isArray(candidateRows) ? candidateRows : [];
-  const participant0 = Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null);
-
-  // 1. Numeric memberId — the only anchor that survives the ACwAA(sheet)/ACoAA(inbox)
-  //    encoding gap. Exact, free (both sides already carry it).
-  const cMemberId = String(participant0?.memberId || '').trim();
-  if (/^\d{4,}$/.test(cMemberId)) {
-    const hits = rows.filter((r) => rowMemberId(r) === cMemberId);
-    if (hits.length === 1) return { row: hits[0], reason: 'identity' };
-    if (hits.length > 1) return { row: null, reason: 'ambiguous' };
-    // 0 → fall through (sheet row may predate memberId capture).
-  }
-
-  // 2. ACoAA fsd_profile token — secondary exact key when memberId is blank on a side.
-  const cFsd = String(participant0?.fsdProfile || '').trim();
-  if (cFsd) {
-    const hits = rows.filter((r) => identityToken(rowLinkedinUrl(r, linkedinColumn)) === cFsd
-      || String(r['LinkedIn URN'] || r['Linkedin URN'] || '').trim() === cFsd);
+function matchParticipant(p, rows, linkedinColumn) {
+  if (!p) return { row: null, reason: 'unmatched' };
+  const mid = String(p.memberId || '').trim();
+  if (/^\d{4,}$/.test(mid)) {
+    const hits = rows.filter((r) => rowMemberId(r) === mid);
     if (hits.length === 1) return { row: hits[0], reason: 'identity' };
     if (hits.length > 1) return { row: null, reason: 'ambiguous' };
   }
-
-  // 3. Legacy slug token (only matches when both sides share an encoding).
-  const ctoken = conversationToken(conv);
-  if (ctoken) {
-    const hits = rows.filter((r) => identityToken(rowLinkedinUrl(r, linkedinColumn)) === ctoken);
+  const fsd = String(p.fsdProfile || '').trim();
+  if (fsd) {
+    const hits = rows.filter((r) => identityToken(rowLinkedinUrl(r, linkedinColumn)) === fsd
+      || String(r['LinkedIn URN'] || r['Linkedin URN'] || '').trim() === fsd);
     if (hits.length === 1) return { row: hits[0], reason: 'identity' };
     if (hits.length > 1) return { row: null, reason: 'ambiguous' };
   }
-
-  const participant = participant0;
-  const convFull = participant ? fullName(participant.firstName, participant.lastName) : '';
-  if (!convFull) return { row: null, reason: 'unmatched' };
-
-  const nameHits = rows.filter((r) =>
-    fullName(r.firstName || r['First Name'], r.lastName || r['Last Name']) === convFull);
-  if (nameHits.length === 1) return { row: nameHits[0], reason: 'name' };
-  if (nameHits.length > 1) return { row: null, reason: 'ambiguous' };
+  const ptoken = identityToken(p.profileUrl);
+  if (ptoken) {
+    const hits = rows.filter((r) => identityToken(rowLinkedinUrl(r, linkedinColumn)) === ptoken);
+    if (hits.length === 1) return { row: hits[0], reason: 'identity' };
+    if (hits.length > 1) return { row: null, reason: 'ambiguous' };
+  }
+  const full = fullName(p.firstName, p.lastName);
+  if (full) {
+    const hits = rows.filter((r) => fullName(r.firstName || r['First Name'], r.lastName || r['Last Name']) === full);
+    if (hits.length === 1) return { row: hits[0], reason: 'name' };
+    if (hits.length > 1) return { row: null, reason: 'ambiguous' };
+  }
   return { row: null, reason: 'unmatched' };
 }
 
-function previewOf(conv, row, linkedinColumn) {
-  const p = Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null);
+/**
+ * Identity-safe match, GROUP-AWARE. In a 3-way CC+IC thread the participants are
+ * [the campaign account ("me", excluded by the parser), the lead, the primary
+ * person]. The lead is NOT necessarily participants[0] (it's often the primary),
+ * so we test EVERY participant against the leads and return the matched LEAD.
+ * Returns { row, reason, lead } — `lead` is the matched participant (for correct
+ * name/direction attribution). >1 distinct lead row → ambiguous (skip-on-doubt).
+ */
+export function matchConversationIdentitySafe(conv, candidateRows, linkedinColumn) {
+  const rows = Array.isArray(candidateRows) ? candidateRows : [];
+  const parts = (Array.isArray(conv?.participants) && conv.participants.length)
+    ? conv.participants
+    : (conv?.participant ? [conv.participant] : []);
+  if (!parts.length) return { row: null, reason: 'unmatched', lead: null };
+
+  const matched = [];           // { row, lead, reason }
+  let sawAmbiguous = false;
+  for (const p of parts) {
+    const r = matchParticipant(p, rows, linkedinColumn);
+    if (r.reason === 'ambiguous') sawAmbiguous = true;
+    else if (r.row) matched.push({ row: r.row, lead: p, reason: r.reason });
+  }
+  const uniq = [...new Map(matched.map((x) => [x.row, x])).values()];
+  if (uniq.length === 1) return { row: uniq[0].row, reason: uniq[0].reason, lead: uniq[0].lead };
+  if (uniq.length > 1) return { row: null, reason: 'ambiguous', lead: null };   // two leads in one thread
+  if (sawAmbiguous) return { row: null, reason: 'ambiguous', lead: null };
+  return { row: null, reason: 'unmatched', lead: null };
+}
+
+function previewOf(conv, row, linkedinColumn, lead) {
+  // Attribute to the matched lead (groups: NOT participants[0], which may be the primary).
+  const p = lead || (Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null));
   const last = conv?.lastMessage || null;
+  const isGroup = conv?.groupChat === true ||
+    (Array.isArray(conv?.participants) && conv.participants.length > 1);
   return {
     leadName: p ? `${p.firstName || ''} ${p.lastName || ''}`.replace(/\s+/g, ' ').trim() : '(unknown)',
     snippet: String(last?.text || '').slice(0, 160),
     profileUrl: p?.profileUrl || '',
+    memberId: p?.memberId || '',
     threadId: conv?.threadId || '',
     timestamp: last?.deliveredAt || conv?.lastActivityAt || null,
     linkedinUrl: row ? rowLinkedinUrl(row, linkedinColumn) : (p?.profileUrl || ''),
     row: row || null,
     suspected: false,
+    isGroup,
+    // Who actually wrote the last message (so the UI can show "Luca replied",
+    // not the primary). Empty when the parser couldn't resolve a sender.
+    lastSender: [last?.actor?.firstName, last?.actor?.lastName].filter(Boolean).join(' ').trim(),
   };
 }
 
-/** Split inbound conversations into matched campaign replies vs unmatched new replies. */
+/** True when the LEAD (matched participant) sent the last message — not us, not the primary. */
+function leadSentLast(conv, lead) {
+  const last = conv?.lastMessage || null;
+  if (!last || !lead) return false;
+  const senderMid = String(last.actor?.memberId || '').trim();
+  const leadMid = String(lead.memberId || '').trim();
+  if (senderMid && leadMid) return senderMid === leadMid;        // exact, group-safe
+  // memberId missing on the message actor → fall back to name/url comparison.
+  const sUrl = last.actor?.profileUrl, lUrl = lead.profileUrl;
+  if (sUrl && lUrl) return sUrl === lUrl;
+  const sName = fullName(last.actor?.firstName, last.actor?.lastName);
+  const lName = fullName(lead.firstName, lead.lastName);
+  return !!(sName && sName === lName);
+}
+
+/**
+ * Split conversations into matched campaign replies vs unmatched new replies.
+ * Group-aware: a thread is a campaign reply only when a campaign LEAD is a
+ * participant AND that lead sent the last message (so the primary's own intro
+ * message is never mistaken for the lead replying).
+ */
 export function classifyConversations(convs, candidateRows, linkedinColumn) {
   const campaignReplies = [];
   const unmatched = [];
   for (const conv of (Array.isArray(convs) ? convs : [])) {
-    if (!isInboundConversation(conv)) continue;
     const m = matchConversationIdentitySafe(conv, candidateRows, linkedinColumn);
+    const inbound = isInboundConversation(conv);
     if (m.reason === 'identity' || m.reason === 'name') {
-      campaignReplies.push(previewOf(conv, m.row, linkedinColumn));
-    } else {
-      const item = previewOf(conv, null, linkedinColumn);
+      // A campaign lead is in this thread. Surface as a reply only when the LEAD
+      // spoke last (group-safe); if the actor carries no memberId, fall back to
+      // the coarse inbound signal so 1:1 DM threads still work.
+      const hasActorMid = !!String(conv?.lastMessage?.actor?.memberId || '').trim();
+      if (leadSentLast(conv, m.lead) || (!hasActorMid && inbound)) {
+        campaignReplies.push(previewOf(conv, m.row, linkedinColumn, m.lead));
+      }
+      // else: we / the primary spoke last → not a fresh lead reply; skip silently.
+    } else if (inbound) {
+      // No campaign lead in the thread, but someone messaged us → unmatched bucket.
+      const item = previewOf(conv, null, linkedinColumn, null);
       item.suspected = (m.reason === 'ambiguous');
       unmatched.push(item);
     }
