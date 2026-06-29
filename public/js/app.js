@@ -17588,9 +17588,10 @@ async function rsweepStart() {
   // Sheet: the panel's own field first, falling back to the global #sheet-url / running campaign.
   const sheetUrl = (document.getElementById('rsweep-sheet')?.value?.trim())
     || (document.getElementById('sheet-url')?.value?.trim()) || '';
-  // Account: blank = all sender accounts in the sheet; otherwise sweep just the chosen profile.
-  const acct = document.getElementById('rsweep-account')?.value || '';
-  const profileIds = acct ? [acct] : undefined;
+  // Accounts: checked boxes = sweep those; zero checked = all sender accounts in the sheet.
+  const boxes = Array.from(document.querySelectorAll('#rsweep-accounts .rsweep-acct-cb'));
+  const checked = boxes.filter((b) => b.checked).map((b) => b.value);
+  const profileIds = (checked.length && checked.length < boxes.length) ? checked : undefined;
   if (!sheetUrl) { showCampaignToast('Paste the Google Sheet URL first', 3000); return; }
   _rsweepSel = null; // re-select first reply of the new run
   try {
@@ -17619,29 +17620,60 @@ async function rsweepInitControls() {
   await rsweepLoadAccounts();
 }
 
-let _rsweepAcctSheet = null; // sheet URL the dropdown is currently populated for
-// Populate the account dropdown with ONLY the accounts that have reply-eligible leads
-// in the chosen sheet (sheet-scoped + lead counts) — not all 400+ GoLogin profiles.
+let _rsweepAcctSheet = null; // sheet URL the list is currently populated for
+// Populate the multi-select account list with ONLY the accounts that have reply-eligible
+// leads in the chosen sheet (sheet-scoped + lead counts) — not all 400+ GoLogin profiles.
+// Pick one, some, or all; zero checked = sweep all.
 async function rsweepLoadAccounts() {
-  const sel = document.getElementById('rsweep-account');
-  if (!sel) return;
+  const listEl = document.getElementById('rsweep-accounts');
+  const countEl = document.getElementById('rsweep-acct-count');
+  if (!listEl) return;
   const url = document.getElementById('rsweep-sheet')?.value?.trim() || '';
-  if (!url) { sel.innerHTML = '<option value="">Paste a sheet URL to list accounts…</option>'; _rsweepAcctSheet = null; return; }
+  if (!url) {
+    listEl.innerHTML = '';
+    if (countEl) countEl.textContent = 'Paste a sheet URL to list accounts…';
+    _rsweepAcctSheet = null; rsweepUpdateAcctCount(); return;
+  }
   if (url === _rsweepAcctSheet) return; // already populated for this sheet
-  sel.innerHTML = '<option value="">Loading accounts…</option>';
+  if (countEl) countEl.textContent = 'Loading accounts…';
+  listEl.innerHTML = '';
   try {
     const res = await fetch(`/api/reply-sweep/accounts?sheetUrl=${encodeURIComponent(url)}`);
     const data = await res.json();
     const accounts = Array.isArray(data.accounts) ? data.accounts : [];
-    const total = accounts.reduce((n, a) => n + (a.leadCount || 0), 0);
-    const opts = [`<option value="">All accounts that sent leads (${accounts.length})</option>`]
-      .concat(accounts.map((a) => `<option value="${rsweepEsc(a.id)}">${rsweepEsc(a.name)} · ${a.leadCount} lead${a.leadCount === 1 ? '' : 's'}</option>`));
-    sel.innerHTML = opts.join('');
+    if (!accounts.length) {
+      listEl.innerHTML = '';
+      if (countEl) countEl.textContent = 'No accounts with eligible leads in this sheet';
+      _rsweepAcctSheet = url; rsweepUpdateAcctCount(); return;
+    }
+    // Default: all checked (matches the old "All accounts" default).
+    listEl.innerHTML = accounts.map((a) => `
+      <label class="rsweep-acct-item">
+        <input type="checkbox" class="rsweep-acct-cb" value="${rsweepEsc(a.id)}" checked />
+        <span class="rsweep-acct-nm">${rsweepEsc(a.name)}</span>
+        <span class="rsweep-acct-ct">${a.leadCount} lead${a.leadCount === 1 ? '' : 's'}</span>
+      </label>`).join('');
     _rsweepAcctSheet = url;
-    if (!accounts.length) sel.innerHTML = '<option value="">No accounts with eligible leads in this sheet</option>';
+    // Wire each checkbox to refresh the count label + CTA.
+    listEl.querySelectorAll('.rsweep-acct-cb').forEach((cb) => cb.addEventListener('change', rsweepUpdateAcctCount));
+    rsweepUpdateAcctCount();
   } catch (_) {
-    sel.innerHTML = '<option value="">Could not load accounts — check the sheet URL</option>';
-    _rsweepAcctSheet = null;
+    listEl.innerHTML = '';
+    if (countEl) countEl.textContent = 'Could not load accounts — check the sheet URL';
+    _rsweepAcctSheet = null; rsweepUpdateAcctCount();
+  }
+}
+
+// Reflect the current checkbox selection in the header count + the CTA label.
+function rsweepUpdateAcctCount() {
+  const boxes = Array.from(document.querySelectorAll('#rsweep-accounts .rsweep-acct-cb'));
+  const checked = boxes.filter((b) => b.checked);
+  const countEl = document.getElementById('rsweep-acct-count');
+  const runBtn = document.getElementById('rsweep-run');
+  if (countEl && boxes.length) countEl.textContent = `${checked.length} of ${boxes.length} selected`;
+  if (runBtn) {
+    const n = checked.length || boxes.length; // zero checked = all
+    runBtn.textContent = boxes.length ? `Check replies · ${n} account${n === 1 ? '' : 's'}` : 'Check replies now';
   }
 }
 
@@ -17689,6 +17721,11 @@ function rsweepBind() {
   }
   if (run && !run._rsweepBound) { run._rsweepBound = true; run.addEventListener('click', rsweepStart); }
   if (stop && !stop._rsweepBound) { stop._rsweepBound = true; stop.addEventListener('click', rsweepStop); }
+  const allBtn = document.getElementById('rsweep-acct-all');
+  const noneBtn = document.getElementById('rsweep-acct-none');
+  const setAll = (v) => { document.querySelectorAll('#rsweep-accounts .rsweep-acct-cb').forEach((cb) => { cb.checked = v; }); rsweepUpdateAcctCount(); };
+  if (allBtn && !allBtn._rsweepBound) { allBtn._rsweepBound = true; allBtn.addEventListener('click', () => setAll(true)); }
+  if (noneBtn && !noneBtn._rsweepBound) { noneBtn._rsweepBound = true; noneBtn.addEventListener('click', () => setAll(false)); }
   if (copy && !copy._rsweepBound) {
     copy._rsweepBound = true;
     copy.addEventListener('click', async () => {

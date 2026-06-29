@@ -3,61 +3,70 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Reply check · 2 — dashboard button while monitoring</title>
+<title>Reply check · 2 — right column (the real card)</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css" />
 <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
 <style>
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px 60px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 26px 24px 60px; }
   .crumb { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); margin:0 0 16px; }
-  .card { border:1px solid var(--hairline); border-radius:16px; padding:24px 26px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-  .eyebrow { display:flex; align-items:center; justify-content:space-between; }
-  .eyebrow .st { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); display:flex; align-items:center; gap:8px; }
-  .eyebrow .st .dot { width:8px; height:8px; border-radius:9999px; background:#2e7d4f; }
-  .av { width:42px; height:42px; border-radius:9999px; border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:.7rem; color:var(--gray); }
-  .nm { font-family:'Bebas Neue',sans-serif; font-size:2.1rem; letter-spacing:.01em; margin:6px 0 18px; }
-  /* the dashboard-level reply-check button — sits in the card header row */
-  body[data-dashboard='v3'] .rc-btn { background:var(--ink); color:#fff; border:none; border-radius:9999px; padding:10px 18px; font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px; }
-  .rc-btn svg { width:14px; height:14px; }
-  .rc-btn .badge { background:var(--gold); color:#0a0a0a; border-radius:9999px; padding:1px 7px; font-size:.58rem; }
-  .toolbar { display:flex; align-items:center; gap:12px; margin:0 0 16px; }
-  .toolbar .ttl { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
-  .toolbar .sp { flex:1; }
-  .vj-log { max-height: 280px; overflow:auto; }
+  /* reply rows shown UNDER the Run button, inside the 260px column */
+  .rc-replies { margin-top:14px; }
+  .rc-replies .gh { font-family:var(--mono); font-size:.52rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 7px; }
+  .rc-reply { padding:7px 0; border-top:1px solid var(--hairline-soft); cursor:pointer; }
+  .rc-reply .who { font-size:.78rem; font-weight:600; color:var(--ink); }
+  .rc-reply .who .src { font-family:var(--mono); font-weight:400; font-size:.58rem; color:var(--gray); display:block; margin-top:1px; }
+  .rc-reply .snip { font-size:.72rem; color:var(--gray); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rc-more { font-size:.72rem; color:var(--gray); opacity:.7; margin-top:8px; cursor:pointer; text-decoration:underline; }
   .pgfoot { position:fixed; bottom:0; left:0; right:0; background:var(--ink); color:#bbb; font-family:var(--mono); font-size:11px; padding:8px 16px; text-align:center; }
 </style>
 </head>
 <body data-dashboard="v3">
 <div class="wrap">
-  <div class="crumb">Sketch 2 / 3 · reply-check as a dashboard button (campaign monitoring)</div>
+  <div class="crumb">Sketch 2 / 3 · reply-check in the right column (= the real card today, after a sweep)</div>
 
-  <div class="card">
-    <div class="eyebrow">
-      <span class="st"><span class="dot"></span>Monitoring</span>
-      <span class="av">OP</span>
+  <!-- VERBATIM #active-card markup (index.html:229-324), is-detailed so the panel shows -->
+  <section class="vj-card is-detailed">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Finished</span></span>
+      <span class="vj-when"></span>
     </div>
-    <div class="nm">Q3 Founders — London</div>
-
-    <!-- ONE button lives in the card's own toolbar, next to Copy all / Open sheet -->
-    <div class="toolbar">
-      <span class="ttl">Live log · 31 events</span>
-      <span class="sp"></span>
-      <button type="button" class="vj-log-act">Copy all</button>
-      <button type="button" class="vj-log-act">Open sheet</button>
-      <button class="rc-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/></svg>
-        Check replies <span class="badge">2</span>
-      </button>
+    <h2 class="vj-name"><span>(Unnamed)</span></h2>
+    <div class="vj-details">
+      <div>
+        <div class="vj-log-head">
+          <span class="vj-details-head">Live log · 31 events</span>
+          <span class="vj-log-acts">
+            <button type="button" class="vj-log-act">Copy all</button>
+            <button type="button" class="vj-log-act">Open sheet</button>
+          </span>
+        </div>
+        <div class="vj-log">
+          <div class="vj-log-line"><span class="time">16:18:09</span><span class="evt">LOG</span><span class="what">→ [dwayne.co@ortus.solutions] op_message_sent · Sophie</span></div>
+          <div class="vj-log-line"><span class="time">16:19:23</span><span class="evt">OK</span><span class="what">✓ [dwayne.co@ortus.solutions] (1/50)</span></div>
+          <div class="vj-log-line"><span class="time">16:19:33</span><span class="evt">OK</span><span class="what">✓ dwayne.co@ortus.solutions browser closed</span></div>
+          <div class="vj-log-line"><span class="time">16:19:40</span><span class="evt">INFO</span><span class="what">═══ Campaign ended ═══</span></div>
+        </div>
+      </div>
+      <!-- vj-bulk toggled to reply-check (as the app already does), now with results under the button -->
+      <div class="vj-bulk">
+        <div class="vj-details-head">Reply check</div>
+        <div class="vj-bulk-status">Last sweep · <b>16:21</b> · <span>2</span> new replies</div>
+        <button class="vj-bulk-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+          <span>Run reply check now</span>
+        </button>
+        <div class="rc-replies">
+          <div class="gh">Campaign replies · 2</div>
+          <div class="rc-reply"><div class="who">Luca Coppone <span class="src">pavan.p</span></div><div class="snip">Buongiorno, scusate il ritardo nella…</div></div>
+          <div class="rc-reply"><div class="who">Piermarco Storti <span class="src">christian.s</span></div><div class="snip">Buon pomeriggio, mi scuso per il…</div></div>
+          <div class="rc-more">9 unmatched · open full view ↗</div>
+        </div>
+        <div class="vj-bulk-hint">Scans the messages you sent for replies and writes them to your sheet. Doesn’t affect throughput.</div>
+      </div>
     </div>
-
-    <div class="vj-log">
-      <div class="vj-log-line"><span class="time">16:18:09</span><span class="evt">LOG</span><span class="what">[dwayne.co] op_message_sent · Sophie</span></div>
-      <div class="vj-log-line"><span class="time">16:19:23</span><span class="evt">OK</span><span class="what">✓ [dwayne.co] (1/50)</span></div>
-      <div class="vj-log-line"><span class="time">16:19:33</span><span class="evt">OK</span><span class="what">✓ dwayne.co browser closed</span></div>
-      <div class="vj-log-line"><span class="time">16:19:40</span><span class="evt">INFO</span><span class="what">═══ Campaign ended ═══</span></div>
-    </div>
-  </div>
+  </section>
 </div>
-<div class="pgfoot">Sketch 2 — ONE pill button ("Check replies", with a found-count badge) sits in the live-log toolbar next to Copy all / Open sheet. Click → opens the full reply-check view. Nothing else added to the card.</div>
+<div class="pgfoot">Sketch 2 — the REAL card (verbatim #active-card markup). Reply-check stays the 260px right column it already is; found replies list under the Run button, click → full view. Tight on width.</div>
 </body>
 </html>

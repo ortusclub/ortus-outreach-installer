@@ -3,38 +3,25 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Reply check · 3 — underneath the live-log status card</title>
+<title>Reply check · 3 — strip under the live log (the real card)</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css" />
 <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
 <style>
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px 60px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 26px 24px 60px; }
   .crumb { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); margin:0 0 16px; }
-  .card { border:1px solid var(--hairline); border-radius:16px; padding:24px 26px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-  .eyebrow { display:flex; align-items:center; justify-content:space-between; }
-  .eyebrow .st { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); display:flex; align-items:center; gap:8px; }
-  .eyebrow .st .dot { width:8px; height:8px; border-radius:9999px; background:#2e7d4f; }
-  .av { width:42px; height:42px; border-radius:9999px; border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:.7rem; color:var(--gray); }
-  .nm { font-family:'Bebas Neue',sans-serif; font-size:2.1rem; margin:6px 0 18px; }
-  .toolbar { display:flex; align-items:center; gap:12px; margin:0 0 10px; }
-  .toolbar .ttl { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
-  .toolbar .sp { flex:1; }
-  .vj-log { max-height: 200px; overflow:auto; }
-
-  /* THE REPLY-CHECK STRIP — full width, directly UNDER the live-log card */
-  .rc-strip { margin-top:18px; border:1px solid var(--hairline); border-radius:12px; overflow:hidden; }
-  .rc-head { display:flex; align-items:center; gap:14px; padding:13px 16px; background:var(--bg-soft); border-bottom:1px solid var(--hairline); }
-  .rc-head .t { font-family:var(--mono); font-size:.58rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
-  .rc-head .sub { font-size:.74rem; color:var(--gray); } .rc-head .sub b { color:var(--ink); }
+  /* CC+IC: details panel keeps BOTH columns (log + connection check). Reply-check is a full-width strip below. */
+  .rc-strip { margin-top:16px; border:1px solid var(--hairline); border-radius:12px; overflow:hidden; }
+  .rc-head { display:flex; align-items:center; gap:14px; padding:12px 16px; background:var(--bg-soft); border-bottom:1px solid var(--hairline); }
+  .rc-head .t { font-family:var(--mono); font-size:.68rem; letter-spacing:.2em; text-transform:uppercase; color:var(--gray); }
+  .rc-head .sub { font-size:.76rem; color:var(--gray); } .rc-head .sub b { color:var(--ink); }
   .rc-head .sp { flex:1; }
-  body[data-dashboard='v3'] .rc-go { background:var(--ink); color:#fff; border:none; border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:.58rem; letter-spacing:.1em; text-transform:uppercase; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px; }
-  .rc-go svg { width:14px; height:14px; }
+  /* reuse the real .vj-bulk-btn for the Run button so it's identical */
+  .rc-head .vj-bulk-btn { width:auto; margin:0; padding:9px 16px; }
   .rc-body { display:grid; grid-template-columns: 1fr 1fr; }
-  .rc-col { padding:12px 16px; }
-  .rc-col + .rc-col { border-left:1px solid var(--hairline); }
+  .rc-col { padding:12px 16px; } .rc-col + .rc-col { border-left:1px solid var(--hairline); }
   .rc-col .ch { font-family:var(--mono); font-size:.54rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 9px; }
-  .reply { padding:8px 0; border-bottom:1px solid var(--hairline-soft); cursor:pointer; }
-  .reply:last-child { border-bottom:none; }
+  .reply { padding:8px 0; border-bottom:1px solid var(--hairline-soft); cursor:pointer; } .reply:last-child { border-bottom:none; }
   .reply .who { font-size:.84rem; font-weight:600; color:var(--ink); }
   .reply .who .src { font-family:var(--mono); font-weight:400; font-size:.62rem; color:var(--gray); margin-left:7px; }
   .reply .snip { font-size:.76rem; color:var(--gray); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -44,36 +31,51 @@
 </head>
 <body data-dashboard="v3">
 <div class="wrap">
-  <div class="crumb">Sketch 3 / 3 · reply-check strip underneath the live-log status card</div>
+  <div class="crumb">Sketch 3 / 3 · reply-check as a full-width strip under the live log</div>
 
-  <div class="card">
-    <div class="eyebrow">
-      <span class="st"><span class="dot"></span>Monitoring</span>
-      <span class="av">OP</span>
+  <!-- VERBATIM #active-card markup — CC+IC: keeps BOTH connection check + reply strip -->
+  <section class="vj-card is-detailed">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Monitoring · CC+IC</span></span>
+      <span class="vj-when"></span>
     </div>
-    <div class="nm">Q3 Founders — London</div>
+    <h2 class="vj-name"><span>Q3 Founders — London</span></h2>
+    <div class="vj-details">
+      <div>
+        <div class="vj-log-head">
+          <span class="vj-details-head">Live log · 31 events</span>
+          <span class="vj-log-acts">
+            <button type="button" class="vj-log-act">Copy all</button>
+            <button type="button" class="vj-log-act">Open sheet</button>
+          </span>
+        </div>
+        <div class="vj-log">
+          <div class="vj-log-line"><span class="time">16:18:09</span><span class="evt">OK</span><span class="what">✓ [pavan.p] Connect sent · Luca Coppone</span></div>
+          <div class="vj-log-line"><span class="time">16:19:23</span><span class="evt">OK</span><span class="what">📨 [rilany.darang] Intro DM fired · Elena R.</span></div>
+          <div class="vj-log-line"><span class="time">16:19:40</span><span class="evt">INFO</span><span class="what">═══ Monitoring — next check in 58m ═══</span></div>
+        </div>
+      </div>
+      <!-- existing connection check keeps its 260px right column, untouched -->
+      <div class="vj-bulk">
+        <div class="vj-details-head">Bulk check connection</div>
+        <div class="vj-bulk-status">Last sweep · <b>16:00</b> · <span>3</span> newly accepted</div>
+        <button class="vj-bulk-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+          <span>Run check now</span>
+        </button>
+        <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn’t affect throughput.</div>
+      </div>
+    </div>
 
-    <div class="toolbar">
-      <span class="ttl">Live log · 31 events</span>
-      <span class="sp"></span>
-      <button type="button" class="vj-log-act">Copy all</button>
-      <button type="button" class="vj-log-act">Open sheet</button>
-    </div>
-    <div class="vj-log">
-      <div class="vj-log-line"><span class="time">16:18:09</span><span class="evt">LOG</span><span class="what">[dwayne.co] op_message_sent · Sophie</span></div>
-      <div class="vj-log-line"><span class="time">16:19:23</span><span class="evt">OK</span><span class="what">✓ [dwayne.co] (1/50)</span></div>
-      <div class="vj-log-line"><span class="time">16:19:40</span><span class="evt">INFO</span><span class="what">═══ Campaign ended ═══</span></div>
-    </div>
-
-    <!-- reply check, full width, right under the log -->
+    <!-- reply check, full width, directly under the live-log panel -->
     <div class="rc-strip">
       <div class="rc-head">
         <span class="t">Reply check</span>
         <span class="sub">Last sweep · <b>16:21</b> · <b>2</b> replies · 9 unmatched</span>
         <span class="sp"></span>
-        <button class="rc-go">
+        <button class="vj-bulk-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
-          Run reply check now
+          <span>Run reply check now</span>
         </button>
       </div>
       <div class="rc-body">
@@ -89,8 +91,8 @@
         </div>
       </div>
     </div>
-  </div>
+  </section>
 </div>
-<div class="pgfoot">Sketch 3 — reply-check as a full-width strip directly under the live log: summary + Run-now on one line, then Campaign replies / Unmatched side-by-side. Click a reply → full read pane + open in sender's GoLogin browser.</div>
+<div class="pgfoot">Sketch 3 (CC+IC) — connection check KEEPS its right column; reply-check is an additive full-width strip beneath the log. CC+IC / CC+DM / ICB show both; OP / InMail / Message Only show only the reply strip.</div>
 </body>
 </html>
