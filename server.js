@@ -39,11 +39,12 @@ import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { primaryKeyFromUrl, loadPrimaryStatus } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
+import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { spreadsheetIdFromUrl, extractSheetGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile } from './src/gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
 import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
@@ -1636,6 +1637,139 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
       _fgTeam.running = false; _fgTeam.phase = 'error'; _fgTeam.error = err.message;
     } finally {
       _fgTeam.running = false;
+      try { allowSleep(); } catch (_) {}
+    }
+  })();
+});
+
+// ── Manual bulk reply sweep ──────────────────────────────────────────────────
+// One-button, observable inbox sweep. Mirrors the FG team-launch streaming
+// pattern: sequential per-profile scan, isolated per-profile errors, force-close
+// on stop. Preview-only unless the operator turns dry-run OFF.
+let _replySweep = makeInitialSweepStatus([], true);
+_replySweep.running = false; _replySweep.phase = 'idle';
+let _replySweepAbort = false;
+let _replySweepHandle = null;
+
+app.get('/api/reply-sweep/status', (_req, res) => res.json(_replySweep));
+
+app.post('/api/reply-sweep/stop', async (_req, res) => {
+  _replySweepAbort = true;
+  const h = _replySweepHandle; _replySweepHandle = null;
+  try { if (h && typeof h.close === 'function') await h.close(); } catch (_) {}
+  res.json({ ok: true });
+});
+
+app.post('/api/reply-sweep/start', async (req, res) => {
+  if (_replySweep.running) return res.status(409).json({ error: 'A reply sweep is already running.' });
+  const b = req.body || {};
+  let { sheetUrl, linkedinColumn, profileIds } = b;
+  const dryRun = b.dryRun !== false; // default ON (preview-only) unless explicitly false
+  if (!sheetUrl && campaign.running && campaign.sheetUrl) {
+    sheetUrl = campaign.sheetUrl;
+    linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
+  }
+  if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+  linkedinColumn = linkedinColumn || 'Linkedin URL';
+
+  // Load + group sent rows by sender (same grouping as /api/reply-check-now).
+  const token = process.env.GOLOGIN_API_TOKEN;
+  let rows;
+  try { rows = await fetchSheet(sheetUrl); }
+  catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}` }); }
+
+  let nameByProfileId = new Map();
+  let nameToId = {};
+  try {
+    const allProfiles = await getProfiles(token);
+    nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
+    for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
+  } catch { /* fall back to id-as-name */ }
+
+  const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
+  const candidateRows = rows.filter((row) =>
+    hasStageSchema ? CHECK_DMS_STAGE_FILTER.has(String(row.Stage || '').trim())
+                   : String(row.Message || '').trim().toLowerCase() === 'sent');
+
+  const wanted = Array.isArray(profileIds) && profileIds.length ? profileIds.slice() : null;
+  const leadsByProfile = new Map();
+  for (const row of candidateRows) {
+    const acct = String(row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').trim();
+    if (!acct) continue;
+    const pid = nameToId[acct.toLowerCase()] || acct;
+    if (wanted && !wanted.includes(pid)) continue;
+    if (!leadsByProfile.has(pid)) leadsByProfile.set(pid, []);
+    leadsByProfile.get(pid).push(row);
+  }
+
+  const pids = [...leadsByProfile.keys()];
+  const names = pids.map((pid) => nameByProfileId.get(pid) || pid);
+  res.json({ started: true, profiles: names.length });
+
+  _replySweep = makeInitialSweepStatus(names, dryRun);
+  _replySweepAbort = false;
+
+  // Scan window: campaign first send-out − 12h, else 14 days back.
+  const startMs = campaign.startedAt ? Date.parse(campaign.startedAt) : NaN;
+  const watermark = (Number.isFinite(startMs) ? startMs : (Date.now() - 14 * 86400000)) - 12 * 60 * 60 * 1000;
+  const stamp = (m) => { _replySweep.logs.push(`[${new Date().toISOString()}] ${m}`); if (_replySweep.logs.length > 200) _replySweep.logs.shift(); try { campaignLog(`[reply-sweep] ${m}`); } catch (_) {} };
+
+  (async () => {
+    setBulkCheckInProgress(true);
+    preventSleep('reply-sweep');
+    try {
+      stamp(`▶ Reply sweep started · ${pids.length} account(s) · ${dryRun ? 'preview only' : 'WRITE-BACK ON'}`);
+      for (let i = 0; i < pids.length; i++) {
+        const pid = pids[i];
+        const slot = _replySweep.perProfile[i];
+        const pName = names[i];
+        if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); continue; }
+        _replySweep.currentProfile = pName;
+        slot.status = 'running';
+        const wasRunning = !!getProfilePid(pid);
+        const isLocal = pid === 'local-browser';
+        let launched = null, handle = null;
+        try {
+          stamp(`📬 [${pName}] Scanning inbox…`);
+          launched = isLocal ? await launchLocalBrowser() : await launchProfile(pid, token);
+          handle = { close: async () => { try { await (isLocal ? closeLocalBrowser() : closeProfile(pid)); } catch (_) {} } };
+          _replySweepHandle = handle;
+
+          const out = await sweepProfileInbox({
+            page: launched.page, sheetUrl, linkedinColumn,
+            candidateRows: leadsByProfile.get(pid), watermark, log: stamp,
+          });
+          if (out.error) { slot.status = 'error'; slot.error = out.error; stamp(`⚠ [${pName}] ${out.error}`); }
+          else {
+            slot.replies = out.campaignReplies.length;
+            slot.unmatched = out.unmatched.length;
+            slot.status = 'done';
+            for (const r of out.campaignReplies) _replySweep.campaignReplies.push({ ...r, account: pName });
+            for (const u of out.unmatched) _replySweep.unmatched.push({ ...u, account: pName });
+            stamp(`📬 [${pName}] ${out.campaignReplies.length} reply(ies), ${out.unmatched.length} unmatched · ${out.conversationsScanned} scanned`);
+
+            if (!dryRun && out.campaignReplies.length) {
+              const wb = await applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignReplies: out.campaignReplies });
+              _replySweep.wrote += wb.wrote;
+              stamp(`✍ [${pName}] wrote ${wb.wrote}, skipped ${wb.skipped}${wb.errors.length ? `, ${wb.errors.length} error(s)` : ''}`);
+            }
+          }
+        } catch (err) {
+          if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); }
+          else { slot.status = 'error'; slot.error = err.message; stamp(`✗ [${pName}] ${err.message}`); }
+        } finally {
+          _replySweepHandle = null;
+          if (!wasRunning && handle) { try { await handle.close(); } catch (_) {} }
+          _replySweep.doneProfiles++;
+        }
+      }
+      _replySweep.phase = 'done';
+      stamp(`■ Reply sweep complete — ${_replySweep.campaignReplies.length} reply(ies), ${_replySweep.unmatched.length} unmatched${dryRun ? '' : `, ${_replySweep.wrote} written`}`);
+    } catch (err) {
+      _replySweep.phase = 'error'; _replySweep.error = err.message; stamp(`✗ Fatal — ${err.message}`);
+    } finally {
+      _replySweep.running = false; _replySweep.currentProfile = null;
+      setBulkCheckInProgress(false);
       try { allowSleep(); } catch (_) {}
     }
   })();
