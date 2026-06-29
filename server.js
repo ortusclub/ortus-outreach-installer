@@ -39,7 +39,7 @@ import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { primaryKeyFromUrl, loadPrimaryStatus } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
-import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus } from './src/linkedin/inbox-sweep.js';
+import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { spreadsheetIdFromUrl, extractSheetGid } from './src/utils.js';
@@ -3077,8 +3077,14 @@ app.post('/api/reply-check-now', async (req, res) => {
 
     const perProfile = [];
     let totalReplies = 0;
+    // Scan the Sales Nav inbox too when this is a MESSAGING campaign (OP / InMail /
+    // message-only) whose Sending Method used Sales Nav (opChannel ≠ ln_only).
+    // CC+IC / ICB / CC+DM are LinkedIn-connection flows → regular inbox only.
+    const _MESSAGING_MODES = new Set(['open_profile_only', 'inmail_only', 'message_only']);
+    const _opChannel = String(campaign.templates?.opChannel || 'sn_first');
+    const wantSalesNav = _MESSAGING_MODES.has(String(campaign.mode || '')) && _opChannel !== 'ln_only';
     setBulkCheckInProgress(true);
-    campaignLog(`📬 Manual reply check — scanning ${leadsByProfile.size} account(s) for replies…`);
+    campaignLog(`📬 Manual reply check — scanning ${leadsByProfile.size} account(s) for replies${wantSalesNav ? ' (incl. Sales Navigator)' : ''}…`);
     try {
       for (const [pid, leads] of leadsByProfile.entries()) {
         const pName = nameByProfileId.get(pid) || pid;
@@ -3114,7 +3120,30 @@ app.post('/api/reply-check-now', async (req, res) => {
           try { await writeRecentMessagesTab(sheetUrl, pName, result.recentMessages || [], []); }
           catch (e) { campaignLog(`⚠ [${pName}] Recent Messages write failed: ${e.message}`); }
           campaignLog(`📬 [${pName}] ${result.inboundCount} reply(ies)${result.suspectedCount ? `, ${result.suspectedCount} suspected (ambiguous name)` : ''} found [${result.method}].`);
-          perProfile.push({ profileId: pid, profileName: pName, replies: result.inboundCount, suspected: result.suspectedCount });
+          let snReplies = 0;
+          // Sales Nav pass — OPs/InMails reply here, not in the regular inbox.
+          // Reuse this profile's already-open page; failures are non-fatal.
+          if (wantSalesNav) {
+            try {
+              campaignLog(`🧭 [${pName}] Scanning Sales Navigator inbox (OP / InMail)…`);
+              const sn = await loadSalesNavConversations(launched.page, { watermark: _replyWatermark });
+              if (sn.error) {
+                campaignLog(`⚠ [${pName}] Sales Nav skipped — ${sn.error}`);
+              } else {
+                const { campaignReplies } = classifyConversations(sn.convs, leads, linkedinColumn || 'Linkedin URL');
+                snReplies = campaignReplies.length;
+                if (snReplies) {
+                  try {
+                    const wb = await applyReplyWriteBack({ sheetUrl, linkedinColumn: linkedinColumn || 'Linkedin URL', campaignReplies });
+                    campaignLog(`✍ [${pName}] Sales Nav wrote ${wb.wrote}, skipped ${wb.skipped}`);
+                  } catch (wbErr) { campaignLog(`⚠ [${pName}] Sales Nav write-back failed: ${wbErr.message}`); }
+                }
+                campaignLog(`🧭 [${pName}] ${snReplies} OP/InMail reply(ies) found [salesnav · ${sn.convs.length} scanned].`);
+              }
+            } catch (snErr) { campaignLog(`⚠ [${pName}] Sales Nav reply check threw: ${snErr.message}`); }
+          }
+          totalReplies += snReplies;
+          perProfile.push({ profileId: pid, profileName: pName, replies: result.inboundCount + snReplies, suspected: result.suspectedCount });
         } catch (err) {
           campaignLog(`⚠ [${pName}] Reply check threw: ${err.message}`);
           perProfile.push({ profileId: pid, profileName: pName, error: err.message });
