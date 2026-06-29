@@ -1651,7 +1651,51 @@ _replySweep.running = false; _replySweep.phase = 'idle';
 let _replySweepAbort = false;
 let _replySweepHandle = null;
 
+// Reply-sweep eligibility is BROADER than the DM-only CHECK_DMS_STAGE_FILTER:
+// anyone we've actually engaged can reply, including connection campaigns (Stage
+// "Connected", "Introduction Made", …). Exclude only leads that can't have replied
+// — still-pending connects, skipped rows, and blanks. Shared by /start + /accounts.
+function replyEligibleRows(rows) {
+  const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
+  return rows.filter((row) => {
+    if (hasStageSchema) {
+      const stage = String(row.Stage || '').trim();
+      if (!stage) return false;
+      if (/^Skipped/i.test(stage)) return false;
+      if (/^Connect Pending$/i.test(stage)) return false;
+      return true;
+    }
+    return String(row.Message || '').trim().toLowerCase() === 'sent';
+  });
+}
+
 app.get('/api/reply-sweep/status', (_req, res) => res.json(_replySweep));
+
+// The accounts that actually have reply-eligible leads in a given sheet — so the UI
+// can offer a SHORT, sheet-scoped account picker instead of all GoLogin profiles.
+app.get('/api/reply-sweep/accounts', async (req, res) => {
+  const sheetUrl = req.query.sheetUrl;
+  if (!sheetUrl) return res.json({ accounts: [] });
+  let rows;
+  try { rows = await fetchSheet(sheetUrl); }
+  catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}`, accounts: [] }); }
+  let nameToId = {}; const nameById = new Map();
+  try {
+    const allProfiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+    for (const p of allProfiles) { nameToId[(p.name || '').toLowerCase()] = p.id; nameById.set(p.id, p.name || p.id); }
+  } catch { /* fall back to sender string as id */ }
+  const byAcct = new Map();
+  for (const row of replyEligibleRows(rows)) {
+    const acct = String(row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').trim();
+    if (!acct) continue;
+    const pid = nameToId[acct.toLowerCase()] || acct;
+    byAcct.set(pid, (byAcct.get(pid) || 0) + 1);
+  }
+  const accounts = [...byAcct.entries()]
+    .map(([id, leadCount]) => ({ id, name: nameById.get(id) || id, leadCount }))
+    .sort((a, b) => b.leadCount - a.leadCount);
+  res.json({ accounts });
+});
 
 app.post('/api/reply-sweep/stop', async (_req, res) => {
   _replySweepAbort = true;
@@ -1686,22 +1730,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
     for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
   } catch { /* fall back to id-as-name */ }
 
-  // Reply-sweep eligibility is BROADER than the DM-only CHECK_DMS_STAGE_FILTER:
-  // anyone we've actually engaged can reply, including connection campaigns
-  // (Stage "Connected", "Introduction Made", etc.). We exclude only leads that
-  // can't have replied — still-pending connects, skipped rows, and blanks.
-  const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
-  const isReplyEligible = (row) => {
-    if (hasStageSchema) {
-      const stage = String(row.Stage || '').trim();
-      if (!stage) return false;
-      if (/^Skipped/i.test(stage)) return false;
-      if (/^Connect Pending$/i.test(stage)) return false;
-      return true; // Connected, Introduction *, DM/IC/OP/InM Sent, Replied, …
-    }
-    return String(row.Message || '').trim().toLowerCase() === 'sent';
-  };
-  const candidateRows = rows.filter(isReplyEligible);
+  const candidateRows = replyEligibleRows(rows);
 
   const wanted = Array.isArray(profileIds) && profileIds.length ? profileIds.slice() : null;
   const leadsByProfile = new Map();

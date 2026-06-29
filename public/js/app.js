@@ -17590,18 +17590,33 @@ async function rsweepInitControls() {
     const global = document.getElementById('sheet-url')?.value?.trim() || '';
     if (global) sheetField.value = global;
   }
+  await rsweepLoadAccounts();
+}
+
+let _rsweepAcctSheet = null; // sheet URL the dropdown is currently populated for
+// Populate the account dropdown with ONLY the accounts that have reply-eligible leads
+// in the chosen sheet (sheet-scoped + lead counts) — not all 400+ GoLogin profiles.
+async function rsweepLoadAccounts() {
   const sel = document.getElementById('rsweep-account');
-  if (!sel || sel._rsweepFilled) return;
+  if (!sel) return;
+  const url = document.getElementById('rsweep-sheet')?.value?.trim() || '';
+  if (!url) { sel.innerHTML = '<option value="">Paste a sheet URL to list accounts…</option>'; _rsweepAcctSheet = null; return; }
+  if (url === _rsweepAcctSheet) return; // already populated for this sheet
+  sel.innerHTML = '<option value="">Loading accounts…</option>';
   try {
-    const res = await fetch('/api/profiles');
-    if (!res.ok) return;
+    const res = await fetch(`/api/reply-sweep/accounts?sheetUrl=${encodeURIComponent(url)}`);
     const data = await res.json();
-    const profiles = Array.isArray(data) ? data : (data.profiles || []);
-    const opts = ['<option value="">All accounts that sent leads</option>']
-      .concat(profiles.map((p) => `<option value="${rsweepEsc(p.id)}">${rsweepEsc(p.name || p.id)}</option>`));
+    const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+    const total = accounts.reduce((n, a) => n + (a.leadCount || 0), 0);
+    const opts = [`<option value="">All accounts that sent leads (${accounts.length})</option>`]
+      .concat(accounts.map((a) => `<option value="${rsweepEsc(a.id)}">${rsweepEsc(a.name)} · ${a.leadCount} lead${a.leadCount === 1 ? '' : 's'}</option>`));
     sel.innerHTML = opts.join('');
-    sel._rsweepFilled = true;
-  } catch (_) { /* leave the default "all" option */ }
+    _rsweepAcctSheet = url;
+    if (!accounts.length) sel.innerHTML = '<option value="">No accounts with eligible leads in this sheet</option>';
+  } catch (_) {
+    sel.innerHTML = '<option value="">Could not load accounts — check the sheet URL</option>';
+    _rsweepAcctSheet = null;
+  }
 }
 
 // Render the per-account live status card from status.perProfile[].
@@ -17640,6 +17655,12 @@ function rsweepBind() {
   const stop = document.getElementById('rsweep-stop');
   const list = document.getElementById('rsweep-list');
   const copy = document.getElementById('rsweep-copy');
+  const sheet = document.getElementById('rsweep-sheet');
+  if (sheet && !sheet._rsweepBound) {
+    sheet._rsweepBound = true;
+    let _t;
+    sheet.addEventListener('input', () => { clearTimeout(_t); _t = setTimeout(() => { rsweepLoadAccounts(); }, 600); });
+  }
   if (run && !run._rsweepBound) { run._rsweepBound = true; run.addEventListener('click', rsweepStart); }
   if (stop && !stop._rsweepBound) { stop._rsweepBound = true; stop.addEventListener('click', rsweepStop); }
   if (copy && !copy._rsweepBound) {
