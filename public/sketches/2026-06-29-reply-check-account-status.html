@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reply check — live account-status card (running)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px; }
+  .crumb { font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 14px; }
+  .rc-toolbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:0 0 14px; }
+  .rc-toolbar .spacer { flex:1; }
+  .rc-eyebrow { font-family:var(--mono); font-size:.56rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 10px; }
+  .rc-dry { display:flex; align-items:center; gap:8px; font-size:.76rem; color:var(--gray); } .rc-dry input { accent-color:var(--gold); }
+  .rc-cta { background:var(--gold); color:#0a0a0a; border:none; border-radius:9999px; padding:10px 20px; font-family:var(--mono); font-size:.64rem; letter-spacing:.12em; text-transform:uppercase; font-weight:700; }
+  .rc-stop { background:none; border:1px solid var(--hairline); border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); }
+
+  /* Per-account live status card */
+  .acct-card { border:1px solid var(--hairline); border-radius:12px; padding:6px 0; margin:0 0 16px; }
+  .acct-head { display:flex; align-items:center; justify-content:space-between; padding:10px 16px 8px; }
+  .acct-head .t { font-family:var(--mono); font-size:.56rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
+  .acct-head .p { font-family:var(--mono); font-size:.56rem; letter-spacing:.08em; color:var(--gray); }
+  .acct-row { display:grid; grid-template-columns: 18px 1fr auto; align-items:center; gap:12px; padding:9px 16px; border-top:1px solid var(--hairline-soft); }
+  .acct-ico { width:14px; height:14px; display:flex; align-items:center; justify-content:center; font-size:.8rem; }
+  .acct-name { font-size:.82rem; color:var(--ink); font-family:var(--mono); }
+  .acct-state { font-family:var(--mono); font-size:.62rem; letter-spacing:.04em; text-transform:uppercase; }
+  .s-wait { color:var(--gray); opacity:.6; }
+  .s-scan { color:var(--gold); }
+  .s-done { color:var(--ink); }
+  .s-closed { color:var(--gray); }
+  .s-err  { color:#d6584a; }
+  .spin { display:inline-block; width:9px; height:9px; border:1.5px solid var(--gold); border-top-color:transparent; border-radius:9999px; animation:sp .7s linear infinite; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  .dot { width:7px; height:7px; border-radius:9999px; background:var(--gray); opacity:.4; }
+
+  .vj-log { max-height: 150px; overflow:auto; }
+  .foot { position:fixed; bottom:0; left:0; right:0; background:#000; color:#888; font-family:'JetBrains Mono',monospace; font-size:11px; padding:8px 16px; border-top:1px solid rgba(255,255,255,.15); text-align:center; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <div class="crumb">Check DMs · live sweep</div>
+
+  <div class="rc-toolbar">
+    <span class="rc-eyebrow">Scanning marlon.j@ortus.solutions · 4/9 accounts</span>
+    <span class="spacer"></span>
+    <label class="rc-dry"><input type="checkbox" checked /> Preview only — don't write to the sheet</label>
+    <button class="rc-cta" disabled style="opacity:.5">Check replies now</button>
+    <button class="rc-stop">Stop now</button>
+  </div>
+
+  <!-- NEW: per-account live status card -->
+  <div class="acct-card">
+    <div class="acct-head"><span class="t">Accounts</span><span class="p">4 / 9 done · 1 scanning</span></div>
+    <div class="acct-row"><span class="acct-ico">✓</span><span class="acct-name">pavan.p@ortus.solutions</span><span class="acct-state s-closed">closed · 2 replies</span></div>
+    <div class="acct-row"><span class="acct-ico">✓</span><span class="acct-name">christian.saguid@ortus.solutions</span><span class="acct-state s-closed">closed · 1 reply</span></div>
+    <div class="acct-row"><span class="acct-ico">✓</span><span class="acct-name">rilany.darang@ortus.solutions</span><span class="acct-state s-closed">closed · 0 replies</span></div>
+    <div class="acct-row"><span class="acct-ico">✕</span><span class="acct-name">tony.otto@ortus.solutions</span><span class="acct-state s-err">error — rate-limited (429)</span></div>
+    <div class="acct-row"><span class="acct-ico"><span class="spin"></span></span><span class="acct-name">marlon.j@ortus.solutions</span><span class="acct-state s-scan">scanning inbox…</span></div>
+    <div class="acct-row"><span class="acct-ico"><span class="dot"></span></span><span class="acct-name">leiddy.penamora@ortus.solutions</span><span class="acct-state s-wait">waiting</span></div>
+    <div class="acct-row"><span class="acct-ico"><span class="dot"></span></span><span class="acct-name">jolens.salas@ortus.solutions</span><span class="acct-state s-wait">waiting</span></div>
+    <div class="acct-row"><span class="acct-ico"><span class="dot"></span></span><span class="acct-name">abhinay.kumar@ortus.solutions</span><span class="acct-state s-wait">waiting</span></div>
+    <div class="acct-row"><span class="acct-ico"><span class="dot"></span></span><span class="acct-name">patrick.s@ortus.solutions</span><span class="acct-state s-wait">waiting</span></div>
+  </div>
+
+  <!-- live log card (same vj-log component the other campaigns use) -->
+  <div class="vj-details">
+    <div>
+      <div class="vj-log-head">
+        <span class="vj-details-head">Live log · scanning marlon.j@ortus.solutions · 4/9 accounts</span>
+        <span class="vj-log-acts"><button type="button" class="vj-log-act">Copy all</button></span>
+      </div>
+      <div class="vj-log">
+        <div class="vj-log-line"><span class="time">10:21:04</span><span class="evt">📬</span><span class="what">[marlon.j] Scanning inbox…</span></div>
+        <div class="vj-log-line"><span class="time">10:20:58</span><span class="evt">✓</span><span class="what">[rilany.darang] Closed</span></div>
+        <div class="vj-log-line"><span class="time">10:20:55</span><span class="evt">⏏</span><span class="what">[rilany.darang] Closing browser…</span></div>
+        <div class="vj-log-line"><span class="time">10:20:54</span><span class="evt">📬</span><span class="what">[rilany.darang] 0 reply(ies), 1 unmatched · 18 scanned</span></div>
+        <div class="vj-log-line"><span class="time">10:20:31</span><span class="evt">✓</span><span class="what">[christian.saguid] Closed</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="foot">NEW · per-account live status card (who's scanning / done / closed / errored) + the existing live log. Updates each poll while the sweep runs.</div>
+</body>
+</html>

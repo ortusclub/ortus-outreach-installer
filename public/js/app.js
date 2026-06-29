@@ -17534,6 +17534,9 @@ function rsweepRender(s) {
       : (logs.length ? `Live log · last ${Math.min(logs.length, 30)} events (finished)` : 'Live log');
   }
 
+  // Per-account live status card (who's scanning / done / closed / errored).
+  rsweepRenderAccts(s);
+
   const all = rsweepAll(s);
   if (!_rsweepSel && all.length) _rsweepSel = all[0].threadId; // auto-select first
   const list = document.getElementById('rsweep-list');
@@ -17599,6 +17602,37 @@ async function rsweepInitControls() {
     sel.innerHTML = opts.join('');
     sel._rsweepFilled = true;
   } catch (_) { /* leave the default "all" option */ }
+}
+
+// Render the per-account live status card from status.perProfile[].
+function rsweepRenderAccts(s) {
+  const card = document.getElementById('rsweep-acctcard');
+  const rowsEl = document.getElementById('rsweep-acctrows');
+  const sumEl = document.getElementById('rsweep-acctsum');
+  if (!card || !rowsEl) return;
+  const accts = Array.isArray(s.perProfile) ? s.perProfile : [];
+  if (!accts.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const cell = (a) => {
+    const st = a.status || 'waiting';
+    if (st === 'running') return { ico: '<span class="acct-spin"></span>', cls: 's-scan', txt: 'scanning inbox…' };
+    if (st === 'error')   return { ico: '✕', cls: 's-err', txt: `error — ${a.error || 'failed'}` };
+    if (st === 'skipped') return { ico: '⊘', cls: 's-wait', txt: a.error === 'stopped' ? 'stopped' : 'skipped' };
+    if (st === 'done') {
+      const r = a.replies || 0;
+      return { ico: '✓', cls: a.closed ? 's-closed' : 's-done', txt: `${a.closed ? 'closed · ' : ''}${r} repl${r === 1 ? 'y' : 'ies'}` };
+    }
+    return { ico: '<span class="acct-dot"></span>', cls: 's-wait', txt: 'waiting' };
+  };
+  rowsEl.innerHTML = accts.map((a) => {
+    const c = cell(a);
+    return `<div class="acct-row"><span class="acct-ico">${c.ico}</span>`
+      + `<span class="acct-name">${rsweepEsc(a.profileName || '')}</span>`
+      + `<span class="acct-state ${c.cls}">${rsweepEsc(c.txt)}</span></div>`;
+  }).join('');
+  const done = accts.filter((a) => a.status === 'done' || a.status === 'error' || a.status === 'skipped').length;
+  const scanning = accts.filter((a) => a.status === 'running').length;
+  if (sumEl) sumEl.textContent = `${done} / ${accts.length} done${scanning ? ` · ${scanning} scanning` : ''}`;
 }
 
 function rsweepBind() {
