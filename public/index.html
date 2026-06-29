@@ -1905,29 +1905,37 @@
 
     <!-- Check DMs mode — A3 reply-check split view. Shown only when mode === 'check_dms'. -->
     <div class="section" id="reply-sweep-panel" style="display:none">
+      <!-- Vertical setup card (sketch 1): sheet → accounts → footer. -->
       <div class="rsweep-setup">
-        <input type="text" id="rsweep-sheet" class="rsweep-sheet-input" placeholder="Paste the Google Sheet URL…" />
-        <!-- Multi-select account picker: pick one, some, or all accounts to sweep. -->
-        <div class="rsweep-acct-pick" id="rsweep-acct-pick" title="Which accounts' inboxes to read">
-          <div class="rsweep-acct-pickhead">
-            <span id="rsweep-acct-count">Paste a sheet URL to list accounts…</span>
+        <div class="rsweep-field">
+          <span class="rsweep-flabel">Google Sheet</span>
+          <input type="text" id="rsweep-sheet" class="rsweep-sheet-input" placeholder="Paste the Google Sheet URL…" />
+        </div>
+        <div class="rsweep-field">
+          <span class="rsweep-flabel">Accounts to sweep
             <span class="rsweep-acct-pickacts">
               <button type="button" id="rsweep-acct-all">Select all</button>
               <button type="button" id="rsweep-acct-none">None</button>
             </span>
+          </span>
+          <!-- Multi-select account picker: pick one, some, or all accounts to sweep. -->
+          <div class="rsweep-acct-pick" id="rsweep-acct-pick" title="Which accounts' inboxes to read">
+            <div class="rsweep-acct-pickhead">
+              <span id="rsweep-acct-count">Paste a sheet URL to list accounts…</span>
+            </div>
+            <div class="rsweep-acct-list" id="rsweep-accounts"></div>
           </div>
-          <div class="rsweep-acct-list" id="rsweep-accounts"></div>
         </div>
-      </div>
-      <div class="rsweep-toolbar">
-        <span class="rsweep-eyebrow" id="rsweep-eyebrow" style="display:none"></span>
-        <span class="rsweep-spacer"></span>
-        <label class="rsweep-dry" title="When on, the sweep only previews replies — it never writes to the sheet.">
-          <input type="checkbox" id="rsweep-dryrun" checked />
-          <span class="rsweep-dry-label">Preview only — don't write to the sheet</span>
-        </label>
-        <button class="rsweep-cta" id="rsweep-run">Check replies now</button>
-        <button class="rsweep-stop" id="rsweep-stop" style="display:none">Stop now</button>
+        <div class="rsweep-footer">
+          <label class="rsweep-dry" title="When on, the sweep only previews replies — it never writes to the sheet.">
+            <input type="checkbox" id="rsweep-dryrun" checked />
+            <span class="rsweep-dry-label">Preview only — don't write to the sheet</span>
+          </label>
+          <span class="rsweep-spacer"></span>
+          <span class="rsweep-eyebrow" id="rsweep-eyebrow" style="display:none"></span>
+          <button class="rsweep-cta" id="rsweep-run">Check replies now</button>
+          <button class="rsweep-stop" id="rsweep-stop" style="display:none">Stop now</button>
+        </div>
       </div>
       <div class="acct-card" id="rsweep-acctcard" style="display:none">
         <div class="acct-head"><span class="acct-head-t">Accounts</span><span class="acct-head-p" id="rsweep-acctsum"></span></div>
