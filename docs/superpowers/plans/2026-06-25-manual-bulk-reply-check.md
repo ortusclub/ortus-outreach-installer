@@ -16,7 +16,9 @@
 - Do NOT modify `src/linkedin/check-dms.js` or `src/post-campaign-reply-check.js` logic — the scheduler (disabled) and its tests depend on them. New behavior lives in new files. (spec: "No new scheduler logic (existing one untouched)")
 - Bump `package.json` patch version before each relaunch of `npm run dev:app`; auto-relaunch after commits touching runtime code. (CLAUDE.md operator rules)
 - Mutating/external actions ship opt-in: **dry-run defaults ON**; write-back is off until the operator turns dry-run off. (spec decision 6 + operator rule 4)
-- Matching is identity-first (URN/profileUrl), name only as fallback, skip-on-doubt → unmatched bucket, never guess. (spec decision 4)
+- Matching is identity-first, name only as fallback, skip-on-doubt → unmatched bucket, never guess. (spec decision 4)
+- **Matching anchor is the NUMERIC memberId**, not the `/in/` slug. Live capture (2026-06-29, `docs/manual-bulk-reply-check-SCHEMA.md`) proved the sheet stores `/in/ACwAA…` while the inbox participant returns `/in/ACoAA…` — **different encodings, they never string-match**. The bridge is the numeric memberId: the sheet's `Linkedin Member` column (e.g. `269709976`) === the inbox participant `backendUrn: urn:li:member:269709976`, exposed by the parser as `participants[0].memberId`. Match order: memberId → ACoAA `fsdProfile` → name fallback.
+- **PRECONDITION DONE (commit 37030d6, v2.122.0):** `helpers.getConversationsPage` was rewritten for the real `normalized+json+2.1` schema (it previously returned empty — why Check DMs looked dead). It now yields, per conversation: `participants[]` (self excluded; each with `firstName/lastName/profileUrl/memberId/fsdProfile/headline/photoUrl`), `lastMessage.{text,deliveredAt,actor,isInbound}`, `unreadCount`, `threadId`, `conversationUrl`, `groupChat`. Tasks below consume these fields directly — do NOT re-derive inbound from names when `lastMessage.isInbound` is present.
 - Preview-only drill-in: use the `lastMessage` preview the bulk scan returns; ZERO extra tab opens. (spec decision 5)
 - Bugatti command-deck design system for any UI: monochrome, hairlines, gold only on the primary CTA, radii 0 or 9999, tokens from `public/css/style.css`. (CLAUDE.md)
 - Per-profile failures are isolated — one bad/rate-limited profile reports an error and the sweep continues. (spec: Error handling)
@@ -220,8 +222,9 @@ git commit -m "inbox-sweep: identity-token + row URL extraction (pure)"
 **Interfaces:**
 - Consumes: `identityToken`, `conversationToken`, `rowLinkedinUrl` (Task 2).
 - Produces:
-  - `isInboundConversation(conv: object) → boolean` — true when the lead (participants[0]) sent the last message (actor matches participant by profileUrl or by exact first+last name).
-  - `matchConversationIdentitySafe(conv, candidateRows: object[], linkedinColumn?: string) → { row: object|null, reason: 'identity'|'name'|'unmatched'|'ambiguous' }` — token match first (exactly one → identity; >1 → ambiguous); name fallback only when token produced zero candidates (exactly one → name; >1 → ambiguous; 0 → unmatched).
+  - `rowMemberId(row: object) → string` — the row's numeric memberId (`'Linkedin Member'` etc.), else `''`.
+  - `isInboundConversation(conv: object) → boolean` — prefers `conv.lastMessage.isInbound` (parser-authoritative); falls back to actor profileUrl/name comparison for shapes without it.
+  - `matchConversationIdentitySafe(conv, candidateRows: object[], linkedinColumn?: string) → { row: object|null, reason: 'identity'|'name'|'unmatched'|'ambiguous' }` — tries in order: (1) numeric memberId, (2) ACoAA `fsdProfile`, (3) legacy slug token, (4) name fallback. At each stage exactly one hit → `identity` (or `name` for stage 4); >1 → `ambiguous` (skip-on-doubt); 0 → next stage; all empty → `unmatched`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -249,7 +252,29 @@ test('isInboundConversation: no lastMessage → false', () => {
   assert.equal(isInboundConversation({ participants: [{ firstName: 'Jane', lastName: 'Doe' }] }), false);
 });
 
-test('matcher: identity-token match wins', () => {
+test('matcher: numeric memberId is the primary anchor across the ACwAA/ACoAA gap', () => {
+  // Real-world shape: sheet stores ACwAA + numeric memberId; inbox gives ACoAA + same memberId.
+  const conv = { participants: [{ firstName: 'Luca', lastName: 'Coppone', memberId: '269709976', fsdProfile: 'ACoAABATcpgBDDx_VOd0lhUz_ZFcIhV21cuJuw8', profileUrl: 'https://www.linkedin.com/in/ACoAABATcpgBDDx_VOd0lhUz_ZFcIhV21cuJuw8' }],
+    lastMessage: { text: 'grazie', deliveredAt: 1, isInbound: true } };
+  const rows = [
+    { 'First Name': 'Other', 'Last Name': 'Person', 'Linkedin Member': '111111111', 'Linkedin URL': 'https://www.linkedin.com/in/ACwAAsomeoneelse' },
+    { 'First Name': 'Luca', 'Last Name': 'Coppone', 'Linkedin Member': '269709976', 'Linkedin URL': 'http://www.linkedin.com/in/ACwAABATcpgBWoI4yCYrBfmpcpJA0zLKtvoJUic' },
+  ];
+  const res = matchConversationIdentitySafe(conv, rows, 'Linkedin URL');
+  assert.equal(res.reason, 'identity');
+  assert.equal(res.row['First Name'], 'Luca');
+});
+
+test('matcher: two rows share the memberId → ambiguous, no row', () => {
+  const conv = { participants: [{ firstName: 'Luca', lastName: 'Coppone', memberId: '269709976' }], lastMessage: { text: 'x', isInbound: true } };
+  const rows = [
+    { 'First Name': 'Luca', 'Last Name': 'Coppone', 'Linkedin Member': '269709976' },
+    { 'First Name': 'Luca', 'Last Name': 'Coppone', 'Linkedin Member': '269709976' },
+  ];
+  assert.equal(matchConversationIdentitySafe(conv, rows).reason, 'ambiguous');
+});
+
+test('matcher: identity-token match wins (slug, when no memberId present)', () => {
   const rows = [
     { 'First Name': 'Other', 'Last Name': 'Person', 'Linkedin URL': 'https://www.linkedin.com/in/someone-else' },
     { 'First Name': 'Jane', 'Last Name': 'Doe', 'Linkedin URL': 'https://www.linkedin.com/in/jane-doe' },
@@ -311,11 +336,32 @@ function fullName(firstName, lastName) {
   return `${normName(firstName)} ${normName(lastName)}`.trim();
 }
 
-/** True when the lead (participant[0]) sent the last message. */
+/** Numeric memberId from a sheet row ('Linkedin Member' / 'Linkedin Member ID' / 'memberId'). */
+export function rowMemberId(row) {
+  if (!row || typeof row !== 'object') return '';
+  for (const k of ['Linkedin Member', 'LinkedIn Member', 'Linkedin Member ID', 'memberId', 'Member ID']) {
+    const v = String(row[k] ?? '').trim();
+    if (/^\d{4,}$/.test(v)) return v;
+  }
+  // Fallback: any column whose value is a bare numeric id of plausible length.
+  for (const k of Object.keys(row)) {
+    const v = String(row[k] ?? '').trim();
+    if (/^\d{6,}$/.test(v)) return v;
+  }
+  return '';
+}
+
+/**
+ * True when the lead sent the last message. Prefer the parser's authoritative
+ * `lastMessage.isInbound` (sender ≠ viewer); fall back to actor/name comparison
+ * only for legacy/test shapes that don't carry it.
+ */
 export function isInboundConversation(conv) {
-  const participant = Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null);
   const last = conv?.lastMessage || null;
-  if (!participant || !last) return false;
+  if (!last) return false;
+  if (typeof last.isInbound === 'boolean') return last.isInbound;
+  const participant = Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null);
+  if (!participant) return false;
   const actor = last.actor || {};
   const sameUrl = participant.profileUrl && actor.profileUrl && participant.profileUrl === actor.profileUrl;
   const sameName = participant.firstName && actor.firstName &&
@@ -330,15 +376,36 @@ export function isInboundConversation(conv) {
  */
 export function matchConversationIdentitySafe(conv, candidateRows, linkedinColumn) {
   const rows = Array.isArray(candidateRows) ? candidateRows : [];
+  const participant0 = Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null);
+
+  // 1. Numeric memberId — the only anchor that survives the ACwAA(sheet)/ACoAA(inbox)
+  //    encoding gap. Exact, free (both sides already carry it).
+  const cMemberId = String(participant0?.memberId || '').trim();
+  if (/^\d{4,}$/.test(cMemberId)) {
+    const hits = rows.filter((r) => rowMemberId(r) === cMemberId);
+    if (hits.length === 1) return { row: hits[0], reason: 'identity' };
+    if (hits.length > 1) return { row: null, reason: 'ambiguous' };
+    // 0 → fall through (sheet row may predate memberId capture).
+  }
+
+  // 2. ACoAA fsd_profile token — secondary exact key when memberId is blank on a side.
+  const cFsd = String(participant0?.fsdProfile || '').trim();
+  if (cFsd) {
+    const hits = rows.filter((r) => identityToken(rowLinkedinUrl(r, linkedinColumn)) === cFsd
+      || String(r['LinkedIn URN'] || r['Linkedin URN'] || '').trim() === cFsd);
+    if (hits.length === 1) return { row: hits[0], reason: 'identity' };
+    if (hits.length > 1) return { row: null, reason: 'ambiguous' };
+  }
+
+  // 3. Legacy slug token (only matches when both sides share an encoding).
   const ctoken = conversationToken(conv);
   if (ctoken) {
     const hits = rows.filter((r) => identityToken(rowLinkedinUrl(r, linkedinColumn)) === ctoken);
     if (hits.length === 1) return { row: hits[0], reason: 'identity' };
     if (hits.length > 1) return { row: null, reason: 'ambiguous' };
-    // hits.length === 0 → fall through to name fallback below.
   }
 
-  const participant = Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null);
+  const participant = participant0;
   const convFull = participant ? fullName(participant.firstName, participant.lastName) : '';
   if (!convFull) return { row: null, reason: 'unmatched' };
 
