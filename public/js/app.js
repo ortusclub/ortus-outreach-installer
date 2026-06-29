@@ -17488,13 +17488,39 @@ function rsweepListItem(r) {
 function rsweepPane(r) {
   if (!r) return `<div class="rsweep-empty">Run a check, then pick a reply to read it here.</div>`;
   const when = r.timestamp ? new Date(r.timestamp).toLocaleString() : '';
-  const url = r.conversationUrl || (r.threadId ? `https://www.linkedin.com/messaging/thread/${rsweepEsc(r.threadId)}/` : '') || r.linkedinUrl || r.profileUrl || '';
   const tag = r.suspected ? `<span class="rsweep-suspect">same-name</span>` : '';
+  // Full message text (untruncated) — fall back to the 160-char snippet for old payloads.
+  const body = (r.fullText && r.fullText.length) ? r.fullText : (r.snippet || '');
+  // Open-thread opens the SENDER's own GoLogin browser when we know its profile;
+  // otherwise fall back to a system-browser link.
+  const canGoLogin = !!(r.accountPid && (r.threadId || r.profileUrl));
+  const webUrl = (r.threadId ? `https://www.linkedin.com/messaging/thread/${rsweepEsc(r.threadId)}/` : '') || r.linkedinUrl || r.profileUrl || '';
+  const openChip = canGoLogin
+    ? `<button type="button" class="rsweep-chip" data-rsweep-open data-pid="${rsweepEsc(r.accountPid)}" data-tid="${rsweepEsc(r.threadId || '')}" data-purl="${rsweepEsc(r.profileUrl || '')}" title="Opens ${rsweepEsc(r.account || 'the sender')}'s GoLogin browser">↗ open thread in ${rsweepEsc(r.account || 'gologin')}</button>`
+    : (webUrl ? `<a class="rsweep-chip" href="${rsweepEsc(webUrl)}" target="_blank" rel="noopener">↗ open thread in linkedin</a>` : '');
   return `<div class="rsweep-pane-head"><div class="rsweep-pane-nm">${rsweepEsc(r.leadName)}${tag}</div>
       <div class="rsweep-pane-meta">${rsweepEsc(r.account || '')}${when ? ` · ${rsweepEsc(when)}` : ''}</div></div>
-    <div class="rsweep-bubble">${rsweepEsc(r.snippet)}</div>
-    ${url ? `<a class="rsweep-chip" href="${rsweepEsc(url)}" target="_blank" rel="noopener">↗ open thread in linkedin</a>` : ''}
+    <div class="rsweep-bubble">${rsweepEsc(body)}</div>
+    ${openChip}
     <span class="rsweep-chip" title="Stage write-back happens during a non-preview sweep">✓ mark replied in sheet</span>`;
+}
+
+// Open a reply's thread in the sender's GoLogin browser via the backend.
+async function rsweepOpenThread(btn) {
+  const pid = btn.getAttribute('data-pid');
+  const tid = btn.getAttribute('data-tid') || '';
+  const purl = btn.getAttribute('data-purl') || '';
+  if (!pid) return;
+  const prev = btn.textContent;
+  btn.disabled = true; btn.textContent = '↗ opening browser…';
+  try {
+    const resp = await fetch('/api/reply-sweep/open-thread', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: pid, threadId: tid, profileUrl: purl }),
+    });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); showCampaignToast(e.error || 'Could not open the browser', 3500); }
+  } catch (e) { showCampaignToast(`Open failed: ${e.message}`, 3500); }
+  finally { btn.disabled = false; btn.textContent = prev; }
 }
 
 function rsweepRender(s) {
@@ -17678,6 +17704,14 @@ function rsweepBind() {
       if (!item || !_rsweepLast) return;
       _rsweepSel = item.getAttribute('data-tid');
       rsweepRender(_rsweepLast);
+    });
+  }
+  const pane = document.getElementById('rsweep-pane');
+  if (pane && !pane._rsweepBound) {
+    pane._rsweepBound = true;
+    pane.addEventListener('click', (e) => {            // open thread in sender's GoLogin browser
+      const btn = e.target.closest('[data-rsweep-open]');
+      if (btn) { e.preventDefault(); rsweepOpenThread(btn); }
     });
   }
 }

@@ -1704,6 +1704,42 @@ app.post('/api/reply-sweep/stop', async (_req, res) => {
   res.json({ ok: true });
 });
 
+// Open a reply's thread in the SENDER's own GoLogin browser (not the system
+// browser) so the operator reads/replies as the right account. Launches the
+// profile if needed and navigates it to the conversation; leaves it open for
+// the operator to act in. Refuses while a sweep is mid-run (it owns the browsers).
+app.post('/api/reply-sweep/open-thread', async (req, res) => {
+  if (_replySweep.running) return res.status(409).json({ error: 'Reply sweep is running — wait for it to finish.' });
+  const b = req.body || {};
+  const profileId = b.profileId;
+  const threadId = b.threadId;
+  const fallbackUrl = b.profileUrl || '';
+  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  const url = threadId
+    ? `https://www.linkedin.com/messaging/thread/${encodeURIComponent(threadId)}/`
+    : fallbackUrl;
+  if (!url) return res.status(400).json({ error: 'threadId or profileUrl required' });
+  try {
+    const token = process.env.GOLOGIN_API_TOKEN;
+    const isLocal = profileId === 'local-browser';
+    const existingPid = getProfilePid(profileId);
+    if (existingPid) {
+      // Already open (operator-opened or focus-existing) — bring it onscreen.
+      // We don't hold its page handle, so we can't navigate it programmatically.
+      if (process.platform === 'darwin') { try { await unhideByPids([existingPid]); } catch (_) {} }
+      return res.json({ ok: true, action: 'focused-existing', pid: existingPid, url });
+    }
+    const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId, token);
+    try { await launched.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); } catch (_) {}
+    const newPid = getProfilePid(profileId);
+    if (process.platform === 'darwin' && newPid) { try { await unhideByPids([newPid]); } catch (_) {} }
+    res.json({ ok: true, action: 'launched', pid: newPid, url });
+  } catch (err) {
+    console.error(`[reply-sweep open-thread] ${profileId}: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/reply-sweep/start', async (req, res) => {
   if (_replySweep.running) return res.status(409).json({ error: 'A reply sweep is already running.' });
   const b = req.body || {};
@@ -1787,8 +1823,8 @@ app.post('/api/reply-sweep/start', async (req, res) => {
             slot.replies = out.campaignReplies.length;
             slot.unmatched = out.unmatched.length;
             slot.status = 'done';
-            for (const r of out.campaignReplies) _replySweep.campaignReplies.push({ ...r, account: pName });
-            for (const u of out.unmatched) _replySweep.unmatched.push({ ...u, account: pName });
+            for (const r of out.campaignReplies) _replySweep.campaignReplies.push({ ...r, account: pName, accountPid: pid });
+            for (const u of out.unmatched) _replySweep.unmatched.push({ ...u, account: pName, accountPid: pid });
             stamp(`📬 [${pName}] ${out.campaignReplies.length} reply(ies), ${out.unmatched.length} unmatched · ${out.conversationsScanned} scanned`);
 
             if (!dryRun && out.campaignReplies.length) {

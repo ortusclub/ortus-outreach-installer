@@ -160,6 +160,7 @@ function previewOf(conv, row, linkedinColumn, lead) {
   return {
     leadName: p ? `${p.firstName || ''} ${p.lastName || ''}`.replace(/\s+/g, ' ').trim() : '(unknown)',
     snippet: String(last?.text || '').slice(0, 160),
+    fullText: String(last?.text || ''),
     profileUrl: p?.profileUrl || '',
     memberId: p?.memberId || '',
     threadId: conv?.threadId || '',
