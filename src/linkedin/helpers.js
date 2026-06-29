@@ -1678,7 +1678,10 @@ export async function getSalesNavThreadsPage(page) {
         const token = csrf.split('=')[1]?.replace(/"/g, '');
         const resp = await fetch(listUrl, {
           headers: {
-            'accept': 'application/json',
+            // MUST be the normalized envelope → { data: { elements }, included }.
+            // Plain application/json returns a flat { elements, paging } with no
+            // `included`, so participant names can't be resolved (verified live).
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
             'csrf-token': token,
             'x-restli-protocol-version': '2.0.0',
           },
