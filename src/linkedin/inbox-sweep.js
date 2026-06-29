@@ -222,3 +222,68 @@ export async function applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignRe
   }
   return { wrote, skipped, errors };
 }
+
+/** Navigate /messaging/, wait for the conversations XHR, fetch + paginate, filter by watermark. */
+export async function loadInboxConversations(page, { watermark = 0, log = () => {} } = {}) {
+  try {
+    if (typeof page.goto === 'function') {
+      try {
+        await page.goto('https://www.linkedin.com/messaging/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } catch (e) {
+        return { convs: [], error: `couldn't open inbox: ${e.message}` };
+      }
+      if (typeof page.waitForFunction === 'function') {
+        await new Promise((r) => setTimeout(r, 2500));
+        try {
+          await page.evaluate(() => {
+            const list = document.querySelector('.msg-conversations-container__conversations-list, ul[class*="conversations-list"], .scaffold-layout__list-detail, .scaffold-layout__list');
+            if (list) { list.scrollTop = list.scrollHeight; list.dispatchEvent(new Event('scroll', { bubbles: true })); }
+            window.scrollTo(0, document.body.scrollHeight);
+          });
+        } catch { /* best-effort nudge */ }
+        try {
+          await page.waitForFunction(
+            () => performance.getEntriesByType('resource').some((e) => typeof e.name === 'string' && e.name.includes('queryId=messengerConversations')),
+            { timeout: 20000 },
+          );
+        } catch { /* fall through — getConversationsPage will return null */ }
+      }
+    }
+
+    let first;
+    try { first = await _deps.getConversationsPage(page, { start: 0, count: 20 }); }
+    catch (e) { return { convs: [], error: `couldn't read inbox: ${e.message}` }; }
+    if (first === null || first === undefined) {
+      return { convs: [], error: "couldn't load inbox for this account (rate-limited or session expired) — try again" };
+    }
+
+    const convs = (first.elements || []).filter((el) => (el.lastActivityAt || 0) > watermark);
+    const firstOldest = (first.elements || []).reduce((min, e) => Math.min(min, e.lastActivityAt || 0), Number.POSITIVE_INFINITY);
+    const paging = first.paging;
+    const maybeMore = firstOldest > watermark && (!paging || !paging.total || 20 < paging.total);
+    if (maybeMore && (first.elements || []).length >= 20) {
+      let start = 20;
+      for (let pages = 0; pages < 9; pages++) {
+        let batch;
+        try { batch = await _deps.getConversationsPage(page, { start, count: 20 }); }
+        catch { break; }
+        if (!batch || !Array.isArray(batch.elements) || batch.elements.length === 0) break;
+        for (const el of batch.elements) { if ((el.lastActivityAt || 0) > watermark) convs.push(el); }
+        const oldest = batch.elements.reduce((min, e) => Math.min(min, e.lastActivityAt || 0), Number.POSITIVE_INFINITY);
+        if (oldest <= watermark) break;
+        start += 20;
+      }
+    }
+    return { convs, error: '' };
+  } catch (e) {
+    return { convs: [], error: `inbox scan failed: ${e.message}` };
+  }
+}
+
+/** Preview-only sweep for one profile. Never throws — per-profile isolated. */
+export async function sweepProfileInbox({ page, sheetUrl, linkedinColumn, candidateRows, watermark = 0, log = () => {} }) {
+  const { convs, error } = await loadInboxConversations(page, { watermark, log });
+  if (error) return { campaignReplies: [], unmatched: [], conversationsScanned: 0, error };
+  const { campaignReplies, unmatched } = classifyConversations(convs, candidateRows, linkedinColumn);
+  return { campaignReplies, unmatched, conversationsScanned: convs.length, error: '' };
+}

@@ -218,3 +218,39 @@ test('applyReplyWriteBack: missing linkedinUrl → counted as error, no throw', 
   assert.equal(out.errors.length, 1);
   _setDeps(null);
 });
+
+import { sweepProfileInbox } from '../src/linkedin/inbox-sweep.js';
+
+function fakePage() {
+  // Minimal puppeteer-page stand-in: goto/evaluate/waitForFunction are no-ops.
+  return {
+    async goto() {}, async evaluate() {}, async waitForFunction() {},
+  };
+}
+
+test('sweepProfileInbox: classifies fetched conversations, preview-only', async () => {
+  _setDeps({
+    async getConversationsPage() {
+      return { elements: [
+        { threadId: 't1', lastActivityAt: 100,
+          participants: [{ firstName: 'Jane', lastName: 'Doe', profileUrl: 'https://www.linkedin.com/in/jane-doe' }],
+          lastMessage: { text: 'thanks!', deliveredAt: 99, actor: { firstName: 'Jane', lastName: 'Doe', profileUrl: 'https://www.linkedin.com/in/jane-doe' } } },
+      ], metadata: null };
+    },
+  });
+  const rows = [{ 'First Name': 'Jane', 'Last Name': 'Doe', 'Linkedin URL': 'https://www.linkedin.com/in/jane-doe' }];
+  const out = await sweepProfileInbox({ page: fakePage(), sheetUrl: 'S', linkedinColumn: 'Linkedin URL', candidateRows: rows, watermark: 0, log: () => {} });
+  assert.equal(out.error, '');
+  assert.equal(out.campaignReplies.length, 1);
+  assert.equal(out.unmatched.length, 0);
+  assert.equal(out.conversationsScanned, 1);
+  _setDeps(null);
+});
+
+test('sweepProfileInbox: getConversationsPage null → clean error, no throw', async () => {
+  _setDeps({ async getConversationsPage() { return null; } });
+  const out = await sweepProfileInbox({ page: fakePage(), sheetUrl: 'S', linkedinColumn: 'Linkedin URL', candidateRows: [], watermark: 0, log: () => {} });
+  assert.match(out.error, /inbox/i);
+  assert.equal(out.campaignReplies.length, 0);
+  _setDeps(null);
+});
