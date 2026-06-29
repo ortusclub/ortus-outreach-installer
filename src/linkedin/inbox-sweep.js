@@ -7,6 +7,10 @@
  * (URN/profileUrl), name only as a fallback, skip-on-doubt → unmatched.
  */
 
+import * as helpers from './helpers.js';
+import { updateSheetRow, appendReplyRow as _appendReplyRow } from '../sheets-writer.js';
+import * as sheetsWriter from '../sheets-writer.js';
+
 // Member-URN encoding shared with outreach.js / check-dms.js.
 const SALES_MEMBER_URN_RE = /\/sales\/(?:lead|people)\/(AC[A-Za-z0-9_-]{10,})(?:[,/?#]|$)/;
 const URN_RE = /^AC[A-Za-z0-9_-]+$/;
@@ -162,4 +166,59 @@ export function classifyConversations(convs, candidateRows, linkedinColumn) {
     }
   }
   return { campaignReplies, unmatched };
+}
+
+// ── Dependency injection (test hook; mirrors check-dms.js) ───────────────────
+const _realDeps = {
+  async getConversationsPage(page, opts) { return helpers.getConversationsPage(page, opts); },
+  async getSheetRowStatus(sheetUrl, url, col) { return sheetsWriter.getSheetRowStatus(sheetUrl, url, col); },
+  async updateSheetRow(sheetUrl, url, tracking, col) { return updateSheetRow(sheetUrl, url, tracking, col); },
+  async appendReplyRow(sheetUrl, reply) { return _appendReplyRow(sheetUrl, reply); },
+};
+let _deps = { ..._realDeps };
+export function _setDeps(stubs) { _deps = stubs === null ? { ..._realDeps } : { ..._realDeps, ...stubs }; }
+
+/** Non-destructive: don't overwrite a row already marked Reply=yes. */
+export function shouldWriteReply(currentStatus, _newReply) {
+  if (!currentStatus) return true;
+  return String(currentStatus.Reply || '').toLowerCase().trim() !== 'yes';
+}
+
+export function makeInitialSweepStatus(profileNames, dryRun) {
+  const names = Array.isArray(profileNames) ? profileNames : [];
+  return {
+    running: true, phase: 'scanning', dryRun: !!dryRun,
+    totalProfiles: names.length, doneProfiles: 0, currentProfile: null,
+    campaignReplies: [], unmatched: [], wrote: 0,
+    perProfile: names.map((n) => ({ profileName: n, status: 'waiting', replies: 0, unmatched: 0, error: '' })),
+    logs: [], error: null,
+  };
+}
+
+/**
+ * Write matched campaign replies to the sheet (Replies tab + Reply/Stage).
+ * Non-destructive + per-row isolated. Only called when dry-run is OFF.
+ */
+export async function applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignReplies }) {
+  let wrote = 0, skipped = 0;
+  const errors = [];
+  for (const r of (campaignReplies || [])) {
+    const url = r.linkedinUrl || '';
+    if (!url) { errors.push(`missing LinkedIn URL for ${r.leadName || '(unknown)'}`); continue; }
+    try {
+      const current = await _deps.getSheetRowStatus(sheetUrl, url, linkedinColumn);
+      if (!shouldWriteReply(current, r)) { skipped++; continue; }
+      const tsIso = new Date(r.timestamp || Date.now()).toISOString();
+      await _deps.appendReplyRow(sheetUrl, {
+        leadUrl: url, timestamp: tsIso, direction: 'in', sender: r.leadName || 'lead', body: String(r.snippet || ''),
+      });
+      await _deps.updateSheetRow(sheetUrl, url, {
+        Reply: 'yes', ReplyAt: tsIso, ReplyPreview: String(r.snippet || '').slice(0, 100), stage: 'Replied',
+      }, linkedinColumn);
+      wrote++;
+    } catch (e) {
+      errors.push(`write-back failed for ${url}: ${e.message}`);
+    }
+  }
+  return { wrote, skipped, errors };
 }

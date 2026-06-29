@@ -164,3 +164,57 @@ test('classify: ambiguous same-name → unmatched with suspected:true', () => {
   assert.equal(unmatched.length, 1);
   assert.equal(unmatched[0].suspected, true);
 });
+
+import { makeInitialSweepStatus, applyReplyWriteBack, _setDeps } from '../src/linkedin/inbox-sweep.js';
+
+test('makeInitialSweepStatus: shape + dryRun flag', () => {
+  const s = makeInitialSweepStatus(['a@x.com', 'b@x.com'], true);
+  assert.equal(s.running, true);
+  assert.equal(s.dryRun, true);
+  assert.equal(s.totalProfiles, 2);
+  assert.equal(s.perProfile.length, 2);
+  assert.equal(s.perProfile[0].status, 'waiting');
+});
+
+test('applyReplyWriteBack: writes matched replies via deps, honors non-destructive guard', async () => {
+  const calls = { update: [], append: [] };
+  _setDeps({
+    async getSheetRowStatus() { return { Reply: '' }; },          // empty → should write
+    async updateSheetRow(sheetUrl, url, tracking) { calls.update.push({ url, tracking }); },
+    async appendReplyRow(sheetUrl, reply) { calls.append.push(reply); },
+  });
+  const campaignReplies = [
+    { leadName: 'Jane Doe', snippet: 'thanks', linkedinUrl: 'https://www.linkedin.com/in/jane-doe', timestamp: 1000, row: { 'First Name': 'Jane', 'Last Name': 'Doe' } },
+  ];
+  const out = await applyReplyWriteBack({ sheetUrl: 'S', linkedinColumn: 'Linkedin URL', campaignReplies, deps: undefined });
+  assert.equal(out.wrote, 1);
+  assert.equal(calls.update.length, 1);
+  assert.equal(calls.update[0].tracking.Reply, 'yes');
+  assert.equal(calls.update[0].tracking.stage, 'Replied');
+  assert.equal(calls.append.length, 1);
+  _setDeps(null);
+});
+
+test('applyReplyWriteBack: skips rows already marked Reply=yes', async () => {
+  const calls = { update: [] };
+  _setDeps({
+    async getSheetRowStatus() { return { Reply: 'yes' }; },        // already replied → skip
+    async updateSheetRow(s, u, t) { calls.update.push(t); },
+    async appendReplyRow() {},
+  });
+  const out = await applyReplyWriteBack({ sheetUrl: 'S', linkedinColumn: 'Linkedin URL',
+    campaignReplies: [{ leadName: 'Jane', snippet: 'hi', linkedinUrl: 'https://www.linkedin.com/in/jane-doe', timestamp: 1, row: {} }], deps: undefined });
+  assert.equal(out.wrote, 0);
+  assert.equal(out.skipped, 1);
+  assert.equal(calls.update.length, 0);
+  _setDeps(null);
+});
+
+test('applyReplyWriteBack: missing linkedinUrl → counted as error, no throw', async () => {
+  _setDeps({ async getSheetRowStatus() { return { Reply: '' }; }, async updateSheetRow() {}, async appendReplyRow() {} });
+  const out = await applyReplyWriteBack({ sheetUrl: 'S', linkedinColumn: 'Linkedin URL',
+    campaignReplies: [{ leadName: 'NoUrl', snippet: 'x', linkedinUrl: '', timestamp: 1, row: {} }], deps: undefined });
+  assert.equal(out.wrote, 0);
+  assert.equal(out.errors.length, 1);
+  _setDeps(null);
+});
