@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reply check · 3 — underneath the live-log status card</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px 60px; }
+  .crumb { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); margin:0 0 16px; }
+  .card { border:1px solid var(--hairline); border-radius:16px; padding:24px 26px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .eyebrow { display:flex; align-items:center; justify-content:space-between; }
+  .eyebrow .st { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); display:flex; align-items:center; gap:8px; }
+  .eyebrow .st .dot { width:8px; height:8px; border-radius:9999px; background:#2e7d4f; }
+  .av { width:42px; height:42px; border-radius:9999px; border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:.7rem; color:var(--gray); }
+  .nm { font-family:'Bebas Neue',sans-serif; font-size:2.1rem; margin:6px 0 18px; }
+  .toolbar { display:flex; align-items:center; gap:12px; margin:0 0 10px; }
+  .toolbar .ttl { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
+  .toolbar .sp { flex:1; }
+  .vj-log { max-height: 200px; overflow:auto; }
+
+  /* THE REPLY-CHECK STRIP — full width, directly UNDER the live-log card */
+  .rc-strip { margin-top:18px; border:1px solid var(--hairline); border-radius:12px; overflow:hidden; }
+  .rc-head { display:flex; align-items:center; gap:14px; padding:13px 16px; background:var(--bg-soft); border-bottom:1px solid var(--hairline); }
+  .rc-head .t { font-family:var(--mono); font-size:.58rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
+  .rc-head .sub { font-size:.74rem; color:var(--gray); } .rc-head .sub b { color:var(--ink); }
+  .rc-head .sp { flex:1; }
+  body[data-dashboard='v3'] .rc-go { background:var(--ink); color:#fff; border:none; border-radius:9999px; padding:9px 16px; font-family:var(--mono); font-size:.58rem; letter-spacing:.1em; text-transform:uppercase; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px; }
+  .rc-go svg { width:14px; height:14px; }
+  .rc-body { display:grid; grid-template-columns: 1fr 1fr; }
+  .rc-col { padding:12px 16px; }
+  .rc-col + .rc-col { border-left:1px solid var(--hairline); }
+  .rc-col .ch { font-family:var(--mono); font-size:.54rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 9px; }
+  .reply { padding:8px 0; border-bottom:1px solid var(--hairline-soft); cursor:pointer; }
+  .reply:last-child { border-bottom:none; }
+  .reply .who { font-size:.84rem; font-weight:600; color:var(--ink); }
+  .reply .who .src { font-family:var(--mono); font-weight:400; font-size:.62rem; color:var(--gray); margin-left:7px; }
+  .reply .snip { font-size:.76rem; color:var(--gray); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rc-empty { font-size:.78rem; color:var(--gray); opacity:.7; padding:6px 0; }
+  .pgfoot { position:fixed; bottom:0; left:0; right:0; background:var(--ink); color:#bbb; font-family:var(--mono); font-size:11px; padding:8px 16px; text-align:center; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <div class="crumb">Sketch 3 / 3 · reply-check strip underneath the live-log status card</div>
+
+  <div class="card">
+    <div class="eyebrow">
+      <span class="st"><span class="dot"></span>Monitoring</span>
+      <span class="av">OP</span>
+    </div>
+    <div class="nm">Q3 Founders — London</div>
+
+    <div class="toolbar">
+      <span class="ttl">Live log · 31 events</span>
+      <span class="sp"></span>
+      <button type="button" class="vj-log-act">Copy all</button>
+      <button type="button" class="vj-log-act">Open sheet</button>
+    </div>
+    <div class="vj-log">
+      <div class="vj-log-line"><span class="time">16:18:09</span><span class="evt">LOG</span><span class="what">[dwayne.co] op_message_sent · Sophie</span></div>
+      <div class="vj-log-line"><span class="time">16:19:23</span><span class="evt">OK</span><span class="what">✓ [dwayne.co] (1/50)</span></div>
+      <div class="vj-log-line"><span class="time">16:19:40</span><span class="evt">INFO</span><span class="what">═══ Campaign ended ═══</span></div>
+    </div>
+
+    <!-- reply check, full width, right under the log -->
+    <div class="rc-strip">
+      <div class="rc-head">
+        <span class="t">Reply check</span>
+        <span class="sub">Last sweep · <b>16:21</b> · <b>2</b> replies · 9 unmatched</span>
+        <span class="sp"></span>
+        <button class="rc-go">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+          Run reply check now
+        </button>
+      </div>
+      <div class="rc-body">
+        <div class="rc-col">
+          <div class="ch">Campaign replies · 2</div>
+          <div class="reply"><div class="who">Luca Coppone <span class="src">pavan.p</span></div><div class="snip">Buongiorno, scusate il ritardo nella risposta, fino all'ultimo…</div></div>
+          <div class="reply"><div class="who">Piermarco Storti <span class="src">christian.s</span></div><div class="snip">Buon pomeriggio, mi scuso per il non veloce riscontro ma…</div></div>
+        </div>
+        <div class="rc-col">
+          <div class="ch">Unmatched · 9</div>
+          <div class="reply"><div class="who">Narayan Panigrahi</div><div class="snip">Hi, turn your network into a growing business opportunit…</div></div>
+          <div class="rc-empty">+ 8 more — open full view to triage</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="pgfoot">Sketch 3 — reply-check as a full-width strip directly under the live log: summary + Run-now on one line, then Campaign replies / Unmatched side-by-side. Click a reply → full read pane + open in sender's GoLogin browser.</div>
+</body>
+</html>

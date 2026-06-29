@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reply check · 1 — Check DMs mode setup (overhaul)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 24px 60px; }
+  .crumb { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); margin:0 0 18px; }
+  .card { border:1px solid var(--hairline); border-radius:14px; padding:22px; background:var(--bg-soft); }
+  .row { margin:0 0 20px; }
+  .row:last-of-type { margin-bottom:0; }
+  .lbl { font-family:var(--mono); font-size:.56rem; letter-spacing:.14em; text-transform:uppercase; color:var(--gray); display:block; margin:0 0 8px; }
+  /* sheet paster */
+  .paste { display:flex; align-items:center; gap:10px; border:1px solid var(--hairline); border-radius:10px; padding:11px 13px; background:var(--bg); }
+  .paste svg { width:16px; height:16px; color:var(--gray); flex:none; }
+  .paste input { flex:1; background:none; border:none; color:var(--ink); font-family:var(--mono); font-size:.78rem; outline:none; }
+  .paste .ok { font-family:var(--mono); font-size:.6rem; color:#2e7d4f; display:flex; align-items:center; gap:5px; flex:none; }
+  /* account picker */
+  .pick { display:flex; align-items:center; gap:10px; }
+  .pick select { flex:1; border:1px solid var(--hairline); border-radius:10px; padding:11px 13px; background:var(--bg); color:var(--ink); font-family:var(--mono); font-size:.78rem; }
+  .pick .all { font-size:.72rem; color:var(--gray); white-space:nowrap; display:flex; align-items:center; gap:7px; }
+  .pick .all input { accent-color:var(--gold); }
+  /* dry toggle + cta */
+  .foot { display:flex; align-items:center; gap:16px; margin-top:24px; padding-top:18px; border-top:1px solid var(--hairline); }
+  .dry { display:flex; align-items:center; gap:9px; font-size:.8rem; color:var(--gray); } .dry input { accent-color:var(--gold); width:15px; height:15px; }
+  .sp { flex:1; }
+  body[data-dashboard='v3'] .cta { background:var(--ink); color:#fff; border:none; border-radius:9999px; padding:12px 26px; font-family:var(--mono); font-size:.64rem; letter-spacing:.12em; text-transform:uppercase; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:9px; }
+  .cta svg { width:15px; height:15px; }
+  .pgfoot { position:fixed; bottom:0; left:0; right:0; background:var(--ink); color:#bbb; font-family:var(--mono); font-size:11px; padding:8px 16px; text-align:center; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <div class="crumb">Sketch 1 / 3 · Check DMs — campaign-type setup (overhaul)</div>
+  <div class="card">
+    <div class="row">
+      <span class="lbl">Google Sheet</span>
+      <div class="paste">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+        <input value="https://docs.google.com/spreadsheets/d/16SM-aZ75TKLR…/edit#gid=0" />
+        <span class="ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="5 12 10 17 19 7"/></svg> 462 leads</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Account to read</span>
+      <div class="pick">
+        <select>
+          <option>All accounts that sent leads (9)</option>
+          <option>pavan.p@ortus.solutions · 10 leads</option>
+          <option>rilany.darang@ortus.solutions · 10 leads</option>
+          <option>christian.saguid@ortus.solutions · 6 leads</option>
+          <option>marlon.j@ortus.solutions · 3 leads</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="foot">
+      <label class="dry"><input type="checkbox" checked /> Preview only — don't write to the sheet</label>
+      <span class="sp"></span>
+      <button class="cta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+        Check replies now
+      </button>
+    </div>
+  </div>
+</div>
+<div class="pgfoot">Sketch 1 — only the three controls you asked for: sheet paster (with live lead count), account picker (single OR all), and the preview-only toggle. Light theme, real components.</div>
+</body>
+</html>

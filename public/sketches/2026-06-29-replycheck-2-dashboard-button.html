@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reply check · 2 — dashboard button while monitoring</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px 60px; }
+  .crumb { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); margin:0 0 16px; }
+  .card { border:1px solid var(--hairline); border-radius:16px; padding:24px 26px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .eyebrow { display:flex; align-items:center; justify-content:space-between; }
+  .eyebrow .st { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); display:flex; align-items:center; gap:8px; }
+  .eyebrow .st .dot { width:8px; height:8px; border-radius:9999px; background:#2e7d4f; }
+  .av { width:42px; height:42px; border-radius:9999px; border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:.7rem; color:var(--gray); }
+  .nm { font-family:'Bebas Neue',sans-serif; font-size:2.1rem; letter-spacing:.01em; margin:6px 0 18px; }
+  /* the dashboard-level reply-check button — sits in the card header row */
+  body[data-dashboard='v3'] .rc-btn { background:var(--ink); color:#fff; border:none; border-radius:9999px; padding:10px 18px; font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px; }
+  .rc-btn svg { width:14px; height:14px; }
+  .rc-btn .badge { background:var(--gold); color:#0a0a0a; border-radius:9999px; padding:1px 7px; font-size:.58rem; }
+  .toolbar { display:flex; align-items:center; gap:12px; margin:0 0 16px; }
+  .toolbar .ttl { font-family:var(--mono); font-size:.6rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); }
+  .toolbar .sp { flex:1; }
+  .vj-log { max-height: 280px; overflow:auto; }
+  .pgfoot { position:fixed; bottom:0; left:0; right:0; background:var(--ink); color:#bbb; font-family:var(--mono); font-size:11px; padding:8px 16px; text-align:center; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="wrap">
+  <div class="crumb">Sketch 2 / 3 · reply-check as a dashboard button (campaign monitoring)</div>
+
+  <div class="card">
+    <div class="eyebrow">
+      <span class="st"><span class="dot"></span>Monitoring</span>
+      <span class="av">OP</span>
+    </div>
+    <div class="nm">Q3 Founders — London</div>
+
+    <!-- ONE button lives in the card's own toolbar, next to Copy all / Open sheet -->
+    <div class="toolbar">
+      <span class="ttl">Live log · 31 events</span>
+      <span class="sp"></span>
+      <button type="button" class="vj-log-act">Copy all</button>
+      <button type="button" class="vj-log-act">Open sheet</button>
+      <button class="rc-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/></svg>
+        Check replies <span class="badge">2</span>
+      </button>
+    </div>
+
+    <div class="vj-log">
+      <div class="vj-log-line"><span class="time">16:18:09</span><span class="evt">LOG</span><span class="what">[dwayne.co] op_message_sent · Sophie</span></div>
+      <div class="vj-log-line"><span class="time">16:19:23</span><span class="evt">OK</span><span class="what">✓ [dwayne.co] (1/50)</span></div>
+      <div class="vj-log-line"><span class="time">16:19:33</span><span class="evt">OK</span><span class="what">✓ dwayne.co browser closed</span></div>
+      <div class="vj-log-line"><span class="time">16:19:40</span><span class="evt">INFO</span><span class="what">═══ Campaign ended ═══</span></div>
+    </div>
+  </div>
+</div>
+<div class="pgfoot">Sketch 2 — ONE pill button ("Check replies", with a found-count badge) sits in the live-log toolbar next to Copy all / Open sheet. Click → opens the full reply-check view. Nothing else added to the card.</div>
+</body>
+</html>
