@@ -130,3 +130,36 @@ export function matchConversationIdentitySafe(conv, candidateRows, linkedinColum
   if (nameHits.length > 1) return { row: null, reason: 'ambiguous' };
   return { row: null, reason: 'unmatched' };
 }
+
+function previewOf(conv, row, linkedinColumn) {
+  const p = Array.isArray(conv?.participants) ? conv.participants[0] : (conv?.participant || null);
+  const last = conv?.lastMessage || null;
+  return {
+    leadName: p ? `${p.firstName || ''} ${p.lastName || ''}`.replace(/\s+/g, ' ').trim() : '(unknown)',
+    snippet: String(last?.text || '').slice(0, 160),
+    profileUrl: p?.profileUrl || '',
+    threadId: conv?.threadId || '',
+    timestamp: last?.deliveredAt || conv?.lastActivityAt || null,
+    linkedinUrl: row ? rowLinkedinUrl(row, linkedinColumn) : (p?.profileUrl || ''),
+    row: row || null,
+    suspected: false,
+  };
+}
+
+/** Split inbound conversations into matched campaign replies vs unmatched new replies. */
+export function classifyConversations(convs, candidateRows, linkedinColumn) {
+  const campaignReplies = [];
+  const unmatched = [];
+  for (const conv of (Array.isArray(convs) ? convs : [])) {
+    if (!isInboundConversation(conv)) continue;
+    const m = matchConversationIdentitySafe(conv, candidateRows, linkedinColumn);
+    if (m.reason === 'identity' || m.reason === 'name') {
+      campaignReplies.push(previewOf(conv, m.row, linkedinColumn));
+    } else {
+      const item = previewOf(conv, null, linkedinColumn);
+      item.suspected = (m.reason === 'ambiguous');
+      unmatched.push(item);
+    }
+  }
+  return { campaignReplies, unmatched };
+}

@@ -122,3 +122,45 @@ test('matcher: nothing matches → unmatched', () => {
   const rows = [{ 'First Name': 'Nobody', 'Last Name': 'Here', 'Linkedin URL': 'https://www.linkedin.com/in/nobody' }];
   assert.equal(matchConversationIdentitySafe(inboundConv(), rows).reason, 'unmatched');
 });
+
+import { classifyConversations } from '../src/linkedin/inbox-sweep.js';
+
+test('classify: splits matched vs unmatched, skips outbound', () => {
+  const convs = [
+    // inbound, matches a row by token → campaign reply
+    { threadId: 't1', lastActivityAt: 10,
+      participants: [{ firstName: 'Jane', lastName: 'Doe', profileUrl: 'https://www.linkedin.com/in/jane-doe' }],
+      lastMessage: { text: 'thanks for connecting!', deliveredAt: 9, actor: { firstName: 'Jane', lastName: 'Doe', profileUrl: 'https://www.linkedin.com/in/jane-doe' } } },
+    // inbound, no matching row → unmatched new reply
+    { threadId: 't2', lastActivityAt: 20,
+      participants: [{ firstName: 'Stranger', lastName: 'Person', profileUrl: 'https://www.linkedin.com/in/stranger' }],
+      lastMessage: { text: 'hi there', deliveredAt: 19, actor: { firstName: 'Stranger', lastName: 'Person', profileUrl: 'https://www.linkedin.com/in/stranger' } } },
+    // outbound (we sent last) → ignored entirely
+    { threadId: 't3', lastActivityAt: 30,
+      participants: [{ firstName: 'Jane', lastName: 'Doe', profileUrl: 'https://www.linkedin.com/in/jane-doe' }],
+      lastMessage: { text: 'following up', deliveredAt: 29, actor: { firstName: 'Matt', lastName: 'Adcock', profileUrl: 'https://www.linkedin.com/in/matt' } } },
+  ];
+  const rows = [{ 'First Name': 'Jane', 'Last Name': 'Doe', 'Linkedin URL': 'https://www.linkedin.com/in/jane-doe' }];
+  const { campaignReplies, unmatched } = classifyConversations(convs, rows);
+  assert.equal(campaignReplies.length, 1);
+  assert.equal(campaignReplies[0].leadName, 'Jane Doe');
+  assert.equal(campaignReplies[0].threadId, 't1');
+  assert.equal(campaignReplies[0].linkedinUrl, 'https://www.linkedin.com/in/jane-doe');
+  assert.equal(unmatched.length, 1);
+  assert.equal(unmatched[0].leadName, 'Stranger Person');
+  assert.equal(unmatched[0].suspected, false);
+});
+
+test('classify: ambiguous same-name → unmatched with suspected:true', () => {
+  const convs = [{ threadId: 'a', lastActivityAt: 5,
+    participants: [{ firstName: 'Jane', lastName: 'Doe', profileUrl: '' }],
+    lastMessage: { text: 'hey', deliveredAt: 4, actor: { firstName: 'Jane', lastName: 'Doe' } } }];
+  const rows = [
+    { 'First Name': 'Jane', 'Last Name': 'Doe', 'Linkedin URL': '' },
+    { 'First Name': 'Jane', 'Last Name': 'Doe', 'Linkedin URL': '' },
+  ];
+  const { campaignReplies, unmatched } = classifyConversations(convs, rows);
+  assert.equal(campaignReplies.length, 0);
+  assert.equal(unmatched.length, 1);
+  assert.equal(unmatched[0].suspected, true);
+});
