@@ -2043,7 +2043,9 @@ function onModeChange() {
     // v2.11.17: same coverage source as Message Only (Connected · DM Now leads).
     refreshMessageOnlyPreview();
   } else if (isCheckDms) {
-    refreshCheckDmsPreview();
+    // check_dms now owns the A3 reply-sweep panel (its legacy preview panel is hidden),
+    // so skip refreshCheckDmsPreview()'s wasted fetch + run-bar relabel. The mode-reveal
+    // block drives this mode via rsweepPoll().
   } else if (isPostAmp) {
     // v3.0: render the per-account engagement table from currently selected
     // GoLogin profiles, and load any saved comment templates.
@@ -17466,7 +17468,7 @@ let _rsweepTimer = null;
 let _rsweepSel = null;     // threadId of the reply shown in the read pane
 let _rsweepLast = null;    // last status, so list clicks can re-render the pane
 
-function rsweepEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function rsweepEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // Flat, ordered list of every reply (campaign first, then unmatched) for selection.
 function rsweepAll(s) {
