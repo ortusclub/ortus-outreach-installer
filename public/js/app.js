@@ -17503,7 +17503,6 @@ function rsweepRender(s) {
   const eyebrow = document.getElementById('rsweep-eyebrow');
   const runBtn = document.getElementById('rsweep-run');
   const stopBtn = document.getElementById('rsweep-stop');
-  const log = document.getElementById('rsweep-log');
   if (!eyebrow) return;
   const camp = s.campaignReplies || [], unm = s.unmatched || [];
   if (s.running) {
@@ -17518,7 +17517,22 @@ function rsweepRender(s) {
     if (runBtn) runBtn.disabled = false;
     if (stopBtn) stopBtn.style.display = 'none';
   }
-  if (log) log.textContent = s.logs && s.logs.length ? s.logs[s.logs.length - 1] : '';
+  // Live log card — same component the other campaigns use (v3RenderLogLine).
+  const logBody = document.getElementById('rsweep-logbody');
+  const logHead = document.getElementById('rsweep-loghead');
+  const logs = Array.isArray(s.logs) ? s.logs : [];
+  if (logBody) {
+    const lastN = logs.slice(-30);
+    logBody.innerHTML = lastN.length
+      ? lastN.map((l) => v3RenderLogLine(l)).join('')
+      : '<div class="vj-log-empty">Pick a sheet + account, then run a check — events stream here, one account at a time.</div>';
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+  if (logHead) {
+    logHead.textContent = s.running
+      ? `Live log · scanning ${s.currentProfile || '…'} · ${s.doneProfiles || 0}/${s.totalProfiles || 0} accounts`
+      : (logs.length ? `Live log · last ${Math.min(logs.length, 30)} events (finished)` : 'Live log');
+  }
 
   const all = rsweepAll(s);
   if (!_rsweepSel && all.length) _rsweepSel = all[0].threadId; // auto-select first
@@ -17591,8 +17605,17 @@ function rsweepBind() {
   const run = document.getElementById('rsweep-run');
   const stop = document.getElementById('rsweep-stop');
   const list = document.getElementById('rsweep-list');
+  const copy = document.getElementById('rsweep-copy');
   if (run && !run._rsweepBound) { run._rsweepBound = true; run.addEventListener('click', rsweepStart); }
   if (stop && !stop._rsweepBound) { stop._rsweepBound = true; stop.addEventListener('click', rsweepStop); }
+  if (copy && !copy._rsweepBound) {
+    copy._rsweepBound = true;
+    copy.addEventListener('click', async () => {
+      const logs = (_rsweepLast && Array.isArray(_rsweepLast.logs)) ? _rsweepLast.logs : [];
+      try { await navigator.clipboard.writeText(logs.join('\n')); showCampaignToast('Log copied', 1500); }
+      catch (_) { /* clipboard blocked — ignore */ }
+    });
+  }
   if (list && !list._rsweepBound) {
     list._rsweepBound = true;
     list.addEventListener('click', (e) => {           // pick a reply → read pane
