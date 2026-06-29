@@ -15262,6 +15262,8 @@ window.renderActiveCard = function(status) {
   if (!status || (!status.running && !isMonitoring)) {
     card.classList.add('is-empty');
     card.classList.remove('is-monitor');
+    const _rs = document.getElementById('active-replystrip');
+    if (_rs) { _rs.hidden = true; const l = document.getElementById('active-rs-list'); if (l) l.innerHTML = ''; }
     v3SetText('activeName', 'No campaign running');
     v3SetText('activeEyebrow', 'No campaign running');
     v3SetText('activePct', '0');
@@ -15969,11 +15971,61 @@ window.dashReplyCheck = async function() {
         : `Reply check done — ${n} new repl${n === 1 ? 'y' : 'ies'}.`;
       if (typeof showCampaignToast === 'function') showCampaignToast(msg);
       if (typeof window.renderReplies === 'function') window.renderReplies();
+      renderReplyStrip(Array.isArray(body.replies) ? body.replies : []);
     } else {
       if (typeof showCampaignToast === 'function') showCampaignToast('Reply check failed: ' + (body.error || 'unknown'));
     }
   } catch (err) { console.error('[v3] dashReplyCheck:', err); }
 };
+
+// Reply strip on the active card (sketch 3): renders found replies under the
+// live log. Each row can open the thread in the SENDER's GoLogin browser.
+function renderReplyStrip(replies) {
+  const strip = document.getElementById('active-replystrip');
+  const list = document.getElementById('active-rs-list');
+  const sum = document.getElementById('active-rs-sum');
+  if (!strip || !list) return;
+  const items = Array.isArray(replies) ? replies : [];
+  if (!items.length) { strip.hidden = true; list.innerHTML = ''; return; }
+  strip.hidden = false;
+  if (sum) sum.textContent = `${items.length} repl${items.length === 1 ? 'y' : 'ies'}`;
+  list.innerHTML = items.map((r) => {
+    const canOpen = !!(r.accountPid && (r.threadId || r.profileUrl));
+    const open = canOpen
+      ? `<button type="button" class="vj-rs-open" data-rsweep-open data-pid="${escHtml(r.accountPid)}" data-tid="${escHtml(r.threadId || '')}" data-purl="${escHtml(r.profileUrl || '')}">↗ open in ${escHtml(r.account || 'gologin')}</button>`
+      : '';
+    const chan = r.channel === 'salesnav' ? '<span class="vj-rs-chan">OP / InMail</span>' : '';
+    return `<div class="vj-rs-item">
+      <div class="vj-rs-who">${escHtml(r.leadName || 'Lead')}${chan}<span class="vj-rs-acct">${escHtml(r.account || '')}</span></div>
+      <div class="vj-rs-msg">${escHtml(r.fullText || r.snippet || '')}</div>
+      ${open}</div>`;
+  }).join('');
+}
+window.renderReplyStrip = renderReplyStrip;
+
+// Open-thread delegation for the active-card reply strip (mirrors rsweepOpenThread).
+(function bindReplyStripOpen() {
+  const strip = document.getElementById('active-replystrip');
+  if (!strip || strip._rsBound) return;
+  strip._rsBound = true;
+  strip.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-rsweep-open]');
+    if (!btn) return;
+    e.preventDefault();
+    const pid = btn.getAttribute('data-pid');
+    if (!pid) return;
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = '↗ opening…';
+    try {
+      const resp = await fetch('/api/reply-sweep/open-thread', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: pid, threadId: btn.getAttribute('data-tid') || '', profileUrl: btn.getAttribute('data-purl') || '' }),
+      });
+      if (!resp.ok) { const er = await resp.json().catch(() => ({})); if (typeof showCampaignToast === 'function') showCampaignToast(er.error || 'Could not open the browser'); }
+    } catch (err) { if (typeof showCampaignToast === 'function') showCampaignToast('Open failed: ' + err.message); }
+    finally { btn.disabled = false; btn.textContent = prev; }
+  });
+})();
 
 window.dashOpenActive = async function() {
   // Entering via Open = a read-only VIEW of the live campaign. The launch panel

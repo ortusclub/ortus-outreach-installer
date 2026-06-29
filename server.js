@@ -3076,6 +3076,7 @@ app.post('/api/reply-check-now', async (req, res) => {
     }
 
     const perProfile = [];
+    const replyItems = [];   // unified found replies for the card strip
     let totalReplies = 0;
     // Scan the Sales Nav inbox too when this is a MESSAGING campaign (OP / InMail /
     // message-only) whose Sending Method used Sales Nav (opChannel ≠ ln_only).
@@ -3120,6 +3121,10 @@ app.post('/api/reply-check-now', async (req, res) => {
           try { await writeRecentMessagesTab(sheetUrl, pName, result.recentMessages || [], []); }
           catch (e) { campaignLog(`⚠ [${pName}] Recent Messages write failed: ${e.message}`); }
           campaignLog(`📬 [${pName}] ${result.inboundCount} reply(ies)${result.suspectedCount ? `, ${result.suspectedCount} suspected (ambiguous name)` : ''} found [${result.method}].`);
+          for (const m of (result.recentMessages || [])) {
+            if (m.matched === false) continue;
+            replyItems.push({ leadName: m.name || '', account: pName, accountPid: pid, snippet: String(m.lastMessage || '').slice(0, 160), fullText: String(m.lastMessage || ''), threadId: '', profileUrl: '', channel: 'dm' });
+          }
           let snReplies = 0;
           // Sales Nav pass — OPs/InMails reply here, not in the regular inbox.
           // Reuse this profile's already-open page; failures are non-fatal.
@@ -3132,6 +3137,9 @@ app.post('/api/reply-check-now', async (req, res) => {
               } else {
                 const { campaignReplies } = classifyConversations(sn.convs, leads, linkedinColumn || 'Linkedin URL');
                 snReplies = campaignReplies.length;
+                for (const r of campaignReplies) {
+                  replyItems.push({ leadName: r.leadName || '', account: pName, accountPid: pid, snippet: r.snippet || '', fullText: r.fullText || r.snippet || '', threadId: r.threadId || '', profileUrl: r.profileUrl || '', channel: 'salesnav' });
+                }
                 if (snReplies) {
                   try {
                     const wb = await applyReplyWriteBack({ sheetUrl, linkedinColumn: linkedinColumn || 'Linkedin URL', campaignReplies });
@@ -3156,7 +3164,7 @@ app.post('/api/reply-check-now', async (req, res) => {
       setBulkCheckInProgress(false);
     }
 
-    res.json({ ok: true, profilesChecked: leadsByProfile.size, repliesFound: totalReplies, perProfile, autoPaused: _weShouldAutoResume });
+    res.json({ ok: true, profilesChecked: leadsByProfile.size, repliesFound: totalReplies, perProfile, replies: replyItems, autoPaused: _weShouldAutoResume });
   } catch (err) {
     res.status(500).json({ error: err.message });
   } finally {

@@ -321,6 +321,15 @@
             <div class="vj-bulk-hint" id="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
           </div>
         </div>
+        <!-- Reply strip (sketch 3) — found replies from the last reply check,
+             full width under the live log. Populated by renderReplyStrip(). -->
+        <div class="vj-replystrip" id="active-replystrip" hidden>
+          <div class="vj-rs-head">
+            <span class="vj-rs-title">Replies</span>
+            <span class="vj-rs-sum" id="active-rs-sum"></span>
+          </div>
+          <div class="vj-rs-list" id="active-rs-list"></div>
+        </div>
       </section>
 
       <!-- ── Replies (v2.72) — inbound replies found by the hourly check ── -->

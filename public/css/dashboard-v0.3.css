@@ -983,6 +983,21 @@
 
 /* ── Check DMs mode — A3 reply-check split view (mirrors public/sketches/2026-06-25-reply-check-A3-page.html) ── */
 #reply-sweep-panel { border: none; }
+  /* Reply strip on the active card (sketch 3) — found replies under the live log. */
+  body[data-dashboard='v3'] .vj-replystrip { margin-top: 16px; border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; }
+  body[data-dashboard='v3'] .vj-rs-head { display: flex; align-items: center; gap: 12px; padding: 11px 16px; background: var(--bg-soft); border-bottom: 1px solid var(--hairline); }
+  body[data-dashboard='v3'] .vj-rs-title { font-family: var(--mono); font-size: .6rem; letter-spacing: .2em; text-transform: uppercase; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-rs-sum { font-size: .76rem; color: var(--ink); font-weight: 600; }
+  body[data-dashboard='v3'] .vj-rs-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  @media (max-width: 720px) { body[data-dashboard='v3'] .vj-rs-list { grid-template-columns: 1fr; } }
+  body[data-dashboard='v3'] .vj-rs-item { padding: 12px 16px; border-bottom: 1px solid var(--hairline-soft); border-right: 1px solid var(--hairline-soft); }
+  body[data-dashboard='v3'] .vj-rs-who { display: flex; align-items: center; gap: 8px; font-size: .86rem; font-weight: 600; color: var(--ink); }
+  body[data-dashboard='v3'] .vj-rs-acct { margin-left: auto; font-family: var(--mono); font-weight: 400; font-size: .6rem; color: var(--gray); }
+  body[data-dashboard='v3'] .vj-rs-chan { font-family: var(--mono); font-size: .5rem; letter-spacing: .06em; text-transform: uppercase; color: #0a0a0a; background: var(--gold); border-radius: 9999px; padding: 1px 6px; }
+  body[data-dashboard='v3'] .vj-rs-msg { font-size: .8rem; color: var(--gray); margin: 5px 0 8px; line-height: 1.45; white-space: pre-wrap; }
+  body[data-dashboard='v3'] .vj-rs-open { background: none; border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 11px; font-family: var(--mono); font-size: .56rem; letter-spacing: .04em; text-transform: uppercase; color: var(--gray); cursor: pointer; }
+  body[data-dashboard='v3'] .vj-rs-open:hover { color: var(--ink); border-color: var(--ink); }
+
   /* Vertical setup card (sketch 1): sheet → accounts → footer, full width. */
   body[data-dashboard='v3'] .rsweep-setup { display: flex; flex-direction: column; gap: 18px; margin: 0 0 16px; border: 1px solid var(--hairline); border-radius: 14px; background: var(--bg-soft); padding: 20px; }
   body[data-dashboard='v3'] .rsweep-field { display: flex; flex-direction: column; gap: 8px; }
