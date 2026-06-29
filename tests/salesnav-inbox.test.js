@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeSalesNavThreads } from '../src/linkedin/helpers.js';
-import { classifyConversations } from '../src/linkedin/inbox-sweep.js';
+import { classifyConversations, hasSalesNavChannel, sweepProfileInbox, _setDeps } from '../src/linkedin/inbox-sweep.js';
 
 // Helpers to build a salesProfile URN + included Profile entity.
 const sUrn = (acwaa) => `urn:li:fs_salesProfile:(${acwaa},NAME_SEARCH,XxXx)`;
@@ -98,4 +98,43 @@ test('salesnav: empty / malformed payload → no throw, empty elements', () => {
   assert.deepEqual(normalizeSalesNavThreads(null), { elements: [], metadata: null });
   assert.deepEqual(normalizeSalesNavThreads({}), { elements: [], metadata: null });
   assert.equal(normalizeSalesNavThreads({ data: { elements: [] }, included: [] }).elements.length, 0);
+});
+
+test('hasSalesNavChannel: detects OP/InMail leads by sheet markers', () => {
+  assert.equal(hasSalesNavChannel([{ Stage: 'OP Sent', 'OP Status': 'OP Sent' }]), true);
+  assert.equal(hasSalesNavChannel([{ Stage: 'InMail Sent' }]), true);
+  assert.equal(hasSalesNavChannel([{ 'Last Action': 'Open Profile message' }]), true);
+  assert.equal(hasSalesNavChannel([{ Stage: 'Connected', 'Last Action': 'DM Sent' }]), false);
+  assert.equal(hasSalesNavChannel([]), false);
+});
+
+test('sweepProfileInbox: combines regular DM + Sales Nav replies in one pass', async () => {
+  // Build one regular-inbox DM reply (internal shape) + one Sales Nav OP reply.
+  const dmConv = {
+    threadId: 'dm-1', lastActivityAt: 5000, groupChat: false,
+    participants: [{ firstName: 'Luca', lastName: 'Coppone', memberId: '269709976' }],
+    lastMessage: { text: 'Ciao!', deliveredAt: 5000, isInbound: true, actor: { firstName: 'Luca', lastName: 'Coppone', memberId: '269709976' } },
+  };
+  const snRaw = {
+    data: { elements: [{ id: 'sn-1', unreadMessageCount: 1, participants: [sUrn(ME), sUrn(LEAD)],
+      messages: [msg(sUrn(ME), 'Invite…', 1000, 'INMAIL'), msg(sUrn(LEAD), 'Sì, volentieri', 2000, 'MESSAGE')] }] },
+    included: [profile(ME, '66974850', 'Christian Dwayne', 'Co'), profile(LEAD, '11415868', 'Sophie', 'Marchessou')],
+  };
+  _setDeps({
+    async getConversationsPage() { return { elements: [dmConv] }; },
+    async getSalesNavThreadsPage() { return normalizeSalesNavThreads(snRaw); },
+  });
+  try {
+    const rows = [
+      { 'First Name': 'Luca', 'Last Name': 'Coppone', 'Linkedin Membership ID': '269709976', Stage: 'Connected' },
+      { 'First Name': 'Sophie', 'Last Name': 'Marchessou', 'Linkedin Membership ID': '11415868', Stage: 'OP Sent' },
+    ];
+    // page with no goto/waitForFunction → loaders skip navigation, hit the stubs.
+    const out = await sweepProfileInbox({ page: {}, sheetUrl: 'x', linkedinColumn: 'Linkedin Bio', candidateRows: rows });
+    assert.equal(out.error, '');
+    const names = out.campaignReplies.map((r) => r.leadName).sort();
+    assert.deepEqual(names, ['Luca Coppone', 'Sophie Marchessou']);
+  } finally {
+    _setDeps(null);
+  }
 });

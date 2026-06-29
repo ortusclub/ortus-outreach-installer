@@ -224,6 +224,7 @@ export function classifyConversations(convs, candidateRows, linkedinColumn) {
 // ── Dependency injection (test hook; mirrors check-dms.js) ───────────────────
 const _realDeps = {
   async getConversationsPage(page, opts) { return helpers.getConversationsPage(page, opts); },
+  async getSalesNavThreadsPage(page) { return helpers.getSalesNavThreadsPage(page); },
   async getSheetRowStatus(sheetUrl, url, col) { return sheetsWriter.getSheetRowStatus(sheetUrl, url, col); },
   async updateSheetRow(sheetUrl, url, tracking, col) { return updateSheetRow(sheetUrl, url, tracking, col); },
   async appendReplyRow(sheetUrl, reply) { return _appendReplyRow(sheetUrl, reply); },
@@ -333,10 +334,75 @@ export async function loadInboxConversations(page, { watermark = 0, log = () => 
   }
 }
 
-/** Preview-only sweep for one profile. Never throws — per-profile isolated. */
-export async function sweepProfileInbox({ page, sheetUrl, linkedinColumn, candidateRows, watermark = 0, log = () => {} }) {
+// True when ANY candidate lead was reached via Sales Navigator (Open Profile /
+// InMail) — so their replies live in the Sales Nav inbox, not the regular one.
+// Detected from the sheet's channel markers (Stage / OP Status / Last Action).
+export function hasSalesNavChannel(rows) {
+  const re = /\bop\b|open profile|in[\s-]?mail|sales nav/i;
+  return (Array.isArray(rows) ? rows : []).some((r) => {
+    if (!r) return false;
+    const vals = [r.Stage, r['OP Status'], r['Op Status'], r['Last Action'], r['Last Acti'], r.Channel]
+      .filter(Boolean).map(String);
+    return vals.some((v) => re.test(v));
+  });
+}
+
+/**
+ * Load the Sales Navigator inbox thread list, normalized to the internal
+ * conversation shape. Best-effort — returns { convs, error } and never throws.
+ * OPs/InMails are sent through Sales Nav so their replies land here.
+ */
+export async function loadSalesNavConversations(page, { watermark = 0, log = () => {} } = {}) {
+  try {
+    if (typeof page.goto === 'function') {
+      try {
+        await page.goto('https://www.linkedin.com/sales/inbox/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } catch (e) {
+        return { convs: [], error: `couldn't open Sales Nav inbox: ${e.message}` };
+      }
+      if (typeof page.waitForFunction === 'function') {
+        await new Promise((r) => setTimeout(r, 2500));
+        try {
+          await page.waitForFunction(
+            () => performance.getEntriesByType('resource').some((e) => typeof e.name === 'string' && e.name.includes('salesApiMessagingThreads')),
+            { timeout: 20000 },
+          );
+        } catch { /* fall through — getSalesNavThreadsPage returns null */ }
+      }
+    }
+    let res;
+    try { res = await _deps.getSalesNavThreadsPage(page); }
+    catch (e) { return { convs: [], error: `couldn't read Sales Nav inbox: ${e.message}` }; }
+    if (res === null || res === undefined) {
+      return { convs: [], error: "couldn't load Sales Nav inbox (no seat, rate-limited, or session expired)" };
+    }
+    const convs = (res.elements || []).filter((el) => (el.lastActivityAt || 0) > watermark);
+    return { convs, error: '' };
+  } catch (e) {
+    return { convs: [], error: `Sales Nav scan failed: ${e.message}` };
+  }
+}
+
+/**
+ * Preview-only sweep for one profile. Never throws — per-profile isolated.
+ * Reads the regular DM inbox, and ALSO the Sales Nav inbox when the candidate
+ * leads include OP/InMail rows (auto-detected) — combined in one classify pass,
+ * so DM and OP/InMail replies for the account surface together. A Sales Nav
+ * failure is logged but does not fail the regular sweep.
+ */
+export async function sweepProfileInbox({ page, sheetUrl, linkedinColumn, candidateRows, watermark = 0, log = () => {}, includeSalesNav } = {}) {
   const { convs, error } = await loadInboxConversations(page, { watermark, log });
   if (error) return { campaignReplies: [], unmatched: [], conversationsScanned: 0, error };
-  const { campaignReplies, unmatched } = classifyConversations(convs, candidateRows, linkedinColumn);
-  return { campaignReplies, unmatched, conversationsScanned: convs.length, error: '' };
+
+  let allConvs = convs;
+  const wantSalesNav = includeSalesNav === undefined ? hasSalesNavChannel(candidateRows) : !!includeSalesNav;
+  if (wantSalesNav) {
+    try { log('🧭 Also scanning Sales Navigator inbox (OP / InMail)…'); } catch (_) {}
+    const sn = await loadSalesNavConversations(page, { watermark, log });
+    if (sn.error) { try { log(`⚠ Sales Nav inbox skipped — ${sn.error}`); } catch (_) {} }
+    else { allConvs = convs.concat(sn.convs); try { log(`🧭 Sales Nav: ${sn.convs.length} thread(s)`); } catch (_) {} }
+  }
+
+  const { campaignReplies, unmatched } = classifyConversations(allConvs, candidateRows, linkedinColumn);
+  return { campaignReplies, unmatched, conversationsScanned: allConvs.length, error: '' };
 }
