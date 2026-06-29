@@ -1393,11 +1393,14 @@ export async function getConversationsPage(page, { start = 0, count = 20 } = {})
         }
 
         const urlObj = new URL(entries[0].name);
-        // Tune pagination params on the discovered URL. LinkedIn accepts
-        // `count` for page size; `start` for offset (sync-token variants may
-        // ignore `start`, which is fine — first-page semantics cover Wave 1).
-        if (count) urlObj.searchParams.set('count', String(count));
-        if (start) urlObj.searchParams.set('start', String(start));
+        // Tune pagination ONLY on URLs that already expose top-level count/start
+        // params. The current messengerConversationsBySyncToken query encodes
+        // paging inside the `variables=(mailboxUrn:…)` tuple and has NO top-level
+        // count — adding one makes LinkedIn return HTTP 400 (verified live
+        // 2026-06-29). Its first page = 20 most-recent threads, which is what the
+        // reply check needs; deeper history is a separate refinement.
+        if (count && urlObj.searchParams.has('count')) urlObj.searchParams.set('count', String(count));
+        if (start && urlObj.searchParams.has('start')) urlObj.searchParams.set('start', String(start));
 
         // ── 2. Auth headers — copy exactly what getVoyagerDegree uses ──
         const csrf = document.cookie.split(';').map(c => c.trim())
@@ -1422,25 +1425,84 @@ export async function getConversationsPage(page, { start = 0, count = 20 } = {})
 
     if (!raw || typeof raw !== 'object') return null;
 
-    // ── Normalize raw GraphQL → internal shape ──
-    const payload = raw.data?.messengerConversationsBySyncToken
-      ?? raw.data?.messengerConversationsByCategoryQuery
-      ?? raw.data;
+    // ── Normalize the `normalized+json+2.1` envelope → internal shape ──
+    // Real schema (captured live 2026-06-29 — see docs/manual-bulk-reply-check-SCHEMA.md):
+    //   { data: { data: { messengerConversationsBySyncToken: { "*elements": [URN refs] } } },
+    //     included: [ Conversation | Message | MessagingParticipant ... ] }
+    // The conversation node only holds URN string REFERENCES (`*elements`); the real
+    // objects live in the flat `included[]` array. We index `included` by entityUrn and
+    // resolve references by hand.
+    const dataData = raw.data?.data ?? raw.data ?? {};
+    const convKey = Object.keys(dataData).find(k => /messengerConversations/i.test(k));
+    const convNode = convKey ? dataData[convKey] : null;
 
-    const elementsRaw = Array.isArray(payload?.elements) ? payload.elements : [];
-    const elements = elementsRaw.map(normalizeConversation).filter(Boolean);
-    return { elements, metadata: payload?.metadata || null };
+    // `*elements` = URN refs; older shape `elements` = inline objects (kept as a fallback).
+    const refs = Array.isArray(convNode?.['*elements']) ? convNode['*elements']
+               : Array.isArray(convNode?.elements) ? convNode.elements
+               : [];
+
+    const index = new Map();
+    for (const e of (Array.isArray(raw.included) ? raw.included : [])) {
+      if (e && e.entityUrn) index.set(e.entityUrn, e);
+    }
+
+    const elements = refs
+      .map(ref => (typeof ref === 'string' ? index.get(ref) : ref))
+      .map(rawConv => normalizeConversation(rawConv, index))
+      .filter(Boolean);
+
+    return { elements, metadata: convNode?.metadata || null };
   } catch (err) {
     console.warn(`[helpers] getConversationsPage failed: ${err.message || err}`);
     return null;
   }
 }
 
+/** Extract the fsd_profile token from any messaging/participant/conversation URN. */
+function fsdFromUrn(urn) {
+  const s = String(urn || '');
+  const i = s.indexOf('fsd_profile:');
+  if (i === -1) return '';
+  return s.slice(i + 'fsd_profile:'.length).replace(/[),].*$/, '');
+}
+
+/** Best-effort avatar URL from a MemberParticipantInfo.profilePicture VectorImage. */
+function buildPhotoUrl(pic) {
+  const root = pic?.rootUrl;
+  const seg = pic?.artifacts?.find(a => a.width === 100)?.fileIdentifyingUrlPathSegment
+           || pic?.artifacts?.[0]?.fileIdentifyingUrlPathSegment;
+  return root && seg ? `${root}${seg}` : '';
+}
+
+/** MessagingParticipant included entity → flat identity (superset of the old shape). */
+function participantIdentity(p) {
+  if (!p || typeof p !== 'object') return null;
+  const member = p.participantType?.member;
+  const fsdProfile = fsdFromUrn(p.hostIdentityUrn || p.entityUrn || '');
+  const memberId = String(p.backendUrn || '').replace(/^urn:li:member:/, '');
+  return {
+    // Old fields (keep the scheduler path working) …
+    firstName: member?.firstName?.text || '',
+    lastName: member?.lastName?.text || '',
+    profileUrl: member?.profileUrl || '',
+    // … new identity fields for the memberId-primary matcher
+    fsdProfile,
+    memberId: /^\d+$/.test(memberId) ? memberId : '',
+    headline: member?.headline?.text || '',
+    distance: member?.distance || '',
+    photoUrl: buildPhotoUrl(member?.profilePicture),
+  };
+}
+
 /**
- * Normalize a raw LinkedIn conversation → internal shape.
- * Defensive: returns null if any required field is missing.
+ * Normalize one resolved Conversation included entity → internal shape.
+ * `index` is the entityUrn→entity Map over `included` (to resolve participant/message refs).
+ *
+ * Output shape is a SUPERSET of the legacy shape: `participants` holds only the OTHER
+ * party (self excluded, so participants[0] === the lead and length===1 means 1:1), and
+ * `lastMessage.actor` is the resolved sender. Adds `memberId`/`fsdProfile` per participant.
  */
-function normalizeConversation(raw) {
+function normalizeConversation(raw, index = new Map()) {
   if (!raw || typeof raw !== 'object') return null;
 
   const backendUrn = String(raw.backendUrn || '');
@@ -1448,38 +1510,45 @@ function normalizeConversation(raw) {
                    String(raw.entityUrn || '').split(',').pop()?.replace(/\)$/, '') ||
                    '';
 
-  const participants = (raw.conversationParticipants || [])
-    .map(p => {
-      const member = p?.participantType?.member;
-      if (!member) return null;
-      return {
-        firstName: member.firstName?.text || '',
-        lastName: member.lastName?.text || '',
-        profileUrl: member.profileUrl || '',
-      };
-    })
-    .filter(Boolean);
+  // "Me" (the viewer) anchors the conversation entityUrn tuple:
+  //   urn:li:msg_conversation:(urn:li:fsd_profile:<ME>, <threadId>)
+  const meFsd = fsdFromUrn(raw.entityUrn || '');
 
-  const lastMessageRaw = raw.messages?.elements?.[0];
+  const participantRefs = Array.isArray(raw['*conversationParticipants'])
+    ? raw['*conversationParticipants'] : [];
+  const allParticipants = participantRefs
+    .map(ref => participantIdentity(typeof ref === 'string' ? index.get(ref) : ref))
+    .filter(Boolean);
+  // Exclude self → participants[0] is the lead; length===1 means a 1:1 thread.
+  const participants = allParticipants.filter(p => !meFsd || p.fsdProfile !== meFsd);
+
+  // Latest message lives behind a URN ref in messages.*elements.
+  const msgRef = raw.messages?.['*elements']?.[0] ?? raw.messages?.elements?.[0];
+  const lastMessageRaw = typeof msgRef === 'string' ? index.get(msgRef) : msgRef;
   let lastMessage = null;
   if (lastMessageRaw) {
-    const actorMember = lastMessageRaw.actor?.participantType?.member;
+    const senderRef = lastMessageRaw['*sender'] ?? lastMessageRaw['*actor'];
+    const actor = participantIdentity(typeof senderRef === 'string' ? index.get(senderRef) : senderRef);
+    const senderFsd = actor?.fsdProfile || fsdFromUrn(senderRef);
     lastMessage = {
       text: lastMessageRaw.body?.text || '',
       deliveredAt: lastMessageRaw.deliveredAt || raw.lastActivityAt || 0,
-      actor: actorMember ? {
-        firstName: actorMember.firstName?.text || '',
-        lastName: actorMember.lastName?.text || '',
-        profileUrl: actorMember.profileUrl || '',
-      } : null,
+      actor: actor || null,
+      // Inbound reply iff the last sender is not the viewer.
+      isInbound: !!(meFsd && senderFsd && senderFsd !== meFsd),
     };
   }
 
   return {
     entityUrn: raw.entityUrn || '',
     threadId,
+    backendUrn,
+    conversationUrl: raw.conversationUrl || '',
     lastActivityAt: raw.lastActivityAt || 0,
     unreadCount: raw.unreadCount || 0,
+    read: raw.read === true,
+    groupChat: raw.groupChat === true,
+    meFsd,
     participants,
     lastMessage,
   };
