@@ -1903,6 +1903,25 @@
       </div>
     </div>
 
+    <!-- Check DMs mode — A3 reply-check split view. Shown only when mode === 'check_dms'. -->
+    <div class="section" id="reply-sweep-panel" style="display:none">
+      <div class="rsweep-toolbar">
+        <span class="rsweep-eyebrow" id="rsweep-eyebrow" style="display:none"></span>
+        <span class="rsweep-spacer"></span>
+        <label class="rsweep-dry" title="When on, the sweep only previews replies — it never writes to the sheet.">
+          <input type="checkbox" id="rsweep-dryrun" checked />
+          <span class="rsweep-dry-label">Preview only — don't write to the sheet</span>
+        </label>
+        <button class="rsweep-cta" id="rsweep-run">Check replies now</button>
+        <button class="rsweep-stop" id="rsweep-stop" style="display:none">Stop now</button>
+      </div>
+      <div class="rsweep-log" id="rsweep-log"></div>
+      <div class="rsweep-split">
+        <div class="rsweep-list" id="rsweep-list"><!-- grouped Campaign replies / Unmatched, rendered by JS --></div>
+        <div class="rsweep-pane" id="rsweep-pane"><div class="rsweep-empty">Run a check, then pick a reply to read it here.</div></div>
+      </div>
+    </div>
+
     <div class="section collapsible" id="nav-launch">
       <h2 class="section-toggle" onclick="toggleSection('nav-launch')"><span class="caret">▾</span> <span data-edit="h2-launch">6. Launch</span> <span class="section-summary" id="summary-launch"></span></h2>
       <div class="collapsible-body">

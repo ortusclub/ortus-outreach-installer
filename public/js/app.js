@@ -2110,6 +2110,24 @@ function onModeChange() {
     // TDZ crash (fgChips accessed before init) for an entire debugging session.
     try { initFollowerGrowth(); } catch (e) { console.error('[FG] initFollowerGrowth failed:', e && e.message); }
   }
+
+  // Check DMs — self-contained A3 reply-check view, mirrors the Follower Growth
+  // takeover. Hide the entire campaign apparatus (incl. the old check-dms
+  // coverage panel + replies section) and show #reply-sweep-panel.
+  const rsweepPanel = document.getElementById('reply-sweep-panel');
+  if (rsweepPanel) rsweepPanel.style.display = isCheckDms ? '' : 'none';
+  if (isCheckDms) {
+    if (cdPanel) cdPanel.style.display = 'none';
+    if (repliesSection) repliesSection.style.display = 'none';
+    if (navAccounts) navAccounts.style.display = 'none';
+    if (navPace) navPace.style.display = 'none';
+    if (navTemplates) navTemplates.style.display = 'none';
+    if (navSheet) navSheet.style.display = 'none';
+    if (dailyKnob) dailyKnob.style.display = 'none';
+    if (navLaunch) navLaunch.style.display = 'none';
+    if (runBar) runBar.style.display = 'none';
+    try { rsweepPoll(); } catch (_) {}
+  }
   // Re-evaluate the generic Live Status section now that the mode changed — so a
   // prior finished campaign's card hides the moment we enter FG view (v2.119.2).
   try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
@@ -3375,9 +3393,6 @@ const MODE_LIST = [
   {
     value: 'check_dms',
     name: 'Check DMs',
-    // Parked per operator request — greyed + non-clickable like Post Amplification.
-    disabled: true,
-    disabledReason: 'Check DMs is unavailable.',
     bullets: [
       'Scan LinkedIn inboxes for new replies',
       'Append new messages to the Replies tab',
@@ -17445,3 +17460,118 @@ if (document.readyState === 'loading') {
   _lcInit();
 }
 
+
+// ── Check DMs / reply-check (A3 split) controller ────────────────────────────
+let _rsweepTimer = null;
+let _rsweepSel = null;     // threadId of the reply shown in the read pane
+let _rsweepLast = null;    // last status, so list clicks can re-render the pane
+
+function rsweepEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// Flat, ordered list of every reply (campaign first, then unmatched) for selection.
+function rsweepAll(s) {
+  return [...(s.campaignReplies || []).map((r) => ({ ...r, group: 'campaign' })),
+          ...(s.unmatched || []).map((r) => ({ ...r, group: 'unmatched' }))];
+}
+
+function rsweepListItem(r) {
+  const tag = r.suspected ? `<span class="rsweep-suspect">same-name</span>` : '';
+  const sel = r.threadId && r.threadId === _rsweepSel ? ' sel' : '';
+  return `<div class="rsweep-item${sel}" data-tid="${rsweepEsc(r.threadId)}">
+    <div class="rsweep-item-nm">${rsweepEsc(r.leadName)}${tag}</div>
+    <div class="rsweep-item-snip">${rsweepEsc(r.snippet)}</div></div>`;
+}
+
+function rsweepPane(r) {
+  if (!r) return `<div class="rsweep-empty">Run a check, then pick a reply to read it here.</div>`;
+  const when = r.timestamp ? new Date(r.timestamp).toLocaleString() : '';
+  const url = r.conversationUrl || (r.threadId ? `https://www.linkedin.com/messaging/thread/${rsweepEsc(r.threadId)}/` : '') || r.linkedinUrl || r.profileUrl || '';
+  const tag = r.suspected ? `<span class="rsweep-suspect">same-name</span>` : '';
+  return `<div class="rsweep-pane-head"><div class="rsweep-pane-nm">${rsweepEsc(r.leadName)}${tag}</div>
+      <div class="rsweep-pane-meta">${rsweepEsc(r.account || '')}${when ? ` · ${rsweepEsc(when)}` : ''}</div></div>
+    <div class="rsweep-bubble">${rsweepEsc(r.snippet)}</div>
+    ${url ? `<a class="rsweep-chip" href="${rsweepEsc(url)}" target="_blank" rel="noopener">↗ open thread in linkedin</a>` : ''}
+    <span class="rsweep-chip" title="Stage write-back happens during a non-preview sweep">✓ mark replied in sheet</span>`;
+}
+
+function rsweepRender(s) {
+  if (!s) return;
+  _rsweepLast = s;
+  const eyebrow = document.getElementById('rsweep-eyebrow');
+  const runBtn = document.getElementById('rsweep-run');
+  const stopBtn = document.getElementById('rsweep-stop');
+  const log = document.getElementById('rsweep-log');
+  if (!eyebrow) return;
+  const camp = s.campaignReplies || [], unm = s.unmatched || [];
+  if (s.running) {
+    eyebrow.style.display = '';
+    eyebrow.textContent = `Scanning ${rsweepEsc(s.currentProfile || '…')} · ${s.doneProfiles || 0}/${s.totalProfiles || 0} accounts`;
+    if (runBtn) runBtn.disabled = true;
+    if (stopBtn) stopBtn.style.display = '';
+  } else {
+    eyebrow.style.display = (s.phase === 'done' || s.phase === 'error') ? '' : 'none';
+    if (s.phase === 'done') eyebrow.textContent = `Done · ${camp.length} reply(ies), ${unm.length} unmatched${s.dryRun ? '' : ` · ${s.wrote || 0} written`}`;
+    if (s.phase === 'error') eyebrow.textContent = `Error — ${rsweepEsc(s.error || '')}`;
+    if (runBtn) runBtn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+  if (log) log.textContent = s.logs && s.logs.length ? s.logs[s.logs.length - 1] : '';
+
+  const all = rsweepAll(s);
+  if (!_rsweepSel && all.length) _rsweepSel = all[0].threadId; // auto-select first
+  const list = document.getElementById('rsweep-list');
+  if (list) list.innerHTML =
+    `<div class="rsweep-grp">Campaign replies · ${camp.length}</div>` +
+    (camp.length ? camp.map(rsweepListItem).join('') : `<div class="rsweep-empty">None</div>`) +
+    `<div class="rsweep-grp">Unmatched · ${unm.length}</div>` +
+    (unm.length ? unm.map(rsweepListItem).join('') : `<div class="rsweep-empty">None</div>`);
+  const pane = document.getElementById('rsweep-pane');
+  if (pane) pane.innerHTML = rsweepPane(all.find((r) => r.threadId === _rsweepSel) || all[0] || null);
+}
+
+async function rsweepPoll() {
+  try {
+    const s = await fetch('/api/reply-sweep/status').then((r) => r.json());
+    rsweepRender(s);
+    if (!s.running && _rsweepTimer) { clearInterval(_rsweepTimer); _rsweepTimer = null; }
+  } catch (_) { /* transient */ }
+}
+
+async function rsweepStart() {
+  const dryRun = document.getElementById('rsweep-dryrun')?.checked !== false;
+  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
+  _rsweepSel = null; // re-select first reply of the new run
+  try {
+    const resp = await fetch('/api/reply-sweep/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheetUrl, dryRun }),
+    });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); showCampaignToast(e.error || 'Could not start reply sweep', 3500); return; }
+    if (_rsweepTimer) clearInterval(_rsweepTimer);
+    _rsweepTimer = setInterval(rsweepPoll, 700);
+    rsweepPoll();
+  } catch (e) { showCampaignToast(`Reply sweep failed: ${e.message}`, 3500); }
+}
+
+async function rsweepStop() { try { await fetch('/api/reply-sweep/stop', { method: 'POST' }); } catch (_) {} }
+
+function rsweepBind() {
+  const run = document.getElementById('rsweep-run');
+  const stop = document.getElementById('rsweep-stop');
+  const list = document.getElementById('rsweep-list');
+  if (run && !run._rsweepBound) { run._rsweepBound = true; run.addEventListener('click', rsweepStart); }
+  if (stop && !stop._rsweepBound) { stop._rsweepBound = true; stop.addEventListener('click', rsweepStop); }
+  if (list && !list._rsweepBound) {
+    list._rsweepBound = true;
+    list.addEventListener('click', (e) => {           // pick a reply → read pane
+      const item = e.target.closest('.rsweep-item');
+      if (!item || !_rsweepLast) return;
+      _rsweepSel = item.getAttribute('data-tid');
+      rsweepRender(_rsweepLast);
+    });
+  }
+}
+document.addEventListener('DOMContentLoaded', rsweepBind);
+if (document.readyState !== 'loading') rsweepBind();
+window.rsweepStart = rsweepStart;
+window.rsweepStop = rsweepStop;
