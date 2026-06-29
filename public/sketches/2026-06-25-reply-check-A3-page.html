@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reply check — A3 full view (split read pane)</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+<style>
+  .route-view { display:block !important; }
+  .crumb { font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 14px; }
+  .crumb a { color:var(--gray); text-decoration:none; }
+  .rc-toolbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:0 0 10px; }
+  .rc-toolbar .spacer { flex:1; }
+  .rc-dry { display:flex; align-items:center; gap:8px; font-size:.76rem; color:var(--gray); } .rc-dry input { accent-color:var(--gold); }
+  .rc-cta { background:var(--gold); color:#0a0a0a; border:none; border-radius:9999px; padding:10px 20px; font-family:var(--mono); font-size:.64rem; letter-spacing:.12em; text-transform:uppercase; font-weight:700; cursor:pointer; }
+  .rc-eyebrow { font-family:var(--mono); font-size:.56rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); border:1px solid var(--hairline); border-radius:9999px; padding:4px 10px; }
+  .rc-log { font-family:var(--mono); font-size:.68rem; color:var(--gray); opacity:.8; margin:8px 0 18px; }
+  .rc-av { border-radius:9999px; border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center; font-family:var(--display); color:var(--gray); flex:0 0 auto; }
+  .rc-nm { font-weight:700; color:var(--ink); }
+  .rc-snip { color:var(--gray); }
+  .rc-suspect { font-family:var(--mono); font-size:.5rem; letter-spacing:.06em; text-transform:uppercase; color:var(--gold); border:1px solid var(--gold); border-radius:9999px; padding:1px 6px; margin-left:6px; }
+  .rc-chip { font-family:var(--mono); font-size:.54rem; letter-spacing:.08em; text-transform:uppercase; border:1px solid var(--hairline); border-radius:9999px; padding:4px 11px; color:var(--gray); cursor:pointer; }
+
+  .a3 { display:grid; grid-template-columns: 340px 1fr; border:1px solid var(--hairline); border-radius:12px; overflow:hidden; min-height:520px; }
+  .a3list { border-right:1px solid var(--hairline); overflow:auto; }
+  .a3grp { font-family:var(--mono); font-size:.56rem; letter-spacing:.12em; text-transform:uppercase; color:var(--gray); padding:14px 15px 6px; }
+  .a3item { padding:12px 15px; border-bottom:1px solid var(--hairline-soft); cursor:pointer; display:flex; gap:10px; align-items:flex-start; }
+  .a3item.sel { background:var(--gold-tint-bg); box-shadow:inset 2px 0 0 var(--gold); }
+  .a3item .rc-av { width:28px; height:28px; font-size:.8rem; }
+  .a3item .rc-nm { font-size:.82rem; }
+  .a3item .rc-snip { font-size:.74rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .a3pane { padding:24px 26px; }
+  .a3pane .ph { display:flex; align-items:center; gap:13px; margin-bottom:4px; }
+  .a3pane .ph .rc-av { width:44px; height:44px; font-size:1.2rem; }
+  .a3pane .big { font-family:var(--display); font-size:1.7rem; line-height:1; }
+  .a3meta { font-size:.74rem; color:var(--gray); margin-top:3px; }
+  .a3bubble { background:var(--bg-soft); border:1px solid var(--hairline); border-radius:12px; padding:15px 17px; font-size:.92rem; color:var(--ink); line-height:1.55; margin:18px 0; max-width:580px; }
+  .a3acts { display:flex; gap:10px; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-wordmark">Ortus <em>Outreach</em></div><div class="sidebar-sub">LinkedIn · v2.122.0</div></div>
+    <nav class="sidebar-nav">
+      <button class="nav-item nav-item-back"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button class="nav-item"><span class="nav-num">I.</span>Campaign Type</button>
+      <button class="nav-item"><span class="nav-num">II.</span>Data</button>
+      <button class="nav-item"><span class="nav-num">III.</span>LinkedIn Accounts</button>
+      <button class="nav-item"><span class="nav-num">IV.</span>Campaign Settings</button>
+      <button class="nav-item"><span class="nav-num">V.</span>Launch</button>
+      <button class="nav-item">Live Status</button>
+      <div class="nav-section-label">Team</div>
+      <button class="nav-item"><span class="nav-num">◆</span>Connection DB</button>
+      <div class="nav-section-label">Review</div>
+      <button class="nav-item">Open log</button>
+      <button class="nav-item" style="color:var(--gold);box-shadow:inset 2px 0 0 var(--gold)">Reply check</button>
+    </nav>
+  </aside>
+
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title"><div class="greeting-wordmark">Reply check</div><div class="greeting-subtitle"><span>Read &amp; triage every reply in one place</span></div></div>
+    </div>
+
+    <div class="route-view">
+      <div class="crumb"><a href="2026-06-25-reply-check-B3-placement.html">← back to dashboard</a> &nbsp;·&nbsp; full view</div>
+      <div class="dashboard-header"><h1 class="dashboard-title">Reply check</h1></div>
+
+      <div class="rc-toolbar">
+        <span class="rc-eyebrow">Done · 2 replies, 2 unmatched</span>
+        <span class="spacer"></span>
+        <label class="rc-dry"><input type="checkbox" checked /> Preview only — don't write to the sheet</label>
+        <button class="rc-cta">Check replies now</button>
+      </div>
+      <div class="rc-log">📬 1 account scanned · 2 campaign replies, 2 unmatched · 20 conversations</div>
+
+      <div class="a3">
+        <div class="a3list">
+          <div class="a3grp">Campaign replies · 2</div>
+          <div class="a3item sel"><div class="rc-av">L</div><div><div class="rc-nm">Luca Coppone</div><div class="rc-snip">Buongiorno, scusate il ritardo nella risposta…</div></div></div>
+          <div class="a3item"><div class="rc-av">E</div><div><div class="rc-nm">Elena Del Boca</div><div class="rc-snip">Molto! Si è creata una bella conversazione…</div></div></div>
+          <div class="a3grp">Unmatched · 2</div>
+          <div class="a3item"><div class="rc-av">L</div><div><div class="rc-nm">Lucia Porta</div><div class="rc-snip">Hi Antonio, I'm reaching out because we have a…</div></div></div>
+          <div class="a3item"><div class="rc-av">A</div><div><div class="rc-nm">Arjohn Capucion</div><div class="rc-snip">Hi Antonio, I received an email through my company…</div></div></div>
+        </div>
+        <div class="a3pane">
+          <div class="ph"><div class="rc-av">L</div><div><div class="big">Luca Coppone</div><div class="a3meta">member 269709976 ✓ matched · replied to pavan.p@ortus.solutions · stage: Connected</div></div></div>
+          <div class="a3bubble">Buongiorno, scusate il ritardo nella risposta, finalmente riesco a rispondervi. Volentieri, organizziamo una call la prossima settimana per parlarne con calma.</div>
+          <div class="a3acts"><span class="rc-chip">↗ open thread in linkedin</span><span class="rc-chip">✓ mark replied in sheet</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </main>
+</div>
+
+<div style="position:fixed;bottom:0;left:0;right:0;background:#000;color:#888;font-family:'JetBrains Mono',monospace;font-size:11px;padding:8px 16px;border-top:1px solid rgba(255,255,255,.15);text-align:center;z-index:60">
+  A3 FULL VIEW · its own page (sidebar → Reply check, or "Open full view" from the dashboard drawer) · click a name on the left → read it on the right
+</div>
+</body>
+</html>
