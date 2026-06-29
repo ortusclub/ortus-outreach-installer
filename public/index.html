@@ -1905,6 +1905,12 @@
 
     <!-- Check DMs mode — A3 reply-check split view. Shown only when mode === 'check_dms'. -->
     <div class="section" id="reply-sweep-panel" style="display:none">
+      <div class="rsweep-setup">
+        <input type="text" id="rsweep-sheet" class="rsweep-sheet-input" placeholder="Paste the Google Sheet URL…" />
+        <select id="rsweep-account" class="rsweep-account-select" title="Which account's inbox to read">
+          <option value="">All accounts that sent leads</option>
+        </select>
+      </div>
       <div class="rsweep-toolbar">
         <span class="rsweep-eyebrow" id="rsweep-eyebrow" style="display:none"></span>
         <span class="rsweep-spacer"></span>

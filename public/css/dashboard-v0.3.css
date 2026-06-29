@@ -983,6 +983,10 @@
 
 /* ── Check DMs mode — A3 reply-check split view (mirrors public/sketches/2026-06-25-reply-check-A3-page.html) ── */
 #reply-sweep-panel { border: none; }
+.rsweep-setup { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
+.rsweep-sheet-input { flex: 1 1 420px; min-width: 280px; background: var(--bg-soft); border: 1px solid var(--hairline); border-radius: 9999px; padding: 9px 16px; font-family: var(--mono); font-size: .72rem; color: var(--ink); }
+.rsweep-sheet-input::placeholder { color: var(--gray); }
+.rsweep-account-select { flex: 0 0 auto; background: var(--bg-soft); border: 1px solid var(--hairline); border-radius: 9999px; padding: 9px 14px; font-family: var(--mono); font-size: .68rem; color: var(--ink); cursor: pointer; }
 .rsweep-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 10px; }
 .rsweep-spacer { flex: 1; }
 .rsweep-eyebrow { font-family: var(--mono); font-size: .56rem; letter-spacing: .12em; text-transform: uppercase; color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; }

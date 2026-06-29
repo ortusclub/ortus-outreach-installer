@@ -2128,6 +2128,7 @@ function onModeChange() {
     if (dailyKnob) dailyKnob.style.display = 'none';
     if (navLaunch) navLaunch.style.display = 'none';
     if (runBar) runBar.style.display = 'none';
+    try { rsweepInitControls(); } catch (_) {}
     try { rsweepPoll(); } catch (_) {}
   }
   // Re-evaluate the generic Live Status section now that the mode changed — so a
@@ -17541,12 +17542,18 @@ async function rsweepPoll() {
 
 async function rsweepStart() {
   const dryRun = document.getElementById('rsweep-dryrun')?.checked !== false;
-  const sheetUrl = document.getElementById('sheet-url')?.value?.trim() || '';
+  // Sheet: the panel's own field first, falling back to the global #sheet-url / running campaign.
+  const sheetUrl = (document.getElementById('rsweep-sheet')?.value?.trim())
+    || (document.getElementById('sheet-url')?.value?.trim()) || '';
+  // Account: blank = all sender accounts in the sheet; otherwise sweep just the chosen profile.
+  const acct = document.getElementById('rsweep-account')?.value || '';
+  const profileIds = acct ? [acct] : undefined;
+  if (!sheetUrl) { showCampaignToast('Paste the Google Sheet URL first', 3000); return; }
   _rsweepSel = null; // re-select first reply of the new run
   try {
     const resp = await fetch('/api/reply-sweep/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sheetUrl, dryRun }),
+      body: JSON.stringify({ sheetUrl, profileIds, dryRun }),
     });
     if (!resp.ok) { const e = await resp.json().catch(() => ({})); showCampaignToast(e.error || 'Could not start reply sweep', 3500); return; }
     if (_rsweepTimer) clearInterval(_rsweepTimer);
@@ -17556,6 +17563,29 @@ async function rsweepStart() {
 }
 
 async function rsweepStop() { try { await fetch('/api/reply-sweep/stop', { method: 'POST' }); } catch (_) {} }
+
+// Populate the panel's sheet field + account dropdown when entering check_dms mode.
+// Sheet pre-fills from the global #sheet-url; accounts come from /api/profiles (same
+// source the LinkedIn Accounts section uses). Safe to call repeatedly.
+async function rsweepInitControls() {
+  const sheetField = document.getElementById('rsweep-sheet');
+  if (sheetField && !sheetField.value) {
+    const global = document.getElementById('sheet-url')?.value?.trim() || '';
+    if (global) sheetField.value = global;
+  }
+  const sel = document.getElementById('rsweep-account');
+  if (!sel || sel._rsweepFilled) return;
+  try {
+    const res = await fetch('/api/profiles');
+    if (!res.ok) return;
+    const data = await res.json();
+    const profiles = Array.isArray(data) ? data : (data.profiles || []);
+    const opts = ['<option value="">All accounts that sent leads</option>']
+      .concat(profiles.map((p) => `<option value="${rsweepEsc(p.id)}">${rsweepEsc(p.name || p.id)}</option>`));
+    sel.innerHTML = opts.join('');
+    sel._rsweepFilled = true;
+  } catch (_) { /* leave the default "all" option */ }
+}
 
 function rsweepBind() {
   const run = document.getElementById('rsweep-run');
