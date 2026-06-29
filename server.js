@@ -1686,10 +1686,22 @@ app.post('/api/reply-sweep/start', async (req, res) => {
     for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
   } catch { /* fall back to id-as-name */ }
 
+  // Reply-sweep eligibility is BROADER than the DM-only CHECK_DMS_STAGE_FILTER:
+  // anyone we've actually engaged can reply, including connection campaigns
+  // (Stage "Connected", "Introduction Made", etc.). We exclude only leads that
+  // can't have replied — still-pending connects, skipped rows, and blanks.
   const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
-  const candidateRows = rows.filter((row) =>
-    hasStageSchema ? CHECK_DMS_STAGE_FILTER.has(String(row.Stage || '').trim())
-                   : String(row.Message || '').trim().toLowerCase() === 'sent');
+  const isReplyEligible = (row) => {
+    if (hasStageSchema) {
+      const stage = String(row.Stage || '').trim();
+      if (!stage) return false;
+      if (/^Skipped/i.test(stage)) return false;
+      if (/^Connect Pending$/i.test(stage)) return false;
+      return true; // Connected, Introduction *, DM/IC/OP/InM Sent, Replied, …
+    }
+    return String(row.Message || '').trim().toLowerCase() === 'sent';
+  };
+  const candidateRows = rows.filter(isReplyEligible);
 
   const wanted = Array.isArray(profileIds) && profileIds.length ? profileIds.slice() : null;
   const leadsByProfile = new Map();

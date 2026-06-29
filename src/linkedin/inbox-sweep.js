@@ -55,10 +55,10 @@ function fullName(firstName, lastName) {
   return `${normName(firstName)} ${normName(lastName)}`.trim();
 }
 
-/** Numeric memberId from a sheet row ('Linkedin Member' / 'Linkedin Member ID' / 'memberId'). */
+/** Numeric memberId from a sheet row ('Linkedin Membership ID' / 'Linkedin Member' / 'memberId' …). */
 export function rowMemberId(row) {
   if (!row || typeof row !== 'object') return '';
-  for (const k of ['Linkedin Member', 'LinkedIn Member', 'Linkedin Member ID', 'memberId', 'Member ID']) {
+  for (const k of ['Linkedin Membership ID', 'LinkedIn Membership ID', 'Linkedin Member', 'LinkedIn Member', 'Linkedin Member ID', 'memberId', 'Member ID']) {
     const v = String(row[k] ?? '').trim();
     if (/^\d{4,}$/.test(v)) return v;
   }
