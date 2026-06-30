@@ -106,9 +106,27 @@ export class InviteModalUnavailableError extends Error {
   constructor(message) { super(message); this.name = 'InviteModalUnavailableError'; this.softSkip = true; }
 }
 
+// LinkedIn bounces a logged-out session to one of these paths instead of the
+// invite page. Detected from page.url() right after goto so we skip in ms instead
+// of waiting out the 2-min modal timeout, and report it distinctly (re-login needed).
+const LOGGED_OUT_RE = /linkedin\.com\/(login|authwall|checkpoint|uas\/login)/i;
+export function isLoggedOutUrl(url) {
+  return LOGGED_OUT_RE.test(String(url || ''));
+}
+
+export class LoggedOutError extends Error {
+  constructor(message) { super(message); this.name = 'LoggedOutError'; this.softSkip = true; this.loggedOut = true; }
+}
+
 export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) {
   // Operators run on slow/overloaded laptops; the invite page can take a while.
   await page.goto(inviteUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  // Logged-out session redirects to a login/authwall URL — detect it now and skip
+  // fast with a distinct error instead of waiting 2 min for a modal that won't mount.
+  const landed = await page.url();
+  if (isLoggedOutUrl(landed)) {
+    throw new LoggedOutError('account is logged out of LinkedIn — re-login needed before it can send follow invites');
+  }
   // Up to 2 min: a real admin's modal can take a long time to mount on a slow/
   // overloaded machine, and we must NOT cut it short and mislabel them. Even an
   // exhausted admin gets a "No remaining invite credits" modal — let it appear,

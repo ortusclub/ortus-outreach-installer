@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCreditsAvailable, parseCreditsMeta, headlineMatches, pickInviteResult, waitForModalContent } from '../../src/linkedin/follower-invite.js';
+import { parseCreditsAvailable, parseCreditsMeta, headlineMatches, pickInviteResult, waitForModalContent, isLoggedOutUrl } from '../../src/linkedin/follower-invite.js';
 
 test('parseCreditsMeta extracts available, allowance, and refill date', () => {
   const t = 'Send your connections an invitation... 5/30 credits available · Credit refill: June 30, 2026 Locations';
@@ -61,6 +61,16 @@ test('waitForModalContent times out when neither search box nor rows ever render
   const r = await waitForModalContent(page, { timeoutMs: 1000, pollMs: 250, sleep: async () => {}, now: () => { const v = clock; clock += 250; return v; } });
   assert.equal(r.ready, false);
   assert.equal(r.via, 'timeout');
+});
+
+test('isLoggedOutUrl flags login / authwall / checkpoint redirects', () => {
+  assert.equal(isLoggedOutUrl('https://www.linkedin.com/login'), true);
+  assert.equal(isLoggedOutUrl('https://www.linkedin.com/authwall?trk=x'), true);
+  assert.equal(isLoggedOutUrl('https://www.linkedin.com/checkpoint/lg/login-submit'), true);
+  assert.equal(isLoggedOutUrl('https://www.linkedin.com/uas/login?goback='), true);
+  assert.equal(isLoggedOutUrl('https://www.linkedin.com/company/the-ortus-club/admin/'), false);
+  assert.equal(isLoggedOutUrl(''), false);
+  assert.equal(isLoggedOutUrl(null), false);
 });
 
 test('parseCreditsAvailable reads the leading number', () => {
