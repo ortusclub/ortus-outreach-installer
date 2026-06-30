@@ -2467,12 +2467,24 @@ async function stopScrapeJob() {
   stopScrapePolling();
 }
 
-// Apply a control action to every selected account's job (each is keyed by
-// profileId on the engine).
+// Apply a control action (pause/stop) keyed by profileId on the engine.
+// Targets every account that's actually RUNNING or QUEUED — fetched live from
+// the engine — UNIONed with any currently-selected accounts. Reading the live
+// engine state (not just the in-memory selection) means STOP/PAUSE keep working
+// after a page refresh, when selectedProfileIds has reset to []. (Bug fix:
+// previously a refresh left nothing to target, so STOP silently did nothing.)
 async function _scrapeControlAll(path) {
-  const accts = scrapeSelectedAccounts();
-  if (!accts.length) return;
-  for (const profileId of accts) {
+  const targets = new Set(scrapeSelectedAccounts());
+  try {
+    const r = await fetch('/api/scrape/jobs');
+    const res = await r.json();
+    const jobs = Array.isArray(res) ? res : (res.jobs || []);
+    for (const j of jobs) {
+      if ((j.state === 'running' || j.state === 'queued') && j.profileId) targets.add(j.profileId);
+    }
+  } catch (_) { /* fall back to the in-memory selection */ }
+  if (!targets.size) return;
+  for (const profileId of targets) {
     try {
       await fetch(path, {
         method: 'POST',
