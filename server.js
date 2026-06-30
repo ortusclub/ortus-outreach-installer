@@ -1414,7 +1414,7 @@ app.get('/api/fg/colleagues', async (req, res) => {
     try {
       const { invites } = await getFgState();
       alreadyInvited = (invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
-    } catch (_) { /* FG sheet unreachable — fall back to raw matched counts */ }
+    } catch (_) { console.warn('[fg/colleagues] FG sheet unreachable — falling back to raw matched counts:', _.message); }
     res.json({ colleagues: listFgColleaguesMatched(roles, { alreadyInvited }) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

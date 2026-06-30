@@ -136,3 +136,14 @@ test('classifySkip = already-follows when name matches but not invitable', () =>
   assert.equal(classifySkip([{ name: 'Someone Else', headline: '', canInvite: false }], person), 'no-match');
   assert.equal(classifySkip([], person), 'no-match');
 });
+
+test('classifySkip = no-match when name-matched result has canInvite:true', () => {
+  const person = { name: 'Mara Lee' };
+  // Name matches but canInvite is true → LinkedIn CAN invite them → not 'already-follows'
+  assert.equal(classifySkip([{ name: 'Mara Lee', headline: '', canInvite: true }], person), 'no-match');
+});
+
+test('classifySkip = already-follows when ALL name-matched results have canInvite:false', () => {
+  const person = { name: 'Mara Lee' };
+  assert.equal(classifySkip([{ name: 'Mara Lee', headline: '', canInvite: false }], person), 'already-follows');
+});

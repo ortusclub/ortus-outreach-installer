@@ -67,9 +67,11 @@ export function pickInviteResult(results, person) {
 // otherwise 'no-match' (no invitable name match at all).
 export function classifySkip(results, person) {
   const target = ((person && person.name) || '').trim().toLowerCase();
-  const nameHit = (results || []).some((r) =>
+  const nameMatched = (results || []).filter((r) =>
     (r.name || '').trim().toLowerCase() === target || firstLastMatches(r.name, person.name));
-  return nameHit ? 'already-follows' : 'no-match';
+  if (nameMatched.length === 0) return 'no-match';
+  if (nameMatched.some((r) => r.canInvite)) return 'no-match';
+  return 'already-follows';
 }
 
 const SEL = {
