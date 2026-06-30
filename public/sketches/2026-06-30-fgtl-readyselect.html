@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sketch · FG Team Launch — pill colors + Add-all-ready</title>
+  <!-- 1:1 with the app: load the real stylesheet so tokens/typography match exactly -->
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* ── These rules are copied verbatim from index.html's inline #nav-follower-growth
+         block so the sketch renders identically to the real Team Launch board. The
+         ONLY additions are the two new pill colors and the .fgtl-ready toolbar. ── */
+    body { background:var(--bg); color:var(--ink); padding:28px 34px; }
+    #nav-follower-growth .fgtl-step-eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); margin-bottom:10px; }
+    #nav-follower-growth .chips { display:flex; flex-wrap:wrap; gap:7px; align-items:center; border:1px solid var(--hairline); border-radius:12px; padding:9px 12px; margin-bottom:9px; }
+    #nav-follower-growth .chips input { border:none; background:none; outline:none; flex:1; min-width:150px; color:var(--ink); font-family:var(--body); font-size:13px; }
+    #nav-follower-growth .chip-tag { background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:3px 10px; font-family:var(--mono); font-size:11px; display:inline-flex; align-items:center; gap:6px; }
+    #nav-follower-growth .chip-tag .cx-chip-x { background:none; border:none; color:var(--gray); cursor:pointer; }
+    #nav-follower-growth .presets { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
+    #nav-follower-growth .presets .lbl { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray); margin-right:4px; }
+    #nav-follower-growth .preset { background:none; border:1px dashed var(--hairline); border-radius:9999px; padding:3px 10px; font-family:var(--mono); font-size:10.5px; color:var(--gray); cursor:pointer; }
+    #nav-follower-growth .filter-foot { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10.5px; color:var(--gray); }
+
+    #nav-follower-growth .fgtl-board2 { display:grid; grid-template-columns:1fr 360px; gap:18px; align-items:start; margin-top:20px; }
+    #nav-follower-growth .fgtl-search { display:flex; align-items:center; gap:9px; background:var(--bg-soft); border:1px solid var(--hairline); border-radius:9999px; padding:9px 15px; margin-bottom:14px; }
+    #nav-follower-growth .fgtl-search input { flex:1; border:none; background:none; outline:none; color:var(--ink); font-size:13px; font-family:var(--body); }
+    #nav-follower-growth .fgtl-people { max-height:560px; overflow-y:auto; padding-right:6px; }
+    #nav-follower-growth .fgtl-prow { display:grid; grid-template-columns:1fr 56px 112px; align-items:center; gap:16px; padding:13px 14px; border:1px solid var(--hairline); border-radius:12px; margin-bottom:9px; }
+    #nav-follower-growth .fgtl-prow.in { opacity:.45; }
+    #nav-follower-growth .fgtl-rowmain { min-width:0; }
+    #nav-follower-growth .fgtl-emline { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+    #nav-follower-growth .fgtl-prow .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+    #nav-follower-growth .fgtl-sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:4px; opacity:.85; }
+    #nav-follower-growth .fgtl-pillst { font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; padding:2px 9px; border-radius:9999px; border:1px solid var(--hairline); color:var(--gray); white-space:nowrap; }
+    #nav-follower-growth .fgtl-pillst.sent { color:var(--ink); border-color:var(--ink); }
+    #nav-follower-growth .fgtl-pillst.out { color:#b00020; border-color:#b00020; }
+    /* CHANGE 1 — split the old single grey ".new" pill into two coloured states: */
+    #nav-follower-growth .fgtl-pillst.ready   { color:var(--green); border-color:var(--green); }  /* "not run yet"   → GREEN (ready to go) */
+    #nav-follower-growth .fgtl-pillst.missing { color:var(--red);   border-color:var(--red);   }  /* "needs a profile" → RED (blocked)   */
+    #nav-follower-growth .fgtl-mbox { text-align:right; }
+    #nav-follower-growth .fgtl-mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; color:var(--ink); }
+    #nav-follower-growth .fgtl-mbox.zero b { color:var(--gray); }
+    #nav-follower-growth .fgtl-mbox small { display:block; font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--gray); margin-top:2px; }
+    #nav-follower-growth .fgtl-addbtn { width:112px; box-sizing:border-box; text-align:center; border:1px solid var(--ink); background:none; color:var(--ink); border-radius:9999px; padding:7px 12px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+    #nav-follower-growth .fgtl-addbtn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+    #nav-follower-growth .fgtl-refresh-btn { background:none; border:1px solid var(--hairline); border-radius:9999px; padding:5px 13px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); cursor:pointer; white-space:nowrap; }
+    #nav-follower-growth .fgtl-refresh-btn:hover { border-color:var(--ink); color:var(--ink); }
+
+    /* CHANGE 2 — "ready" quick-select toolbar: sits between the search row and the list */
+    #nav-follower-growth .fgtl-ready { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--hairline); border-radius:12px; padding:10px 14px; margin:0 0 14px; background:var(--bg-soft); }
+    #nav-follower-growth .fgtl-ready .rl { min-width:0; }
+    #nav-follower-growth .fgtl-ready .rl b { font-family:var(--display); font-size:1.15rem; color:var(--green); }
+    #nav-follower-growth .fgtl-ready .rl .lab { font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--gray); }
+    #nav-follower-growth .fgtl-ready .rl .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); opacity:.85; margin-top:3px; }
+    #nav-follower-growth .fgtl-ready-btn { border:1px solid var(--green); color:var(--green); background:none; border-radius:9999px; padding:8px 16px; font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+    #nav-follower-growth .fgtl-ready-btn:hover { background:var(--green); color:#fff; }
+    #nav-follower-growth .fgtl-ready-btn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+
+    #nav-follower-growth .fgtl-cart { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
+    #nav-follower-growth .fgtl-cart h3 { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 12px; }
+    #nav-follower-growth .fgtl-cart .empty { color:var(--gray); font-size:12.5px; text-align:center; padding:30px 10px; border:1px dashed var(--hairline); border-radius:10px; }
+    #nav-follower-growth .fgtl-cart-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--hairline); }
+    #nav-follower-growth .fgtl-cart-row .em { font-family:var(--mono); font-size:11.5px; }
+    #nav-follower-growth .fgtl-cart-row .x { background:none; border:none; color:var(--gray); cursor:pointer; }
+    #nav-follower-growth .fgtl-cart-foot { border-top:1px solid var(--hairline); margin-top:14px; padding-top:14px; }
+    #nav-follower-growth .fgtl-cart-foot .tot { display:flex; justify-content:space-between; font-family:var(--mono); font-size:12px; margin-bottom:6px; }
+    #nav-follower-growth .fgtl-cart-foot .tot b { font-family:var(--display); font-size:1.05rem; }
+    #nav-follower-growth .fgtl-go-btn { width:100%; margin-top:10px; border:1px solid var(--ink); background:var(--ink); color:var(--bg); border-radius:9999px; padding:11px; font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; cursor:pointer; }
+
+    .sk-note { max-width:1040px; margin:0 auto 18px; font-family:var(--mono); font-size:11px; color:var(--gray); border-left:2px solid var(--green); padding:6px 0 6px 12px; }
+    .sk-wrap { max-width:1040px; margin:0 auto; }
+  </style>
+</head>
+<body>
+  <div class="sk-wrap">
+    <div class="sk-note">
+      SKETCH · Team Launch board. Two changes: (1) <b style="color:var(--green)">not run yet</b> = green,
+      <b style="color:var(--red)">needs a profile</b> = red. (2) new “Add all ready” strip selects every account
+      that has a profile AND hasn’t run yet, in one click. The “+ add” buttons and the strip are clickable.
+    </div>
+
+    <div class="section" id="nav-follower-growth">
+      <h2>Follower Growth</h2>
+
+      <!-- Step 1 · role chips (unchanged) -->
+      <div class="fgtl-roles">
+        <div class="fgtl-step-eyebrow">① Which roles to invite — counts update live</div>
+        <div class="chips" id="fgtl-chips">
+          <span class="chip-tag">marketing<button class="cx-chip-x">×</button></span>
+          <span class="chip-tag">brand<button class="cx-chip-x">×</button></span>
+          <span class="chip-tag">growth<button class="cx-chip-x">×</button></span>
+          <input placeholder="add a role keyword…" autocomplete="off">
+        </div>
+        <div class="presets"><span class="lbl">Quick add</span>
+          <button class="preset">content</button><button class="preset">demand</button><button class="preset">comms</button><button class="preset">cmo</button>
+        </div>
+        <div class="filter-foot"><span>Defaults toward marketers. Applies to everyone below.</span><span>3 roles · matches in title</span></div>
+      </div>
+
+      <!-- Step 2 · browse + cart -->
+      <div class="fgtl-board2">
+        <div>
+          <div class="fgtl-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+            <input placeholder="Search the team by name or email…" autocomplete="off">
+          </div>
+          <button type="button" class="fgtl-refresh-btn">↻ Refresh status</button>
+
+          <!-- CHANGE 2 · ready quick-select strip -->
+          <div class="fgtl-ready" style="margin-top:14px">
+            <div class="rl">
+              <span class="lab">Ready to launch</span> · <b id="rdy-n">4</b> <span class="lab">accounts</span>
+              <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+            </div>
+            <button class="fgtl-ready-btn" id="rdy-btn">+ Add all ready</button>
+          </div>
+
+          <div class="fgtl-people" id="fgtl-people">
+            <!-- READY (green) -->
+            <div class="fgtl-prow" data-state="ready" data-em="alexc@ortus.solutions">
+              <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">alexc@ortus.solutions</span><span class="fgtl-pillst ready">not run yet</span></div><div class="fgtl-sub">1,071 connections</div></div>
+              <div class="fgtl-mbox"><b>91</b><small>match</small></div>
+              <button class="fgtl-addbtn" data-add="alexc@ortus.solutions">+ add</button>
+            </div>
+            <div class="fgtl-prow" data-state="ready" data-em="justin@ortus.solutions">
+              <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">justin@ortus.solutions</span><span class="fgtl-pillst ready">not run yet</span></div><div class="fgtl-sub">842 connections</div></div>
+              <div class="fgtl-mbox"><b>63</b><small>match</small></div>
+              <button class="fgtl-addbtn" data-add="justin@ortus.solutions">+ add</button>
+            </div>
+            <!-- ALREADY RUN (ink) -->
+            <div class="fgtl-prow" data-state="sent">
+              <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">antonio@ortusclub.com</span><span class="fgtl-pillst sent">30 sent</span></div><div class="fgtl-sub">1,071 connections</div></div>
+              <div class="fgtl-mbox"><b>61</b><small>match</small></div>
+              <button class="fgtl-addbtn" data-add="antonio@ortusclub.com">+ add</button>
+            </div>
+            <!-- NEEDS A PROFILE (red) -->
+            <div class="fgtl-prow" data-state="missing">
+              <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">priya@ortusclub.com</span><span class="fgtl-pillst missing">needs a profile</span></div><div class="fgtl-sub">655 connections</div></div>
+              <div class="fgtl-mbox"><b>44</b><small>match</small></div>
+              <button class="fgtl-addbtn dis" disabled>needs profile</button>
+            </div>
+            <!-- READY (green) -->
+            <div class="fgtl-prow" data-state="ready" data-em="dwayne.co@ortus.solutions">
+              <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">dwayne.co@ortus.solutions</span><span class="fgtl-pillst ready">not run yet</span></div><div class="fgtl-sub">512 connections</div></div>
+              <div class="fgtl-mbox"><b>38</b><small>match</small></div>
+              <button class="fgtl-addbtn" data-add="dwayne.co@ortus.solutions">+ add</button>
+            </div>
+            <!-- CAN'T INVITE (red, ineligible) -->
+            <div class="fgtl-prow" data-state="cant">
+              <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">sara@apexstrategy.com</span><span class="fgtl-pillst out">Apex Strategy · can’t invite</span></div><div class="fgtl-sub">390 connections</div></div>
+              <div class="fgtl-mbox zero"><b>0</b><small>match</small></div>
+              <button class="fgtl-addbtn dis" disabled>can’t invite</button>
+            </div>
+            <!-- READY (green) -->
+            <div class="fgtl-prow" data-state="ready" data-em="megan@ortusclub.com">
+              <div class="fgtl-rowmain"><div class="fgtl-emline"><span class="em">megan@ortusclub.com</span><span class="fgtl-pillst ready">not run yet</span></div><div class="fgtl-sub">301 connections</div></div>
+              <div class="fgtl-mbox"><b>22</b><small>match</small></div>
+              <button class="fgtl-addbtn" data-add="megan@ortusclub.com">+ add</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="fgtl-cart">
+          <h3>Your launch list</h3>
+          <div id="fgtl-cart"><div class="empty">Add colleagues from the left,<br>or use “+ Add all ready”.</div></div>
+          <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
+            <div class="tot"><span>People</span><b id="t-people">0</b></div>
+            <div class="tot"><span>Invites this run</span><b id="t-inv">0</b></div>
+            <button class="fgtl-go-btn">Launch all sequentially</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Minimal interactivity so the sketch is clickable (mirrors fgtlPicked + fgtlRenderCart).
+    const picked = {};
+    const matchOf = { 'alexc@ortus.solutions':91,'justin@ortus.solutions':63,'antonio@ortusclub.com':61,'dwayne.co@ortus.solutions':38,'megan@ortusclub.com':22 };
+    function renderCart(){
+      const cart = document.getElementById('cart-target') || document.getElementById('fgtl-cart');
+      const emails = Object.keys(picked);
+      const foot = document.getElementById('fgtl-foot');
+      if(!emails.length){ cart.innerHTML = '<div class="empty">Add colleagues from the left,<br>or use “+ Add all ready”.</div>'; foot.style.display='none'; return; }
+      cart.innerHTML = emails.map(e=>`<div class="fgtl-cart-row"><span class="em">${e}</span><button class="x" data-rm="${e}">×</button></div>`).join('');
+      foot.style.display='block';
+      document.getElementById('t-people').textContent = emails.length;
+      document.getElementById('t-inv').textContent = emails.reduce((s,e)=>s+(matchOf[e]||0),0);
+      // grey added rows + relabel their add button
+      document.querySelectorAll('.fgtl-prow[data-em]').forEach(r=>{ const inn=!!picked[r.dataset.em]; r.classList.toggle('in',inn); const b=r.querySelector('[data-add]'); if(b) b.textContent = inn?'added':'+ add'; });
+      refreshReadyCount();
+    }
+    function refreshReadyCount(){
+      const ready = [...document.querySelectorAll('.fgtl-prow[data-state="ready"]')].filter(r=>!picked[r.dataset.em]);
+      document.getElementById('rdy-n').textContent = ready.length;
+      const btn = document.getElementById('rdy-btn'); btn.classList.toggle('dis', ready.length===0); btn.disabled = ready.length===0;
+    }
+    document.getElementById('fgtl-cart').id='cart-target';
+    document.addEventListener('click',e=>{
+      const add=e.target.closest('[data-add]'); if(add){ picked[add.dataset.add]={}; renderCart(); return; }
+      const rm=e.target.closest('[data-rm]'); if(rm){ delete picked[rm.dataset.rm]; renderCart(); return; }
+      if(e.target.id==='rdy-btn'){ document.querySelectorAll('.fgtl-prow[data-state="ready"]').forEach(r=>{ picked[r.dataset.em]={}; }); renderCart(); return; }
+    });
+    refreshReadyCount();
+  </script>
+</body>
+</html>

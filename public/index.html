@@ -1489,6 +1489,16 @@
       #nav-follower-growth .fgtl-pillst.sent { color:var(--ink); border-color:var(--ink); }
       #nav-follower-growth .fgtl-pillst.out { color:#b00020; border-color:#b00020; }
       #nav-follower-growth .fgtl-pillst.new { color:var(--gray); border-style:dashed; }
+      #nav-follower-growth .fgtl-pillst.ready { color:var(--green); border-color:var(--green); }
+      #nav-follower-growth .fgtl-pillst.missing { color:var(--red); border-color:var(--red); }
+      #nav-follower-growth .fgtl-ready { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--hairline); border-radius:12px; padding:10px 14px; margin:0 0 14px; background:var(--bg-soft); }
+      #nav-follower-growth .fgtl-ready .rl { min-width:0; }
+      #nav-follower-growth .fgtl-ready .rl b { font-family:var(--display); font-size:1.15rem; color:var(--green); }
+      #nav-follower-growth .fgtl-ready .rl .lab { font-family:var(--mono); font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgtl-ready .rl .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); opacity:.85; margin-top:3px; }
+      #nav-follower-growth .fgtl-ready-btn { border:1px solid var(--green); color:var(--green); background:none; border-radius:9999px; padding:8px 16px; font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+      #nav-follower-growth .fgtl-ready-btn:hover { background:var(--green); color:#fff; }
+      #nav-follower-growth .fgtl-ready-btn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
       #nav-follower-growth .fgtl-mbox { text-align:right; }
       #nav-follower-growth .fgtl-mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; color:var(--ink); }
       #nav-follower-growth .fgtl-mbox.zero b { color:var(--gray); }
@@ -1570,6 +1580,13 @@
             <button class="clr" id="fgtl-search-clear" title="Clear">&#215;</button>
           </div>
           <button type="button" id="fgtl-soo-refresh" class="fgtl-refresh-btn" title="Reload account status from SoO">↻ Refresh status</button>
+          <div class="fgtl-ready" id="fgtl-ready" style="margin-top:14px">
+            <div class="rl">
+              <span class="lab">Ready to launch</span> · <b id="fgtl-ready-n">0</b> <span class="lab">accounts</span>
+              <div class="sub">has a profile + not run yet — excludes already-run, no-profile and can’t-invite accounts</div>
+            </div>
+            <button type="button" class="fgtl-ready-btn dis" id="fgtl-ready-btn" disabled>+ Add all ready</button>
+          </div>
           <div class="fgtl-people" id="fgtl-people"></div>
         </div>
         <div class="fgtl-cart">

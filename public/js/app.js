@@ -13548,12 +13548,12 @@ function fgtlRenderPeople() {
     if (!elig.eligible) {
       pill = `<span class="fgtl-pillst out">${escHtml(elig.company)} · can’t invite</span>`;
     } else if (!p.paired) {
-      pill = '<span class="fgtl-pillst new">needs a profile</span>';
+      pill = '<span class="fgtl-pillst missing">needs a profile</span>';
     } else {
       const c = fgtlCredit(p.paired);
       if (!c.infinite) {
         if (!c.tracked) {
-          pill = '<span class="fgtl-pillst new">not run yet</span>';
+          pill = '<span class="fgtl-pillst ready">not run yet</span>';
         } else {
           // ALWAYS show the factual "N sent" (0/29/30…) — NEVER "no credits left".
           // A 0-credit snapshot doesn't mean exhausted: invite credits refill when
@@ -13614,7 +13614,26 @@ function fgtlRenderCart() {
   if (go) { go.disabled = gaps; go.textContent = gaps ? 'Pick a profile for everyone first' : `Launch ${emails.length} sequentially`; }
 }
 
-function fgtlRenderAll() { fgtlRenderPeople(); fgtlRenderCart(); }
+// "Ready to launch" = eligible (Ortus) + has a paired profile + has matches +
+// NOT run yet (no budget snapshot — tracked=false; Local Browser counts as never-run)
+// + not already in the launch list. This is exactly what "+ Add all ready" sweeps in.
+function fgtlIsReady(p) {
+  if (!p || fgtlPicked[p.email]) return false;
+  if (!fgtlEligibility(p.email).eligible) return false;
+  if (!p.paired) return false;
+  if (!p.matched) return false;
+  const c = fgtlCredit(p.paired);
+  if (!c.infinite && c.tracked) return false; // already run this month
+  return true;
+}
+function fgtlReadyPeople() { return fgtlPeople.filter(fgtlIsReady); }
+function fgtlRenderReady() {
+  const n = fgtlReadyPeople().length;
+  const nEl = document.getElementById('fgtl-ready-n'); if (nEl) nEl.textContent = n;
+  const btn = document.getElementById('fgtl-ready-btn');
+  if (btn) { btn.classList.toggle('dis', n === 0); btn.disabled = n === 0; }
+}
+function fgtlRenderAll() { fgtlRenderPeople(); fgtlRenderCart(); fgtlRenderReady(); }
 
 async function fgtlRefreshMatched() {
   // Show a spinner while the (sometimes slow) colleagues fetch is in flight, so
@@ -13667,7 +13686,12 @@ function fgtlBindBoard() {
     if (e.target.id === 'fgtl-search-clear') { const s = document.getElementById('fgtl-search'); if (s) { s.value = ''; e.target.classList.remove('show'); } fgtlRenderPeople(); return; }
     if (e.target.id === 'fgtl-soo-refresh') {
       const btn = e.target; const prev = btn.textContent; btn.disabled = true; btn.textContent = '↻ Refreshing…';
-      loadSoOStatus().then(() => { fgtlRenderPeople(); }).finally(() => { btn.disabled = false; btn.textContent = prev; });
+      loadSoOStatus().then(() => { fgtlRenderAll(); }).finally(() => { btn.disabled = false; btn.textContent = prev; });
+      return;
+    }
+    if (e.target.id === 'fgtl-ready-btn' && !e.target.disabled) {
+      fgtlReadyPeople().forEach((p) => { fgtlPicked[p.email] = {}; });
+      fgtlRenderAll();
       return;
     }
   });
