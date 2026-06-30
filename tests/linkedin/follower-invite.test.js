@@ -1,6 +1,38 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCreditsAvailable, parseCreditsMeta, headlineMatches, pickInviteResult, waitForModalContent, isLoggedOutUrl, classifySkip } from '../../src/linkedin/follower-invite.js';
+import { parseCreditsAvailable, parseCreditsMeta, headlineMatches, pickInviteResult, waitForModalContent, isLoggedOutUrl, classifySkip, openInviteModal, LoggedOutError } from '../../src/linkedin/follower-invite.js';
+
+test('openInviteModal flags logged-out fast via Voyager /me (no 2-min modal wait)', async () => {
+  // Page that did NOT redirect to a login URL (a login WALL at the same url), so
+  // only the /me identity probe can catch it.
+  let waitedForModal = false;
+  const page = {
+    goto: async () => {},
+    url: async () => 'https://www.linkedin.com/company/the-ortus-club/admin/',
+    waitForSelector: async () => { waitedForModal = true; },
+    $eval: async () => '',
+    $: async () => null,
+  };
+  let identityCalls = 0;
+  await assert.rejects(
+    () => openInviteModal(page, 'https://x', { getIdentity: async () => { identityCalls++; return ''; }, sleep: async () => {} }),
+    (e) => e instanceof LoggedOutError && e.loggedOut === true,
+  );
+  assert.equal(identityCalls, 2, 'should retry /me once before declaring logged out');
+  assert.equal(waitedForModal, false, 'must NOT fall through to the 2-min modal wait');
+});
+
+test('openInviteModal proceeds when Voyager /me returns an identity', async () => {
+  const page = {
+    goto: async () => {},
+    url: async () => 'https://www.linkedin.com/company/the-ortus-club/admin/',
+    waitForSelector: async () => {},               // modal "appears"
+    $eval: async () => '',
+    $: async () => ({}),                            // search element present → ready
+  };
+  const out = await openInviteModal(page, 'https://x', { getIdentity: async () => 'urn:li:fsd_profile:ACoAA', sleep: async () => {} });
+  assert.equal(out.ok, true);
+});
 
 test('parseCreditsMeta extracts available, allowance, and refill date', () => {
   const t = 'Send your connections an invitation... 5/30 credits available · Credit refill: June 30, 2026 Locations';

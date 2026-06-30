@@ -1,7 +1,7 @@
 // Follower Growth Phase 2 — automates the LinkedIn page "Invite to follow" modal.
 // Self-contained module (mirrors post-amplification.js); reuses only shared
 // helpers.js + the launcher. Does NOT touch outreach.js / actions.js.
-import { randomDelay } from './helpers.js';
+import { randomDelay, getSenderUrn } from './helpers.js';
 
 // "30/30 credits available · …" → 30 (the LEADING number = currently available).
 export function parseCreditsAvailable(text) {
@@ -131,7 +131,7 @@ export class LoggedOutError extends Error {
   constructor(message) { super(message); this.name = 'LoggedOutError'; this.softSkip = true; this.loggedOut = true; }
 }
 
-export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) {
+export async function openInviteModal(page, inviteUrl, { log = () => {}, getIdentity = getSenderUrn, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   // Operators run on slow/overloaded laptops; the invite page can take a while.
   await page.goto(inviteUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
   // Logged-out session redirects to a login/authwall URL — detect it now and skip
@@ -140,6 +140,17 @@ export async function openInviteModal(page, inviteUrl, { log = () => {} } = {}) 
   if (isLoggedOutUrl(landed)) {
     throw new LoggedOutError('account is logged out of LinkedIn — re-login needed before it can send follow invites');
   }
+  // Same fast, DOM-independent login check the other campaigns use: the Voyager
+  // /me probe. Catches a logged-out session that LinkedIn serves as a login WALL
+  // at the SAME url (no redirect for isLoggedOutUrl to catch) — so we skip in ~1s
+  // instead of waiting out the 2-min modal timeout. One retry absorbs a transient
+  // /me hiccup so a momentarily-slow but logged-IN account isn't mislabeled.
+  let urn = await getIdentity(page).catch(() => '');
+  if (!urn) { await sleep(1500); urn = await getIdentity(page).catch(() => ''); }
+  if (!urn) {
+    throw new LoggedOutError('account is logged out (Voyager /me returned no identity) — re-login needed before it can send follow invites');
+  }
+  log('login confirmed via Voyager /me');
   // Up to 2 min: a real admin's modal can take a long time to mount on a slow/
   // overloaded machine, and we must NOT cut it short and mislabel them. Even an
   // exhausted admin gets a "No remaining invite credits" modal — let it appear,
