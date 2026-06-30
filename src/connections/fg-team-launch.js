@@ -57,7 +57,9 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
             await deps.observeCredits({ account: pair.account, operator: pair.operator, month: ctx.month, available: out.creditsAfter, allowance: out.allowance, refill: out.refill });
           } catch (e) { stamp(`[${pair.account}] ⚠ credit write-back failed — ${e.message}`); }
         }
-        slot.status = 'done'; slot.invited = invitedIds.length; status.sent++; status.invitesTotal += invitedIds.length;
+        slot.status = 'done'; slot.invited = invitedIds.length; slot.targets = count;
+        if (Number.isFinite(out.creditsAfter)) slot.creditsAfter = out.creditsAfter;
+        status.sent++; status.invitesTotal += invitedIds.length;
         stamp(`✓ [${pair.account}] Invites sent · ${invitedIds.length} sent, ${out.creditsAfter} credits left`);
       } catch (err) {
         if (ctx.getAbort()) {

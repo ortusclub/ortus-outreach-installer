@@ -14015,13 +14015,24 @@ function fgtlRenderAcctBoard(status) {
     let icCls = '', ic = '•', pillCls = 'waiting', pillTxt = 'waiting', sub = 'waiting its turn…', rowCls = '';
     if (st === 'done') {
       const n = a.invited || 0;
-      icCls = 'done'; ic = '✓'; pillCls = 'done'; pillTxt = `${n} sent`; rowCls = 'dim';
-      sub = n > 0 ? `finished · ${n} invite${n === 1 ? '' : 's'} sent` : 'finished · 0 sent';
+      const left = Number.isFinite(a.creditsAfter) ? a.creditsAfter : null;
+      const tgt = Number.isFinite(a.targets) ? a.targets : null;
+      icCls = 'done'; ic = '✓'; rowCls = 'dim done';
+      // Pill carries the "we sent everything we could" signal so N sent never reads as a cap.
+      if (left === 0) { pillCls = 'done maxed'; pillTxt = `${n} sent · no credits left`; }
+      else if (tgt != null && n >= tgt) { pillCls = 'done'; pillTxt = `${n} of ${tgt} sent`; }
+      else { pillCls = 'done'; pillTxt = `${n} sent`; }
+      // Sub spells out why it stopped where it did.
+      let why = '';
+      if (left === 0) why = ' · used all available credits';
+      else if (tgt != null && n >= tgt) why = ' · all matches invited';
+      else if (left != null && left > 0) why = ` · ${left} credit${left === 1 ? '' : 's'} left`;
+      sub = `finished · ${n} invite${n === 1 ? '' : 's'} sent${why}`;
     } else if (st === 'running') {
       icCls = 'run'; ic = '⟳'; pillCls = 'running'; pillTxt = 'running'; rowCls = 'now';
       sub = 'sending invites…';
     } else if (st === 'skipped') {
-      icCls = 'skip'; pillCls = 'skipped';
+      icCls = 'skip'; pillCls = 'skipped'; rowCls = 'skip';
       if (a.loggedOut) { ic = '🔒'; pillTxt = 'logged out'; }
       else { ic = '✗'; pillTxt = 'skipped'; }
       sub = `skipped${a.reason ? ' · ' + esc(a.reason) : ''}`;
