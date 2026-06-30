@@ -1,11 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sketch · FG Team Launch — pill colors + Add-all-ready</title>
-  <!-- 1:1 with the app: load the real stylesheet so tokens/typography match exactly -->
+  <!-- 1:1 with the app: load BOTH real stylesheets + light theme exactly as index.html does -->
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css">
   <style>
     /* ── These rules are copied verbatim from index.html's inline #nav-follower-growth
          block so the sketch renders identically to the real Team Launch board. The
@@ -71,7 +73,7 @@
     .sk-wrap { max-width:1040px; margin:0 auto; }
   </style>
 </head>
-<body>
+<body data-dashboard="v3" class="theme-light">
   <div class="sk-wrap">
     <div class="sk-note">
       SKETCH · Team Launch board. Two changes: (1) <b style="color:var(--green)">not run yet</b> = green,
