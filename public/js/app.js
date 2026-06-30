@@ -13531,7 +13531,13 @@ function fgtlRenderChips() {
 function fgtlRenderPeople() {
   const el = document.getElementById('fgtl-people'); if (!el) return;
   const q = (document.getElementById('fgtl-search')?.value || '').toLowerCase();
-  el.innerHTML = fgtlPeople.filter((p) => p.email.toLowerCase().includes(q)).map((p) => {
+  // Hide non-Ortus accounts (SoO Company ≠ The Ortus Club). Fail-open: if SoO data
+  // hasn't loaded (empty), show everyone so a transient SoO outage doesn't block launching.
+  const sooReady = typeof sooData !== 'undefined' && sooData && Object.keys(sooData).length > 0;
+  el.innerHTML = fgtlPeople
+    .filter((p) => p.email.toLowerCase().includes(q))
+    .filter((p) => !sooReady || fgtlEligibility(p.email).eligible)
+    .map((p) => {
     const isIn = !!fgtlPicked[p.email]; const zero = p.matched === 0;
     // One small status pill (the thing you decide on) instead of cramming
     // DB-count + pairing + status into one crowded line. Connection count drops to
@@ -13660,6 +13666,11 @@ function fgtlBindBoard() {
     const opt = e.target.closest('[data-fgopt]'); if (opt) { const em = opt.dataset.fgopt; fgtlPicked[em].profile = opt.dataset.name; fgtlPicked[em].changing = false; fgtlPicked[em].pq = ''; fgtlRenderCart(); return; }
     if (e.target.id === 'fgtl-db-toggle') { const b = document.getElementById('fgtl-db-body'); if (b) b.style.display = b.style.display === 'none' ? 'block' : 'none'; return; }
     if (e.target.id === 'fgtl-search-clear') { const s = document.getElementById('fgtl-search'); if (s) { s.value = ''; e.target.classList.remove('show'); } fgtlRenderPeople(); return; }
+    if (e.target.id === 'fgtl-soo-refresh') {
+      const btn = e.target; const prev = btn.textContent; btn.disabled = true; btn.textContent = '↻ Refreshing…';
+      loadSoOStatus().then(() => { fgtlRenderPeople(); }).finally(() => { btn.disabled = false; btn.textContent = prev; });
+      return;
+    }
   });
   root.addEventListener('input', (e) => {
     if (e.target.id === 'fgtl-search') { const cl = document.getElementById('fgtl-search-clear'); if (cl) cl.classList.toggle('show', !!e.target.value); fgtlRenderPeople(); return; }
