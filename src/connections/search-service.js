@@ -246,18 +246,20 @@ export function listFgColleagues({ dir, cachePath } = {}) {
 // connections MATCH the role keywords (jobtitle substring). One pass over the
 // memoized annotated DB. Empty keywords => matched === total (matchesCriteria
 // returns true when the jobTitles list is empty). Sorted by name.
-export function listFgColleaguesMatched(keywords = [], { dir, cachePath } = {}) {
+export function listFgColleaguesMatched(keywords = [], { dir, cachePath, alreadyInvited = [] } = {}) {
   const annotated = _fgColleaguesFixtures ? _fgColleaguesFixtures.annotated : getAnnotated(dir, cachePath);
   const colleagues = _fgColleaguesFixtures ? _fgColleaguesFixtures.colleagues : getColleagues();
   const norm = normCriteria({ jobTitles: keywords || [] });
+  const invitedKeys = new Set((alreadyInvited || []).map(String));
   const total = new Map();
   const matched = new Map();
   for (const r of annotated) {
     if (r.dnc) continue;
     const isMatch = matchesCriteria(r.contact, norm);
+    const alreadyDone = invitedKeys.has(inviteKey(r.contact));
     for (const email of (r.warmVia || [])) {
       total.set(email, (total.get(email) || 0) + 1);
-      if (isMatch) matched.set(email, (matched.get(email) || 0) + 1);
+      if (isMatch && !alreadyDone) matched.set(email, (matched.get(email) || 0) + 1);
     }
   }
   return [...total.entries()]

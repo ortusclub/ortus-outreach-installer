@@ -1407,10 +1407,15 @@ app.get('/api/fg/operators', (_req, res) => {
 // Employee roster for the Team Launch board. With ?roles=a,b,c it also returns
 // matched (connections whose job title matches the roles) per colleague; without
 // it, matched === total (full roster — backward compatible).
-app.get('/api/fg/colleagues', (req, res) => {
+app.get('/api/fg/colleagues', async (req, res) => {
   try {
     const roles = parseRolesParam(req.query.roles);
-    res.json({ colleagues: listFgColleaguesMatched(roles) });
+    let alreadyInvited = [];
+    try {
+      const { invites } = await getFgState();
+      alreadyInvited = (invites || []).map((r) => String(r['Member ID'] || '') || (r['LinkedIn URL'] || ''));
+    } catch (_) { /* FG sheet unreachable — fall back to raw matched counts */ }
+    res.json({ colleagues: listFgColleaguesMatched(roles, { alreadyInvited }) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

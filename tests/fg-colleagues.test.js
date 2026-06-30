@@ -39,6 +39,20 @@ test('listFgColleaguesMatched counts matched (role keywords) and total per owner
   ]);
 });
 
+test('listFgColleaguesMatched subtracts already-invited from matched (not total)', () => {
+  __setFgColleaguesFixtures({
+    annotated: [
+      { contact: { firstname: 'A', jobtitle: 'Head of Marketing', linkedin_membership_id: 'm1' }, warmVia: ['bea@ortusclub.com'], dnc: false },
+      { contact: { firstname: 'B', jobtitle: 'Brand Lead', linkedin_membership_id: 'm2' }, warmVia: ['bea@ortusclub.com'], dnc: false },
+    ],
+    colleagues: { 'bea@ortusclub.com': { name: 'Beatrice' } },
+  });
+  const out = listFgColleaguesMatched(['marketing', 'brand'], { alreadyInvited: ['m1'] });
+  assert.deepEqual(out, [
+    { email: 'bea@ortusclub.com', name: 'Beatrice', total: 2, matched: 1 }, // m1 already invited → excluded from matched
+  ]);
+});
+
 test('listFgColleaguesMatched with no keywords => matched equals total', () => {
   __setFgColleaguesFixtures({
     annotated: [
