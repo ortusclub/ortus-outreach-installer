@@ -14028,7 +14028,7 @@ function fgtlRenderAcctBoard(status) {
     }
     return `<div class="fgacct ${rowCls}">
       <div class="ic ${icCls}">${ic}</div>
-      <div><div class="em">${esc(a.account)}</div><div class="sub">${sub}</div></div>
+      <div class="fgacct-mid"><div class="em">${esc(a.account)}</div><div class="sub">${sub}</div></div>
       <div class="right"><span class="fgtl-pill ${pillCls}">${esc(pillTxt)}</span></div>
     </div>`;
   }).join('');
