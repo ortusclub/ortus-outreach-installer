@@ -1596,18 +1596,22 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
         send: ({ page, queued, log, shouldAbort }) => runFollowerInvites({ page, inviteUrl: ORTUS_PAGE_INVITE_URL, queued, log, shouldAbort }),
         // Write-back: append the invited rows then flip them to Invited (+bump budget).
         // End state has NO Queued rows; reuses existing Apps Script actions.
-        record: async ({ rows, invitedIds, account, operator }) => {
-          const set = new Set(invitedIds.map(String));
-          const invitedRows = rows.filter((r) => set.has(String(r[2])));
-          if (invitedRows.length) {
-            await queueFgInvites(invitedRows);
+        record: async ({ rows, invitedIds, alreadyFollowingIds = [], account, operator }) => {
+          // Already-follows go into the SAME store as invited so the next build's
+          // alreadyInvited dedupe removes them; the observeCredits write-back keeps
+          // the real budget correct (these consumed no credit).
+          const persistIds = [...new Set([...(invitedIds || []), ...alreadyFollowingIds].map(String))];
+          const set = new Set(persistIds);
+          const persistRows = rows.filter((r) => set.has(String(r[2])));
+          if (persistRows.length) {
+            await queueFgInvites(persistRows);
             try {
-              await markFgInvited({ memberIds: invitedIds, account, operator, month });
+              await markFgInvited({ memberIds: persistIds, account, operator, month });
             } catch (e1) {
               try {
-                await markFgInvited({ memberIds: invitedIds, account, operator, month }); // retry (idempotent)
+                await markFgInvited({ memberIds: persistIds, account, operator, month }); // retry (idempotent)
               } catch (e2) {
-                const warn = `[${new Date().toISOString()}] ⚠ STRANDED: ${invitedIds.length} invite(s) sent for ${account} were queued but NOT marked Invited — flip them manually in the FG sheet (${e2.message})`;
+                const warn = `[${new Date().toISOString()}] ⚠ STRANDED: ${persistIds.length} invite(s)/follow(s) for ${account} were queued but NOT marked Invited — flip them manually in the FG sheet (${e2.message})`;
                 try { _fgTeam.logs.push(warn); if (_fgTeam.logs.length > 200) _fgTeam.logs.shift(); } catch (_) {}
                 try { campaignLog(`[FG-team] ${warn}`); } catch (_) {}
               }

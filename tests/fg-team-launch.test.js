@@ -118,6 +118,23 @@ test('runTeamLaunch writes observed credits back per account (even 0 sent)', asy
   ]);
 });
 
+test('runTeamLaunch forwards already-following IDs to record', async () => {
+  const pairs = [{ account: 'a@ortusclub.com', operator: 'a@ortusclub.com', profileId: 'p1' }];
+  const status = makeInitialStatus(pairs);
+  let recorded = null;
+  const deps = {
+    buildTargets: () => ({ rows: [['N', '', 'm1'], ['M', '', 'm2']], count: 2, reason: '' }),
+    launch: async () => ({ page: {}, close: async () => {} }),
+    send: async () => ({ invited: ['m1'], skipped: ['m2'], alreadyFollowing: ['m2'], creditsAfter: 4 }),
+    record: async (arg) => { recorded = arg; },
+    log: () => {},
+    now: () => '2026-06-30T00:00:00Z',
+  };
+  await runTeamLaunch(pairs, { keywords: [], month: '2026-06', getAbort: () => false }, deps, status);
+  assert.deepEqual(recorded.invitedIds, ['m1']);
+  assert.deepEqual(recorded.alreadyFollowingIds, ['m2']);
+});
+
 test('runTeamLaunch labels a logged-out account distinctly', async () => {
   const pairs = [{ account: 'a@ortusclub.com', operator: 'a@ortusclub.com', profileId: 'p1' }];
   const status = makeInitialStatus(pairs);

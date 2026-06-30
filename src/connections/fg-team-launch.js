@@ -41,7 +41,13 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
         if (ctx.setActiveHandle) ctx.setActiveHandle(handle);
         const out = await deps.send({ page: handle.page, queued: pairToQueued(rows), log: (m) => stamp(`[${pair.account}] ${m}`), shouldAbort: ctx.getAbort });
         const invitedIds = out.invited || [];
-        if (invitedIds.length) await deps.record({ rows, invitedIds, account: pair.account, operator: pair.operator, month: ctx.month });
+        const alreadyFollowingIds = out.alreadyFollowing || [];
+        // Persist invited AND already-follows in the same store so the next build
+        // dedupes both out — already-follows cost no credit and must never re-fill a slot.
+        if (invitedIds.length || alreadyFollowingIds.length) {
+          await deps.record({ rows, invitedIds, alreadyFollowingIds, account: pair.account, operator: pair.operator, month: ctx.month });
+        }
+        if (alreadyFollowingIds.length) stamp(`[${pair.account}] already follows the page — ${alreadyFollowingIds.length} remembered & skipped`);
         // Write the modal's REAL post-run available count back to the sheet (even
         // when 0 were sent — the credit reading is still authoritative). This
         // supersedes the 30−Sent estimate so the shared budget self-corrects for
