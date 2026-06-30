@@ -12,8 +12,11 @@ import { FG_WEBAPP_URL } from '../sheets-webapp-url.js';
 // FG Budgets row yet; per-account overrides still live in the Allowance column.
 export const FG_DEFAULT_MONTHLY_ALLOWANCE = 30;
 
-async function postFg(payload, { timeoutMs = 30000 } = {}) {
-  if (!FG_WEBAPP_URL) return { error: 'FG_WEBAPP_URL not configured — deploy fg-apps-script.js and set its URL in src/sheets-webapp-url.js' };
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// One POST→(follow 302)→parse attempt. Returns either the parsed object, or a
+// { error, transient } marker so the retry wrapper knows whether to try again.
+async function postFgOnce(payload, timeoutMs) {
   const body = JSON.stringify(payload);
   try {
     const initial = await fetch(FG_WEBAPP_URL, {
@@ -32,13 +35,34 @@ async function postFg(payload, { timeoutMs = 30000 } = {}) {
       return JSON.parse(text);
     } catch {
       if (text.includes('accounts.google.com') || text.includes('Sign in')) {
-        return { error: 'FG Apps Script returned a login page — redeploy it ("anyone with the link")' };
+        // A login page is a deployment problem, not a transient blip — don't retry.
+        return { error: 'FG Apps Script returned a login page — redeploy it ("anyone with the link")', transient: false };
       }
-      return { error: 'Unexpected non-JSON response from the FG Apps Script' };
+      // Apps Script intermittently returns an HTML error page from its one-time
+      // redirect URL under load. This is transient — worth retrying.
+      return { error: 'Unexpected non-JSON response from the FG Apps Script', transient: true };
     }
   } catch (err) {
-    return { error: err.message };
+    // Network / timeout — transient.
+    return { error: err.message, transient: true };
   }
+}
+
+// Retry transient failures a few times with a short backoff. Safe because every FG
+// action is idempotent: fgQueue dedupes by Member-ID-or-URL, fgMarkInvited skips
+// rows already Invited, fgObserveCredits just overwrites a snapshot — so re-sending
+// a request whose response was lost to a Google hiccup never double-applies.
+export async function postFg(payload, { timeoutMs = 30000, attempts = 3, sleep = _sleep } = {}) {
+  if (!FG_WEBAPP_URL) return { error: 'FG_WEBAPP_URL not configured — deploy fg-apps-script.js and set its URL in src/sheets-webapp-url.js' };
+  let last = { error: 'FG request never ran' };
+  for (let i = 0; i < Math.max(1, attempts); i++) {
+    if (i > 0) await sleep(400 * i); // 0ms, 400ms, 800ms…
+    const r = await postFgOnce(payload, timeoutMs);
+    if (!r || !r.error) return r;            // success
+    last = r;
+    if (r.transient === false) break;        // non-retryable (e.g. login page)
+  }
+  return { error: last.error };
 }
 
 // { invites: [...row objects], budgets: [...], funnel: [...] }

@@ -1609,20 +1609,21 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
           const set = new Set(persistIds);
           const persistRows = rows.filter((r) => set.has(String(r[2])));
           if (persistRows.length) {
-            await queueFgInvites(persistRows);
+            // BEST-EFFORT: the invites were already sent on LinkedIn. If the sheet
+            // write-back fails (postFg already retries transient Google hiccups),
+            // do NOT abort the account — that would hide real sent invites as a ✗
+            // Error and leave them mislabeled. Log a loud STRANDED warning instead;
+            // the run still reports "N sent" and writes the real credit snapshot.
             try {
+              await queueFgInvites(persistRows);
               await markFgInvited({ memberIds: persistIds, account, operator, month });
-            } catch (e1) {
-              try {
-                await markFgInvited({ memberIds: persistIds, account, operator, month }); // retry (idempotent)
-              } catch (e2) {
-                const warn = `[${new Date().toISOString()}] ⚠ STRANDED: ${persistIds.length} invite(s)/follow(s) for ${account} were queued but NOT marked Invited — flip them manually in the FG sheet (${e2.message})`;
-                try { _fgTeam.logs.push(warn); if (_fgTeam.logs.length > 200) _fgTeam.logs.shift(); } catch (_) {}
-                try { campaignLog(`[FG-team] ${warn}`); } catch (_) {}
-              }
+            } catch (e) {
+              const warn = `[${new Date().toISOString()}] ⚠ STRANDED: ${persistIds.length} invite(s)/follow(s) WERE sent for ${account} but the sheet write-back failed — they will be re-checked next run; flip them to Invited manually if needed (${e.message})`;
+              try { _fgTeam.logs.push(warn); if (_fgTeam.logs.length > 200) _fgTeam.logs.shift(); } catch (_) {}
+              try { campaignLog(`[FG-team] ${warn}`); } catch (_) {}
             }
           }
-          _fgTeamSnap = await getFgState(); // refresh so the next account dedups against these
+          try { _fgTeamSnap = await getFgState(); } catch (_) { /* keep prior snapshot */ } // refresh so the next account dedups against these
         },
         // Authoritative credit write-back: store the modal's real available number
         // so the shared budget self-corrects for accept/withdraw refills.

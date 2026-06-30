@@ -13545,7 +13545,6 @@ function fgtlRenderPeople() {
     // profile. (v2.119.12 — declutter)
     const elig = fgtlEligibility(p.email);
     let pill = '';
-    let exhausted = false;
     if (!elig.eligible) {
       pill = `<span class="fgtl-pillst out">${escHtml(elig.company)} · can’t invite</span>`;
     } else if (!p.paired) {
@@ -13556,11 +13555,11 @@ function fgtlRenderPeople() {
         if (!c.tracked) {
           pill = '<span class="fgtl-pillst new">not run yet</span>';
         } else {
+          // ALWAYS show the factual "N sent" (0/29/30…) — NEVER "no credits left".
+          // A 0-credit snapshot doesn't mean exhausted: invite credits refill when
+          // people accept/withdraw, so the only honest number is how many we've sent.
           const n = c.sent || 0;
-          exhausted = c.available === 0;
-          pill = (n > 0)
-            ? `<span class="fgtl-pillst sent">${n} sent</span>`
-            : (exhausted ? '<span class="fgtl-pillst out">no credits left</span>' : '<span class="fgtl-pillst sent">0 sent</span>');
+          pill = `<span class="fgtl-pillst sent">${n} sent</span>`;
         }
       }
     }
