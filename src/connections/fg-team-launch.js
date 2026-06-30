@@ -59,6 +59,9 @@ export async function runTeamLaunch(pairs, ctx, deps, status) {
           // failure. Label it as a clean stop.
           slot.status = 'skipped'; slot.reason = 'stopped'; status.skipped++;
           stamp(`⊘ [${pair.account}] Stopped`);
+        } else if (err.loggedOut) {
+          slot.status = 'skipped'; slot.reason = 'logged out'; slot.loggedOut = true; status.skipped++;
+          stamp(`🔒 [${pair.account}] Logged out — needs re-login`);
         } else {
           // A soft-skip (e.g. the invite modal didn't open in time) is expected, not
           // a failure — label it ⊘ so it reads clearly vs a real ✗ error.

@@ -117,3 +117,22 @@ test('runTeamLaunch writes observed credits back per account (even 0 sent)', asy
     { account: 'b@x', operator: 'b@x', month: '2026-06', available: 0, allowance: 30, refill: 'June 30, 2026' },
   ]);
 });
+
+test('runTeamLaunch labels a logged-out account distinctly', async () => {
+  const pairs = [{ account: 'a@ortusclub.com', operator: 'a@ortusclub.com', profileId: 'p1' }];
+  const status = makeInitialStatus(pairs);
+  const deps = {
+    buildTargets: () => ({ rows: [['N', '', 'm1']], count: 1, reason: '' }),
+    launch: async () => { const e = new Error('logged out'); e.loggedOut = true; e.softSkip = true; throw e; },
+    send: async () => ({ invited: [], skipped: [] }),
+    record: async () => {},
+    log: () => {},
+    now: () => '2026-06-30T00:00:00Z',
+  };
+  await runTeamLaunch(pairs, { keywords: [], month: '2026-06', getAbort: () => false }, deps, status);
+  assert.equal(status.perAccount[0].status, 'skipped');
+  assert.equal(status.perAccount[0].reason, 'logged out');
+  assert.equal(status.perAccount[0].loggedOut, true);
+  assert.equal(status.skipped, 1);
+  assert.ok(status.logs.some((l) => /Logged out/.test(l)));
+});
