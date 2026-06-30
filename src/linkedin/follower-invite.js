@@ -61,6 +61,17 @@ export function pickInviteResult(results, person) {
   return verified.length === 1 ? verified[0] : null;
 }
 
+// Why was a queued person skipped? 'already-follows' when a name-matched result
+// exists but LinkedIn won't let us invite them (canInvite=false → already a
+// follower/invitee — they cost no credit and should be remembered & not re-tried);
+// otherwise 'no-match' (no invitable name match at all).
+export function classifySkip(results, person) {
+  const target = ((person && person.name) || '').trim().toLowerCase();
+  const nameHit = (results || []).some((r) =>
+    (r.name || '').trim().toLowerCase() === target || firstLastMatches(r.name, person.name));
+  return nameHit ? 'already-follows' : 'no-match';
+}
+
 const SEL = {
   modal: 'div[data-test-modal-id="invite-to-follow-picker"]',
   search: 'input.artdeco-typeahead__input',
@@ -185,13 +196,17 @@ export async function selectPerson(page, person, { log = () => {} } = {}) {
   // rendered within the wait window), skip this person instead of throwing — a
   // missing-selector throw previously aborted the whole run mid-batch.
   const hasSearch = await page.$(SEL.search).then(Boolean).catch(() => false);
-  if (!hasSearch) { log(`skip "${person.name}" — search box not present`); return false; }
+  if (!hasSearch) { log(`skip "${person.name}" — search box not present`); return { selected: false, reason: 'no-match' }; }
   await page.click(SEL.search, { clickCount: 3 }).catch(() => {});
   await page.type(SEL.search, person.name, { delay: 40 });
   await randomDelay(900, 1600);
   const results = await scrapeResults(page);
   const choice = pickInviteResult(results, person);
-  if (!choice) { log(`skip "${person.name}" — scraped ${JSON.stringify(results.slice(0, 2))}`); return false; }
+  if (!choice) {
+    const reason = classifySkip(results, person);
+    log(`skip "${person.name}" (${reason}) — scraped ${JSON.stringify(results.slice(0, 2))}`);
+    return { selected: false, reason };
+  }
   const clicked = await page.evaluate((sel, targetName) => {
     // Match on the first line minus the "Select " a11y prefix (same as scrapeResults).
     const norm = (s) => (s || '').split('\n')[0].trim().replace(/^select\s+/i, '').trim().toLowerCase();
@@ -203,7 +218,7 @@ export async function selectPerson(page, person, { log = () => {} } = {}) {
     return true;
   }, SEL.result, choice.name);
   log(`${clicked ? 'selected' : 'click-miss'} "${person.name}"`);
-  return clicked;
+  return { selected: clicked, reason: clicked ? 'ok' : 'no-match' };
 }
 
 export async function clickInvite(page, { log = () => {} } = {}) {
@@ -240,16 +255,23 @@ export async function runFollowerInvites({ page, inviteUrl, queued = [], log = (
   // only; unit tests pass no inviteUrl). `available` here equals creditsBefore.
   let allowance = null, refill = '';
   if (inviteUrl) { const meta = await d.readCreditsMeta(page); allowance = meta.allowance; refill = meta.refill; }
-  const invited = [], skipped = [];
+  const invited = [], skipped = [], alreadyFollowing = [];
   for (const person of queued) {
     if (shouldAbort()) { log('aborted'); break; }
     if (invited.length >= creditsBefore) { log('credit cap reached'); break; }
-    const ok = await d.selectPerson(page, person, { log });
-    (ok ? invited : skipped).push(person.memberId);
+    const r = await d.selectPerson(page, person, { log });
+    const selected = (r && typeof r === 'object') ? !!r.selected : !!r;
+    const reason = (r && typeof r === 'object') ? r.reason : '';
+    if (selected) {
+      invited.push(person.memberId);
+    } else {
+      skipped.push(person.memberId);
+      if (reason === 'already-follows') alreadyFollowing.push(person.memberId);
+    }
     await d.sleep();
   }
   let sent = false;
   if (invited.length) sent = await d.clickInvite(page, { log });
   const creditsAfter = sent ? Math.max(0, creditsBefore - invited.length) : creditsBefore;
-  return { invited: sent ? invited : [], skipped: sent ? skipped : skipped.concat(invited), creditsBefore, creditsAfter, allowance, refill, sent };
+  return { invited: sent ? invited : [], skipped: sent ? skipped : skipped.concat(invited), alreadyFollowing, creditsBefore, creditsAfter, allowance, refill, sent };
 }

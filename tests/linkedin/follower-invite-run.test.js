@@ -33,3 +33,21 @@ test('runFollowerInvites: nothing selected → no Invite click, all reported ski
   assert.deepEqual(res.skipped, ['1']);
   assert.equal(res.sent, false);
 });
+
+test('runFollowerInvites collects already-follows IDs separately', async () => {
+  const queued = [
+    { name: 'Mara Lee', memberId: '1' },   // selected
+    { name: 'Dan Roe', memberId: '2' },    // already follows
+  ];
+  const deps = {
+    readCredits: async () => 5,
+    selectPerson: async (_page, person) =>
+      person.name === 'Mara Lee' ? { selected: true, reason: 'ok' } : { selected: false, reason: 'already-follows' },
+    clickInvite: async () => true,
+    sleep: async () => {},
+  };
+  const res = await runFollowerInvites({ page: {}, queued, log: () => {}, shouldAbort: () => false, deps });
+  assert.deepEqual(res.invited, ['1']);
+  assert.deepEqual(res.alreadyFollowing, ['2']);
+  assert.ok(res.skipped.includes('2'));
+});

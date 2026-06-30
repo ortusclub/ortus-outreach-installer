@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCreditsAvailable, parseCreditsMeta, headlineMatches, pickInviteResult, waitForModalContent, isLoggedOutUrl } from '../../src/linkedin/follower-invite.js';
+import { parseCreditsAvailable, parseCreditsMeta, headlineMatches, pickInviteResult, waitForModalContent, isLoggedOutUrl, classifySkip } from '../../src/linkedin/follower-invite.js';
 
 test('parseCreditsMeta extracts available, allowance, and refill date', () => {
   const t = 'Send your connections an invitation... 5/30 credits available · Credit refill: June 30, 2026 Locations';
@@ -128,4 +128,11 @@ test('pickInviteResult: ambiguous duplicates → null (skip)', () => {
 test('pickInviteResult: non-invitable + zero matches → null', () => {
   assert.equal(pickInviteResult([{ name: 'Mara Lee', headline: 'x', canInvite: false }], { name: 'Mara Lee' }), null);
   assert.equal(pickInviteResult([], { name: 'Nobody' }), null);
+});
+
+test('classifySkip = already-follows when name matches but not invitable', () => {
+  const person = { name: 'Mara Lee' };
+  assert.equal(classifySkip([{ name: 'Mara Lee', headline: '', canInvite: false }], person), 'already-follows');
+  assert.equal(classifySkip([{ name: 'Someone Else', headline: '', canInvite: false }], person), 'no-match');
+  assert.equal(classifySkip([], person), 'no-match');
 });
