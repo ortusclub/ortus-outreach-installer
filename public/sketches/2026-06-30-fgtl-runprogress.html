@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sketch · FG Team Launch — live per-account progress</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { background:var(--bg); color:var(--ink); padding:28px 34px; }
+    .sk-wrap { max-width:1040px; margin:0 auto; }
+    .sk-note { font-family:var(--mono); font-size:11px; color:var(--gray); border-left:2px solid var(--gold); padding:6px 0 6px 12px; margin-bottom:18px; }
+
+    /* ── per-account board (the NEW bit). Reuses the existing fgtl-pill running/
+         done/skipped colours already defined in index.html. ── */
+    #nav-follower-growth .fgtl-pill { font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; padding:2px 8px; border-radius:9999px; }
+    #nav-follower-growth .fgtl-pill.running { color:var(--gold); border:1px solid var(--gold); animation:fgtlPp 1s infinite; }
+    #nav-follower-growth .fgtl-pill.done { color:var(--green); border:1px solid var(--green); }
+    #nav-follower-growth .fgtl-pill.skipped { color:var(--red); border:1px solid var(--red); }
+    #nav-follower-growth .fgtl-pill.waiting { color:var(--gray); border:1px solid var(--hairline); }
+    @keyframes fgtlPp { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; }
+    #nav-follower-growth .fgacct { display:grid; grid-template-columns:22px 1fr auto; align-items:center; gap:12px; padding:11px 13px; border:1px solid var(--hairline); border-radius:11px; }
+    #nav-follower-growth .fgacct.now { border-color:var(--gold); background:color-mix(in srgb, var(--gold) 7%, transparent); }
+    #nav-follower-growth .fgacct.dim { opacity:.62; }
+    #nav-follower-growth .fgacct .ic { width:22px; height:22px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-size:12px; border:1px solid var(--hairline); color:var(--gray); }
+    #nav-follower-growth .fgacct .ic.done { color:var(--green); border-color:var(--green); }
+    #nav-follower-growth .fgacct .ic.skip { color:var(--red); border-color:var(--red); }
+    #nav-follower-growth .fgacct .ic.run { color:var(--gold); border-color:var(--gold); animation:fgtlPp 1s infinite; }
+    #nav-follower-growth .fgacct .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+    #nav-follower-growth .fgacct .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:3px; }
+    #nav-follower-growth .fgacct .right { text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+    #nav-follower-growth .fgacct .miniprog { width:96px; height:4px; border-radius:9999px; background:var(--hairline); overflow:hidden; }
+    #nav-follower-growth .fgacct .miniprog i { display:block; height:100%; background:var(--gold); }
+    #nav-follower-growth .fgboard-head { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px; }
+    #nav-follower-growth .fgboard-head .h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); }
+    #nav-follower-growth .fgboard-head .c { font-family:var(--mono); font-size:11px; color:var(--ink); }
+  </style>
+</head>
+<body>
+  <div class="sk-wrap">
+    <div class="sk-note">
+      SKETCH · the live card MID-RUN. New: a per-account board so it’s obvious at a glance who’s
+      <b style="color:var(--green)">done</b>, who’s <b style="color:var(--gold)">running now</b> (with a little
+      progress bar), who’s <b style="color:var(--red)">skipped</b> (with the reason), and who’s still waiting.
+      The data already exists (status.perAccount) — today the card only shows a log + totals.
+    </div>
+
+    <div class="section" id="nav-follower-growth">
+      <section class="vj-card is-detailed" id="fgtl-card">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span>Sending</span>
+          <span class="vj-when">started 2 min ago</span>
+          <button type="button" class="fgtl-card-stop" style="display:inline-block">Stop now</button>
+        </div>
+        <div class="vj-glyph-circle" aria-hidden="true">⌁</div>
+        <h2 class="vj-name"><span>Team Follower Growth</span></h2>
+
+        <div class="vj-hbar" role="progressbar"><i style="width:40%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span>40</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b>2</b> of <span>5</span> accounts done</span>
+              <span>Runs <b>sequentially</b> · 1 account at a time</span>
+            </div>
+          </div>
+          <div class="vj-stats">
+            <span><b>5</b> accounts</span>
+            <span><b>27</b> invites sent</span>
+            <span>· <b>Sending</b></span>
+          </div>
+        </div>
+
+        <div class="vj-details">
+          <!-- LEFT: the new per-account board -->
+          <div>
+            <div class="fgboard-head"><span class="h">Accounts</span><span class="c">2 done · 1 running · 1 skipped · 1 waiting</span></div>
+            <div class="fgacct-board">
+
+              <!-- DONE -->
+              <div class="fgacct dim">
+                <div class="ic done">✓</div>
+                <div><div class="em">alexc@ortus.solutions</div><div class="sub">finished · 27 of 30 targets</div></div>
+                <div class="right"><span class="fgtl-pill done">27 sent</span></div>
+              </div>
+
+              <!-- DONE, 0 sent (no credits) — still GREEN done, honest sub-line -->
+              <div class="fgacct dim">
+                <div class="ic done">✓</div>
+                <div><div class="em">justin@ortus.solutions</div><div class="sub">finished · 0 sent (no credits available right now)</div></div>
+                <div class="right"><span class="fgtl-pill done">0 sent</span></div>
+              </div>
+
+              <!-- RUNNING NOW -->
+              <div class="fgacct now">
+                <div class="ic run">⟳</div>
+                <div><div class="em">dwayne.co@ortus.solutions</div><div class="sub">sending invites… 14 of 30</div></div>
+                <div class="right">
+                  <span class="fgtl-pill running">running</span>
+                  <span class="miniprog"><i style="width:47%"></i></span>
+                </div>
+              </div>
+
+              <!-- SKIPPED · logged out -->
+              <div class="fgacct">
+                <div class="ic skip">🔒</div>
+                <div><div class="em">priya@ortusclub.com</div><div class="sub">skipped · logged out — needs re-login</div></div>
+                <div class="right"><span class="fgtl-pill skipped">logged out</span></div>
+              </div>
+
+              <!-- WAITING -->
+              <div class="fgacct">
+                <div class="ic">•</div>
+                <div><div class="em">megan@ortusclub.com</div><div class="sub">waiting its turn…</div></div>
+                <div class="right"><span class="fgtl-pill waiting">waiting</span></div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- RIGHT: keep the live log (unchanged) -->
+          <div class="vj-bulk">
+            <div class="vj-details-head">Live log · last events</div>
+            <div class="vj-log" style="max-height:300px;overflow:auto">
+              <div class="vj-log-line"><span class="what">🔄 [dwayne.co] selected "Naomi Watson"</span></div>
+              <div class="vj-log-line"><span class="what">🔄 [dwayne.co] selected "Elaine Lau"</span></div>
+              <div class="vj-log-line"><span class="what">✓ [justin] Invites sent · 0 sent</span></div>
+              <div class="vj-log-line"><span class="what">✓ [alexc] Invites sent · 27 sent, 3 credits left</span></div>
+              <div class="vj-log-line"><span class="what">🔄 [alexc] selected "Cheri Davies"</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
