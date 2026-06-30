@@ -13590,7 +13590,9 @@ function fgtlRenderCart() {
   const el = document.getElementById('fgtl-cart'); if (!el) return;
   const emails = Object.keys(fgtlPicked);
   const card = document.getElementById('fgtl-card'); if (card) card.style.display = emails.length ? '' : 'none';
-  if (!emails.length) { el.innerHTML = '<div class="empty">Add colleagues from the left.<br>You will see their paired account and how many invites they can send.</div>'; const foot = document.getElementById('fgtl-foot'); if (foot) foot.style.display = 'none'; return; }
+  const clr = document.getElementById('fgtl-clear');
+  if (!emails.length) { el.innerHTML = '<div class="empty">Add colleagues from the left.<br>You will see their paired account and how many invites they can send.</div>'; const foot = document.getElementById('fgtl-foot'); if (foot) foot.style.display = 'none'; if (clr) clr.style.display = 'none'; return; }
+  if (clr) clr.style.display = '';
   el.innerHTML = emails.map((em) => {
     const p = fgtlPeople.find((x) => x.email === em); if (!p) return '';
     const prof = fgtlPicked[em].profile || p.paired;
@@ -13601,7 +13603,7 @@ function fgtlRenderCart() {
     return `<div class="fgtl-pick">
       <div><div class="em">${escHtml(em)}</div><div class="acct ${acctCls}" data-fgchange="${escHtml(em)}">${prof ? escHtml(prof) + (p.paired && !fgtlPicked[em].changing ? ' · change' : '') : 'needs a profile'}</div></div>
       <div class="inv">${prof ? inv : 0}<small>${b === 0 ? 'budget 0' : 'invites'}</small></div>
-      <button class="rm" data-fgrm="${escHtml(em)}">remove</button>
+      <button class="rm" data-fgrm="${escHtml(em)}" title="Remove" aria-label="Remove">×</button>
       ${showSel ? `<div class="fgtl-acctsel"><input class="psearch" data-fgpsearch="${escHtml(em)}" placeholder="Search profiles by name…" value="${escHtml(fgtlPicked[em].pq || '')}"><div class="plist" data-fgplist="${escHtml(em)}">${fgtlRenderProfileOpts(em, prof, fgtlPicked[em].pq || '')}</div></div>` : ''}
     </div>`;
   }).join('');
@@ -13680,6 +13682,7 @@ function fgtlBindBoard() {
     // chip input keydown handled in bindBoard for chip-input
     const add = e.target.closest('[data-fgadd]'); if (add && !add.disabled) { fgtlPicked[add.dataset.fgadd] = {}; fgtlRenderAll(); return; }
     const rm = e.target.closest('[data-fgrm]'); if (rm) { delete fgtlPicked[rm.dataset.fgrm]; fgtlRenderAll(); return; }
+    if (e.target.id === 'fgtl-clear') { fgtlPicked = {}; fgtlRenderAll(); return; }
     const ch = e.target.closest('[data-fgchange]'); if (ch) { (fgtlPicked[ch.dataset.fgchange] ||= {}).changing = true; fgtlRenderCart(); return; }
     const opt = e.target.closest('[data-fgopt]'); if (opt) { const em = opt.dataset.fgopt; fgtlPicked[em].profile = opt.dataset.name; fgtlPicked[em].changing = false; fgtlPicked[em].pq = ''; fgtlRenderCart(); return; }
     if (e.target.id === 'fgtl-db-toggle') { const b = document.getElementById('fgtl-db-body'); if (b) b.style.display = b.style.display === 'none' ? 'block' : 'none'; return; }

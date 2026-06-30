@@ -1528,17 +1528,22 @@
       #nav-follower-growth .fgtl-refresh-btn { background:none; border:1px solid var(--hairline); border-radius:9999px; padding:5px 13px; font-family:var(--mono); font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--gray); cursor:pointer; white-space:nowrap; }
       #nav-follower-growth .fgtl-refresh-btn:hover { border-color:var(--ink); color:var(--ink); }
       #nav-follower-growth .fgtl-cart { border:1px solid var(--hairline); border-radius:14px; padding:16px; position:sticky; top:20px; }
-      #nav-follower-growth .fgtl-cart h3 { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0 0 12px; }
+      #nav-follower-growth .fgtl-cart-head { display:flex; align-items:center; justify-content:space-between; margin:0 0 12px; }
+      #nav-follower-growth .fgtl-cart h3 { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); margin:0; }
+      #nav-follower-growth .fgtl-clear { background:none; border:1px solid var(--red); color:var(--red); cursor:pointer; font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:9999px; }
+      #nav-follower-growth .fgtl-clear:hover { background:var(--red); color:#fff; }
+      #nav-follower-growth .fgtl-cart-list { max-height:520px; overflow-y:auto; padding-right:6px; }
       #nav-follower-growth .fgtl-cart .empty { color:var(--gray); font-size:12.5px; text-align:center; padding:30px 10px; border:1px dashed var(--hairline); border-radius:10px; }
       #nav-follower-growth .fgtl-pick { display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:11px 0; border-top:1px solid var(--hairline-soft); }
       #nav-follower-growth .fgtl-pick:first-child { border-top:none; }
       #nav-follower-growth .fgtl-pick .em { font-family:var(--mono); font-size:11.5px; color:var(--ink); }
-      #nav-follower-growth .fgtl-pick .acct { font-family:var(--mono); font-size:9.5px; color:var(--green); margin-top:3px; cursor:pointer; }
+      #nav-follower-growth .fgtl-pick .acct { font-family:var(--mono); font-size:9.5px; color:#1f9c3f; margin-top:3px; cursor:pointer; }
       #nav-follower-growth .fgtl-pick .acct.gap { color:var(--red); }
       #nav-follower-growth .fgtl-pick .acct.local { color:var(--gold); }
       #nav-follower-growth .fgtl-pick .inv { text-align:right; font-family:var(--display); font-size:1.1rem; color:var(--ink); }
       #nav-follower-growth .fgtl-pick .inv small { display:block; font-family:var(--mono); font-size:8px; text-transform:uppercase; color:var(--gray); }
-      #nav-follower-growth .fgtl-pick .rm { grid-column:2; justify-self:end; background:none; border:none; color:var(--gray); cursor:pointer; font-size:11px; font-family:var(--mono); }
+      #nav-follower-growth .fgtl-pick .rm { grid-column:2; justify-self:end; width:20px; height:20px; display:flex; align-items:center; justify-content:center; background:none; border:1px solid var(--hairline); border-radius:9999px; color:var(--gray); cursor:pointer; font-size:13px; line-height:1; font-family:var(--mono); padding:0; }
+      #nav-follower-growth .fgtl-pick .rm:hover { border-color:var(--red); color:var(--red); }
       #nav-follower-growth .fgtl-acctsel { grid-column:1 / -1; margin-top:8px; border:1px solid var(--gold); border-radius:10px; padding:8px; background:var(--bg-soft); }
       #nav-follower-growth .fgtl-acctsel .psearch { width:100%; box-sizing:border-box; background:var(--card-bg); border:1px solid var(--hairline); border-radius:9999px; padding:7px 12px; font-family:var(--mono); font-size:11px; color:var(--ink); outline:none; margin-bottom:7px; }
       #nav-follower-growth .fgtl-acctsel .plist { max-height:168px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
@@ -1612,8 +1617,11 @@
           <div class="fgtl-people" id="fgtl-people"></div>
         </div>
         <div class="fgtl-cart">
-          <h3>Your launch list</h3>
-          <div id="fgtl-cart"></div>
+          <div class="fgtl-cart-head">
+            <h3>Your launch list</h3>
+            <button type="button" id="fgtl-clear" class="fgtl-clear" style="display:none">Clear all</button>
+          </div>
+          <div id="fgtl-cart" class="fgtl-cart-list"></div>
           <div class="fgtl-cart-foot" id="fgtl-foot" style="display:none">
             <div class="tot"><span>People</span><b id="fgtl-t-people">0</b></div>
             <div class="tot"><span>Invites this run</span><b id="fgtl-t-inv" title="Upper bound — already-invited connections are skipped when sending">0</b></div>
