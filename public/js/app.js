@@ -13995,8 +13995,56 @@ function fgtlPoll() {
   tick();
 }
 
+// Per-account progress board shown ABOVE the live card. Pure render of the
+// status.perAccount the backend already streams — no invented data. Each slot is
+// { account, status:'waiting'|'running'|'done'|'skipped', invited, reason, loggedOut }.
+function fgtlRenderAcctBoard(status) {
+  const wrap = document.getElementById('fgtl-acctboard');
+  const list = document.getElementById('fgtl-acct-list');
+  if (!wrap || !list) return;
+  const accts = Array.isArray(status.perAccount) ? status.perAccount : [];
+  // Show only once a run exists (accounts present). Hidden at idle/Ready.
+  if (!accts.length) { wrap.hidden = true; list.innerHTML = ''; return; }
+  wrap.hidden = false;
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const counts = { done: 0, running: 0, skipped: 0, waiting: 0 };
+  list.innerHTML = accts.map((a) => {
+    const st = a.status || 'waiting';
+    counts[st] = (counts[st] || 0) + 1;
+    let icCls = '', ic = '•', pillCls = 'waiting', pillTxt = 'waiting', sub = 'waiting its turn…', rowCls = '';
+    if (st === 'done') {
+      const n = a.invited || 0;
+      icCls = 'done'; ic = '✓'; pillCls = 'done'; pillTxt = `${n} sent`; rowCls = 'dim';
+      sub = n > 0 ? `finished · ${n} invite${n === 1 ? '' : 's'} sent` : 'finished · 0 sent';
+    } else if (st === 'running') {
+      icCls = 'run'; ic = '⟳'; pillCls = 'running'; pillTxt = 'running'; rowCls = 'now';
+      sub = 'sending invites…';
+    } else if (st === 'skipped') {
+      icCls = 'skip'; pillCls = 'skipped';
+      if (a.loggedOut) { ic = '🔒'; pillTxt = 'logged out'; }
+      else { ic = '✗'; pillTxt = 'skipped'; }
+      sub = `skipped${a.reason ? ' · ' + esc(a.reason) : ''}`;
+    }
+    return `<div class="fgacct ${rowCls}">
+      <div class="ic ${icCls}">${ic}</div>
+      <div><div class="em">${esc(a.account)}</div><div class="sub">${sub}</div></div>
+      <div class="right"><span class="fgtl-pill ${pillCls}">${esc(pillTxt)}</span></div>
+    </div>`;
+  }).join('');
+
+  const roll = [];
+  if (counts.done) roll.push(`${counts.done} done`);
+  if (counts.running) roll.push(`${counts.running} running`);
+  if (counts.skipped) roll.push(`${counts.skipped} skipped`);
+  if (counts.waiting) roll.push(`${counts.waiting} waiting`);
+  const rollEl = document.getElementById('fgtl-acct-roll');
+  if (rollEl) rollEl.textContent = roll.join(' · ');
+}
+
 /** Map status object onto #fgtl-* card elements. */
 function fgtlRenderCard(status) {
+  fgtlRenderAcctBoard(status);
   function setTxt(id, val) {
     const el = document.getElementById(id);
     if (el) el.textContent = val != null ? String(val) : '';

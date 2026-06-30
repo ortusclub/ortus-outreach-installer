@@ -1499,6 +1499,21 @@
       #nav-follower-growth .fgtl-ready-btn { border:1px solid var(--green); color:var(--green); background:none; border-radius:9999px; padding:8px 16px; font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
       #nav-follower-growth .fgtl-ready-btn:hover { background:var(--green); color:#fff; }
       #nav-follower-growth .fgtl-ready-btn.dis { border-color:var(--hairline); color:var(--hairline); cursor:not-allowed; }
+      #nav-follower-growth .fgacct-wrap { margin:0 0 18px; }
+      #nav-follower-growth .fgboard-head { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px; }
+      #nav-follower-growth .fgboard-head .h { font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--gray); }
+      #nav-follower-growth .fgboard-head .c { font-family:var(--mono); font-size:11px; color:var(--ink); }
+      #nav-follower-growth .fgacct-board { display:flex; flex-direction:column; gap:8px; }
+      #nav-follower-growth .fgacct { display:grid; grid-template-columns:22px 1fr auto; align-items:center; gap:12px; padding:11px 13px; border:1px solid var(--hairline); border-radius:11px; }
+      #nav-follower-growth .fgacct.now { border-color:var(--gold); background:color-mix(in srgb, var(--gold) 7%, transparent); }
+      #nav-follower-growth .fgacct.dim { opacity:.62; }
+      #nav-follower-growth .fgacct .ic { width:22px; height:22px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-size:12px; border:1px solid var(--hairline); color:var(--gray); }
+      #nav-follower-growth .fgacct .ic.done { color:var(--green); border-color:var(--green); }
+      #nav-follower-growth .fgacct .ic.skip { color:var(--red); border-color:var(--red); }
+      #nav-follower-growth .fgacct .ic.run { color:var(--gold); border-color:var(--gold); animation:fgtlPp 1s infinite; }
+      #nav-follower-growth .fgacct .em { font-family:var(--mono); font-size:12.5px; color:var(--ink); }
+      #nav-follower-growth .fgacct .sub { font-family:var(--mono); font-size:9.5px; color:var(--gray); margin-top:3px; }
+      #nav-follower-growth .fgacct .right { text-align:right; }
       #nav-follower-growth .fgtl-mbox { text-align:right; }
       #nav-follower-growth .fgtl-mbox b { font-family:var(--display); font-size:1.5rem; line-height:1; color:var(--ink); }
       #nav-follower-growth .fgtl-mbox.zero b { color:var(--gray); }
@@ -1558,6 +1573,7 @@
       #nav-follower-growth .fgtl-pill.running { color:var(--gold); border:1px solid var(--gold); animation:fgtlPp 1s infinite; }
       #nav-follower-growth .fgtl-pill.done { color:var(--green); border:1px solid var(--green); }
       #nav-follower-growth .fgtl-pill.skipped { color:var(--red); border:1px solid var(--red); }
+      #nav-follower-growth .fgtl-pill.waiting { color:var(--gray); border:1px solid var(--hairline); }
       @keyframes fgtlPp { 0%,100%{opacity:1} 50%{opacity:.4} }
     </style>
     <div class="section" id="nav-follower-growth" style="display:none">
@@ -1599,6 +1615,12 @@
             <button class="fgtl-go-btn" id="fgtl-stop" style="display:none;background:var(--red);color:#fff">Stop now</button>
           </div>
         </div>
+      </div>
+
+      <!-- Per-account progress board — sits ABOVE the live card during a run -->
+      <div class="fgacct-wrap" id="fgtl-acctboard" hidden>
+        <div class="fgboard-head"><span class="h">Accounts</span><span class="c" id="fgtl-acct-roll"></span></div>
+        <div class="fgacct-board" id="fgtl-acct-list"></div>
       </div>
 
       <!-- Live campaign card (reuses global .vj-* classes) -->
