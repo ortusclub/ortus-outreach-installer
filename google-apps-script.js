@@ -1833,8 +1833,11 @@ function handleBumpSoOConnections(sheet, data) {
     var cell = sheet.getRange(targetRow, connCol + 1);
     var cur = Number(cell.getValue());
     if (!isFinite(cur)) cur = 0;
-    var newVal = reset ? delta : cur + delta;
+    // Whole connections only — round and stamp an integer number format so the
+    // cell reads "1", not "1.0" (the column's default format may show decimals).
+    var newVal = Math.round(reset ? delta : cur + delta);
     cell.setValue(newVal);
+    cell.setNumberFormat('0');
     props.setProperty(key, week);
 
     return jsonResponse({ success: true, matched: true, row: targetRow, value: newVal, week: week, reset: reset });
