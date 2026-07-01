@@ -29,6 +29,131 @@ import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
+import { toggleDecision, fmtEta } from '/js/scrape-board.mjs';
+
+// ── Sales Nav Board ──────────────────────────────────────────────────────────
+let snCurrentEmail = '';
+async function loadOperatorEmail() {
+  try { const r = await fetch('/api/operator-identity'); const d = await r.json(); snCurrentEmail = (d && d.email) || ''; }
+  catch { snCurrentEmail = ''; }
+}
+
+let _snPollTimer = null;
+async function openSalesNavBoard() {
+  document.querySelectorAll('.section').forEach((s) => { s.style.display = 'none'; });
+  const sec = document.getElementById('nav-salesnav');
+  if (sec) sec.style.display = 'block';
+  await loadOperatorEmail();
+  await pollSalesNavBoard();
+  clearInterval(_snPollTimer);
+  _snPollTimer = setInterval(pollSalesNavBoard, 2500);
+}
+window.openSalesNavBoard = openSalesNavBoard;
+
+async function pollSalesNavBoard() {
+  const host = document.getElementById('sn-board');
+  if (!host || document.hidden) return;
+  try {
+    const r = await fetch('/api/scrape/campaigns');
+    const d = await r.json();
+    if (d && d.error) { host.innerHTML = `<div class="sn-empty">${escHtml(d.error)}</div>`; return; }
+    renderSalesNavBoard(d.campaigns || []);
+  } catch (_) { /* keep last render */ }
+}
+
+function _snStatusDot(status) {
+  const cls = status === 'running' ? 'run' : status === 'queued' ? 'q' : status === 'error' ? 'red' : 'mon';
+  return `<span class="dot ${cls}"></span>`;
+}
+
+function renderSalesNavBoard(campaigns) {
+  const host = document.getElementById('sn-board');
+  const running = campaigns.filter((c) => c.status === 'running');
+  const queued = campaigns.filter((c) => c.status === 'queued');
+  const done = campaigns.filter((c) => c.status === 'done' || c.status === 'error');
+  document.getElementById('sn-qmeta').textContent =
+    `${running.length} running · ${queued.length} queued`;
+  let html = '';
+  const rail = (label, list) => list.length
+    ? `<div class="sn-railhead">${label}</div>` + list.map(renderStrip).join('') : '';
+  html += rail('▶ Now running', running);
+  html += rail('• Up next in the queue', queued);
+  html += rail('✓ Done', done);
+  if (!campaigns.length) html = `<div class="sn-empty">No scrapes yet — press ＋ New scrape.</div>`;
+  host.innerHTML = html;
+}
+
+function renderStrip(c) {
+  const isQueued = c.status === 'queued';
+  const owner = c.owner || 'unknown';
+  const nJobs = (c.jobs || []).length || (c.searchUrls || []).length;
+  const flow = `<b>${(c.searchUrls || []).length} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
+  const statusTxt = isQueued
+    ? `Queued${c.minPosition ? ` · #${c.minPosition}` : ''}${c.etaMs ? ` · ${fmtEta(c.etaMs)}` : ''}`
+    : c.status === 'running' ? `Running · ${c.done}/${nJobs} jobs` : (c.status === 'error' ? 'Error' : 'Done');
+  const jobsPane = (c.jobs || []).map((j) => {
+    const label = j.searchUrl ? j.searchUrl.slice(0, 60) : 'search';
+    const st = j.state === 'running' ? `<span class="dot run"></span> Running · ${j.profiles || 0} rows`
+      : j.state === 'done' ? `<span class="dot mon"></span> Done · ${j.profiles || 0} rows`
+      : j.state === 'error' ? `<span class="dot red"></span> Error`
+      : `<span class="dot q"></span> Queued`;
+    return `<div class="job"><div><div class="jt">${escHtml(label)}</div></div><div class="jstat">${st}</div></div>`;
+  }).join('') || '<div class="sn-empty">No jobs.</div>';
+  const canOpen = !isQueued || _snIsOwnerOrAdmin(owner);
+  const openBtn = canOpen
+    ? `<button class="mini solid" onclick="openScrapeSetupFor('${escHtml(c.id)}')">Open</button>`
+    : `<button class="mini locked" title="Only ${escHtml(owner)} can open this">Open 🔒</button>`;
+  const toggleOn = c.enabled !== false;
+  const switchBlock = isQueued ? '' : `
+    <div class="sn-switch">
+      <div class="sn-switchtabs"><span class="sn-st on" data-t="jobs">Jobs</span><span class="sn-st" data-t="logs">Logs</span></div>
+      <div class="sn-pane on" data-p="jobs">${jobsPane}</div>
+      <div class="sn-pane" data-p="logs"><div class="sn-logbox" data-logsfor="${escHtml(c.id)}">…</div></div>
+    </div>`;
+  return `
+  <div class="sn-strip ${c.status === 'running' ? 'run' : ''} ${isQueued ? 'queued sn-collapsed' : ''} ${c.status === 'done' || c.status === 'error' ? 'done' : ''}" data-cid="${escHtml(c.id)}">
+    <div class="sn-qpos">${isQueued && c.minPosition ? c.minPosition : (c.status === 'running' ? '▶' : '✓')}</div>
+    <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span><span class="sn-owner">· ${escHtml(owner)}</span>
+      <span class="sn-status">${_snStatusDot(c.status)} ${escHtml(statusTxt)}</span></div>
+    <div class="sn-name">${escHtml(c.name || '')}</div>
+    <div class="sn-flow">${flow}</div>
+    ${switchBlock}
+    <div class="sn-foot">
+      <div class="togwrap"><div class="toggle ${toggleOn ? '' : 'off'}" data-owner="${escHtml(owner)}" data-cid="${escHtml(c.id)}"><i></i></div><span class="lbl">${toggleOn ? 'On' : 'Off'}</span></div>
+      <div class="right">${c.status === 'running' ? '<button class="mini" onclick="stopScrapeCampaign(\'' + escHtml(c.id) + '\')">Stop</button>' : ''}${openBtn}</div>
+    </div>
+  </div>`;
+}
+
+function _snIsOwnerOrAdmin(owner) {
+  const dec = toggleDecision({ currentEmail: snCurrentEmail, ownerEmail: owner });
+  return !dec.needsConfirm;
+}
+
+function startNewScrapeSetup() { openScrapeSetupFor(''); }
+window.startNewScrapeSetup = startNewScrapeSetup;
+
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('.sn-st');
+  if (tab) {
+    const sw = tab.closest('.sn-switch');
+    sw.querySelectorAll('.sn-st').forEach((x) => x.classList.toggle('on', x === tab));
+    sw.querySelectorAll('.sn-pane').forEach((p) => p.classList.toggle('on', p.dataset.p === tab.dataset.t));
+    if (tab.dataset.t === 'logs') {
+      const box = sw.querySelector('.sn-logbox');
+      if (box && box.dataset.logsfor) _snLoadLogs(box);
+    }
+  }
+});
+async function _snLoadLogs(box) {
+  try {
+    const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(box.dataset.logsfor)}/logs`);
+    const d = await r.json();
+    box.innerHTML = (d.lines || []).map((l) =>
+      `<div><span class="t">${new Date(l.ts).toLocaleTimeString()}</span> ${escHtml(l.message)}</div>`).join('') || 'No logs yet.';
+  } catch { box.textContent = 'Logs unavailable.'; }
+}
+// ── /Sales Nav Board ─────────────────────────────────────────────────────────
 
 // Floating live console — state used by renderLiveConsole(). The previous
 // running flag is needed to detect the running → idle transition that
