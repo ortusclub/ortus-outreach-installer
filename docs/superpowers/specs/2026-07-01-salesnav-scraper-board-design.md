@@ -45,8 +45,14 @@ generic campaigns list is untouched.
 
 ## 4. Non-negotiable constraints
 
-- **One campaign at a time** (hard app constraint). The board shows exactly one
-  "Now running" plus a queue of "Up next". FIFO via `src/campaign-queue.js`.
+- **Do NOT change scrape execution or concurrency logic** (operator decision,
+  2026-07-01). This is a **presentation redesign** over the existing GKE scrape
+  engine plus the minimal persistence the board needs. The engine already
+  queues jobs and reports their state — we surface it, we don't re-implement it.
+- **The one-campaign-at-a-time rule does NOT apply to scrapes.** That constraint
+  exists because *local* campaigns open browsers/sheets and crash under parallel
+  load. Scrapes run on the **cloud engine**, which schedules jobs itself. The
+  board reflects the **engine's** queue/positions, not `src/campaign-queue.js`.
 - **1:1 with the real skin.** Build in the real app, reusing `/css/style.css` +
   `/css/dashboard-v0.3.css` tokens (`--ink`, `--gray`, `--green`, `--gold`,
   `--hairline`, `--bg-soft`, `--display`, `--mono`), `body[data-dashboard='v3']`
@@ -70,13 +76,26 @@ the tab ships (see §11 Q1 — transition decision).
 
 ## 6. The queue board
 
-A single vertical, queue-ordered list of strips under two rails:
+A single vertical list of strips, grouped under two rails, **driven by the
+engine's real state** (from `scraper-client.js` `getJobs()` — each job reports
+`state`, `position`, `accountsAhead`, `etaMs`, `pages`, `profiles`):
 
-- **▶ Now running** — the one active scraper (queue position `#1`).
-- **• Up next in the queue** — queued scrapers (`#2`, `#3`, …) in FIFO order.
+- **▶ Now running** — scraper campaigns with any job in `running` state.
+- **• Up next in the queue** — campaigns whose jobs are `queued`, ordered by the
+  engine's reported `position`.
 
-**Board header:** date kicker + "Sales Nav Queue" title + a meta line
-(`N running · M queued · one at a time`).
+Because concurrency is unchanged and engine-driven, there **may be more than one
+running** campaign if the engine is running jobs across accounts — the board
+shows all of them; it does not force a single "Now running". "Done" campaigns
+(all jobs `done`/`error`) drop below or into a done section.
+
+**Board header:** date kicker + "Sales Nav Queue" title + a meta line derived
+from live engine counts (`N running · M queued`).
+
+**A "scrape campaign" = a persisted named group of jobs** (one job per Sales Nav
+search URL) with an owner and destination. Strips group the engine's jobs by
+their campaign; positions/ETA/progress within a strip come straight from the
+engine per job.
 
 ### 6.1 Strip — running (expanded)
 
@@ -120,10 +139,11 @@ which is where editing happens.
   the confirm** — the toggle flips immediately on any campaign, as if owned. The
   action is still logged (`toggled OFF by antonio@ortusclub.com (admin)`).
   Everyone else gets the confirm on campaigns they don't own.
-- **Semantics (option A — arm/disarm in queue):**
-  - **On** = the campaign will run when it reaches the front of the queue.
-  - **Off** = it stays in the queue but is skipped/paused until turned On again.
-  - **Off** on the *running* campaign = **pause** the scrape; **On** = resume.
+- **Semantics (option A — arm/disarm), implemented via the engine's existing
+  pause/resume/stop** (`scraper-client.js` `pauseScrape`/`resumeScrape` per
+  job): **Off** pauses the campaign's jobs on the engine; **On** resumes them.
+  No new queue-execution logic is added — we drive the controls the engine
+  already exposes.
 - **Every toggle is logged** to that campaign's own log, including who did it
   (e.g. `toggled OFF by Alecx Bagatsolon`), so owners can see cross-owner
   actions.
@@ -166,23 +186,46 @@ total rows.
 2. **Admin override — DECIDED:** `antonio@ortusclub.com` bypasses the owner
    confirm (flips immediately, still logged as admin). Everyone else gets the
    "not your campaign" confirm. See §7.
+3. **Queue model — DECIDED:** the board reflects the **engine's** real queue
+   (live `position`/`etaMs`/`state` from `getJobs()`), not the app FIFO. See §6.
+4. **Concurrency — DECIDED:** no change to current scrape execution/concurrency
+   logic. Whatever the engine does today stays; the board only presents it.
 
-## 12. Code-side unknowns to verify during planning (risks)
+## 12. Architecture (verified 2026-07-01)
 
-These are the two areas the sketch can't settle — they gate feasibility and must
-be confirmed against the code before/within the implementation plan:
+Investigation confirmed the scrape engine is a remote GKE service and the app is
+a thin HTTP control panel (`src/scraper-client.js`, `/api/scrape/*` in
+server.js). This reshapes the work from "build a queue" to "present the engine's
+state + persist a campaign wrapper".
 
-- **R1 — Per-campaign log surfacing.** The board needs each scraper campaign's
-  **own** log stream (queue events, per-job dispatch/progress/done, toggles),
-  live for the running one and historical for queued/done. Verify what the
-  scrape engine (`/api/scrape/*`, `SCRAPER_ENGINE_URL`, GKE) and campaign
-  history already persist per campaign, and whether a per-campaign log feed
-  exists or must be built.
-- **R2 — Multiple queued Sales Nav campaigns.** The board assumes several
-  scraper campaigns can sit queued behind the running one. Confirm
-  `src/campaign-queue.js` supports queuing multiple `sales_nav_scrape` configs
-  and exposes queue position, and that arm/disarm (On/Off) can pause/skip a
-  queued or running scrape without corrupting the FIFO order.
+**Already exists (reuse, don't rebuild):**
+- **Per-job state/position/ETA** — `getJobs()` returns `state`, `pages`,
+  `profiles`, `position`, `accountsAhead`, `etaMs`, `tabName`, `searchUrl`, `id`.
+- **Pause / resume / stop per job** — `pauseScrape`/`resumeScrape`/`stopScrape`
+  (→ engine `/api/scrape/*`). Drives the On/Off toggle and Stop.
+- **Live activity logs** — `getLogs(since)` → `{ts, tabName, message}` lines
+  (currently held only in an ephemeral in-memory ring, `app.js` ~2589–2604).
+- **Owner + operator identity** — queue/history carry `owner`; the current
+  operator email is available via `/api/operator-identity`
+  (`src/operator-identity.js`). Enough to owner-gate and to detect the admin.
+
+**Must be built:**
+- **B1 — Persisted "scrape campaign" record.** Today scrapes fire jobs with no
+  saved name/owner/grouping. Persist each launched scrape as a campaign
+  (id, name, owner, destination sheet+tab, its job IDs, createdAt) so strips can
+  group jobs and gate by owner. New small data file + server routes.
+- **B2 — Per-campaign scrape log persistence** for history. Engine logs are
+  live-only and operator-scoped; persist them per campaign (NDJSON per campaign
+  id, or a scoped scrape log + reader like `readCampaignLog`) so a done/queued
+  campaign's Logs tab has content. Live tab still polls the engine.
+- **B3 — The board UI itself** (tab, strips, Jobs/Logs tabs, owner toggle +
+  confirm + admin bypass, handover visual, Open→setup routing) — the bulk of the
+  work, all frontend over the above.
+- **B4 — Toggle/action logging** — write toggle + stop actions (with actor) into
+  the campaign's persisted log (B2), including the admin tag.
+
+**Explicitly NOT built (per §11.4):** any new scrape queue, drain trigger, or
+concurrency control. Scrape scheduling stays entirely on the engine.
 
 ## 13. Success criteria
 
