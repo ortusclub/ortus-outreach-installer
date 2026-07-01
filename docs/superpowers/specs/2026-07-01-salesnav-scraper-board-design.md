@@ -116,6 +116,10 @@ which is where editing happens.
   **Cancel** leaves it, **Yes, toggle it** flips it. (Namespaced modal; the
   sketch proved generic class names collide with app CSS — real impl must scope
   its styles.)
+- **Admin override:** `antonio@ortusclub.com` is treated as admin and **bypasses
+  the confirm** — the toggle flips immediately on any campaign, as if owned. The
+  action is still logged (`toggled OFF by antonio@ortusclub.com (admin)`).
+  Everyone else gets the confirm on campaigns they don't own.
 - **Semantics (option A — arm/disarm in queue):**
   - **On** = the campaign will run when it reaches the front of the queue.
   - **Off** = it stays in the queue but is skipped/paused until turned On again.
@@ -155,14 +159,13 @@ GoLogin account per URL; destination sheet URL + new tab name; slow-mode flag;
 queue position; per-job status + row counts; per-campaign log lines; running
 total rows.
 
-## 11. Open questions / decisions needed before/within planning
+## 11. Decisions (resolved 2026-07-01)
 
-1. **Transition of the old mode:** remove `sales_nav_scrape` from the New
-   Campaign wizard the moment the tab ships, or keep both during a transition?
-   (Recommendation: remove on ship to avoid two doors to the same thing.)
-2. **Admin override:** should an admin (e.g. Antonio) bypass the owner confirm,
-   or does everyone get the same "not your campaign" confirm? (Current design:
-   same confirm for everyone; no special admin path.)
+1. **Transition of the old mode — DECIDED:** remove `sales_nav_scrape` from the
+   New Campaign wizard the moment the new tab ships (no side-by-side period).
+2. **Admin override — DECIDED:** `antonio@ortusclub.com` bypasses the owner
+   confirm (flips immediately, still logged as admin). Everyone else gets the
+   "not your campaign" confirm. See §7.
 
 ## 12. Code-side unknowns to verify during planning (risks)
 
