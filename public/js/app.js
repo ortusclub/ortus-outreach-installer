@@ -145,6 +145,44 @@ document.addEventListener('click', (e) => {
     }
   }
 });
+let _snPendingToggle = null;
+function _snApplyToggle(el, cid) {
+  const goingOn = el.classList.contains('off'); // currently off → turning on
+  fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ on: goingOn }),
+  }).then(() => pollSalesNavBoard()).catch(() => {});
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('.toggle');
+  if (!t || !t.dataset.cid) return;
+  const owner = t.dataset.owner || '';
+  const dec = toggleDecision({ currentEmail: snCurrentEmail, ownerEmail: owner });
+  if (dec.needsConfirm) {
+    _snPendingToggle = { el: t, cid: t.dataset.cid };
+    const goingTo = t.classList.contains('off') ? 'ON' : 'OFF';
+    document.getElementById('snm-body').innerHTML =
+      `This isn't your campaign — it belongs to <b>${escHtml(owner)}</b>. Turning it <b>${goingTo}</b> affects their scrape and its place in the queue. Continue?`;
+    document.getElementById('snm-scrim').classList.add('open');
+    return;
+  }
+  _snApplyToggle(t, t.dataset.cid); // owner or admin → immediate
+});
+document.getElementById('snm-cancel')?.addEventListener('click', () => {
+  _snPendingToggle = null; document.getElementById('snm-scrim').classList.remove('open');
+});
+document.getElementById('snm-ok')?.addEventListener('click', () => {
+  if (_snPendingToggle) _snApplyToggle(_snPendingToggle.el, _snPendingToggle.cid);
+  _snPendingToggle = null; document.getElementById('snm-scrim').classList.remove('open');
+});
+
+function stopScrapeCampaign(cid) {
+  fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: false }),
+  }).then(() => pollSalesNavBoard());
+}
+window.stopScrapeCampaign = stopScrapeCampaign;
+
 async function _snLoadLogs(box) {
   try {
     const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(box.dataset.logsfor)}/logs`);
