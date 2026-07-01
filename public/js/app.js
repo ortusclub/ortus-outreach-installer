@@ -162,6 +162,36 @@ function _snIsOwnerOrAdmin(owner) {
   return !dec.needsConfirm;
 }
 
+// Open the scrape setup/config wizard for a campaign (or a blank new scrape when
+// cid is ''). Reaches the same screen the scrape is built on by switching the
+// wizard into sales_nav_scrape mode via the existing mode machinery — NOT by
+// toggling section display by hand.
+async function openScrapeSetupFor(cid) {
+  if (typeof goCreateCampaign === 'function') goCreateCampaign(); // → #/new
+  // Let the hash route settle, then switch mode + prefill.
+  setTimeout(async () => {
+    const sel = document.getElementById('campaign-mode');
+    if (sel) sel.value = 'sales_nav_scrape';
+    if (typeof onModeChange === 'function') onModeChange(); // reveals #nav-scrape etc.
+    if (!cid) return;
+    try {
+      const r = await fetch('/api/scrape/campaigns');
+      const d = await r.json();
+      const rec = (d.campaigns || []).find((c) => c.id === cid);
+      if (rec) {
+        const urls = document.getElementById('scrape-urls');
+        if (urls) urls.value = (rec.searchUrls || []).join('\n');
+        const sheet = document.getElementById('scrape-sheet');
+        if (sheet) sheet.value = rec.sheetUrl || '';
+        const tab = document.getElementById('scrape-tab');
+        if (tab) tab.value = rec.tabName || 'Results';
+        if (typeof updateScrapePairing === 'function') updateScrapePairing();
+      }
+    } catch (_) { /* new/empty setup — leave fields blank */ }
+  }, 80);
+}
+window.openScrapeSetupFor = openScrapeSetupFor;
+
 function startNewScrapeSetup() { openScrapeSetupFor(''); }
 window.startNewScrapeSetup = startNewScrapeSetup;
 
@@ -3556,15 +3586,6 @@ const MODE_LIST = [
       'Messages leads via LinkedIn or Sales Navigator',
       'Free for Open Profile members — optional InMail fallback',
       'Resolves plain profile links automatically',
-    ],
-  },
-  {
-    value: 'sales_nav_scrape',
-    name: 'Sales Nav Scrape',
-    bullets: [
-      'Scrape a Sales Navigator search into a Google Sheet',
-      'Runs in the cloud — close your laptop, it keeps going',
-      'Live page / profile progress',
     ],
   },
   {
