@@ -66,7 +66,39 @@ function _snStatusDot(status) {
   return `<span class="dot ${cls}"></span>`;
 }
 
+let _snPrevStatus = new Map(); // cid -> status
+function _snDetectHandover(campaigns) {
+  const nowStatus = new Map(campaigns.map((c) => [c.id, c.status]));
+  let stopped = null, started = null;
+  for (const [cid, prev] of _snPrevStatus) {
+    const cur = nowStatus.get(cid);
+    if (prev === 'running' && (cur === 'done' || cur === 'error' || cur === undefined)) stopped = cid;
+  }
+  for (const c of campaigns) {
+    if (_snPrevStatus.get(c.id) === 'queued' && c.status === 'running') started = c.id;
+  }
+  _snPrevStatus = nowStatus;
+  if (stopped || started) _snShowHandover(campaigns, stopped, started);
+}
+function _snName(campaigns, cid) { const c = campaigns.find((x) => x.id === cid); return c ? (c.name || 'a scrape') : 'a scrape'; }
+function _snShowHandover(campaigns, stopped, started) {
+  const ho = document.getElementById('sn-handover'), txt = document.getElementById('sn-handover-txt');
+  if (!ho) return;
+  if (stopped && started) {
+    ho.className = 'sn-handover show launching';
+    txt.innerHTML = `<b>Handover</b> — ${escHtml(_snName(campaigns, stopped))} stopped, now launching <b>${escHtml(_snName(campaigns, started))}</b>.`;
+  } else if (stopped) {
+    ho.className = 'sn-handover show stopping';
+    txt.innerHTML = `<b>Stopped</b> ${escHtml(_snName(campaigns, stopped))}.`;
+  } else {
+    ho.className = 'sn-handover show launching';
+    txt.innerHTML = `<b>Launching</b> ${escHtml(_snName(campaigns, started))}…`;
+  }
+  clearTimeout(ho._t); ho._t = setTimeout(() => { ho.className = 'sn-handover'; }, 5000);
+}
+
 function renderSalesNavBoard(campaigns) {
+  _snDetectHandover(campaigns);
   const host = document.getElementById('sn-board');
   const running = campaigns.filter((c) => c.status === 'running');
   const queued = campaigns.filter((c) => c.status === 'queued');
