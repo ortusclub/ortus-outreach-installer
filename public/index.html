@@ -42,7 +42,6 @@
 
         <div class="nav-section-label">Team</div>
         <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
-        <button type="button" class="nav-item" data-nav="nav-salesnav" onclick="openSalesNavBoard()"><span class="nav-num">◆</span>Sales Nav<span class="nav-glyph" id="nav-glyph-salesnav"></span></button>
 
         <div class="nav-section-label">Review</div>
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
@@ -214,6 +213,7 @@
              renderResumeDraftBadge() in app.js. -->
         <div class="dashboard-new-wrap">
           <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connection DB</button>
+          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goSalesNav()">Sales Nav</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
                indicator (drafts remain reachable via the Drafts & Stops section).
@@ -604,6 +604,21 @@
         <div class="gs" id="cx-sheet-preview"></div>
         <p class="gs-note">Columns are the real lead-sheet schema (<b>First Name + LinkedIn URL</b> required), plus a <b>Primary</b> column = the colleague who can warmly reach each person. <b>Stage</b> is left blank for the campaign to fill.</p>
       </section>
+    </div>
+
+    <!-- ── Sales Nav board view (route #/salesnav) — top-level queue board. ── -->
+    <div id="salesnav-view" class="route-view">
+      <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+      <div class="sn-boardhead">
+        <div>
+          <div class="sn-kicker" id="sn-datekicker">Sales Nav</div>
+          <div class="sn-boardtitle">Sales Nav Queue</div>
+        </div>
+        <div class="sn-qmeta" id="sn-qmeta">—</div>
+        <button type="button" class="sn-newbtn" onclick="startNewScrapeSetup()">＋ New scrape</button>
+      </div>
+      <div id="sn-handover" class="sn-handover"><span class="spin"></span><span class="txt" id="sn-handover-txt"></span></div>
+      <div id="sn-board" class="sn-board"></div>
     </div>
 
     <!-- ── Wizard view (route #/new) ── -->
@@ -1203,18 +1218,7 @@
   .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
 </style>
 
-<div class="section" id="nav-salesnav" style="display:none">
-  <div class="sn-boardhead">
-    <div>
-      <div class="sn-kicker" id="sn-datekicker">Sales Nav</div>
-      <div class="sn-boardtitle">Sales Nav Queue</div>
-    </div>
-    <div class="sn-qmeta" id="sn-qmeta">—</div>
-    <button type="button" class="sn-newbtn" onclick="startNewScrapeSetup()">＋ New scrape</button>
-  </div>
-  <div id="sn-handover" class="sn-handover"><span class="spin"></span><span class="txt" id="sn-handover-txt"></span></div>
-  <div id="sn-board" class="sn-board"></div>
-</div>
+<!-- Sales Nav board markup moved to the top-level #salesnav-view route-view. -->
 
     <!-- ── Sales Nav Scrape (2026-06) — visible only when mode = sales_nav_scrape. ──
          Control panel for the GKE scraper engine. Dispatches a scrape job

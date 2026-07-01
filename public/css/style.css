@@ -4659,12 +4659,14 @@ body.theme-light .sb-link { color: #6e520f; }
 .route-view { display: none; }
 body.route-dashboard #dashboard-view,
 body.route-connections #connections-view,
+body.route-salesnav #salesnav-view,
 body.route-wizard #wizard-view { display: block; }
 
 /* Hide the campaign+review sidebar nav while on the dashboard or connections
    route — those nav items only make sense inside the wizard. */
 body.route-dashboard .sidebar-nav,
-body.route-connections .sidebar-nav { display: none; }
+body.route-connections .sidebar-nav,
+body.route-salesnav .sidebar-nav { display: none; }
 
 /* ── Connections (warm-reach) screen ───────────────────────────────────── */
 .conn-stats { display: flex; gap: 56px; padding: 8px 0 4px; }

@@ -39,10 +39,15 @@ async function loadOperatorEmail() {
 }
 
 let _snPollTimer = null;
+// Navigate to the Sales Nav board (its own top-level route #/salesnav). The
+// router (applyRoute) calls openSalesNavBoard() on entry to load + start polling.
+function goSalesNav() { window.location.hash = '#/salesnav'; }
+window.goSalesNav = goSalesNav;
+
+// Route-entry initializer for the board. View visibility is handled by the
+// #/salesnav route (body.route-salesnav in the router + CSS), NOT by toggling
+// section display here.
 async function openSalesNavBoard() {
-  document.querySelectorAll('.section').forEach((s) => { s.style.display = 'none'; });
-  const sec = document.getElementById('nav-salesnav');
-  if (sec) sec.style.display = 'block';
   await loadOperatorEmail();
   await pollSalesNavBoard();
   clearInterval(_snPollTimer);
@@ -51,8 +56,8 @@ async function openSalesNavBoard() {
 window.openSalesNavBoard = openSalesNavBoard;
 
 async function pollSalesNavBoard() {
-  const _snSec = document.getElementById('nav-salesnav');
-  if (!_snSec || _snSec.style.display === 'none') { clearInterval(_snPollTimer); _snPollTimer = null; return; }
+  // Self-cancel once we leave the board route (the poller outlives the view otherwise).
+  if (!document.body.classList.contains('route-salesnav')) { clearInterval(_snPollTimer); _snPollTimer = null; return; }
   const host = document.getElementById('sn-board');
   if (!host || document.hidden) return;
   try {
@@ -10169,9 +10174,20 @@ function applyRoute() {
   const hash = window.location.hash || '#/';
   const isWizard = hash.startsWith('#/new');
   const isConnections = hash.startsWith('#/connections');
+  const isSalesNav = hash.startsWith('#/salesnav');
   document.body.classList.toggle('route-connections', isConnections);
-  document.body.classList.toggle('route-wizard', isWizard && !isConnections);
-  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections);
+  document.body.classList.toggle('route-salesnav', isSalesNav);
+  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav);
+  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav);
+  if (isSalesNav) {
+    // Sales Nav board — its own top-level route-view. Stop the other routes'
+    // pollers and start the board's load/poll loop.
+    stopDashboardPolling();
+    if (typeof stopWizardPolling === 'function') stopWizardPolling();
+    if (typeof stopConnectionsPolling === 'function') stopConnectionsPolling();
+    if (typeof openSalesNavBoard === 'function') openSalesNavBoard();
+    return;
+  }
   if (isConnections) {
     // Connections (warm-reach) screen — its own route-view. Stop the other
     // routes' pollers and kick off the screen's own load/poll loop.
