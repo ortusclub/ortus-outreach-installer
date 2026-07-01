@@ -194,7 +194,7 @@ function requestWithRetry(method, path, body) {
  * @param {string}   [opts.tabName]          destination tab (single scrape only)
  * @param {boolean}  [opts.slowMode]         larger inter-page delays
  */
-export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false } = {}) {
+export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode = false, ownerEmail = '', campaignName = '' } = {}) {
   const urls = (Array.isArray(searchUrls) ? searchUrls : [searchUrls])
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
@@ -207,6 +207,9 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
   // jobs/logs views to just this operator (the engine is shared across the team).
   const userId = getOperatorId();
 
+  // ownerEmail + campaignName ride along so the SHARED board can label each
+  // job's owner/campaign on every operator's screen. Best-effort — if the
+  // engine drops unknown fields, the board falls back to userId + tab name.
   if (urls.length === 1) {
     return requestOnce('POST', '/api/scrape/single', {
       searchUrl: urls[0],
@@ -215,6 +218,8 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
       profileId,
       slowMode,
       userId,
+      ownerEmail,
+      campaignName,
     });
   }
   return requestOnce('POST', '/api/scrape/batch', {
@@ -223,7 +228,15 @@ export function startScrape({ searchUrls, sheetUrl, profileId, tabName, slowMode
     profileId,
     slowMode,
     userId,
+    ownerEmail,
+    campaignName,
   });
+}
+
+/** ALL operators' jobs (unscoped) — powers the SHARED board. The engine tags
+ *  each job with its own userId; we group by that. Retried like getJobs. */
+export function getAllJobs() {
+  return requestWithRetry('GET', '/api/jobs');
 }
 
 /** Pause the running scrape for a profile. Idempotent → retried. */

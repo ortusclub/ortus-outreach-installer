@@ -29,7 +29,7 @@ import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
-import { toggleDecision, fmtEta } from '/js/scrape-board.mjs';
+import { toggleDecision, fmtEta, ADMIN_EMAIL } from '/js/scrape-board.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -104,8 +104,15 @@ function _snShowHandover(campaigns, stopped, started) {
   clearTimeout(ho._t); ho._t = setTimeout(() => { ho.className = 'sn-handover'; }, 5000);
 }
 
+// cid → { profileIds, tabName, owner, mine } from the last render, so the
+// delegated toggle/stop handlers can drive the right engine profiles and gate
+// by ownership (strips are engine-derived; there's no local record to look up).
+const _snStrips = new Map();
+
 function renderSalesNavBoard(campaigns) {
   _snDetectHandover(campaigns);
+  _snStrips.clear();
+  for (const c of campaigns) _snStrips.set(c.id, { profileIds: c.profileIds || [], tabName: c.tabName || '', owner: c.owner || '', mine: !!c.mine });
   const host = document.getElementById('sn-board');
   const running = campaigns.filter((c) => c.status === 'running');
   const queued = campaigns.filter((c) => c.status === 'queued');
@@ -143,13 +150,13 @@ function renderStrip(c) {
       : `<span class="dot q"></span> Queued`;
     return `<div class="job"><div><div class="jt">${escHtml(label)}</div></div><div class="jstat">${st}</div></div>`;
   }).join('') || '<div class="sn-empty">No jobs.</div>';
-  const canOpen = !isQueued || _snIsOwnerOrAdmin(owner);
+  const canOpen = !isQueued || _snCanControl(c);
   const openBtn = canOpen
     ? `<button class="mini solid" onclick="openScrapeSetupFor('${escHtml(c.id)}')">Open</button>`
     : `<button class="mini locked" title="Only ${escHtml(owner)} can open this">Open 🔒</button>`;
-  // Stop is available while running OR still queued (owner/admin only for queued,
-  // to match the toggle gate). Running strips are always stoppable.
-  const canStop = c.status === 'running' || (isQueued && _snIsOwnerOrAdmin(owner));
+  // Stop shows while running OR still queued. Anyone can press it, but a
+  // "not yours" confirm gates non-owners (handled in stopScrapeCampaign).
+  const canStop = c.status === 'running' || isQueued;
   const stopBtn = canStop
     ? `<button class="mini" onclick="stopScrapeCampaign('${escHtml(c.id)}')">Stop</button>` : '';
   // Non-queued strips carry the Jobs/Logs pane; let the owner fold it down to a
@@ -161,7 +168,7 @@ function renderStrip(c) {
     <div class="sn-switch">
       <div class="sn-switchtabs"><span class="sn-st on" data-t="jobs">Jobs</span><span class="sn-st" data-t="logs">Logs</span></div>
       <div class="sn-pane on" data-p="jobs">${jobsPane}</div>
-      <div class="sn-pane" data-p="logs"><div class="sn-logbox" data-logsfor="${escHtml(c.id)}">…</div></div>
+      <div class="sn-pane" data-p="logs"><div class="sn-logbox" data-logsfor="${escHtml(c.id)}" data-tab="${escHtml(c.tabName || '')}">…</div></div>
     </div>`;
   return `
   <div class="sn-strip ${c.status === 'running' ? 'run' : ''} ${isQueued ? 'queued sn-collapsed' : ''} ${!isQueued && userCollapsed ? 'sn-collapsed' : ''} ${c.status === 'done' || c.status === 'error' ? 'done' : ''}" data-cid="${escHtml(c.id)}">
@@ -178,9 +185,13 @@ function renderStrip(c) {
   </div>`;
 }
 
-function _snIsOwnerOrAdmin(owner) {
-  const dec = toggleDecision({ currentEmail: snCurrentEmail, ownerEmail: owner });
-  return !dec.needsConfirm;
+function _snIsAdmin() {
+  return String(snCurrentEmail || '').trim().toLowerCase() === ADMIN_EMAIL;
+}
+// Can the viewer control this strip WITHOUT the "not yours" confirm? True when
+// it's their own scrape (server-computed `mine`) or they're the admin.
+function _snCanControl(c) {
+  return !!(c && c.mine) || _snIsAdmin();
 }
 
 // The scrape flow spans three real wizard sections: the 2b config, the shared
@@ -290,6 +301,7 @@ document.addEventListener('click', (e) => {
 });
 
 let _snPendingToggle = null;
+let _snPendingStop = null;
 function _snApplyToggle(el, cid) {
   const goingOn = el.classList.contains('off'); // currently off → turning on
   // Immediate visual feedback — flip the switch and pulse the strip so the
@@ -302,35 +314,39 @@ function _snApplyToggle(el, cid) {
     strip.classList.remove('starting', 'stopping');
     strip.classList.add(goingOn ? 'starting' : 'stopping');
   }
+  const meta = _snStrips.get(cid) || {};
   fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ on: goingOn }),
+    body: JSON.stringify({ on: goingOn, profileIds: meta.profileIds || [] }),
   }).then(() => pollSalesNavBoard()).catch(() => {});
 }
 document.addEventListener('click', (e) => {
   const t = e.target.closest('.toggle');
   if (!t || !t.dataset.cid) return;
-  const owner = t.dataset.owner || '';
-  const dec = toggleDecision({ currentEmail: snCurrentEmail, ownerEmail: owner });
-  if (dec.needsConfirm) {
-    _snPendingToggle = { el: t, cid: t.dataset.cid };
+  const cid = t.dataset.cid;
+  const strip = _snStrips.get(cid) || {};
+  const owner = t.dataset.owner || strip.owner || '';
+  if (!_snCanControl({ mine: strip.mine })) {
+    _snPendingToggle = { el: t, cid };
     const goingTo = t.classList.contains('off') ? 'ON' : 'OFF';
     document.getElementById('snm-body').innerHTML =
       `This isn't your campaign — it belongs to <b>${escHtml(owner)}</b>. Turning it <b>${goingTo}</b> affects their scrape and its place in the queue. Continue?`;
     document.getElementById('snm-scrim').classList.add('open');
     return;
   }
-  _snApplyToggle(t, t.dataset.cid); // owner or admin → immediate
+  _snApplyToggle(t, cid); // owner or admin → immediate
 });
 document.getElementById('snm-cancel')?.addEventListener('click', () => {
-  _snPendingToggle = null; document.getElementById('snm-scrim').classList.remove('open');
+  _snPendingToggle = null; _snPendingStop = null; document.getElementById('snm-scrim').classList.remove('open');
 });
 document.getElementById('snm-ok')?.addEventListener('click', () => {
   if (_snPendingToggle) _snApplyToggle(_snPendingToggle.el, _snPendingToggle.cid);
-  _snPendingToggle = null; document.getElementById('snm-scrim').classList.remove('open');
+  if (_snPendingStop) _snDoStop(_snPendingStop);
+  _snPendingToggle = null; _snPendingStop = null; document.getElementById('snm-scrim').classList.remove('open');
 });
 
-function stopScrapeCampaign(cid) {
+function _snDoStop(cid) {
+  const meta = _snStrips.get(cid) || {};
   // Immediate visual feedback: pulse the strip red and show the button working.
   const strip = document.querySelector(`.sn-strip[data-cid="${cid}"]`);
   if (strip) {
@@ -340,14 +356,29 @@ function stopScrapeCampaign(cid) {
     if (btn) { btn.textContent = 'Stopping…'; btn.disabled = true; }
   }
   fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: false }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ on: false, profileIds: meta.profileIds || [] }),
   }).then(() => pollSalesNavBoard()).catch(() => {});
+}
+
+function stopScrapeCampaign(cid) {
+  const meta = _snStrips.get(cid) || {};
+  // Confirm-then-allow: stopping someone else's scrape asks first (admin skips).
+  if (!_snCanControl({ mine: meta.mine })) {
+    _snPendingStop = cid;
+    document.getElementById('snm-body').innerHTML =
+      `This isn't your campaign — it belongs to <b>${escHtml(meta.owner || 'another operator')}</b>. Stopping it ends their scrape and frees its queue slot. Continue?`;
+    document.getElementById('snm-scrim').classList.add('open');
+    return;
+  }
+  _snDoStop(cid);
 }
 window.stopScrapeCampaign = stopScrapeCampaign;
 
 async function _snLoadLogs(box) {
   try {
-    const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(box.dataset.logsfor)}/logs`);
+    const tab = box.dataset.tab ? `?tabName=${encodeURIComponent(box.dataset.tab)}` : '';
+    const r = await fetch(`/api/scrape/campaigns/${encodeURIComponent(box.dataset.logsfor)}/logs${tab}`);
     const d = await r.json();
     box.innerHTML = (d.lines || []).map((l) =>
       `<div><span class="t">${new Date(l.ts).toLocaleTimeString()}</span> ${escHtml(l.message)}</div>`).join('') || 'No logs yet.';
@@ -2771,7 +2802,7 @@ async function startScrapeJob() {
       const r = await fetch('/api/scrape/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode }),
+        body: JSON.stringify({ searchUrls: [urls[i]], sheetUrl, tabName, profileId, slowMode, campaignName }),
       });
       const res = await r.json();
       if (res && res.error) errors.push(`URL ${i + 1}: ${res.error}`);
@@ -2783,19 +2814,9 @@ async function startScrapeJob() {
   setScrapeStatus(errors.length
     ? `Started ${started}/${urls.length}. First error — ${errors[0]}`
     : `Started ${started} scrape job${started === 1 ? '' : 's'} on the engine.`);
-  // Group this launch's jobs into ONE board campaign (best-effort). The engine
-  // still ran one job per URL above; this record just lets the board show them
-  // as a single strip. profileIds = the accounts actually paired (round-robin).
-  if (started > 0) {
-    try {
-      const usedProfileIds = urls.map((_, i) => accts[i % accts.length]);
-      await fetch('/api/scrape/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: campaignName, sheetUrl, tabName: baseTab, profileIds: usedProfileIds, searchUrls: urls }),
-      });
-    } catch (_) { /* board grouping is best-effort */ }
-  }
+  // The board is engine-derived: it groups the jobs we just dispatched (each
+  // carrying campaignName + ownerEmail) straight from the shared /api/jobs list,
+  // so there's no local grouping record to write here.
   startScrapePolling();
 }
 

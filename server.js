@@ -27,10 +27,11 @@ import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updat
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
-import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
+import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getAllJobs as getAllScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
 import { addScrapeCampaign, listScrapeCampaigns, getScrapeCampaign, updateScrapeCampaign } from './src/scrape-campaigns.js';
 import { appendAction, readScrapeLog } from './src/scrape-campaign-logs.js';
-import { mergeCampaignsWithJobs } from './public/js/scrape-board.mjs';
+import { mergeCampaignsWithJobs, groupJobsIntoCampaigns } from './public/js/scrape-board.mjs';
+import { getOperatorId } from './src/operator-id.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
@@ -2071,8 +2072,13 @@ app.post('/api/campaign/login-done', (_req, res) => {
 // the UI can show "engine not configured" instead of failing.
 // ---------------------------------------------------------------------------
 app.post('/api/scrape/start', async (req, res) => {
-  const { searchUrls, sheetUrl, tabName, profileId, slowMode } = req.body || {};
-  const result = await startScrape({ searchUrls, sheetUrl, tabName, profileId, slowMode });
+  const { searchUrls, sheetUrl, tabName, profileId, slowMode, campaignName } = req.body || {};
+  // Stamp the owner server-side (the authoritative "Operating as" email) so the
+  // shared board can show WHO launched each scrape across machines.
+  const result = await startScrape({
+    searchUrls, sheetUrl, tabName, profileId, slowMode,
+    ownerEmail: getOperatorEmail() || '', campaignName: campaignName || '',
+  });
   res.status(result && result.error ? 400 : 200).json(result);
 });
 
@@ -2132,9 +2138,15 @@ app.post('/api/scrape/campaigns', async (req, res) => {
 
 app.get('/api/scrape/campaigns', async (_req, res) => {
   try {
-    const [campaigns, jobsRes] = await Promise.all([listScrapeCampaigns(), getScrapeJobs()]);
+    // SHARED board: group EVERY operator's engine jobs into strips (not just
+    // this install's). Each job is tagged with its own userId + owner email,
+    // so the board shows the whole team's scrapes.
+    const jobsRes = await getAllScrapeJobs();
+    if (jobsRes && jobsRes.error) return res.status(502).json({ error: jobsRes.error });
     const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes && jobsRes.jobs) || [];
-    res.json({ campaigns: mergeCampaignsWithJobs(campaigns, jobs) });
+    const me = getOperatorEmail() || '';
+    const campaigns = groupJobsIntoCampaigns(jobs, { currentEmail: me, currentOperatorId: getOperatorId() });
+    res.json({ campaigns, me });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -2142,18 +2154,24 @@ app.get('/api/scrape/campaigns', async (_req, res) => {
 
 app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {
   try {
-    const rec = await getScrapeCampaign(req.params.id);
-    if (!rec) return res.status(404).json({ error: 'unknown campaign' });
     const on = !!(req.body && req.body.on);
-    // Drive the engine controls the campaign's profiles already expose.
-    for (const pid of rec.profileIds || []) {
+    // The board's strips are engine-derived (synthetic `eng_` ids), so the
+    // profiles to drive come from the client (it has them from the live jobs).
+    // Fall back to a local record if one exists (legacy / same-machine).
+    let profileIds = Array.isArray(req.body && req.body.profileIds) ? req.body.profileIds.filter(Boolean) : null;
+    if (!profileIds) {
+      const rec = await getScrapeCampaign(req.params.id);
+      profileIds = (rec && rec.profileIds) || [];
+      if (rec) await updateScrapeCampaign(rec.id, { enabled: on });
+    }
+    if (!profileIds.length) return res.status(400).json({ error: 'no profiles to toggle' });
+    for (const pid of profileIds) {
       try { on ? await resumeScrape(pid) : await pauseScrape(pid); }
       catch (e) { console.error('toggle scrape profile failed:', pid, e.message); }
     }
-    await updateScrapeCampaign(rec.id, { enabled: on });
-    const actor = req.user || 'unknown';
+    const actor = getOperatorEmail() || req.user || 'unknown';
     const admin = actor.toLowerCase() === 'antonio@ortusclub.com';
-    await appendAction(rec.id, { actor, admin, action: `toggled ${on ? 'ON' : 'OFF'}` });
+    try { await appendAction(req.params.id, { actor, admin, action: `toggled ${on ? 'ON' : 'OFF'}` }); } catch { /* audit best-effort */ }
     res.json({ ok: true, enabled: on });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2161,15 +2179,16 @@ app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {
 });
 
 app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
+  // Engine-derived strips have no local record; the board passes the strip's
+  // base tab name so we can filter the shared engine log to this campaign.
   const rec = await getScrapeCampaign(req.params.id);
-  if (!rec) return res.status(404).json({ error: 'unknown campaign' });
-  const persisted = await readScrapeLog(rec.id, { limit: 300 });
-  // For a running campaign, also fold in live engine lines for this campaign's tab.
+  const tabName = String(req.query.tabName || (rec && rec.tabName) || '').trim();
+  const persisted = rec ? await readScrapeLog(rec.id, { limit: 300 }) : [];
   let live = [];
   try {
     const l = await getScrapeLogs(req.query.since);
     const lines = Array.isArray(l) ? l : (l && l.logs) || [];
-    live = lines.filter((ln) => !rec.tabName || ln.tabName === rec.tabName)
+    live = lines.filter((ln) => !tabName || String(ln.tabName || '').startsWith(tabName))
                 .map((ln) => ({ ts: ln.ts, message: ln.message }));
   } catch { /* engine offline — persisted still shows */ }
   const merged = [...persisted, ...live].sort((a, b) => (a.ts || 0) - (b.ts || 0));

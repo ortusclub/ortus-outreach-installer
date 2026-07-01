@@ -36,6 +36,74 @@ export function mergeCampaignsWithJobs(campaigns, jobs) {
   });
 }
 
+// Strip a trailing " N" batch suffix so the per-URL tabs of one launch
+// ("Results", "Results 2", "Results 3") collapse to a single base name.
+export function baseTabName(tab) {
+  return String(tab || '').replace(/\s+\d+\s*$/, '').trim();
+}
+
+// Deterministic small hash → stable synthetic campaign id (no Math.random,
+// which is unavailable in workflow scripts and would break resume/tests).
+function _hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+// Build board strips DIRECTLY from the engine's shared job list (every
+// operator's jobs, each tagged with userId/profileId/tabName/sheetUrl and —
+// when the engine echoes them — ownerEmail/campaignName). One launch's jobs
+// share userId+sheetUrl+base-tab, so that triple is a robust grouping key that
+// works even if the engine drops the ride-along fields; ownerEmail/campaignName
+// are then pure display enrichments. `currentEmail`/`currentOperatorId` mark
+// which strips belong to the viewer (email match, or same install id).
+export function groupJobsIntoCampaigns(jobs, { currentEmail = '', currentOperatorId = '' } = {}) {
+  const curEmail = String(currentEmail || '').trim().toLowerCase();
+  const curId = String(currentOperatorId || '').trim();
+  const groups = new Map();
+  for (const j of jobs || []) {
+    const userId = j.userId || '';
+    const base = (j.campaignName || baseTabName(j.tabName) || 'Sales Nav scrape').trim();
+    const key = `${userId}|${j.sheetUrl || ''}|${base}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: 'eng_' + _hash(key), userId,
+        ownerEmail: (j.ownerEmail || '').trim(),
+        name: j.campaignName || base,
+        tabName: baseTabName(j.tabName) || 'Results',
+        sheetUrl: j.sheetUrl || '', searchUrls: [], profileIds: [], jobs: [],
+      });
+    }
+    const g = groups.get(key);
+    g.jobs.push(j);
+    if (!g.ownerEmail && j.ownerEmail) g.ownerEmail = String(j.ownerEmail).trim();
+    if (j.searchUrl && !g.searchUrls.includes(j.searchUrl)) g.searchUrls.push(j.searchUrl);
+    if (j.profileId && !g.profileIds.includes(j.profileId)) g.profileIds.push(j.profileId);
+  }
+  return [...groups.values()].map((g) => {
+    const cjobs = g.jobs;
+    const positions = cjobs.filter((j) => j.state === 'queued' && j.position).map((j) => j.position);
+    const etas = cjobs.filter((j) => j.etaMs).map((j) => j.etaMs);
+    // Owner label: real email if the engine echoed it, else a short, stable
+    // install tag so strangers' strips still read as "someone else's".
+    const owner = g.ownerEmail || (g.userId ? `operator ${g.userId.replace(/^op_/, '').slice(0, 6)}` : 'unknown');
+    const mine = (!!curEmail && g.ownerEmail && g.ownerEmail.toLowerCase() === curEmail)
+      || (!!curId && g.userId === curId);
+    return {
+      ...g, owner, mine,
+      status: campaignStatus(cjobs),
+      running: cjobs.filter((j) => j.state === 'running').length,
+      queued: cjobs.filter((j) => j.state === 'queued').length,
+      done: cjobs.filter((j) => j.state === 'done').length,
+      totalProfiles: cjobs.reduce((n, j) => n + (j.profiles || 0), 0),
+      minPosition: positions.length ? Math.min(...positions) : null,
+      etaMs: etas.length ? Math.min(...etas) : null,
+      // toggle "on" = not all jobs are paused/stopped.
+      enabled: cjobs.some((j) => j.state === 'running' || j.state === 'queued'),
+    };
+  });
+}
+
 export function toggleDecision({ currentEmail, ownerEmail }) {
   const cur = String(currentEmail || '').trim().toLowerCase();
   const own = String(ownerEmail || '').trim().toLowerCase();

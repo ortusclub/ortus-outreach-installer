@@ -2,7 +2,42 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ADMIN_EMAIL, mergeCampaignsWithJobs, campaignStatus, toggleDecision, fmtEta,
+  groupJobsIntoCampaigns, baseTabName,
 } from '../public/js/scrape-board.mjs';
+
+test('baseTabName strips the trailing batch suffix', () => {
+  assert.equal(baseTabName('Results'), 'Results');
+  assert.equal(baseTabName('Results 3'), 'Results');
+  assert.equal(baseTabName('London CFOs 12'), 'London CFOs');
+  assert.equal(baseTabName(''), '');
+});
+
+test('groupJobsIntoCampaigns groups a launch across operators and marks ownership', () => {
+  const jobs = [
+    // Operator A — one launch, two URLs → tabs "Results", "Results 2"
+    { userId: 'op_aaa', ownerEmail: 'a@ortus.com', campaignName: 'London CFOs', sheetUrl: 's1', tabName: 'Results', searchUrl: 'u1', profileId: 'p1', state: 'running', profiles: 10 },
+    { userId: 'op_aaa', ownerEmail: 'a@ortus.com', campaignName: 'London CFOs', sheetUrl: 's1', tabName: 'Results 2', searchUrl: 'u2', profileId: 'p2', state: 'queued', position: 3, etaMs: 60000 },
+    // Operator B — different install, no echoed email (engine dropped it)
+    { userId: 'op_bbb', sheetUrl: 's2', tabName: 'Leads', searchUrl: 'u3', profileId: 'p3', state: 'done', profiles: 40 },
+  ];
+  const strips = groupJobsIntoCampaigns(jobs, { currentEmail: 'a@ortus.com', currentOperatorId: 'op_aaa' });
+  assert.equal(strips.length, 2);
+  const a = strips.find((s) => s.userId === 'op_aaa');
+  const b = strips.find((s) => s.userId === 'op_bbb');
+  // A: one strip, two jobs, named + owned by the viewer
+  assert.equal(a.jobs.length, 2);
+  assert.equal(a.name, 'London CFOs');
+  assert.equal(a.owner, 'a@ortus.com');
+  assert.equal(a.mine, true);
+  assert.deepEqual(a.searchUrls, ['u1', 'u2']);
+  assert.deepEqual(a.profileIds, ['p1', 'p2']);
+  assert.equal(a.status, 'running');
+  assert.equal(a.minPosition, 3);
+  // B: someone else's — no email echoed, falls back to a short install tag, not mine
+  assert.equal(b.mine, false);
+  assert.equal(b.name, 'Leads');
+  assert.match(b.owner, /^operator /);
+});
 
 test('mergeCampaignsWithJobs attaches jobs + computed fields (flat shape) per record', () => {
   const campaigns = [
