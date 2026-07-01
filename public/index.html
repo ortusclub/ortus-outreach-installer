@@ -42,6 +42,7 @@
 
         <div class="nav-section-label">Team</div>
         <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
+        <button type="button" class="nav-item" data-nav="nav-salesnav" onclick="openSalesNavBoard()"><span class="nav-num">◆</span>Sales Nav<span class="nav-glyph" id="nav-glyph-salesnav"></span></button>
 
         <div class="nav-section-label">Review</div>
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
@@ -1118,6 +1119,102 @@
         <div id="cs-error" style="display:none; color:var(--red, #dc2626); font-size:13px; padding:20px 0;"></div>
       </div>
     </div>
+
+<style id="sn-board-styles">
+  /* Sales Nav board — namespaced (sn-/snm-) so nothing collides with style.css */
+  .sn-boardhead{display:flex;align-items:flex-end;gap:16px;margin:0 0 6px;}
+  .sn-boardhead > div:first-child{margin-right:auto;}
+  .sn-kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .sn-boardtitle{font-family:var(--display);font-weight:400;font-size:40px;line-height:.92;margin:4px 0 0;}
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-newbtn{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:var(--bg);border:0;border-radius:9999px;padding:9px 16px;cursor:pointer;}
+  .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
+
+  /* handover banner */
+  .sn-handover{display:none;align-items:center;gap:14px;margin:18px 0 4px;padding:14px 18px;border-radius:12px;border:1px solid var(--hairline);background:var(--hairline-soft);}
+  .sn-handover.show{display:flex;}
+  .sn-handover .spin{width:16px;height:16px;border-radius:9999px;border:2px solid var(--hairline);border-top-color:var(--ink);animation:sn-spin .8s linear infinite;flex:none;}
+  @keyframes sn-spin{to{transform:rotate(360deg);}}
+  .sn-handover .txt{font-size:12.5px;color:var(--gray);}
+  .sn-handover .txt b{color:var(--ink);font-weight:600;}
+  .sn-handover.stopping{border-left:3px solid var(--red);}
+  .sn-handover.launching{border-left:3px solid var(--green);}
+  .sn-handover.launching .spin{border-top-color:var(--green);}
+
+  .sn-railhead{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+
+  .sn-strip{position:relative;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px 18px 60px;transition:opacity .4s, border-color .4s;}
+  .sn-strip.queued{border-style:dashed;}
+  .sn-strip.done{opacity:.6;}
+  .sn-strip.stopping{border-color:var(--red);animation:sn-pulse 1s ease-in-out infinite;}
+  .sn-strip.starting{border-color:var(--green);animation:sn-pulse 1s ease-in-out infinite;}
+  @keyframes sn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,0,0,0);}50%{box-shadow:0 0 0 3px var(--hairline-soft);}}
+  .sn-qpos{position:absolute;left:16px;top:18px;width:30px;height:30px;border-radius:9999px;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:18px;color:var(--gray);transition:all .3s;}
+  .sn-strip.run .sn-qpos{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-top{display:flex;align-items:center;gap:12px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-owner{font-size:12px;color:var(--gray);}
+  .sn-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-board .dot.run{background:var(--green);}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.q{background:var(--gray-faint,#b8b8b6);}.sn-board .dot.red{background:var(--red);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-prog{height:5px;border-radius:9999px;background:var(--hairline-soft);margin:12px 0 0;overflow:hidden;}
+  .sn-prog i{display:block;height:100%;background:var(--green);transition:width .5s;}
+
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .toggle{width:42px;height:23px;border-radius:9999px;background:var(--green);position:relative;flex:none;cursor:pointer;}
+  .sn-foot .toggle.off{background:var(--gray-faint,#c9c9c7);}
+  .sn-foot .toggle i{position:absolute;top:2px;left:21px;width:19px;height:19px;border-radius:9999px;background:#fff;transition:left .12s;}
+  .sn-foot .toggle.off i{left:2px;}
+  .sn-foot .togwrap{display:flex;align-items:center;gap:9px;}
+  .sn-foot .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-foot .lock{font-size:11px;color:var(--gray-faint,#b8b8b6);}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-foot .mini.locked{opacity:.4;cursor:not-allowed;}
+  .sn-strip.sn-collapsed .sn-switch{display:none;}
+
+  .sn-switch{margin:16px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;}
+  .sn-switchtabs{display:flex;gap:20px;margin-bottom:12px;}
+  .sn-st{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);cursor:pointer;padding-bottom:5px;}
+  .sn-st.on{color:var(--ink);border-bottom:2px solid var(--gold);}
+  .sn-pane{display:none;}
+  .sn-pane.on{display:block;}
+  .sn-board .job{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hairline-soft);}
+  .sn-board .job:last-child{border-bottom:0;}
+  .sn-board .job .jt{font-size:12.5px;color:var(--ink);font-weight:600;}
+  .sn-board .job .js{font-size:11px;color:var(--gray);margin-top:2px;}
+  .sn-board .job .jstat{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:none;}
+  .logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
+  .logbox .t{color:#6a6a6a;}.logbox .ok{color:#4ec36b;}.logbox .bl{color:#7fb2e6;}.logbox .wr{color:#e0b060;}
+
+  /* confirm modal (namespaced) */
+  #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
+  #snm-scrim.open{display:flex;}
+  .snm-card{box-sizing:border-box;background:#fff;border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
+  .snm-title{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 12px;letter-spacing:.02em;line-height:1;}
+  .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}
+  .snm-text b{color:var(--ink);font-weight:600;}
+  .snm-row{display:flex;gap:10px;justify-content:flex-end;align-items:center;}
+  .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+</style>
+
+<div class="section" id="nav-salesnav" style="display:none">
+  <div class="sn-boardhead">
+    <div>
+      <div class="sn-kicker" id="sn-datekicker">Sales Nav</div>
+      <div class="sn-boardtitle">Sales Nav Queue</div>
+    </div>
+    <div class="sn-qmeta" id="sn-qmeta">—</div>
+    <button type="button" class="sn-newbtn" onclick="startNewScrapeSetup()">＋ New scrape</button>
+  </div>
+  <div id="sn-handover" class="sn-handover"><span class="spin"></span><span class="txt" id="sn-handover-txt"></span></div>
+  <div id="sn-board" class="sn-board"></div>
+</div>
 
     <!-- ── Sales Nav Scrape (2026-06) — visible only when mode = sales_nav_scrape. ──
          Control panel for the GKE scraper engine. Dispatches a scrape job
@@ -2928,6 +3025,13 @@
       <button class="btn btn-secondary" id="tab-change-cancel">Keep last tab</button>
       <button class="btn btn-primary" id="tab-change-confirm">Yes, use the new tab</button>
     </div>
+  </div>
+</div>
+<div id="snm-scrim">
+  <div class="snm-card">
+    <div class="snm-title">Are you sure?</div>
+    <div class="snm-text" id="snm-body">This isn't your campaign.</div>
+    <div class="snm-row"><button class="snm-btn" id="snm-cancel">Cancel</button><button class="snm-btn solid" id="snm-ok">Yes, toggle it</button></div>
   </div>
 </div>
 </body>
