@@ -122,8 +122,13 @@ function renderSalesNavBoard(campaigns) {
   host.innerHTML = html;
 }
 
+// cids the operator has folded down to a slim strip. Survives re-renders (the
+// board rebuilds its innerHTML on every poll).
+const _snCollapsed = new Set();
+
 function renderStrip(c) {
   const isQueued = c.status === 'queued';
+  const userCollapsed = _snCollapsed.has(c.id);
   const owner = c.owner || 'unknown';
   const nJobs = (c.jobs || []).length || (c.searchUrls || []).length;
   const flow = `<b>${(c.searchUrls || []).length} searches</b> → <b>${nJobs} jobs</b> → feeds <b>${escHtml(c.name || c.tabName || '')}</b> · tab "${escHtml(c.tabName || 'Results')}"`;
@@ -142,6 +147,15 @@ function renderStrip(c) {
   const openBtn = canOpen
     ? `<button class="mini solid" onclick="openScrapeSetupFor('${escHtml(c.id)}')">Open</button>`
     : `<button class="mini locked" title="Only ${escHtml(owner)} can open this">Open 🔒</button>`;
+  // Stop is available while running OR still queued (owner/admin only for queued,
+  // to match the toggle gate). Running strips are always stoppable.
+  const canStop = c.status === 'running' || (isQueued && _snIsOwnerOrAdmin(owner));
+  const stopBtn = canStop
+    ? `<button class="mini" onclick="stopScrapeCampaign('${escHtml(c.id)}')">Stop</button>` : '';
+  // Non-queued strips carry the Jobs/Logs pane; let the owner fold it down to a
+  // slim strip (same look as a queued one) when a scrape is finished/running.
+  const collapseBtn = isQueued ? ''
+    : `<button class="mini sn-collapse" title="Minimize / expand">▾</button>`;
   const toggleOn = c.enabled !== false;
   const switchBlock = isQueued ? '' : `
     <div class="sn-switch">
@@ -150,7 +164,7 @@ function renderStrip(c) {
       <div class="sn-pane" data-p="logs"><div class="sn-logbox" data-logsfor="${escHtml(c.id)}">…</div></div>
     </div>`;
   return `
-  <div class="sn-strip ${c.status === 'running' ? 'run' : ''} ${isQueued ? 'queued sn-collapsed' : ''} ${c.status === 'done' || c.status === 'error' ? 'done' : ''}" data-cid="${escHtml(c.id)}">
+  <div class="sn-strip ${c.status === 'running' ? 'run' : ''} ${isQueued ? 'queued sn-collapsed' : ''} ${!isQueued && userCollapsed ? 'sn-collapsed' : ''} ${c.status === 'done' || c.status === 'error' ? 'done' : ''}" data-cid="${escHtml(c.id)}">
     <div class="sn-qpos">${isQueued && c.minPosition ? c.minPosition : (c.status === 'running' ? '▶' : '✓')}</div>
     <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span><span class="sn-owner">· ${escHtml(owner)}</span>
       <span class="sn-status">${_snStatusDot(c.status)} ${escHtml(statusTxt)}</span></div>
@@ -159,7 +173,7 @@ function renderStrip(c) {
     ${switchBlock}
     <div class="sn-foot">
       <div class="togwrap"><div class="toggle ${toggleOn ? '' : 'off'}" data-owner="${escHtml(owner)}" data-cid="${escHtml(c.id)}"><i></i></div><span class="lbl">${toggleOn ? 'On' : 'Off'}</span></div>
-      <div class="right">${c.status === 'running' ? '<button class="mini" onclick="stopScrapeCampaign(\'' + escHtml(c.id) + '\')">Stop</button>' : ''}${openBtn}</div>
+      <div class="right">${collapseBtn}${stopBtn}${openBtn}</div>
     </div>
   </div>`;
 }
@@ -225,6 +239,8 @@ async function openScrapeSetupFor(cid) {
         if (sheet) sheet.value = rec.sheetUrl || '';
         const tab = document.getElementById('scrape-tab');
         if (tab) tab.value = rec.tabName || 'Results';
+        const nm = document.getElementById('scrape-name');
+        if (nm) nm.value = rec.name || '';
       }
     } catch (_) { /* new/empty setup — leave fields blank */ }
   }
@@ -235,6 +251,7 @@ window.openScrapeSetupFor = openScrapeSetupFor;
 
 function startNewScrapeSetup() {
   const urls = document.getElementById('scrape-urls'); if (urls) urls.value = '';
+  const nm = document.getElementById('scrape-name'); if (nm) nm.value = '';
   openScrapeSetupFor('');
 }
 window.startNewScrapeSetup = startNewScrapeSetup;
@@ -261,9 +278,30 @@ document.addEventListener('click', (e) => {
     }
   }
 });
+// Fold / unfold a finished-or-running strip's Jobs/Logs pane.
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.sn-collapse');
+  if (!btn) return;
+  const strip = btn.closest('.sn-strip');
+  const cid = strip?.dataset.cid;
+  if (!cid) return;
+  if (_snCollapsed.has(cid)) _snCollapsed.delete(cid); else _snCollapsed.add(cid);
+  strip.classList.toggle('sn-collapsed', _snCollapsed.has(cid));
+});
+
 let _snPendingToggle = null;
 function _snApplyToggle(el, cid) {
   const goingOn = el.classList.contains('off'); // currently off → turning on
+  // Immediate visual feedback — flip the switch and pulse the strip so the
+  // operator sees the state change without waiting for the next poll.
+  el.classList.toggle('off', !goingOn);
+  const lbl = el.parentNode?.querySelector('.lbl');
+  if (lbl) lbl.textContent = goingOn ? 'On' : 'Off';
+  const strip = el.closest('.sn-strip');
+  if (strip) {
+    strip.classList.remove('starting', 'stopping');
+    strip.classList.add(goingOn ? 'starting' : 'stopping');
+  }
   fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ on: goingOn }),
@@ -293,6 +331,14 @@ document.getElementById('snm-ok')?.addEventListener('click', () => {
 });
 
 function stopScrapeCampaign(cid) {
+  // Immediate visual feedback: pulse the strip red and show the button working.
+  const strip = document.querySelector(`.sn-strip[data-cid="${cid}"]`);
+  if (strip) {
+    strip.classList.remove('starting');
+    strip.classList.add('stopping');
+    const btn = strip.querySelector('.sn-foot .right .mini');
+    if (btn) { btn.textContent = 'Stopping…'; btn.disabled = true; }
+  }
   fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: false }),
   }).then(() => pollSalesNavBoard()).catch(() => {});
@@ -2675,6 +2721,7 @@ async function startScrapeJob() {
   const sheetUrl = (sheetEl?.value || '').trim();
   const accts = scrapeSelectedAccounts();
   const baseTab = (document.getElementById('scrape-tab')?.value || 'Results').trim();
+  const campaignName = (document.getElementById('scrape-name')?.value || '').trim() || baseTab;
   const slowMode = !!document.getElementById('scrape-slow')?.checked;
   // Diagnostic — shows in the in-app CONSOLE so we can see exactly what's missing.
   console.log('[scrape] Start clicked →', { mode: scrapeInputMode, urls: urls.length, hasSheet: !!sheetUrl, accounts: accts.length, sheetFieldFound: !!sheetEl });
@@ -2745,7 +2792,7 @@ async function startScrapeJob() {
       await fetch('/api/scrape/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: baseTab, sheetUrl, tabName: baseTab, profileIds: usedProfileIds, searchUrls: urls }),
+        body: JSON.stringify({ name: campaignName, sheetUrl, tabName: baseTab, profileIds: usedProfileIds, searchUrls: urls }),
       });
     } catch (_) { /* board grouping is best-effort */ }
   }
