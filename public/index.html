@@ -615,7 +615,7 @@
           <div class="sn-boardtitle">Sales Nav Queue</div>
         </div>
         <div class="sn-qmeta" id="sn-qmeta">—</div>
-        <button type="button" class="sn-newbtn" onclick="startNewScrapeSetup()">＋ New scrape</button>
+        <button type="button" class="btn btn-secondary" onclick="startNewScrapeSetup()">＋ New scrape</button>
       </div>
       <div id="sn-handover" class="sn-handover"><span class="spin"></span><span class="txt" id="sn-handover-txt"></span></div>
       <div id="sn-board" class="sn-board"></div>
@@ -1142,7 +1142,6 @@
   .sn-kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
   .sn-boardtitle{font-family:var(--display);font-weight:400;font-size:40px;line-height:.92;margin:4px 0 0;}
   .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
-  .sn-newbtn{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:var(--bg);border:0;border-radius:9999px;padding:9px 16px;cursor:pointer;}
   .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
 
   /* handover banner */
@@ -1214,8 +1213,9 @@
   .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}
   .snm-text b{color:var(--ink);font-weight:600;}
   .snm-row{display:flex;gap:10px;justify-content:flex-end;align-items:center;}
-  .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
-  .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  /* id-scoped so these survive the global `body[data-dashboard='v3'] button { font: inherit }` reset */
+  #snm-scrim .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  #snm-scrim .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
 </style>
 
 <!-- Sales Nav board markup moved to the top-level #salesnav-view route-view. -->
