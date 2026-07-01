@@ -416,6 +416,9 @@ function doPost(e) {
       case 'setSoO':
         return handleSetSoO(sheet, data);
 
+      case 'bumpSoOConnections':
+        return handleBumpSoOConnections(sheet, data);
+
       case 'writeRecentConnections':
         return handleWriteRecentConnections(spreadsheet, data);
 
@@ -1753,6 +1756,88 @@ function handleSetSoO(sheet, data) {
     });
 
     return jsonResponse({ success: true, matched: true, row: targetRow, written: written, skipped: skipped });
+  } catch (err) {
+    return jsonResponse({ error: err.message, errorCode: 'WRITE_FAILED' });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Action: Bump SoO Connections — accumulate a per-account WEEKLY connection
+// tally in the "Number of Connections (this week)" cell. The app POSTs only the
+// delta from the send that just happened (default +1); this handler adds it to
+// the current value and RESETS the cell to the delta on the first write of a
+// new ISO week (per account), so "this week" self-clears without any client
+// memory. The week tag per email lives in Script Properties, not a sheet
+// column, so the board layout is untouched. Serialized with a script lock so
+// concurrent operators can't lose an increment in a read-modify-write race.
+// ═══════════════════════════════════════════════════════════════════════════
+function handleBumpSoOConnections(sheet, data) {
+  if (!data.email) {
+    return jsonResponse({ error: 'email is required', errorCode: 'BAD_REQUEST' });
+  }
+  var delta = Number(data.delta);
+  if (!isFinite(delta) || delta === 0) delta = 1;
+  var wantHeader = (data.header || 'Number of Connections (this week)').toString().toLowerCase().trim();
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return jsonResponse({ error: 'could not acquire lock', errorCode: 'LOCKED' });
+  }
+
+  try {
+    var headers = getHeaders(sheet);
+    var headerIndex = function (name) {
+      var want = (name || '').toString().toLowerCase().trim();
+      for (var i = 0; i < headers.length; i++) {
+        if ((headers[i] || '').toString().toLowerCase().trim() === want) return i;
+      }
+      return -1;
+    };
+
+    var emailCol = headerIndex('Email');
+    if (emailCol === -1) {
+      return jsonResponse({ error: 'Email column not found', errorCode: 'MISSING_EMAIL_HEADER' });
+    }
+    var connCol = headerIndex(wantHeader);
+    if (connCol === -1) {
+      return jsonResponse({ error: 'connection-count column not found', errorCode: 'MISSING_CONN_HEADER' });
+    }
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return jsonResponse({ success: true, matched: false });
+
+    var wantEmail = data.email.toString().toLowerCase().trim();
+    var emailVals = sheet.getRange(2, emailCol + 1, lastRow - 1, 1).getValues();
+    var targetRow = -1;
+    for (var r = 0; r < emailVals.length; r++) {
+      if ((emailVals[r][0] || '').toString().toLowerCase().trim() === wantEmail) {
+        targetRow = r + 2;
+        break;
+      }
+    }
+    if (targetRow === -1) return jsonResponse({ success: true, matched: false });
+
+    // ISO week in the spreadsheet's own timezone (Mon-based). "YYYY" is the
+    // week-year, "ww" the week-of-year — good enough to detect a week rollover.
+    var tz = sheet.getParent().getSpreadsheetTimeZone();
+    var week = Utilities.formatDate(new Date(), tz, "YYYY-'W'ww");
+    var props = PropertiesService.getScriptProperties();
+    var key = 'connWeek:' + wantEmail;
+    var stored = props.getProperty(key);
+    var reset = stored !== week;
+
+    var cell = sheet.getRange(targetRow, connCol + 1);
+    var cur = Number(cell.getValue());
+    if (!isFinite(cur)) cur = 0;
+    var newVal = reset ? delta : cur + delta;
+    cell.setValue(newVal);
+    props.setProperty(key, week);
+
+    return jsonResponse({ success: true, matched: true, row: targetRow, value: newVal, week: week, reset: reset });
   } catch (err) {
     return jsonResponse({ error: err.message, errorCode: 'WRITE_FAILED' });
   } finally {

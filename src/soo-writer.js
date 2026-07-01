@@ -23,6 +23,20 @@ const CONNECT_MODES = new Set([
   'connect_and_message',
 ]);
 
+// SoO header for the per-account weekly connection tally (column AX on the
+// board). Matched by header text in the Apps Script — must equal the sheet
+// header EXACTLY. The count is accumulated + weekly-reset server-side.
+export const SOO_CONN_WEEK_HEADER = 'Number of Connections (this week)';
+
+/**
+ * True when this send is a connection request that should tick the weekly
+ * connection tally — i.e. a 'connection_sent' in one of the connect modes
+ * (CC / CC+IC / CC+DM). Mirrors the CONNECT_MODES gate used for credit flips.
+ */
+export function isConnectSend(mode, action) {
+  return action === 'connection_sent' && CONNECT_MODES.has(mode);
+}
+
 /**
  * Pure mapping. Given the campaign mode and the send result's action, return
  * the SoO credit column to flip + its paired User column, or null for "no
@@ -201,6 +215,24 @@ export function buildFlipPayload({ email, creditHeader, userHeader, operatorEmai
   };
 }
 
+/**
+ * Build the payload for a server-side weekly connection-count increment. The
+ * Apps Script (action 'bumpSoOConnections') accumulates the delta into the
+ * "Number of Connections (this week)" cell and resets it to `delta` on the
+ * first write of a new ISO week — so the app only ever reports what THIS send
+ * added and never has to remember a weekly total.
+ */
+export function buildBumpConnectionsPayload({ email, delta = 1 }) {
+  return {
+    sheetId: SOO_SHEET_ID,
+    gid: SOO_SHEET_GID,
+    action: 'bumpSoOConnections',
+    email,
+    delta,
+    header: SOO_CONN_WEEK_HEADER,
+  };
+}
+
 /** Build the setSoO payload for a Needs Login flag (no guard). */
 export function buildNeedsLoginPayload({ email }) {
   return {
@@ -248,6 +280,24 @@ export async function flipAccountInUse({ email, creditHeader, userHeader, operat
     // operatorEmail is already resolved by the caller (resolveOperatorStamp):
     // the per-machine operator identity, or a blanked shared login. Stamp verbatim.
     const data = await postSetSoO(buildFlipPayload({ email, creditHeader, userHeader, operatorEmail }));
+    if (data && data.error) return { ok: false, error: data.error };
+    return { ok: true, ...data };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Increment the account's weekly connection tally in the SoO by `delta` (the
+ * Apps Script accumulates + weekly-resets server-side). Best-effort; never
+ * throws. Fires once per successful connection send ("live" write-back).
+ * @returns {Promise<object>} { ok, matched, value, week, reset } or { ok:false, ... }
+ */
+export async function bumpConnectionsThisWeek({ email, delta = 1 }) {
+  if (!sooWritebackEnabled()) return { ok: false, disabled: true };
+  if (!email) return { ok: false, error: 'no email' };
+  try {
+    const data = await postSetSoO(buildBumpConnectionsPayload({ email, delta }));
     if (data && data.error) return { ok: false, error: data.error };
     return { ok: true, ...data };
   } catch (err) {

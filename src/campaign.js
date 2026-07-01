@@ -52,7 +52,7 @@ import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
-import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp } from './soo-writer.js';
+import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
 import { fetchSoOData } from './soo.js';
 import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
@@ -2103,6 +2103,28 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       return _sooEmailsCache;
     }
 
+    // Resolve a GoLogin account label to its best SoO Email, fuzzily but safely
+    // (shared by the In-Use flip and the weekly connection-count bump so both
+    // key the same row). Returns { email, note } on success — email may be the
+    // raw label when the SoO list is unavailable or no fuzzy match applies — or
+    // { ambiguous:true, score } when two accounts tie and we must refuse to guess.
+    async function resolveAccountSoOEmail(accountName) {
+      let email = accountName;
+      let note = '';
+      const emails = await sooEmailList();
+      if (emails.length) {
+        const r = resolveSoOEmail(accountName, emails);
+        if (r && r.ambiguous) return { ambiguous: true, score: r.score };
+        if (r && r.email && !r.exact) {
+          email = r.email;
+          note = ` (≈ "${accountName}" → "${r.email}", ${Math.round(r.score * 100)}%)`;
+        } else if (r && r.email) {
+          email = r.email; // exact (normalized) — use the sheet's spelling
+        }
+      }
+      return { email, note };
+    }
+
     async function flipSoOInUse(accountName, action) {
       try {
         const target = resolveSoOTarget(mode, action);
@@ -2121,21 +2143,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // ".solution" vs ".solutions" / stray spaces). Skip-on-doubt: a near-tie
         // between two accounts falls back to the raw label rather than risk
         // reserving the wrong person's account.
-        let matchEmail = accountName;
-        let fuzzyNote = '';
-        const _sooEmails = await sooEmailList();
-        if (_sooEmails.length) {
-          const r = resolveSoOEmail(accountName, _sooEmails);
-          if (r && r.email && !r.exact) {
-            matchEmail = r.email;
-            fuzzyNote = ` (≈ "${accountName}" → "${r.email}", ${Math.round(r.score * 100)}%)`;
-          } else if (r && r.email) {
-            matchEmail = r.email; // exact (normalized) — use the sheet's spelling
-          } else if (r && r.ambiguous) {
-            log(`  ⚠ SoO: "${accountName}" is too close to 2+ accounts (best ${Math.round(r.score * 100)}%) — refusing to guess, left as-is.`);
-            return;
-          }
+        const resolved = await resolveAccountSoOEmail(accountName);
+        if (resolved.ambiguous) {
+          log(`  ⚠ SoO: "${accountName}" is too close to 2+ accounts (best ${Math.round(resolved.score * 100)}%) — refusing to guess, left as-is.`);
+          return;
         }
+        const matchEmail = resolved.email;
+        const fuzzyNote = resolved.note;
         const res = await flipAccountInUse({
           email: matchEmail,
           creditHeader: target.creditHeader,
@@ -2167,6 +2181,35 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         }
       } catch (err) {
         log(`  ⚠ SoO flip failed for ${accountName}: ${err.message}`);
+      }
+    }
+
+    // v2.124: weekly connection-count write-back. Fires on EVERY successful
+    // connection send in a connect mode (CC / CC+IC / CC+DM) — unlike the
+    // once-per-run In-Use flip — POSTing a +1 delta the Apps Script accumulates
+    // into the SoO "Number of Connections (this week)" cell (col AX), resetting
+    // it on a new ISO week. Best-effort: never throws into the send loop. The
+    // per-account naming/ambiguity warnings are left to flipSoOInUse (which runs
+    // first) so this doesn't double-log them.
+    async function bumpSoOConnCount(accountName, action) {
+      try {
+        if (!isConnectSend(mode, action)) return;
+        const acctNorm = (accountName || '').toString().toLowerCase().trim();
+        if (!acctNorm) return;
+        const resolved = await resolveAccountSoOEmail(accountName);
+        if (resolved.ambiguous) return; // flipSoOInUse already logged the tie
+        const res = await bumpConnectionsThisWeek({ email: resolved.email, delta: 1 });
+        if (res && res.ok && res.matched) {
+          log(`  # SoO: ${accountName} → connections this week = ${res.value}${res.reset ? ' (new week — reset)' : ''}.`);
+        } else if (res && res.ok && res.matched === false) {
+          log(`  · SoO: no row matched "${accountName}" for connection count — check the SoO Email spelling.`);
+        } else if (res && res.disabled) {
+          // write-back OFF on this machine — flipSoOInUse already said so.
+        } else if (!res || !res.ok) {
+          log(`  ⚠ SoO: connection-count bump failed for ${accountName} — ${(res && res.error) || 'unknown error'}.`);
+        }
+      } catch (err) {
+        log(`  ⚠ SoO connection-count failed for ${accountName}: ${err.message}`);
       }
     }
 
@@ -3817,6 +3860,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // send (connection_sent / inmail_sent per mode), flip its SoO credit
             // cell to In Use + stamp the operator. No-op for every other action.
             await flipSoOInUse(pName, result.action);
+            // v2.124: tick the per-account weekly connection tally in the SoO
+            // (col AX). Fires on EVERY connect send, not just the first.
+            await bumpSoOConnCount(pName, result.action);
 
             // 2.8.28: For check_status, do NOT overwrite Sender — preserving
             // the original sender attribution is essential. The audit log
