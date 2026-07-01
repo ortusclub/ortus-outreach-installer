@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sales Nav Board — V3 · Queue lanes</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);}
+  .wrap{max-width:1240px;margin:0 auto;padding:0 26px 80px;}
+  .tabs{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:26px;background:var(--bg);
+    border-bottom:1px solid var(--hairline);padding:16px 26px;margin:0 -26px 0;}
+  .brand{font-family:var(--display);font-size:22px;}
+  .tab{font-size:12px;letter-spacing:.06em;color:var(--gray);text-transform:uppercase;cursor:pointer;}
+  .tab.on{color:var(--ink);border-bottom:2px solid var(--gold);padding-bottom:4px;}
+  .tabs .cta{margin-left:auto;font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:var(--bg);border:0;border-radius:9999px;padding:9px 16px;cursor:pointer;}
+  .vnote{font-size:11px;color:var(--gray);margin:14px 0 0;}
+  .phead{display:flex;align-items:flex-end;justify-content:space-between;margin:22px 0 18px;}
+  .phead h1{font-family:var(--display);font-weight:400;font-size:44px;line-height:.92;margin:4px 0 0;}
+  .phead .kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+
+  .lanes{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start;}
+  .lane-h{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+  .lane-h .n{margin-left:auto;color:var(--gray-faint,#b8b8b6);}
+  .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .dot.run{background:var(--green);}.dot.mon{background:var(--blue);}.dot.q{background:var(--gray-faint,#b8b8b6);}
+
+  .block{border:1px solid var(--hairline);border-radius:12px;background:#fff;padding:15px 16px;margin-bottom:14px;}
+  .block.run{border-left:3px solid var(--green);}
+  .block.queued{border-style:dashed;}
+  .block.done{opacity:.72;}
+  .b-top{display:flex;align-items:center;gap:8px;}
+  .qpos{width:22px;height:22px;border-radius:9999px;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:13px;color:var(--gray);flex:none;}
+  .block.run .qpos{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .bn{font-family:var(--display);font-size:20px;letter-spacing:.02em;}
+  .bowner{font-size:10px;color:var(--gray);margin-left:auto;}
+  .bflow{font-size:11px;color:var(--gray);margin-top:8px;line-height:1.5;}
+  .bflow b{color:var(--ink);font-weight:600;}
+  .prog{height:4px;border-radius:9999px;background:var(--hairline-soft);margin-top:10px;overflow:hidden;}
+  .prog i{display:block;height:100%;background:var(--green);}
+  /* mini inline log tail */
+  .tail{margin-top:11px;border-top:1px solid var(--hairline-soft);padding-top:9px;font-family:'JetBrains Mono',var(--mono);
+    font-size:10px;line-height:1.65;color:var(--gray);max-height:70px;overflow:hidden;}
+  .tail .t{color:var(--gray-faint,#b8b8b6);}.tail .ok{color:var(--green);}.tail .bl{color:var(--blue);}
+  .b-foot{display:flex;gap:7px;margin-top:11px;}
+  .mini{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:6px 11px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .mini.link{border:0;color:var(--gray);padding:6px 4px;margin-left:auto;}
+</style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <div class="tabs"><span class="brand">ORTUS</span><span class="tab">Campaigns</span><span class="tab on">Sales Nav</span><button class="cta">＋ New scrape</button></div>
+  <p class="vnote">V3 · <b>Queue lanes</b> — campaigns flow left→right through <b>Running / Queued / Done</b>. Each block shows its queue position + a live log tail; “Full log” opens the console. Sample data.</p>
+
+  <div class="phead"><div><div class="kicker">Wednesday · 1 Jul 2026 · Tokyo</div><h1>Sales Nav Queue</h1></div><div class="qmeta">1 running · 2 queued · 1 done today</div></div>
+
+  <div class="lanes">
+    <!-- RUNNING -->
+    <div>
+      <div class="lane-h"><span class="dot run"></span> Running <span class="n">1</span></div>
+      <div class="block run">
+        <div class="b-top"><span class="qpos">1</span><span class="bn">APAC_EXPANSION</span><span class="bowner">Alecx B.</span></div>
+        <div class="bflow"><b>3 searches</b> → <b>3 jobs</b> → <b>Warm List › APAC</b> · Results</div>
+        <div class="prog"><i style="width:64%"></i></div>
+        <div class="tail">
+          <div><span class="t">12:45:30</span> job 1 · page 2 · +40 (118)</div>
+          <div><span class="t">12:47:11</span> job 2 · <span class="ok">done — 240 rows</span></div>
+          <div><span class="t">12:47:40</span> job 3 · waiting (account busy)</div>
+        </div>
+        <div class="b-foot"><button class="mini solid">Pause</button><button class="mini">Stop</button><button class="mini link">Full log →</button></div>
+      </div>
+    </div>
+
+    <!-- QUEUED -->
+    <div>
+      <div class="lane-h"><span class="dot q"></span> Queued <span class="n">2</span></div>
+      <div class="block queued">
+        <div class="b-top"><span class="qpos">2</span><span class="bn">CTAX_GUES_MUN</span><span class="bowner">Ines S.G.</span></div>
+        <div class="bflow"><b>2 searches</b> → <b>2 jobs</b> → <b>Guest List › Munich</b> · Results</div>
+        <div class="tail"><div><span class="t">12:40:55</span> queued — starts when #1 finishes</div></div>
+        <div class="b-foot"><button class="mini">Edit</button><button class="mini">Remove</button><button class="mini link">Full log →</button></div>
+      </div>
+      <div class="block queued">
+        <div class="b-top"><span class="qpos">3</span><span class="bn">SFLK_SYD1</span><span class="bowner">Roe A.</span></div>
+        <div class="bflow"><b>1 search</b> → <b>1 job</b> → <b>Sydney FLK</b> · Results</div>
+        <div class="tail"><div><span class="t">12:41:20</span> queued — position 3</div></div>
+        <div class="b-foot"><button class="mini">Edit</button><button class="mini">Remove</button><button class="mini link">Full log →</button></div>
+      </div>
+    </div>
+
+    <!-- DONE -->
+    <div>
+      <div class="lane-h"><span class="dot mon"></span> Done today <span class="n">1</span></div>
+      <div class="block done">
+        <div class="b-top"><span class="qpos">✓</span><span class="bn">NORDIC_Q3</span><span class="bowner">Pamela P.</span></div>
+        <div class="bflow"><b>2 searches</b> → <b>2 jobs</b> → <b>Nordics Q3</b> · Results</div>
+        <div class="tail"><div><span class="t">11:58:02</span> <span class="ok">all jobs done — 512 rows written</span></div></div>
+        <div class="b-foot"><button class="mini">Open sheet ↗</button><button class="mini">Re-run</button><button class="mini link">Full log →</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

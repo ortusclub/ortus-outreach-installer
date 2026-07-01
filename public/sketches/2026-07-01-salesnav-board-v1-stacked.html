@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sales Nav Board — V1 · Stacked queue strips</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 26px 120px;}
+  /* tab bar */
+  .tabs{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:26px;background:var(--bg);
+    border-bottom:1px solid var(--hairline);padding:16px 26px;margin:0 -26px 0;}
+  .brand{font-family:var(--display);font-size:22px;letter-spacing:.02em;}
+  .tab{font-size:12px;letter-spacing:.06em;color:var(--gray);text-transform:uppercase;padding:4px 0;cursor:pointer;}
+  .tab.on{color:var(--ink);border-bottom:2px solid var(--gold);}
+  .tabs .cta{margin-left:auto;font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:var(--bg);
+    border:0;border-radius:9999px;padding:9px 16px;cursor:pointer;}
+  .vnote{font-size:11px;color:var(--gray);margin:14px 0 0;}
+  .phead{display:flex;align-items:flex-end;justify-content:space-between;margin:24px 0 6px;}
+  .phead h1{font-family:var(--display);font-weight:400;font-size:46px;line-height:.92;margin:4px 0 0;}
+  .phead .kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+
+  /* queue rail label */
+  .railhead{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:26px 0 10px;}
+
+  /* strip */
+  .strip{position:relative;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;
+    padding:18px 22px 18px 60px;}
+  body.theme-light .strip{background:#fff;}
+  .strip.queued{opacity:.9;border-style:dashed;}
+  /* queue position badge */
+  .qpos{position:absolute;left:16px;top:18px;width:30px;height:30px;border-radius:9999px;border:1px solid var(--hairline);
+    display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:18px;color:var(--gray);}
+  .strip.run .qpos{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .s-top{display:flex;align-items:center;gap:12px;}
+  .s-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .s-owner{font-size:12px;color:var(--gray);}
+  .s-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .s-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .dot.run{background:var(--green);}.dot.mon{background:var(--blue);}.dot.q{background:var(--gray-faint,#b8b8b6);}
+  .s-sub{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .s-sub b{color:var(--ink);font-weight:600;}
+  /* progress bar for jobs */
+  .prog{height:5px;border-radius:9999px;background:var(--hairline-soft);margin:12px 0 0;overflow:hidden;}
+  .prog i{display:block;height:100%;background:var(--green);}
+  .s-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;
+    border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .s-foot .right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  /* owner-gated on/off toggle */
+  .toggle{width:42px;height:23px;border-radius:9999px;background:var(--green);position:relative;flex:none;cursor:pointer;}
+  .toggle.off{background:var(--gray-faint,#c9c9c7);}
+  .toggle i{position:absolute;top:2px;left:21px;width:19px;height:19px;border-radius:9999px;background:#fff;transition:left .12s;}
+  .toggle.off i{left:2px;}
+  .togwrap{display:flex;align-items:center;gap:9px;}
+  .togwrap .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .togwrap .lock{font-size:11px;color:var(--gray-faint,#b8b8b6);}
+  .whoami{font-size:11px;color:var(--gray);}
+  .whoami b{color:var(--ink);font-weight:600;}
+  /* confirm modal — namespaced (snm-) so the real app CSS can't hijack it */
+  #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
+  #snm-scrim.open{display:flex;}
+  .snm-card{box-sizing:border-box;background:#fff;border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
+  .snm-title{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 12px;letter-spacing:.02em;line-height:1;}
+  .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}
+  .snm-text b{color:var(--ink);font-weight:600;}
+  .snm-row{display:flex;gap:10px;justify-content:flex-end;align-items:center;}
+  .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  /* inline log drawer */
+  .log{margin:14px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;font-family:'JetBrains Mono',var(--mono);
+    font-size:11px;line-height:1.7;color:var(--gray);max-height:150px;overflow:auto;}
+  .log .t{color:var(--gray-faint,#b8b8b6);}
+  .log .ok{color:var(--green);}.log .bl{color:var(--blue);}
+  .log.hidden{display:none;}
+</style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <div class="tabs">
+    <span class="brand">ORTUS</span>
+    <span class="tab">Campaigns</span>
+    <span class="tab on">Sales Nav</span>
+    <button class="cta">＋ New scrape</button>
+  </div>
+  <p class="vnote">V1 · <b>Stacked queue strips</b> + <b>owner-gated toggle</b> — the board you land on after setup. Ordered by queue position; click <b>Logs</b> to expand a strip's own log. You can flip <b>On/Off</b> only on campaigns you own. Sample data.</p>
+  <p class="whoami" style="margin:8px 0 0;">Signed in as <b>Alecx Bagatsolon</b> — toggling someone else's scraper asks you to confirm first.</p>
+
+  <div class="phead">
+    <div><div class="kicker">Wednesday · 1 Jul 2026 · Tokyo</div><h1>Sales Nav Queue</h1></div>
+    <div class="qmeta">1 running · 2 queued · runs one at a time</div>
+  </div>
+
+  <div class="railhead">▶ Now running</div>
+
+  <div class="strip run">
+    <div class="qpos">1</div>
+    <div class="s-top"><span class="s-type">Sales Nav Scraper</span><span class="s-owner">· Alecx Bagatsolon</span>
+      <span class="s-status"><span class="dot run"></span> Running · 2 / 3 jobs</span></div>
+    <div class="s-name">APAC_EXPANSION</div>
+    <div class="s-sub"><b>3 searches</b> → <b>3 jobs</b> (3 accounts) → feeds <b>Warm List › APAC</b> · tab “Results”</div>
+    <div class="prog"><i style="width:64%"></i></div>
+    <div class="s-foot">
+      <div class="togwrap"><div class="toggle" data-owner="Alecx Bagatsolon" data-mine="1"><i></i></div><span class="lbl">On</span></div>
+      <button class="mini solid" onclick="this.closest('.strip').querySelector('.log').classList.toggle('hidden')">Logs</button>
+      <div class="right"><span class="s-owner">358 rows so far</span><button class="mini">Open</button></div>
+    </div>
+    <div class="log">
+      <div><span class="t">12:44:10</span> ▶ reached front of queue — <span class="bl">dispatched 3 jobs</span> to engine</div>
+      <div><span class="t">12:44:12</span> job 1 · arnoldd@ortus.solutions · opening Sales Nav search “CMOs · Italy”</div>
+      <div><span class="t">12:45:30</span> job 1 · page 2 · +40 rows (118 total)</div>
+      <div><span class="t">12:47:11</span> job 2 · alecx@ortus.solutions · <span class="ok">done — 240 rows → Results</span></div>
+      <div><span class="t">12:47:40</span> job 3 · danicaf@ortus.solutions · queued (account busy)</div>
+    </div>
+  </div>
+
+  <div class="railhead">• Up next in the queue</div>
+
+  <div class="strip queued">
+    <div class="qpos">2</div>
+    <div class="s-top"><span class="s-type">Sales Nav Scraper</span><span class="s-owner">· Ines Smith Garcia</span>
+      <span class="s-status"><span class="dot q"></span> Queued · starts when #1 finishes</span></div>
+    <div class="s-name">CTAX_GUES_MUN</div>
+    <div class="s-sub"><b>2 searches</b> → <b>2 jobs</b> (2 accounts) → feeds <b>Guest List › Munich</b> · tab “Results”</div>
+    <div class="s-foot">
+      <div class="togwrap"><div class="toggle off" data-owner="Ines Smith Garcia"><i></i></div><span class="lbl">Off</span><span class="lock">· Ines’s</span></div>
+      <button class="mini" onclick="this.closest('.strip').querySelector('.log').classList.toggle('hidden')">Logs</button>
+      <div class="right"><span class="s-owner">position 2 of 2</span><button class="mini">Open</button></div>
+    </div>
+    <div class="log hidden"><div><span class="t">12:40:55</span> queued — position 2</div></div>
+  </div>
+
+  <div class="strip queued">
+    <div class="qpos">3</div>
+    <div class="s-top"><span class="s-type">Sales Nav Scraper</span><span class="s-owner">· Roe Aguirre</span>
+      <span class="s-status"><span class="dot q"></span> Queued</span></div>
+    <div class="s-name">SFLK_SYD1</div>
+    <div class="s-sub"><b>1 search</b> → <b>1 job</b> (1 account) → feeds <b>Sydney FLK</b> · tab “Results”</div>
+    <div class="s-foot">
+      <div class="togwrap"><div class="toggle off" data-owner="Roe Aguirre"><i></i></div><span class="lbl">Off</span><span class="lock">· Roe’s</span></div>
+      <button class="mini" onclick="this.closest('.strip').querySelector('.log').classList.toggle('hidden')">Logs</button>
+      <div class="right"><span class="s-owner">position 3 of 3</span><button class="mini">Open</button></div>
+    </div>
+    <div class="log hidden"><div><span class="t">12:41:20</span> queued — position 3</div></div>
+  </div>
+</div>
+  <!-- confirm modal for toggling a campaign you don't own -->
+  <div id="snm-scrim">
+    <div class="snm-card">
+      <div class="snm-title">Are you sure?</div>
+      <div class="snm-text" id="snm-body">This isn’t your campaign.</div>
+      <div class="snm-row">
+        <button class="snm-btn" id="m-cancel">Cancel</button>
+        <button class="snm-btn solid" id="m-ok">Yes, toggle it</button>
+      </div>
+    </div>
+  </div>
+<script>
+  const ME = 'Alecx Bagatsolon';
+  const scrim = document.getElementById('snm-scrim');
+  const mBody = document.getElementById('snm-body');
+  let pending = null;
+  function flip(t){
+    t.classList.toggle('off');
+    const lbl = t.parentElement.querySelector('.lbl');
+    if (lbl) lbl.textContent = t.classList.contains('off') ? 'Off' : 'On';
+  }
+  document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => {
+    const owner = t.dataset.owner || '';
+    if (owner && owner !== ME) {
+      // Not yours — confirm first.
+      pending = t;
+      const goingTo = t.classList.contains('off') ? 'ON' : 'OFF';
+      mBody.innerHTML = `This isn’t your campaign — it belongs to <b>${owner}</b>. Turning it <b>${goingTo}</b> affects their scrape and its place in the queue. Continue?`;
+      scrim.classList.add('open');
+      return;
+    }
+    flip(t);
+  }));
+  document.getElementById('m-cancel').onclick = () => { pending = null; scrim.classList.remove('open'); };
+  document.getElementById('m-ok').onclick = () => { if (pending) flip(pending); pending = null; scrim.classList.remove('open'); };
+</script>
+</body></html>

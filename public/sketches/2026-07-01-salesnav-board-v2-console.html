@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sales Nav Board — V2 · Two-pane console</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 26px 80px;}
+  .tabs{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:26px;background:var(--bg);
+    border-bottom:1px solid var(--hairline);padding:16px 26px;margin:0 -26px 0;}
+  .brand{font-family:var(--display);font-size:22px;}
+  .tab{font-size:12px;letter-spacing:.06em;color:var(--gray);text-transform:uppercase;cursor:pointer;}
+  .tab.on{color:var(--ink);border-bottom:2px solid var(--gold);padding-bottom:4px;}
+  .tabs .cta{margin-left:auto;font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:var(--bg);border:0;border-radius:9999px;padding:9px 16px;cursor:pointer;}
+  .vnote{font-size:11px;color:var(--gray);margin:14px 0 0;}
+  .phead{display:flex;align-items:flex-end;justify-content:space-between;margin:22px 0 18px;}
+  .phead h1{font-family:var(--display);font-weight:400;font-size:44px;line-height:.92;margin:4px 0 0;}
+  .phead .kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+
+  .split{display:grid;grid-template-columns:360px 1fr;gap:20px;align-items:start;}
+  /* left: strips list */
+  .list{display:flex;flex-direction:column;gap:10px;}
+  .cell{position:relative;border:1px solid var(--hairline);border-radius:12px;background:#fff;padding:14px 14px 14px 46px;cursor:pointer;}
+  .cell.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink);}
+  .cell.queued{border-style:dashed;opacity:.92;}
+  .qpos{position:absolute;left:12px;top:14px;width:26px;height:26px;border-radius:9999px;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:15px;color:var(--gray);}
+  .cell.run .qpos{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .cn{font-family:var(--display);font-size:21px;letter-spacing:.02em;}
+  .cmeta{font-size:11px;color:var(--gray);margin-top:3px;}
+  .cst{font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-top:8px;display:flex;align-items:center;gap:6px;}
+  .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .dot.run{background:var(--green);}.dot.mon{background:var(--blue);}.dot.q{background:var(--gray-faint,#b8b8b6);}
+  .prog{height:4px;border-radius:9999px;background:var(--hairline-soft);margin-top:8px;overflow:hidden;}
+  .prog i{display:block;height:100%;background:var(--green);}
+
+  /* right: console */
+  .console{border:1px solid var(--hairline);border-radius:14px;background:#fff;overflow:hidden;position:sticky;top:84px;}
+  .con-head{padding:18px 22px;border-bottom:1px solid var(--hairline-soft);}
+  .con-head .cn2{font-family:var(--display);font-size:30px;letter-spacing:.02em;}
+  .con-head .flowline{font-size:12px;color:var(--gray);margin-top:8px;}
+  .con-head .flowline b{color:var(--ink);font-weight:600;}
+  .con-chips{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
+  .chip{font-size:10px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--hairline);border-radius:9999px;padding:5px 10px;color:var(--gray);}
+  .chip .dot{margin-right:5px;}
+  .con-body{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:12px;line-height:1.85;padding:16px 20px;height:330px;overflow:auto;}
+  .con-body .t{color:#6a6a6a;}.con-body .ok{color:#4ec36b;}.con-body .bl{color:#7fb2e6;}.con-body .wr{color:#e0b060;}
+  .con-foot{display:flex;gap:10px;padding:14px 20px;border-top:1px solid var(--hairline-soft);}
+  .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:8px 14px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .con-foot .right{margin-left:auto;display:flex;gap:8px;}
+</style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <div class="tabs"><span class="brand">ORTUS</span><span class="tab">Campaigns</span><span class="tab on">Sales Nav</span><button class="cta">＋ New scrape</button></div>
+  <p class="vnote">V2 · <b>Two-pane console</b> — queue strips on the left (in order), the selected campaign's <b>live log console</b> on the right. Click a strip to switch. Sample data.</p>
+
+  <div class="phead"><div><div class="kicker">Wednesday · 1 Jul 2026 · Tokyo</div><h1>Sales Nav Queue</h1></div><div class="qmeta">1 running · 2 queued</div></div>
+
+  <div class="split">
+    <div class="list">
+      <div class="cell run sel" data-name="APAC_EXPANSION">
+        <div class="qpos">1</div><div class="cn">APAC_EXPANSION</div>
+        <div class="cmeta">Alecx Bagatsolon · 3 jobs → Warm List › APAC</div>
+        <div class="cst"><span class="dot run"></span> Running · 2/3 jobs</div>
+        <div class="prog"><i style="width:64%"></i></div>
+      </div>
+      <div class="cell queued" data-name="CTAX_GUES_MUN">
+        <div class="qpos">2</div><div class="cn">CTAX_GUES_MUN</div>
+        <div class="cmeta">Ines Smith Garcia · 2 jobs → Guest List › Munich</div>
+        <div class="cst"><span class="dot q"></span> Queued · next up</div>
+      </div>
+      <div class="cell queued" data-name="SFLK_SYD1">
+        <div class="qpos">3</div><div class="cn">SFLK_SYD1</div>
+        <div class="cmeta">Roe Aguirre · 1 job → Sydney FLK</div>
+        <div class="cst"><span class="dot q"></span> Queued</div>
+      </div>
+    </div>
+
+    <div class="console">
+      <div class="con-head">
+        <div class="cn2" id="cn2">APAC_EXPANSION</div>
+        <div class="flowline" id="flow"><b>3 Sales Nav searches</b> → <b>3 jobs</b> (arnoldd, alecx, danicaf) → <b>Warm List › APAC</b> · tab “Results”</div>
+        <div class="con-chips">
+          <span class="chip"><span class="dot run"></span> Queue #1 · running</span>
+          <span class="chip">Slow mode: off</span>
+          <span class="chip">358 rows written</span>
+        </div>
+      </div>
+      <div class="con-body" id="log">
+<div><span class="t">12:44:10</span> ▶ reached front of queue — <span class="bl">dispatched 3 jobs</span></div>
+<div><span class="t">12:44:12</span> job 1 · arnoldd@ortus.solutions · opening “CMOs · Italy · SaaS”</div>
+<div><span class="t">12:44:58</span> job 1 · page 1 · +78 rows</div>
+<div><span class="t">12:45:30</span> job 1 · page 2 · +40 rows (118 total)</div>
+<div><span class="t">12:46:02</span> job 2 · alecx@ortus.solutions · opening “Heads of Growth · DACH”</div>
+<div><span class="t">12:47:11</span> job 2 · <span class="ok">done — 240 rows → Results</span></div>
+<div><span class="t">12:47:40</span> job 3 · danicaf@ortus.solutions · <span class="wr">waiting — account busy on another seat</span></div>
+<div><span class="t">12:48:03</span> writing batch → Warm List › APAC!Results …</div>
+      </div>
+      <div class="con-foot">
+        <button class="mini solid">Pause</button><button class="mini">Stop</button>
+        <div class="right"><button class="mini">Edit</button><button class="mini">Open sheet ↗</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  const LOGS = {
+    APAC_EXPANSION: document.getElementById('log').innerHTML,
+    CTAX_GUES_MUN: '<div><span class="t">12:40:55</span> queued — position 2 · starts when #1 finishes</div>',
+    SFLK_SYD1: '<div><span class="t">12:41:20</span> queued — position 3</div>'
+  };
+  const FLOWS = {
+    APAC_EXPANSION: document.getElementById('flow').innerHTML,
+    CTAX_GUES_MUN: '<b>2 Sales Nav searches</b> → <b>2 jobs</b> (ines, +1) → <b>Guest List › Munich</b> · tab “Results”',
+    SFLK_SYD1: '<b>1 Sales Nav search</b> → <b>1 job</b> (roe) → <b>Sydney FLK</b> · tab “Results”'
+  };
+  document.querySelectorAll('.cell').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.cell').forEach(x => x.classList.remove('sel'));
+    c.classList.add('sel');
+    const n = c.dataset.name;
+    document.getElementById('cn2').textContent = n;
+    document.getElementById('flow').innerHTML = FLOWS[n];
+    document.getElementById('log').innerHTML = LOGS[n];
+  }));
+</script>
+</body></html>

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sales Nav Board — V1 · Jobs-first tabs + handover</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/dashboard-v0.3.css">
+<style>
+  /* everything namespaced sn- so the real app CSS can't hijack the sketch */
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);}
+  .sn-wrap{max-width:1000px;margin:0 auto;padding:0 26px 120px;}
+  .sn-tabs{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:26px;background:var(--bg);border-bottom:1px solid var(--hairline);padding:16px 26px;margin:0 -26px;}
+  .sn-brand{font-family:var(--display);font-size:22px;}
+  .sn-nav{font-size:12px;letter-spacing:.06em;color:var(--gray);text-transform:uppercase;cursor:pointer;}
+  .sn-nav.on{color:var(--ink);border-bottom:2px solid var(--gold);padding-bottom:4px;}
+  .sn-cta{margin-left:auto;font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:var(--bg);border:0;border-radius:9999px;padding:9px 16px;cursor:pointer;}
+  .sn-note{font-size:11px;color:var(--gray);margin:14px 0 0;}
+  .sn-sim{margin:12px 0 0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:transparent;border:1px solid var(--gold);color:var(--ink);border-radius:9999px;padding:8px 14px;cursor:pointer;}
+
+  .sn-phead{display:flex;align-items:flex-end;justify-content:space-between;margin:22px 0 6px;}
+  .sn-phead h1{font-family:var(--display);font-weight:400;font-size:46px;line-height:.92;margin:4px 0 0;}
+  .sn-kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+
+  /* handover banner */
+  .sn-handover{display:none;align-items:center;gap:14px;margin:18px 0 4px;padding:14px 18px;border-radius:12px;border:1px solid var(--hairline);background:var(--hairline-soft);}
+  .sn-handover.show{display:flex;}
+  .sn-handover .spin{width:16px;height:16px;border-radius:9999px;border:2px solid var(--hairline);border-top-color:var(--ink);animation:sn-spin .8s linear infinite;flex:none;}
+  @keyframes sn-spin{to{transform:rotate(360deg);}}
+  .sn-handover .txt{font-size:12.5px;color:var(--gray);}
+  .sn-handover .txt b{color:var(--ink);font-weight:600;}
+  .sn-handover.stopping{border-left:3px solid var(--red);}
+  .sn-handover.launching{border-left:3px solid var(--green);}
+  .sn-handover.launching .spin{border-top-color:var(--green);}
+
+  .sn-railhead{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+
+  .sn-strip{position:relative;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px 18px 60px;transition:opacity .4s, border-color .4s;}
+  .sn-strip.queued{border-style:dashed;}
+  .sn-strip.done{opacity:.6;}
+  .sn-strip.stopping{border-color:var(--red);animation:sn-pulse 1s ease-in-out infinite;}
+  .sn-strip.starting{border-color:var(--green);animation:sn-pulse 1s ease-in-out infinite;}
+  @keyframes sn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,0,0,0);}50%{box-shadow:0 0 0 3px var(--hairline-soft);}}
+  .sn-qpos{position:absolute;left:16px;top:18px;width:30px;height:30px;border-radius:9999px;border:1px solid var(--hairline);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:18px;color:var(--gray);transition:all .3s;}
+  .sn-strip.run .sn-qpos{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-top{display:flex;align-items:center;gap:12px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-owner{font-size:12px;color:var(--gray);}
+  .sn-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .dot.run{background:var(--green);}.dot.mon{background:var(--blue);}.dot.q{background:var(--gray-faint,#b8b8b6);}.dot.red{background:var(--red);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-prog{height:5px;border-radius:9999px;background:var(--hairline-soft);margin:12px 0 0;overflow:hidden;}
+  .sn-prog i{display:block;height:100%;background:var(--green);transition:width .5s;}
+
+  /* strip footer: owner toggle + Open (→ setup page) */
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .toggle{width:42px;height:23px;border-radius:9999px;background:var(--green);position:relative;flex:none;cursor:pointer;}
+  .toggle.off{background:var(--gray-faint,#c9c9c7);}
+  .toggle i{position:absolute;top:2px;left:21px;width:19px;height:19px;border-radius:9999px;background:#fff;transition:left .12s;}
+  .toggle.off i{left:2px;}
+  .togwrap{display:flex;align-items:center;gap:9px;}
+  .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .lock{font-size:11px;color:var(--gray-faint,#b8b8b6);}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .mini.locked{opacity:.4;cursor:not-allowed;}
+  /* queued strips are collapsed — summary + toggle only, no in-card panel */
+  .sn-strip.sn-collapsed .sn-switch{display:none;}
+
+  /* JOBS / LOGS tabbed panel */
+  .sn-switch{margin:16px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;}
+  .sn-switchtabs{display:flex;gap:20px;margin-bottom:12px;}
+  .sn-st{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);cursor:pointer;padding-bottom:5px;}
+  .sn-st.on{color:var(--ink);border-bottom:2px solid var(--gold);}
+  .sn-pane{display:none;}
+  .sn-pane.on{display:block;}
+  /* jobs pane */
+  .job{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hairline-soft);}
+  .job:last-child{border-bottom:0;}
+  .job .jt{font-size:12.5px;color:var(--ink);font-weight:600;}
+  .job .js{font-size:11px;color:var(--gray);margin-top:2px;}
+  .job .jstat{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:none;}
+  /* queue pane */
+  .qline{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:12.5px;border-bottom:1px solid var(--hairline-soft);}
+  .qline:last-child{border-bottom:0;}
+  .qline .qn{font-family:var(--display);font-size:15px;color:var(--gray);width:22px;}
+  .qline.here{color:var(--ink);font-weight:600;}
+  .qline .tag{margin-left:auto;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  /* logs pane */
+  .logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
+  .logbox .t{color:#6a6a6a;}.logbox .ok{color:#4ec36b;}.logbox .bl{color:#7fb2e6;}.logbox .wr{color:#e0b060;}
+
+  /* confirm modal (namespaced) */
+  #snm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:none;align-items:center;justify-content:center;z-index:50;}
+  #snm-scrim.open{display:flex;}
+  .snm-card{box-sizing:border-box;background:#fff;border-radius:16px;max-width:400px;width:calc(100% - 48px);padding:26px;}
+  .snm-title{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 12px;letter-spacing:.02em;line-height:1;}
+  .snm-text{font-size:13px;color:var(--gray);line-height:1.55;margin:0 0 22px;}
+  .snm-text b{color:var(--ink);font-weight:600;}
+  .snm-row{display:flex;gap:10px;justify-content:flex-end;align-items:center;}
+  .snm-btn{box-sizing:border-box;flex:0 0 auto;height:38px;line-height:1;white-space:nowrap;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:0 20px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .snm-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+</style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="sn-wrap">
+  <div class="sn-tabs"><span class="sn-brand">ORTUS</span><span class="sn-nav">Campaigns</span><span class="sn-nav on">Sales Nav</span><button class="sn-cta">＋ New scrape</button></div>
+  <p class="sn-note">V1 · running strips lead with <b>Jobs</b> / <b>Logs</b>. <b>Queued</b> strips are collapsed to summary + toggle, and only the owner can <b>Open</b> them. <b>Open</b> → the setup page (no more Edit). Signed in as <b>Alecx Bagatsolon</b>. Sample data.</p>
+  <button class="sn-sim" id="sim">▶ Simulate: Stop #1 &amp; launch #2 (watch the handover)</button>
+
+  <div class="sn-phead"><div><div class="sn-kicker">Wednesday · 1 Jul 2026 · Tokyo</div><h1>Sales Nav Queue</h1></div><div class="sn-qmeta" id="qmeta">1 running · 2 queued · one at a time</div></div>
+
+  <!-- handover banner -->
+  <div class="sn-handover" id="handover"><span class="spin"></span><span class="txt" id="handover-txt"></span></div>
+
+  <div class="sn-railhead" id="rail-run">▶ Now running</div>
+
+  <!-- STRIP 1 (running, owned by me) -->
+  <div class="sn-strip run" id="strip1">
+    <div class="sn-qpos" id="qpos1">1</div>
+    <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span><span class="sn-owner">· Alecx Bagatsolon</span>
+      <span class="sn-status" id="stat1"><span class="dot run"></span> Running · 2/3 jobs</span></div>
+    <div class="sn-name">APAC_EXPANSION</div>
+    <div class="sn-flow"><b>3 searches</b> → <b>3 jobs</b> (3 accounts) → feeds <b>Warm List › APAC</b> · tab “Results”</div>
+    <div class="sn-prog"><i id="prog1" style="width:64%"></i></div>
+
+    <div class="sn-switch">
+      <div class="sn-switchtabs">
+        <span class="sn-st on" data-t="jobs">Jobs</span><span class="sn-st" data-t="logs">Logs</span>
+      </div>
+      <div class="sn-pane on" data-p="jobs">
+        <div class="job"><div><div class="jt">Search 1 · “CMOs · Italy · SaaS”</div><div class="js">arnoldd@ortus.solutions</div></div><div class="jstat"><span class="dot run"></span> Running · 118 rows</div></div>
+        <div class="job"><div><div class="jt">Search 2 · “Heads of Growth · DACH”</div><div class="js">alecx@ortus.solutions</div></div><div class="jstat"><span class="dot mon"></span> Done · 240 rows</div></div>
+        <div class="job"><div><div class="jt">Search 3 · “VP Sales · Nordics”</div><div class="js">danicaf@ortus.solutions</div></div><div class="jstat"><span class="dot q"></span> Waiting · account busy</div></div>
+      </div>
+      <div class="sn-pane" data-p="logs">
+        <div class="logbox">
+<div><span class="t">12:44:10</span> ▶ front of queue — <span class="bl">dispatched 3 jobs</span></div>
+<div><span class="t">12:45:30</span> job 1 · page 2 · +40 rows (118 total)</div>
+<div><span class="t">12:47:11</span> job 2 · <span class="ok">done — 240 rows → Results</span></div>
+<div><span class="t">12:47:40</span> job 3 · <span class="wr">waiting — account busy</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sn-foot">
+      <div class="togwrap"><div class="toggle" data-owner="Alecx Bagatsolon"><i></i></div><span class="lbl">On</span></div>
+      <div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div>
+    </div>
+  </div>
+
+  <div class="sn-railhead" id="rail-q">• Up next in the queue</div>
+
+  <!-- STRIP 2 (queued, owned by Ines) -->
+  <div class="sn-strip queued sn-collapsed" id="strip2">
+    <div class="sn-qpos" id="qpos2">2</div>
+    <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span><span class="sn-owner">· Ines Smith Garcia</span>
+      <span class="sn-status" id="stat2"><span class="dot q"></span> Queued · starts when #1 finishes</span></div>
+    <div class="sn-name">CTAX_GUES_MUN</div>
+    <div class="sn-flow"><b>2 searches</b> → <b>2 jobs</b> (2 accounts) → feeds <b>Guest List › Munich</b> · tab “Results”</div>
+    <div class="sn-prog" id="prog2wrap" style="display:none"><i id="prog2" style="width:0%"></i></div>
+
+    <div class="sn-switch">
+      <div class="sn-switchtabs">
+        <span class="sn-st on" data-t="jobs">Jobs</span><span class="sn-st" data-t="logs">Logs</span>
+      </div>
+      <div class="sn-pane on" data-p="jobs">
+        <div class="job"><div><div class="jt">Search 1 · “Event planners · Munich”</div><div class="js">ines@ortus.solutions</div></div><div class="jstat"><span class="dot q"></span> Queued</div></div>
+        <div class="job"><div><div class="jt">Search 2 · “Venue managers · DACH”</div><div class="js">danicaf@ortus.solutions</div></div><div class="jstat"><span class="dot q"></span> Queued</div></div>
+      </div>
+      <div class="sn-pane" data-p="logs">
+        <div class="logbox"><div><span class="t">12:40:55</span> queued — position 2 · starts when an account frees</div></div>
+      </div>
+    </div>
+
+    <div class="sn-foot">
+      <div class="togwrap"><div class="toggle off" data-owner="Ines Smith Garcia"><i></i></div><span class="lbl">Off</span><span class="lock">· Ines’s</span></div>
+      <div class="right"><button class="mini locked" id="open2" title="Only Ines Smith Garcia can open this">Open 🔒</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- confirm modal -->
+<div id="snm-scrim">
+  <div class="snm-card">
+    <div class="snm-title">Are you sure?</div>
+    <div class="snm-text" id="snm-body">This isn’t your campaign.</div>
+    <div class="snm-row"><button class="snm-btn" id="m-cancel">Cancel</button><button class="snm-btn solid" id="m-ok">Yes, toggle it</button></div>
+  </div>
+</div>
+
+<script>
+  const ME='Alecx Bagatsolon';
+  // tab switching per strip
+  document.querySelectorAll('.sn-switch').forEach(sw=>{
+    sw.querySelectorAll('.sn-st').forEach(tab=>tab.addEventListener('click',()=>{
+      sw.querySelectorAll('.sn-st').forEach(x=>x.classList.toggle('on',x===tab));
+      sw.querySelectorAll('.sn-pane').forEach(p=>p.classList.toggle('on',p.dataset.p===tab.dataset.t));
+    }));
+  });
+  // owner-gated toggle + confirm
+  const scrim=document.getElementById('snm-scrim'), body=document.getElementById('snm-body'); let pending=null;
+  function flip(t){t.classList.toggle('off');const l=t.parentElement.querySelector('.lbl');if(l)l.textContent=t.classList.contains('off')?'Off':'On';}
+  document.querySelectorAll('.toggle').forEach(t=>t.addEventListener('click',()=>{
+    const o=t.dataset.owner||'';
+    if(o&&o!==ME){pending=t;const to=t.classList.contains('off')?'ON':'OFF';
+      body.innerHTML=`This isn’t your campaign — it belongs to <b>${o}</b>. Turning it <b>${to}</b> affects their scrape and its place in the queue. Continue?`;
+      scrim.classList.add('open');return;}
+    flip(t);
+  }));
+  document.getElementById('m-cancel').onclick=()=>{pending=null;scrim.classList.remove('open');};
+  document.getElementById('m-ok').onclick=()=>{if(pending)flip(pending);pending=null;scrim.classList.remove('open');};
+
+  // ── handover simulation: stop #1, launch #2 ──
+  const ho=document.getElementById('handover'), hoTxt=document.getElementById('handover-txt');
+  document.getElementById('sim').addEventListener('click',()=>{
+    const s1=document.getElementById('strip1'), s2=document.getElementById('strip2');
+    // phase 1: stopping #1
+    ho.className='sn-handover show stopping'; hoTxt.innerHTML='<b>Stopping</b> APAC_EXPANSION — finishing the current job and closing accounts…';
+    s1.classList.add('stopping');
+    setTimeout(()=>{
+      // #1 becomes stopped/done
+      s1.classList.remove('stopping','run'); s1.classList.add('done');
+      document.getElementById('qpos1').textContent='✓';
+      document.getElementById('stat1').innerHTML='<span class="dot red"></span> Stopped by Alecx';
+      document.getElementById('prog1').style.width='64%';
+      // phase 2: launching #2
+      ho.className='sn-handover show launching'; hoTxt.innerHTML='<b>Launching</b> CTAX_GUES_MUN — dispatching jobs to the engine…';
+      s2.classList.add('starting');
+    },1700);
+    setTimeout(()=>{
+      const s2=document.getElementById('strip2');
+      s2.classList.remove('starting','queued','sn-collapsed'); s2.classList.add('run');
+      document.getElementById('qpos2').textContent='1';
+      document.getElementById('stat2').innerHTML='<span class="dot run"></span> Running · 0/2 jobs';
+      document.getElementById('prog2wrap').style.display=''; document.getElementById('prog2').style.width='8%';
+      document.getElementById('rail-run').textContent='▶ Now running';
+      document.getElementById('rail-q').textContent='• Done / up next';
+      document.getElementById('qmeta').textContent='1 running · 0 queued · handover complete';
+      ho.className='sn-handover show launching'; hoTxt.innerHTML='<b>✓ Now running</b> CTAX_GUES_MUN — APAC_EXPANSION was stopped.';
+    },3400);
+    setTimeout(()=>{ ho.className='sn-handover'; },6000);
+  });
+</script>
+</body></html>
