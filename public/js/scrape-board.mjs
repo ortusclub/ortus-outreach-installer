@@ -10,7 +10,7 @@ export function campaignStatus(jobs) {
   return 'idle';
 }
 
-export function groupJobsIntoCampaigns(campaigns, jobs) {
+export function mergeCampaignsWithJobs(campaigns, jobs) {
   const byUrl = new Map();
   for (const c of campaigns || []) for (const u of (c.searchUrls || [])) byUrl.set(u, c.id);
   const jobsByCampaign = new Map();
@@ -20,15 +20,12 @@ export function groupJobsIntoCampaigns(campaigns, jobs) {
     if (!jobsByCampaign.has(cid)) jobsByCampaign.set(cid, []);
     jobsByCampaign.get(cid).push(j);
   }
-  return (campaigns || []).map((campaign) => {
-    const cjobs = jobsByCampaign.get(campaign.id) || [];
-    const status = campaignStatus(cjobs);
+  return (campaigns || []).map((c) => {
+    const cjobs = jobsByCampaign.get(c.id) || [];
     const positions = cjobs.filter((j) => j.state === 'queued' && j.position).map((j) => j.position);
     const etas = cjobs.filter((j) => j.etaMs).map((j) => j.etaMs);
     return {
-      campaign,
-      jobs: cjobs,
-      status,
+      ...c, jobs: cjobs, status: campaignStatus(cjobs),
       running: cjobs.filter((j) => j.state === 'running').length,
       queued: cjobs.filter((j) => j.state === 'queued').length,
       done: cjobs.filter((j) => j.state === 'done').length,

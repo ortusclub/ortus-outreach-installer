@@ -28,6 +28,8 @@ import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeRes
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
 import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
+import { addScrapeCampaign, listScrapeCampaigns } from './src/scrape-campaigns.js';
+import { mergeCampaignsWithJobs } from './public/js/scrape-board.mjs';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
@@ -2068,9 +2070,21 @@ app.post('/api/campaign/login-done', (_req, res) => {
 // the UI can show "engine not configured" instead of failing.
 // ---------------------------------------------------------------------------
 app.post('/api/scrape/start', async (req, res) => {
-  const { searchUrls, sheetUrl, tabName, profileId, slowMode } = req.body || {};
+  const { searchUrls, sheetUrl, tabName, profileId, slowMode, name, profileIds } = req.body || {};
   const result = await startScrape({ searchUrls, sheetUrl, tabName, profileId, slowMode });
-  res.status(result && result.error ? 400 : 200).json(result);
+  if (result && result.error) return res.status(400).json(result);
+  // Persist a campaign wrapper so the Sales Nav board can group these jobs by owner.
+  try {
+    const urls = Array.isArray(searchUrls) ? searchUrls : (searchUrls ? [searchUrls] : []);
+    await addScrapeCampaign({
+      name: name || tabName || 'Sales Nav scrape',
+      owner: req.user || null,
+      sheetUrl, tabName,
+      profileIds: Array.isArray(profileIds) ? profileIds : (profileId ? [profileId] : []),
+      searchUrls: urls,
+    });
+  } catch (e) { console.error('scrape-campaign persist failed:', e.message); }
+  res.status(200).json(result);
 });
 
 // Read input Sales Nav search URLs from a pasted Google Sheet (app-side only —
@@ -2109,6 +2123,16 @@ app.get('/api/scrape/jobs', async (_req, res) => {
 
 app.get('/api/scrape/logs', async (req, res) => {
   res.json(await getScrapeLogs(req.query.since));
+});
+
+app.get('/api/scrape/campaigns', async (_req, res) => {
+  try {
+    const [campaigns, jobsRes] = await Promise.all([listScrapeCampaigns(), getScrapeJobs()]);
+    const jobs = Array.isArray(jobsRes) ? jobsRes : (jobsRes && jobsRes.jobs) || [];
+    res.json({ campaigns: mergeCampaignsWithJobs(campaigns, jobs) });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // Per-job live View — proxies the engine's MJPEG screencast stream

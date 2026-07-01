@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ADMIN_EMAIL, groupJobsIntoCampaigns, campaignStatus, toggleDecision, fmtEta,
+  ADMIN_EMAIL, mergeCampaignsWithJobs, campaignStatus, toggleDecision, fmtEta,
 } from '../public/js/scrape-board.mjs';
 
-test('groups engine jobs under the campaign whose searchUrls contain them', () => {
+test('mergeCampaignsWithJobs attaches jobs + computed fields (flat shape) per record', () => {
   const campaigns = [
     { id: 'sc_1', name: 'A', owner: 'a@b', searchUrls: ['u1', 'u2'], profileIds: ['p1', 'p2'] },
     { id: 'sc_2', name: 'B', owner: 'c@d', searchUrls: ['u3'], profileIds: ['p3'] },
@@ -14,13 +14,19 @@ test('groups engine jobs under the campaign whose searchUrls contain them', () =
     { id: 'j2', searchUrl: 'u2', state: 'done', profiles: 240, position: 0 },
     { id: 'j3', searchUrl: 'u3', state: 'queued', profiles: 0, position: 2, etaMs: 120000 },
   ];
-  const groups = groupJobsIntoCampaigns(campaigns, jobs);
-  const a = groups.find((g) => g.campaign.id === 'sc_1');
-  const b = groups.find((g) => g.campaign.id === 'sc_2');
+  const merged = mergeCampaignsWithJobs(campaigns, jobs);
+  const a = merged.find((m) => m.id === 'sc_1');
+  const b = merged.find((m) => m.id === 'sc_2');
+  // flat shape: record fields are spread at top level, not nested under `campaign`
+  assert.equal(a.name, 'A');
+  assert.equal(a.owner, 'a@b');
   assert.equal(a.jobs.length, 2);
   assert.equal(a.status, 'running');
+  assert.equal(a.totalProfiles, 358);
+  assert.equal(a.done, 1);
   assert.equal(b.status, 'queued');
   assert.equal(b.minPosition, 2);
+  assert.equal(b.etaMs, 120000);
 });
 
 test('campaignStatus precedence: running > queued > error > done > idle', () => {
