@@ -2071,21 +2071,9 @@ app.post('/api/campaign/login-done', (_req, res) => {
 // the UI can show "engine not configured" instead of failing.
 // ---------------------------------------------------------------------------
 app.post('/api/scrape/start', async (req, res) => {
-  const { searchUrls, sheetUrl, tabName, profileId, slowMode, name, profileIds } = req.body || {};
+  const { searchUrls, sheetUrl, tabName, profileId, slowMode } = req.body || {};
   const result = await startScrape({ searchUrls, sheetUrl, tabName, profileId, slowMode });
-  if (result && result.error) return res.status(400).json(result);
-  // Persist a campaign wrapper so the Sales Nav board can group these jobs by owner.
-  try {
-    const urls = Array.isArray(searchUrls) ? searchUrls : (searchUrls ? [searchUrls] : []);
-    await addScrapeCampaign({
-      name: name || tabName || 'Sales Nav scrape',
-      owner: req.user || null,
-      sheetUrl, tabName,
-      profileIds: Array.isArray(profileIds) ? profileIds : (profileId ? [profileId] : []),
-      searchUrls: urls,
-    });
-  } catch (e) { console.error('scrape-campaign persist failed:', e.message); }
-  res.status(200).json(result);
+  res.status(result && result.error ? 400 : 200).json(result);
 });
 
 // Read input Sales Nav search URLs from a pasted Google Sheet (app-side only —
@@ -2126,6 +2114,22 @@ app.get('/api/scrape/logs', async (req, res) => {
   res.json(await getScrapeLogs(req.query.since));
 });
 
+app.post('/api/scrape/campaigns', async (req, res) => {
+  try {
+    const { name, sheetUrl, tabName, profileIds, searchUrls } = req.body || {};
+    const rec = await addScrapeCampaign({
+      name: name || tabName || 'Sales Nav scrape',
+      owner: req.user || null,
+      sheetUrl, tabName,
+      profileIds: Array.isArray(profileIds) ? profileIds : [],
+      searchUrls: Array.isArray(searchUrls) ? searchUrls : [],
+    });
+    res.json({ ok: true, campaign: rec });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/scrape/campaigns', async (_req, res) => {
   try {
     const [campaigns, jobsRes] = await Promise.all([listScrapeCampaigns(), getScrapeJobs()]);
@@ -2137,19 +2141,23 @@ app.get('/api/scrape/campaigns', async (_req, res) => {
 });
 
 app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {
-  const rec = await getScrapeCampaign(req.params.id);
-  if (!rec) return res.status(404).json({ error: 'unknown campaign' });
-  const on = !!(req.body && req.body.on);
-  // Drive the engine controls the campaign's profiles already expose.
-  for (const pid of rec.profileIds || []) {
-    try { on ? await resumeScrape(pid) : await pauseScrape(pid); }
-    catch (e) { console.error('toggle scrape profile failed:', pid, e.message); }
+  try {
+    const rec = await getScrapeCampaign(req.params.id);
+    if (!rec) return res.status(404).json({ error: 'unknown campaign' });
+    const on = !!(req.body && req.body.on);
+    // Drive the engine controls the campaign's profiles already expose.
+    for (const pid of rec.profileIds || []) {
+      try { on ? await resumeScrape(pid) : await pauseScrape(pid); }
+      catch (e) { console.error('toggle scrape profile failed:', pid, e.message); }
+    }
+    await updateScrapeCampaign(rec.id, { enabled: on });
+    const actor = req.user || 'unknown';
+    const admin = actor.toLowerCase() === 'antonio@ortusclub.com';
+    await appendAction(rec.id, { actor, admin, action: `toggled ${on ? 'ON' : 'OFF'}` });
+    res.json({ ok: true, enabled: on });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  await updateScrapeCampaign(rec.id, { enabled: on });
-  const actor = req.user || 'unknown';
-  const admin = actor.toLowerCase() === 'antonio@ortusclub.com';
-  await appendAction(rec.id, { actor, admin, action: `toggled ${on ? 'ON' : 'OFF'}` });
-  res.json({ ok: true, enabled: on });
 });
 
 app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {

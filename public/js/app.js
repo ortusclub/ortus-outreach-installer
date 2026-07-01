@@ -51,6 +51,8 @@ async function openSalesNavBoard() {
 window.openSalesNavBoard = openSalesNavBoard;
 
 async function pollSalesNavBoard() {
+  const _snSec = document.getElementById('nav-salesnav');
+  if (!_snSec || _snSec.style.display === 'none') { clearInterval(_snPollTimer); _snPollTimer = null; return; }
   const host = document.getElementById('sn-board');
   if (!host || document.hidden) return;
   try {
@@ -83,7 +85,7 @@ function _snDetectHandover(campaigns) {
 function _snName(campaigns, cid) { const c = campaigns.find((x) => x.id === cid); return c ? (c.name || 'a scrape') : 'a scrape'; }
 function _snShowHandover(campaigns, stopped, started) {
   const ho = document.getElementById('sn-handover'), txt = document.getElementById('sn-handover-txt');
-  if (!ho) return;
+  if (!ho || !txt) return;
   if (stopped && started) {
     ho.className = 'sn-handover show launching';
     txt.innerHTML = `<b>Handover</b> — ${escHtml(_snName(campaigns, stopped))} stopped, now launching <b>${escHtml(_snName(campaigns, started))}</b>.`;
@@ -241,7 +243,7 @@ document.getElementById('snm-ok')?.addEventListener('click', () => {
 function stopScrapeCampaign(cid) {
   fetch(`/api/scrape/campaigns/${encodeURIComponent(cid)}/toggle`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: false }),
-  }).then(() => pollSalesNavBoard());
+  }).then(() => pollSalesNavBoard()).catch(() => {});
 }
 window.stopScrapeCampaign = stopScrapeCampaign;
 
@@ -2682,6 +2684,19 @@ async function startScrapeJob() {
   setScrapeStatus(errors.length
     ? `Started ${started}/${urls.length}. First error — ${errors[0]}`
     : `Started ${started} scrape job${started === 1 ? '' : 's'} on the engine.`);
+  // Group this launch's jobs into ONE board campaign (best-effort). The engine
+  // still ran one job per URL above; this record just lets the board show them
+  // as a single strip. profileIds = the accounts actually paired (round-robin).
+  if (started > 0) {
+    try {
+      const usedProfileIds = urls.map((_, i) => accts[i % accts.length]);
+      await fetch('/api/scrape/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: baseTab, sheetUrl, tabName: baseTab, profileIds: usedProfileIds, searchUrls: urls }),
+      });
+    } catch (_) { /* board grouping is best-effort */ }
+  }
   startScrapePolling();
 }
 
