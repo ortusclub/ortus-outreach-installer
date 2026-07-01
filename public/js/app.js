@@ -13103,6 +13103,10 @@ async function useConnectionsForCampaign() {
     if (urlInput && data.url) {
       urlInput.value = data.url;
       try { if (typeof updateSheetTabHint === 'function') updateSheetTabHint(); } catch (_) {}
+      // A programmatic .value change fires no input/blur event, so the tab
+      // picker would keep the PREVIOUS campaign's tabs + preview. Refresh it for
+      // the new sheet (hides itself if single-tab, repopulates if multi-tab).
+      try { if (typeof refreshSheetTabPicker === 'function') refreshSheetTabPicker(); } catch (_) {}
     }
     goCreateCampaign();
     setTimeout(() => { try { if (typeof previewSheet === 'function') previewSheet(); } catch (_) {} }, 80);
@@ -13163,6 +13167,9 @@ function startCampaignWithCreatedSheet() {
   if (urlInput) {
     urlInput.value = connLastCreatedSheetUrl;
     try { if (typeof updateSheetTabHint === 'function') updateSheetTabHint(); } catch (_) {}
+    // Programmatic .value change fires no input/blur — refresh the tab picker
+    // so it drops the previous campaign's tabs and reads the new sheet.
+    try { if (typeof refreshSheetTabPicker === 'function') refreshSheetTabPicker(); } catch (_) {}
   }
   goCreateCampaign();
   setTimeout(() => { try { if (typeof previewSheet === 'function') previewSheet(); } catch (_) {} }, 80);
