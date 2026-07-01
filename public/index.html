@@ -617,6 +617,16 @@
         <div class="sn-qmeta" id="sn-qmeta">—</div>
         <button type="button" class="btn btn-secondary" onclick="startNewScrapeSetup()">＋ New scrape</button>
       </div>
+      <!-- Inline scrape composer — "＋ New scrape" reveals the real scrape setup
+           sections (config + accounts + launch) here, relocated from the wizard,
+           so no navigation happens. Restored to the wizard on close/leave. -->
+      <div id="sn-setup" style="display:none">
+        <div class="sn-setup-head">
+          <div class="sn-setup-title">New scrape</div>
+          <button type="button" class="btn btn-secondary" onclick="closeScrapeSetup()">Close ✕</button>
+        </div>
+        <div id="sn-setup-body"></div>
+      </div>
       <div id="sn-handover" class="sn-handover"><span class="spin"></span><span class="txt" id="sn-handover-txt"></span></div>
       <div id="sn-board" class="sn-board"></div>
     </div>
@@ -1155,6 +1165,9 @@
   .sn-handover.launching{border-left:3px solid var(--green);}
   .sn-handover.launching .spin{border-top-color:var(--green);}
 
+  #sn-setup{margin:8px 0 24px;padding:20px 0 4px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
+  .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px;}
+  .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;}
   .sn-railhead{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
 
   .sn-strip{position:relative;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px 18px 60px;transition:opacity .4s, border-color .4s;}

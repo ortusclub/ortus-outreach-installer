@@ -169,18 +169,51 @@ function _snIsOwnerOrAdmin(owner) {
   return !dec.needsConfirm;
 }
 
-// Open the scrape setup/config wizard for a campaign (or a blank new scrape when
-// cid is ''). Reaches the same screen the scrape is built on by switching the
-// wizard into sales_nav_scrape mode via the existing mode machinery — NOT by
-// toggling section display by hand.
+// The scrape flow spans three real wizard sections: the 2b config, the shared
+// account picker (section 3), and the scrape launch console. To show the setup
+// INLINE on the board (no navigation), we relocate those DOM nodes into the
+// board's #sn-setup-body, leaving a placeholder so we can move them back exactly.
+const SN_SETUP_SECTIONS = ['nav-scrape', 'nav-accounts', 'nav-scrape-launch'];
+let _snSetupOpen = false;
+
+function _snMoveSetupIn() {
+  const body = document.getElementById('sn-setup-body');
+  if (!body) return;
+  SN_SETUP_SECTIONS.forEach((id) => {
+    const sec = document.getElementById(id);
+    if (!sec) return;
+    if (!sec._snPlaceholder) {
+      const ph = document.createComment('sn-setup:' + id);
+      sec.parentNode.insertBefore(ph, sec);
+      sec._snPlaceholder = ph;
+    }
+    body.appendChild(sec);
+  });
+}
+
+function _snRestoreSetup() {
+  SN_SETUP_SECTIONS.forEach((id) => {
+    const sec = document.getElementById(id);
+    if (sec && sec._snPlaceholder && sec._snPlaceholder.parentNode) {
+      sec._snPlaceholder.parentNode.insertBefore(sec, sec._snPlaceholder);
+      sec._snPlaceholder.remove();
+      sec._snPlaceholder = null;
+    }
+  });
+}
+
+// Reveal the scrape setup INLINE on the board (blank for a new scrape, or
+// prefilled when editing a campaign). No route change.
 async function openScrapeSetupFor(cid) {
-  if (typeof goCreateCampaign === 'function') goCreateCampaign(); // → #/new
-  // Let the hash route settle, then switch mode + prefill.
-  setTimeout(async () => {
-    const sel = document.getElementById('campaign-mode');
-    if (sel) sel.value = 'sales_nav_scrape';
-    if (typeof onModeChange === 'function') onModeChange(); // reveals #nav-scrape etc.
-    if (!cid) return;
+  const host = document.getElementById('sn-setup');
+  if (!host) return;
+  const sel = document.getElementById('campaign-mode');
+  if (sel) sel.value = 'sales_nav_scrape';
+  _snMoveSetupIn();
+  if (typeof onModeChange === 'function') onModeChange(); // reveals the scrape sections
+  host.style.display = 'block';
+  _snSetupOpen = true;
+  if (cid) {
     try {
       const r = await fetch('/api/scrape/campaigns');
       const d = await r.json();
@@ -192,15 +225,29 @@ async function openScrapeSetupFor(cid) {
         if (sheet) sheet.value = rec.sheetUrl || '';
         const tab = document.getElementById('scrape-tab');
         if (tab) tab.value = rec.tabName || 'Results';
-        if (typeof updateScrapePairing === 'function') updateScrapePairing();
       }
     } catch (_) { /* new/empty setup — leave fields blank */ }
-  }, 80);
+  }
+  if (typeof updateScrapePairing === 'function') updateScrapePairing();
+  try { host.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
 }
 window.openScrapeSetupFor = openScrapeSetupFor;
 
-function startNewScrapeSetup() { openScrapeSetupFor(''); }
+function startNewScrapeSetup() {
+  const urls = document.getElementById('scrape-urls'); if (urls) urls.value = '';
+  openScrapeSetupFor('');
+}
 window.startNewScrapeSetup = startNewScrapeSetup;
+
+// Hide the inline setup and move the relocated sections back into the wizard so
+// the campaign wizard stays intact for every other mode.
+function closeScrapeSetup() {
+  const host = document.getElementById('sn-setup');
+  if (host) host.style.display = 'none';
+  _snRestoreSetup();
+  _snSetupOpen = false;
+}
+window.closeScrapeSetup = closeScrapeSetup;
 
 document.addEventListener('click', (e) => {
   const tab = e.target.closest('.sn-st');
@@ -10179,6 +10226,9 @@ function applyRoute() {
   document.body.classList.toggle('route-salesnav', isSalesNav);
   document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav);
   document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav);
+  // Leaving the board with the inline scrape setup open: move the relocated
+  // wizard sections back so the campaign wizard is intact for other modes.
+  if (!isSalesNav && _snSetupOpen && typeof closeScrapeSetup === 'function') closeScrapeSetup();
   if (isSalesNav) {
     // Sales Nav board — its own top-level route-view. Stop the other routes'
     // pollers and start the board's load/poll loop.
