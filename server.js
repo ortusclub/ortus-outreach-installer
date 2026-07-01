@@ -28,7 +28,8 @@ import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeRes
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
 // dispatches scrape jobs here; it never launches a scraper browser locally.
 import { isScraperConfigured, getEngineUrl as getScrapeEngineUrl, startScrape, pauseScrape, resumeScrape, stopScrape, getJobs as getScrapeJobs, getLogs as getScrapeLogs, extractSalesNavUrls, extractSalesNavUrlsWithRows, openJobViewStream as openScrapeJobViewStream } from './src/scraper-client.js';
-import { addScrapeCampaign, listScrapeCampaigns } from './src/scrape-campaigns.js';
+import { addScrapeCampaign, listScrapeCampaigns, getScrapeCampaign, updateScrapeCampaign } from './src/scrape-campaigns.js';
+import { appendAction, readScrapeLog } from './src/scrape-campaign-logs.js';
 import { mergeCampaignsWithJobs } from './public/js/scrape-board.mjs';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
 import { getDrafts, getDraft, addDraft, updateDraft, removeDraft } from './src/drafts.js';
@@ -2133,6 +2134,38 @@ app.get('/api/scrape/campaigns', async (_req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+app.post('/api/scrape/campaigns/:id/toggle', async (req, res) => {
+  const rec = await getScrapeCampaign(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'unknown campaign' });
+  const on = !!(req.body && req.body.on);
+  // Drive the engine controls the campaign's profiles already expose.
+  for (const pid of rec.profileIds || []) {
+    try { on ? await resumeScrape(pid) : await pauseScrape(pid); }
+    catch (e) { console.error('toggle scrape profile failed:', pid, e.message); }
+  }
+  await updateScrapeCampaign(rec.id, { enabled: on });
+  const actor = req.user || 'unknown';
+  const admin = actor.toLowerCase() === 'antonio@ortusclub.com';
+  await appendAction(rec.id, { actor, admin, action: `toggled ${on ? 'ON' : 'OFF'}` });
+  res.json({ ok: true, enabled: on });
+});
+
+app.get('/api/scrape/campaigns/:id/logs', async (req, res) => {
+  const rec = await getScrapeCampaign(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'unknown campaign' });
+  const persisted = await readScrapeLog(rec.id, { limit: 300 });
+  // For a running campaign, also fold in live engine lines for this campaign's tab.
+  let live = [];
+  try {
+    const l = await getScrapeLogs(req.query.since);
+    const lines = Array.isArray(l) ? l : (l && l.logs) || [];
+    live = lines.filter((ln) => !rec.tabName || ln.tabName === rec.tabName)
+                .map((ln) => ({ ts: ln.ts, message: ln.message }));
+  } catch { /* engine offline — persisted still shows */ }
+  const merged = [...persisted, ...live].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  res.json({ lines: merged });
 });
 
 // Per-job live View — proxies the engine's MJPEG screencast stream
