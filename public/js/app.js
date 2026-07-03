@@ -5478,6 +5478,212 @@ function dismissCloudDone(id, btn) {
 }
 window.dismissCloudDone = dismissCloudDone;
 
+// ─── Unified Campaigns board (v2.129) ───────────────────────────────────────
+// One board for EVERY campaign — local + cloud — as sn-strips. Rail colour says
+// where it runs: GREEN = cloud/VM, PINK = local machine. Buckets into Now
+// running / Up next / Done. Replaces the hero + Up Next + Past for the top-level
+// view; the legacy sections stay in the DOM (hidden) so a local strip's "Open"
+// can reveal the rich detail card.
+
+// Hide the legacy dashboard sections once, keeping them in the DOM.
+function _hideLegacyDashboardSections() {
+  const hide = (sel) => { const el = document.querySelector(sel); if (el) el.style.display = 'none'; };
+  hide('#active-card');
+  hide('#dashboard-view .section-band.is-queue');
+  hide('#dashboard-view .section-band.is-week');
+  hide('#dashboard-view .section-band.is-past');
+  // The old standalone Cloud Campaigns section is now redundant (folded in here).
+  const cloudSec = document.getElementById('cloud-campaigns-section');
+  if (cloudSec) cloudSec.style.display = 'none';
+}
+
+// Reveal the rich local detail card (live log / bulk-check / monitoring) for the
+// running local campaign, and scroll to it.
+function openLocalCampaignDetail() {
+  const card = document.getElementById('active-card');
+  if (card) {
+    card.style.display = '';
+    try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
+  }
+}
+window.openLocalCampaignDetail = openLocalCampaignDetail;
+
+// Render one normalized item as an sn-strip. Item shape:
+//   { where:'cloud'|'local', id, name, mode, isFG, bucket:'running'|'queued'|'done',
+//     sent, total, accounts, mine, owner, bad, paused, sheetUrl }
+function renderUnifiedStrip(it) {
+  const cloud = it.where === 'cloud';
+  const running = it.bucket === 'running';
+  const queued = it.bucket === 'queued';
+  const done = it.bucket === 'done';
+  const collapsed = queued ? true : !_snExpanded.has(it.id);
+  const badge = _cloudBadge(it.mode);
+  const acctWord = it.accounts === 1 ? 'account' : 'accounts';
+
+  // Rail: running cloud → green (.run); running local → pink (.local.run).
+  const stateCls = [
+    it.where === 'local' ? 'local' : '',
+    running ? 'run' : '',
+    queued ? 'queued' : '',
+    done ? 'done' : '',
+    collapsed ? 'sn-collapsed' : '',
+    it.bad ? 'stopped' : '',
+  ].filter(Boolean).join(' ');
+
+  const wherePill = cloud
+    ? '<span class="sn-where cloud">☁︎ VM</span>'
+    : '<span class="sn-where local">💻 This machine</span>';
+  const dot = it.bad ? '<span class="dot red"></span>'
+    : running ? (cloud ? '<span class="dot run"></span>' : '<span class="dot runlocal"></span>')
+    : queued ? '<span class="dot q"></span>'
+    : '<span class="dot mon"></span>';
+  const statusTxt = queued ? 'Queued'
+    : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
+    : it.bad ? (it.badLabel || 'Stopped')
+    : 'Done';
+
+  const flow = it.isFG
+    ? `<b>${it.total || '—'} invites</b> → <b>${it.accounts || 1} account${(it.accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
+    : `<b>${it.total || 0} leads</b> → <b>${it.accounts || 0} ${acctWord}</b> → feeds <b>${escHtml(it.name || '')}</b> · ${escHtml(_cloudModeLabel(it.mode))}`;
+  const whereNote = cloud ? 'runs in the cloud — keeps going if you close the app'
+    : 'runs on this machine — closing the app stops it';
+  const progLine = running
+    ? `<div class="sn-progtxt"><b>${it.sent || 0}</b> of ${it.total || 0} ${it.isFG ? 'invites' : 'sent'} · ${whereNote}</div>`
+    : '';
+
+  const expandBtn = queued ? ''
+    : `<button class="sn-collapse sn-expand" title="Expand / collapse"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>`;
+  const logHtml = cloud
+    ? `<div class="sn-logbox">Per-lead live log lands here once the engine's per-lead endpoint is deployed. Status: <span class="ok">${it.sent || 0}/${it.total || 0} ${it.isFG ? 'invites' : 'sent'}</span>.</div>`
+    : `<div class="sn-logbox">${(it.logs && it.logs.length) ? it.logs.slice(-8).map((l) => escHtml(l)).join('<br>') : 'Live log appears here while this local campaign runs.'}</div>`;
+  const switchBlock = queued ? '' : `<div class="sn-switch"><div class="sn-pane on">${logHtml}</div></div>`;
+
+  // Controls — local: Pause/Stop/Open(detail); cloud: Stop/Open(sheet). Done: ✕/Open.
+  let foot = '';
+  if (running && it.where === 'local') {
+    foot = `<button class="mini" onclick="window.dashPauseActive && window.dashPauseActive()">${it.paused ? 'Resume' : 'Pause'}</button>`
+      + `<button class="mini" onclick="window.dashStopActive && window.dashStopActive()">Stop</button>`
+      + `<button class="mini solid" onclick="openLocalCampaignDetail()">Open</button>`;
+  } else if (running && cloud) {
+    foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button>`
+      + `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`;
+  } else if (queued) {
+    foot = cloud
+      ? `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`
+      : `<button class="mini solid" onclick="window.startNewCampaign && window.startNewCampaign()">Open</button>`;
+  } else { // done
+    const dismiss = cloud
+      ? `<button class="mini" onclick="dismissCloudDone('${escHtml(it.id)}', this)" title="Hide">✕</button>` : '';
+    const open = cloud
+      ? `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`
+      : `<button class="mini solid" onclick="openLocalCampaignDetail()">Open</button>`;
+    foot = dismiss + open;
+  }
+
+  return `
+  <div class="sn-strip ${stateCls}" data-cid="${escHtml(it.id)}">
+    ${expandBtn}
+    <div class="sn-top"><span class="sn-type">Campaign · ${escHtml(badge)}</span>${it.mine ? '<span class="sn-you">You</span>' : (it.owner ? `<span class="sn-owner">· ${escHtml(it.owner)}</span>` : '')}${wherePill}
+      <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
+    <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
+    <div class="sn-flow">${flow}</div>
+    ${progLine}
+    ${switchBlock}
+    <div class="sn-foot"><div class="right">${foot}</div></div>
+  </div>`;
+}
+
+let _campaignsBoardTimer = null;
+// Fetch local (status/queue/history) + cloud campaigns, normalize, render.
+async function renderCampaignsBoard() {
+  const board = document.getElementById('campaigns-board');
+  if (!board) return;
+  const items = [];
+
+  // 1) Local running campaign (0 or 1) — from /api/campaign/status.
+  try {
+    const s = await (await fetch('/api/campaign/status')).json();
+    if (s && (s.running || s.state === 'monitoring')) {
+      items.push({
+        where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
+        bucket: 'running', sent: s.totalProcessed || 0, total: s.totalTargets || 0,
+        accounts: (s.profileIds || []).length, mine: true, paused: !!(s.paused || s._paused),
+        logs: Array.isArray(s.logs) ? s.logs : [],
+      });
+    }
+  } catch (_) { /* local status best-effort */ }
+
+  // 2) Local queued — from /api/queue.
+  try {
+    const q = await (await fetch('/api/queue')).json();
+    for (const it of (q.queue || [])) {
+      items.push({ where: 'local', id: 'q-' + it.id, name: it.name, mode: it.mode,
+        isFG: it.mode === 'follower_growth', bucket: 'queued', accounts: (it.profileIds || []).length, mine: true });
+    }
+  } catch (_) { /* */ }
+
+  // 3) Cloud campaigns — from /api/campaign/cloud-list (+ per-campaign counts).
+  try {
+    const cl = await (await fetch('/api/campaign/cloud-list')).json();
+    const cloudCamps = (cl && cl.campaigns) || [];
+    const details = await Promise.all(cloudCamps.map(async (c) => {
+      try { return await (await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`)).json(); }
+      catch { return { campaign: c, leadCounts: {} }; }
+    }));
+    for (const d of details) {
+      const c = d.campaign || {}; const lc = d.leadCounts || {};
+      if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
+      if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
+      const bucket = c.status === 'running' ? 'running'
+        : (c.status === 'pending' || c.status === 'queued') ? 'queued' : 'done';
+      items.push({
+        where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
+        bucket, sent: Number(lc.sent || 0), total: Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0),
+        accounts: (c.profile_ids || []).length,
+        mine: !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase()),
+        owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
+        badLabel: c.status === 'cancelled' ? 'Cancelled' : 'Error',
+      });
+    }
+  } catch (_) { /* cloud best-effort */ }
+
+  // 4) Local done — recent history (limit 8).
+  try {
+    const h = await (await fetch('/api/history')).json();
+    const hist = Array.isArray(h) ? h : (h.history || []);
+    for (const p of hist.slice(-8).reverse()) {
+      const stopped = p.endReason === 'stopped' || p.fullStop;
+      items.push({ where: 'local', id: 'h-' + (p.date || p.name), name: p.name, mode: p.mode,
+        isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
+        total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
+        bad: stopped, badLabel: 'Stopped' });
+    }
+  } catch (_) { /* */ }
+
+  const running = items.filter((x) => x.bucket === 'running');
+  const queued = items.filter((x) => x.bucket === 'queued');
+  const done = items.filter((x) => x.bucket === 'done');
+
+  const qmeta = document.getElementById('campaigns-qmeta');
+  if (qmeta) qmeta.textContent = `${running.length} running · ${queued.length} queued`;
+
+  const rail = (label, arr, extra = '') => arr.length
+    ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map(renderUnifiedStrip).join('') : '';
+  let html = rail('▶ Now running', running) + rail('• Up next in the queue', queued)
+    + rail('✓ Done', done, done.length ? ` <span class="sn-railcount">${done.length}</span>` : '');
+  board.innerHTML = html || `<div class="sn-empty">No campaigns yet — press ＋ New campaign.</div>`;
+}
+window.renderCampaignsBoard = renderCampaignsBoard;
+
+// Start the board (hide legacy sections, render, poll every 4s). Called on load.
+function startCampaignsBoard() {
+  _hideLegacyDashboardSections();
+  renderCampaignsBoard();
+  if (_campaignsBoardTimer) clearInterval(_campaignsBoardTimer);
+  _campaignsBoardTimer = setInterval(renderCampaignsBoard, 4000);
+}
+window.startCampaignsBoard = startCampaignsBoard;
+
 // Stop a cloud campaign from the panel.
 async function stopCloudCampaignUI(id) {
   if (!confirm('Stop this cloud campaign? Leads not yet actioned will not be sent.')) return;
@@ -7203,6 +7409,9 @@ function startPolling() {
   if (pollInterval) return;
   pollInterval = setInterval(pollStatus, 2000);
   pollStatus();
+  // v2.129: the unified Campaigns board (local + cloud strips) replaces the
+  // hero + Up Next + Past as the top-level view.
+  try { if (typeof startCampaignsBoard === 'function') startCampaignsBoard(); } catch (_) { /* */ }
 }
 
 function stopPolling() {

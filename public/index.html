@@ -228,6 +228,16 @@
            renderDashScrapeStrip() from the /api/scrape/jobs poll. ───────── -->
       <div id="dash-scrape-strip" hidden></div>
 
+      <!-- ── UNIFIED CAMPAIGNS BOARD (v2.129) ────────────────────────
+           Every campaign as an sn-strip, color-coded: GREEN rail = running on
+           the VM (cloud), PINK rail = running on this local machine. Replaces
+           the hero + Up Next + Past as the top-level Campaigns view. Rendered by
+           renderCampaignsBoard(). The legacy sections below are hidden by
+           _hideLegacyDashboardSections() but kept in the DOM so a local strip's
+           "Open" can reveal the rich detail card. -->
+      <div class="sn-qmeta" id="campaigns-qmeta" style="text-align:right;margin:0 2px 4px">—</div>
+      <div id="campaigns-board" class="sn-board"><div class="sn-empty">Loading campaigns…</div></div>
+
       <!-- ── ACTIVE (Variant J) ──────────────────────────────────── -->
       <section class="vj-card" id="active-card" aria-labelledby="sect-active">
         <div class="vj-eyebrow">
@@ -1219,6 +1229,12 @@
   .sn-strip.mine::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
   .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
   .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  /* v2.129 unified board — PINK rail = running on the local machine (vs green = cloud/VM) */
+  .sn-strip.local.run::before{background:#e35ea0;}
+  .sn-board .dot.runlocal{background:#e35ea0;}
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
+  .sn-where.local{background:#fbe6f0;color:#b23372;}
   /* stopped / error — red border + red rail (overrides mine/run) */
   .sn-strip.stopped{border-color:var(--red);}
   .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
