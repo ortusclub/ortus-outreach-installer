@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sales Nav — admin view, filters & duplicate (sketch)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fafafa; --panel:#ffffff; --ink:#0a0a0a; --gray:#999999;
+    --hair:rgba(0,0,0,.15); --hair-soft:rgba(0,0,0,.06);
+    --green:#3fb950; --red:#f85149; --gold:#F7BE68; --gold-tint:rgba(247,190,104,.16);
+    --display:'Bebas Neue','Arial Narrow',sans-serif;
+    --body:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);font-weight:400;-webkit-font-smoothing:antialiased}
+  .skbar{position:sticky;top:0;z-index:60;display:flex;gap:12px;align-items:center;padding:8px 20px;background:#0a0a0a;color:#fafafa;font-size:12px}
+  .skbar b{font-family:var(--body);text-transform:uppercase;letter-spacing:.18em;font-size:9.5px;color:#999;margin-right:4px}
+  .skbar span{color:#bbb}
+  .sknote{margin-left:auto;color:#666;font-size:11px}
+  .shell{max-width:1120px;margin:0 auto;padding:30px 26px 130px}
+  .lbl{font-family:var(--body);font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);font-weight:600}
+  .disp{font-family:var(--display);font-weight:400;letter-spacing:.02em;text-transform:uppercase;line-height:.95}
+
+  .head{display:flex;align-items:flex-end;gap:20px;padding-bottom:18px;border-bottom:1px solid var(--hair)}
+  .head .title{font-family:var(--display);font-size:2.7rem}
+  .head .meta{margin-left:auto;display:flex;gap:16px;align-items:center;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);font-weight:600}
+  .pill{display:inline-flex;gap:7px;align-items:center}
+  .dot{width:6px;height:6px;border-radius:9999px;background:var(--gray);display:inline-block}
+  .dot.run{background:var(--green)} .dot.q{background:var(--gray)}
+  .btn{font-family:var(--body);border:1px solid var(--ink);background:transparent;color:var(--ink);border-radius:9999px;padding:10px 20px;font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;font-weight:600;cursor:pointer}
+  .btn:hover{opacity:.6}
+
+  /* ── SCOPE + FILTER BAR (the new stuff) ── */
+  .scopebar{display:flex;align-items:center;gap:14px;margin:22px 0 4px;flex-wrap:wrap}
+  /* Mine | Everyone — only shown to admins. Non-admin never sees this toggle. */
+  .scopetoggle{display:inline-flex;border:1px solid var(--hair);border-radius:9999px;padding:3px}
+  .scopetoggle button{border:0;background:transparent;font-family:var(--body);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--gray);padding:8px 18px;border-radius:9999px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+  .scopetoggle button.on{background:var(--ink);color:#fff}
+  .adminbadge{font-size:.5rem;letter-spacing:.14em;font-weight:700;padding:2px 7px;border-radius:9999px;background:var(--gold-tint);color:#8a6a1f;border:1px solid rgba(247,190,104,.5)}
+
+  .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}
+  .selwrap{position:relative}
+  .fsel{appearance:none;border:1px solid var(--hair);background:var(--panel);border-radius:9999px;padding:8px 30px 8px 14px;font-family:var(--body);font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);font-weight:600;cursor:pointer}
+  .selwrap::after{content:"▾";position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:.6rem;color:var(--gray);pointer-events:none}
+  .fsel.dim{color:var(--gray)}
+  .fsel:disabled{opacity:.4;cursor:not-allowed}
+  .clearf{border:0;background:transparent;color:var(--gray);font-size:.56rem;letter-spacing:.1em;text-transform:uppercase;font-weight:600;cursor:pointer;text-decoration:underline}
+  .cond-only{transition:opacity .2s}
+  .cond-only.hidden{display:none}
+
+  .filtsummary{font-size:.72rem;color:var(--gray);margin:12px 0 2px}
+  .filtsummary b{color:var(--ink);font-weight:600}
+
+  .rail{margin-top:22px}
+  .railhead{display:flex;align-items:center;gap:12px;margin:0 0 12px;font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);font-weight:600}
+  .railhead .ln{flex:1;height:1px;background:var(--hair-soft)}
+  .railhead .n{color:#c4c4c4}
+
+  .strip{background:var(--panel);border:1px solid var(--hair);padding:16px 18px;margin-bottom:10px;position:relative}
+  .strip .top{display:flex;align-items:center;gap:8px;font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);font-weight:600}
+  .strip .top .st{margin-left:auto;display:inline-flex;gap:7px;align-items:center;color:var(--ink)}
+  .strip .nm{font-family:var(--display);font-size:1.7rem;margin:9px 0 3px}
+  .strip .flow{font-size:.8rem;color:var(--gray)}
+  .strip .flow b{color:var(--ink);font-weight:600}
+  .prog{height:3px;background:var(--hair);border-radius:9999px;overflow:hidden;margin:11px 0 6px}
+  .prog i{display:block;height:100%;background:var(--green)}
+  .progtxt{font-size:.76rem;color:var(--gray)}.progtxt b{color:var(--ink);font-weight:600}
+
+  .strip.mine{border-color:var(--ink)}
+  .strip.mine::before{content:"";position:absolute;left:-1px;top:-1px;bottom:-1px;width:3px;background:var(--ink)}
+  .strip.run{border-color:var(--green)}
+  .strip.run::before{content:"";position:absolute;left:-1px;top:-1px;bottom:-1px;width:3px;background:var(--green)}
+  .youchip{display:inline-block;background:var(--ink);color:#fff;font-size:.52rem;letter-spacing:.14em;font-weight:700;padding:3px 8px;border-radius:9999px;vertical-align:middle;margin-left:4px}
+  /* conductor chip — who is running it (visible in Everyone view) */
+  .condchip{display:inline-flex;align-items:center;gap:6px;font-size:.56rem;letter-spacing:.08em;text-transform:none;color:var(--gray);font-weight:600}
+  .condchip .av{width:16px;height:16px;border-radius:9999px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:.5rem;font-weight:700}
+  /* type tag */
+  .typetag{font-size:.5rem;letter-spacing:.12em;font-weight:700;padding:3px 8px;border-radius:9999px;border:1px solid var(--hair);color:var(--gray)}
+
+  .foot{display:flex;align-items:center;gap:10px;margin-top:13px;padding-top:12px;border-top:1px solid var(--hair-soft)}
+  .foot .right{margin-left:auto;display:flex;gap:8px}
+  .mini-b{font-family:var(--body);border:1px solid var(--hair);background:transparent;color:var(--ink);border-radius:9999px;padding:8px 15px;font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;font-weight:600;cursor:pointer}
+  .mini-b:hover{opacity:.6}
+  .mini-b.solid{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .mini-b.dup{border-style:dashed}
+
+  .strip.mini{padding:12px 16px}
+  .strip.mini .nm{font-size:1.25rem;margin:5px 0 2px}
+  .strip.mini .flow{font-size:.76rem}
+
+  .thin{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--hair);padding:11px 16px;margin-bottom:8px;position:relative}
+  .thin .chk{color:#c4c4c4;font-size:.85rem;width:14px}
+  .thin .nm{font-family:var(--display);font-size:1.05rem;min-width:120px}
+  .thin .sum{color:var(--gray);font-size:.76rem}.thin .sum b{color:var(--ink);font-weight:600}
+  .thin .rows{margin-left:auto;color:var(--gray);font-size:.76rem}.thin .rows b{color:var(--ink);font-weight:600}
+  .thin .when{color:#bcbcbc;font-size:.68rem;min-width:52px;text-align:right}
+  .thin .op{border:1px solid var(--hair);border-radius:9999px;padding:5px 12px;font-size:.53rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);font-weight:600;cursor:pointer}
+  .thin.mine::before{content:"";position:absolute;left:-1px;top:-1px;bottom:-1px;width:3px;background:var(--ink)}
+
+  .empty{border:1px dashed var(--hair);padding:34px;text-align:center;color:var(--gray);font-size:.78rem;margin-top:8px}
+
+  /* duplicate confirmation popover */
+  .dupcard{display:none;position:fixed;inset:0;background:rgba(10,10,10,.35);z-index:80;align-items:center;justify-content:center}
+  .dupcard.show{display:flex}
+  .dupbox{background:var(--panel);border:1px solid var(--ink);width:min(440px,90vw);padding:26px}
+  .dupbox .k{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);font-weight:600}
+  .dupbox h3{font-family:var(--display);font-size:1.9rem;margin:8px 0 4px}
+  .dupbox p{font-size:.8rem;color:var(--gray);line-height:1.5;margin-bottom:16px}
+  .dupbox .ns-name{font-family:var(--display);font-size:1.7rem;border:0;border-bottom:2px solid var(--hair);background:transparent;color:var(--ink);width:100%;padding:2px 0 8px;letter-spacing:.02em;text-transform:uppercase;outline:none;margin-bottom:6px}
+  .dupbox .ns-name:focus{border-color:var(--ink)}
+  .dupbox .cfg{font-size:.72rem;color:var(--gray);margin:14px 0 20px}
+  .dupbox .cfg b{color:var(--ink)}
+  .dupacts{display:flex;gap:10px;justify-content:flex-end}
+</style>
+</head>
+<body>
+
+<div class="skbar"><b>Sketch 1 / 2</b><span>Admin view · filter by type + conductor · duplicate — toggle the ADMIN switch top-right to see how the board changes</span><span class="sknote">not in the app yet</span></div>
+
+<div class="shell">
+
+  <div class="head">
+    <div><div class="lbl">Sales Nav</div><div class="title disp">Sales Nav Queue</div></div>
+    <div class="meta">
+      <span class="pill"><span class="dot run"></span> <span id="mRun">1</span> running</span>
+      <span class="pill"><span class="dot q"></span> <span id="mQ">2</span> queued</span>
+      <!-- demo-only switch to fake "am I an admin" -->
+      <label class="pill" style="cursor:pointer;gap:8px"><input type="checkbox" id="isAdmin" onchange="renderScope()" checked> I'm an admin</label>
+    </div>
+  </div>
+
+  <!-- ── SCOPE + FILTERS ── -->
+  <div class="scopebar">
+    <!-- admin-only: choose whose campaigns to see -->
+    <div class="scopetoggle" id="scopeToggle">
+      <button id="sc-mine" onclick="setScope('mine')">Mine</button>
+      <button id="sc-all" class="on" onclick="setScope('all')">Everyone <span class="adminbadge">Admin</span></button>
+    </div>
+
+    <div class="filters">
+      <div class="selwrap">
+        <select class="fsel" id="fType" onchange="applyFilters()">
+          <option value="">All types</option>
+          <option value="people">People search</option>
+          <option value="account">Account / company search</option>
+          <option value="list">Saved list</option>
+        </select>
+      </div>
+      <!-- conductor filter — ONLY meaningful/visible for admins in Everyone view -->
+      <div class="selwrap cond-only" id="condWrap">
+        <select class="fsel" id="fCond" onchange="applyFilters()">
+          <option value="">All conductors</option>
+          <option value="you">You (antonio@ortusclub.com)</option>
+          <option value="james">james.carter@ortus.solutions</option>
+          <option value="sam">sam@ortusclub.com</option>
+          <option value="milee">milee@linkedvelocity.com</option>
+        </select>
+      </div>
+      <button class="clearf" onclick="clearFilters()">Clear</button>
+    </div>
+  </div>
+  <div class="filtsummary" id="summary"></div>
+
+  <!-- RUNNING -->
+  <div class="rail" data-rail="run">
+    <div class="railhead">▶ Running <span class="n" data-count></span><span class="ln"></span></div>
+    <div class="rows-host"></div>
+  </div>
+
+  <!-- QUEUE -->
+  <div class="rail" data-rail="queue">
+    <div class="railhead">• Queue <span class="n" data-count></span><span class="ln"></span></div>
+    <div class="rows-host"></div>
+  </div>
+
+  <!-- DONE -->
+  <div class="rail" data-rail="done">
+    <div class="railhead">✓ Done <span class="n" data-count></span><span class="ln"></span></div>
+    <div class="rows-host"></div>
+  </div>
+
+</div>
+
+<!-- duplicate popover -->
+<div class="dupcard" id="dup" onclick="if(event.target===this)closeDup()">
+  <div class="dupbox">
+    <div class="k">＋ Duplicate scrape</div>
+    <h3 id="dupTitle">MILAN_VP · copy</h3>
+    <p>Clones every setting — searches, destination sheet, slow mode — into a new draft. Accounts are re-picked fresh (the originals may be in use). Nothing runs until you hit Start.</p>
+    <input class="ns-name" id="dupName" value="MILAN_VP_COPY" />
+    <div class="cfg" id="dupCfg">Copies <b>3 searches</b> · dest sheet <b>1AbC…</b> · tab <b>Results</b> · slow mode <b>off</b></div>
+    <div class="dupacts">
+      <button class="mini-b" onclick="closeDup()">Cancel</button>
+      <button class="mini-b solid" onclick="closeDup()">Create draft →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // conductor identity of the signed-in demo user
+  const ME = 'you';
+  // seed data — each campaign carries owner + type so filters have something to bite on
+  const DATA = [
+    {rail:'run',   name:'REZ_MIL_I',   owner:'you',   ownerLabel:'You',   type:'people',  searches:3, jobs:12, rows:2504, pct:26, eta:'~14m', when:''},
+    {rail:'queue', name:'VON_LON_III', owner:'you',   ownerLabel:'You',   type:'account', searches:2, jobs:2,  rows:0,    pct:0,  eta:'~1h',  when:'#1 in line'},
+    {rail:'queue', name:'PARIS_CMO_II',owner:'james', ownerLabel:'JC',    type:'people',  searches:6, jobs:6,  rows:0,    pct:0,  eta:'~1h30',when:'#2 in line'},
+    {rail:'done',  name:'MILAN_VP',    owner:'you',   ownerLabel:'You',   type:'people',  searches:3, jobs:3,  rows:2110, pct:100,eta:'',     when:'1h ago'},
+    {rail:'done',  name:'SF_LIST_Q3',  owner:'sam',   ownerLabel:'SA',    type:'list',    searches:1, jobs:1,  rows:523,  pct:100,eta:'',     when:'2h ago'},
+    {rail:'done',  name:'LV_CFO_DACH', owner:'milee', ownerLabel:'ML',    type:'account', searches:6, jobs:6,  rows:16275,pct:100,eta:'',     when:'3h ago'},
+  ];
+
+  let scope = 'all';       // 'mine' | 'all'
+  let fType = '', fCond = '';
+
+  const $ = s => document.querySelector(s);
+
+  function isAdmin(){ return $('#isAdmin').checked; }
+
+  function setScope(s){ scope = s;
+    $('#sc-mine').classList.toggle('on', s==='mine');
+    $('#sc-all').classList.toggle('on', s==='all');
+    applyFilters();
+  }
+
+  // Admin-only chrome: non-admins never see the scope toggle or the conductor filter,
+  // and are hard-scoped to their own campaigns.
+  function renderScope(){
+    const admin = isAdmin();
+    $('#scopeToggle').style.display = admin ? 'inline-flex' : 'none';
+    if(!admin){ scope = 'mine'; }
+    else if(scope==='mine' && $('#sc-all').classList.contains('on')) scope='all';
+    applyFilters();
+  }
+
+  function clearFilters(){ fType=''; fCond=''; $('#fType').value=''; $('#fCond').value=''; applyFilters(); }
+
+  function applyFilters(){
+    fType = $('#fType').value; fCond = $('#fCond').value;
+    const admin = isAdmin();
+    // conductor filter only exists for admins looking at Everyone
+    const condActive = admin && scope==='all';
+    $('#condWrap').classList.toggle('hidden', !condActive);
+    if(!condActive){ fCond=''; $('#fCond').value=''; }
+
+    const rows = DATA.filter(c=>{
+      if(scope==='mine' && c.owner!==ME) return false;
+      if(!admin && c.owner!==ME) return false;   // safety: non-admin only ever sees own
+      if(fType && c.type!==fType) return false;
+      if(condActive && fCond && c.owner!==fCond) return false;
+      return true;
+    });
+
+    ['run','queue','done'].forEach(rail=>{
+      const host = document.querySelector(`.rail[data-rail="${rail}"] .rows-host`);
+      const railRows = rows.filter(r=>r.rail===rail);
+      host.innerHTML = railRows.length ? railRows.map(r=>card(r)).join('')
+        : `<div class="empty">Nothing here${(scope==='mine')?' that you started':''}${fType||fCond?' for this filter':''}.</div>`;
+      document.querySelector(`.rail[data-rail="${rail}"] [data-count]`).textContent = railRows.length;
+    });
+
+    // header counts + summary
+    $('#mRun').textContent = rows.filter(r=>r.rail==='run').length;
+    $('#mQ').textContent = rows.filter(r=>r.rail==='queue').length;
+    const bits = [];
+    bits.push(scope==='mine'||!admin ? 'Showing <b>your</b> campaigns' : 'Showing <b>everyone\'s</b> campaigns');
+    if(fType) bits.push('type <b>'+$('#fType').selectedOptions[0].text+'</b>');
+    if(fCond) bits.push('conductor <b>'+$('#fCond').selectedOptions[0].text+'</b>');
+    $('#summary').innerHTML = bits.join(' · ') + ` — <b>${rows.length}</b> total`;
+  }
+
+  const TYPELABEL = {people:'People', account:'Account', list:'List'};
+
+  function card(r){
+    const mine = r.owner===ME;
+    const showCond = (scope==='all' && isAdmin()) && !mine;   // show whose it is when browsing everyone
+    const condHTML = showCond
+      ? `<span class="condchip"><span class="av">${r.ownerLabel}</span></span>`
+      : (mine ? '<span class="youchip">You</span>' : '');
+    const typeHTML = `<span class="typetag">${TYPELABEL[r.type]}</span>`;
+    const dupBtn = `<button class="mini-b dup" onclick="openDup('${r.name}',${r.searches})">＋ Duplicate</button>`;
+
+    if(r.rail==='run'){
+      return `<div class="strip ${mine?'mine ':''}run">
+        <div class="top"><span>Sales Nav Scraper</span> ${condHTML} ${typeHTML}
+          <span class="st"><span class="dot run"></span> Running</span>
+          <span style="margin-left:10px;color:var(--gray)">ETA ${r.eta}</span></div>
+        <div class="nm">${r.name}</div>
+        <div class="flow"><b>${r.searches} searches</b> → <b>${r.jobs} jobs</b></div>
+        <div class="prog"><i style="width:${r.pct}%"></i></div>
+        <div class="progtxt"><b>${r.pct}%</b> · ${r.rows.toLocaleString()} rows so far</div>
+        <div class="foot"><div class="right">${dupBtn}<button class="mini-b">Stop</button><button class="mini-b solid">Open</button></div></div>
+      </div>`;
+    }
+    if(r.rail==='queue'){
+      return `<div class="strip mini ${mine?'mine':''}">
+        <div class="top"><span>${r.when}</span> ${condHTML} ${typeHTML}
+          <span class="st"><span class="dot q"></span> Queued</span>
+          <span style="margin-left:10px;color:var(--gray)">ETA ${r.eta}</span></div>
+        <div class="nm">${r.name}</div>
+        <div class="flow"><b>${r.searches} searches</b> → <b>${r.jobs} jobs</b></div>
+        <div class="foot"><div class="right">${dupBtn}<button class="mini-b">Open</button></div></div>
+      </div>`;
+    }
+    return `<div class="thin ${mine?'mine':''}">
+      <span class="chk">✓</span><span class="nm">${r.name}</span>
+      ${condHTML} ${typeHTML}
+      <span class="sum"><b>${r.searches}</b> searches</span>
+      <span class="rows"><b>${r.rows.toLocaleString()}</b> rows</span>
+      <span class="when">${r.when}</span>
+      <span class="op" onclick="openDup('${r.name}',${r.searches})">＋ Duplicate</span>
+      <span class="op">Open</span>
+    </div>`;
+  }
+
+  // duplicate popover
+  function openDup(name, searches){
+    $('#dupTitle').textContent = name + ' · copy';
+    $('#dupName').value = name + '_COPY';
+    $('#dupCfg').innerHTML = `Copies <b>${searches} searches</b> · dest sheet <b>1AbC…</b> · tab <b>Results</b> · slow mode <b>off</b>`;
+    $('#dup').classList.add('show');
+  }
+  function closeDup(){ $('#dup').classList.remove('show'); }
+
+  renderScope();
+</script>
+</body>
+</html>
