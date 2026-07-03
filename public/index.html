@@ -1235,6 +1235,10 @@
   .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
   .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
   .sn-where.local{background:#fbe6f0;color:#b23372;}
+  /* scheduled — gold rail + gold "Scheduled" pill (v2.130) */
+  .sn-strip.sched::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);}
+  .sn-board .dot.gold{background:var(--gold);}
+  .sn-when-pill{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;background:#faf3e0;color:#8a6d1f;}
   /* stopped / error — red border + red rail (overrides mine/run) */
   .sn-strip.stopped{border-color:var(--red);}
   .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}

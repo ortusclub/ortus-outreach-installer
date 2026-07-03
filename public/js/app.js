@@ -5485,28 +5485,48 @@ window.dismissCloudDone = dismissCloudDone;
 // view; the legacy sections stay in the DOM (hidden) so a local strip's "Open"
 // can reveal the rich detail card.
 
-// Hide the legacy dashboard sections once, keeping them in the DOM.
+// True once the user pressed "Open" on a local strip — keeps the legacy detail
+// card (#active-card) revealed instead of letting the board re-hide it.
+let _localDetailOpen = false;
+// Local done strips the user dismissed with ✕ (parity with cloud ✕).
+const _localDismissed = new Set();
+
+// Keep the legacy dashboard sections hidden. Called on EVERY board render (not
+// once) so route switches / campaign start-stop / renderActiveCard can't leak
+// the old hero, calendar or Past back in. #active-card is the one exception:
+// it stays visible while the user has the local detail open.
 function _hideLegacyDashboardSections() {
   const hide = (sel) => { const el = document.querySelector(sel); if (el) el.style.display = 'none'; };
-  hide('#active-card');
   hide('#dashboard-view .section-band.is-queue');
   hide('#dashboard-view .section-band.is-week');
   hide('#dashboard-view .section-band.is-past');
   // The old standalone Cloud Campaigns section is now redundant (folded in here).
   const cloudSec = document.getElementById('cloud-campaigns-section');
   if (cloudSec) cloudSec.style.display = 'none';
+  // #active-card: revealed (pink) only while a local detail is open.
+  const card = document.getElementById('active-card');
+  if (card) {
+    if (_localDetailOpen) { card.style.display = ''; card.classList.add('is-local'); }
+    else { card.style.display = 'none'; }
+  }
 }
 
 // Reveal the rich local detail card (live log / bulk-check / monitoring) for the
-// running local campaign, and scroll to it.
+// running local campaign — pink-railed to match the board strip — and scroll to it.
 function openLocalCampaignDetail() {
+  _localDetailOpen = true;
   const card = document.getElementById('active-card');
   if (card) {
     card.style.display = '';
+    card.classList.add('is-local');
     try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) { /* */ }
   }
 }
 window.openLocalCampaignDetail = openLocalCampaignDetail;
+
+// Dismiss a local Done strip from the board (parity with dismissCloudDone).
+function dismissLocalDone(id) { _localDismissed.add(id); renderCampaignsBoard(); }
+window.dismissLocalDone = dismissLocalDone;
 
 // Render one normalized item as an sn-strip. Item shape:
 //   { where:'cloud'|'local', id, name, mode, isFG, bucket:'running'|'queued'|'done',
@@ -5516,15 +5536,19 @@ function renderUnifiedStrip(it) {
   const running = it.bucket === 'running';
   const queued = it.bucket === 'queued';
   const done = it.bucket === 'done';
+  const scheduled = queued && !!it.scheduledAt;
+  const whenTxt = scheduled && typeof v3FormatScheduledAt === 'function' ? v3FormatScheduledAt(it.scheduledAt) : '';
   const collapsed = queued ? true : !_snExpanded.has(it.id);
   const badge = _cloudBadge(it.mode);
   const acctWord = it.accounts === 1 ? 'account' : 'accounts';
 
-  // Rail: running cloud → green (.run); running local → pink (.local.run).
+  // Rail: running cloud → green (.run); running local → pink (.local.run);
+  // scheduled → gold (.sched).
   const stateCls = [
     it.where === 'local' ? 'local' : '',
     running ? 'run' : '',
     queued ? 'queued' : '',
+    scheduled ? 'sched' : '',
     done ? 'done' : '',
     collapsed ? 'sn-collapsed' : '',
     it.bad ? 'stopped' : '',
@@ -5533,11 +5557,14 @@ function renderUnifiedStrip(it) {
   const wherePill = cloud
     ? '<span class="sn-where cloud">☁︎ VM</span>'
     : '<span class="sn-where local">💻 This machine</span>';
+  const whenPill = scheduled ? '<span class="sn-when-pill">⏰ Scheduled</span>' : '';
   const dot = it.bad ? '<span class="dot red"></span>'
     : running ? (cloud ? '<span class="dot run"></span>' : '<span class="dot runlocal"></span>')
+    : scheduled ? '<span class="dot gold"></span>'
     : queued ? '<span class="dot q"></span>'
     : '<span class="dot mon"></span>';
-  const statusTxt = queued ? 'Queued'
+  const statusTxt = scheduled ? whenTxt
+    : queued ? 'Queued'
     : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
     : 'Done';
@@ -5568,12 +5595,21 @@ function renderUnifiedStrip(it) {
     foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button>`
       + `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`;
   } else if (queued) {
-    foot = cloud
-      ? `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`
-      : `<button class="mini solid" onclick="window.startNewCampaign && window.startNewCampaign()">Open</button>`;
-  } else { // done
+    if (cloud) {
+      foot = `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(it.id)}')">Stop</button><button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`;
+    } else if (scheduled) {
+      // Local scheduled — Reschedule (edit) / Cancel (remove) / Open (edit).
+      foot = `<button class="mini" onclick="window.editQueuedCampaign && window.editQueuedCampaign('${escHtml(it.rawId)}')">Reschedule</button>`
+        + `<button class="mini" onclick="window.cancelQueuedCampaign && window.cancelQueuedCampaign('${escHtml(it.rawId)}')">Cancel</button>`
+        + `<button class="mini solid" onclick="window.editQueuedCampaign && window.editQueuedCampaign('${escHtml(it.rawId)}')">Open</button>`;
+    } else {
+      foot = `<button class="mini" onclick="window.cancelQueuedCampaign && window.cancelQueuedCampaign('${escHtml(it.rawId)}')">Cancel</button>`
+        + `<button class="mini solid" onclick="window.editQueuedCampaign && window.editQueuedCampaign('${escHtml(it.rawId)}')">Open</button>`;
+    }
+  } else { // done — ✕ dismiss on BOTH local and cloud (Sales Nav parity)
     const dismiss = cloud
-      ? `<button class="mini" onclick="dismissCloudDone('${escHtml(it.id)}', this)" title="Hide">✕</button>` : '';
+      ? `<button class="mini" onclick="dismissCloudDone('${escHtml(it.id)}', this)" title="Hide">✕</button>`
+      : `<button class="mini" onclick="dismissLocalDone('${escHtml(it.id)}')" title="Hide">✕</button>`;
     const open = cloud
       ? `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`
       : `<button class="mini solid" onclick="openLocalCampaignDetail()">Open</button>`;
@@ -5583,7 +5619,7 @@ function renderUnifiedStrip(it) {
   return `
   <div class="sn-strip ${stateCls}" data-cid="${escHtml(it.id)}">
     ${expandBtn}
-    <div class="sn-top"><span class="sn-type">Campaign · ${escHtml(badge)}</span>${it.mine ? '<span class="sn-you">You</span>' : (it.owner ? `<span class="sn-owner">· ${escHtml(it.owner)}</span>` : '')}${wherePill}
+    <div class="sn-top"><span class="sn-type">Campaign · ${escHtml(badge)}</span>${it.mine ? '<span class="sn-you">You</span>' : (it.owner ? `<span class="sn-owner">· ${escHtml(it.owner)}</span>` : '')}${wherePill}${whenPill}
       <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
     <div class="sn-name">${escHtml(it.name || '(unnamed)')}</div>
     <div class="sn-flow">${flow}</div>
@@ -5598,6 +5634,8 @@ let _campaignsBoardTimer = null;
 async function renderCampaignsBoard() {
   const board = document.getElementById('campaigns-board');
   if (!board) return;
+  // Keep the legacy dashboard hidden on EVERY cycle (defeats route/render races).
+  _hideLegacyDashboardSections();
   const items = [];
 
   // 1) Local running campaign (0 or 1) — from /api/campaign/status.
@@ -5617,8 +5655,9 @@ async function renderCampaignsBoard() {
   try {
     const q = await (await fetch('/api/queue')).json();
     for (const it of (q.queue || [])) {
-      items.push({ where: 'local', id: 'q-' + it.id, name: it.name, mode: it.mode,
-        isFG: it.mode === 'follower_growth', bucket: 'queued', accounts: (it.profileIds || []).length, mine: true });
+      items.push({ where: 'local', id: 'q-' + it.id, rawId: it.id, name: it.name, mode: it.mode,
+        isFG: it.mode === 'follower_growth', bucket: 'queued', accounts: (it.profileIds || []).length,
+        mine: true, scheduledAt: it.scheduledAt || null });
     }
   } catch (_) { /* */ }
 
@@ -5653,7 +5692,9 @@ async function renderCampaignsBoard() {
     const hist = Array.isArray(h) ? h : (h.history || []);
     for (const p of hist.slice(-8).reverse()) {
       const stopped = p.endReason === 'stopped' || p.fullStop;
-      items.push({ where: 'local', id: 'h-' + (p.date || p.name), name: p.name, mode: p.mode,
+      const hid = 'h-' + (p.date || p.name);
+      if (_localDismissed.has(hid)) continue;
+      items.push({ where: 'local', id: hid, name: p.name, mode: p.mode,
         isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
         total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
         bad: stopped, badLabel: 'Stopped' });
@@ -5664,12 +5705,23 @@ async function renderCampaignsBoard() {
   const queued = items.filter((x) => x.bucket === 'queued');
   const done = items.filter((x) => x.bucket === 'done');
 
+  // If no local campaign is running, the detail card has nothing to show —
+  // drop the "open" flag so it stops being revealed.
+  if (!running.some((x) => x.where === 'local')) _localDetailOpen = false;
+
+  const schedCount = queued.filter((x) => x.scheduledAt).length;
   const qmeta = document.getElementById('campaigns-qmeta');
-  if (qmeta) qmeta.textContent = `${running.length} running · ${queued.length} queued`;
+  if (qmeta) {
+    const bits = [`${running.length} running`];
+    const plainQ = queued.length - schedCount;
+    if (plainQ > 0) bits.push(`${plainQ} queued`);
+    if (schedCount > 0) bits.push(`${schedCount} scheduled`);
+    qmeta.textContent = bits.join(' · ');
+  }
 
   const rail = (label, arr, extra = '') => arr.length
     ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map(renderUnifiedStrip).join('') : '';
-  let html = rail('▶ Now running', running) + rail('• Up next in the queue', queued)
+  let html = rail('▶ Now running', running) + rail('• Up next', queued)
     + rail('✓ Done', done, done.length ? ` <span class="sn-railcount">${done.length}</span>` : '');
   board.innerHTML = html || `<div class="sn-empty">No campaigns yet — press ＋ New campaign.</div>`;
 }

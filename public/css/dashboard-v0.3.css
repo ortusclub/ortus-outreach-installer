@@ -338,6 +338,11 @@
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
     background: var(--green);
   }
+  /* v2.130: local campaign detail card gets a PINK rail (matches the pink
+     board strip) when opened from the unified Campaigns board. */
+  body[data-dashboard='v3'] .vj-card.is-local:not(.is-monitor)::before { background: #e35ea0; }
+  body[data-dashboard='v3'] .vj-card.is-local .vj-eyebrow .vj-tag .dot { background: #e35ea0; }
+  body[data-dashboard='v3'] .vj-card.is-local .vj-live-ico { color: #e35ea0; }
 
   /* v2.59.19: live activity line — what the campaign is doing right now. */
   body[data-dashboard='v3'] .vj-live {
