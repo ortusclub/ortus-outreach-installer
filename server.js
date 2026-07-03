@@ -1086,6 +1086,14 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
         : 'No leads with LinkedIn URLs found in the sheet.';
       return res.status(400).json({ error: why });
     }
+
+    // Ensure the sheet has the tracking columns before the cloud engine writes
+    // back to them (the engine's write skips columns that don't exist). Same
+    // step the local campaign flow does at start. Best-effort — never blocks.
+    try {
+      const { ensureTrackingColumns } = await import('./src/sheets-writer.js');
+      await ensureTrackingColumns(sheetUrl, mode);
+    } catch (e) { campaignLog(`[cloud] ensureColumns skipped: ${e.message}`); }
     // Accounts: picker for normal modes; distinct routed accounts otherwise.
     const accounts = autoRouted
       ? [...new Set(leads.map((l) => l.routeAccount).filter(Boolean))]
