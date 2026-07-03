@@ -6688,7 +6688,7 @@ body.theme-light .wiz-launch-menu-item:hover { background: rgba(0,0,0,0.04); }
  * button). Wrapper is position:relative so the badge anchors to the
  * button's top-right corner. Click the badge → resume; click the button
  * itself → fresh campaign. ───────────────────────────────────────────── */
-.dashboard-new-wrap { position: relative; display: inline-block; }
+.dashboard-new-wrap { position: relative; display: inline-flex; align-items: center; gap: 10px; }
 .resume-draft-badge {
   position: absolute;
   top: -6px;
