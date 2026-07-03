@@ -142,7 +142,9 @@ function renderSalesNavBoard(campaigns) {
       + `<button type="button" class="sn-clear-done">Clear done</button></div>`
       + done.map(renderStrip).join('');
   }
-  if (!campaigns.length) html = _scrapeEmptyState();
+  // Empty state when NO strips are visible — covers both "no scrapes at all"
+  // and "all scrapes dismissed / in a non-shown status" (previously blank).
+  if (!html) html = _scrapeEmptyState();
   host.innerHTML = html;
 }
 
