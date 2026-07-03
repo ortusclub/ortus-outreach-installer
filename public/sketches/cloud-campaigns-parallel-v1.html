@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cloud Campaigns — parallel live cards (sketch)</title>
+  <!-- 1:1 with the real app: same fonts + the real stylesheets -->
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    /* Sketch-only chrome — nothing here ships; it just frames the real components. */
+    body { background: var(--bg, #f5f4f1); margin: 0; }
+    .sketch-wrap { max-width: 960px; margin: 0 auto; padding: 32px 28px 120px; }
+    .sketch-note {
+      font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; line-height: 1.5;
+      color: #6b6b6b; border-left: 2px solid var(--gold, #F7BE68);
+      padding: 8px 12px; margin: 0 0 26px; background: #fff;
+    }
+    .cloud-head {
+      display: flex; align-items: center; gap: 12px; margin: 34px 0 4px;
+    }
+    .cloud-head h1 {
+      font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: 1px;
+      margin: 0; color: #141414;
+    }
+    .cloud-head .cloud-glyph { font-size: 22px; }
+    .lifecycle-label {
+      font-family: 'Hanken Grotesk', sans-serif; font-size: 11px; font-weight: 600;
+      letter-spacing: 1.4px; text-transform: uppercase; color: #9a9a9a;
+      margin: 28px 0 12px; display: flex; align-items: center; gap: 10px;
+    }
+    .lifecycle-label::after { content: ''; flex: 1; height: 1px; background: var(--hairline, #e3e1dc); }
+    .lifecycle-label .count {
+      background: #141414; color: #fff; border-radius: 9999px;
+      font-size: 10px; padding: 1px 8px; letter-spacing: .5px;
+    }
+    /* Stack the real cards with breathing room */
+    #cloud-active .vj-card { margin-bottom: 18px; }
+    /* Cloud eyebrow tag accent */
+    .vj-tag.is-cloud .dot { background: var(--gold, #F7BE68); }
+    /* "View campaign" pill matches the Open pill */
+    .btn-view { }
+    /* Compact rows for queue + past (same visual language as monitoring mini) */
+    .cloud-mini {
+      display: flex; align-items: center; gap: 16px; background: #fff;
+      border: 1px solid var(--hairline, #e3e1dc); padding: 14px 18px; margin-bottom: 10px;
+    }
+    .cloud-mini .cm-name { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: .5px; color: #141414; }
+    .cloud-mini .cm-mode { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9a9a9a; margin-left: 8px; }
+    .cloud-mini .cm-meta { font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; color: #6b6b6b; }
+    .cloud-mini .cm-spacer { flex: 1; }
+    .cloud-mini .cm-pill {
+      font-family: 'Hanken Grotesk', sans-serif; font-size: 10px; font-weight: 600;
+      letter-spacing: .6px; text-transform: uppercase; padding: 3px 10px; border-radius: 9999px;
+    }
+    .cm-pill.queued { background: #eef0f3; color: #5a6472; }
+    .cm-pill.done   { background: #e6f2e9; color: #2f7d47; }
+    .cm-pill.stopped{ background: #f6e9e7; color: #a5442f; }
+    .cloud-mini .cm-mini-bar { width: 120px; height: 4px; background: #edeae4; position: relative; }
+    .cloud-mini .cm-mini-bar i { position: absolute; left:0; top:0; bottom:0; background:#141414; }
+    .cm-link { font-family:'Hanken Grotesk',sans-serif; font-size:12px; text-decoration:underline; text-decoration-color:var(--hairline,#e3e1dc); text-underline-offset:3px; cursor:pointer; color:#141414; }
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="sketch-wrap">
+
+  <p class="sketch-note">
+    <b>Sketch — Cloud Campaigns, multiple parallel runs.</b> Every cloud campaign renders as the
+    <b>same live-status card</b> as a local run (real <code>vj-card</code>, real CSS) — a literal transposition.
+    Because the cloud engine runs <b>several campaigns at once</b>, the singleton local card becomes a
+    <b>stack</b>, bucketed into <b>Active → Queued → Past</b>. Each active card carries the full live log,
+    per-account state, progress, batch settings and an added <b>View campaign</b> button. The old plain text
+    strip and the dead "UNNAMED / 0-of-0" ghost card are retired.
+  </p>
+
+  <div class="cloud-head">
+    <span class="cloud-glyph">☁︎</span>
+    <h1>Cloud Campaigns</h1>
+  </div>
+
+  <!-- ══════════════════ ACTIVE (running in parallel) ══════════════════ -->
+  <div class="lifecycle-label">Active <span class="count">3</span> · 3 of 4 run slots in use</div>
+  <div id="cloud-active">
+
+    <!-- ─── Card 1 ─── -->
+    <section class="vj-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag is-cloud"><span class="dot"></span>☁︎ Running</span>
+        <span class="vj-when">started 14:52 · owner kyra@ortusclub.com</span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true"></div>
+      <h2 class="vj-name">APAC Founders — CC</h2>
+      <div class="vj-hbar" role="progressbar"><i style="width:42%"></i></div>
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span>42</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b>27</b> of <span>65</span> sent</span>
+            <span>Next batch in <b>00:48</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b>3</b> accounts</span>
+          <span><b>5</b> accepted</span>
+          <span>· <b>Sending</b> · <a class="cm-link">batch settings</a></span>
+        </div>
+      </div>
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill btn-view">View campaign ↗</button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart" aria-label="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+            <button class="dock-btn" data-tip="Copy to queue" aria-label="Copy to queue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="vj-details" style="display:block">
+        <div>
+          <div class="vj-log-head">
+            <span class="vj-details-head">Live log · last 6 events</span>
+            <span class="vj-log-acts">
+              <button type="button" class="vj-log-act">Copy all</button>
+              <button type="button" class="vj-log-act">Open sheet</button>
+            </span>
+          </div>
+          <div class="vj-log">
+            <div class="vj-log-line"><span class="t">14:59:04</span> ✅ Connection request sent → <b>Mei Lin Tan</b> (kyra)</div>
+            <div class="vj-log-line"><span class="t">14:58:31</span> ✅ Connection request sent → <b>Raj Patel</b> (aiden)</div>
+            <div class="vj-log-line"><span class="t">14:58:02</span> ⏭ Skipped — already 1st degree → <b>Sofia Rossi</b></div>
+            <div class="vj-log-line"><span class="t">14:57:19</span> 🤝 Accepted (bulk check) → <b>Daniel Okafor</b></div>
+            <div class="vj-log-line"><span class="t">14:56:58</span> ✅ Connection request sent → <b>Yuki Nakamura</b> (kyra)</div>
+            <div class="vj-log-line"><span class="t">14:56:20</span> ✅ Connection request sent → <b>Lars Berg</b> (aiden) · ✍ sheet updated</div>
+          </div>
+        </div>
+        <div class="vj-bulk">
+          <div class="vj-details-head">Bulk check connection</div>
+          <div class="vj-bulk-status">Last sweep · <b>14:57</b> · <span>2</span> newly accepted</div>
+          <button class="vj-bulk-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg><span>Run check now</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Card 2 (CC+IC, intros firing) ─── -->
+    <section class="vj-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag is-cloud"><span class="dot"></span>☁︎ Running</span>
+        <span class="vj-when">started 14:40 · owner milee@linkedvelocity.com</span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true"></div>
+      <h2 class="vj-name">London PE — CC+IC</h2>
+      <div class="vj-hbar" role="progressbar"><i style="width:71%"></i></div>
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span>71</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b>46</b> of <span>65</span> sent</span>
+            <span>Next batch in <b>01:57</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b>2</b> accounts</span>
+          <span><b>12</b> accepted</span>
+          <span>· <b>Sending</b> · <a class="cm-link">batch settings</a></span>
+        </div>
+      </div>
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill btn-view">View campaign ↗</button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+            <button class="dock-btn" data-tip="Restart" aria-label="Restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="vj-details" style="display:block">
+        <div>
+          <div class="vj-log-head">
+            <span class="vj-details-head">Live log · last 6 events</span>
+            <span class="vj-log-acts"><button type="button" class="vj-log-act">Copy all</button><button type="button" class="vj-log-act">Open sheet</button></span>
+          </div>
+          <div class="vj-log">
+            <div class="vj-log-line"><span class="t">15:00:11</span> 🎯 Introduction sent → <b>Amara Nwosu</b> ↔ Sam Adcock (primary)</div>
+            <div class="vj-log-line"><span class="t">14:59:47</span> 🤝 Accepted → <b>Amara Nwosu</b> · intro auto-fired</div>
+            <div class="vj-log-line"><span class="t">14:59:02</span> ✅ Connection request sent → <b>Thomas Ellis</b> (milee)</div>
+            <div class="vj-log-line"><span class="t">14:58:20</span> 🎯 Introduction sent → <b>Grace Wynn</b> ↔ Sam Adcock (primary)</div>
+            <div class="vj-log-line"><span class="t">14:57:41</span> ✅ Connection request sent → <b>Oliver Reid</b> (milee) · ✍ sheet updated</div>
+            <div class="vj-log-line"><span class="t">14:57:03</span> ⏸ Account <b>milee</b> parked 26 min — HTTP 429 (throttle)</div>
+          </div>
+        </div>
+        <div class="vj-bulk">
+          <div class="vj-details-head">Bulk check connection</div>
+          <div class="vj-bulk-status">Last sweep · <b>14:59</b> · <span>4</span> newly accepted</div>
+          <button class="vj-bulk-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg><span>Run check now</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Card 3 (Message only, collapsed details) ─── -->
+    <section class="vj-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag is-cloud"><span class="dot"></span>☁︎ Running</span>
+        <span class="vj-when">started 15:01 · owner kyra@ortusclub.com</span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true"></div>
+      <h2 class="vj-name">DACH Ops — Message</h2>
+      <div class="vj-hbar" role="progressbar"><i style="width:88%"></i></div>
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span>88</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b>57</b> of <span>65</span> sent</span>
+            <span>Next batch in <b>00:22</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b>1</b> account</span>
+          <span><b>—</b> accepted</span>
+          <span>· <b>Sending</b> · <a class="cm-link">batch settings</a></span>
+        </div>
+      </div>
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill btn-view">View campaign ↗</button>
+        <button class="vj-toggle-btn" data-tip="Show details" aria-label="Show details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ══════════════════ QUEUED (waiting for a run slot) ══════════════════ -->
+  <div class="lifecycle-label">Queued <span class="count">2</span></div>
+  <div class="cloud-mini">
+    <span><span class="cm-name">US VC — CC</span><span class="cm-mode">connect_only</span></span>
+    <span class="cm-meta">65 leads · 3 accounts</span>
+    <span class="cm-spacer"></span>
+    <span class="cm-meta">promotes when a slot frees</span>
+    <span class="cm-pill queued">Queued</span>
+    <span class="cm-link">Edit</span>
+  </div>
+  <div class="cloud-mini">
+    <span><span class="cm-name">Nordics — CC+DM</span><span class="cm-mode">connect_and_dm</span></span>
+    <span class="cm-meta">48 leads · 2 accounts</span>
+    <span class="cm-spacer"></span>
+    <span class="cm-meta">promotes when a slot frees</span>
+    <span class="cm-pill queued">Queued</span>
+    <span class="cm-link">Edit</span>
+  </div>
+
+  <!-- ══════════════════ PAST (finished / stopped) ══════════════════ -->
+  <div class="lifecycle-label">Past <span class="count">2</span></div>
+  <div class="cloud-mini">
+    <span><span class="cm-name">Test CC Cloud 2</span><span class="cm-mode">connect_only</span></span>
+    <span class="cm-mini-bar"><i style="width:100%"></i></span>
+    <span class="cm-meta">65 of 65 sent · 18 accepted</span>
+    <span class="cm-spacer"></span>
+    <span class="cm-pill done">Finished</span>
+    <span class="cm-link">View ↗</span>
+  </div>
+  <div class="cloud-mini">
+    <span><span class="cm-name">Test Cloud 1 — CC</span><span class="cm-mode">connect_only</span></span>
+    <span class="cm-mini-bar"><i style="width:11%;background:#a5442f"></i></span>
+    <span class="cm-meta">7 of 65 sent · 2 errors</span>
+    <span class="cm-spacer"></span>
+    <span class="cm-pill stopped">Cancelled</span>
+    <span class="cm-link">View ↗</span>
+  </div>
+
+  <p class="sketch-note" style="margin-top:34px">
+    <b>How the lifecycle moves.</b> A cloud campaign starts in <b>Active</b> (up to N run slots — the "run slots"
+    dial from the concurrency sketch). Extra launches wait in <b>Queued</b> and auto-promote the instant a slot frees
+    (pause / stop / finish all free a slot — no more "you have to stop it for the next to start"). When a campaign
+    finishes or is cancelled it drops to <b>Past</b> with its final counts. The live log inside each active card is the
+    <b>same log you'd see running locally</b> — it just needs the engine to expose per-lead events (the one piece
+    that goes to Steven).
+  </p>
+
+</div>
+</body>
+</html>

@@ -45,6 +45,7 @@ import { primaryKeyFromUrl, loadPrimaryStatus } from './src/primary-status-store
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, stopCloudCampaign } from './src/campaigns-client.js';
 import { spreadsheetIdFromUrl, extractSheetGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
@@ -81,7 +82,8 @@ import { getFgState, queueFgInvites, markFgInvited, observeFgCredits, FG_DEFAULT
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
-import { ORTUS_PAGE_INVITE_URL } from './src/sheets-webapp-url.js';
+import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
+import { resolveSoOEmail } from './src/soo-writer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1054,6 +1056,165 @@ async function runNextFromQueue() {
   console.log(`[queue] Launching queued campaign "${next.name || '(unnamed)'}" (${next.id})`);
   launchCampaign(next.config, next.owner);
 }
+
+// ─── Cloud dispatch — run this campaign on the GKE engine, not locally ──────
+// The "Run in cloud" toggle routes here. We reuse the app's OWN sheet reader
+// (fetchSheet + extractLinkedInUrl) to build the leads, then hand the campaign
+// to the engine via campaigns-client. The engine runs it in the cloud (survives
+// the laptop closing). No local browser is launched. The regular local
+// /api/campaign/start path below is untouched.
+app.post('/api/campaign/start-cloud', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
+      delayMin, delayMax } = body;
+    if (!isCloudMode(mode)) return res.status(400).json({ error: `Mode "${mode}" can't run in the cloud yet.` });
+    if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+    if (rejectIfNoOperatorEmail(res)) return;
+
+    // Auto-routed modes derive the account per-row from the sheet's sender
+    // column (the picker is hidden for them), so we pin each lead to its
+    // account (routeAccount = GoLogin profile id). Other modes use the picker.
+    const AUTO_ROUTED = new Set(['message_only', 'introduce_back', 'check_status']);
+    const autoRouted = AUTO_ROUTED.has(mode);
+    // Profiles are fetched for ALL modes now (not just auto-routed): the engine
+    // needs an accountEmails map (profileId -> SoO email) so it can stamp SoO
+    // Needs-Login when a cloud session dies. Best-effort — [] on failure.
+    const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+    const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
+    let nameToId = null;
+    if (autoRouted) {
+      nameToId = new Map((profs || []).map((p) => [String(p.name || '').trim().toLowerCase(), p.id]));
+    } else if (!profileIds?.length) {
+      return res.status(400).json({ error: 'Select at least one GoLogin account.' });
+    }
+    // Per-row sender name (mirrors campaign.js getSenderName): the chosen sender
+    // column first, else the canonical 'Sender' / 'Account Used' columns.
+    const senderName = (row) => {
+      if (senderColumn && row[senderColumn] != null) return String(row[senderColumn]).trim();
+      return String(row['Sender'] || row['Account Used'] || '').trim();
+    };
+
+    // Build leads from the sheet exactly as the local campaign does.
+    const rows = await fetchSheet(sheetUrl);
+    const leads = [];
+    const skippedNoAccount = [];
+    for (const row of rows) {
+      const leadUrl = extractLinkedInUrl(row, linkedinColumn);
+      if (!leadUrl) continue;
+      const first = row['First Name'] || row['first name'] || '';
+      const last = row['Last Name'] || row['last name'] || '';
+      const fullName = String(row['Full Name'] || row['Name'] || `${first} ${last}`).trim();
+      let routeAccount = '';
+      if (autoRouted) {
+        routeAccount = nameToId.get(senderName(row).toLowerCase()) || '';
+        if (!routeAccount) { skippedNoAccount.push(senderName(row) || '(blank)'); continue; }
+      }
+      // `row` = the FULL sheet row, so the engine personalizes templates against
+      // every column header exactly like a local campaign ({company}, {Event}, …).
+      leads.push({ leadUrl, fullName, memberUrn: row['LinkedIn URN'] || row['Member ID'] || null, routeAccount, row });
+    }
+    if (!leads.length) {
+      const why = autoRouted && skippedNoAccount.length
+        ? `No leads matched a known GoLogin account by sender name (e.g. ${[...new Set(skippedNoAccount)].slice(0, 3).join(', ')}). Check the sender column.`
+        : 'No leads with LinkedIn URLs found in the sheet.';
+      return res.status(400).json({ error: why });
+    }
+
+    // Ensure the sheet has the tracking columns before the cloud engine writes
+    // back to them (the engine's write skips columns that don't exist). Same
+    // step the local campaign flow does at start. Best-effort — never blocks.
+    try {
+      const { ensureTrackingColumns } = await import('./src/sheets-writer.js');
+      await ensureTrackingColumns(sheetUrl, mode);
+    } catch (e) { campaignLog(`[cloud] ensureColumns skipped: ${e.message}`); }
+    // Accounts: picker for normal modes; distinct routed accounts otherwise.
+    const accounts = autoRouted
+      ? [...new Set(leads.map((l) => l.routeAccount).filter(Boolean))]
+      : profileIds;
+
+    // accountEmails: profileId -> SoO Email, resolved with the same fuzzy
+    // matcher (+ skip-on-doubt) local flipSoOInUse uses. Lets the engine stamp
+    // SoO Needs-Login for a dead cloud session. Best-effort — {} on failure.
+    const accountEmails = {};
+    try {
+      const soo = await fetchSoOData();
+      const sooEmails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+      for (const id of accounts) {
+        const label = idToName.get(id) || '';
+        if (!label) continue;
+        const r = resolveSoOEmail(label, sooEmails);
+        if (r && r.email) accountEmails[id] = r.email;
+        else if (r && r.ambiguous) campaignLog(`[cloud] SoO email ambiguous for "${label}" — skipped (no Needs-Login stamping for it)`);
+      }
+    } catch (e) { campaignLog(`[cloud] accountEmails skipped: ${e.message}`); }
+
+    // Map the wizard's template names to the keys the engine modes read. The
+    // wizard already uses engine-compatible names for most fields (connectionNote,
+    // ccDmBody, primaryName/IntroBody/Url, introTitle, autoAccept/followUp*); the
+    // one gap is message_only, where the engine reads `message` but the wizard
+    // stores the DM body in `followUp1`. Keep originals; add engine aliases.
+    const t = templates || {};
+    const config = {
+      ...t,
+      message: t.message || t.followUp1 || '',            // message_only DM body
+      followUpMessage: t.followUpMessage || t.followUp1 || '',
+      senderFirstNames: body.senderFirstNames || t.senderFirstNames || {},
+      // Sheet write-back: the engine pushes per-lead status back to this
+      // operator's Apps Script web app (same one local campaigns use), matching
+      // rows by this linkedin column — so cloud results land in the Sheet too.
+      sheetsWebappUrl: SHEETS_WEBAPP_URL,
+      linkedinColumn: linkedinColumn || 'LinkedIn URL',
+      // Ban-safety: randomized inter-send delay (seconds) the engine's worker
+      // waits between sends per account — same knob local campaigns use. The
+      // engine defaults to 30–60s (1–3s for check_status) when absent.
+      ...(Number.isFinite(Number(delayMin)) && Number(delayMin) > 0 ? { delayMin: Number(delayMin) } : {}),
+      ...(Number.isFinite(Number(delayMax)) && Number(delayMax) > 0 ? { delayMax: Number(delayMax) } : {}),
+      // SoO Needs-Login stamping: the engine matches accounts by email in the
+      // SoO sheet when a cloud session dies. Graceful no-op engine-side if empty.
+      accountEmails,
+      sooSheetId: SOO_SHEET_ID,
+      sooGid: SOO_SHEET_GID,
+    };
+    // Follower Growth needs the page invite URL + a monthly credit budget. The
+    // operator can override the URL from the wizard; otherwise use the Ortus
+    // Club page invite URL the local FG flow already uses.
+    if (mode === 'follower_growth') {
+      config.inviteUrl = body.inviteUrl || t.inviteUrl || ORTUS_PAGE_INVITE_URL;
+      config.monthlyBudget = Number(body.monthlyBudget || t.monthlyBudget || 30);
+    }
+
+    const result = await startCloudCampaign({
+      mode, name: name || '', owner: req.user || '',
+      profileIds: accounts, leads, config,
+      dailyLimit: dailyLimit || 50, sheetUrl,
+    });
+    if (result.error) return res.status(502).json({ error: result.error, cloud: true });
+    campaignLog(`[cloud] campaign ${result.id} (${mode}) dispatched to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
+    res.json({ ok: true, cloud: true, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Cloud-campaign observability — proxied through the local server so the
+// frontend never handles the engine token (it lives in campaigns-client). The
+// "Cloud Campaigns" panel polls these.
+app.get('/api/campaign/cloud-list', async (req, res) => {
+  const r = await listCloudCampaigns(req.query.owner);
+  if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
+app.get('/api/campaign/cloud/:id', async (req, res) => {
+  const r = await getCloudCampaign(req.params.id);
+  if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
+app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
+  const r = await stopCloudCampaign(req.params.id, { pause: !!req.query.pause });
+  if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
 
 app.post('/api/campaign/start', async (req, res) => {
   try {

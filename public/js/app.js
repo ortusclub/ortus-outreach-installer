@@ -2354,6 +2354,7 @@ async function refreshCheckDmsPreview() {
 
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
+  try { refreshCloudToggle(); } catch { /* toggle is optional */ }
   const connect = document.getElementById('tpl-connect-section');
   const message = document.getElementById('tpl-message-section');
   const inmail = document.getElementById('tpl-inmail-section');
@@ -3022,12 +3023,24 @@ async function stopScrapeJob() {
   stopScrapePolling();
 }
 
-// Apply a control action to every selected account's job (each is keyed by
-// profileId on the engine).
+// Apply a control action (pause/stop) keyed by profileId on the engine.
+// Targets every account that's actually RUNNING or QUEUED — fetched live from
+// the engine — UNIONed with any currently-selected accounts. Reading the live
+// engine state (not just the in-memory selection) means STOP/PAUSE keep working
+// after a page refresh, when selectedProfileIds has reset to []. (Bug fix:
+// previously a refresh left nothing to target, so STOP silently did nothing.)
 async function _scrapeControlAll(path) {
-  const accts = scrapeSelectedAccounts();
-  if (!accts.length) return;
-  for (const profileId of accts) {
+  const targets = new Set(scrapeSelectedAccounts());
+  try {
+    const r = await fetch('/api/scrape/jobs');
+    const res = await r.json();
+    const jobs = Array.isArray(res) ? res : (res.jobs || []);
+    for (const j of jobs) {
+      if ((j.state === 'running' || j.state === 'queued') && j.profileId) targets.add(j.profileId);
+    }
+  } catch (_) { /* fall back to the in-memory selection */ }
+  if (!targets.size) return;
+  for (const profileId of targets) {
     try {
       await fetch(path, {
         method: 'POST',
@@ -5258,8 +5271,113 @@ async function startCampaign(opts = {}) {
   // Rerun context consumed — clear so a subsequent fresh launch isn't treated as a rerun.
   window._savedSheetGid = '';
 
+  // Cloud dispatch: only for an immediate "Start" (not Queue/Schedule/Draft) and
+  // only for engine-supported modes. Gated on the mode so a non-cloud mode NEVER
+  // routes to cloud even if the (hidden) checkbox is left checked. Default is ON
+  // (cloud-first) — operators untick to run locally.
+  const _cloudModeNow = new Set(['connect_only', 'message_only', 'introduce_back',
+    'connect_and_introduce', 'connect_and_message', 'follower_growth',
+    'inmail_only', 'open_profile_only', 'check_status']).has(document.getElementById('campaign-mode')?.value);
+  const _cloudOn = _cloudModeNow && !!document.getElementById('cloud-run-checkbox')?.checked;
+  if (_cloudOn && !opts.queueOnly) {
+    opts = { ...opts, cloud: true };
+    // Follower Growth cloud extras (server defaults the URL to the Ortus page).
+    if (document.getElementById('campaign-mode')?.value === 'follower_growth') {
+      body.inviteUrl = document.getElementById('fg-invite-url')?.value?.trim() || '';
+      const _b = parseInt(document.getElementById('fg-monthly-budget')?.value, 10);
+      body.monthlyBudget = Number.isFinite(_b) && _b > 0 ? _b : 30;
+    }
+  }
+
   await submitStartCampaign(body, opts);
 }
+
+// Show the "Run in cloud" toggle only for modes the engine supports; hide (and
+// clear) it otherwise. Called from onModeChange + on init.
+function refreshCloudToggle() {
+  const wrap = document.getElementById('cloud-run-toggle');
+  if (!wrap) return;
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  const CLOUD_MODES = new Set(['connect_only', 'message_only', 'introduce_back',
+    'connect_and_introduce', 'connect_and_message', 'follower_growth',
+    'inmail_only', 'open_profile_only', 'check_status']);
+  const show = CLOUD_MODES.has(mode);
+  wrap.style.display = show ? '' : 'none';
+  const cb = document.getElementById('cloud-run-checkbox');
+  // Don't force the checkbox here — default-on comes from the HTML `checked`
+  // attribute, and launch-time gating (_cloudModeNow) ignores it for non-cloud
+  // modes. Forcing it would fight the operator's manual untick (onchange calls us).
+  // FG extras: visible only for follower_growth while the cloud toggle is on.
+  const fg = document.getElementById('cloud-fg-extras');
+  if (fg) fg.style.display = (show && mode === 'follower_growth' && cb?.checked) ? '' : 'none';
+  // The Cloud Campaigns section is only relevant once the engine is in play —
+  // reveal it whenever a cloud-eligible mode is selected.
+  const panel = document.getElementById('cloud-campaigns-section');
+  if (panel && show) panel.style.display = '';
+}
+
+// ─── Cloud Campaigns panel ──────────────────────────────────────────────────
+let _cloudPollTimer = null;
+
+// Render the list of cloud campaigns (with live lead counts) into the panel.
+async function renderCloudCampaigns() {
+  const list = document.getElementById('cloud-campaigns-list');
+  if (!list) return;
+  let data;
+  try {
+    const res = await fetch('/api/campaign/cloud-list');
+    data = await res.json();
+  } catch (e) {
+    list.innerHTML = `<p class="empty-state">Couldn't reach the cloud engine: ${escHtml(e.message)}</p>`;
+    return;
+  }
+  if (data.error) { list.innerHTML = `<p class="empty-state">${escHtml(data.error)}</p>`; return; }
+  const campaigns = data.campaigns || [];
+  if (!campaigns.length) { list.innerHTML = `<p class="empty-state">No cloud campaigns yet.</p>`; return; }
+
+  // Fetch per-campaign lead counts (best-effort, parallel).
+  const details = await Promise.all(campaigns.map(async (c) => {
+    try { const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(c.id)}`); return await r.json(); }
+    catch { return { campaign: c, leadCounts: {} }; }
+  }));
+
+  list.innerHTML = details.map((d) => {
+    const c = d.campaign || {};
+    const lc = d.leadCounts || {};
+    const total = Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0);
+    const sent = Number(lc.sent || 0);
+    const active = !['done', 'cancelled', 'error'].includes(c.status);
+    const counts = Object.entries(lc).map(([k, v]) => `${escHtml(k)}: ${v}`).join(' · ') || 'no leads';
+    return `
+      <div class="cloud-camp-row" style="display:flex; align-items:center; gap:14px; padding:12px 0; border-bottom:1px solid var(--hairline);">
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:13px;">${escHtml(c.name || c.id)} <span style="color:var(--gray); font-family:var(--mono); font-size:10px; letter-spacing:.06em;">${escHtml(c.mode || '')}</span></div>
+          <div style="color:var(--gray); font-size:11px; margin-top:3px;">${escHtml(c.status || '')} — ${sent}/${total} sent · ${counts}</div>
+        </div>
+        ${active ? `<button type="button" class="btn btn-secondary" style="font-size:11px; padding:5px 12px;" onclick="stopCloudCampaignUI('${escHtml(c.id)}')">Stop</button>` : ''}
+      </div>`;
+  }).join('');
+}
+
+// Stop a cloud campaign from the panel.
+async function stopCloudCampaignUI(id) {
+  if (!confirm('Stop this cloud campaign? Leads not yet actioned will not be sent.')) return;
+  try {
+    const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+    const d = await res.json();
+    if (d.error) { alert('Could not stop: ' + d.error); return; }
+  } catch (e) { alert('Could not stop: ' + e.message); return; }
+  renderCloudCampaigns();
+}
+window.stopCloudCampaignUI = stopCloudCampaignUI;
+
+// Start/stop polling when the Cloud Campaigns section is opened/closed.
+window.onCloudSectionToggle = function onCloudSectionToggle() {
+  const section = document.getElementById('cloud-campaigns-section');
+  const open = section && !section.classList.contains('collapsed');
+  if (_cloudPollTimer) { clearInterval(_cloudPollTimer); _cloudPollTimer = null; }
+  if (open) { renderCloudCampaigns(); _cloudPollTimer = setInterval(renderCloudCampaigns, 8000); }
+};
 
 async function _runIcPreflight(sheetUrl, senderColumn) {
   try {
@@ -5367,7 +5485,41 @@ function _icPreflightScrollToColumnPicker() {
   setTimeout(() => sel.focus(), 350);
 }
 
+// Cloud dispatch: run the campaign on the GKE engine instead of locally. Fully
+// self-contained + returns early, so the local path below is untouched. The
+// server reads the sheet into leads and hands off to the engine; the campaign
+// then runs in the cloud and survives the laptop closing.
+async function _submitCloudCampaign(body) {
+  try {
+    const res = await fetch('/api/campaign/start-cloud', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const txt = await res.text();
+    let data; try { data = JSON.parse(txt); } catch { data = { error: txt }; }
+    if (res.status === 409 && txt.includes('OPERATOR_EMAIL_REQUIRED')) {
+      openOperatorEmailModal({ mandatory: true }); return;
+    }
+    if (!res.ok || data.error) {
+      alert(`Could not start cloud campaign:\n\n${data.error || txt}`); return;
+    }
+    // Draft consumed on launch, same as the local path.
+    try {
+      const draftId = getActiveDraftId();
+      if (draftId) await fetch('/api/drafts/' + encodeURIComponent(draftId), { method: 'DELETE' }).catch(() => {});
+      clearActiveDraft();
+    } catch { /* non-fatal */ }
+    alert(`☁︎ Cloud campaign started\n\n${data.leadsAdded} lead(s) dispatched to the engine (mode: ${data.mode}).\nIt keeps running in the cloud even if you close the app.`);
+  } catch (e) {
+    alert('Could not reach the cloud engine:\n\n' + e.message);
+  }
+}
+
 async function submitStartCampaign(body, opts = {}) {
+  // "Run in cloud" toggle → hand off to the engine and return; local path below
+  // stays exactly as-is for normal (local) launches.
+  if (opts.cloud) return _submitCloudCampaign(body);
   // v2.59.x — Add to Queue routes to /api/campaign/queue-only, which always
   // queues and never auto-drains. The regular Start path is unchanged: it
   // hits /api/campaign/start which fires immediately if idle, queues if a

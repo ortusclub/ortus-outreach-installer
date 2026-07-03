@@ -2174,6 +2174,24 @@
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
             <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
           </div>
+          <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
+               the GKE engine instead of running locally — the campaign keeps
+               running after the laptop closes. Hidden for modes the engine
+               doesn't support yet (inmail / open-profile / check-status); see
+               onModeChange → refreshCloudToggle() in app.js. Defaults OFF. -->
+          <label class="launch-cloud-toggle" id="cloud-run-toggle" style="display:none; margin-top:8px; font-size:12px; letter-spacing:.04em; cursor:pointer; user-select:none;">
+            <input type="checkbox" id="cloud-run-checkbox" onchange="refreshCloudToggle()" checked style="vertical-align:middle; margin-right:6px;">
+            <span data-edit="cloud-run-label">Running in cloud (beta) — keeps going after you close the laptop. Untick to run on this Mac.</span>
+          </label>
+          <!-- Follower Growth (cloud) extras — shown only when the mode is
+               follower_growth AND "Run in cloud" is on. Invite URL defaults to
+               the Ortus Club page server-side when left blank. -->
+          <div id="cloud-fg-extras" style="display:none; margin-top:8px; font-size:12px;">
+            <label style="display:block; margin-bottom:6px; color:var(--gray); font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;">Page invite URL (optional — defaults to Ortus Club)</label>
+            <input type="text" id="fg-invite-url" placeholder="https://www.linkedin.com/company/…/?invite=true" style="width:100%; max-width:420px; padding:7px 10px; border:1px solid var(--hairline); border-radius:9999px; font-size:12px; margin-bottom:8px;">
+            <label style="display:block; margin-bottom:6px; color:var(--gray); font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;">Monthly invite budget / account</label>
+            <input type="number" id="fg-monthly-budget" min="1" value="30" style="width:120px; padding:7px 10px; border:1px solid var(--hairline); border-radius:9999px; font-size:12px;">
+          </div>
           <!-- v2.112.x: shown by applyViewingActiveLock when you've opened the
                LIVE campaign to view it — the launch buttons are disabled (never
                hidden), this explains why. Hidden once the campaign stops. -->
@@ -2481,6 +2499,22 @@
         <p class="schedule-note">Create schedules from the <strong>Launch</strong> section above by switching to <em>Schedule</em> mode.</p>
         <div id="schedule-list">
           <p class="empty-state">Loading schedules...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cloud Campaigns — campaigns running on the GKE engine (survive the
+         laptop closing). Polls /api/campaign/cloud-list. Populated + refreshed
+         by renderCloudCampaigns() in app.js; opening the section starts polling,
+         closing stops it. -->
+    <div class="section collapsible collapsed" id="cloud-campaigns-section" style="display:none">
+      <div class="history-header">
+        <h2 class="section-toggle" onclick="toggleSection('cloud-campaigns-section'); window.onCloudSectionToggle && window.onCloudSectionToggle();"><span class="caret">▾</span> <span data-edit="h2-cloud">☁︎ Cloud Campaigns</span></h2>
+      </div>
+      <div class="collapsible-body">
+        <p class="schedule-note">Campaigns running on the cloud engine. These keep going even when this app is closed.</p>
+        <div id="cloud-campaigns-list">
+          <p class="empty-state">Open to load cloud campaigns…</p>
         </div>
       </div>
     </div>
