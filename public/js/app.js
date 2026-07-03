@@ -5723,7 +5723,27 @@ async function renderCampaignsBoard() {
     ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map(renderUnifiedStrip).join('') : '';
   let html = rail('▶ Now running', running) + rail('• Up next', queued)
     + rail('✓ Done', done, done.length ? ` <span class="sn-railcount">${done.length}</span>` : '');
-  board.innerHTML = html || `<div class="sn-empty">No campaigns yet — press ＋ New campaign.</div>`;
+  board.innerHTML = html || _campaignsEmptyState();
+}
+
+// Prettier empty state for the board when nothing is running/queued/done.
+function _campaignsEmptyState() {
+  return `
+  <div class="sn-emptyx">
+    <div class="sn-emptyx-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6.5 18a3.5 3.5 0 0 1-.4-6.98A5 5 0 0 1 16 10.2a3.4 3.4 0 0 1 1.5 6.8"/>
+        <path d="M9 21h9a2 2 0 0 0 2-2v-2"/>
+      </svg>
+    </div>
+    <div class="sn-emptyx-title">No campaigns yet</div>
+    <div class="sn-emptyx-sub">Launch outreach and it lands here as a live strip — locally or on the cloud VM.</div>
+    <button type="button" class="sn-emptyx-cta" onclick="window.startNewCampaign && window.startNewCampaign()">＋ New campaign</button>
+    <div class="sn-emptyx-legend">
+      <span><i class="sw green"></i>Cloud · runs on the VM</span>
+      <span><i class="sw pink"></i>Local · runs on this machine</span>
+    </div>
+  </div>`;
 }
 window.renderCampaignsBoard = renderCampaignsBoard;
 

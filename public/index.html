@@ -1235,6 +1235,17 @@
   .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
   .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
   .sn-where.local{background:#fbe6f0;color:#b23372;}
+  /* empty state (v2.130.2) — centered card when nothing is running */
+  .sn-emptyx{display:flex;flex-direction:column;align-items:center;text-align:center;gap:0;padding:52px 24px 46px;margin:6px 0 0;border:1px solid var(--hairline);border-radius:16px;background:#fff;}
+  .sn-emptyx-mark{width:60px;height:60px;display:flex;align-items:center;justify-content:center;border-radius:9999px;border:1px solid var(--hairline);color:var(--gray);margin-bottom:16px;}
+  .sn-emptyx-title{font-family:var(--display);font-size:26px;line-height:1;letter-spacing:.02em;color:var(--ink);}
+  .sn-emptyx-sub{font-size:13px;color:var(--gray);margin-top:9px;max-width:360px;line-height:1.5;}
+  .sn-emptyx-cta{margin-top:20px;background:var(--gold,#c9a84a);color:#111;border:none;border-radius:9999px;padding:10px 22px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;cursor:pointer;}
+  .sn-emptyx-cta:hover{filter:brightness(1.05);}
+  .sn-emptyx-legend{display:flex;gap:22px;margin-top:24px;font-size:11px;color:var(--gray);}
+  .sn-emptyx-legend .sw{display:inline-block;width:18px;height:5px;border-radius:9999px;vertical-align:middle;margin-right:7px;}
+  .sn-emptyx-legend .sw.green{background:var(--green);}
+  .sn-emptyx-legend .sw.pink{background:#e35ea0;}
   /* scheduled — gold rail + gold "Scheduled" pill (v2.130) */
   .sn-strip.sched::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);}
   .sn-board .dot.gold{background:var(--gold);}
