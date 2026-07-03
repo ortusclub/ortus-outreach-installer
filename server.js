@@ -1057,6 +1057,14 @@ async function runNextFromQueue() {
   launchCampaign(next.config, next.owner);
 }
 
+// Cloud dispatch logging — console ONLY, deliberately NOT the local campaign
+// status log (campaignLog → campaign.logs). Cloud campaigns have no local
+// campaign, so writing to campaign.logs made a dispatch spawn a ghost
+// "FINISHED (UNNAMED)" card in the dashboard's active-card (renderActiveCard
+// treats any logs with no running campaign as a finished run). Console keeps
+// the [cloud] lines for debugging without touching the dashboard.
+function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
+
 // ─── Cloud dispatch — run this campaign on the GKE engine, not locally ──────
 // The "Run in cloud" toggle routes here. We reuse the app's OWN sheet reader
 // (fetchSheet + extractLinkedInUrl) to build the leads, then hand the campaign
@@ -1127,7 +1135,7 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     try {
       const { ensureTrackingColumns } = await import('./src/sheets-writer.js');
       await ensureTrackingColumns(sheetUrl, mode);
-    } catch (e) { campaignLog(`[cloud] ensureColumns skipped: ${e.message}`); }
+    } catch (e) { cloudLog(`[cloud] ensureColumns skipped: ${e.message}`); }
     // Accounts: picker for normal modes; distinct routed accounts otherwise.
     const accounts = autoRouted
       ? [...new Set(leads.map((l) => l.routeAccount).filter(Boolean))]
@@ -1145,9 +1153,9 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
         if (!label) continue;
         const r = resolveSoOEmail(label, sooEmails);
         if (r && r.email) accountEmails[id] = r.email;
-        else if (r && r.ambiguous) campaignLog(`[cloud] SoO email ambiguous for "${label}" — skipped (no Needs-Login stamping for it)`);
+        else if (r && r.ambiguous) cloudLog(`[cloud] SoO email ambiguous for "${label}" — skipped (no Needs-Login stamping for it)`);
       }
-    } catch (e) { campaignLog(`[cloud] accountEmails skipped: ${e.message}`); }
+    } catch (e) { cloudLog(`[cloud] accountEmails skipped: ${e.message}`); }
 
     // SoO "In Use" flip at DISPATCH. The engine has no SoO code, so the app does
     // here what a local campaign does at its first send: flip each account's
@@ -1174,7 +1182,7 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       for (const id of accounts) {
         const label = idToName.get(id) || id;
         const email = accountEmails[id];
-        if (!email) { campaignLog(`[cloud] SoO In-Use skipped for "${label}" — no unambiguous SoO email.`); continue; }
+        if (!email) { cloudLog(`[cloud] SoO In-Use skipped for "${label}" — no unambiguous SoO email.`); continue; }
         try {
           const r = await flipAccountInUse({
             email,
@@ -1183,18 +1191,18 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
             operatorEmail: stampEmail,
           });
           if (r && r.ok && r.matched && r.written && r.written.length) {
-            campaignLog(`[cloud] SoO: ${label} → ${flipTarget.creditHeader} = In Use (${stampEmail || '—'}).`);
+            cloudLog(`[cloud] SoO: ${label} → ${flipTarget.creditHeader} = In Use (${stampEmail || '—'}).`);
           } else if (r && r.ok && r.matched) {
             const why = (Array.isArray(r.skipped) && r.skipped.length) ? r.skipped.join('; ') : `${flipTarget.creditHeader} not Available`;
-            campaignLog(`[cloud] SoO: ${label} not flipped — ${why}.`);
+            cloudLog(`[cloud] SoO: ${label} not flipped — ${why}.`);
           } else if (r && r.disabled) {
-            campaignLog(`[cloud] SoO: write-back OFF (ORTUS_SOO_WRITEBACK) — ${label} left as-is.`);
+            cloudLog(`[cloud] SoO: write-back OFF (ORTUS_SOO_WRITEBACK) — ${label} left as-is.`);
           } else if (r && r.ok && r.matched === false) {
-            campaignLog(`[cloud] SoO: no row matched "${label}" (${email}) — nothing flipped.`);
+            cloudLog(`[cloud] SoO: no row matched "${label}" (${email}) — nothing flipped.`);
           } else {
-            campaignLog(`[cloud] SoO: ${label} flip failed — ${(r && r.error) || 'unknown'}.`);
+            cloudLog(`[cloud] SoO: ${label} flip failed — ${(r && r.error) || 'unknown'}.`);
           }
-        } catch (e) { campaignLog(`[cloud] SoO In-Use flip error for "${label}": ${e.message}`); }
+        } catch (e) { cloudLog(`[cloud] SoO In-Use flip error for "${label}": ${e.message}`); }
       }
     }
 
@@ -1239,7 +1247,7 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       dailyLimit: dailyLimit || 50, sheetUrl,
     });
     if (result.error) return res.status(502).json({ error: result.error, cloud: true });
-    campaignLog(`[cloud] campaign ${result.id} (${mode}) dispatched to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
+    cloudLog(`[cloud] campaign ${result.id} (${mode}) dispatched to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
     res.json({ ok: true, cloud: true, ...result });
   } catch (e) {
     res.status(500).json({ error: e.message });
