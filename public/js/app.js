@@ -5530,6 +5530,65 @@ window.openLocalCampaignDetail = openLocalCampaignDetail;
 function dismissLocalDone(id) { _localDismissed.add(id); renderCampaignsBoard(); }
 window.dismissLocalDone = dismissLocalDone;
 
+// ── Campaigns board: filter by type (Sam) ──────────────────────────────────
+// A compact dropdown on the header narrows the board to one campaign type.
+let _campaignsTypeFilter = 'All';   // 'All' | badge (CC, C+I, C+D, DM, IB, FG…)
+let _typeFilterOpen = false;        // menu open — don't rebuild it mid-interaction
+let _typeFilterWired = false;
+
+// Rebuild the dropdown control. counts come from ALL items (unfiltered).
+function renderCampaignsTypeFilter(allItems) {
+  const host = document.getElementById('campaigns-typefilter');
+  if (!host) return;
+  if (_typeFilterOpen) { _updateTypeFilterTrigger(allItems); return; } // don't clobber open menu
+  // Distinct types present, in a stable order, each with its live count.
+  const order = ['CC', 'C+I', 'C+D', 'DM', 'IB', 'FG', 'IM', 'OP', 'CS'];
+  const present = [];
+  for (const it of allItems) { const b = _cloudBadge(it.mode); if (b && !present.includes(b)) present.push(b); }
+  present.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const types = ['All', ...present];
+  const count = (t) => t === 'All' ? allItems.length : allItems.filter((x) => _cloudBadge(x.mode) === t).length;
+  // If the active filter no longer exists (its campaigns ended), fall back to All.
+  if (_campaignsTypeFilter !== 'All' && !present.includes(_campaignsTypeFilter)) _campaignsTypeFilter = 'All';
+  const items = types.map((t) =>
+    `<div class="fdrop-item ${t === _campaignsTypeFilter ? 'on' : ''}" data-t="${escHtml(t)}">`
+    + `<span><span class="tick">${t === _campaignsTypeFilter ? '✓' : ''}</span> ${escHtml(t)}</span>`
+    + `<span class="n">${count(t)}</span></div>`).join('');
+  host.innerHTML =
+    `<button type="button" class="fdrop-btn" id="typeFilterBtn"><span class="cur">Type: <b>${escHtml(_campaignsTypeFilter)}</b> · ${count(_campaignsTypeFilter)}</span>`
+    + `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg></button>`
+    + `<div class="fdrop-menu" id="typeFilterMenu">${items}</div>`;
+  host.classList.toggle('open', _typeFilterOpen);
+  _wireTypeFilter();
+}
+
+function _updateTypeFilterTrigger(allItems) {
+  const btn = document.querySelector('#typeFilterBtn .cur');
+  if (!btn) return;
+  const count = _campaignsTypeFilter === 'All'
+    ? allItems.length : allItems.filter((x) => _cloudBadge(x.mode) === _campaignsTypeFilter).length;
+  btn.innerHTML = `Type: <b>${escHtml(_campaignsTypeFilter)}</b> · ${count}`;
+}
+
+function _wireTypeFilter() {
+  if (_typeFilterWired) return;
+  _typeFilterWired = true;
+  document.addEventListener('click', (e) => {
+    const host = document.getElementById('campaigns-typefilter');
+    if (!host) return;
+    if (e.target.closest('#typeFilterBtn')) {
+      _typeFilterOpen = !_typeFilterOpen; host.classList.toggle('open', _typeFilterOpen); return;
+    }
+    const item = e.target.closest('.fdrop-item');
+    if (item && host.contains(item)) {
+      _campaignsTypeFilter = item.dataset.t; _typeFilterOpen = false;
+      renderCampaignsBoard();
+      return;
+    }
+    if (!host.contains(e.target)) { _typeFilterOpen = false; host.classList.remove('open'); }
+  });
+}
+
 // Render one normalized item as an sn-strip. Item shape:
 //   { where:'cloud'|'local', id, name, mode, isFG, bucket:'running'|'queued'|'done',
 //     sent, total, accounts, mine, owner, bad, paused, sheetUrl }
@@ -5703,13 +5762,20 @@ async function renderCampaignsBoard() {
     }
   } catch (_) { /* */ }
 
-  const running = items.filter((x) => x.bucket === 'running');
-  const queued = items.filter((x) => x.bucket === 'queued');
-  const done = items.filter((x) => x.bucket === 'done');
+  // Type filter (Sam): a dropdown on the header narrows the board to one
+  // campaign type. Counts on the menu reflect ALL items; the board shows only
+  // the selected type. 'All' shows everything.
+  renderCampaignsTypeFilter(items);
+  const shown = _campaignsTypeFilter === 'All'
+    ? items : items.filter((x) => _cloudBadge(x.mode) === _campaignsTypeFilter);
+
+  const running = shown.filter((x) => x.bucket === 'running');
+  const queued = shown.filter((x) => x.bucket === 'queued');
+  const done = shown.filter((x) => x.bucket === 'done');
 
   // If no local campaign is running, the detail card has nothing to show —
   // drop the "open" flag so it stops being revealed.
-  if (!running.some((x) => x.where === 'local')) _localDetailOpen = false;
+  if (!items.some((x) => x.bucket === 'running' && x.where === 'local')) _localDetailOpen = false;
 
   const schedCount = queued.filter((x) => x.scheduledAt).length;
   const qmeta = document.getElementById('campaigns-qmeta');

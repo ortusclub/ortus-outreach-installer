@@ -215,6 +215,9 @@
              Badge visibility + name tooltip + count handled by
              renderResumeDraftBadge() in app.js. -->
         <div class="dashboard-new-wrap">
+          <!-- v2.131: filter the Campaigns board by type (rendered by
+               renderCampaignsTypeFilter() in app.js). -->
+          <div class="fdrop" id="campaigns-typefilter"></div>
           <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connection DB</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
@@ -1246,6 +1249,19 @@
   .sn-emptyx-legend .sw{display:inline-block;width:18px;height:5px;border-radius:9999px;vertical-align:middle;margin-right:7px;}
   .sn-emptyx-legend .sw.green{background:var(--green);}
   .sn-emptyx-legend .sw.pink{background:#e35ea0;}
+  /* type filter dropdown (v2.131) — compact control on the header row */
+  .fdrop{position:relative;}
+  .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;white-space:nowrap;}
+  .fdrop-btn .cur{color:var(--gray);}
+  .fdrop-btn .cur b{color:var(--ink);font-weight:600;}
+  .fdrop-btn svg{opacity:.5;}
+  .fdrop-menu{position:absolute;right:0;top:calc(100% + 8px);min-width:210px;background:#fff;border:1px solid var(--hairline);border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.10);padding:6px;z-index:40;display:none;}
+  .fdrop.open .fdrop-menu{display:block;}
+  .fdrop-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 12px;border-radius:9px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#555;}
+  .fdrop-item:hover{background:#f5f5f4;color:var(--ink);}
+  .fdrop-item.on{background:var(--ink);color:#fff;}
+  .fdrop-item .n{opacity:.5;}
+  .fdrop-item .tick{width:14px;text-align:center;display:inline-block;}
   /* scheduled — gold rail + gold "Scheduled" pill (v2.130) */
   .sn-strip.sched::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);}
   .sn-board .dot.gold{background:var(--gold);}
@@ -3089,7 +3105,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.130.5"></script>
+  <script type="module" src="/js/app.js?v=2.131.0"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
