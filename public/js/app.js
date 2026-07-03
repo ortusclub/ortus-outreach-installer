@@ -5727,7 +5727,7 @@ async function renderCampaignsBoard() {
 }
 window.renderCampaignsBoard = renderCampaignsBoard;
 
-// Start the board (hide legacy sections, render, poll every 4s). Called on load.
+// Start the board (hide legacy sections, render, poll every 4s). Idempotent.
 function startCampaignsBoard() {
   _hideLegacyDashboardSections();
   renderCampaignsBoard();
@@ -5735,6 +5735,19 @@ function startCampaignsBoard() {
   _campaignsBoardTimer = setInterval(renderCampaignsBoard, 4000);
 }
 window.startCampaignsBoard = startCampaignsBoard;
+
+// The board is the top-level Campaigns view — it must start on page load
+// REGARDLESS of whether a campaign is running. (Previously it was only kicked
+// off from startPolling(), which doesn't fire when nothing is active — so the
+// board never rendered and the legacy dashboard leaked through.)
+function _bootCampaignsBoard() {
+  try { startCampaignsBoard(); } catch (_) { /* board best-effort */ }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _bootCampaignsBoard);
+} else {
+  _bootCampaignsBoard();
+}
 
 // Stop a cloud campaign from the panel.
 async function stopCloudCampaignUI(id) {
