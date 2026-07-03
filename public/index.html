@@ -205,7 +205,10 @@
     <!-- ── Dashboard view (default route #/) ── -->
     <div id="dashboard-view" class="route-view">
       <div class="dashboard-header">
-        <h1 class="dashboard-title">Campaigns</h1>
+        <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
+          <button type="button" class="route-seg-btn is-active" onclick="goDashboard()">Campaigns</button>
+          <button type="button" class="route-seg-btn" onclick="goSalesNav()">Sales Nav</button>
+        </div>
         <!-- 2026-05-27 (drafts-isolation v2): resume-draft surfaces as a small
              gold count-badge on the New-campaign button. Click the button →
              fresh campaign. Click the badge → resume the existing draft.
@@ -213,7 +216,6 @@
              renderResumeDraftBadge() in app.js. -->
         <div class="dashboard-new-wrap">
           <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connection DB</button>
-          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goSalesNav()">Sales Nav</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
                indicator (drafts remain reachable via the Drafts & Stops section).
@@ -608,14 +610,17 @@
 
     <!-- ── Sales Nav board view (route #/salesnav) — top-level queue board. ── -->
     <div id="salesnav-view" class="route-view">
-      <button type="button" class="back-link" onclick="goDashboard()">← Back to dashboard</button>
+      <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
+        <button type="button" class="route-seg-btn" onclick="goDashboard()">Campaigns</button>
+        <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav</button>
+      </div>
       <div class="sn-boardhead">
         <div>
           <div class="sn-kicker" id="sn-datekicker">Sales Nav</div>
           <div class="sn-boardtitle">Sales Nav Queue</div>
         </div>
         <div class="sn-qmeta" id="sn-qmeta">—</div>
-        <button type="button" class="btn btn-secondary" onclick="startNewScrapeSetup()">＋ New scrape</button>
+        <button type="button" id="sn-new-btn" class="btn btn-secondary" onclick="startNewScrapeSetup()">＋ New scrape</button>
       </div>
       <!-- Inline scrape composer — "＋ New scrape" reveals the real scrape setup
            sections (config + accounts + launch) here, relocated from the wizard,
@@ -1146,6 +1151,37 @@
     </div>
 
 <style id="sn-board-styles">
+  /* Campaigns | Sales Nav top-level segmented toggle (drawing 1) */
+  .route-seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;padding:3px;margin:8px 0 26px;}
+  .route-seg-btn{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--gray);background:transparent;border:0;border-radius:9999px;padding:9px 20px;cursor:pointer;transition:background .12s,color .12s;}
+  .route-seg-btn.is-active{background:var(--ink);color:var(--bg);}
+  .route-seg-btn:not(.is-active):hover{color:var(--ink);}
+  #salesnav-view > .route-seg{margin-top:14px;}
+
+  /* Composer restyle — scoped to the board's inline setup (#sn-setup) ONLY, so
+     the shared campaign-wizard sections keep their styling everywhere else.
+     Turns the elevated cards into flat, hairline-separated sections. */
+  /* count row — one bordered box, no dividers (matches sketch) */
+  #sn-setup .scrape-stats{gap:0;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;margin:4px 0 0;}
+  #sn-setup .scrape-stat{background:transparent;border:0;border-radius:0;box-shadow:none;padding:16px 24px;}
+  #sn-setup .scrape-panel{background:transparent;border:0;border-top:1px solid var(--hairline);border-radius:0;box-shadow:none;padding:22px 2px 6px;margin-top:14px;}
+  #sn-setup .scrape-panel:first-of-type{border-top:0;}
+  #sn-setup .scrape-statuscard{box-shadow:none;}
+  /* drop the wizard's "2b. Sales Nav Scrape" section heading — the board header labels it */
+  #sn-setup #nav-scrape > h2.section-toggle{display:none;}
+  /* hide the wizard's numbered-section pointers (no numbers on the board) */
+  #sn-setup #scrape-hint-accounts, #sn-setup #scrape-hint-launch{display:none;}
+  /* real bordered fields (the wizard's underline inputs read as empty lines here) */
+  #sn-setup #scrape-urls{border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;min-height:92px;background:var(--card-bg);}
+  #sn-setup input[type=text]{border:1px solid var(--hairline);border-radius:10px;padding:11px 13px;background:var(--card-bg);}
+  #sn-setup .scrape-label{margin-bottom:8px;}
+  /* editable hero campaign name, pulled to the top of the composer (label below) */
+  #sn-setup #scrape-name-field{display:flex;flex-direction:column-reverse;margin:0 0 28px;}
+  #sn-setup #scrape-name-field .scrape-label{margin:12px 0 0;}
+  #sn-setup #scrape-name{font-family:var(--display);font-size:52px;line-height:1;letter-spacing:.02em;text-transform:uppercase;border:0;border-bottom:2px solid var(--hairline);border-radius:0;padding:4px 0 12px;background:transparent;}
+  #sn-setup #scrape-name:focus{border-color:var(--ink);outline:none;}
+  #sn-setup #scrape-name::placeholder{font-family:var(--display);font-size:52px;text-transform:uppercase;color:#d0d0d0;opacity:1;}
+
   /* Sales Nav board — namespaced (sn-/snm-) so nothing collides with style.css */
   .sn-boardhead{display:flex;align-items:flex-end;gap:16px;margin:0 0 6px;}
   .sn-boardhead > div:first-child{margin-right:auto;}
@@ -1165,14 +1201,39 @@
   .sn-handover.launching{border-left:3px solid var(--green);}
   .sn-handover.launching .spin{border-top-color:var(--green);}
 
-  #sn-setup{margin:8px 0 24px;padding:20px 0 4px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
-  .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px;}
+  #sn-setup{margin:32px 0 28px;padding:32px 0 8px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);}
+  .sn-setup-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 26px;}
   .sn-setup-title{font-family:var(--display);font-size:24px;letter-spacing:.02em;}
-  .sn-railhead{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;transition:color .12s,border-color .12s;}
+  .sn-clear-done:hover{color:var(--ink);border-color:var(--ink);}
+  .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
+  .sn-foot .mini.sn-dismiss:hover{color:var(--red);border-color:var(--red);}
 
-  .sn-strip{position:relative;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px 18px 60px;transition:opacity .4s, border-color .4s;}
-  .sn-strip.queued{border-style:dashed;}
-  .sn-strip.done{opacity:.6;}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  .sn-qpos{display:none;}
+  /* Left accent rail — same pattern as the dashboard campaign card (::before
+     clipped by the strip's overflow:hidden, so it hugs the rounded corners).
+     mine = ink rail; running = green rail (declared last so it wins when both). */
+  .sn-strip.mine::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  /* stopped / error — red border + red rail (overrides mine/run) */
+  .sn-strip.stopped{border-color:var(--red);}
+  .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
+  .sn-strip.stopped .sn-status{color:var(--red);}
+  .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
+  .sn-progtxt b{color:var(--ink);font-weight:600;}
+  /* queued — tidy mini card (solid, smaller title) */
+  .sn-strip.queued .sn-name{font-size:20px;}
+  .sn-strip.queued{padding-top:14px;padding-bottom:14px;}
+  /* done — slim by default (kept fully legible, not faded) */
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-strip.done.sn-collapsed .togwrap{display:none;}
+  .sn-strip.done.sn-collapsed .sn-foot{margin-top:10px;padding-top:0;border-top:0;}
   .sn-strip.stopping{border-color:var(--red);animation:sn-pulse 1s ease-in-out infinite;}
   .sn-strip.starting{border-color:var(--green);animation:sn-pulse 1s ease-in-out infinite;}
   @keyframes sn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,0,0,0);}50%{box-shadow:0 0 0 3px var(--hairline-soft);}}
@@ -1203,8 +1264,15 @@
   .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
   .sn-foot .mini.locked{opacity:.4;cursor:not-allowed;}
   .sn-strip.sn-collapsed .sn-switch{display:none;}
-  .sn-foot .sn-collapse{line-height:1;transition:transform .12s;}
-  .sn-strip.sn-collapsed .sn-collapse{transform:rotate(-90deg);}
+  /* expand/collapse chevron — circular button pinned top-right; stays put when
+     the pane opens. Chevron points down when collapsed, flips up when open. */
+  .sn-expand{position:absolute;top:14px;right:16px;width:32px;height:32px;display:flex;
+    align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;
+    background:transparent;color:var(--ink);cursor:pointer;transition:transform .15s, border-color .12s;z-index:2;}
+  .sn-expand:hover{border-color:var(--ink);}
+  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);}
+  /* keep the top row's status clear of the pinned chevron */
+  .sn-top{padding-right:40px;}
 
   .sn-switch{margin:16px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;}
   .sn-switchtabs{display:flex;gap:20px;margin-bottom:12px;}
@@ -1297,15 +1365,15 @@
           </div>
 
           <div id="scrape-pairing" class="scrape-hint" style="margin-top:12px; padding:12px 14px; background:var(--hairline-soft); border-left:2px solid var(--hairline);"></div>
-          <div class="scrape-hint" style="margin-top:8px;">↓ Pick the GoLogin accounts (one per URL) in <strong>section 3 · Select GoLogin Accounts</strong> below — each needs a Sales Nav seat.</div>
+          <div class="scrape-hint" id="scrape-hint-accounts" style="margin-top:8px;">↓ Pick the GoLogin accounts (one per URL) in <strong>section 3 · Select GoLogin Accounts</strong> below — each needs a Sales Nav seat.</div>
         </div>
 
         <!-- DESTINATION panel -->
         <div class="scrape-panel">
           <div class="scrape-panel-head">Destination · where results land</div>
-          <div style="margin-bottom:16px;">
-            <label for="scrape-name" class="scrape-label">Campaign name — shown on the board strip</label>
-            <input type="text" id="scrape-name" placeholder="e.g. London CFOs — June" style="width:100%" />
+          <div style="margin-bottom:16px;" id="scrape-name-field">
+            <label for="scrape-name" class="scrape-label">Campaign name — editable · shown on the board strip</label>
+            <input type="text" id="scrape-name" placeholder="tag_city_ee" style="width:100%" />
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
             <div>
@@ -1325,7 +1393,7 @@
           <label style="display:flex; gap:8px; align-items:center; cursor:pointer; font-size:13px;">
             <input type="checkbox" id="scrape-slow" /> Slow mode (larger delays between pages)
           </label>
-          <div class="scrape-hint" style="margin-top:10px;">↓ Launch this scrape from <strong>section 6 · Launch</strong> below — Start / Pause / Stop.</div>
+          <div class="scrape-hint" id="scrape-hint-launch" style="margin-top:10px;">↓ Launch this scrape from <strong>section 6 · Launch</strong> below — Start / Pause / Stop.</div>
         </div>
       </div>
     </div>
