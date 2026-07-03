@@ -1741,15 +1741,26 @@ function handleSetSoO(sheet, data) {
     (data.guardAvailableFor || []).forEach(function (h) {
       guard[(h || '').toString().toLowerCase().trim()] = true;
     });
+    // Write-once guard: these columns are only written when currently empty, so
+    // an operator stamp stays sticky until a human clears the cell by hand.
+    var writeOnce = {};
+    (data.guardWriteOnceFor || []).forEach(function (h) {
+      writeOnce[(h || '').toString().toLowerCase().trim()] = true;
+    });
 
     var written = [];
     var skipped = [];
     Object.keys(data.fields).forEach(function (header) {
       var col = headerIndex(header);
       if (col === -1) { skipped.push(header + ' (no column)'); return; }
-      if (guard[(header || '').toString().toLowerCase().trim()]) {
+      var key = (header || '').toString().toLowerCase().trim();
+      if (guard[key]) {
         var cur = (sheet.getRange(targetRow, col + 1).getValue() || '').toString().toLowerCase().trim();
         if (cur !== 'available') { skipped.push(header + ' (not Available: "' + cur + '")'); return; }
+      }
+      if (writeOnce[key]) {
+        var curName = (sheet.getRange(targetRow, col + 1).getValue() || '').toString().trim();
+        if (curName !== '') { skipped.push(header + ' (write-once, already set: "' + curName + '")'); return; }
       }
       sheet.getRange(targetRow, col + 1).setValue(data.fields[header]);
       written.push(header);

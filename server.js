@@ -911,6 +911,25 @@ function rejectIfNoOperatorEmail(res) {
   return true;
 }
 
+// Unattended-path guard. The HTTP start routes prompt with the mandatory modal
+// (rejectIfNoOperatorEmail); but campaigns also launch WITHOUT an HTTP request —
+// the queue drain, scheduled cron fires, and monitoring resume. Those paths
+// funnel through here: no operator email → refuse to run and notify, so a
+// scheduled/queued/resumed run can never write an anonymous "In Use" row to the
+// SoO (the root cause of blank "CC App User" stamps). Returns true when blocked.
+// `notifyTo` is the owner/createdBy to email; falls back to notifyAll when null.
+function blockIfNoOperatorEmail(context, notifyTo) {
+  if (getOperatorEmail()) return false;
+  console.error(`[operator-gate] blocked ${context} — no operator email set on this machine`);
+  const payload = {
+    title: 'Blocked — set your operator email',
+    body: `A campaign (${context}) could not run because this machine has no operator email set. Open the app, enter your work email, then start it again.`,
+    link: '/',
+  };
+  (notifyTo ? notifyEmail(notifyTo, payload) : notifyAll(payload)).catch(() => {});
+  return true;
+}
+
 // runs with exactly the same shape as a directly-launched one.
 function buildCampaignConfig(body) {
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
@@ -999,6 +1018,9 @@ function buildCampaignConfig(body) {
 // startCampaign — callers must check campaign.running first and queue
 // instead if they want fire-and-forget semantics.
 function launchCampaign(config, owner) {
+  // Central operator-identity gate — both the HTTP start route AND the ungated
+  // queue drain (runNextFromQueue) funnel through here. No identity → refuse.
+  if (blockIfNoOperatorEmail(`campaign "${(config && config.name) || ''}"`, owner)) return;
   preventSleep('campaign');
   startCampaign({ ...config, createdBy: owner }).then(() => {
     const status = getCampaignStatus();
@@ -2227,6 +2249,8 @@ app.get('/api/scrape/view/:jobId', async (req, res) => {
 // { ok, restartedFrom, reason? } — the loop runs async after the response.
 app.post('/api/campaign/restore', async (_req, res) => {
   try {
+    // Restore re-launches with the last settings — gate it like a fresh start.
+    if (rejectIfNoOperatorEmail(res)) return;
     const result = await restoreCampaign();
     res.json(result);
   } catch (err) {
@@ -3844,6 +3868,9 @@ function registerSchedule(schedule) {
   // Main fire
   const main = cron.schedule(schedule.cron, async () => {
     console.log(`[scheduler] Firing schedule "${schedule.name}" (owner: ${schedule.createdBy || 'none'})`);
+    // Unattended cron fire bypasses the HTTP start gate — enforce identity here
+    // too, else a scheduled acceptance-check flips accounts "In Use" anonymously.
+    if (blockIfNoOperatorEmail(`schedule "${schedule.name}"`, schedule.createdBy)) return;
     const notify = (payload) => schedule.createdBy
       ? notifyEmail(schedule.createdBy, payload)
       : notifyAll(payload);
@@ -4299,11 +4326,18 @@ app.listen(PORT, async () => {
 
   // v2.14 — resume any in-flight monitoring state from disk before the watcher
   // starts, so the campaign global is populated on the first watcher tick.
-  resumeMonitoringFromDisk()
-    .then((r) => {
-      if (r.action !== 'noop') console.log('[boot] monitoring:', r.action);
-    })
-    .catch((err) => console.warn('[boot] monitoring resume failed:', err.message));
+  // Gated on operator identity — a resumed monitoring loop runs acceptance
+  // checks that flip accounts "In Use", so it must not run anonymously. Skip
+  // quietly (no boot-time notify spam); the load-time modal prompts the human.
+  if (getOperatorEmail()) {
+    resumeMonitoringFromDisk()
+      .then((r) => {
+        if (r.action !== 'noop') console.log('[boot] monitoring:', r.action);
+      })
+      .catch((err) => console.warn('[boot] monitoring resume failed:', err.message));
+  } else {
+    console.error('[boot] monitoring resume skipped — no operator email set on this machine');
+  }
 
   // v2.14 — start the T+7d monitoring auto-end watcher
   startMonitoringWatcher();

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operator-Identity Gate — flow</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#000; --paper:#fff; --mute:#999;
+    --hairline:rgba(0,0,0,.15);
+    --gold:#F7BE68; --green:#3fb950; --red:#f85149; --blue:#6ea3d4;
+    --display:'Bebas Neue',sans-serif;
+    --body:'Hanken Grotesk',sans-serif;
+    --mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f4f4f2;color:var(--ink);font-family:var(--body);padding:48px 32px 80px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+  h1{font-family:var(--display);font-size:52px;letter-spacing:.01em;line-height:.95;margin-bottom:6px}
+  .sub{color:#555;font-size:15px;max-width:640px;margin-bottom:40px}
+
+  .flow{display:flex;flex-direction:column;align-items:center;gap:0}
+
+  /* Sources row */
+  .sources{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;width:100%}
+  .src{background:var(--paper);border:1px solid var(--hairline);border-radius:14px;padding:16px 16px 14px;position:relative;overflow:hidden}
+  .src::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--blue)}
+  .src .tag{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+  .src .name{font-weight:700;font-size:15px;margin:4px 0 4px}
+  .src .path{font-family:var(--mono);font-size:10.5px;color:#888;word-break:break-all}
+  .src .was{margin-top:8px;font-size:11px;color:var(--red);font-weight:600}
+  .src .was.ok{color:var(--green)}
+
+  .down{width:2px;height:30px;background:var(--ink);opacity:.35}
+  .down.long{height:42px}
+  .converge{width:78%;height:2px;background:var(--ink);opacity:.35;margin-top:0}
+  .conv-label{font-family:var(--mono);font-size:10px;color:var(--mute);letter-spacing:.12em;text-transform:uppercase;margin:10px 0 2px}
+
+  /* The gate */
+  .gate{background:var(--ink);color:var(--paper);border-radius:16px;padding:22px 28px;text-align:center;width:min(560px,100%);box-shadow:0 1px 0 rgba(0,0,0,.06)}
+  .gate .glabel{font-family:var(--display);font-size:30px;letter-spacing:.02em}
+  .gate .gq{font-family:var(--mono);font-size:12px;color:#cfcfcf;margin-top:6px}
+  .gate .gcode{font-family:var(--mono);font-size:11px;color:#8ad;margin-top:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:8px 10px;display:inline-block}
+
+  /* branch */
+  .branch{display:grid;grid-template-columns:1fr 1fr;gap:22px;width:min(820px,100%);margin-top:6px}
+  .col{display:flex;flex-direction:column;align-items:center}
+  .arm{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:5px 12px;border-radius:9999px;margin-bottom:12px}
+  .arm.no{background:rgba(248,81,73,.12);color:var(--red);border:1px solid rgba(248,81,73,.35)}
+  .arm.yes{background:rgba(63,185,80,.12);color:#2f8f3f;border:1px solid rgba(63,185,80,.35)}
+  .outcome{background:var(--paper);border:1px solid var(--hairline);border-radius:14px;padding:18px;width:100%;position:relative;overflow:hidden}
+  .outcome.block::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--red)}
+  .outcome.run::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--green)}
+  .outcome h3{font-family:var(--display);font-size:24px;letter-spacing:.02em;margin-bottom:10px}
+  .outcome ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+  .outcome li{font-size:13.5px;color:#333;padding-left:20px;position:relative;line-height:1.35}
+  .outcome li::before{content:'';position:absolute;left:0;top:7px;width:8px;height:8px;border-radius:9999px}
+  .outcome.block li::before{background:var(--red)}
+  .outcome.run li::before{background:var(--green)}
+  .outcome .foot{margin-top:12px;font-family:var(--mono);font-size:10.5px;color:var(--mute);border-top:1px solid var(--hairline);padding-top:10px}
+
+  .sheet{margin-top:26px;width:min(820px,100%);background:var(--paper);border:1px solid var(--hairline);border-radius:14px;overflow:hidden}
+  .sheet .row{display:grid;grid-template-columns:1.4fr .7fr 1fr;font-size:12.5px}
+  .sheet .row.head{background:#faf9f7;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+  .sheet .row>div{padding:10px 14px;border-bottom:1px solid var(--hairline);border-right:1px solid var(--hairline)}
+  .sheet .row>div:last-child{border-right:none}
+  .sheet .row:last-child>div{border-bottom:none}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:9999px}
+  .pill.inuse{background:#fdf1dc;color:#8a6314}
+  .cap{font-size:12px;color:#666;margin:8px 4px 0;font-family:var(--mono)}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:34px;font-size:12px;color:#555}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:10px;height:10px;border-radius:9999px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">v2.126.23 · SoO anonymous-write fix</div>
+  <h1>The operator-identity gate</h1>
+  <p class="sub">Every way a campaign can start now funnels through one check: <strong>is this machine's operator email set?</strong> If not, the run is refused — so no path can ever flip an account <strong>In&nbsp;Use</strong> without stamping who did it.</p>
+
+  <div class="flow">
+
+    <!-- SOURCES -->
+    <div class="conv-label">4 ways a campaign starts</div>
+    <div class="sources">
+      <div class="src">
+        <div class="tag">Manual</div>
+        <div class="name">Start button</div>
+        <div class="path">POST /api/campaign/start</div>
+        <div class="was ok">was already gated</div>
+      </div>
+      <div class="src">
+        <div class="tag">Auto</div>
+        <div class="name">Queue drain</div>
+        <div class="path">runNextFromQueue → launchCampaign</div>
+        <div class="was">was bypassing ✗</div>
+      </div>
+      <div class="src">
+        <div class="tag">Unattended</div>
+        <div class="name">Scheduled cron</div>
+        <div class="path">cron.schedule → startCampaign</div>
+        <div class="was">was bypassing ✗</div>
+      </div>
+      <div class="src">
+        <div class="tag">On boot</div>
+        <div class="name">Monitoring resume</div>
+        <div class="path">resumeMonitoringFromDisk</div>
+        <div class="was">was bypassing ✗</div>
+      </div>
+    </div>
+
+    <div class="down"></div>
+    <div class="converge"></div>
+    <div class="down"></div>
+
+    <!-- GATE -->
+    <div class="gate">
+      <div class="glabel">Operator email set?</div>
+      <div class="gq">getOperatorEmail() — data/operator-identity.json</div>
+      <div class="gcode">launchCampaign · cron fire · /restore · boot-resume → blockIfNoOperatorEmail()</div>
+    </div>
+
+    <div class="down long"></div>
+
+    <!-- BRANCH -->
+    <div class="branch">
+      <div class="col">
+        <div class="arm no">NO — empty</div>
+        <div class="outcome block">
+          <h3>Refuse to run</h3>
+          <ul>
+            <li>Campaign does <strong>not</strong> launch / resume</li>
+            <li>Loud <span style="font-family:var(--mono)">[operator-gate] blocked</span> log</li>
+            <li>Emails the owner: “set your operator email”</li>
+            <li>Manual start instead shows the <strong>REQUIRED</strong> modal (409)</li>
+          </ul>
+          <div class="foot">→ no anonymous "In Use" write can happen</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="arm yes">YES — set</div>
+        <div class="outcome run">
+          <h3>Run &amp; stamp</h3>
+          <ul>
+            <li>Campaign launches normally</li>
+            <li>On each successful send: flip credit → <span class="pill inuse">In&nbsp;Use</span></li>
+            <li>Stamp the operator email into <strong>CC App User</strong></li>
+            <li>Write-once: never overwrites an existing name</li>
+          </ul>
+          <div class="foot">→ every reservation is attributable</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULT SHEET -->
+    <div class="cap">Result in the SoO — no more blank names next to “In Use”:</div>
+    <div class="sheet">
+      <div class="row head"><div>LinkedIn account</div><div>CC (Credits)</div><div>CC App User</div></div>
+      <div class="row"><div>ellis.robredillo@ortus.solutions</div><div><span class="pill inuse">In Use</span></div><div>milee@linkedvelocity.com</div></div>
+      <div class="row"><div>edward.simon@ortus.solutions</div><div><span class="pill inuse">In Use</span></div><div>sam@ortusclub.com</div></div>
+      <div class="row"><div>ashly.colipano@ortus.solutions</div><div><span class="pill inuse">In Use</span></div><div>argil@ortusclub.com</div></div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--blue)"></i> launch path</span>
+    <span><i class="dot" style="background:var(--red)"></i> blocked (no identity)</span>
+    <span><i class="dot" style="background:var(--green)"></i> runs &amp; stamps</span>
+    <span><i class="dot" style="background:#8a6314"></i> In Use credit flip</span>
+  </div>
+</div>
+</body>
+</html>

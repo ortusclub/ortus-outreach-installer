@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operator gate — in the app</title>
+<!-- same font link the app uses -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- REAL app stylesheets so this renders 1:1 with the running app -->
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/dashboard-v0.3.css">
+<style>
+  /* demo scaffolding only — everything inside the modal/chip is real app markup */
+  body{margin:0}
+  .demo-note{position:fixed;top:0;left:0;right:0;z-index:50;background:#000;color:#fff;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:8px 16px;display:flex;justify-content:space-between;align-items:center}
+  .demo-stage{padding:56px 28px 40px;max-width:1000px;margin:0 auto}
+  .demo-toolbar{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap}
+  .demo-toolbar button{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;border:1px solid rgba(0,0,0,.2);background:#fff;padding:8px 14px;border-radius:9999px;cursor:pointer}
+  .demo-toolbar button.on{background:#000;color:#fff}
+  .faux-topbar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:24px}
+  .faux-panel{background:#fff;border:1px solid rgba(0,0,0,.12);border-radius:16px;padding:26px}
+  .faux-panel h2{font-family:var(--display);font-size:34px;margin:0 0 4px}
+  .faux-panel p.mut{color:#888;font-size:13px;margin:0 0 20px}
+  .faux-toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);z-index:60;background:#111;color:#fff;font-size:13px;padding:12px 18px;border-radius:10px;opacity:0;transition:.28s;pointer-events:none;max-width:520px;text-align:center}
+  .faux-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .faux-toast.err{background:#7a1c19;border:1px solid #f85149}
+  /* make the modal actually visible (app toggles .hidden off) */
+  .modal-backdrop.show{display:flex}
+  .stepcap{font-family:var(--mono);font-size:11px;color:#999;letter-spacing:.1em;text-transform:uppercase;margin:0 0 14px}
+</style>
+</head>
+<body class="theme-light">
+  <div class="demo-note">
+    <span>1:1 in-app render · real style.css + dashboard-v0.3.css · real modal &amp; chip markup</span>
+    <span>v2.126.23</span>
+  </div>
+
+  <div class="demo-stage">
+    <p class="stepcap">Click <b>Start campaign</b> with no identity set → watch the block &amp; the fix</p>
+    <div class="demo-toolbar">
+      <button id="reset-btn" onclick="resetDemo()">⟲ Reset (unset identity)</button>
+    </div>
+
+    <!-- faux top bar with the REAL operator chip -->
+    <div class="faux-topbar">
+      <!-- real markup, copied from index.html -->
+      <button type="button" class="operator-chip operator-chip--unset" id="operator-chip" onclick="openMandatory()" title="The email stamped on every LinkedIn account you reserve. Click to change.">
+        <span class="operator-chip-label">Operating as</span>
+        <strong id="operator-chip-email">—</strong>
+      </button>
+    </div>
+
+    <div class="faux-panel">
+      <h2>New campaign</h2>
+      <p class="mut">Connect · 3 accounts selected · daily limit 50</p>
+      <button type="button" class="btn btn-primary" style="min-width:180px" onclick="tryStart()">Start campaign</button>
+    </div>
+  </div>
+
+  <!-- ============ REAL modal markup (verbatim from index.html) ============ -->
+  <div id="operator-email-modal" class="modal-backdrop hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="operator-email-title">
+      <span class="ptm-pill modal-pill--alert">REQUIRED</span>
+      <h3 id="operator-email-title" class="modal-title">Who's using this app?</h3>
+      <div class="modal-body">
+        <p>Enter <strong>your work email</strong>. It gets stamped against every LinkedIn account you reserve, so the team can see who's using what. You can't start a campaign until this is set.</p>
+        <input type="email" id="operator-email-input" class="oe-input" placeholder="you@ortusclub.com" autocomplete="email" inputmode="email" onkeydown="if(event.key==='Enter')saveOperatorEmail()" />
+        <div id="operator-email-error" class="intro-config-error" hidden></div>
+      </div>
+      <div class="modal-actions" style="flex-direction: column; gap: 10px; align-items: stretch;">
+        <button type="button" class="btn btn-primary" id="operator-email-save" onclick="saveOperatorEmail()">Save &amp; continue</button>
+      </div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button type="button" class="modal-cancel-link" id="operator-email-cancel" onclick="closeModal()" style="display:none;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="faux-toast" id="faux-toast"></div>
+
+<script>
+  // Mini state — mirrors getOperatorEmail()/saveOperatorEmail() behaviour so the
+  // block + fix look exactly like the app, without needing the auth'd server.
+  let operatorEmail = '';
+  const modal = document.getElementById('operator-email-modal');
+  const chip  = document.getElementById('operator-chip');
+  const chipEmail = document.getElementById('operator-chip-email');
+  const err = document.getElementById('operator-email-error');
+
+  function showModal(){ modal.classList.remove('hidden'); modal.classList.add('show');
+    setTimeout(()=>document.getElementById('operator-email-input').focus(),50); }
+  function closeModal(){ modal.classList.add('hidden'); modal.classList.remove('show'); }
+  function openMandatory(){ err.hidden=true; showModal(); }
+
+  function toast(msg, isErr){
+    const t = document.getElementById('faux-toast');
+    t.textContent = msg; t.className = 'faux-toast show' + (isErr?' err':'');
+    clearTimeout(t._h); t._h = setTimeout(()=>t.className='faux-toast',3200);
+  }
+
+  // === the block: exactly what the app does on a 409 OPERATOR_EMAIL_REQUIRED ===
+  function tryStart(){
+    if(!operatorEmail){
+      toast('Blocked — set your operator email before starting.', true);   // desktop-notify equivalent
+      openMandatory();                                                     // 409 → mandatory modal
+      return;
+    }
+    toast('Campaign started — reserving 3 accounts as ' + operatorEmail + '.');
+  }
+
+  // === the fix: POST /api/operator-identity, then chip updates ===
+  function saveOperatorEmail(){
+    const v = document.getElementById('operator-email-input').value.trim();
+    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    if(!ok){ err.hidden=false; err.textContent='A valid email is required.'; return; }
+    operatorEmail = v;
+    chipEmail.textContent = v;
+    chip.classList.remove('operator-chip--unset');
+    closeModal();
+    toast('Saved. You’re now operating as ' + v + '.');
+  }
+
+  function resetDemo(){
+    operatorEmail=''; chipEmail.textContent='—'; chip.classList.add('operator-chip--unset');
+    document.getElementById('operator-email-input').value=''; err.hidden=true;
+    toast('Identity cleared — this is a fresh machine now.');
+  }
+</script>
+</body>
+</html>

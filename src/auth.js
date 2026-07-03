@@ -15,7 +15,7 @@ import { dirname } from 'node:path';
 
 import { fetchSoOData } from './soo.js';
 import { dataPath } from './paths.js';
-import { SIGNUP_ALLOWED_DOMAINS } from './sheets-webapp-url.js';
+import { SIGNUP_ALLOWED_DOMAINS, SIGNUP_ALLOWED_EMAILS } from './sheets-webapp-url.js';
 
 const USERS_PATH = dataPath('users.json');
 const SECRET_PATH = dataPath('.session-secret');
@@ -200,6 +200,10 @@ export async function isEmailAllowed(email) {
   // depends on it.
   const domain = normalized.split('@')[1] || '';
   if (SIGNUP_ALLOWED_DOMAINS.includes(domain)) return true;
+
+  // Per-email allowlist for individual external collaborators (e.g. Milee) —
+  // access without opening their whole domain.
+  if (SIGNUP_ALLOWED_EMAILS.includes(normalized)) return true;
 
   return false;
 }

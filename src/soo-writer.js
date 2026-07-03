@@ -212,6 +212,10 @@ export function buildFlipPayload({ email, creditHeader, userHeader, operatorEmai
     email,
     fields,
     guardAvailableFor: [creditHeader],
+    // Write-once: the operator stamp is sticky. Once a name is in "CC App User"
+    // it is never overwritten by a later run — only a human clearing the cell
+    // frees it to be re-stamped. Passover/reset does NOT clear it.
+    guardWriteOnceFor: [userHeader],
   };
 }
 

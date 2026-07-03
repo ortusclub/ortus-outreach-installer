@@ -23,6 +23,8 @@ test('flip payload: In Use + user cell + guard on the credit header', () => {
   assert.equal(p.email, 'a@ortus.solutions');
   assert.deepEqual(p.fields, { 'CC (Credits)': 'In Use', 'CC User': 'op@ortusclub.com' });
   assert.deepEqual(p.guardAvailableFor, ['CC (Credits)']);
+  // Operator stamp is sticky — write-once guard on the user column.
+  assert.deepEqual(p.guardWriteOnceFor, ['CC User']);
 });
 
 test('flip payload omits the user cell when operator email is blank', () => {
