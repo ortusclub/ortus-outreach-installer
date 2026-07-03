@@ -2596,7 +2596,9 @@ function onModeChange() {
     // v2.11.17: same coverage source as Message Only (Connected · DM Now leads).
     refreshMessageOnlyPreview();
   } else if (isCheckDms) {
-    refreshCheckDmsPreview();
+    // check_dms now owns the A3 reply-sweep panel (its legacy preview panel is hidden),
+    // so skip refreshCheckDmsPreview()'s wasted fetch + run-bar relabel. The mode-reveal
+    // block drives this mode via rsweepPoll().
   } else if (isPostAmp) {
     // v3.0: render the per-account engagement table from currently selected
     // GoLogin profiles, and load any saved comment templates.
@@ -2662,6 +2664,25 @@ function onModeChange() {
     // Surface failures instead of swallowing them — a silent catch here hid a
     // TDZ crash (fgChips accessed before init) for an entire debugging session.
     try { initFollowerGrowth(); } catch (e) { console.error('[FG] initFollowerGrowth failed:', e && e.message); }
+  }
+
+  // Check DMs — self-contained A3 reply-check view, mirrors the Follower Growth
+  // takeover. Hide the entire campaign apparatus (incl. the old check-dms
+  // coverage panel + replies section) and show #reply-sweep-panel.
+  const rsweepPanel = document.getElementById('reply-sweep-panel');
+  if (rsweepPanel) rsweepPanel.style.display = isCheckDms ? '' : 'none';
+  if (isCheckDms) {
+    if (cdPanel) cdPanel.style.display = 'none';
+    if (repliesSection) repliesSection.style.display = 'none';
+    if (navAccounts) navAccounts.style.display = 'none';
+    if (navPace) navPace.style.display = 'none';
+    if (navTemplates) navTemplates.style.display = 'none';
+    if (navSheet) navSheet.style.display = 'none';
+    if (dailyKnob) dailyKnob.style.display = 'none';
+    if (navLaunch) navLaunch.style.display = 'none';
+    if (runBar) runBar.style.display = 'none';
+    try { rsweepInitControls(); } catch (_) {}
+    try { rsweepPoll(); } catch (_) {}
   }
   // Re-evaluate the generic Live Status section now that the mode changed — so a
   // prior finished campaign's card hides the moment we enter FG view (v2.119.2).
@@ -3954,9 +3975,6 @@ const MODE_LIST = [
   {
     value: 'check_dms',
     name: 'Check DMs',
-    // Parked per operator request — greyed + non-clickable like Post Amplification.
-    disabled: true,
-    disabledReason: 'Check DMs is unavailable.',
     bullets: [
       'Scan LinkedIn inboxes for new replies',
       'Append new messages to the Replies tab',
@@ -16781,6 +16799,9 @@ window.renderActiveCard = function(status) {
   if (!status || (!status.running && !isMonitoring)) {
     card.classList.add('is-empty');
     card.classList.remove('is-monitor');
+    // Check DMs reply-check strip: hide + clear when the card goes idle.
+    const _rs = document.getElementById('active-replystrip');
+    if (_rs) { _rs.hidden = true; const l = document.getElementById('active-rs-list'); if (l) l.innerHTML = ''; }
     // Cloud-aware idle: a cloud campaign runs on the VM, so the LOCAL card is
     // idle — but claiming "No campaign running" contradicts the cloud board
     // right below it. Reflect the cloud count instead (kept in is-empty state,
@@ -17501,11 +17522,61 @@ window.dashReplyCheck = async function() {
         : `Reply check done — ${n} new repl${n === 1 ? 'y' : 'ies'}.`;
       if (typeof showCampaignToast === 'function') showCampaignToast(msg);
       if (typeof window.renderReplies === 'function') window.renderReplies();
+      renderReplyStrip(Array.isArray(body.replies) ? body.replies : []);
     } else {
       if (typeof showCampaignToast === 'function') showCampaignToast('Reply check failed: ' + (body.error || 'unknown'));
     }
   } catch (err) { console.error('[v3] dashReplyCheck:', err); }
 };
+
+// Reply strip on the active card (sketch 3): renders found replies under the
+// live log. Each row can open the thread in the SENDER's GoLogin browser.
+function renderReplyStrip(replies) {
+  const strip = document.getElementById('active-replystrip');
+  const list = document.getElementById('active-rs-list');
+  const sum = document.getElementById('active-rs-sum');
+  if (!strip || !list) return;
+  const items = Array.isArray(replies) ? replies : [];
+  if (!items.length) { strip.hidden = true; list.innerHTML = ''; return; }
+  strip.hidden = false;
+  if (sum) sum.textContent = `${items.length} repl${items.length === 1 ? 'y' : 'ies'}`;
+  list.innerHTML = items.map((r) => {
+    const canOpen = !!(r.accountPid && (r.threadId || r.profileUrl));
+    const open = canOpen
+      ? `<button type="button" class="vj-rs-open" data-rsweep-open data-pid="${escHtml(r.accountPid)}" data-tid="${escHtml(r.threadId || '')}" data-purl="${escHtml(r.profileUrl || '')}">↗ open in ${escHtml(r.account || 'gologin')}</button>`
+      : '';
+    const chan = r.channel === 'salesnav' ? '<span class="vj-rs-chan">OP / InMail</span>' : '';
+    return `<div class="vj-rs-item">
+      <div class="vj-rs-who">${escHtml(r.leadName || 'Lead')}${chan}<span class="vj-rs-acct">${escHtml(r.account || '')}</span></div>
+      <div class="vj-rs-msg">${escHtml(r.fullText || r.snippet || '')}</div>
+      ${open}</div>`;
+  }).join('');
+}
+window.renderReplyStrip = renderReplyStrip;
+
+// Open-thread delegation for the active-card reply strip (mirrors rsweepOpenThread).
+(function bindReplyStripOpen() {
+  const strip = document.getElementById('active-replystrip');
+  if (!strip || strip._rsBound) return;
+  strip._rsBound = true;
+  strip.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-rsweep-open]');
+    if (!btn) return;
+    e.preventDefault();
+    const pid = btn.getAttribute('data-pid');
+    if (!pid) return;
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = '↗ opening…';
+    try {
+      const resp = await fetch('/api/reply-sweep/open-thread', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: pid, threadId: btn.getAttribute('data-tid') || '', profileUrl: btn.getAttribute('data-purl') || '' }),
+      });
+      if (!resp.ok) { const er = await resp.json().catch(() => ({})); if (typeof showCampaignToast === 'function') showCampaignToast(er.error || 'Could not open the browser'); }
+    } catch (err) { if (typeof showCampaignToast === 'function') showCampaignToast('Open failed: ' + err.message); }
+    finally { btn.disabled = false; btn.textContent = prev; }
+  });
+})();
 
 window.dashOpenActive = async function() {
   // Entering via Open = a read-only VIEW of the live campaign. The launch panel
@@ -18995,3 +19066,296 @@ if (document.readyState === 'loading') {
   _lcInit();
 }
 
+
+// ── Check DMs / reply-check (A3 split) controller ────────────────────────────
+let _rsweepTimer = null;
+let _rsweepSel = null;     // threadId of the reply shown in the read pane
+let _rsweepLast = null;    // last status, so list clicks can re-render the pane
+
+function rsweepEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// Flat, ordered list of every reply (campaign first, then unmatched) for selection.
+function rsweepAll(s) {
+  return [...(s.campaignReplies || []).map((r) => ({ ...r, group: 'campaign' })),
+          ...(s.unmatched || []).map((r) => ({ ...r, group: 'unmatched' }))];
+}
+
+function rsweepListItem(r) {
+  const tag = r.suspected ? `<span class="rsweep-suspect">same-name</span>` : '';
+  const sel = r.threadId && r.threadId === _rsweepSel ? ' sel' : '';
+  return `<div class="rsweep-item${sel}" data-tid="${rsweepEsc(r.threadId)}">
+    <div class="rsweep-item-nm">${rsweepEsc(r.leadName)}${tag}</div>
+    <div class="rsweep-item-snip">${rsweepEsc(r.snippet)}</div></div>`;
+}
+
+function rsweepPane(r) {
+  if (!r) return `<div class="rsweep-empty">Run a check, then pick a reply to read it here.</div>`;
+  const when = r.timestamp ? new Date(r.timestamp).toLocaleString() : '';
+  const tag = r.suspected ? `<span class="rsweep-suspect">same-name</span>` : '';
+  // Full message text (untruncated) — fall back to the 160-char snippet for old payloads.
+  const body = (r.fullText && r.fullText.length) ? r.fullText : (r.snippet || '');
+  // Open-thread opens the SENDER's own GoLogin browser when we know its profile;
+  // otherwise fall back to a system-browser link.
+  const canGoLogin = !!(r.accountPid && (r.threadId || r.profileUrl));
+  const webUrl = (r.threadId ? `https://www.linkedin.com/messaging/thread/${rsweepEsc(r.threadId)}/` : '') || r.linkedinUrl || r.profileUrl || '';
+  const openChip = canGoLogin
+    ? `<button type="button" class="rsweep-chip" data-rsweep-open data-pid="${rsweepEsc(r.accountPid)}" data-tid="${rsweepEsc(r.threadId || '')}" data-purl="${rsweepEsc(r.profileUrl || '')}" title="Opens ${rsweepEsc(r.account || 'the sender')}'s GoLogin browser">↗ open thread in ${rsweepEsc(r.account || 'gologin')}</button>`
+    : (webUrl ? `<a class="rsweep-chip" href="${rsweepEsc(webUrl)}" target="_blank" rel="noopener">↗ open thread in linkedin</a>` : '');
+  return `<div class="rsweep-pane-head"><div class="rsweep-pane-nm">${rsweepEsc(r.leadName)}${tag}</div>
+      <div class="rsweep-pane-meta">${rsweepEsc(r.account || '')}${when ? ` · ${rsweepEsc(when)}` : ''}</div></div>
+    <div class="rsweep-bubble">${rsweepEsc(body)}</div>
+    ${openChip}
+    <span class="rsweep-chip" title="Stage write-back happens during a non-preview sweep">✓ mark replied in sheet</span>`;
+}
+
+// Open a reply's thread in the sender's GoLogin browser via the backend.
+async function rsweepOpenThread(btn) {
+  const pid = btn.getAttribute('data-pid');
+  const tid = btn.getAttribute('data-tid') || '';
+  const purl = btn.getAttribute('data-purl') || '';
+  if (!pid) return;
+  const prev = btn.textContent;
+  btn.disabled = true; btn.textContent = '↗ opening browser…';
+  try {
+    const resp = await fetch('/api/reply-sweep/open-thread', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: pid, threadId: tid, profileUrl: purl }),
+    });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); showCampaignToast(e.error || 'Could not open the browser', 3500); }
+  } catch (e) { showCampaignToast(`Open failed: ${e.message}`, 3500); }
+  finally { btn.disabled = false; btn.textContent = prev; }
+}
+
+function rsweepRender(s) {
+  if (!s) return;
+  _rsweepLast = s;
+  const eyebrow = document.getElementById('rsweep-eyebrow');
+  const runBtn = document.getElementById('rsweep-run');
+  const stopBtn = document.getElementById('rsweep-stop');
+  if (!eyebrow) return;
+  const camp = s.campaignReplies || [], unm = s.unmatched || [];
+  if (s.running) {
+    eyebrow.style.display = '';
+    eyebrow.textContent = `Scanning ${rsweepEsc(s.currentProfile || '…')} · ${s.doneProfiles || 0}/${s.totalProfiles || 0} accounts`;
+    if (runBtn) runBtn.disabled = true;
+    if (stopBtn) stopBtn.style.display = '';
+  } else {
+    eyebrow.style.display = (s.phase === 'done' || s.phase === 'error') ? '' : 'none';
+    if (s.phase === 'done') eyebrow.textContent = `Done · ${camp.length} reply(ies), ${unm.length} unmatched${s.dryRun ? '' : ` · ${s.wrote || 0} written`}`;
+    if (s.phase === 'error') eyebrow.textContent = `Error — ${rsweepEsc(s.error || '')}`;
+    if (runBtn) runBtn.disabled = false;
+    if (stopBtn) stopBtn.style.display = 'none';
+  }
+  // Live log card — same component the other campaigns use (v3RenderLogLine).
+  const logBody = document.getElementById('rsweep-logbody');
+  const logHead = document.getElementById('rsweep-loghead');
+  const logs = Array.isArray(s.logs) ? s.logs : [];
+  if (logBody) {
+    const lastN = logs.slice(-30);
+    logBody.innerHTML = lastN.length
+      ? lastN.map((l) => v3RenderLogLine(l)).join('')
+      : '<div class="vj-log-empty">Pick a sheet + account, then run a check — events stream here, one account at a time.</div>';
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+  if (logHead) {
+    logHead.textContent = s.running
+      ? `Live log · scanning ${s.currentProfile || '…'} · ${s.doneProfiles || 0}/${s.totalProfiles || 0} accounts`
+      : (logs.length ? `Live log · last ${Math.min(logs.length, 30)} events (finished)` : 'Live log');
+  }
+
+  // Per-account live status card (who's scanning / done / closed / errored).
+  rsweepRenderAccts(s);
+
+  const all = rsweepAll(s);
+  if (!_rsweepSel && all.length) _rsweepSel = all[0].threadId; // auto-select first
+  const list = document.getElementById('rsweep-list');
+  if (list) list.innerHTML =
+    `<div class="rsweep-grp">Campaign replies · ${camp.length}</div>` +
+    (camp.length ? camp.map(rsweepListItem).join('') : `<div class="rsweep-empty">None</div>`) +
+    `<div class="rsweep-grp">Unmatched · ${unm.length}</div>` +
+    (unm.length ? unm.map(rsweepListItem).join('') : `<div class="rsweep-empty">None</div>`);
+  const pane = document.getElementById('rsweep-pane');
+  if (pane) pane.innerHTML = rsweepPane(all.find((r) => r.threadId === _rsweepSel) || all[0] || null);
+}
+
+async function rsweepPoll() {
+  try {
+    const s = await fetch('/api/reply-sweep/status').then((r) => r.json());
+    rsweepRender(s);
+    if (!s.running && _rsweepTimer) { clearInterval(_rsweepTimer); _rsweepTimer = null; }
+  } catch (_) { /* transient */ }
+}
+
+async function rsweepStart() {
+  const dryRun = document.getElementById('rsweep-dryrun')?.checked !== false;
+  // Sheet: the panel's own field first, falling back to the global #sheet-url / running campaign.
+  const sheetUrl = (document.getElementById('rsweep-sheet')?.value?.trim())
+    || (document.getElementById('sheet-url')?.value?.trim()) || '';
+  // Accounts: checked boxes = sweep those; zero checked = all sender accounts in the sheet.
+  const boxes = Array.from(document.querySelectorAll('#rsweep-accounts .rsweep-acct-cb'));
+  const checked = boxes.filter((b) => b.checked).map((b) => b.value);
+  const profileIds = (checked.length && checked.length < boxes.length) ? checked : undefined;
+  if (!sheetUrl) { showCampaignToast('Paste the Google Sheet URL first', 3000); return; }
+  _rsweepSel = null; // re-select first reply of the new run
+  try {
+    const resp = await fetch('/api/reply-sweep/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheetUrl, profileIds, dryRun }),
+    });
+    if (!resp.ok) { const e = await resp.json().catch(() => ({})); showCampaignToast(e.error || 'Could not start reply sweep', 3500); return; }
+    if (_rsweepTimer) clearInterval(_rsweepTimer);
+    _rsweepTimer = setInterval(rsweepPoll, 700);
+    rsweepPoll();
+  } catch (e) { showCampaignToast(`Reply sweep failed: ${e.message}`, 3500); }
+}
+
+async function rsweepStop() { try { await fetch('/api/reply-sweep/stop', { method: 'POST' }); } catch (_) {} }
+
+// Populate the panel's sheet field + account dropdown when entering check_dms mode.
+// Sheet pre-fills from the global #sheet-url; accounts come from /api/profiles (same
+// source the LinkedIn Accounts section uses). Safe to call repeatedly.
+async function rsweepInitControls() {
+  const sheetField = document.getElementById('rsweep-sheet');
+  if (sheetField && !sheetField.value) {
+    const global = document.getElementById('sheet-url')?.value?.trim() || '';
+    if (global) sheetField.value = global;
+  }
+  await rsweepLoadAccounts();
+}
+
+let _rsweepAcctSheet = null; // sheet URL the list is currently populated for
+// Populate the multi-select account list with ONLY the accounts that have reply-eligible
+// leads in the chosen sheet (sheet-scoped + lead counts) — not all 400+ GoLogin profiles.
+// Pick one, some, or all; zero checked = sweep all.
+async function rsweepLoadAccounts() {
+  const listEl = document.getElementById('rsweep-accounts');
+  const countEl = document.getElementById('rsweep-acct-count');
+  if (!listEl) return;
+  const url = document.getElementById('rsweep-sheet')?.value?.trim() || '';
+  if (!url) {
+    listEl.innerHTML = '';
+    if (countEl) countEl.textContent = 'Paste a sheet URL to list accounts…';
+    _rsweepAcctSheet = null; rsweepUpdateAcctCount(); return;
+  }
+  if (url === _rsweepAcctSheet) return; // already populated for this sheet
+  if (countEl) countEl.textContent = 'Loading accounts…';
+  listEl.innerHTML = '';
+  try {
+    const res = await fetch(`/api/reply-sweep/accounts?sheetUrl=${encodeURIComponent(url)}`);
+    const data = await res.json();
+    const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+    if (!accounts.length) {
+      listEl.innerHTML = '';
+      if (countEl) countEl.textContent = 'No accounts with eligible leads in this sheet';
+      _rsweepAcctSheet = url; rsweepUpdateAcctCount(); return;
+    }
+    // Default: all checked (matches the old "All accounts" default).
+    listEl.innerHTML = accounts.map((a) => `
+      <label class="rsweep-acct-item">
+        <input type="checkbox" class="rsweep-acct-cb" value="${rsweepEsc(a.id)}" checked />
+        <span class="rsweep-acct-nm">${rsweepEsc(a.name)}</span>
+        <span class="rsweep-acct-ct">${a.leadCount} lead${a.leadCount === 1 ? '' : 's'}</span>
+      </label>`).join('');
+    _rsweepAcctSheet = url;
+    // Wire each checkbox to refresh the count label + CTA.
+    listEl.querySelectorAll('.rsweep-acct-cb').forEach((cb) => cb.addEventListener('change', rsweepUpdateAcctCount));
+    rsweepUpdateAcctCount();
+  } catch (_) {
+    listEl.innerHTML = '';
+    if (countEl) countEl.textContent = 'Could not load accounts — check the sheet URL';
+    _rsweepAcctSheet = null; rsweepUpdateAcctCount();
+  }
+}
+
+// Reflect the current checkbox selection in the header count + the CTA label.
+function rsweepUpdateAcctCount() {
+  const boxes = Array.from(document.querySelectorAll('#rsweep-accounts .rsweep-acct-cb'));
+  const checked = boxes.filter((b) => b.checked);
+  const countEl = document.getElementById('rsweep-acct-count');
+  const runBtn = document.getElementById('rsweep-run');
+  if (countEl && boxes.length) countEl.textContent = `${checked.length} of ${boxes.length} selected`;
+  if (runBtn) {
+    const n = checked.length || boxes.length; // zero checked = all
+    runBtn.textContent = boxes.length ? `Check replies · ${n} account${n === 1 ? '' : 's'}` : 'Check replies now';
+  }
+}
+
+// Render the per-account live status card from status.perProfile[].
+function rsweepRenderAccts(s) {
+  const card = document.getElementById('rsweep-acctcard');
+  const rowsEl = document.getElementById('rsweep-acctrows');
+  const sumEl = document.getElementById('rsweep-acctsum');
+  if (!card || !rowsEl) return;
+  const accts = Array.isArray(s.perProfile) ? s.perProfile : [];
+  if (!accts.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const cell = (a) => {
+    const st = a.status || 'waiting';
+    if (st === 'running') return { ico: '<span class="acct-spin"></span>', cls: 's-scan', txt: 'scanning inbox…' };
+    if (st === 'error')   return { ico: '✕', cls: 's-err', txt: `error — ${a.error || 'failed'}` };
+    if (st === 'skipped') return { ico: '⊘', cls: 's-wait', txt: a.error === 'stopped' ? 'stopped' : 'skipped' };
+    if (st === 'done') {
+      const r = a.replies || 0;
+      return { ico: '✓', cls: a.closed ? 's-closed' : 's-done', txt: `${a.closed ? 'closed · ' : ''}${r} repl${r === 1 ? 'y' : 'ies'}` };
+    }
+    return { ico: '<span class="acct-dot"></span>', cls: 's-wait', txt: 'waiting' };
+  };
+  rowsEl.innerHTML = accts.map((a) => {
+    const c = cell(a);
+    return `<div class="acct-row"><span class="acct-ico">${c.ico}</span>`
+      + `<span class="acct-name">${rsweepEsc(a.profileName || '')}</span>`
+      + `<span class="acct-state ${c.cls}">${rsweepEsc(c.txt)}</span></div>`;
+  }).join('');
+  const done = accts.filter((a) => a.status === 'done' || a.status === 'error' || a.status === 'skipped').length;
+  const scanning = accts.filter((a) => a.status === 'running').length;
+  if (sumEl) sumEl.textContent = `${done} / ${accts.length} done${scanning ? ` · ${scanning} scanning` : ''}`;
+}
+
+function rsweepBind() {
+  const run = document.getElementById('rsweep-run');
+  const stop = document.getElementById('rsweep-stop');
+  const list = document.getElementById('rsweep-list');
+  const copy = document.getElementById('rsweep-copy');
+  const sheet = document.getElementById('rsweep-sheet');
+  if (sheet && !sheet._rsweepBound) {
+    sheet._rsweepBound = true;
+    let _t;
+    sheet.addEventListener('input', () => { clearTimeout(_t); _t = setTimeout(() => { rsweepLoadAccounts(); }, 600); });
+  }
+  if (run && !run._rsweepBound) { run._rsweepBound = true; run.addEventListener('click', rsweepStart); }
+  if (stop && !stop._rsweepBound) { stop._rsweepBound = true; stop.addEventListener('click', rsweepStop); }
+  const allBtn = document.getElementById('rsweep-acct-all');
+  const noneBtn = document.getElementById('rsweep-acct-none');
+  const setAll = (v) => { document.querySelectorAll('#rsweep-accounts .rsweep-acct-cb').forEach((cb) => { cb.checked = v; }); rsweepUpdateAcctCount(); };
+  if (allBtn && !allBtn._rsweepBound) { allBtn._rsweepBound = true; allBtn.addEventListener('click', () => setAll(true)); }
+  if (noneBtn && !noneBtn._rsweepBound) { noneBtn._rsweepBound = true; noneBtn.addEventListener('click', () => setAll(false)); }
+  if (copy && !copy._rsweepBound) {
+    copy._rsweepBound = true;
+    copy.addEventListener('click', async () => {
+      const logs = (_rsweepLast && Array.isArray(_rsweepLast.logs)) ? _rsweepLast.logs : [];
+      try { await navigator.clipboard.writeText(logs.join('\n')); showCampaignToast('Log copied', 1500); }
+      catch (_) { /* clipboard blocked — ignore */ }
+    });
+  }
+  if (list && !list._rsweepBound) {
+    list._rsweepBound = true;
+    list.addEventListener('click', (e) => {           // pick a reply → read pane
+      const item = e.target.closest('.rsweep-item');
+      if (!item || !_rsweepLast) return;
+      _rsweepSel = item.getAttribute('data-tid');
+      rsweepRender(_rsweepLast);
+    });
+  }
+  const pane = document.getElementById('rsweep-pane');
+  if (pane && !pane._rsweepBound) {
+    pane._rsweepBound = true;
+    pane.addEventListener('click', (e) => {            // open thread in sender's GoLogin browser
+      const btn = e.target.closest('[data-rsweep-open]');
+      if (btn) { e.preventDefault(); rsweepOpenThread(btn); }
+    });
+  }
+}
+document.addEventListener('DOMContentLoaded', rsweepBind);
+if (document.readyState !== 'loading') rsweepBind();
+window.rsweepStart = rsweepStart;
+window.rsweepStop = rsweepStop;

@@ -43,12 +43,13 @@ import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { primaryKeyFromUrl, loadPrimaryStatus } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
+import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, stopCloudCampaign } from './src/campaigns-client.js';
 import { spreadsheetIdFromUrl, extractSheetGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile } from './src/gologin-launcher.js';
+import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile } from './src/gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes } from './public/js/campaign-modes.mjs';
 import { validatePrimaryUrl } from './public/js/primary-url-validation.mjs';
@@ -1916,6 +1917,234 @@ app.post('/api/fg/team-launch/start', async (req, res) => {
   })();
 });
 
+// ── Manual bulk reply sweep ──────────────────────────────────────────────────
+// One-button, observable inbox sweep. Mirrors the FG team-launch streaming
+// pattern: sequential per-profile scan, isolated per-profile errors, force-close
+// on stop. Preview-only unless the operator turns dry-run OFF.
+let _replySweep = makeInitialSweepStatus([], true);
+_replySweep.running = false; _replySweep.phase = 'idle';
+let _replySweepAbort = false;
+let _replySweepHandle = null;
+
+// Reply-sweep eligibility is BROADER than the DM-only CHECK_DMS_STAGE_FILTER:
+// anyone we've actually engaged can reply, including connection campaigns (Stage
+// "Connected", "Introduction Made", …). Exclude only leads that can't have replied
+// — still-pending connects, skipped rows, and blanks. Shared by /start + /accounts.
+function replyEligibleRows(rows) {
+  const hasStageSchema = rows.length > 0 && ('Stage' in rows[0]);
+  return rows.filter((row) => {
+    if (hasStageSchema) {
+      const stage = String(row.Stage || '').trim();
+      if (!stage) return false;
+      if (/^Skipped/i.test(stage)) return false;
+      if (/^Connect Pending$/i.test(stage)) return false;
+      return true;
+    }
+    return String(row.Message || '').trim().toLowerCase() === 'sent';
+  });
+}
+
+app.get('/api/reply-sweep/status', (_req, res) => res.json(_replySweep));
+
+// The accounts that actually have reply-eligible leads in a given sheet — so the UI
+// can offer a SHORT, sheet-scoped account picker instead of all GoLogin profiles.
+app.get('/api/reply-sweep/accounts', async (req, res) => {
+  const sheetUrl = req.query.sheetUrl;
+  if (!sheetUrl) return res.json({ accounts: [] });
+  let rows;
+  try { rows = await fetchSheet(sheetUrl); }
+  catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}`, accounts: [] }); }
+  let nameToId = {}; const nameById = new Map();
+  try {
+    const allProfiles = await getProfiles(process.env.GOLOGIN_API_TOKEN);
+    for (const p of allProfiles) { nameToId[(p.name || '').toLowerCase()] = p.id; nameById.set(p.id, p.name || p.id); }
+  } catch { /* fall back to sender string as id */ }
+  const byAcct = new Map();
+  for (const row of replyEligibleRows(rows)) {
+    const acct = String(row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').trim();
+    if (!acct) continue;
+    const pid = nameToId[acct.toLowerCase()] || acct;
+    byAcct.set(pid, (byAcct.get(pid) || 0) + 1);
+  }
+  const accounts = [...byAcct.entries()]
+    .map(([id, leadCount]) => ({ id, name: nameById.get(id) || id, leadCount }))
+    .sort((a, b) => b.leadCount - a.leadCount);
+  res.json({ accounts });
+});
+
+app.post('/api/reply-sweep/stop', async (_req, res) => {
+  _replySweepAbort = true;
+  const h = _replySweepHandle; _replySweepHandle = null;
+  try { if (h && typeof h.close === 'function') await h.close(); } catch (_) {}
+  res.json({ ok: true });
+});
+
+// Open a reply's thread in the SENDER's own GoLogin browser (not the system
+// browser) so the operator reads/replies as the right account. Launches the
+// profile if needed and navigates it to the conversation; leaves it open for
+// the operator to act in. Refuses while a sweep is mid-run (it owns the browsers).
+app.post('/api/reply-sweep/open-thread', async (req, res) => {
+  if (_replySweep.running) return res.status(409).json({ error: 'Reply sweep is running — wait for it to finish.' });
+  const b = req.body || {};
+  const profileId = b.profileId;
+  const threadId = b.threadId;
+  const fallbackUrl = b.profileUrl || '';
+  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  const url = threadId
+    ? `https://www.linkedin.com/messaging/thread/${encodeURIComponent(threadId)}/`
+    : fallbackUrl;
+  if (!url) return res.status(400).json({ error: 'threadId or profileUrl required' });
+  try {
+    const token = process.env.GOLOGIN_API_TOKEN;
+    const isLocal = profileId === 'local-browser';
+    const existingPid = getProfilePid(profileId);
+    if (existingPid) {
+      // Already open (operator-opened or focus-existing) — bring it onscreen.
+      // We don't hold its page handle, so we can't navigate it programmatically.
+      if (process.platform === 'darwin') { try { await unhideByPids([existingPid]); } catch (_) {} }
+      return res.json({ ok: true, action: 'focused-existing', pid: existingPid, url });
+    }
+    const launched = isLocal ? await launchLocalBrowser() : await launchProfile(profileId, token);
+    try { await launched.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 }); } catch (_) {}
+    const newPid = getProfilePid(profileId);
+    if (process.platform === 'darwin' && newPid) { try { await unhideByPids([newPid]); } catch (_) {} }
+    res.json({ ok: true, action: 'launched', pid: newPid, url });
+  } catch (err) {
+    console.error(`[reply-sweep open-thread] ${profileId}: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/reply-sweep/start', async (req, res) => {
+  if (_replySweep.running) return res.status(409).json({ error: 'A reply sweep is already running.' });
+  const b = req.body || {};
+  let { sheetUrl, linkedinColumn, profileIds } = b;
+  const dryRun = b.dryRun !== false; // default ON (preview-only) unless explicitly false
+  if (!sheetUrl && campaign.running && campaign.sheetUrl) {
+    sheetUrl = campaign.sheetUrl;
+    linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
+  }
+  if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+  linkedinColumn = linkedinColumn || 'Linkedin URL';
+
+  // Load + group sent rows by sender (same grouping as /api/reply-check-now).
+  const token = process.env.GOLOGIN_API_TOKEN;
+  let rows;
+  try { rows = await fetchSheet(sheetUrl); }
+  catch (err) { return res.status(400).json({ error: `Could not load sheet: ${err.message}` }); }
+
+  let nameByProfileId = new Map();
+  let nameToId = {};
+  try {
+    const allProfiles = await getProfiles(token);
+    nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
+    for (const p of allProfiles) nameToId[(p.name || '').toLowerCase()] = p.id;
+  } catch { /* fall back to id-as-name */ }
+
+  const candidateRows = replyEligibleRows(rows);
+
+  const wanted = Array.isArray(profileIds) && profileIds.length ? profileIds.slice() : null;
+  const leadsByProfile = new Map();
+  for (const row of candidateRows) {
+    const acct = String(row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').trim();
+    if (!acct) continue;
+    const pid = nameToId[acct.toLowerCase()] || acct;
+    if (wanted && !wanted.includes(pid)) continue;
+    if (!leadsByProfile.has(pid)) leadsByProfile.set(pid, []);
+    leadsByProfile.get(pid).push(row);
+  }
+
+  const pids = [...leadsByProfile.keys()];
+  const names = pids.map((pid) => nameByProfileId.get(pid) || pid);
+  res.json({ started: true, profiles: names.length });
+
+  _replySweep = makeInitialSweepStatus(names, dryRun);
+  _replySweepAbort = false;
+
+  // Scan window: campaign first send-out − 12h, else 14 days back.
+  const startMs = campaign.startedAt ? Date.parse(campaign.startedAt) : NaN;
+  const watermark = (Number.isFinite(startMs) ? startMs : (Date.now() - 14 * 86400000)) - 12 * 60 * 60 * 1000;
+  const stamp = (m) => { _replySweep.logs.push(`[${new Date().toISOString()}] ${m}`); if (_replySweep.logs.length > 200) _replySweep.logs.shift(); try { campaignLog(`[reply-sweep] ${m}`); } catch (_) {} };
+
+  (async () => {
+    setBulkCheckInProgress(true);
+    preventSleep('reply-sweep');
+    try {
+      stamp(`▶ Reply sweep started · ${pids.length} account(s) · ${dryRun ? 'preview only' : 'WRITE-BACK ON'}`);
+      const launchedPids = new Set();   // profiles WE opened this sweep (for the close safety net)
+      for (let i = 0; i < pids.length; i++) {
+        const pid = pids[i];
+        const slot = _replySweep.perProfile[i];
+        const pName = names[i];
+        if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); continue; }
+        _replySweep.currentProfile = pName;
+        slot.status = 'running';
+        const wasRunning = !!getProfilePid(pid);
+        const isLocal = pid === 'local-browser';
+        let launched = null, handle = null;
+        try {
+          stamp(`📬 [${pName}] Scanning inbox…`);
+          launched = isLocal ? await launchLocalBrowser() : await launchProfile(pid, token);
+          if (!isLocal) launchedPids.add(pid);
+          handle = { close: async () => { try { await (isLocal ? closeLocalBrowser() : closeProfile(pid)); } catch (_) {} } };
+          _replySweepHandle = handle;
+
+          const out = await sweepProfileInbox({
+            page: launched.page, sheetUrl, linkedinColumn,
+            candidateRows: leadsByProfile.get(pid), watermark, log: stamp,
+          });
+          if (out.error) { slot.status = 'error'; slot.error = out.error; stamp(`⚠ [${pName}] ${out.error}`); }
+          else {
+            slot.replies = out.campaignReplies.length;
+            slot.unmatched = out.unmatched.length;
+            slot.status = 'done';
+            for (const r of out.campaignReplies) _replySweep.campaignReplies.push({ ...r, account: pName, accountPid: pid });
+            for (const u of out.unmatched) _replySweep.unmatched.push({ ...u, account: pName, accountPid: pid });
+            stamp(`📬 [${pName}] ${out.campaignReplies.length} reply(ies), ${out.unmatched.length} unmatched · ${out.conversationsScanned} scanned`);
+
+            if (!dryRun && out.campaignReplies.length) {
+              const wb = await applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignReplies: out.campaignReplies });
+              _replySweep.wrote += wb.wrote;
+              stamp(`✍ [${pName}] wrote ${wb.wrote}, skipped ${wb.skipped}${wb.errors.length ? `, ${wb.errors.length} error(s)` : ''}`);
+            }
+          }
+        } catch (err) {
+          if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); }
+          else { slot.status = 'error'; slot.error = err.message; stamp(`✗ [${pName}] ${err.message}`); }
+        } finally {
+          _replySweepHandle = null;
+          // Always close what WE opened (sweep only runs when no campaign is active,
+          // so wasRunning should be false; we still respect an operator-opened browser).
+          if (!wasRunning && handle) {
+            stamp(`⏏ [${pName}] Closing browser…`);
+            try { await handle.close(); } catch (_) {}
+            if (!isLocal) {
+              await new Promise((r) => setTimeout(r, 1500));   // let kill/SIGKILL settle
+              if (getProfilePid(pid)) { try { await closeProfile(pid); } catch (_) {} }
+              if (!getProfilePid(pid)) launchedPids.delete(pid);
+            }
+            slot.closed = true;
+            stamp(`✓ [${pName}] Closed`);
+          }
+          _replySweep.doneProfiles++;
+        }
+      }
+      // Safety net: force-close any profile we opened that somehow survived its finally.
+      for (const pid of launchedPids) {
+        if (getProfilePid(pid)) { stamp(`⏏ Safety close — ${nameByProfileId.get(pid) || pid}`); try { await closeProfile(pid); } catch (_) {} }
+      }
+      _replySweep.phase = 'done';
+      stamp(`■ Reply sweep complete — ${_replySweep.campaignReplies.length} reply(ies), ${_replySweep.unmatched.length} unmatched${dryRun ? '' : `, ${_replySweep.wrote} written`}`);
+    } catch (err) {
+      _replySweep.phase = 'error'; _replySweep.error = err.message; stamp(`✗ Fatal — ${err.message}`);
+    } finally {
+      _replySweep.running = false; _replySweep.currentProfile = null;
+      setBulkCheckInProgress(false);
+      try { allowSleep(); } catch (_) {}
+    }
+  })();
+});
+
 // v2.59.x — Atomic full-order reorder for drag-and-drop in the dashboard.
 // Body: { ids: ["q_xxx", "q_yyy", ...] } in the desired new order. Validates
 // the ids match the current queue exactly so a concurrent pop/cancel can't
@@ -3204,9 +3433,16 @@ app.post('/api/reply-check-now', async (req, res) => {
     }
 
     const perProfile = [];
+    const replyItems = [];   // unified found replies for the card strip
     let totalReplies = 0;
+    // Scan the Sales Nav inbox too when this is a MESSAGING campaign (OP / InMail /
+    // message-only) whose Sending Method used Sales Nav (opChannel ≠ ln_only).
+    // CC+IC / ICB / CC+DM are LinkedIn-connection flows → regular inbox only.
+    const _MESSAGING_MODES = new Set(['open_profile_only', 'inmail_only', 'message_only']);
+    const _opChannel = String(campaign.templates?.opChannel || 'sn_first');
+    const wantSalesNav = _MESSAGING_MODES.has(String(campaign.mode || '')) && _opChannel !== 'ln_only';
     setBulkCheckInProgress(true);
-    campaignLog(`📬 Manual reply check — scanning ${leadsByProfile.size} account(s) for replies…`);
+    campaignLog(`📬 Manual reply check — scanning ${leadsByProfile.size} account(s) for replies${wantSalesNav ? ' (incl. Sales Navigator)' : ''}…`);
     try {
       for (const [pid, leads] of leadsByProfile.entries()) {
         const pName = nameByProfileId.get(pid) || pid;
@@ -3242,7 +3478,37 @@ app.post('/api/reply-check-now', async (req, res) => {
           try { await writeRecentMessagesTab(sheetUrl, pName, result.recentMessages || [], []); }
           catch (e) { campaignLog(`⚠ [${pName}] Recent Messages write failed: ${e.message}`); }
           campaignLog(`📬 [${pName}] ${result.inboundCount} reply(ies)${result.suspectedCount ? `, ${result.suspectedCount} suspected (ambiguous name)` : ''} found [${result.method}].`);
-          perProfile.push({ profileId: pid, profileName: pName, replies: result.inboundCount, suspected: result.suspectedCount });
+          for (const m of (result.recentMessages || [])) {
+            if (m.matched === false) continue;
+            replyItems.push({ leadName: m.name || '', account: pName, accountPid: pid, snippet: String(m.lastMessage || '').slice(0, 160), fullText: String(m.lastMessage || ''), threadId: '', profileUrl: '', channel: 'dm' });
+          }
+          let snReplies = 0;
+          // Sales Nav pass — OPs/InMails reply here, not in the regular inbox.
+          // Reuse this profile's already-open page; failures are non-fatal.
+          if (wantSalesNav) {
+            try {
+              campaignLog(`🧭 [${pName}] Scanning Sales Navigator inbox (OP / InMail)…`);
+              const sn = await loadSalesNavConversations(launched.page, { watermark: _replyWatermark });
+              if (sn.error) {
+                campaignLog(`⚠ [${pName}] Sales Nav skipped — ${sn.error}`);
+              } else {
+                const { campaignReplies } = classifyConversations(sn.convs, leads, linkedinColumn || 'Linkedin URL');
+                snReplies = campaignReplies.length;
+                for (const r of campaignReplies) {
+                  replyItems.push({ leadName: r.leadName || '', account: pName, accountPid: pid, snippet: r.snippet || '', fullText: r.fullText || r.snippet || '', threadId: r.threadId || '', profileUrl: r.profileUrl || '', channel: 'salesnav' });
+                }
+                if (snReplies) {
+                  try {
+                    const wb = await applyReplyWriteBack({ sheetUrl, linkedinColumn: linkedinColumn || 'Linkedin URL', campaignReplies });
+                    campaignLog(`✍ [${pName}] Sales Nav wrote ${wb.wrote}, skipped ${wb.skipped}`);
+                  } catch (wbErr) { campaignLog(`⚠ [${pName}] Sales Nav write-back failed: ${wbErr.message}`); }
+                }
+                campaignLog(`🧭 [${pName}] ${snReplies} OP/InMail reply(ies) found [salesnav · ${sn.convs.length} scanned].`);
+              }
+            } catch (snErr) { campaignLog(`⚠ [${pName}] Sales Nav reply check threw: ${snErr.message}`); }
+          }
+          totalReplies += snReplies;
+          perProfile.push({ profileId: pid, profileName: pName, replies: result.inboundCount + snReplies, suspected: result.suspectedCount });
         } catch (err) {
           campaignLog(`⚠ [${pName}] Reply check threw: ${err.message}`);
           perProfile.push({ profileId: pid, profileName: pName, error: err.message });
@@ -3255,7 +3521,7 @@ app.post('/api/reply-check-now', async (req, res) => {
       setBulkCheckInProgress(false);
     }
 
-    res.json({ ok: true, profilesChecked: leadsByProfile.size, repliesFound: totalReplies, perProfile, autoPaused: _weShouldAutoResume });
+    res.json({ ok: true, profilesChecked: leadsByProfile.size, repliesFound: totalReplies, perProfile, replies: replyItems, autoPaused: _weShouldAutoResume });
   } catch (err) {
     res.status(500).json({ error: err.message });
   } finally {

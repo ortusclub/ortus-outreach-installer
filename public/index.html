@@ -339,6 +339,15 @@
             <div class="vj-bulk-hint" id="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
           </div>
         </div>
+        <!-- Reply strip (sketch 3) — found replies from the last reply check,
+             full width under the live log. Populated by renderReplyStrip(). -->
+        <div class="vj-replystrip" id="active-replystrip" hidden>
+          <div class="vj-rs-head">
+            <span class="vj-rs-title">Replies</span>
+            <span class="vj-rs-sum" id="active-rs-sum"></span>
+          </div>
+          <div class="vj-rs-list" id="active-rs-list"></div>
+        </div>
       </section>
 
       <!-- ── Replies (v2.72) — inbound replies found by the hourly check ── -->
@@ -2205,6 +2214,61 @@
       </div>
     </div>
 
+    <!-- Check DMs mode — A3 reply-check split view. Shown only when mode === 'check_dms'. -->
+    <div class="section" id="reply-sweep-panel" style="display:none">
+      <!-- Vertical setup card (sketch 1): sheet → accounts → footer. -->
+      <div class="rsweep-setup">
+        <div class="rsweep-field">
+          <span class="rsweep-flabel">Google Sheet</span>
+          <input type="text" id="rsweep-sheet" class="rsweep-sheet-input" placeholder="Paste the Google Sheet URL…" />
+        </div>
+        <div class="rsweep-field">
+          <span class="rsweep-flabel">Accounts to sweep
+            <span class="rsweep-acct-pickacts">
+              <button type="button" id="rsweep-acct-all">Select all</button>
+              <button type="button" id="rsweep-acct-none">None</button>
+            </span>
+          </span>
+          <!-- Multi-select account picker: pick one, some, or all accounts to sweep. -->
+          <div class="rsweep-acct-pick" id="rsweep-acct-pick" title="Which accounts' inboxes to read">
+            <div class="rsweep-acct-pickhead">
+              <span id="rsweep-acct-count">Paste a sheet URL to list accounts…</span>
+            </div>
+            <div class="rsweep-acct-list" id="rsweep-accounts"></div>
+          </div>
+        </div>
+        <div class="rsweep-footer">
+          <label class="rsweep-dry" title="When on, the sweep only previews replies — it never writes to the sheet.">
+            <input type="checkbox" id="rsweep-dryrun" checked />
+            <span class="rsweep-dry-label">Preview only — don't write to the sheet</span>
+          </label>
+          <span class="rsweep-spacer"></span>
+          <span class="rsweep-eyebrow" id="rsweep-eyebrow" style="display:none"></span>
+          <button class="rsweep-cta" id="rsweep-run">Check replies now</button>
+          <button class="rsweep-stop" id="rsweep-stop" style="display:none">Stop now</button>
+        </div>
+      </div>
+      <div class="acct-card" id="rsweep-acctcard" style="display:none">
+        <div class="acct-head"><span class="acct-head-t">Accounts</span><span class="acct-head-p" id="rsweep-acctsum"></span></div>
+        <div id="rsweep-acctrows"></div>
+      </div>
+      <div class="vj-details rsweep-logcard">
+        <div>
+          <div class="vj-log-head">
+            <span class="vj-details-head" id="rsweep-loghead">Live log</span>
+            <span class="vj-log-acts">
+              <button type="button" class="vj-log-act" id="rsweep-copy" title="Copy the full log to your clipboard">Copy all</button>
+            </span>
+          </div>
+          <div class="vj-log" id="rsweep-logbody"><div class="vj-log-empty">Pick a sheet + account, then run a check — events stream here, one account at a time.</div></div>
+        </div>
+      </div>
+      <div class="rsweep-split">
+        <div class="rsweep-list" id="rsweep-list"><!-- grouped Campaign replies / Unmatched, rendered by JS --></div>
+        <div class="rsweep-pane" id="rsweep-pane"><div class="rsweep-empty">Run a check, then pick a reply to read it here.</div></div>
+      </div>
+    </div>
+
     <div class="section collapsible" id="nav-launch">
       <h2 class="section-toggle" onclick="toggleSection('nav-launch')"><span class="caret">▾</span> <span data-edit="h2-launch">6. Launch</span> <span class="section-summary" id="summary-launch"></span></h2>
       <div class="collapsible-body">
@@ -3116,7 +3180,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.133.0"></script>
+  <script type="module" src="/js/app.js?v=2.134.0"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
