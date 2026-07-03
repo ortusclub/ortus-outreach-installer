@@ -78,7 +78,8 @@ import { getFgState, queueFgInvites, markFgInvited, observeFgCredits, FG_DEFAULT
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
-import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL } from './src/sheets-webapp-url.js';
+import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
+import { resolveSoOEmail } from './src/soo-writer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1039,7 +1040,8 @@ async function runNextFromQueue() {
 app.post('/api/campaign/start-cloud', async (req, res) => {
   try {
     const body = req.body || {};
-    const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn } = body;
+    const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
+      delayMin, delayMax } = body;
     if (!isCloudMode(mode)) return res.status(400).json({ error: `Mode "${mode}" can't run in the cloud yet.` });
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (rejectIfNoOperatorEmail(res)) return;
@@ -1049,9 +1051,13 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     // account (routeAccount = GoLogin profile id). Other modes use the picker.
     const AUTO_ROUTED = new Set(['message_only', 'introduce_back', 'check_status']);
     const autoRouted = AUTO_ROUTED.has(mode);
+    // Profiles are fetched for ALL modes now (not just auto-routed): the engine
+    // needs an accountEmails map (profileId -> SoO email) so it can stamp SoO
+    // Needs-Login when a cloud session dies. Best-effort — [] on failure.
+    const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
+    const idToName = new Map((profs || []).map((p) => [p.id, String(p.name || '').trim()]));
     let nameToId = null;
     if (autoRouted) {
-      const profs = await getProfiles(process.env.GOLOGIN_API_TOKEN).catch(() => []);
       nameToId = new Map((profs || []).map((p) => [String(p.name || '').trim().toLowerCase(), p.id]));
     } else if (!profileIds?.length) {
       return res.status(400).json({ error: 'Select at least one GoLogin account.' });
@@ -1078,7 +1084,9 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
         routeAccount = nameToId.get(senderName(row).toLowerCase()) || '';
         if (!routeAccount) { skippedNoAccount.push(senderName(row) || '(blank)'); continue; }
       }
-      leads.push({ leadUrl, fullName, memberUrn: row['LinkedIn URN'] || row['Member ID'] || null, routeAccount });
+      // `row` = the FULL sheet row, so the engine personalizes templates against
+      // every column header exactly like a local campaign ({company}, {Event}, …).
+      leads.push({ leadUrl, fullName, memberUrn: row['LinkedIn URN'] || row['Member ID'] || null, routeAccount, row });
     }
     if (!leads.length) {
       const why = autoRouted && skippedNoAccount.length
@@ -1099,6 +1107,22 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       ? [...new Set(leads.map((l) => l.routeAccount).filter(Boolean))]
       : profileIds;
 
+    // accountEmails: profileId -> SoO Email, resolved with the same fuzzy
+    // matcher (+ skip-on-doubt) local flipSoOInUse uses. Lets the engine stamp
+    // SoO Needs-Login for a dead cloud session. Best-effort — {} on failure.
+    const accountEmails = {};
+    try {
+      const soo = await fetchSoOData();
+      const sooEmails = (((soo && soo.accounts) || []).map((a) => a && a.email).filter(Boolean));
+      for (const id of accounts) {
+        const label = idToName.get(id) || '';
+        if (!label) continue;
+        const r = resolveSoOEmail(label, sooEmails);
+        if (r && r.email) accountEmails[id] = r.email;
+        else if (r && r.ambiguous) campaignLog(`[cloud] SoO email ambiguous for "${label}" — skipped (no Needs-Login stamping for it)`);
+      }
+    } catch (e) { campaignLog(`[cloud] accountEmails skipped: ${e.message}`); }
+
     // Map the wizard's template names to the keys the engine modes read. The
     // wizard already uses engine-compatible names for most fields (connectionNote,
     // ccDmBody, primaryName/IntroBody/Url, introTitle, autoAccept/followUp*); the
@@ -1115,6 +1139,16 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
       // rows by this linkedin column — so cloud results land in the Sheet too.
       sheetsWebappUrl: SHEETS_WEBAPP_URL,
       linkedinColumn: linkedinColumn || 'LinkedIn URL',
+      // Ban-safety: randomized inter-send delay (seconds) the engine's worker
+      // waits between sends per account — same knob local campaigns use. The
+      // engine defaults to 30–60s (1–3s for check_status) when absent.
+      ...(Number.isFinite(Number(delayMin)) && Number(delayMin) > 0 ? { delayMin: Number(delayMin) } : {}),
+      ...(Number.isFinite(Number(delayMax)) && Number(delayMax) > 0 ? { delayMax: Number(delayMax) } : {}),
+      // SoO Needs-Login stamping: the engine matches accounts by email in the
+      // SoO sheet when a cloud session dies. Graceful no-op engine-side if empty.
+      accountEmails,
+      sooSheetId: SOO_SHEET_ID,
+      sooGid: SOO_SHEET_GID,
     };
     // Follower Growth needs the page invite URL + a monthly credit budget. The
     // operator can override the URL from the wizard; otherwise use the Ortus
