@@ -83,7 +83,7 @@ import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
 import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
-import { resolveSoOEmail } from './src/soo-writer.js';
+import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse } from './src/soo-writer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1148,6 +1148,55 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
         else if (r && r.ambiguous) campaignLog(`[cloud] SoO email ambiguous for "${label}" — skipped (no Needs-Login stamping for it)`);
       }
     } catch (e) { campaignLog(`[cloud] accountEmails skipped: ${e.message}`); }
+
+    // SoO "In Use" flip at DISPATCH. The engine has no SoO code, so the app does
+    // here what a local campaign does at its first send: flip each account's
+    // credit cell Available -> In Use and stamp the operator into the paired User
+    // column (write-once). resolveSoOTarget returns null for message_only /
+    // introduce_back / follower_growth / check_status — so those flip nothing,
+    // identical to local. Best-effort: a SoO failure NEVER blocks the dispatch.
+    // Reuses accountEmails (already fuzzily resolved, skip-on-doubt) so an
+    // ambiguous GoLogin label is left untouched rather than reserving the wrong
+    // person's account.
+    const flipAction = ({
+      connect_only: 'connection_sent',
+      connect_and_introduce: 'connection_sent',
+      connect_and_message: 'connection_sent',
+      inmail_only: 'inmail_sent',
+      open_profile_only: 'message_sent',
+    })[mode] || '';
+    const flipTarget = flipAction ? resolveSoOTarget(mode, flipAction) : null;
+    if (flipTarget) {
+      const stampEmail = resolveOperatorStamp({
+        perMachineEmail: getOperatorEmail(),
+        loginEmail: req.user || '',
+      });
+      for (const id of accounts) {
+        const label = idToName.get(id) || id;
+        const email = accountEmails[id];
+        if (!email) { campaignLog(`[cloud] SoO In-Use skipped for "${label}" — no unambiguous SoO email.`); continue; }
+        try {
+          const r = await flipAccountInUse({
+            email,
+            creditHeader: flipTarget.creditHeader,
+            userHeader: flipTarget.userHeader,
+            operatorEmail: stampEmail,
+          });
+          if (r && r.ok && r.matched && r.written && r.written.length) {
+            campaignLog(`[cloud] SoO: ${label} → ${flipTarget.creditHeader} = In Use (${stampEmail || '—'}).`);
+          } else if (r && r.ok && r.matched) {
+            const why = (Array.isArray(r.skipped) && r.skipped.length) ? r.skipped.join('; ') : `${flipTarget.creditHeader} not Available`;
+            campaignLog(`[cloud] SoO: ${label} not flipped — ${why}.`);
+          } else if (r && r.disabled) {
+            campaignLog(`[cloud] SoO: write-back OFF (ORTUS_SOO_WRITEBACK) — ${label} left as-is.`);
+          } else if (r && r.ok && r.matched === false) {
+            campaignLog(`[cloud] SoO: no row matched "${label}" (${email}) — nothing flipped.`);
+          } else {
+            campaignLog(`[cloud] SoO: ${label} flip failed — ${(r && r.error) || 'unknown'}.`);
+          }
+        } catch (e) { campaignLog(`[cloud] SoO In-Use flip error for "${label}": ${e.message}`); }
+      }
+    }
 
     // Map the wizard's template names to the keys the engine modes read. The
     // wizard already uses engine-compatible names for most fields (connectionNote,
