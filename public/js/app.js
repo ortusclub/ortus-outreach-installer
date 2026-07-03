@@ -5319,7 +5319,103 @@ function refreshCloudToggle() {
 // ─── Cloud Campaigns panel ──────────────────────────────────────────────────
 let _cloudPollTimer = null;
 
-// Render the list of cloud campaigns (with live lead counts) into the panel.
+// Cloud campaigns render as the SAME Sales-Nav-queue board (sn-strip cards,
+// Now-running / Up-next / Done rails) — the board already handles many running
+// in parallel, which is exactly what the VM does. We reuse the sn-strip markup
+// (its expand/collapse + tab handlers are document-level delegation, so cloud
+// strips get them for free); Stop/Open/dismiss are cloud-specific onclicks.
+const CLOUD_MODE_LABELS = {
+  connect_only: 'Connect Only', connect_and_introduce: 'Connect + Introduce',
+  connect_and_message: 'Connect + DM', message_only: 'Direct Messages',
+  introduce_back: 'Introduction', follower_growth: 'Follower Growth',
+  inmail_only: 'InMail', open_profile_only: 'Message', check_status: 'Check Status',
+};
+const CLOUD_MODE_BADGES = {
+  connect_only: 'CC', connect_and_introduce: 'C+I', connect_and_message: 'C+D',
+  message_only: 'DM', introduce_back: 'IB', follower_growth: 'FG',
+  inmail_only: 'IM', open_profile_only: 'OP', check_status: 'CS',
+};
+const _cloudModeLabel = (m) => CLOUD_MODE_LABELS[m] || m || '';
+const _cloudBadge = (m) => CLOUD_MODE_BADGES[m] || (typeof v3ModeBadge === 'function' ? v3ModeBadge(m) : '—');
+
+// Cloud "done" strips the operator hid from THEIR board (local-only, mirrors the
+// scrape board's _snDismissed). Persisted so dismissals survive reloads.
+const _cloudDismissed = new Set((() => {
+  try { return JSON.parse(localStorage.getItem('cloudDismissedDone') || '[]'); } catch (_) { return []; }
+})());
+function _cloudSaveDismissed() {
+  try { localStorage.setItem('cloudDismissedDone', JSON.stringify([..._cloudDismissed])); } catch (_) { /* */ }
+}
+// Sheet URLs stashed per campaign (from the detail fetch) so "Open" can jump to
+// the source Google Sheet.
+const _cloudSheetUrls = new Map();
+
+// Adapt one cloud campaign ({campaign, leadCounts}) into an sn-strip.
+function renderCloudStrip(c, lc) {
+  const status = c.status || '';
+  const isQueued = status === 'pending' || status === 'queued';
+  const isRunning = status === 'running';
+  const isDone = ['done', 'cancelled', 'error'].includes(status);
+  const isBad = status === 'error' || status === 'cancelled';
+  const isFG = c.mode === 'follower_growth';
+  const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
+  const owner = c.owner || 'unknown';
+  const total = Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0);
+  const sent = Number(lc.sent || 0);
+  const accounts = (c.profile_ids || c.profileIds || []).length;
+  const collapsed = isQueued ? true : !_snExpanded.has(c.id);
+  const badge = _cloudBadge(c.mode);
+  const acctWord = accounts === 1 ? 'account' : 'accounts';
+
+  const flow = isFG
+    ? `<b>${total || '—'} invites</b> → <b>${accounts || 1} account${(accounts || 1) === 1 ? '' : 's'}</b> → page · Follower Growth`
+    : `<b>${total} leads</b> → <b>${accounts} ${acctWord}</b> → feeds <b>${escHtml(c.name || '')}</b> · ${escHtml(_cloudModeLabel(c.mode))}`;
+
+  const statusTxt = isQueued ? 'Queued'
+    : isRunning ? (isFG ? 'Inviting' : 'Running')
+    : isBad ? (status === 'cancelled' ? 'Cancelled' : 'Error')
+    : 'Done';
+  const dot = isBad ? '<span class="dot red"></span>'
+    : isRunning ? '<span class="dot run"></span>'
+    : isQueued ? '<span class="dot q"></span>'
+    : '<span class="dot mon"></span>';
+
+  const progLine = isRunning
+    ? `<div class="sn-progtxt"><b>${sent}</b> of ${total} ${isFG ? 'invites' : 'sent'}`
+      + `${lc.claimed ? ` · ${lc.claimed} in flight` : ''}${lc.error ? ` · ${lc.error} error` : ''}</div>`
+    : '';
+
+  // Expandable Log / Counts pane (running + done only; queued stays slim). The
+  // Log pane is a placeholder until the engine's per-lead endpoint is deployed.
+  const expandBtn = isQueued ? ''
+    : `<button class="sn-collapse sn-expand" title="Expand / collapse"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>`;
+  const countsHtml = Object.entries(lc).map(([k, v]) => `${escHtml(k)}: <b style="color:var(--ink)">${v}</b>`).join(' · ') || 'no leads';
+  const switchBlock = isQueued ? '' : `
+    <div class="sn-switch">
+      <div class="sn-switchtabs"><span class="sn-st on" data-t="log">Log</span><span class="sn-st" data-t="counts">Counts</span></div>
+      <div class="sn-pane on" data-p="log"><div class="sn-logbox">Per-lead live log lands here once the engine's per-lead endpoint is deployed.
+Status so far: <span class="ok">${sent}/${total} ${isFG ? 'invites' : 'sent'}</span>.</div></div>
+      <div class="sn-pane" data-p="counts"><div style="font-size:12px;color:var(--gray);padding:4px 0">${countsHtml}</div></div>
+    </div>`;
+
+  const stopBtn = (isRunning || isQueued) ? `<button class="mini" onclick="stopCloudCampaignUI('${escHtml(c.id)}')">Stop</button>` : '';
+  const openBtn = `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(c.id)}')">Open</button>`;
+  const dismissBtn = isDone ? `<button class="mini sn-dismiss-cloud" onclick="dismissCloudDone('${escHtml(c.id)}', this)" title="Hide from your board">✕</button>` : '';
+
+  return `
+  <div class="sn-strip ${mine ? 'mine' : ''} ${isRunning ? 'run' : ''} ${isQueued ? 'queued' : ''} ${collapsed ? 'sn-collapsed' : ''} ${isDone ? 'done' : ''} ${isBad ? 'stopped' : ''}" data-cid="${escHtml(c.id)}">
+    ${expandBtn}
+    <div class="sn-top"><span class="sn-type">Cloud Campaign · ${escHtml(badge)}</span>${mine ? '<span class="sn-you">You</span>' : `<span class="sn-owner">· ${escHtml(owner)}</span>`}
+      <span class="sn-status">${dot} ${escHtml(statusTxt)}</span></div>
+    <div class="sn-name">${escHtml(c.name || '')}</div>
+    <div class="sn-flow">${flow}</div>
+    ${progLine}
+    ${switchBlock}
+    <div class="sn-foot"><div class="right">${dismissBtn}${stopBtn}${openBtn}</div></div>
+  </div>`;
+}
+
+// Render the cloud campaigns as an sn-board (Now running / Up next / Done rails).
 async function renderCloudCampaigns() {
   const list = document.getElementById('cloud-campaigns-list');
   if (!list) return;
@@ -5333,7 +5429,7 @@ async function renderCloudCampaigns() {
   }
   if (data.error) { list.innerHTML = `<p class="empty-state">${escHtml(data.error)}</p>`; return; }
   const campaigns = data.campaigns || [];
-  if (!campaigns.length) { list.innerHTML = `<p class="empty-state">No cloud campaigns yet.</p>`; return; }
+  if (!campaigns.length) { list.innerHTML = `<div class="sn-empty">No cloud campaigns yet.</div>`; return; }
 
   // Fetch per-campaign lead counts (best-effort, parallel).
   const details = await Promise.all(campaigns.map(async (c) => {
@@ -5341,23 +5437,46 @@ async function renderCloudCampaigns() {
     catch { return { campaign: c, leadCounts: {} }; }
   }));
 
-  list.innerHTML = details.map((d) => {
-    const c = d.campaign || {};
-    const lc = d.leadCounts || {};
-    const total = Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0);
-    const sent = Number(lc.sent || 0);
-    const active = !['done', 'cancelled', 'error'].includes(c.status);
-    const counts = Object.entries(lc).map(([k, v]) => `${escHtml(k)}: ${v}`).join(' · ') || 'no leads';
-    return `
-      <div class="cloud-camp-row" style="display:flex; align-items:center; gap:14px; padding:12px 0; border-bottom:1px solid var(--hairline);">
-        <div style="flex:1; min-width:0;">
-          <div style="font-size:13px;">${escHtml(c.name || c.id)} <span style="color:var(--gray); font-family:var(--mono); font-size:10px; letter-spacing:.06em;">${escHtml(c.mode || '')}</span></div>
-          <div style="color:var(--gray); font-size:11px; margin-top:3px;">${escHtml(c.status || '')} — ${sent}/${total} sent · ${counts}</div>
-        </div>
-        ${active ? `<button type="button" class="btn btn-secondary" style="font-size:11px; padding:5px 12px;" onclick="stopCloudCampaignUI('${escHtml(c.id)}')">Stop</button>` : ''}
-      </div>`;
-  }).join('');
+  const items = details.map((d) => ({ c: d.campaign || {}, lc: d.leadCounts || {} }));
+  for (const it of items) { if (it.c.sheet_url) _cloudSheetUrls.set(it.c.id, it.c.sheet_url); }
+
+  const running = items.filter((x) => x.c.status === 'running');
+  const queued = items.filter((x) => x.c.status === 'pending' || x.c.status === 'queued');
+  const done = items.filter((x) => ['done', 'cancelled', 'error'].includes(x.c.status) && !_cloudDismissed.has(x.c.id));
+
+  const qmeta = document.getElementById('cloud-qmeta');
+  if (qmeta) qmeta.textContent = `${running.length} running · ${queued.length} queued`;
+
+  const rail = (label, arr, extra = '') => arr.length
+    ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map((x) => renderCloudStrip(x.c, x.lc)).join('') : '';
+  let html = '';
+  html += rail('▶ Now running', running);
+  html += rail('• Up next in the queue', queued);
+  html += rail('✓ Done', done, done.length ? ` <span class="sn-railcount">${done.length}</span>` : '');
+  list.className = 'sn-board';
+  list.innerHTML = html || `<div class="sn-empty">No cloud campaigns yet.</div>`;
 }
+
+// "Open" a cloud campaign — jump to its source Google Sheet if we have the URL.
+function viewCloudCampaign(id) {
+  const url = _cloudSheetUrls.get(id);
+  if (url) { try { window.open(url, '_blank', 'noopener'); return; } catch (_) { /* */ } }
+  // No sheet URL yet — expand the strip so the operator sees its log/counts.
+  const strip = document.querySelector(`#cloud-campaigns-list .sn-strip[data-cid="${id}"]`);
+  if (strip && strip.classList.contains('sn-collapsed')) {
+    _snExpanded.add(id);
+    strip.classList.remove('sn-collapsed');
+  }
+}
+window.viewCloudCampaign = viewCloudCampaign;
+
+// Hide a done cloud strip from THIS operator's board (local-only, next poll keeps it hidden).
+function dismissCloudDone(id, btn) {
+  _cloudDismissed.add(id); _cloudSaveDismissed();
+  const strip = btn && btn.closest ? btn.closest('.sn-strip') : null;
+  if (strip) strip.remove();
+}
+window.dismissCloudDone = dismissCloudDone;
 
 // Stop a cloud campaign from the panel.
 async function stopCloudCampaignUI(id) {
