@@ -142,7 +142,7 @@ function renderSalesNavBoard(campaigns) {
       + `<button type="button" class="sn-clear-done">Clear done</button></div>`
       + done.map(renderStrip).join('');
   }
-  if (!campaigns.length) html = `<div class="sn-empty">No scrapes yet — press ＋ New scrape.</div>`;
+  if (!campaigns.length) html = _scrapeEmptyState();
   host.innerHTML = html;
 }
 
@@ -5719,31 +5719,68 @@ async function renderCampaignsBoard() {
     qmeta.textContent = bits.join(' · ');
   }
 
+  _lastCampaignsDone = done;
   const rail = (label, arr, extra = '') => arr.length
     ? `<div class="sn-railhead">${label}${extra}</div>` + arr.map(renderUnifiedStrip).join('') : '';
+  const doneExtra = done.length
+    ? ` <span class="sn-railcount">${done.length}</span><button type="button" class="sn-clear-done" onclick="clearCampaignsDone()">Clear done</button>`
+    : '';
   let html = rail('▶ Now running', running) + rail('• Up next', queued)
-    + rail('✓ Done', done, done.length ? ` <span class="sn-railcount">${done.length}</span>` : '');
+    + rail('✓ Done', done, doneExtra);
   board.innerHTML = html || _campaignsEmptyState();
 }
 
-// Prettier empty state for the board when nothing is running/queued/done.
-function _campaignsEmptyState() {
+// Bulk-dismiss every Done strip on the campaigns board (local → _localDismissed,
+// cloud → _cloudDismissed). Mirrors the Sales Nav "Clear done".
+let _lastCampaignsDone = [];
+function clearCampaignsDone() {
+  for (const it of _lastCampaignsDone) {
+    if (it.where === 'cloud') _cloudDismissed.add(it.id);
+    else _localDismissed.add(it.id);
+  }
+  renderCampaignsBoard();
+}
+window.clearCampaignsDone = clearCampaignsDone;
+
+// Shared prettier empty state for the sn-boards. cfg: { icon, title, sub,
+// ctaLabel, ctaFn, legend? }.
+function _snEmptyStateHtml(cfg) {
+  const legend = cfg.legend
+    ? `<div class="sn-emptyx-legend">${cfg.legend}</div>` : '';
   return `
   <div class="sn-emptyx">
-    <div class="sn-emptyx-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6.5 18a3.5 3.5 0 0 1-.4-6.98A5 5 0 0 1 16 10.2a3.4 3.4 0 0 1 1.5 6.8"/>
-        <path d="M9 21h9a2 2 0 0 0 2-2v-2"/>
-      </svg>
-    </div>
-    <div class="sn-emptyx-title">No campaigns yet</div>
-    <div class="sn-emptyx-sub">Launch outreach and it lands here as a live strip — locally or on the cloud VM.</div>
-    <button type="button" class="sn-emptyx-cta" onclick="window.startNewCampaign && window.startNewCampaign()">＋ New campaign</button>
-    <div class="sn-emptyx-legend">
-      <span><i class="sw green"></i>Cloud · runs on the VM</span>
-      <span><i class="sw pink"></i>Local · runs on this machine</span>
-    </div>
+    <div class="sn-emptyx-mark" aria-hidden="true">${cfg.icon}</div>
+    <div class="sn-emptyx-title">${cfg.title}</div>
+    <div class="sn-emptyx-sub">${cfg.sub}</div>
+    <button type="button" class="sn-emptyx-cta" onclick="${cfg.ctaFn}">${cfg.ctaLabel}</button>
+    ${legend}
   </div>`;
+}
+
+const _SN_ICON_CLOUD = `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 18a3.5 3.5 0 0 1-.4-6.98A5 5 0 0 1 16 10.2a3.4 3.4 0 0 1 1.5 6.8"/><path d="M9 21h9a2 2 0 0 0 2-2v-2"/></svg>`;
+const _SN_ICON_SEARCH = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
+
+// Prettier empty state for the campaigns board.
+function _campaignsEmptyState() {
+  return _snEmptyStateHtml({
+    icon: _SN_ICON_CLOUD,
+    title: 'No campaigns yet',
+    sub: 'Launch outreach and it lands here as a live strip — locally or on the cloud VM.',
+    ctaLabel: '＋ New campaign',
+    ctaFn: 'window.startNewCampaign && window.startNewCampaign()',
+    legend: '<span><i class="sw green"></i>Cloud · runs on the VM</span><span><i class="sw pink"></i>Local · runs on this machine</span>',
+  });
+}
+
+// Prettier empty state for the Sales Nav scraper board.
+function _scrapeEmptyState() {
+  return _snEmptyStateHtml({
+    icon: _SN_ICON_SEARCH,
+    title: 'No scrapes yet',
+    sub: 'Start a Sales Navigator scrape to pull leads into a sheet. Live jobs show up here.',
+    ctaLabel: '＋ New scrape',
+    ctaFn: 'window.startNewScrapeSetup && window.startNewScrapeSetup()',
+  });
 }
 window.renderCampaignsBoard = renderCampaignsBoard;
 
