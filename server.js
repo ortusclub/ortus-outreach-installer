@@ -67,6 +67,7 @@ _setAlertImpl((msg) => {
 import { getPrefs as getNotificationPrefs, setPrefs as setNotificationPrefs } from './src/notification-prefs.js';
 import { getPrefs as getOperatorPrefs, setPrefs as setOperatorPrefs } from './src/operator-prefs.js';
 import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/operator-identity.js';
+import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-configs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { checkDiskFree } from './src/disk-check.js';
@@ -1259,6 +1260,9 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     });
     if (result.error) return res.status(502).json({ error: result.error, cloud: true });
     cloudLog(`[cloud] campaign ${result.id} (${mode}) dispatched to engine — ${result.leadsAdded} leads, ${accounts.length} account(s)${autoRouted ? ' (auto-routed)' : ''}`);
+    // Snapshot the wizard config so the campaign can be duplicated later (the
+    // engine doesn't return templates/delays). Best-effort — never blocks dispatch.
+    saveCloudLaunchConfig(result.id, name || '', body).catch((e) => cloudLog(`[cloud] launch-config save failed: ${e.message}`));
     res.json({ ok: true, cloud: true, ...result });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1277,6 +1281,12 @@ app.get('/api/campaign/cloud/:id', async (req, res) => {
   const r = await getCloudCampaign(req.params.id);
   if (r.error) return res.status(502).json(r);
   res.json(r);
+});
+// The wizard config snapshotted at dispatch — used to Duplicate a cloud campaign.
+app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
+  const rec = await getCloudLaunchConfig(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'No saved launch config for this campaign.' });
+  res.json({ name: rec.name || '', config: rec.config || {} });
 });
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   const r = await stopCloudCampaign(req.params.id, { pause: !!req.query.pause });

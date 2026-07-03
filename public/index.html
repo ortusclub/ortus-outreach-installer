@@ -1251,6 +1251,15 @@
   .sn-emptyx-legend .sw{display:inline-block;width:18px;height:5px;border-radius:9999px;vertical-align:middle;margin-right:7px;}
   .sn-emptyx-legend .sw.green{background:var(--green);}
   .sn-emptyx-legend .sw.pink{background:#e35ea0;}
+  /* strip ⋯ overflow menu (v2.132) — Duplicate lives here */
+  .ovf{position:relative;display:inline-block;}
+  .ovf-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;font-size:16px;line-height:1;padding:0;}
+  .ovf-btn:hover{border-color:var(--ink);}
+  .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:#fff;border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;z-index:35;display:none;}
+  .ovf.open .ovf-menu{display:block;}
+  .ovf-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#444;background:transparent;border:none;text-align:left;}
+  .ovf-item:hover{background:#f4f4f3;color:var(--ink);}
+  .ovf-item svg{opacity:.7;}
   /* type filter dropdown (v2.131) — compact control on the header row */
   .fdrop{position:relative;}
   .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;white-space:nowrap;}
@@ -3107,7 +3116,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.132.0"></script>
+  <script type="module" src="/js/app.js?v=2.133.0"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {

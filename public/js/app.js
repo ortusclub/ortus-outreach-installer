@@ -5540,6 +5540,99 @@ window.openLocalCampaignDetail = openLocalCampaignDetail;
 function dismissLocalDone(id) { _localDismissed.add(id); renderCampaignsBoard(); }
 window.dismissLocalDone = dismissLocalDone;
 
+// ── Duplicate a campaign (Sam #1) → open + New campaign pre-filled ──────────
+const _boardItemsById = new Map();  // strip id → normalized item (for actions)
+let _ovfWired = false;
+
+// Build a wizard-config object from a history entry's settings (mirrors
+// rerunPastCampaign so a duplicated done campaign carries every setting).
+function _configFromSettings(mode, s) {
+  s = s || {};
+  const gid = s.sheetGid ? String(s.sheetGid) : ((s.sheetUrl || '').match(/[#&?]gid=(\d+)/) || [])[1] || '';
+  return {
+    mode, sheetUrl: s.sheetUrl || '', sheetGid: gid,
+    dailyLimit: s.dailyLimit ?? 50, delayMin: s.delayMin ?? 30, delayMax: s.delayMax ?? 60,
+    linkedinColumn: s.linkedinColumn || '', messageOpenProfiles: !!s.messageOpenProfiles,
+    addNote: !!(s.templates && s.templates.connectionNote), templates: s.templates || {},
+    profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
+    concurrency: s.concurrency ?? 1, senderFirstNames: s.senderFirstNames || {},
+  };
+}
+
+// Resolve the source config for a strip, then open the pre-filled wizard.
+async function duplicateCampaign(id) {
+  const it = _boardItemsById.get(id);
+  if (!it) return;
+  let config = null; let srcName = it.name || 'Campaign';
+  try {
+    if (it.where === 'cloud') {
+      const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(it.id)}/launch-config`);
+      if (r.ok) { const d = await r.json(); config = d.config; srcName = d.name || srcName; }
+    } else if (it.bucket === 'queued' && it.rawId) {
+      const r = await fetch('/api/queue/' + encodeURIComponent(it.rawId));
+      if (r.ok) { const e = await r.json(); config = e.config; srcName = e.name || srcName; }
+    } else if (it.bucket === 'done' && it.srcSettings) {
+      config = _configFromSettings(it.mode, it.srcSettings);
+    } else if (it.id === 'local-active') {
+      const r = await fetch('/api/presets/_last_used');
+      if (r.ok) { const e = await r.json(); config = e.config || (e.entry && e.entry.config) || null; }
+    }
+  } catch (_) { /* fall through to the guard below */ }
+  if (!config || typeof config !== 'object') {
+    alert("Couldn't load this campaign's settings to duplicate.\nOpen ＋ New campaign and set it up manually.");
+    return;
+  }
+  _openDuplicateDraft(srcName, config);
+}
+window.duplicateCampaign = duplicateCampaign;
+
+// Stage the config as a fresh draft and open the wizard pre-filled with a
+// "… copy" name. Nothing runs until the operator picks Start/Queue/Schedule.
+async function _openDuplicateDraft(srcName, config) {
+  const copyName = /\bcopy\b/i.test(srcName) ? srcName : `${srcName} copy`;
+  let draftId = '';
+  try {
+    const r = await fetch('/api/drafts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: copyName, config }),
+    });
+    if (r.ok) draftId = (await r.json())?.draft?.id || '';
+  } catch (_) { /* draft staging best-effort */ }
+  if (draftId && typeof setActiveDraftId === 'function') setActiveDraftId(draftId);
+  if (typeof goCreateCampaign === 'function') goCreateCampaign();
+  // Defer until the wizard view is mounted (same pattern as rerunPastCampaign).
+  setTimeout(() => {
+    const ni = document.getElementById('campaign-name-input');
+    if (ni) ni.value = copyName;
+    if (typeof applyPresetConfig === 'function') applyPresetConfig(config);
+  }, 60);
+}
+
+// Delegated open/close + Duplicate action for the strip ⋯ menus.
+function _wireStripOverflow() {
+  if (_ovfWired) return;
+  _ovfWired = true;
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#campaigns-board .ovf-btn');
+    if (btn) {
+      const o = btn.closest('.ovf'); const wasOpen = o.classList.contains('open');
+      document.querySelectorAll('#campaigns-board .ovf.open').forEach((x) => x.classList.remove('open'));
+      if (!wasOpen) o.classList.add('open');
+      return;
+    }
+    const act = e.target.closest('#campaigns-board .ovf-item[data-act="duplicate"]');
+    if (act) {
+      const cid = act.closest('.sn-strip')?.dataset.cid;
+      document.querySelectorAll('#campaigns-board .ovf.open').forEach((x) => x.classList.remove('open'));
+      if (cid) duplicateCampaign(cid);
+      return;
+    }
+    if (!e.target.closest('#campaigns-board .ovf')) {
+      document.querySelectorAll('#campaigns-board .ovf.open').forEach((x) => x.classList.remove('open'));
+    }
+  });
+}
+
 // ── Campaigns board: filter by type (Sam) ──────────────────────────────────
 // A compact dropdown on the header narrows the board to one campaign type.
 let _campaignsTypeFilter = 'All';   // 'All' | badge (CC, C+I, C+D, DM, IB, FG…)
@@ -5746,8 +5839,15 @@ function renderUnifiedStrip(it) {
     <div class="sn-flow">${flow}</div>
     ${progLine}
     ${switchBlock}
-    <div class="sn-foot"><div class="right">${foot}</div></div>
+    <div class="sn-foot"><div class="right">${foot}${_stripOverflow()}</div></div>
   </div>`;
+}
+
+// The ⋯ overflow menu on each strip (currently: Duplicate → pre-filled draft).
+function _stripOverflow() {
+  return `<div class="ovf"><button type="button" class="ovf-btn" title="More">⋯</button>`
+    + `<div class="ovf-menu"><button type="button" class="ovf-item" data-act="duplicate">`
+    + `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>`;
 }
 
 let _campaignsBoardTimer = null;
@@ -5821,9 +5921,13 @@ async function renderCampaignsBoard() {
       items.push({ where: 'local', id: hid, name: p.name, mode: p.mode,
         isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
         total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
-        bad: stopped, badLabel: 'Stopped' });
+        bad: stopped, badLabel: 'Stopped', srcSettings: p.settings || null });
     }
   } catch (_) { /* */ }
+
+  // Lookup for per-strip actions (Duplicate) — keyed by strip id.
+  _boardItemsById.clear();
+  for (const it of items) _boardItemsById.set(it.id, it);
 
   // Type filter (Sam): a dropdown on the header narrows the board to one
   // campaign type. Counts on the menu reflect ALL items; the board shows only
@@ -5923,6 +6027,7 @@ window.renderCampaignsBoard = renderCampaignsBoard;
 // Start the board (hide legacy sections, render, poll every 4s). Idempotent.
 function startCampaignsBoard() {
   _hideLegacyDashboardSections();
+  _wireStripOverflow();
   renderCampaignsBoard();
   if (_campaignsBoardTimer) clearInterval(_campaignsBoardTimer);
   _campaignsBoardTimer = setInterval(renderCampaignsBoard, 4000);
