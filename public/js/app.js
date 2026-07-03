@@ -7271,6 +7271,27 @@ async function pollStatus() {
       }
     } catch { /* post-amp overlay is best-effort */ }
 
+    // Cloud campaigns run on the VM, so the LOCAL status is idle even while a
+    // cloud campaign is actively sending. Keep a lightweight running/queued count
+    // (throttled ~6s so we don't hammer the engine) so the dashboard hero can say
+    // "running in the cloud" instead of contradicting the cloud board with
+    // "No campaign running". Only relevant when no local campaign is running.
+    if (!s.running) {
+      const now = Date.now();
+      if (now - (window.__cloudSummaryAt || 0) > 6000) {
+        window.__cloudSummaryAt = now;
+        fetch('/api/campaign/cloud-list').then((r) => r.json()).then((cd) => {
+          const cs = (cd && cd.campaigns) || [];
+          window.__cloudHeroSummary = {
+            running: cs.filter((c) => c.status === 'running').length,
+            queued: cs.filter((c) => c.status === 'pending' || c.status === 'queued').length,
+          };
+        }).catch(() => {});
+      }
+    } else {
+      window.__cloudHeroSummary = { running: 0, queued: 0 };
+    }
+
     // Phase 2.8.12: feed the cockpit panel with the latest status snapshot
     // (renderCockpit + tick handle the smooth countdown without re-polling).
     updateCockpit(s);
@@ -16186,14 +16207,27 @@ window.renderActiveCard = function(status) {
   if (!status || (!status.running && !isMonitoring)) {
     card.classList.add('is-empty');
     card.classList.remove('is-monitor');
-    v3SetText('activeName', 'No campaign running');
-    v3SetText('activeEyebrow', 'No campaign running');
+    // Cloud-aware idle: a cloud campaign runs on the VM, so the LOCAL card is
+    // idle — but claiming "No campaign running" contradicts the cloud board
+    // right below it. Reflect the cloud count instead (kept in is-empty state,
+    // so the local Pause/Stop controls stay inert — they can't drive cloud).
+    const _cloud = window.__cloudHeroSummary || { running: 0, queued: 0 };
+    if (_cloud.running > 0) {
+      const n = _cloud.running;
+      const qNote = _cloud.queued > 0 ? ` · ${_cloud.queued} queued` : '';
+      v3SetText('activeName', `${n} campaign${n === 1 ? '' : 's'} running in the cloud`);
+      v3SetText('activeEyebrow', `☁︎ Running in the cloud${qNote}`);
+      v3SetText('sendingLbl', 'Cloud');
+    } else {
+      v3SetText('activeName', 'No campaign running');
+      v3SetText('activeEyebrow', 'No campaign running');
+      v3SetText('sendingLbl', 'Idle');
+    }
     v3SetText('activePct', '0');
     v3SetText('activeSent', '0');
     v3SetText('activeTotal', '0');
     v3SetText('activeAccounts', '0');
     v3SetText('activeAccepted', '—');
-    v3SetText('sendingLbl', 'Idle');
     v3SetText('batchEta', '—');
     const glyph = document.getElementById('activeGlyph');
     if (glyph) glyph.textContent = '';
