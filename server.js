@@ -238,8 +238,19 @@ app.use(async (req, res, next) => {
 });
 
 // Who-am-I endpoint used by the dashboard to show the logged-in user
+// Admin list — ADMIN_EMAILS env (comma-separated), with antonio as the default
+// so an unset env still has one admin. Used by the client for the admin-vs-own
+// campaigns view + Conductor filter.
+const ADMIN_EMAIL_SET = new Set(
+  String(process.env.ADMIN_EMAILS || 'antonio@ortusclub.com')
+    .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+);
+function isAdminEmail(email) {
+  return ADMIN_EMAIL_SET.has(String(email || '').trim().toLowerCase());
+}
+
 app.get('/api/me', (req, res) => {
-  res.json({ email: req.user });
+  res.json({ email: req.user, admin: isAdminEmail(req.user) });
 });
 
 app.use(express.static(resolve(__dirname, 'public')));

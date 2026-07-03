@@ -38,6 +38,16 @@ async function loadOperatorEmail() {
   catch { snCurrentEmail = ''; }
 }
 
+// Viewer's LOGIN identity + admin flag (from /api/me, driven by ADMIN_EMAILS).
+// Admin sees every cloud campaign + the Conductor filter; everyone else sees
+// only their own. Distinct from snCurrentEmail (the per-machine operator).
+let _viewerEmail = '';
+let _viewerIsAdmin = false;
+async function loadViewerIdentity() {
+  try { const d = await (await fetch('/api/me')).json(); _viewerEmail = (d && d.email) || ''; _viewerIsAdmin = !!(d && d.admin); }
+  catch { _viewerEmail = ''; _viewerIsAdmin = false; }
+}
+
 let _snPollTimer = null;
 // Navigate to the Sales Nav board (its own top-level route #/salesnav). The
 // router (applyRoute) calls openSalesNavBoard() on entry to load + start polling.
@@ -5589,6 +5599,56 @@ function _wireTypeFilter() {
   });
 }
 
+// ── Conductor filter (admin only) ──────────────────────────────────────────
+let _campaignsConductorFilter = 'Everyone'; // 'Everyone' | owner email
+let _conductorFilterOpen = false;
+let _conductorFilterWired = false;
+const _ownerOf = (it) => it.owner || (it.mine ? _viewerEmail : '') || '';
+const _shortOwner = (o) => o === 'Everyone' ? 'Everyone' : String(o).split('@')[0];
+
+function renderCampaignsConductorFilter(allItems) {
+  const host = document.getElementById('campaigns-conductorfilter');
+  if (!host) return;
+  if (!_viewerIsAdmin) { host.style.display = 'none'; host.innerHTML = ''; return; }
+  host.style.display = '';
+  if (_conductorFilterOpen) { return; } // don't clobber open menu
+  const owners = [];
+  for (const it of allItems) { const o = _ownerOf(it); if (o && !owners.includes(o)) owners.push(o); }
+  owners.sort();
+  if (_campaignsConductorFilter !== 'Everyone' && !owners.includes(_campaignsConductorFilter)) _campaignsConductorFilter = 'Everyone';
+  const opts = ['Everyone', ...owners];
+  const count = (o) => o === 'Everyone' ? allItems.length : allItems.filter((x) => _ownerOf(x) === o).length;
+  const items = opts.map((o) =>
+    `<div class="fdrop-item ${o === _campaignsConductorFilter ? 'on' : ''}" data-o="${escHtml(o)}">`
+    + `<span><span class="tick">${o === _campaignsConductorFilter ? '✓' : ''}</span> ${escHtml(_shortOwner(o))}</span>`
+    + `<span class="n">${count(o)}</span></div>`).join('');
+  host.innerHTML =
+    `<button type="button" class="fdrop-btn" id="conductorFilterBtn"><span class="cur">Conductor: <b>${escHtml(_shortOwner(_campaignsConductorFilter))}</b></span>`
+    + `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg></button>`
+    + `<div class="fdrop-menu" id="conductorFilterMenu">${items}</div>`;
+  host.classList.toggle('open', _conductorFilterOpen);
+  _wireConductorFilter();
+}
+
+function _wireConductorFilter() {
+  if (_conductorFilterWired) return;
+  _conductorFilterWired = true;
+  document.addEventListener('click', (e) => {
+    const host = document.getElementById('campaigns-conductorfilter');
+    if (!host) return;
+    if (e.target.closest('#conductorFilterBtn')) {
+      _conductorFilterOpen = !_conductorFilterOpen; host.classList.toggle('open', _conductorFilterOpen); return;
+    }
+    const item = e.target.closest('.fdrop-item');
+    if (item && host.contains(item)) {
+      _campaignsConductorFilter = item.dataset.o; _conductorFilterOpen = false;
+      renderCampaignsBoard();
+      return;
+    }
+    if (!host.contains(e.target)) { _conductorFilterOpen = false; host.classList.remove('open'); }
+  });
+}
+
 // Render one normalized item as an sn-strip. Item shape:
 //   { where:'cloud'|'local', id, name, mode, isFG, bucket:'running'|'queued'|'done',
 //     sent, total, accounts, mine, owner, bad, paused, sheetUrl }
@@ -5734,13 +5794,16 @@ async function renderCampaignsBoard() {
       const c = d.campaign || {}; const lc = d.leadCounts || {};
       if (['done', 'cancelled', 'error'].includes(c.status) && _cloudDismissed.has(c.id)) continue;
       if (c.sheet_url) _cloudSheetUrls.set(c.id, c.sheet_url);
+      const mine = !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase());
+      // Ownership gate: normal accounts see only their OWN cloud campaigns;
+      // admins see everyone's. (Local campaigns are always the viewer's.)
+      if (!_viewerIsAdmin && !mine) continue;
       const bucket = c.status === 'running' ? 'running'
         : (c.status === 'pending' || c.status === 'queued') ? 'queued' : 'done';
       items.push({
         where: 'cloud', id: c.id, name: c.name, mode: c.mode, isFG: c.mode === 'follower_growth',
         bucket, sent: Number(lc.sent || 0), total: Object.values(lc).reduce((a, b) => a + (Number(b) || 0), 0),
-        accounts: (c.profile_ids || []).length,
-        mine: !!(snCurrentEmail && c.owner && String(c.owner).toLowerCase() === String(snCurrentEmail).toLowerCase()),
+        accounts: (c.profile_ids || []).length, mine,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Cancelled' : 'Error',
       });
@@ -5766,8 +5829,13 @@ async function renderCampaignsBoard() {
   // campaign type. Counts on the menu reflect ALL items; the board shows only
   // the selected type. 'All' shows everything.
   renderCampaignsTypeFilter(items);
-  const shown = _campaignsTypeFilter === 'All'
+  // Conductor filter (admin only): narrow to one operator's campaigns.
+  renderCampaignsConductorFilter(items);
+  let shown = _campaignsTypeFilter === 'All'
     ? items : items.filter((x) => _cloudBadge(x.mode) === _campaignsTypeFilter);
+  if (_viewerIsAdmin && _campaignsConductorFilter !== 'Everyone') {
+    shown = shown.filter((x) => (x.owner || (x.mine ? _viewerEmail : '')) === _campaignsConductorFilter);
+  }
 
   const running = shown.filter((x) => x.bucket === 'running');
   const queued = shown.filter((x) => x.bucket === 'queued');
@@ -5867,6 +5935,8 @@ window.startCampaignsBoard = startCampaignsBoard;
 // board never rendered and the legacy dashboard leaked through.)
 function _bootCampaignsBoard() {
   try { startCampaignsBoard(); } catch (_) { /* board best-effort */ }
+  // Learn admin status, then re-render so the admin-only controls appear.
+  loadViewerIdentity().then(() => { try { renderCampaignsBoard(); } catch (_) { /* */ } });
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _bootCampaignsBoard);

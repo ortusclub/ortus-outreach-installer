@@ -218,6 +218,8 @@
           <!-- v2.131: filter the Campaigns board by type (rendered by
                renderCampaignsTypeFilter() in app.js). -->
           <div class="fdrop" id="campaigns-typefilter"></div>
+          <!-- v2.131: admin-only Conductor filter (hidden for normal accounts). -->
+          <div class="fdrop" id="campaigns-conductorfilter" style="display:none"></div>
           <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connection DB</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
@@ -3105,7 +3107,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.131.1"></script>
+  <script type="module" src="/js/app.js?v=2.132.0"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
