@@ -47,7 +47,7 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, stopCloudCampaign } from './src/campaigns-client.js';
-import { spreadsheetIdFromUrl, extractSheetGid } from './src/utils.js';
+import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile } from './src/gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
@@ -72,7 +72,7 @@ import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
-import { lintLeads } from './src/preflight-lint.js';
+import { lintLeads, blocklistExcludedUrls, normalizeProfileUrl } from './src/preflight-lint.js';
 import { ackFor, decidePreflightGate } from './src/preflight-gate.js';
 import { checkDiskFree } from './src/disk-check.js';
 import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, latestDownloadUrl, latestReleaseUrl } from './src/updater.js';
@@ -1098,6 +1098,9 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
     if (rejectIfNoOperatorEmail(res)) return;
 
+    // ── Pre-flight gate: same ack/blocklist check as /api/campaign/start ─────
+    if (!await runPreflightGate(req, res)) return;
+
     // Auto-routed modes derive the account per-row from the sheet's sender
     // column (the picker is hidden for them), so we pin each lead to its
     // account (routeAccount = GoLogin profile id). Other modes use the picker.
@@ -1122,12 +1125,28 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     };
 
     // Build leads from the sheet exactly as the local campaign does.
-    const rows = await fetchSheet(sheetUrl);
+    // Resolve the correct tab (mirrors runPreflightGate + campaign.js withGid).
+    const cloudGid = body.sheetGid != null ? String(body.sheetGid).replace(/\D/g, '') : '';
+    const cloudSheetUrl = withGid(sheetUrl, cloudGid);
+    const rows = await fetchSheet(cloudSheetUrl);
+
+    // Hard-exclude blocklisted + client-pre-flight-excluded URLs (cold modes only;
+    // blocklistExcludedUrls is a no-op for warm modes). This mirrors the central
+    // guard in campaign.js (startCampaign) that covers the local path.
+    const blExcluded = new Set(blocklistExcludedUrls(rows, { linkedinColumn, mode, blocklist: readBlocklist() }));
+    const clientExcluded = new Set((req.body._preflightExcludedUrls || []).map((u) => normalizeProfileUrl(u)));
+    const totalExcluded = blExcluded.size + clientExcluded.size;
+    if (totalExcluded) {
+      cloudLog(`[cloud] pre-flight excluded ${totalExcluded} URL(s) (blocklist: ${blExcluded.size}, client: ${clientExcluded.size})`);
+    }
+
     const leads = [];
     const skippedNoAccount = [];
     for (const row of rows) {
       const leadUrl = extractLinkedInUrl(row, linkedinColumn);
       if (!leadUrl) continue;
+      // Skip blocklisted / client-excluded URLs.
+      if (blExcluded.has(normalizeProfileUrl(leadUrl)) || clientExcluded.has(normalizeProfileUrl(leadUrl))) continue;
       const first = row['First Name'] || row['first name'] || '';
       const last = row['Last Name'] || row['last name'] || '';
       const fullName = String(row['Full Name'] || row['Name'] || `${first} ${last}`).trim();
@@ -1322,11 +1341,16 @@ function _registerAck(token) {
  */
 async function runPreflightGate(req, res) {
   try {
-    const gateRows = await fetchSheetWithRows(String(req.body?.sheetUrl || ''));
-    const gateGidExplicit = /[#&?]gid=\d+/.test(String(req.body?.sheetUrl || ''));
+    const rawSheetUrl = String(req.body?.sheetUrl || '');
+    const resolvedGid = req.body?.sheetGid != null
+      ? String(req.body.sheetGid).replace(/\D/g, '')
+      : '';
+    const effectiveUrl = withGid(rawSheetUrl, resolvedGid);
+    const gateRows = await fetchSheetWithRows(effectiveUrl);
+    const gateGidExplicit = /[#&?]gid=\d+/.test(effectiveUrl) || !!resolvedGid;
     let gateTabs = 1;
     if (!gateGidExplicit) {
-      try { gateTabs = (await listSheetTabs(req.body.sheetUrl)).length || 1; } catch { /* non-fatal */ }
+      try { gateTabs = (await listSheetTabs(rawSheetUrl)).length || 1; } catch { /* non-fatal */ }
     }
     const gateFindings = lintLeads({
       rows: gateRows,
@@ -1363,10 +1387,14 @@ app.post('/api/preflight', async (req, res) => {
     const sheetUrl = String(body.sheetUrl || '');
     if (!sheetUrl) return res.status(400).json({ ok: false, error: 'sheetUrl required' });
 
-    const rows = await fetchSheetWithRows(sheetUrl);
+    const resolvedGid = body.sheetGid != null
+      ? String(body.sheetGid).replace(/\D/g, '')
+      : '';
+    const effectiveUrl = withGid(sheetUrl, resolvedGid);
+    const rows = await fetchSheetWithRows(effectiveUrl);
 
-    // Tab ambiguity: explicit gid in the URL? how many tabs?
-    const gidExplicit = /[#&?]gid=\d+/.test(sheetUrl);
+    // Tab ambiguity: explicit gid in the URL or supplied sheetGid? how many tabs?
+    const gidExplicit = /[#&?]gid=\d+/.test(effectiveUrl) || !!resolvedGid;
     let tabCount = 1;
     if (!gidExplicit) {
       try { tabCount = (await listSheetTabs(sheetUrl)).length || 1; }

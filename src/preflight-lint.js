@@ -73,13 +73,15 @@ function stageOf(row) {
   return String(row.Stage || row.stage || '').trim();
 }
 
-function normalizeUrl(url) {
+export function normalizeProfileUrl(url) {
   return String(url || '')
     .toLowerCase()
     .replace(/^https?:\/\/(www\.)?/, '')
     .replace(/\/+$/, '')
     .split('?')[0];
 }
+// Internal alias kept for backward compat within this file.
+const normalizeUrl = normalizeProfileUrl;
 
 // ── main ───────────────────────────────────────────────────────────────────
 

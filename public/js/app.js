@@ -5432,6 +5432,7 @@ async function startCampaign(opts = {}) {
         sheetUrl: body.sheetUrl, linkedinColumn: body.linkedinColumn,
         mode: body.mode, templates: body.templates,
         dailyLimit: body.dailyLimit, profileIds: body.profileIds,
+        sheetGid: body.sheetGid || window._chosenSheetGid || '',
       });
       _pfState = { findings: pf.findings, ack: pf.ack, payload: body, opts };
       if (pf.findings.blockers.length || pf.findings.warnings.length) {

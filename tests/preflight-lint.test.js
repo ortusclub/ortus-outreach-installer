@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lintLeads, vanitySlug, nameMatchesSlug, blocklistExcludedUrls } from '../src/preflight-lint.js';
+import { lintLeads, vanitySlug, nameMatchesSlug, blocklistExcludedUrls, normalizeProfileUrl } from '../src/preflight-lint.js';
 
 const R = (rowNumber, row) => ({ rowNumber, row });
 const BASE = { linkedinColumn: 'LinkedIn URL', mode: 'connect_only', templates: {}, blocklist: [], tabCount: 1, gidExplicit: true };
@@ -175,4 +175,12 @@ test('blocklistExcludedUrls: message_only excludes nothing (warm mode)', () => {
     blocklist: IBM_BLOCKLIST,
   });
   assert.deepEqual(urls, []);
+});
+
+test('normalizeProfileUrl strips protocol, www, trailing slash, and query string', () => {
+  assert.equal(normalizeProfileUrl('https://www.linkedin.com/in/janedoe/'), 'linkedin.com/in/janedoe');
+  assert.equal(normalizeProfileUrl('http://linkedin.com/in/janedoe?trk=foo'), 'linkedin.com/in/janedoe');
+  assert.equal(normalizeProfileUrl('HTTPS://LinkedIn.com/in/JaneDoe'), 'linkedin.com/in/janedoe');
+  assert.equal(normalizeProfileUrl(''), '');
+  assert.equal(normalizeProfileUrl(null), '');
 });
