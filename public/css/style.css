@@ -1304,6 +1304,49 @@ select {
 }
 .browse-card .profile-item.jt .jt-sub b { color:var(--ink); font-weight:600; }
 
+/* ⑫ Account warm-up mode — WARM-UP tile state (amber-tinted stat zone, per
+   master-all-features sketch) + the Start/Stop link and the schedule panel
+   revealed below the grid. */
+.browse-card .profile-item.jt .jt-stat.s-warmup { background:rgba(247,190,104,0.16); }
+.browse-card .profile-item.jt .s-warmup .jt-dot { background:var(--gold); }
+.browse-card .profile-item.jt .s-warmup .jt-word { color:var(--gold); font-size:0.86rem; letter-spacing:0.08em; }
+.browse-card .profile-item.jt .s-warmup .jt-zsub {
+  font-family:var(--mono); font-size:0.6rem; letter-spacing:0.04em;
+  color:var(--gray); line-height:1.1; text-align:center;
+}
+.browse-card .profile-item.jt .wu-link {
+  color:var(--gray); text-decoration:underline;
+  text-decoration-color:var(--hairline); text-underline-offset:3px; cursor:pointer;
+}
+.browse-card .profile-item.jt .wu-link:hover { color:var(--ink); }
+.wu-sched { border:1px solid var(--hairline); padding:16px 18px; margin-top:12px; }
+.wu-sched .wu-sched-head {
+  font-family:var(--mono); font-size:0.62rem; letter-spacing:0.14em;
+  text-transform:uppercase; color:var(--gray); margin-bottom:10px;
+}
+.wu-sched .wu-steps { display:flex; align-items:stretch; }
+.wu-sched .wu-step {
+  flex:1 1 0; max-width:180px; border:1px solid var(--hairline);
+  border-left:none; padding:10px 14px; position:relative;
+}
+.wu-sched .wu-step:first-child { border-left:1px solid var(--hairline); }
+.wu-sched .wu-step .wk {
+  font-family:var(--mono); font-size:0.58rem; letter-spacing:0.12em;
+  text-transform:uppercase; color:var(--gray);
+}
+.wu-sched .wu-step .cap {
+  font-family:var(--display); font-size:1.4rem; letter-spacing:0.02em;
+  color:var(--ink); line-height:1.15;
+}
+.wu-sched .wu-step .cap small { font-family:var(--mono); font-size:0.6rem; color:var(--gray); letter-spacing:0.04em; }
+.wu-sched .wu-step::after {
+  content:"→"; position:absolute; right:-6px; top:50%; transform:translateY(-50%);
+  font-family:var(--mono); font-size:0.66rem; color:var(--gray); background:var(--bg); z-index:2; line-height:1;
+}
+.wu-sched .wu-step:last-child::after { content:none; }
+.wu-sched .wu-sched-note { font-family:var(--mono); font-size:0.64rem; color:var(--gray); margin-top:10px; line-height:1.6; }
+.wu-sched .wu-sched-note b { color:var(--ink); font-weight:500; }
+
 /* Variant C — per-channel breakdown tile (Message Campaign · Direct Messages ·
    InMail Only). Same shell + typography as the two-zone .jt tile; a slim accent
    stripe replaces the status word, and a clean 3-column channel row replaces the
