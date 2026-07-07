@@ -74,6 +74,7 @@ import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
+import { listPresets, getPreset, savePreset, deletePreset, getLastUsed as getLastUsedPreset, saveLastUsed as saveLastUsedPreset } from './src/presets.js';
 import { lintLeads, blocklistExcludedUrls, normalizeProfileUrl } from './src/preflight-lint.js';
 import { ackFor, decidePreflightGate } from './src/preflight-gate.js';
 import { checkDiskFree } from './src/disk-check.js';
@@ -4336,86 +4337,40 @@ app.get('/api/post-amplification/status', (_req, res) => {
 // rate, limits, etc.) so operators can reload a full setup with one click.
 // Stored globally (team-shared); "last used" is per-user.
 // Shape of data/presets.json: { presets: { name: { config, meta } }, last_used: { email: { config, meta } } }
+// Store logic lives in src/presets.js (pure module, atomic .tmp+rename writes).
 // ---------------------------------------------------------------------------
-const PRESETS_PATH = dataPath('presets.json');
 
-async function loadPresetsFile() {
-  try {
-    const raw = await readFile(PRESETS_PATH, 'utf-8');
-    const parsed = JSON.parse(raw);
-    return {
-      presets: parsed.presets || {},
-      last_used: parsed.last_used || {},
-    };
-  } catch {
-    return { presets: {}, last_used: {} };
-  }
-}
-
-async function savePresetsFile(data) {
-  await mkdir(dirname(PRESETS_PATH), { recursive: true });
-  await writeFile(PRESETS_PATH, JSON.stringify(data, null, 2), 'utf-8');
-}
-
-app.get('/api/presets', async (_req, res) => {
-  const file = await loadPresetsFile();
+app.get('/api/presets', (_req, res) => {
   // Return just the presets map with a small summary per entry.
-  const summary = {};
-  for (const [name, entry] of Object.entries(file.presets)) {
-    summary[name] = {
-      name,
-      mode: entry.config?.mode || null,
-      profileCount: (entry.config?.profileIds || []).length,
-      createdBy: entry.createdBy || null,
-      updatedAt: entry.updatedAt || entry.createdAt || null,
-    };
-  }
-  res.json(summary);
+  res.json(listPresets());
 });
 
-app.get('/api/presets/:name', async (req, res) => {
-  const file = await loadPresetsFile();
+app.get('/api/presets/:name', (req, res) => {
   const name = req.params.name;
   if (name === '_last_used') {
-    const last = file.last_used[req.user];
+    const last = getLastUsedPreset(req.user);
     if (!last) return res.status(404).json({ error: 'No last-used preset for this operator' });
     return res.json(last);
   }
-  const entry = file.presets[name];
+  const entry = getPreset(name);
   if (!entry) return res.status(404).json({ error: 'Preset not found' });
   res.json(entry);
 });
 
-app.post('/api/presets', async (req, res) => {
+app.post('/api/presets', (req, res) => {
   try {
     const { name, config } = req.body || {};
-    if (!name || typeof name !== 'string') return res.status(400).json({ error: 'name required' });
+    if (!name || typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name required' });
     if (!config || typeof config !== 'object') return res.status(400).json({ error: 'config required' });
-    const cleanName = name.trim();
-    if (!cleanName) return res.status(400).json({ error: 'name cannot be empty' });
-
-    const file = await loadPresetsFile();
-    const existing = file.presets[cleanName];
-    const now = new Date().toISOString();
-    file.presets[cleanName] = {
-      config,
-      createdBy: existing?.createdBy || req.user,
-      createdAt: existing?.createdAt || now,
-      updatedBy: req.user,
-      updatedAt: now,
-    };
-    await savePresetsFile(file);
-    res.json({ saved: true, name: cleanName });
+    res.json(savePreset({ name, config, user: req.user }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/presets/:name', async (req, res) => {
+app.delete('/api/presets/:name', (req, res) => {
   try {
-    const file = await loadPresetsFile();
-    delete file.presets[req.params.name];
-    await savePresetsFile(file);
+    deletePreset(req.params.name);
     res.json({ deleted: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4424,17 +4379,11 @@ app.delete('/api/presets/:name', async (req, res) => {
 
 // Save current campaign config as "last used" for the current operator.
 // Called automatically by the client right before starting a campaign.
-app.post('/api/presets/_last_used', async (req, res) => {
+app.post('/api/presets/_last_used', (req, res) => {
   try {
     const { config } = req.body || {};
     if (!config || typeof config !== 'object') return res.status(400).json({ error: 'config required' });
-    const file = await loadPresetsFile();
-    file.last_used[req.user] = {
-      config,
-      savedAt: new Date().toISOString(),
-    };
-    await savePresetsFile(file);
-    res.json({ saved: true });
+    res.json(saveLastUsedPreset(req.user, config));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
