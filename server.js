@@ -71,6 +71,7 @@ import { getOperatorEmail, setOperatorEmail, isPlausibleEmail } from './src/oper
 import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-configs.js';
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
+import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
 import { checkDiskFree } from './src/disk-check.js';
 import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, latestDownloadUrl, latestReleaseUrl } from './src/updater.js';
 import {
@@ -4491,6 +4492,28 @@ app.delete('/api/schedules/:id', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Company/domain blocklist (pre-flight linter) ─────────────────────────
+app.get('/api/blocklist', (req, res) => {
+  res.json({ entries: readBlocklist() });
+});
+
+app.post('/api/blocklist', (req, res) => {
+  try {
+    const entry = addBlocklistEntry({
+      value: req.body?.value,
+      reason: req.body?.reason || '',
+      addedBy: req.body?.addedBy || '',
+    });
+    res.json({ ok: true, entry });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+app.delete('/api/blocklist', (req, res) => {
+  res.json({ ok: removeBlocklistEntry(req.body?.value) });
 });
 
 // ---------------------------------------------------------------------------
