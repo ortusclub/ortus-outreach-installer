@@ -1078,6 +1078,18 @@
             </div>
           </div>
           <div id="sheet-preview" class="hidden sheet-hero-preview"></div>
+          <!-- v2.135: inline blocklist editor — enter blocklisted companies BEFORE
+               pressing Start. Same data as the #bl-scrim panel (GET/POST/DELETE
+               /api/blocklist); chips render via renderWizardBlocklist() in app.js. -->
+          <div class="wiz-blocklist" id="wiz-blocklist">
+            <div class="wiz-blocklist-label">Blocklist</div>
+            <div class="wiz-blocklist-chips" id="wiz-bl-chips"></div>
+            <div class="wiz-blocklist-add">
+              <input type="text" id="wiz-bl-value" placeholder="Add company or domain…" />
+              <button type="button" class="btn btn-secondary btn-sm" id="wiz-bl-add">Add</button>
+            </div>
+            <div class="wiz-blocklist-hint">These companies/domains are never contacted by any campaign (applies to cold modes).</div>
+          </div>
         </div>
 
         <!-- v2.58.x — IC sheet mapping (Variant C — progressive disclosure).
@@ -2295,6 +2307,7 @@
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
             <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openBlocklistPanel()" title="View and edit the company/domain blocklist">Blocklist</button>
           </div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
                the GKE engine instead of running locally — the campaign keeps
@@ -3317,11 +3330,11 @@
 
     <div class="pf-actions">
       <button class="btn btn-secondary btn-sm" id="pf-fix">Fix on sheet</button>
-      <button class="btn btn-primary" id="pf-exclude">Exclude flagged rows &amp; launch</button>
+      <button class="btn btn-primary" id="pf-exclude">Exclude all flagged &amp; launch</button>
       <span class="spacer"></span>
       <button class="btn btn-secondary btn-sm" id="pf-anyway">Launch anyway</button>
       <button class="btn btn-secondary btn-sm" id="pf-cancel">Cancel</button>
-      <div class="pf-count-note"><b>Exclude flagged rows &amp; launch</b> stamps blocker rows in the Stage column and skips them for this run. Nothing is deleted from the sheet.</div>
+      <div class="pf-count-note"><b>Exclude all flagged &amp; launch</b> stamps every flagged row (including blocklisted) in the Stage column and skips them for this run — nothing is deleted from the sheet. <b>Keep flagged, launch anyway</b> sends to the flagged rows too; blocklisted rows are always excluded and can never be launched.</div>
     </div>
   </div>
 </div>
@@ -3329,7 +3342,7 @@
 <!-- ══ Blocklist management panel (spec 2026-07-07) ══ -->
 <div id="bl-scrim" role="dialog" aria-modal="true" aria-labelledby="bl-title" style="display:none">
   <div class="bl-panel">
-    <div class="bl-eyebrow">Settings · shared across all operators</div>
+    <div class="bl-eyebrow">Settings · local to this app</div>
     <h2 class="bl-title" id="bl-title">Blocklist</h2>
     <p class="bl-sub">Companies and email/URL domains that must <b>never</b> be contacted by any campaign. Matched against the sheet's Company column at pre-flight.</p>
     <div id="bl-list"></div>

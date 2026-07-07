@@ -7720,14 +7720,14 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .pf-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.6; margin-bottom: 8px; }
 .pf-sub b { color: var(--ink); font-weight: 500; }
 .pf-tally { display: flex; gap: 10px; margin: 18px 0 26px; flex-wrap: wrap; }
-.pf-tally span { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.06em;
+.pf-tally span { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.06em;
   border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; color: var(--gray); }
 .pf-tally .t-block { color: var(--red); border-color: var(--red); }
 .pf-tally .t-warn { color: var(--gold); border-color: var(--gold); }
 .pf-tally .t-pass { color: var(--green); border-color: var(--green); }
 .pf-group { border-top: 1px solid var(--hairline); padding: 20px 0 14px; }
 .pf-group-head { display: flex; align-items: baseline; gap: 12px; font-family: var(--mono);
-  font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
+  font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 14px; padding-top: 4px; }
 .pf-group-head .n { color: var(--gray); letter-spacing: 0.04em; }
 .pf-blockers .pf-group-head { color: var(--red); }
 .pf-warnings .pf-group-head { color: var(--gold); }
@@ -7735,21 +7735,24 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .pf-passed .caret { display: inline-block; transition: transform 0.15s; }
 .pf-passed.collapsed .caret { transform: rotate(-90deg); }
 .pf-passed.collapsed .pf-rows { display: none; }
-.pf-row { display: grid; grid-template-columns: 92px 190px 1fr; gap: 18px; align-items: baseline;
-  padding: 12px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+.pf-row { display: grid; grid-template-columns: 56px 160px 1fr; gap: 14px; align-items: baseline;
+  padding: 14px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); font-size: 0.85rem; }
 .pf-rows .pf-row:last-child { border-bottom: none; }
-.pf-row .rowno { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); }
+.pf-row .rowno { font-size: 0.8rem; letter-spacing: 0.04em; color: var(--gray); white-space: nowrap; }
 .pf-blockers .pf-row .rowno { color: var(--red); }
 .pf-warnings .pf-row .rowno { color: var(--gold); }
-.pf-row .lead { font-size: 0.78rem; color: var(--ink); font-weight: 500;
+.pf-row .lead { font-size: 0.88rem; color: var(--ink); font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pf-row .reason { font-size: 0.72rem; color: var(--gray); line-height: 1.55; }
+.pf-row .reason { font-size: 0.85rem; color: var(--gray); line-height: 1.5; }
 .pf-passed .pf-row { grid-template-columns: 24px 1fr; }
 .pf-passed .pf-row .rowno { color: var(--green); }
+/* Sheet-level findings (rowIndex null) — "Sheet" label spans the row#+lead columns */
+.pf-row.pf-sheet-level { grid-template-columns: 230px 1fr; }
+.pf-row.pf-sheet-level .lead { display: none; }
 .pf-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
   margin-top: 8px; padding-top: 22px; flex-wrap: wrap; }
 .pf-actions .spacer { flex: 1; }
-.pf-count-note { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); line-height: 1.6;
+.pf-count-note { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.6;
   width: 100%; margin-top: 12px; }
 .pf-count-note b { color: var(--ink); font-weight: 500; }
 
@@ -7764,10 +7767,10 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .bl-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.6; margin: 0 0 20px; }
 .bl-sub b { color: var(--ink); font-weight: 500; }
 .bl-row { display: grid; grid-template-columns: 190px 1fr 150px 70px; gap: 14px; align-items: baseline;
-  padding: 12px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
-.bl-entry { font-size: 0.78rem; font-weight: 500; color: var(--ink); }
-.bl-reason-cell { font-size: 0.7rem; color: var(--gray); }
-.bl-meta { font-size: 0.62rem; color: var(--gray); }
+  padding: 14px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); font-size: 0.85rem; }
+.bl-entry { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+.bl-reason-cell { font-size: 0.85rem; color: var(--gray); }
+.bl-meta { font-size: 0.72rem; color: var(--gray); }
 .bl-remove { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--gray); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; cursor: pointer; }
 .bl-remove:hover { color: var(--red); border-color: var(--red); }
@@ -7777,3 +7780,23 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .bl-add input:focus { outline: none; border-color: var(--ink); }
 .bl-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 14px; line-height: 1.6; }
 .bl-note b { color: var(--ink); font-weight: 500; }
+
+/* ── Inline wizard blocklist (Section 2, under the sheet URL) ── */
+.wiz-blocklist { margin-top: 18px; border-top: 1px solid var(--hairline-soft); padding-top: 14px; }
+.wiz-blocklist-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gray); margin-bottom: 10px; }
+.wiz-blocklist-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.wiz-bl-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono);
+  font-size: 0.85rem; color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px;
+  padding: 4px 6px 4px 12px; }
+.wiz-bl-x { font-family: var(--mono); font-size: 0.85rem; line-height: 1; color: var(--gray);
+  background: transparent; border: none; cursor: pointer; padding: 2px 6px; border-radius: 9999px; }
+.wiz-bl-x:hover { color: var(--red); }
+.wiz-bl-empty { font-family: var(--mono); font-size: 0.85rem; color: var(--gray); }
+.wiz-blocklist-add { display: flex; gap: 10px; align-items: center; max-width: 460px; }
+.wiz-blocklist-add input { box-sizing: border-box; flex: 1; background: transparent;
+  border: 1px solid var(--hairline); color: var(--ink); font-family: var(--mono);
+  font-size: 0.85rem; padding: 8px 12px; border-radius: 0; }
+.wiz-blocklist-add input:focus { outline: none; border-color: var(--ink); }
+.wiz-blocklist-hint { font-family: var(--mono); font-size: 0.72rem; color: var(--gray);
+  margin-top: 10px; line-height: 1.6; }

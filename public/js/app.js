@@ -4896,10 +4896,16 @@ async function runPreflight(payload) {
 function renderPreflight({ findings }) {
   const fill = (id, list, isFinding) => {
     const el = document.getElementById(id);
-    el.innerHTML = list.map((f) => isFinding
-      ? `<div class="pf-row"><span class="rowno">${escapeHtml(String(f.rowIndex ?? '—'))}</span><span class="lead">${escapeHtml(f.leadName || '')}</span><span class="reason">${escapeHtml(f.detail)}</span></div>`
-      : `<div class="pf-row pf-pass"><span class="rowno">✓</span><span class="reason">${escapeHtml(f.detail)}</span></div>`
-    ).join('') || '<div class="pf-row" style="color:var(--gray);font-size:0.72rem">none</div>';
+    el.innerHTML = list.map((f) => {
+      if (!isFinding) {
+        return `<div class="pf-row pf-pass"><span class="rowno">✓</span><span class="reason">${escapeHtml(f.detail)}</span></div>`;
+      }
+      if (f.rowIndex == null) {
+        // Sheet-level finding — no row number; "Sheet" label spans the first two columns.
+        return `<div class="pf-row pf-sheet-level"><span class="rowno">Sheet</span><span class="lead"></span><span class="reason">${escapeHtml(f.detail)}</span></div>`;
+      }
+      return `<div class="pf-row"><span class="rowno">Row ${escapeHtml(String(f.rowIndex))}</span><span class="lead">${escapeHtml(f.leadName || '')}</span><span class="reason">${escapeHtml(f.detail)}</span></div>`;
+    }).join('') || '<div class="pf-row pf-sheet-level"><span class="rowno">—</span><span class="lead"></span><span class="reason">none</span></div>';
   };
   fill('pf-blockers', findings.blockers, true);
   fill('pf-warnings', findings.warnings, true);
@@ -4913,7 +4919,7 @@ function renderPreflight({ findings }) {
   // Blocklist findings are never overridable — adapt button label accordingly.
   const hasBl = findings.blockers.some((f) => f.check === 'blocklist_match');
   const anyway = document.getElementById('pf-anyway');
-  anyway.textContent = hasBl ? 'Exclude blocklisted & launch anyway' : 'Launch anyway';
+  anyway.textContent = hasBl ? 'Keep flagged, launch anyway (blocklisted still excluded)' : 'Launch anyway';
   anyway.style.display = findings.blockers.length || findings.warnings.length ? '' : 'none';
   // Show/hide warning tally chip
   const warnChip = document.getElementById('pf-tally-warnings');
@@ -4922,6 +4928,43 @@ function renderPreflight({ findings }) {
 }
 
 function closePreflight() { document.getElementById('pf-scrim').style.display = 'none'; }
+
+// Disable/enable the 4 overlay action buttons + show a "re-checking…" note
+// while the blocklist-triggered re-lint runs.
+function _setPfActionsDisabled(disabled) {
+  ['pf-fix', 'pf-exclude', 'pf-anyway', 'pf-cancel'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+  const sub = document.getElementById('pf-sub');
+  if (sub) {
+    if (disabled) {
+      if (sub.getAttribute('data-prev-text') == null) sub.setAttribute('data-prev-text', sub.innerHTML);
+      sub.innerHTML = '<span style="color:var(--gray);font-style:italic">re-checking against the updated blocklist…</span>';
+    } else {
+      const prev = sub.getAttribute('data-prev-text');
+      if (prev != null) { sub.innerHTML = prev; sub.removeAttribute('data-prev-text'); }
+    }
+  }
+}
+
+// If the pre-flight overlay is open with stored results, re-run the lint so
+// blocklist edits are reflected immediately (no Cancel + Start-again needed).
+async function _recheckPreflightIfOpen() {
+  if (!_pfState) return;
+  const scrim = document.getElementById('pf-scrim');
+  if (!scrim || scrim.style.display === 'none') return;
+  _setPfActionsDisabled(true);
+  try {
+    const fresh = await runPreflight(_pfState.payload);
+    _pfState = { findings: fresh.findings, ack: fresh.ack, payload: _pfState.payload, opts: _pfState.opts };
+    renderPreflight(fresh);
+  } catch (err) {
+    showCampaignToast('Blocklist saved — pre-flight re-check failed: ' + (err && err.message || 'unknown error') + '. Showing previous results.', 7000);
+  } finally {
+    _setPfActionsDisabled(false);
+  }
+}
 
 async function stampExcluded(stampables) {
   if (!stampables.length) return { ok: true, stamped: 0, failed: [] };
@@ -4986,9 +5029,49 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('bl-value').value = '';
     document.getElementById('bl-reason').value = '';
-    openBlocklistPanel();
+    await openBlocklistPanel();
+    if (typeof renderWizardBlocklist === 'function') renderWizardBlocklist();
+    _recheckPreflightIfOpen();
   };
-  if (blClose) blClose.onclick = () => { document.getElementById('bl-scrim').style.display = 'none'; };
+  if (blClose) blClose.onclick = () => {
+    document.getElementById('bl-scrim').style.display = 'none';
+    _recheckPreflightIfOpen();
+  };
+});
+
+// ── Inline wizard blocklist (Section 2, under the sheet URL) — same data as
+// the #bl-scrim panel. Chips + inline add; refreshed after add/remove.
+async function renderWizardBlocklist() {
+  const chips = document.getElementById('wiz-bl-chips');
+  if (!chips) return;
+  const r = await fetch('/api/blocklist').then((x) => x.json()).catch(() => ({ entries: [] }));
+  chips.innerHTML = (r.entries || []).map((e) =>
+    `<span class="wiz-bl-chip" title="${escapeHtml(e.reason || '')}">${escapeHtml(e.value)}<button type="button" class="wiz-bl-x" data-v="${escapeHtml(e.value)}" aria-label="Remove ${escapeHtml(e.value)} from blocklist">×</button></span>`
+  ).join('') || '<span class="wiz-bl-empty">No blocklisted companies yet</span>';
+  chips.querySelectorAll('.wiz-bl-x').forEach((btn) => btn.onclick = async () => {
+    await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
+    renderWizardBlocklist();
+    _recheckPreflightIfOpen();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const wizAdd = document.getElementById('wiz-bl-add');
+  const wizInput = document.getElementById('wiz-bl-value');
+  const doAdd = async () => {
+    const value = (wizInput?.value || '').trim();
+    if (!value) return;
+    await fetch('/api/blocklist', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value, reason: '', addedBy: (window.operatorEmail || '') }),
+    });
+    wizInput.value = '';
+    renderWizardBlocklist();
+    _recheckPreflightIfOpen();
+  };
+  if (wizAdd) wizAdd.onclick = doAdd;
+  if (wizInput) wizInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+  renderWizardBlocklist(); // populate chips on wizard render
 });
 
 async function openBlocklistPanel() {
@@ -4999,7 +5082,9 @@ async function openBlocklistPanel() {
   ).join('') || '<div style="font-family:var(--mono);font-size:0.72rem;color:var(--gray);padding:12px 4px">No entries yet</div>';
   list.querySelectorAll('.bl-remove').forEach((btn) => btn.onclick = async () => {
     await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
-    openBlocklistPanel();
+    await openBlocklistPanel();
+    if (typeof renderWizardBlocklist === 'function') renderWizardBlocklist();
+    _recheckPreflightIfOpen();
   });
   document.getElementById('bl-scrim').style.display = 'flex';
 }
