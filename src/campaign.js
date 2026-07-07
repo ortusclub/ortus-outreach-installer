@@ -79,7 +79,7 @@ import {
 import {
   recordSkip, clearSkips,
   ALREADY_PROCESSED, IDENTITY_UNCONFIRMED, WATCHDOG_TIMEOUT,
-  MALFORMED_URL, FAILED_REPEATEDLY,
+  MALFORMED_URL, FAILED_REPEATEDLY, OTHER, TERMINAL_STAGE,
 } from './skip-ledger.js';
 
 const STATE_FILE = dataPath('state.json');
@@ -3436,7 +3436,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             row['Introduction status'] || row['introStatus'] || ''
           ).toString().trim();
           if (_introStatusNow !== '') {
-            recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Intro Status already set to "${_introStatusNow}" — skipping` });
+            recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: Intro Status already set to "${_introStatusNow}" — skipping` });
             delete state.processed[url]; continue;
           }
         } else if (mode === 'message_only') {
@@ -3448,7 +3448,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             row['Direct Message Status'] || row['dmStatus'] || ''
           ).toString().trim();
           if (_dmStatusNow !== '') {
-            recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: DM Status already set to "${_dmStatusNow}" — skipping` });
+            recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: DM Status already set to "${_dmStatusNow}" — skipping` });
             delete state.processed[url]; continue;
           }
         } else if (mode === 'open_profile_only' || mode === 'inmail_only') {
@@ -3456,26 +3456,26 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // New schema: pre-filter required Stage in {'', 'Send Connect'}.
             // If a concurrent run flipped it to anything else, skip.
             if (_stage !== '' && _stage !== 'Send Connect') {
-              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Stage is "${_stage}" (not eligible for ${mode}) — skipping` });
+              recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: Stage is "${_stage}" (not eligible for ${mode}) — skipping` });
               delete state.processed[url]; continue;
             }
           } else {
             if (status === 'done') {
-              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Connection Status is "done" — skipping` });
+              recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: Connection Status is "done" — skipping` });
               delete state.processed[url]; continue;
             }
             if (mode === 'open_profile_only' && msgSent) {
-              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Message already sent — skipping` });
+              recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: Message already sent — skipping` });
               delete state.processed[url]; continue;
             }
             if (mode === 'inmail_only' && inmailCell === 'sent') {
-              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: InMail already sent — skipping` });
+              recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: InMail already sent — skipping` });
               delete state.processed[url]; continue;
             }
           }
         } else {
           if (status === 'done') {
-            recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Connection Status is "done" — skipping` });
+            recordSkip({ url, leadName: _leadNameForSkip, reason: TERMINAL_STAGE, profileId, profileName: pName, detail: `In-loop re-validation: Connection Status is "done" — skipping` });
             delete state.processed[url]; continue;
           }
         }
@@ -3837,7 +3837,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               } else if (_errStr.includes('identity_unverified') || _errStr.includes('identity-unverified')) {
                 _skipReason = IDENTITY_UNCONFIRMED;
               } else {
-                _skipReason = result.error; // will be stored as a raw string (OTHER-ish)
+                _skipReason = OTHER;
               }
               recordSkip({
                 url,
