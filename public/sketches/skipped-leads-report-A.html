@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Skipped-leads report (A)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-h { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.05em; color: var(--ink);
+    margin: 36px 0 4px; border-bottom: 1px solid var(--hairline); padding-bottom: 8px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 16px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* ── NEW: skipped-leads block, built on log/hairline tokens ── */
+  .skipped { grid-column: 1 / -1; border-top: 1px solid var(--hairline-soft); padding-top: 14px; }
+  .skipped-head { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); }
+  .skipped-head .n { color: var(--ink); }
+  .skipped-head .vj-log-act { margin-left: auto; }
+  table.skiptab { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.7rem; margin-top: 12px; }
+  table.skiptab th { text-align: left; color: var(--gray); font-weight: 500; padding: 5px 8px; border-bottom: 1px solid var(--hairline);
+    text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.56rem; }
+  table.skiptab td { padding: 7px 8px; color: var(--ink); border-bottom: 1px solid var(--hairline-soft); vertical-align: top; }
+  table.skiptab td.rowno { color: var(--gray); white-space: nowrap; }
+  table.skiptab td.reason { color: var(--gray); line-height: 1.45; }
+  table.skiptab td.reason b { color: var(--gold); font-weight: 500; }
+  table.skiptab input[type="checkbox"] { accent-color: var(--ink); }
+  .skipped-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .skipped-note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); }
+  .skipped-note b { color: var(--ink); }
+
+  /* Collapsed mid-run variant */
+  .skipped-mini { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray); border-top: 1px solid var(--hairline-soft); padding-top: 12px; }
+  .skipped-mini .pill { color: var(--gold); border: 1px solid var(--gold); border-radius: 9999px; padding: 3px 12px;
+    font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .skipped-mini a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Skipped-leads report (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <h2 class="sk-h">1 · End-of-campaign card — full skipped report</h2>
+  <p class="sk-cap">When the run finishes, the card gains a <b>Skipped: 7 leads</b> section: row #, lead, account, and the
+    reason each was skipped. Tick rows and hit <b>Retry these 7</b> (count follows the checkboxes).</p>
+
+  <section class="vj-card">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot" style="background:var(--gray)"></span><span>Completed</span></span>
+      <span class="vj-when">Finished 16:42</span>
+    </div>
+    <h2 class="vj-name"><span>CC+IC — FinTech CTOs</span></h2>
+    <div class="vj-hbar" role="progressbar" aria-valuenow="113" aria-valuemax="120"><i style="width:94%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span>94</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>113</b> of <span>120</span> sent</span>
+          <span>7 skipped</span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>13</b> accepted</span>
+        <span>· <b>Done</b></span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill" onclick="toast('Opening Google Sheet')">Open sheet</button>
+    </div>
+
+    <!-- ── NEW: Skipped report ── -->
+    <div class="skipped">
+      <div class="skipped-head">⚠ Skipped · <span class="n">7 leads</span>
+        <button type="button" class="vj-log-act" onclick="toggleAll()">Select all / none</button>
+      </div>
+      <table class="skiptab">
+        <thead><tr><th></th><th>Row #</th><th>Lead</th><th>Account</th><th>Reason</th></tr></thead>
+        <tbody id="skiprows">
+          <tr><td><input type="checkbox" checked onchange="recount()"></td><td class="rowno">87</td><td>Rajiv Menon</td><td>James Okafor</td><td class="reason"><b>Malformed URL</b> — profile slug missing, page never loaded</td></tr>
+          <tr><td><input type="checkbox" checked onchange="recount()"></td><td class="rowno">109</td><td>Elena Petrova</td><td>Marta Kowalski</td><td class="reason"><b>Identity unconfirmed</b> — loaded profile name didn't match the sheet, skipped on doubt</td></tr>
+          <tr><td><input type="checkbox" checked onchange="recount()"></td><td class="rowno">110</td><td>Elena Petrova</td><td>Marta Kowalski</td><td class="reason"><b>Duplicate URL</b> — identical to row 109, only one send allowed</td></tr>
+          <tr><td><input type="checkbox" checked onchange="recount()"></td><td class="rowno">164</td><td>Marcus Webb</td><td>Priya Nair</td><td class="reason"><b>Watchdog timeout</b> — page didn't respond within the limit</td></tr>
+          <tr><td><input type="checkbox" checked onchange="recount()"></td><td class="rowno">201</td><td>Aisha Bello</td><td>James Okafor</td><td class="reason"><b>3 failures</b> — send failed 3 times, gave up for this run</td></tr>
+          <tr><td><input type="checkbox" checked onchange="recount()"></td><td class="rowno">278</td><td>Henrik Dahl</td><td>Priya Nair</td><td class="reason"><b>Watchdog timeout</b> — browser froze mid-navigation</td></tr>
+          <tr><td><input type="checkbox" checked onchange="recount()"></td><td class="rowno">413</td><td>Lavanya Vemula</td><td>Marta Kowalski</td><td class="reason"><b>Identity unconfirmed</b> — URL slug “leonkatsnelson” doesn't match the sheet name</td></tr>
+        </tbody>
+      </table>
+      <div class="skipped-actions">
+        <button class="btn btn-primary" id="retry-btn" onclick="retrySel()">Retry these 7</button>
+        <span class="skipped-note">Retries run as a short follow-on pass with the <b>same accounts and settings</b> — nothing else is re-sent.</span>
+      </div>
+    </div>
+  </section>
+
+  <h2 class="sk-h">2 · Same section, collapsed mid-run</h2>
+  <p class="sk-cap">While the campaign is still running the card only shows a one-liner — <b>Skipped so far: 3 — view</b> —
+    which expands into the same table (click “view”).</p>
+
+  <section class="vj-card">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Connect + Introduce</span></span>
+      <span class="vj-when">Started 09:41</span>
+    </div>
+    <h2 class="vj-name"><span>CC+IC — FinTech CTOs</span></h2>
+    <div class="vj-hbar" role="progressbar" aria-valuenow="52" aria-valuemax="120"><i style="width:43%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span>43</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>52</b> of <span>120</span> sent</span>
+          <span>Next batch in <b>06:12</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>13</b> accepted</span>
+        <span>· <b>Sending</b></span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill" onclick="toast('Open — restores the live campaign view')">Open</button>
+      <div class="dock" style="display:flex;gap:6px">
+        <button class="dock-btn" data-tip="Pause" aria-label="Pause" onclick="toast('Paused')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="toast('Stop')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="skipped-mini" id="mini-line">
+      <span class="pill">Skipped so far: 3</span>
+      <a onclick="expandMini()">view</a>
+    </div>
+    <div class="skipped" id="mini-table" hidden>
+      <div class="skipped-head">⚠ Skipped so far · <span class="n">3 leads</span>
+        <button type="button" class="vj-log-act" onclick="collapseMini()">Collapse</button>
+      </div>
+      <table class="skiptab">
+        <thead><tr><th>Row #</th><th>Lead</th><th>Account</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td class="rowno">87</td><td>Rajiv Menon</td><td>James Okafor</td><td class="reason"><b>Malformed URL</b> — profile slug missing</td></tr>
+          <tr><td class="rowno">109</td><td>Elena Petrova</td><td>Marta Kowalski</td><td class="reason"><b>Identity unconfirmed</b> — skipped on doubt</td></tr>
+          <tr><td class="rowno">110</td><td>Elena Petrova</td><td>Marta Kowalski</td><td class="reason"><b>Duplicate URL</b> — identical to row 109</td></tr>
+        </tbody>
+      </table>
+      <div class="skipped-note" style="margin-top:10px">Retry becomes available when the run finishes — skipped rows stay untouched on the sheet.</div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast" style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-family:var(--mono);font-size:0.7rem;padding:10px 20px;border-radius:9999px;opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:100"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.opacity = 1;
+    clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, 2200);
+  }
+  function selCount(){ return document.querySelectorAll('#skiprows input:checked').length; }
+  function recount(){
+    const n = selCount();
+    const b = document.getElementById('retry-btn');
+    b.textContent = 'Retry these ' + n;
+    b.disabled = n === 0;
+  }
+  function toggleAll(){
+    const boxes = document.querySelectorAll('#skiprows input');
+    const anyOff = Array.from(boxes).some(b => !b.checked);
+    boxes.forEach(b => b.checked = anyOff);
+    recount();
+  }
+  function retrySel(){ toast('Retrying ' + selCount() + ' skipped leads — same accounts & settings'); }
+  function expandMini(){ document.getElementById('mini-line').hidden = true; document.getElementById('mini-table').hidden = false; }
+  function collapseMini(){ document.getElementById('mini-line').hidden = false; document.getElementById('mini-table').hidden = true; }
+</script>
+</body>
+</html>

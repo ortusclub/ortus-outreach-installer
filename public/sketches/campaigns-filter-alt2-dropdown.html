@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Filter alt 2 — dropdown menu</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <link rel="stylesheet" href="/sketches/_filter-shared.css" />
+  <style>
+    /* Compact single control that lives on the header row next to + New campaign.
+       Opens a menu; the trigger shows the current selection. Zero horizontal cost. */
+    .fdrop{position:relative;}
+    .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;}
+    .fdrop-btn .cur{color:var(--gray);}
+    .fdrop-btn .cur b{color:var(--ink);font-weight:600;}
+    .fdrop-btn svg{opacity:.5;}
+    .fdrop-menu{position:absolute;right:0;top:calc(100% + 8px);min-width:220px;background:#fff;border:1px solid var(--hairline);border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.10);padding:6px;z-index:20;display:none;}
+    .fdrop.open .fdrop-menu{display:block;}
+    .fdrop-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 12px;border-radius:9px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#555;}
+    .fdrop-item:hover{background:#f5f5f4;color:var(--ink);}
+    .fdrop-item.on{background:var(--ink);color:#fff;}
+    .fdrop-item .n{opacity:.5;}
+    .fdrop-item .tick{width:14px;text-align:center;}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <p class="note"><b>Alt 2 — Dropdown menu.</b> The filter collapses into one small control on the header row — no space taken until you open it. The trigger always shows what's active (e.g. "Type: CC · 3"). Scales to many types. (Click it — it works.)</p>
+  <div class="altnav">
+    <a href="/sketches/campaigns-filter-alt1-underline.html">1 · Underline tabs</a>
+    <a class="here" href="/sketches/campaigns-filter-alt2-dropdown.html">2 · Dropdown menu</a>
+    <a href="/sketches/campaigns-filter-alt3-rail.html">3 · Left rail</a>
+  </div>
+
+  <div class="toprow">
+    <div class="seg"><b>Campaigns</b><span>Sales Nav</span></div>
+    <div class="right" style="display:flex;gap:10px;align-items:center;">
+      <div class="fdrop" id="fdrop">
+        <button class="fdrop-btn" id="fdropBtn"><span class="cur">Type: <b id="curLbl">All</b> · <span id="curN">7</span></span>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg></button>
+        <div class="fdrop-menu" id="fdropMenu"></div>
+      </div>
+      <button class="cta-new">＋ New campaign</button>
+    </div>
+  </div>
+
+  <div class="sn-qmeta" id="qmeta" style="text-align:right;margin:12px 2px 4px">—</div>
+  <div id="board"></div>
+</div>
+
+<script src="/sketches/_filter-shared.js"></script>
+<script>
+  let active = 'All';
+  const drop = document.getElementById('fdrop');
+  function drawMenu() {
+    const items = ['All', ...TYPES];
+    document.getElementById('fdropMenu').innerHTML = items.map(t =>
+      `<div class="fdrop-item ${t===active?'on':''}" data-t="${t}"><span><span class="tick">${t===active?'✓':''}</span> ${t}</span><span class="n">${typeCount(t)}</span></div>`).join('');
+    document.getElementById('curLbl').textContent = active;
+    document.getElementById('curN').textContent = typeCount(active);
+  }
+  document.getElementById('fdropBtn').addEventListener('click', () => drop.classList.toggle('open'));
+  document.getElementById('fdropMenu').addEventListener('click', (e) => {
+    const it = e.target.closest('.fdrop-item'); if (!it) return;
+    active = it.dataset.t; drawMenu(); renderBoard(active); drop.classList.remove('open');
+  });
+  document.addEventListener('click', (e) => { if (!drop.contains(e.target)) drop.classList.remove('open'); });
+  drawMenu(); renderBoard('All');
+</script>
+</body>
+</html>

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Duplicate campaign (B · appwide, unified board)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+
+<!-- ── 1:1 copy of index.html's inline #sn-board-styles (board CSS lives there, not in the linked files) ── -->
+<style id="sn-board-styles">
+  .route-seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;padding:3px;margin:8px 0 26px;}
+  .route-seg-btn{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--gray);background:transparent;border:0;border-radius:9999px;padding:9px 20px;cursor:pointer;transition:background .12s,color .12s;}
+  .route-seg-btn.is-active{background:var(--ink);color:var(--bg);}
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;transition:color .12s,border-color .12s;}
+  .sn-clear-done:hover{color:var(--ink);border-color:var(--ink);}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  .sn-strip.mine::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  .sn-strip.local.run::before{background:#e35ea0;}
+  .sn-board .dot.runlocal{background:#e35ea0;}
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
+  .sn-where.local{background:#fbe6f0;color:#b23372;}
+  .ovf{position:relative;display:inline-block;}
+  .ovf-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;font-size:16px;line-height:1;padding:0;}
+  .ovf-btn:hover{border-color:var(--ink);}
+  .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:#fff;border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;z-index:35;display:none;}
+  .ovf.open .ovf-menu{display:block;}
+  .ovf-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#444;background:transparent;border:none;text-align:left;}
+  .ovf-item:hover{background:#f4f4f3;color:var(--ink);}
+  .ovf-item svg{opacity:.7;}
+  .fdrop{position:relative;}
+  .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;white-space:nowrap;}
+  .fdrop-btn .cur{color:var(--gray);}
+  .fdrop-btn .cur b{color:var(--ink);font-weight:600;}
+  .fdrop-btn svg{opacity:.5;}
+  .sn-strip.stopped{border-color:var(--red);}
+  .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
+  .sn-strip.stopped .sn-status{color:var(--red);}
+  .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
+  .sn-progtxt b{color:var(--ink);font-weight:600;}
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-strip.done.sn-collapsed .sn-foot{margin-top:10px;padding-top:0;border-top:0;}
+  .sn-top{display:flex;align-items:center;gap:12px;padding-right:40px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-owner{font-size:12px;color:var(--gray);}
+  .sn-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-board .dot.run{background:var(--green);}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.q{background:var(--gray-faint,#b8b8b6);}.sn-board .dot.red{background:var(--red);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-strip.sn-collapsed .sn-switch{display:none;}
+  .sn-expand{position:absolute;top:14px;right:16px;width:32px;height:32px;display:flex;
+    align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;
+    background:transparent;color:var(--ink);cursor:pointer;transition:transform .15s, border-color .12s;z-index:2;}
+  .sn-expand:hover{border-color:var(--ink);}
+  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);}
+  .sn-switch{margin:16px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;}
+  .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
+  .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}
+</style>
+
+<style>
+  /* ── sketch-only chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+
+  /* v2 addition: explicit Duplicate pill on DONE strips (kept alongside the real ⋯ menu) */
+  .sn-foot .mini.dup { border-style: dashed; }
+  .sn-foot .mini.dup:hover { border-color: var(--ink); border-style: solid; }
+
+  /* gold prefill note inside the wizard */
+  .prefill-note { border: 1px solid var(--gold); background: var(--gold-tint-bg, rgba(201,168,74,0.08));
+    border-radius: 10px; padding: 13px 17px; font-family: var(--mono); font-size: 0.72rem; color: var(--ink);
+    line-height: 1.6; margin: 0 0 22px; }
+  .prefill-note b { color: var(--gold); }
+
+  /* wizard section value chips (sample values without rebuilding every field) */
+  .wiz-vals { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .wiz-val { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 6px 13px; }
+  .wiz-val b { color: var(--ink); font-weight: 500; }
+  .section .attn-flag { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gold); margin-left: 10px; }
+  .section.attn { border-left: 3px solid var(--gold); padding-left: 21px; margin-left: -24px; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3" class="route-dashboard">
+<div class="sketch-bar">SKETCH — Duplicate campaign · v2 appwide (unified campaigns board) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="app">
+
+  <!-- ── Sidebar (real shell) ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar">v2.132.0</span></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back" onclick="showDash()"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item" data-nav="nav-settings" onclick="toast('Scrolls to I. Campaign Type')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-sheet" onclick="toast('Scrolls to II. Data')"><span class="nav-num">II.</span>Data<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-accounts" onclick="toast('Scrolls to III. LinkedIn Accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-templates" onclick="toast('Scrolls to IV. Campaign Settings')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-launch" onclick="toast('Scrolls to V. Launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Live Status — unchanged')">Live Status</button>
+
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item" onclick="toast('Connection DB — unchanged')"><span class="nav-num">◆</span>Connection DB</button>
+
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item" onclick="toast('Open log — unchanged')">Open log</button>
+
+      <div class="nav-section-label">Help</div>
+      <button type="button" class="nav-item nav-item-help" onclick="toast('Help — unchanged')"><span class="nav-num">?</span>Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip" onclick="toast('Operator email — unchanged')">
+        <span class="operator-chip-label">Operating as</span>
+        <strong>antonio@ortusclub.com</strong>
+      </button>
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        <span>Mon 6 Jul</span>
+      </div>
+      <button type="button" class="btn btn-sm sidebar-signout" onclick="toast('Sign out — unchanged')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span>Monday, 6 July</span> <small style="margin-left:12px; color:var(--gray)">v2.132.0</small></div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">26</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">143</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err">0</span></div>
+        <div class="header-stat"><span class="k">Passover</span>
+          <span class="v small passover-pills">
+            <span class="passover-pill closed" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" title="CC">CC</span>
+          </span>
+        </div>
+        <div class="header-stat"><span class="k">RAM</span><span class="v">62%</span></div>
+        <div class="header-stat"><span class="k">CPU</span><span class="v">31%</span></div>
+        <div class="header-stat"><span class="k">Browsers</span><span class="v">1</span></div>
+      </div>
+    </div>
+
+    <!-- ══ Dashboard view — the CURRENT unified campaigns board (v2.129+) ══ -->
+    <div id="dashboard-view" class="route-view">
+      <div class="dashboard-header">
+        <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
+          <button type="button" class="route-seg-btn is-active">Campaigns</button>
+          <button type="button" class="route-seg-btn" onclick="toast('Sales Nav — unchanged')">Sales Nav</button>
+        </div>
+        <div class="dashboard-new-wrap">
+          <div class="fdrop" id="campaigns-typefilter">
+            <button type="button" class="fdrop-btn" onclick="toast('Type filter — unchanged')"><span class="cur">Type: <b>All</b> · 4</span>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg></button>
+          </div>
+          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="toast('Connection DB — unchanged')">Connection DB</button>
+          <button type="button" class="btn btn-start dashboard-new-btn" onclick="toast('+ New campaign — blank wizard, unchanged')">+ New campaign</button>
+        </div>
+      </div>
+
+      <div class="sn-qmeta" style="text-align:right;margin:0 2px 4px">1 running</div>
+
+      <div id="campaigns-board" class="sn-board">
+
+        <div class="sn-railhead">▶ Now running</div>
+
+        <!-- running local strip — pink rail, real controls incl. the ⋯ Duplicate menu -->
+        <div class="sn-strip local run" data-cid="local-active">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · C+I</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span>
+            <span class="sn-status"><span class="dot runlocal"></span> Running</span></div>
+          <div class="sn-name">CC+IC — FinTech CTOs</div>
+          <div class="sn-flow"><b>120 leads</b> → <b>3 accounts</b> → feeds <b>CC+IC — FinTech CTOs</b> · Connect + Introduce Back</div>
+          <div class="sn-progtxt"><b>52</b> of 120 sent · runs on this machine — closing the app stops it</div>
+          <div class="sn-switch"><div class="sn-pane on">
+            <div class="sn-logbox"><span class="t">10:22</span> <span class="ok">Sent</span> — Connect request → Daniel Reyes (James Okafor)<br><span class="t">10:18</span> <span class="ok">Intro</span> — Intro DM fired → Sofia Lindqvist<br><span class="t">10:14</span> <span class="ok">Sent</span> — Connect request → Sofia Lindqvist (Marta Kowalski)</div>
+          </div></div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('Pause — unchanged')">Pause</button>
+            <button class="mini" onclick="toast('Stop — unchanged')">Stop</button>
+            <button class="mini solid" onclick="toast('Open — reveals the local detail card, unchanged')">Open</button>
+            <div class="ovf"><button type="button" class="ovf-btn" title="More" onclick="toggleOvf(this)">⋯</button>
+              <div class="ovf-menu"><button type="button" class="ovf-item" onclick="duplicateFrom('CC+IC — FinTech CTOs')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>
+          </div></div>
+        </div>
+
+        <div class="sn-railhead">✓ Done <span class="sn-railcount">3</span><button type="button" class="sn-clear-done" onclick="toast('Clear done — unchanged')">Clear done</button></div>
+
+        <!-- done strips — each finished campaign gets the Duplicate action -->
+        <div class="sn-strip local done sn-collapsed" data-cid="h-1">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · C+I</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span>
+            <span class="sn-status"><span class="dot mon"></span> Done</span></div>
+          <div class="sn-name">CC+IC — FinTech CTOs — 18 Jun</div>
+          <div class="sn-flow"><b>120 leads</b> → <b>3 accounts</b> → feeds <b>CC+IC — FinTech CTOs — 18 Jun</b> · Connect + Introduce Back</div>
+          <div class="sn-switch"><div class="sn-pane on"><div class="sn-logbox">Finished 18 Jun · <span class="ok">113/120 sent</span> · 13 accepted</div></div></div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini dup" onclick="duplicateFrom('CC+IC — FinTech CTOs — 18 Jun')">Duplicate</button>
+            <button class="mini solid" onclick="toast('Open — unchanged')">Open</button>
+            <div class="ovf"><button type="button" class="ovf-btn" title="More" onclick="toggleOvf(this)">⋯</button>
+              <div class="ovf-menu"><button type="button" class="ovf-item" onclick="duplicateFrom('CC+IC — FinTech CTOs — 18 Jun')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>
+          </div></div>
+        </div>
+
+        <div class="sn-strip done sn-collapsed" data-cid="c-2">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · DM</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span>
+            <span class="sn-status"><span class="dot mon"></span> Done</span></div>
+          <div class="sn-name">DM — June event follow-up</div>
+          <div class="sn-flow"><b>64 leads</b> → <b>2 accounts</b> → feeds <b>DM — June event follow-up</b> · Direct Messages</div>
+          <div class="sn-switch"><div class="sn-pane on"><div class="sn-logbox">Finished 12 Jun · <span class="ok">64/64 sent</span> · 9 replied</div></div></div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini dup" onclick="duplicateFrom('DM — June event follow-up')">Duplicate</button>
+            <button class="mini solid" onclick="toast('Open — jumps to the source Google Sheet, unchanged')">Open</button>
+            <div class="ovf"><button type="button" class="ovf-btn" title="More" onclick="toggleOvf(this)">⋯</button>
+              <div class="ovf-menu"><button type="button" class="ovf-item" onclick="duplicateFrom('DM — June event follow-up')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>
+          </div></div>
+        </div>
+
+        <div class="sn-strip local done stopped sn-collapsed" data-cid="h-3">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span>
+            <span class="sn-status"><span class="dot red"></span> Stopped</span></div>
+          <div class="sn-name">Connect Only — CFO list</div>
+          <div class="sn-flow"><b>95 leads</b> → <b>1 account</b> → feeds <b>Connect Only — CFO list</b> · Connect Only</div>
+          <div class="sn-switch"><div class="sn-pane on"><div class="sn-logbox">Stopped early 5 Jun · <span class="ok">80/95 sent</span></div></div></div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini dup" onclick="duplicateFrom('Connect Only — CFO list')">Duplicate</button>
+            <button class="mini solid" onclick="toast('Open — unchanged')">Open</button>
+            <div class="ovf"><button type="button" class="ovf-btn" title="More" onclick="toggleOvf(this)">⋯</button>
+              <div class="ovf-menu"><button type="button" class="ovf-item" onclick="duplicateFrom('Connect Only — CFO list')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>
+          </div></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══ Wizard view — revealed in-page when Duplicate is clicked, prefilled ══ -->
+    <div id="wizard-view" class="route-view">
+      <div class="wizard-back-row">
+        <button type="button" class="back-link" onclick="showDash()">← Back to dashboard</button>
+      </div>
+
+      <div class="prefill-note" id="prefill-note"><b>Prefilled from “CC+IC — FinTech CTOs — 18 Jun”</b> — review Section II Data before launch: the copied sheet + tab may already contain sent rows.</div>
+
+      <div class="section campaign-name-section" id="nav-campaign-name">
+        <h2>Campaign Name</h2>
+        <div class="campaign-name-row">
+          <input type="text" id="campaign-name-input" value="CC+IC — FinTech CTOs — 18 Jun copy" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="section" id="nav-settings">
+        <h2>1. Campaign Type <span class="section-summary">Connect + Introduce Back</span></h2>
+        <div class="wiz-vals">
+          <span class="wiz-val">Mode <b>Connect + Introduce Back</b> — copied</span>
+          <span class="wiz-val">Primary <b>Sam Adcock</b> · linkedin.com/in/samadcock — copied</span>
+        </div>
+      </div>
+
+      <div class="section collapsible attn" id="nav-sheet">
+        <h2 class="section-toggle"><span class="caret">▾</span> 2. Google Sheet tab URL <span class="section-summary">tab “June leads”</span><span class="attn-flag">· review before launch</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val">Sheet <b>CC+IC — FinTech CTOs</b> — copied from the source campaign</span>
+            <span class="wiz-val">Tab <b>June leads</b> · gid 482910</span>
+            <span class="wiz-val">LinkedIn column <b>C · “LinkedIn URL”</b></span>
+          </div>
+          <div class="wiz-vals"><span class="wiz-val" style="border-color:var(--gold); color:var(--ink)">⚠ This tab was already run on 18 Jun — <b>113 rows carry a Stage stamp</b>. Point at a fresh tab or the stamped rows will be skipped.</span></div>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-accounts">
+        <h2 class="section-toggle"><span class="caret">▾</span> 3. Select GoLogin Accounts <span class="section-summary">3 accounts</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val"><b>James Okafor</b> — copied</span>
+            <span class="wiz-val"><b>Marta Kowalski</b> — copied</span>
+            <span class="wiz-val"><b>Priya Nair</b> — copied</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-templates">
+        <h2 class="section-toggle"><span class="caret">▾</span> 5. Message Templates <span class="section-summary">note + intro copied</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val">Connection note <b>copied</b> · uses {first name} {company}</span>
+            <span class="wiz-val">Intro DM body <b>copied</b> · uses {primary name} {primary url}</span>
+            <span class="wiz-val">Daily limit <b>20/day per account</b> · delay <b>30–60s</b></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-launch">
+        <h2 class="section-toggle"><span class="caret">▾</span> 6. Launch <span class="section-summary"></span></h2>
+        <div class="collapsible-body">
+          <div class="launch-hero">
+            <div>
+              <div class="launch-number">120</div>
+              <div class="launch-caption">Number of accounts being used: <strong>3</strong> · <strong>120 connections</strong> · ETA <strong>~2 days</strong></div>
+            </div>
+            <div class="launch-right">
+              <div class="launch-actions launch-actions--four">
+                <button type="button" class="btn btn-start" onclick="toast('Start — same flow as today (pre-flight runs first)')">Start a campaign</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Queue it — unchanged')">Queue it</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Schedule it — unchanged')">Schedule it</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Save as draft — the duplicate is already staged as a draft')">Save as draft</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function toggleOvf(btn){
+    const o = btn.closest('.ovf'); const wasOpen = o.classList.contains('open');
+    document.querySelectorAll('.ovf.open').forEach((x) => x.classList.remove('open'));
+    if (!wasOpen) o.classList.add('open');
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.ovf')) document.querySelectorAll('.ovf.open').forEach((x) => x.classList.remove('open'));
+  });
+  function duplicateFrom(name){
+    document.querySelectorAll('.ovf.open').forEach((x) => x.classList.remove('open'));
+    document.getElementById('prefill-note').innerHTML =
+      '<b>Prefilled from “' + name + '”</b> — review Section II Data before launch: the copied sheet + tab may already contain sent rows.';
+    const ni = document.getElementById('campaign-name-input');
+    ni.value = /\bcopy\b/i.test(name) ? name : name + ' copy';
+    // Same mechanism as the real router: swap the body route class
+    document.body.classList.remove('route-dashboard');
+    document.body.classList.add('route-wizard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast('Duplicated — staged as a draft, nothing runs until you Start/Queue/Schedule');
+  }
+  function showDash(){
+    document.body.classList.remove('route-wizard');
+    document.body.classList.add('route-dashboard');
+    window.scrollTo({ top: 0 });
+  }
+</script>
+</body>
+</html>

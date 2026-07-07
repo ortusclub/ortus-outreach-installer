@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Duplicate campaign + presets (A)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 22px 140px; }
+  .sk-h { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.05em; color: var(--ink);
+    margin: 36px 0 4px; border-bottom: 1px solid var(--hairline); padding-bottom: 8px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 16px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* History rows — real .campaign-row grid */
+  .hist-band { border: 1px solid var(--hairline); border-radius: 10px; padding: 4px 12px; }
+  .campaign-row { display: grid; grid-template-columns: 38px 2fr 1.2fr 1.6fr auto; gap: 20px; align-items: center;
+    padding: 12px 6px; border-bottom: 1px solid var(--hairline-soft); }
+  .campaign-row:last-child { border-bottom: none; }
+  .row-actions .btn-pill { padding: 6px 14px; font-size: 0.58rem; }
+
+  /* Prefilled wizard mock */
+  .wiz-mock { border: 1px solid var(--card-border); background: var(--card-bg); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: 22px 26px; }
+  .prefill-note { border: 1px solid var(--gold); background: var(--gold-tint-bg); border-radius: 10px;
+    padding: 12px 16px; font-family: var(--mono); font-size: 0.7rem; color: var(--ink); line-height: 1.55; margin-bottom: 18px; }
+  .prefill-note b { color: var(--gold); }
+  .wiz-sec { border-top: 1px solid var(--hairline); padding: 12px 0; }
+  .wiz-sec:first-of-type { border-top: none; }
+  .wiz-sec-head { display: flex; align-items: baseline; gap: 12px; font-family: var(--mono); }
+  .wiz-sec-head .nav-num { color: var(--gray); font-size: 0.62rem; letter-spacing: 0.1em; width: 26px; }
+  .wiz-sec-head .lbl { font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+  .wiz-sec-head .val { margin-left: auto; font-size: 0.7rem; color: var(--gray); text-align: right; max-width: 55%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wiz-sec-head .val b { color: var(--ink); font-weight: 500; }
+  .wiz-sec.attn { border-left: 3px solid var(--gold); margin-left: -26px; padding-left: 23px; }
+  .wiz-sec.attn .lbl::after { content: " · review"; color: var(--gold); text-transform: none; letter-spacing: 0.04em; }
+  .wiz-sec .save-preset { margin-top: 8px; }
+  .wiz-actions { display: flex; gap: 10px; margin-top: 18px; border-top: 1px solid var(--hairline); padding-top: 16px; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Duplicate campaign + presets (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <h2 class="sk-h">1 · Campaign History — each row gains “Duplicate”</h2>
+  <p class="sk-cap">Real history layout (<b>.section.collapsible + .campaign-row</b>). Duplicate copies the whole config
+    into a fresh wizard draft — click it to see step 2 fill in below.</p>
+
+  <div class="section collapsible" id="history-section-sk">
+    <div class="history-header">
+      <h2 class="section-toggle" onclick="document.getElementById('hist-body').hidden = !document.getElementById('hist-body').hidden"><span class="caret">▾</span> Campaign History</h2>
+      <div style="display:flex; gap:10px">
+        <button class="btn btn-secondary btn-sm" onclick="toast('Download CSV — unchanged')">Download CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="toast('Clear History — unchanged')">Clear History</button>
+      </div>
+    </div>
+    <div class="collapsible-body" id="hist-body">
+      <div class="hist-band">
+        <div class="campaign-row">
+          <span class="glyph">CC</span>
+          <span class="row-name">CC+IC — FinTech CTOs — 18 Jun</span>
+          <span class="row-when">18 Jun · 3 accounts</span>
+          <span class="row-progress"><b>113</b>/120 sent · 13 accepted</span>
+          <span class="row-actions">
+            <button class="btn-pill" onclick="toast('Open — past-campaign detail, unchanged')">Open</button>
+            <button class="btn-pill" onclick="showDup()">Duplicate</button>
+          </span>
+        </div>
+        <div class="campaign-row">
+          <span class="glyph">DM</span>
+          <span class="row-name">DM — June event follow-up</span>
+          <span class="row-when">12 Jun · 2 accounts</span>
+          <span class="row-progress"><b>64</b>/64 sent · 9 replied</span>
+          <span class="row-actions">
+            <button class="btn-pill" onclick="toast('Open — past-campaign detail, unchanged')">Open</button>
+            <button class="btn-pill" onclick="toast('Duplicate — prefills the wizard from this campaign')">Duplicate</button>
+          </span>
+        </div>
+        <div class="campaign-row">
+          <span class="glyph">CO</span>
+          <span class="row-name">Connect Only — CFO list</span>
+          <span class="row-when">05 Jun · 1 account</span>
+          <span class="row-progress"><b>80</b>/95 sent · stopped early</span>
+          <span class="row-actions">
+            <button class="btn-pill" onclick="toast('Open — past-campaign detail, unchanged')">Open</button>
+            <button class="btn-pill" onclick="toast('Duplicate — prefills the wizard from this campaign')">Duplicate</button>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sk-h">2 · Wizard, prefilled from the duplicate</h2>
+  <p class="sk-cap">Wizard section headers (real <b>I–V</b> numbering) with the copied values summarized, a highlighted
+    review note, a <b>Presets</b> dropdown at the top (reuses the real Saved-configs pill), and a per-section
+    <b>Save as preset</b> affordance on Campaign Settings.</p>
+
+  <div class="wiz-mock" id="wiz-mock" hidden>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px">
+      <span style="font-family:var(--display); font-size:1.4rem; letter-spacing:0.04em">New Campaign</span>
+      <!-- Presets dropdown — real preset-pill component -->
+      <div class="preset-pill" style="margin-left:auto; position:relative">
+        <button type="button" class="btn btn-xs preset-pill-btn" onclick="document.getElementById('preset-pop').hidden = !document.getElementById('preset-pop').hidden">
+          <span>Presets</span>
+          <span class="preset-pill-count">2</span>
+          <span class="preset-pill-caret">▾</span>
+        </button>
+        <div class="preset-popover" id="preset-pop" hidden style="position:absolute; right:0; top:110%; z-index:20">
+          <div class="preset-pop-label">Pinned</div>
+          <div class="preset-pop-item preset-pop-last" onclick="toast('Loaded: Last Used')">
+            <span><span class="preset-pop-dot"></span>Last Used</span>
+            <span class="preset-pop-tag">CC+IC</span>
+          </div>
+          <div class="preset-pop-divider"></div>
+          <div class="preset-pop-label">Saved</div>
+          <div class="preset-pop-item" onclick="toast('Loaded preset: FinTech settings')"><span>FinTech settings</span><span class="preset-pop-tag">CC+IC</span></div>
+          <div class="preset-pop-item" onclick="toast('Loaded preset: Event follow-up DM')"><span>Event follow-up DM</span><span class="preset-pop-tag">DM</span></div>
+          <div class="preset-pop-action" onclick="toast('Save current as… — names the current wizard config')">
+            <span>+ Save current as…</span><span class="preset-pop-caret">→</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prefill-note"><b>Prefilled from “CC+IC — FinTech CTOs — 18 Jun”</b> — review Section II Data before launch:
+      the copied sheet + tab may already contain sent rows.</div>
+
+    <div class="wiz-sec">
+      <div class="wiz-sec-head"><span class="nav-num">I.</span><span class="lbl">Campaign Type</span>
+        <span class="val"><b>Connect + Introduce</b></span></div>
+    </div>
+    <div class="wiz-sec attn">
+      <div class="wiz-sec-head"><span class="nav-num">II.</span><span class="lbl">Data</span>
+        <span class="val"><b>CC+IC — FinTech CTOs</b> · tab “June leads”</span></div>
+    </div>
+    <div class="wiz-sec">
+      <div class="wiz-sec-head"><span class="nav-num">III.</span><span class="lbl">LinkedIn Accounts</span>
+        <span class="val"><b>3 accounts</b> — James Okafor, Marta Kowalski, Priya Nair</span></div>
+    </div>
+    <div class="wiz-sec">
+      <div class="wiz-sec-head"><span class="nav-num">IV.</span><span class="lbl">Campaign Settings</span>
+        <span class="val"><b>20/day per account</b> · connection note + intro template copied</span></div>
+      <div class="save-preset">
+        <button class="btn btn-secondary btn-sm" onclick="toast('Saved as preset — appears in the Presets dropdown')">Save as preset</button>
+      </div>
+    </div>
+    <div class="wiz-sec">
+      <div class="wiz-sec-head"><span class="nav-num">V.</span><span class="lbl">Launch</span>
+        <span class="val">ready when Section II is reviewed</span></div>
+    </div>
+
+    <div class="wiz-actions">
+      <button class="btn btn-primary" onclick="toast('Launch flow — same as today (pre-flight runs first)')">Continue to launch</button>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('wiz-mock').hidden = true; toast('Duplicate discarded')">Discard draft</button>
+    </div>
+  </div>
+  <p class="sk-cap" id="wiz-hint">↑ Click <b>Duplicate</b> on the first history row to reveal the prefilled wizard.</p>
+</div>
+
+<div class="toast" id="toast" style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-family:var(--mono);font-size:0.7rem;padding:10px 20px;border-radius:9999px;opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:100"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.opacity = 1;
+    clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, 2200);
+  }
+  function showDup(){
+    document.getElementById('wiz-mock').hidden = false;
+    document.getElementById('wiz-hint').hidden = true;
+    toast('Duplicated — wizard prefilled below');
+    document.getElementById('wiz-mock').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+</script>
+</body>
+</html>

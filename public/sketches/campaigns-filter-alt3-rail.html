@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Filter alt 3 — left rail</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <link rel="stylesheet" href="/sketches/_filter-shared.css" />
+  <style>
+    /* Two-column: a slim type rail on the left, board on the right. Filter is
+       always visible and doubles as a legend of what types exist + their counts. */
+    .split{display:grid;grid-template-columns:180px 1fr;gap:30px;align-items:start;}
+    .frail{position:sticky;top:20px;}
+    .frail-h{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:#b0b0ae;margin:0 0 12px;padding-left:12px;}
+    .frail-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;background:none;border:none;position:relative;padding:9px 12px;border-radius:9px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#777;transition:.12s;}
+    .frail-item:hover{background:#f5f5f4;color:var(--ink);}
+    .frail-item.on{color:var(--ink);font-weight:600;}
+    .frail-item.on::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;background:var(--ink);border-radius:2px;}
+    .frail-item .n{font-size:10px;color:#b0b0ae;}
+    .frail-item.on .n{color:var(--gray);}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <p class="note"><b>Alt 3 — Left rail.</b> The filter is a permanent slim column beside the board — always visible, doubles as a legend of which types exist and how many. Best if filtering is something you do a lot. (Click a type — it works.)</p>
+  <div class="altnav">
+    <a href="/sketches/campaigns-filter-alt1-underline.html">1 · Underline tabs</a>
+    <a href="/sketches/campaigns-filter-alt2-dropdown.html">2 · Dropdown menu</a>
+    <a class="here" href="/sketches/campaigns-filter-alt3-rail.html">3 · Left rail</a>
+  </div>
+
+  <div class="toprow"><div class="seg"><b>Campaigns</b><span>Sales Nav</span></div><div class="right"><button class="cta-new">＋ New campaign</button></div></div>
+
+  <div class="split">
+    <div class="frail">
+      <div class="frail-h">Filter · Type</div>
+      <div id="frail"></div>
+    </div>
+    <div>
+      <div class="sn-qmeta" id="qmeta" style="text-align:right;margin:0 2px 6px">—</div>
+      <div id="board"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/sketches/_filter-shared.js"></script>
+<script>
+  let active = 'All';
+  function drawRail() {
+    const items = ['All', ...TYPES];
+    document.getElementById('frail').innerHTML = items.map(t =>
+      `<button class="frail-item ${t===active?'on':''}" data-t="${t}"><span>${t}</span><span class="n">${typeCount(t)}</span></button>`).join('');
+  }
+  document.getElementById('frail').addEventListener('click', (e) => {
+    const b = e.target.closest('.frail-item'); if (!b) return;
+    active = b.dataset.t; drawRail(); renderBoard(active);
+  });
+  drawRail(); renderBoard('All');
+</script>
+</body>
+</html>

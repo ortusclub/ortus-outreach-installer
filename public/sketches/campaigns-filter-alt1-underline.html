@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Filter alt 1 — underline tabs</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <link rel="stylesheet" href="/sketches/_filter-shared.css" />
+  <style>
+    /* Underline tabs — quiet, editorial, no boxes. Active = ink underline. */
+    .utabs{display:flex;align-items:flex-end;gap:26px;border-bottom:1px solid var(--hairline);margin:4px 0 2px;}
+    .utab{position:relative;background:none;border:none;padding:0 0 12px;cursor:pointer;font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#9a9a98;transition:color .12s;}
+    .utab .n{font-size:10px;opacity:.5;margin-left:5px;}
+    .utab:hover{color:var(--ink);}
+    .utab.on{color:var(--ink);}
+    .utab.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--ink);}
+    .utab.on .n{opacity:.6;}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <p class="note"><b>Alt 1 — Underline tabs.</b> Reads like section tabs, not buttons. One row, minimal, no pills or boxes. Click one and the board filters live. (Click the chips — it works.)</p>
+  <div class="altnav">
+    <a class="here" href="/sketches/campaigns-filter-alt1-underline.html">1 · Underline tabs</a>
+    <a href="/sketches/campaigns-filter-alt2-dropdown.html">2 · Dropdown menu</a>
+    <a href="/sketches/campaigns-filter-alt3-rail.html">3 · Left rail</a>
+  </div>
+
+  <div class="toprow"><div class="seg"><b>Campaigns</b><span>Sales Nav</span></div><div class="right"><button class="cta-new">＋ New campaign</button></div></div>
+
+  <div class="utabs" id="utabs"></div>
+  <div class="sn-qmeta" id="qmeta" style="text-align:right;margin:8px 2px 4px">—</div>
+  <div id="board"></div>
+</div>
+
+<script src="/sketches/_filter-shared.js"></script>
+<script>
+  let active = 'All';
+  function drawTabs() {
+    const tabs = ['All', ...TYPES];
+    document.getElementById('utabs').innerHTML = tabs.map(t =>
+      `<button class="utab ${t===active?'on':''}" data-t="${t}">${t}<span class="n">${typeCount(t)}</span></button>`).join('');
+  }
+  document.getElementById('utabs').addEventListener('click', (e) => {
+    const b = e.target.closest('.utab'); if (!b) return;
+    active = b.dataset.t; drawTabs(); renderBoard(active);
+  });
+  drawTabs(); renderBoard('All');
+</script>
+</body>
+</html>

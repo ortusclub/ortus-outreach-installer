@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Reply triage inbox (A · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 22px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* header */
+  .rx-head { display: flex; align-items: baseline; gap: 16px; border-bottom: 1px solid var(--hairline); padding-bottom: 14px; margin-bottom: 4px; }
+  .rx-title { font-family: var(--display); font-size: 2.1rem; letter-spacing: 0.03em; color: var(--ink); line-height: 1; }
+  .rx-count { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--gold); border: 1px solid var(--gold); border-radius: 9999px; padding: 5px 14px; }
+  .rx-sweep { margin-left: auto; font-family: var(--mono); font-size: 0.62rem; color: var(--gray); }
+  .rx-sweep b { color: var(--ink); font-weight: 500; }
+
+  /* rows */
+  .rx-row { display: grid; grid-template-columns: 200px 1fr 200px; gap: 20px; padding: 18px 4px;
+    border-bottom: 1px solid var(--hairline-soft); transition: opacity 0.25s; }
+  .rx-row.handled { opacity: 0.35; }
+  .rx-who .lead { font-family: var(--mono); font-size: 0.82rem; font-weight: 500; color: var(--ink); }
+  .rx-who .via { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-top: 4px; line-height: 1.55; }
+  .rx-who .via b { color: var(--ink); font-weight: 500; }
+  .rx-who .camp { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 3px 9px; display: inline-block; margin-top: 8px; }
+  .rx-snip { font-family: var(--sans, 'Hanken Grotesk', sans-serif); font-size: 0.86rem; color: var(--ink);
+    line-height: 1.55; border-left: 2px solid var(--hairline); padding-left: 14px; align-self: start;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .rx-time { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 8px; padding-left: 16px; }
+  .rx-acts { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+  .rx-pills { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .rx-pill { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gray); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px;
+    padding: 5px 11px; cursor: pointer; }
+  .rx-pill:hover { color: var(--ink); border-color: var(--ink); }
+  .rx-pill.sel { color: var(--bg); background: var(--ink); border-color: var(--ink); }
+  .rx-open { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px;
+    padding: 6px 14px; cursor: pointer; }
+  .rx-open:hover { border-color: var(--ink); }
+  .rx-handled-tag { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green); }
+
+  .rx-note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.65; margin-top: 22px; }
+  .rx-note b { color: var(--ink); font-weight: 500; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Reply triage inbox (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap"><b>New dashboard view</b> — a "Replies" queue so a reply never dies unseen in a GoLogin profile.
+    Classify each reply with one click; "Open thread" launches the right GoLogin profile straight to the conversation.</p>
+
+  <div class="rx-head">
+    <span class="rx-title">Replies</span>
+    <span class="rx-count" id="rx-count">3 unhandled replies</span>
+    <span class="rx-sweep">Last reply sweep · <b>today 08:30</b> · next <b>14:30</b></span>
+  </div>
+
+  <!-- Row 1 -->
+  <div class="rx-row" id="row-1">
+    <div class="rx-who">
+      <div class="lead">Sofia Lindqvist</div>
+      <div class="via">via <b>Marta Kowalski</b></div>
+      <span class="camp">CC+IC — FinTech CTOs</span>
+    </div>
+    <div>
+      <div class="rx-snip">"Thanks for the intro Sam — a fintech roundtable in Singapore sounds great. Could you send over the date and the guest list so I can check my calendar?"</div>
+      <div class="rx-time">10:42 PH · 10:42 lead-local (Singapore)</div>
+    </div>
+    <div class="rx-acts">
+      <div class="rx-pills">
+        <button class="rx-pill" onclick="classify('row-1', this, 'Interested')">Interested</button>
+        <button class="rx-pill" onclick="classify('row-1', this, 'Not now')">Not now</button>
+        <button class="rx-pill" onclick="classify('row-1', this, 'Declined')">Declined</button>
+        <button class="rx-pill" onclick="classify('row-1', this, 'OOO')">OOO</button>
+      </div>
+      <button class="rx-open" onclick="toast('Would open GoLogin profile “Marta Kowalski” at this thread')">Open thread ↗</button>
+    </div>
+  </div>
+
+  <!-- Row 2 -->
+  <div class="rx-row" id="row-2">
+    <div class="rx-who">
+      <div class="lead">Daniel Reyes</div>
+      <div class="via">via <b>James Okafor</b></div>
+      <span class="camp">CC+IC — FinTech CTOs</span>
+    </div>
+    <div>
+      <div class="rx-snip">"Appreciate the connect. We're mid-audit until end of July so I'll have to pass on anything before then — happy to revisit in August."</div>
+      <div class="rx-time">09:15 PH · 03:15 lead-local (London)</div>
+    </div>
+    <div class="rx-acts">
+      <div class="rx-pills">
+        <button class="rx-pill" onclick="classify('row-2', this, 'Interested')">Interested</button>
+        <button class="rx-pill" onclick="classify('row-2', this, 'Not now')">Not now</button>
+        <button class="rx-pill" onclick="classify('row-2', this, 'Declined')">Declined</button>
+        <button class="rx-pill" onclick="classify('row-2', this, 'OOO')">OOO</button>
+      </div>
+      <button class="rx-open" onclick="toast('Would open GoLogin profile “James Okafor” at this thread')">Open thread ↗</button>
+    </div>
+  </div>
+
+  <!-- Row 3 -->
+  <div class="rx-row" id="row-3">
+    <div class="rx-who">
+      <div class="lead">Priya Raghavan</div>
+      <div class="via">via <b>Priya Nair</b></div>
+      <span class="camp">DM — Q3 newsletter warm list</span>
+    </div>
+    <div>
+      <div class="rx-snip">"I am out of the office until 14 July with limited access to email and LinkedIn. For urgent matters please contact my EA."</div>
+      <div class="rx-time">07:58 PH · 09:58 lead-local (Sydney)</div>
+    </div>
+    <div class="rx-acts">
+      <div class="rx-pills">
+        <button class="rx-pill" onclick="classify('row-3', this, 'Interested')">Interested</button>
+        <button class="rx-pill" onclick="classify('row-3', this, 'Not now')">Not now</button>
+        <button class="rx-pill" onclick="classify('row-3', this, 'Declined')">Declined</button>
+        <button class="rx-pill" onclick="classify('row-3', this, 'OOO')">OOO</button>
+      </div>
+      <button class="rx-open" onclick="toast('Would open GoLogin profile “Priya Nair” at this thread')">Open thread ↗</button>
+    </div>
+  </div>
+
+  <!-- Row 4 — already handled -->
+  <div class="rx-row handled" id="row-4">
+    <div class="rx-who">
+      <div class="lead">Marcus Webb</div>
+      <div class="via">via <b>James Okafor</b></div>
+      <span class="camp">CC+IC — UK CIOs</span>
+    </div>
+    <div>
+      <div class="rx-snip">"Not for me thanks — we don't attend vendor dinners."</div>
+      <div class="rx-time">Yesterday 16:20 PH · 09:20 lead-local (London)</div>
+    </div>
+    <div class="rx-acts">
+      <span class="rx-handled-tag">✓ Handled · Declined</span>
+      <button class="rx-open" onclick="toast('Would open GoLogin profile “James Okafor” at this thread')">Open thread ↗</button>
+    </div>
+  </div>
+
+  <p class="rx-note">Replies are detected by the <b>existing reply sweep</b> (v2.72 post-campaign check) — this view just
+    surfaces them in one queue instead of leaving them inside each GoLogin profile. Classification stamps the sheet's
+    Stage column; nothing is sent from here.</p>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  let unhandled = 3;
+  function classify(rowId, btn, label){
+    const row = document.getElementById(rowId);
+    if (row.classList.contains('handled')) return;
+    btn.classList.add('sel');
+    setTimeout(() => {
+      row.classList.add('handled');
+      const acts = row.querySelector('.rx-pills');
+      acts.outerHTML = '<span class="rx-handled-tag">✓ Handled · ' + label + '</span>';
+      unhandled = Math.max(0, unhandled - 1);
+      document.getElementById('rx-count').textContent = unhandled + ' unhandled ' + (unhandled === 1 ? 'reply' : 'replies');
+      toast('Classified as “' + label + '” — Stage column stamped');
+    }, 250);
+  }
+</script>
+</body>
+</html>

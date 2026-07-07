@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Duplicate — what happens</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <link rel="stylesheet" href="/sketches/_filter-shared.css" />
+  <style>
+    .step{font-family:'Hanken Grotesk',sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#8a8a8a;margin:30px 0 12px;display:flex;align-items:center;gap:10px;}
+    .step .num{width:20px;height:20px;border-radius:9999px;background:var(--ink);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;}
+    .arrow{text-align:center;color:#c4c4c4;font-size:22px;margin:14px 0;}
+    /* ⋯ menu open state (static) */
+    .ovf{position:relative;display:inline-block;}
+    .ovf-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--ink);border-radius:9999px;background:transparent;color:var(--ink);font-size:16px;}
+    .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:#fff;border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;}
+    .ovf-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;background:#f4f4f3;color:var(--ink);font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;}
+    /* pre-filled form card */
+    .form{border:1px solid var(--hairline);border-radius:16px;background:#fff;padding:0;overflow:hidden;}
+    .form-band{display:flex;align-items:center;gap:12px;background:#faf3e0;border-bottom:1px solid #efe4c6;padding:12px 20px;font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;color:#8a6d1f;}
+    .form-band b{color:#6f5716;}
+    .form-hd{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 6px;}
+    .form-hd .t{font-family:var(--display);font-size:26px;letter-spacing:.02em;}
+    .form-hd .sub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+    .fld{padding:14px 20px;border-top:1px solid var(--hairline);}
+    .fld:first-of-type{border-top:none;}
+    .fld-l{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+    .copied{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:9999px;background:#f3e9c9;color:#8a6d1f;}
+    .fld-v{display:flex;align-items:center;gap:10px;}
+    .inp{flex:1;border:1px solid var(--hairline);border-radius:10px;padding:11px 13px;font-size:14px;color:var(--ink);background:#fff;}
+    .inp.name{font-weight:600;}
+    .pill{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:6px 11px;border-radius:9999px;border:1px solid var(--hairline);color:var(--ink);}
+    .acct{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--hairline);border-radius:9999px;padding:6px 12px;font-size:12px;}
+    .acct .av{width:18px;height:18px;border-radius:9999px;background:linear-gradient(135deg,#ddd,#bbb);}
+    .launch{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid var(--hairline);background:#fcfcfb;}
+    .lb{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:10px 16px;border-radius:9999px;border:1px solid var(--hairline);background:#fff;color:var(--ink);cursor:pointer;}
+    .lb.gold{background:var(--gold,#c9a84a);border-color:var(--gold,#c9a84a);color:#111;font-weight:700;}
+    .caret{cursor:pointer}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <p class="note"><b>Pressing Duplicate</b> doesn't run anything. It opens <b>＋ New campaign</b> pre-filled with a copy of the source, dropped on the review screen. You tweak whatever you want, then choose Start / Queue / Schedule / Save as draft — exactly like a fresh campaign.</p>
+
+  <!-- STEP 1 -->
+  <div class="step"><span class="num">1</span> You click ⋯ → Duplicate on a strip</div>
+  <div class="sn-strip run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+    <div class="sn-name">APAC Founders — CC</div>
+    <div class="sn-flow"><b>65 leads</b> → <b>2 accounts</b> → feeds <b>APAC Founders</b> · Connect Only</div>
+    <div class="sn-foot"><div class="right">
+      <button class="mini">Stop</button><button class="mini solid">Open</button>
+      <div class="ovf"><button class="ovf-btn">⋯</button>
+        <div class="ovf-menu"><div class="ovf-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <!-- STEP 2 -->
+  <div class="step"><span class="num">2</span> ＋ New campaign opens, pre-filled — review &amp; launch</div>
+  <div class="form">
+    <div class="form-band">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg>
+      <span>Duplicated from <b>APAC Founders — CC</b>. Nothing runs yet — review below and launch when ready.</span>
+    </div>
+    <div class="form-hd"><div class="t">New campaign</div><div class="sub">Step 5 · Review</div></div>
+
+    <div class="fld">
+      <div class="fld-l">Campaign name <span class="copied">＋ copy</span></div>
+      <div class="fld-v"><input class="inp name" value="APAC Founders — CC copy" /></div>
+    </div>
+    <div class="fld">
+      <div class="fld-l">Leads sheet / tab <span class="copied">copied</span></div>
+      <div class="fld-v"><input class="inp" value="Ortus Leads › APAC Founders (65 rows)" readonly /></div>
+    </div>
+    <div class="fld">
+      <div class="fld-l">Accounts <span class="copied">copied</span></div>
+      <div class="fld-v"><span class="acct"><span class="av"></span> kyra@ortus.solutions</span><span class="acct"><span class="av"></span> aiden@ortus.solutions</span></div>
+    </div>
+    <div class="fld">
+      <div class="fld-l">Mode <span class="copied">copied</span></div>
+      <div class="fld-v"><span class="pill">CC · Connect Only</span></div>
+    </div>
+    <div class="fld">
+      <div class="fld-l">Message templates <span class="copied">copied</span></div>
+      <div class="fld-v"><input class="inp" value="Connection note + 2 follow-ups" readonly /></div>
+    </div>
+    <div class="fld">
+      <div class="fld-l">Run where</div>
+      <div class="fld-v"><span class="pill">☁︎ Cloud (VM)</span> <span style="font-size:11px;color:var(--gray)">— change to 💻 this machine if you like</span></div>
+    </div>
+
+    <div class="launch">
+      <button class="lb">Save as draft</button>
+      <button class="lb">Schedule</button>
+      <button class="lb">Queue it</button>
+      <button class="lb gold">Start</button>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:26px"><b>What carries over:</b> name (＋ “copy”), leads sheet/tab, selected accounts, mode, and message templates. <b>What you still control:</b> the name, and the Start / Queue / Schedule / Save-as-draft choice — so a duplicate is never a surprise live run.</p>
+</div>
+</body>
+</html>

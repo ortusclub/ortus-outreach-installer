@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Event-aware campaigns (A · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 18px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* in-page switch between the two contexts */
+  .ctx-tabs { display: flex; gap: 0; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden;
+    width: max-content; margin: 0 0 26px; }
+  .ctx-tab { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--gray); background: transparent; border: none; padding: 8px 18px; cursor: pointer; }
+  .ctx-tab.active { color: var(--bg); background: var(--ink); }
+  .ctx-panel { display: none; }
+  .ctx-panel.active { display: block; }
+
+  /* ── wizard: Event block ── */
+  .ev-block { border: 1px solid var(--hairline); padding: 22px 26px; margin-top: 18px; background: var(--bg-soft, transparent); }
+  .ev-block-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  .ev-block-head h3 { font-family: var(--display); font-size: 1.25rem; letter-spacing: 0.04em; color: var(--ink); margin: 0; }
+  .ev-optional { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray);
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 3px 10px; }
+  .ev-block-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.6; margin: 0 0 18px; }
+  .ev-grid { display: grid; grid-template-columns: 2fr 1.2fr 1fr; gap: 14px; }
+  .ev-field label { display: block; font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 7px; }
+  .ev-field input { width: 100%; box-sizing: border-box; background: transparent; border: 1px solid var(--hairline);
+    color: var(--ink); font-family: var(--mono); font-size: 0.78rem; padding: 10px 12px; border-radius: 0; }
+  .ev-field input:focus { outline: none; border-color: var(--ink); }
+  .ev-derived { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); margin-top: 14px; line-height: 1.6; }
+  .ev-derived b { color: var(--ink); font-weight: 500; }
+  .ev-autostop { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.62rem;
+    color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; margin-top: 12px; }
+  .ev-autostop b { color: var(--ink); font-weight: 500; }
+
+  /* ── board: event group headers + strips ── */
+  .ev-group { margin-bottom: 34px; }
+  .ev-group-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--hairline);
+    padding-bottom: 10px; margin-bottom: 14px; }
+  .ev-group-head .name { font-family: var(--display); font-size: 1.35rem; letter-spacing: 0.04em; color: var(--ink); }
+  .ev-group-head .meta { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); letter-spacing: 0.06em; }
+  .ev-group-head .days { margin-left: auto; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; }
+  .ev-group-head .days.soon { color: var(--gold); border-color: var(--gold); }
+  .ev-group .vj-card { margin-bottom: 12px; }
+
+  .vj-attach { border: 1px solid var(--hairline); border-top: none; margin: -8px 0 12px; padding: 14px 20px; background: var(--bg-soft, transparent); }
+  .pacing-hint { display: flex; align-items: baseline; gap: 10px;
+    font-family: var(--mono); font-size: 0.68rem; color: var(--gold); line-height: 1.55; }
+  .pacing-hint .glyph { flex: none; }
+  .pacing-hint b { color: var(--ink); font-weight: 500; }
+  .pacing-hint .acts { margin-left: auto; display: flex; gap: 8px; flex: none; }
+  .vj-attach .vj-foot-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); }
+  .pacing-hint + .vj-foot-note { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hairline-soft); }
+  .vj-foot-note b { color: var(--ink); font-weight: 500; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Event-aware campaigns (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap"><b>Additive</b> — a campaign can optionally belong to an event. Wizard gets a small Event block next
+    to the campaign name; the campaigns board then groups strips under event headers and shows a pacing hint when the
+    list won't finish before the event date.</p>
+
+  <div class="ctx-tabs">
+    <button class="ctx-tab active" onclick="setCtx('wiz', this)">Wizard · Event block</button>
+    <button class="ctx-tab" onclick="setCtx('board', this)">Campaigns board · grouped</button>
+  </div>
+
+  <!-- ══ Context 1: wizard ══ -->
+  <div class="ctx-panel active" id="ctx-wiz">
+    <div class="section campaign-name-section">
+      <h2>Campaign Name</h2>
+      <div class="campaign-name-row">
+        <input type="text" value="CC+IC — FinTech CTOs (SG)" autocomplete="off" />
+      </div>
+
+      <div class="ev-block">
+        <div class="ev-block-head">
+          <h3>Event</h3>
+          <span class="ev-optional">Optional</span>
+        </div>
+        <p class="ev-block-sub">Tie this campaign to a roundtable. The board groups it under the event and paces the run against the event date.</p>
+        <div class="ev-grid">
+          <div class="ev-field">
+            <label>Event name</label>
+            <input type="text" value="Fintech Roundtable" />
+          </div>
+          <div class="ev-field">
+            <label>City</label>
+            <input type="text" value="Singapore" />
+          </div>
+          <div class="ev-field">
+            <label>Event date</label>
+            <input type="text" value="24 Jul 2026" />
+          </div>
+        </div>
+        <div class="ev-derived">Event is <b>18 days out</b> · list of <b>418 leads</b> at current pace (~60/day across 3 accounts) finishes in <b>~7 days</b> — comfortably before the event.</div>
+        <div class="ev-autostop">⏻ Auto-stop — campaign <b>auto-stops after the event date</b> (24 Jul, end of day). No invites go out for a dinner that already happened.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Context 2: campaigns board ══ -->
+  <div class="ctx-panel" id="ctx-board">
+
+    <div class="ev-group">
+      <div class="ev-group-head">
+        <span class="name">Fintech Roundtable</span>
+        <span class="meta">Singapore — 24 Jul</span>
+        <span class="days soon">18 days out</span>
+      </div>
+
+      <section class="vj-card">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span>Connect + Introduce</span></span>
+          <span class="vj-when">Started 09:41</span>
+        </div>
+        <h2 class="vj-name"><span>CC+IC — FinTech CTOs (SG)</span></h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="52" aria-valuemax="418"><i style="width:12%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span>12</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b>52</b> of <span>418</span> sent</span>
+              <span>Next batch in <b>06:12</b></span>
+            </div>
+          </div>
+          <div class="vj-stats">
+            <span><b>3</b> accounts</span>
+            <span><b>13</b> accepted</span>
+            <span>· <b>Sending</b></span>
+          </div>
+        </div>
+        <div class="vj-controls">
+          <button class="btn-pill" onclick="toast('Open — unchanged')">Open</button>
+          <div class="dock" style="display:flex;gap:6px">
+            <button class="dock-btn" data-tip="Pause" aria-label="Pause" onclick="toast('Paused')">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="toast('Stop')">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+      <div class="vj-attach">
+        <div class="pacing-hint">
+          <span class="glyph">⚠</span>
+          <span><b>Event in 12 days</b> · <b>40% of list uncontacted</b> at the current pace — raise the daily pace or add an account to finish before the roundtable.</span>
+          <span class="acts">
+            <button class="btn-pill" onclick="toast('Would open Campaign Settings — daily limit')">Raise pace</button>
+            <button class="btn-pill" onclick="toast('Would open account picker')">Add account</button>
+          </span>
+        </div>
+        <div class="vj-foot-note">⏻ <b>Auto-stops after event date</b> — 24 Jul, end of day.</div>
+      </div>
+
+      <section class="vj-card">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot" style="background:var(--gray)"></span><span>Connect Only</span></span>
+          <span class="vj-when">Queued</span>
+        </div>
+        <h2 class="vj-name"><span>CC — SG banking VPs (second wave)</span></h2>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="vj-meta">
+              <span><b>210</b> leads · waiting for a free account</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      <div class="vj-attach"><div class="vj-foot-note">⏻ <b>Auto-stops after event date</b> — 24 Jul, end of day.</div></div>
+    </div>
+
+    <div class="ev-group">
+      <div class="ev-group-head">
+        <span class="name">CIO Dinner</span>
+        <span class="meta">London — 11 Aug</span>
+        <span class="days">36 days out</span>
+      </div>
+
+      <section class="vj-card">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot"></span><span>Connect + Introduce</span></span>
+          <span class="vj-when">Started Fri</span>
+        </div>
+        <h2 class="vj-name"><span>CC+IC — UK CIOs</span></h2>
+        <div class="vj-hbar" role="progressbar" aria-valuenow="188" aria-valuemax="300"><i style="width:63%"></i></div>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="num"><span>63</span><span class="sub">%</span></div>
+            <div class="vj-meta">
+              <span><b>188</b> of <span>300</span> sent</span>
+              <span>On pace · finishes <b>~14 Jul</b></span>
+            </div>
+          </div>
+          <div class="vj-stats">
+            <span><b>2</b> accounts</span>
+            <span><b>41</b> accepted</span>
+            <span>· <b>Sending</b></span>
+          </div>
+        </div>
+      </section>
+      <div class="vj-attach"><div class="vj-foot-note">⏻ <b>Auto-stops after event date</b> — 11 Aug, end of day.</div></div>
+    </div>
+
+    <div class="ev-group">
+      <div class="ev-group-head">
+        <span class="name">No event</span>
+        <span class="meta">standing campaigns</span>
+      </div>
+      <section class="vj-card">
+        <div class="vj-eyebrow">
+          <span class="vj-tag"><span class="dot" style="background:var(--gray)"></span><span>Direct Messages</span></span>
+          <span class="vj-when">Finished Thu</span>
+        </div>
+        <h2 class="vj-name"><span>DM — Q3 newsletter warm list</span></h2>
+        <div class="vj-hero">
+          <div class="vj-hero-row">
+            <div class="vj-meta"><span><b>96</b> of <span>96</span> sent · done</span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function setCtx(id, btn){
+    document.querySelectorAll('.ctx-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.ctx-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('ctx-' + id).classList.add('active');
+  }
+</script>
+</body>
+</html>

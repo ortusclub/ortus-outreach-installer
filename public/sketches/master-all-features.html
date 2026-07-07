@@ -1,0 +1,1797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — MASTER · all features combined (appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+
+<!-- ── 1:1 copy of index.html's inline #sn-board-styles (board CSS lives there, not in the linked files) ── -->
+<style id="sn-board-styles">
+  .route-seg{display:inline-flex;border:1px solid var(--hairline);border-radius:9999px;padding:3px;margin:8px 0 26px;}
+  .route-seg-btn{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;color:var(--gray);background:transparent;border:0;border-radius:9999px;padding:9px 20px;cursor:pointer;transition:background .12s,color .12s;}
+  .route-seg-btn.is-active{background:var(--ink);color:var(--bg);}
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;transition:color .12s,border-color .12s;}
+  .sn-clear-done:hover{color:var(--ink);border-color:var(--ink);}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  .sn-strip.mine::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  .sn-strip.local.run::before{background:#f1a7c9;}
+  .sn-board .dot.runlocal{background:#f1a7c9;}
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
+  .sn-where.local{background:#fbe6f0;color:#b23372;}
+  .ovf{position:relative;display:inline-block;}
+  .ovf-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;font-size:16px;line-height:1;padding:0;}
+  .ovf-btn:hover{border-color:var(--ink);}
+  .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:#fff;border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;z-index:35;display:none;}
+  .ovf.open .ovf-menu{display:block;}
+  .ovf-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#444;background:transparent;border:none;text-align:left;}
+  .ovf-item:hover{background:#f4f4f3;color:var(--ink);}
+  .ovf-item svg{opacity:.7;}
+  .fdrop{position:relative;}
+  .fdrop-btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:9px 15px;cursor:pointer;white-space:nowrap;}
+  .fdrop-btn .cur{color:var(--gray);}
+  .fdrop-btn .cur b{color:var(--ink);font-weight:600;}
+  .fdrop-btn svg{opacity:.5;}
+  .sn-strip.stopped{border-color:var(--red);}
+  .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
+  .sn-strip.stopped .sn-status{color:var(--red);}
+  .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
+  .sn-progtxt b{color:var(--ink);font-weight:600;}
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-strip.done.sn-collapsed .sn-foot{margin-top:10px;padding-top:0;border-top:0;}
+  .sn-top{display:flex;align-items:center;gap:12px;padding-right:40px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-owner{font-size:12px;color:var(--gray);}
+  .sn-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-board .dot.run{background:var(--green);}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.q{background:var(--gray-faint,#b8b8b6);}.sn-board .dot.red{background:var(--red);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-strip.sn-collapsed .sn-switch{display:none;}
+  .sn-expand{position:absolute;top:14px;right:16px;width:32px;height:32px;display:flex;
+    align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;
+    background:transparent;color:var(--ink);cursor:pointer;transition:transform .15s, border-color .12s;z-index:2;}
+  .sn-expand:hover{border-color:var(--ink);}
+  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);}
+  .sn-switch{margin:16px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;}
+  .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:160px;overflow:auto;}
+  .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}
+</style>
+
+<style>
+  /* ── sketch-only chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+
+  /* view switching (sketch mechanism — same body-class swap idea as the real router) */
+  .mview { display: none; }
+  body.view-dashboard #view-dashboard,
+  body.view-wizard #view-wizard,
+  body.view-replies #view-replies,
+  body.view-team #view-team { display: block; }
+
+  /* ── event header rows on the board (event-campaigns-B) ── */
+  .evt-head { display: flex; align-items: baseline; gap: 12px; margin: 20px 2px 10px;
+    padding-bottom: 7px; border-bottom: 1px solid var(--hairline); }
+  .evt-head .evt-name { font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+  .evt-head .evt-meta { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--gray); }
+  .evt-head .evt-count { margin-left: auto; font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: #c4c4c4; }
+  .sn-pacing { font-family: var(--mono); font-size: 11px; color: var(--gray); margin: 8px 0 0;
+    display: flex; align-items: center; gap: 8px; }
+  .sn-pacing .pace-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--gold, #caa24a); flex: none; }
+  .sn-pacing b { color: var(--ink); font-weight: 600; }
+
+  /* ── funnel strip on the running card (campaign-funnel-A, Pending removed) ── */
+  .funnel-wrap { border-top: 1px solid var(--hairline-soft); margin-top: 14px; padding-top: 12px; }
+  .funnel-head { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); margin-bottom: 10px; }
+  .funnel { display: flex; align-items: stretch; gap: 0; }
+  .funnel-stage { flex: 1 1 0; min-width: 0; max-width: 280px; border: 1px solid var(--hairline); border-left: none; padding: 12px 14px; position: relative; }
+  .funnel-stage:first-child { border-left: 1px solid var(--hairline); }
+  .funnel-stage .st-lbl { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
+  .funnel-stage .st-num { font-family: var(--display); font-size: 1.9rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1.1; }
+  .funnel-stage .st-drop { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 2px; }
+  .funnel-stage .st-drop b { color: var(--ink); font-weight: 500; }
+  .funnel-stage:nth-child(1) { background: rgba(0,0,0,0.05); }
+  .funnel-stage:nth-child(2) { background: rgba(0,0,0,0.035); }
+  .funnel-stage:nth-child(3) { background: rgba(0,0,0,0.02); }
+  .funnel-stage:nth-child(4) { background: transparent; }
+  .funnel-stage::after { content: "→"; position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray); background: #fff; z-index: 2; line-height: 1; }
+  .funnel-stage:last-child::after { content: none; }
+  .funnel-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 8px; }
+
+  /* ── per-account cooldown chips (429-cooldown-B) ── */
+  .vj-profiles-sk { border-top: 1px solid var(--hairline-soft); margin-top: 14px; padding-top: 12px; }
+  .vj-prof-head-sk { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .vj-prof-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 14px;
+    padding: 6px 0; font-family: var(--mono); font-size: 0.72rem; }
+  .vj-prof-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vj-prof-chip { font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 3px 10px; color: var(--gray); white-space: nowrap; }
+  .vj-prof-today { color: var(--gray); font-size: 0.66rem; }
+  .vj-prof-row.is-sending .vj-prof-chip { color: var(--green); border-color: var(--green); }
+  .vj-prof-row.is-cooling .vj-prof-chip { color: var(--gold); border-color: var(--gold); }
+  .vj-prof-row.is-cooling .vj-prof-name::after { content: " · auto-retries"; color: var(--gray); font-size: 0.62rem; }
+  .vj-prof-row.is-capped .vj-prof-chip { color: var(--gray); border-style: dashed; }
+  .vj-prof-row.is-capped .vj-prof-name { color: var(--gray); }
+
+  /* ── skipped-so-far collapsed line + table (skipped-leads-report-A) ── */
+  .skipped-mini { display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray); border-top: 1px solid var(--hairline-soft); margin-top: 14px; padding-top: 12px; }
+  .skipped-mini .pill { color: var(--gold); border: 1px solid var(--gold); border-radius: 9999px; padding: 3px 12px;
+    font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .skipped-mini a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .skipped { border-top: 1px solid var(--hairline-soft); margin-top: 14px; padding-top: 12px; }
+  .skipped-head { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); }
+  .skipped-head .n { color: var(--ink); }
+  .skipped-head .vj-log-act { margin-left: auto; }
+  table.skiptab { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.7rem; margin-top: 12px; }
+  table.skiptab th { text-align: left; color: var(--gray); font-weight: 500; padding: 5px 8px; border-bottom: 1px solid var(--hairline);
+    text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.56rem; }
+  table.skiptab td { padding: 7px 8px; color: var(--ink); border-bottom: 1px solid var(--hairline-soft); vertical-align: top; }
+  table.skiptab td.rowno { color: var(--gray); white-space: nowrap; }
+  table.skiptab td.reason { color: var(--gray); line-height: 1.45; }
+  table.skiptab td.reason b { color: var(--gold); font-weight: 500; }
+  .skipped-note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); }
+
+  /* ── sheet-writes-failed + follow-ups lines on the running strip ── */
+  .sn-oneline { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 0.7rem;
+    color: var(--gray); border-top: 1px solid var(--hairline-soft); margin-top: 14px; padding-top: 12px; }
+  .sn-oneline .pill-warn { color: var(--gold); border: 1px solid var(--gold); border-radius: 9999px; padding: 3px 12px;
+    font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .sn-oneline a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .sn-oneline b { color: var(--ink); font-weight: 600; }
+
+  /* ── wizard: presets row + prefill note + event row ── */
+  .prefill-note { border: 1px solid var(--gold); background: rgba(201,168,74,0.08);
+    border-radius: 10px; padding: 13px 17px; font-family: var(--mono); font-size: 0.72rem; color: var(--ink);
+    line-height: 1.6; margin: 0 0 22px; }
+  .prefill-note b { color: var(--gold); }
+  .preset-row { display: flex; align-items: center; gap: 12px; margin: 0 0 22px; }
+  .preset-row .lbl { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .wiz-vals { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .wiz-val { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 6px 13px; }
+  .wiz-val b { color: var(--ink); font-weight: 500; }
+  .event-row { display: flex; align-items: flex-end; gap: 22px; margin-top: 18px; }
+  .event-row .ef { flex: 1; min-width: 0; }
+  .event-row .ef.city { flex: 0.7; }
+  .event-row .ef.date { flex: 0.55; }
+  .event-row .ef-label { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .event-row .ef-label .opt { color: #c4c4c4; margin-left: 6px; }
+  .event-row input { width: 100%; font-family: var(--sans, 'Hanken Grotesk', sans-serif); font-size: 1rem;
+    color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--hairline);
+    padding: 6px 0; outline: none; }
+  .event-row input::placeholder { color: #c4c4c4; }
+  .event-row input:focus { border-bottom-color: var(--ink); }
+  .event-hint { font-size: 12px; color: var(--gray); margin-top: 10px; }
+
+  /* ── Section III account rows with warm-up (account-warmup-A) ── */
+  .acc-list { border: 1px solid var(--hairline); }
+  .acc-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 16px; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid var(--hairline-soft); }
+  .acc-row:last-child { border-bottom: none; }
+  .acc-row input[type="checkbox"] { accent-color: var(--ink); width: 15px; height: 15px; }
+  .acc-id .name { font-family: var(--mono); font-size: 0.82rem; font-weight: 500; color: var(--ink); }
+  .acc-id .email { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-top: 3px; }
+  .acc-side { display: flex; align-items: center; gap: 12px; }
+  .wu-tag { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase;
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 12px; color: var(--gray); }
+  .wu-tag.active { color: var(--gold); border-color: var(--gold); }
+  .wu-tag.done { color: var(--green); border-color: var(--green); }
+  .wu-prog { width: 92px; }
+  .wu-prog .bar { height: 3px; background: var(--hairline-soft); position: relative; }
+  .wu-prog .bar i { position: absolute; inset: 0 auto 0 0; background: var(--gold); }
+  .wu-prog .lbl { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gray); margin-top: 5px; text-align: right; }
+  .wu-start { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.64rem;
+    color: var(--ink); cursor: pointer; user-select: none; }
+  .wu-start input { accent-color: var(--ink); width: 14px; height: 14px; }
+  .wu-sched { grid-column: 2 / -1; display: none; border-top: 1px solid var(--hairline-soft); margin-top: 4px; padding-top: 14px; }
+  .acc-row.wu-open .wu-sched { display: block; }
+  .wu-sched-head { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 10px; }
+  .wu-steps { display: flex; align-items: stretch; }
+  .wu-step { flex: 1 1 0; max-width: 180px; border: 1px solid var(--hairline); border-left: none; padding: 10px 14px; position: relative; }
+  .wu-step:first-child { border-left: 1px solid var(--hairline); }
+  .wu-step .wk { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
+  .wu-step .cap { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1.15; }
+  .wu-step .cap small { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); letter-spacing: 0.04em; }
+  .wu-step::after { content: "→"; position: absolute; right: -6px; top: 50%; transform: translateY(-50%);
+    font-family: var(--mono); font-size: 0.66rem; color: var(--gray); background: var(--bg); z-index: 2; line-height: 1; }
+  .wu-step:last-child::after { content: none; }
+  .wu-sched-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 10px; line-height: 1.6; }
+  .wu-sched-note b { color: var(--ink); font-weight: 500; }
+
+  /* ── J3 picker: WARM-UP tile state (sketch addition — amber-tinted stat zone,
+     same anatomy as the real s-free/s-assigned/s-inuse/s-stop zones) ── */
+  .browse-card .profile-item.jt .jt-stat.s-warmup { background: rgba(247,190,104,0.16); }
+  .browse-card .profile-item.jt .s-warmup .jt-dot { background: var(--gold); }
+  .browse-card .profile-item.jt .s-warmup .jt-word { color: var(--gold); font-size: 0.86rem; letter-spacing: 0.08em; }
+  .browse-card .profile-item.jt .jt-zsub { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--gold); line-height: 1; }
+  .browse-card .profile-item.jt .jt-sub .wu-link { color: var(--ink); text-decoration: underline;
+    text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  /* standalone warm-up schedule panel under the grid (the .wu-sched base rule
+     is scoped to the old acc-row layout — re-open it here) */
+  #wu-sched:not([hidden]) { display: block; margin: 4px 18px 0; padding: 14px 0 0; border-top: 1px solid var(--hairline-soft); }
+
+  /* ── manual check buttons on the running CC+IC strip (real .vj-bulk anatomy,
+     dashboard-v0.3.css body[data-dashboard='v3'] .vj-bulk*) ── */
+  .sn-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
+    border-top: 1px solid var(--hairline-soft); margin-top: 14px; padding-top: 12px; }
+  .sn-checks .vj-details-head { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--gray); }
+
+  /* ── Section 5: template split + history panel (template-memory-A) ── */
+  .tpl-split { display: grid; grid-template-columns: 1fr; gap: 26px; align-items: start; }
+  .tplh-panel { border: 1px solid var(--hairline); border-radius: 14px; background: #fff; padding: 18px 20px; position: sticky; top: 60px; }
+  .tplh-head { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .tplh-sub { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin: 5px 0 12px; }
+  .tplh-row { border-top: 1px solid var(--hairline-soft); padding: 13px 2px; position: relative; }
+  .tplh-row.best { border-left: 2px solid var(--gold); padding-left: 12px; margin-left: -14px; }
+  .tplh-row .best-tag { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); }
+  .tplh-first { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); line-height: 1.5;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 3px 0 7px; }
+  .tplh-stats { display: flex; flex-wrap: wrap; gap: 5px 12px; font-family: var(--mono); font-size: 0.6rem; color: var(--gray); align-items: center; }
+  .tplh-stats b { color: var(--ink); font-weight: 500; }
+  .tplh-use { margin-left: auto; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 11px; background: transparent; cursor: pointer; white-space: nowrap; }
+  .tplh-use:hover { border-color: var(--ink); }
+  .tplh-note { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); line-height: 1.65;
+    border-top: 1px solid var(--hairline); margin-top: 12px; padding-top: 12px; }
+  @media (max-width: 1100px){ .tpl-split { grid-template-columns: 1fr; } .tplh-panel { position: static; } }
+
+  /* ── Suggested-replies settings block (Section 5) ── */
+  .sr-block { border: 1px solid var(--hairline); padding: 22px 26px; margin-top: 26px; }
+  .sr-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .sr-title { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.03em; color: var(--ink); margin: 0 0 6px; line-height: 1; }
+  .sr-sub { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); line-height: 1.6; margin: 0 0 18px; }
+  .sr-field { margin-bottom: 18px; }
+  .sr-field .f-lbl { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); margin-bottom: 7px; }
+  .sr-field .f-lbl .opt { color: #c4c4c4; margin-left: 6px; }
+  .sr-field textarea { width: 100%; box-sizing: border-box; }
+  .sr-ai { display: flex; gap: 12px; align-items: flex-start; border-top: 1px solid var(--hairline-soft); padding-top: 16px;
+    font-family: var(--mono); font-size: 0.66rem; color: var(--ink); line-height: 1.6; cursor: pointer; user-select: none; }
+  .sr-ai input { accent-color: var(--ink); width: 14px; height: 14px; margin-top: 2px; flex: none; }
+  .sr-ai small { display: block; color: var(--gray); font-size: 0.6rem; margin-top: 3px; }
+
+  /* ── capacity forecast card (capacity-forecast-A) ── */
+  .fc-card { border: 1px solid var(--hairline); padding: 24px 28px; margin-bottom: 22px; }
+  .fc-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 14px; }
+  .fc-acc { display: grid; grid-template-columns: 170px 1fr 190px; gap: 16px; align-items: center;
+    padding: 11px 0; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+  .fc-acc .name { font-size: 0.78rem; font-weight: 500; color: var(--ink); }
+  .fc-acc .bar { height: 3px; background: var(--hairline-soft); position: relative; }
+  .fc-acc .bar i { position: absolute; inset: 0 auto 0 0; background: var(--ink); }
+  .fc-acc.capped .bar i { background: var(--red); }
+  .fc-acc .est { font-size: 0.66rem; color: var(--gray); text-align: right; line-height: 1.5; }
+  .fc-acc .est b { color: var(--ink); font-weight: 500; }
+  .fc-acc.capped .est b { color: var(--red); }
+  .fc-total { display: flex; align-items: baseline; gap: 16px; padding: 18px 0 4px; }
+  .fc-total .num { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1; }
+  .fc-total .lbl { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.55; }
+  .fc-total .lbl b { color: var(--ink); font-weight: 500; }
+  .fc-vs { border-top: 1px solid var(--hairline); margin-top: 12px; padding-top: 16px;
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray); line-height: 1.65; }
+  .fc-vs b { color: var(--ink); font-weight: 500; }
+  .fc-warn { display: flex; gap: 10px; align-items: baseline; border: 1px solid var(--gold);
+    padding: 12px 16px; margin-top: 16px; font-family: var(--mono); font-size: 0.66rem; color: var(--gold); line-height: 1.6; }
+  .fc-warn b { color: var(--ink); font-weight: 500; }
+  .fc-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 16px; line-height: 1.6; }
+
+  /* ── pre-flight linter overlay (preflight-linter-B + blocklist group) ── */
+  #pf-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none;
+    align-items: flex-start; justify-content: center; z-index: 80; overflow-y: auto; padding: 48px 24px 64px; }
+  #pf-scrim.open { display: flex; }
+  .pf-panel { box-sizing: border-box; width: 100%; max-width: 760px; background: var(--bg, #fff);
+    border: 1px solid var(--hairline); border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.22); padding: 36px 44px 30px; }
+  .pf-eyebrow { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 10px; }
+  .pf-title { font-family: var(--display); font-size: 2rem; letter-spacing: 0.03em; line-height: 1;
+    color: var(--ink); margin: 0 0 10px; }
+  .pf-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.6; margin-bottom: 8px; }
+  .pf-sub b { color: var(--ink); font-weight: 500; }
+  .pf-tally { display: flex; gap: 10px; margin: 18px 0 26px; flex-wrap: wrap; }
+  .pf-tally span { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.06em;
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; color: var(--gray); }
+  .pf-tally .t-block { color: var(--red); border-color: var(--red); }
+  .pf-tally .t-warn { color: var(--gold); border-color: var(--gold); }
+  .pf-tally .t-pass { color: var(--green); border-color: var(--green); }
+  .pf-group { border-top: 1px solid var(--hairline); padding: 20px 0 14px; }
+  .pf-group-head { display: flex; align-items: baseline; gap: 12px; font-family: var(--mono);
+    font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
+  .pf-group-head .n { margin-left: auto; color: var(--gray); letter-spacing: 0.04em; }
+  .pf-blockers .pf-group-head { color: var(--red); }
+  .pf-warnings .pf-group-head { color: var(--gold); }
+  .pf-passed .pf-group-head { color: var(--green); cursor: pointer; user-select: none; }
+  .pf-passed .caret { display: inline-block; transition: transform 0.15s; }
+  .pf-passed.collapsed .caret { transform: rotate(-90deg); }
+  .pf-passed.collapsed .pf-rows { display: none; }
+  .pf-row { display: grid; grid-template-columns: 92px 190px 1fr; gap: 18px; align-items: baseline;
+    padding: 12px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+  .pf-rows .pf-row:last-child { border-bottom: none; }
+  .pf-row .rowno { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); }
+  .pf-blockers .pf-row .rowno { color: var(--red); }
+  .pf-warnings .pf-row .rowno { color: var(--gold); }
+  .pf-row .lead { font-size: 0.78rem; color: var(--ink); font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pf-row .reason { font-size: 0.72rem; color: var(--gray); line-height: 1.55; }
+  .pf-row .reason code { background: var(--hairline-soft); padding: 1px 6px; border-radius: 4px; font-size: 0.68rem; color: var(--ink); }
+  .pf-passed .pf-row { grid-template-columns: 24px 1fr; }
+  .pf-passed .pf-row .rowno { color: var(--green); }
+  .pf-passed .pf-row .reason b { color: var(--ink); font-weight: 500; }
+  .pf-group-foot { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); line-height: 1.6; margin-top: 8px; }
+  .pf-group-foot a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .pf-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
+    margin-top: 8px; padding-top: 22px; flex-wrap: wrap; }
+  .pf-actions .spacer { flex: 1; }
+  .pf-count-note { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); line-height: 1.6;
+    width: 100%; margin-top: 12px; }
+  .pf-count-note b { color: var(--ink); font-weight: 500; }
+
+  /* ── debrief overlay (campaign-debrief-A) ── */
+  #db-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none;
+    align-items: flex-start; justify-content: center; z-index: 80; overflow-y: auto; padding: 44px 24px 72px; }
+  #db-scrim.open { display: flex; }
+  .db-panel { box-sizing: border-box; width: 100%; max-width: 780px; background: var(--bg, #fff);
+    border: 1px solid var(--hairline); border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.22); padding: 38px 46px 32px; }
+  .db-eyebrow { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 10px; }
+  .db-title { font-family: var(--display); font-size: 2.1rem; letter-spacing: 0.03em; line-height: 1;
+    color: var(--ink); margin: 0 0 10px; }
+  .db-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.7; margin-bottom: 26px; }
+  .db-sub b { color: var(--ink); font-weight: 500; }
+  .db-sec-head { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin: 0 0 14px; }
+  .db-sec { border-top: 1px solid var(--hairline); padding: 24px 0; }
+  .db-table { width: 100%; border-collapse: collapse; font-family: var(--mono); }
+  .db-table th { text-align: left; font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gray); font-weight: 500; padding: 0 10px 10px 0; border-bottom: 1px solid var(--hairline); }
+  .db-table td { font-size: 0.74rem; color: var(--ink); padding: 12px 10px 12px 0;
+    border-bottom: 1px solid var(--hairline-soft); }
+  .db-table td.num { font-weight: 500; }
+  .db-table td.dim { color: var(--gray); }
+  .db-table tr:last-child td { border-bottom: none; }
+  .db-park { font-size: 0.64rem; color: var(--gray); border: 1px dashed var(--hairline); border-radius: 9999px; padding: 3px 10px; white-space: nowrap; }
+  .db-park.gold { color: var(--gold); border-color: var(--gold); }
+  .db-skipped { font-family: var(--mono); font-size: 0.72rem; color: var(--ink); line-height: 1.7; }
+  .db-skipped b { font-weight: 500; }
+  .db-skipped .why { color: var(--gray); }
+  .db-skipped a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .db-tpl { border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 18px; cursor: pointer; }
+  .db-tpl .tpl-first { font-family: var(--mono); font-size: 0.72rem; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-tpl .tpl-more { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-top: 6px; }
+  .db-tpl .tpl-full { display: none; font-family: var(--mono); font-size: 0.72rem; color: var(--ink); line-height: 1.8; margin-top: 10px;
+    border-top: 1px solid var(--hairline-soft); padding-top: 12px; white-space: pre-line; }
+  .db-tpl.open .tpl-first { white-space: normal; }
+  .db-tpl.open .tpl-full { display: block; }
+  .db-vs { display: flex; gap: 12px; flex-wrap: wrap; }
+  .db-vs .vs-chip { font-family: var(--mono); font-size: 0.68rem; color: var(--gray);
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 8px 16px; }
+  .db-vs .vs-chip b { color: var(--ink); font-weight: 500; }
+  .db-vs .vs-chip .up { color: var(--green); }
+  .db-vs .vs-chip .down { color: var(--red); }
+  .db-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
+    margin-top: 4px; padding-top: 24px; }
+  .db-actions .spacer { flex: 1; }
+  .db-foot-note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.6; margin-top: 14px; }
+
+  /* ── blocklist management overlay (company-blocklist-A panel in a scrim) ── */
+  #bl-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none;
+    align-items: flex-start; justify-content: center; z-index: 90; overflow-y: auto; padding: 48px 24px 64px; }
+  #bl-scrim.open { display: flex; }
+  .bl-panel { box-sizing: border-box; width: 100%; max-width: 760px; background: var(--bg, #fff);
+    border: 1px solid var(--hairline); border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.22); padding: 30px 36px 26px; }
+  .bl-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .bl-title { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.03em; color: var(--ink); margin: 0 0 8px; line-height: 1; }
+  .bl-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.6; margin: 0 0 20px; }
+  .bl-sub b { color: var(--ink); font-weight: 500; }
+  .bl-row { display: grid; grid-template-columns: 190px 1fr 150px 92px 70px; gap: 14px; align-items: baseline;
+    padding: 12px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+  .bl-row.head { font-size: 0.54rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); border-bottom: 1px solid var(--hairline); }
+  .bl-row .entry { font-size: 0.78rem; font-weight: 500; color: var(--ink); }
+  .bl-row .entry small { display: block; font-size: 0.58rem; font-weight: 400; color: var(--gray); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+  .bl-row .reason { font-size: 0.7rem; color: var(--gray); }
+  .bl-row .by, .bl-row .date { font-size: 0.64rem; color: var(--gray); }
+  .bl-remove { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gray); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; cursor: pointer; }
+  .bl-remove:hover { color: var(--red); border-color: var(--red); }
+  .bl-add { display: grid; grid-template-columns: 190px 1fr auto; gap: 12px; margin-top: 18px; }
+  .bl-add input { box-sizing: border-box; width: 100%; background: transparent; border: 1px solid var(--hairline);
+    color: var(--ink); font-family: var(--mono); font-size: 0.72rem; padding: 9px 12px; border-radius: 0; }
+  .bl-add input:focus { outline: none; border-color: var(--ink); }
+  .bl-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 14px; line-height: 1.6; }
+  .bl-note b { color: var(--ink); font-weight: 500; }
+  .bl-actions { display: flex; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--hairline); }
+  .bl-actions .spacer { flex: 1; }
+
+  /* ── Replies view (reply-inbox-B + suggested replies) ── */
+  .replies-wrap { border: 1px solid var(--hairline); border-radius: 14px; background: #fff; padding: 22px 24px; }
+  .replies-head { display: flex; align-items: baseline; gap: 14px; }
+  .replies-head .tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray);
+    display: inline-flex; align-items: center; gap: 7px; }
+  .replies-head .tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--gold, #caa24a); display: inline-block; }
+  .replies-head .mark { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--gray);
+    text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .replies-title { font-family: var(--display); font-size: 34px; line-height: 1; letter-spacing: 0.02em; margin: 10px 0 2px; }
+  .replies-sub { font-size: 12px; color: var(--gray); margin: 0 0 16px; }
+  .replies-sub b { color: var(--ink); font-weight: 600; }
+  .replies-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .reply-item { border: 1px solid var(--hairline); border-radius: 10px; padding: 10px 12px; background: #fff; }
+  .reply-item.interested { border-left: 3px solid var(--gold, #caa24a); }
+  .reply-row1 { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .reply-row1 strong a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .reply-when { font-size: 0.75em; color: #8b949e; white-space: nowrap; }
+  .reply-sub { font-size: 0.8em; color: #8b949e; margin: 2px 0 6px; }
+  .reply-sub strong { color: var(--ink); font-weight: 600; }
+  .reply-msg { white-space: pre-wrap; font-size: 0.92em; }
+  .reply-foot { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+  .reply-open { margin-left: auto; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 6px 12px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--ink); cursor: pointer; }
+  .reply-open:hover { border-color: var(--ink); }
+  .lbl { position: relative; display: inline-block; }
+  .lbl-chip { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 5px 12px; border-radius: 9999px; border: 1px solid var(--hairline); background: #f7f7f6;
+    color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  .lbl-chip .ldot { width: 6px; height: 6px; border-radius: 9999px; background: #b8b8b6; display: inline-block; }
+  .lbl-chip.interested { border-color: var(--gold, #caa24a); background: rgba(201,168,74,0.08); }
+  .lbl-chip.interested .ldot { background: var(--gold, #caa24a); }
+  .lbl-chip.lowconf { border-style: dashed; }
+  .lbl-chip:hover { border-color: var(--ink); }
+  .lbl-conf { font-size: 9px; color: #b8b8b6; letter-spacing: 0.08em; }
+  .lbl-menu { position: absolute; left: 0; top: calc(100% + 6px); min-width: 168px; background: #fff;
+    border: 1px solid var(--hairline); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+    padding: 6px; z-index: 35; display: none; }
+  .lbl.open .lbl-menu { display: block; }
+  .lbl-item { display: block; width: 100%; padding: 8px 11px; border-radius: 8px; cursor: pointer;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #444; background: transparent; border: none; text-align: left; }
+  .lbl-item:hover { background: #f4f4f3; color: var(--ink); }
+  .replies-note { font-size: 12px; color: var(--gray); margin-top: 16px; }
+  .reply-item.seen { opacity: 0.55; }
+
+  /* suggested reply box under a reply */
+  .sug { border: 1px dashed var(--hairline); border-radius: 8px; padding: 10px 12px; margin-top: 10px; background: #fafaf9; }
+  .sug-head { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.58rem;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); margin-bottom: 7px; }
+  .sug-head .ai-tag { color: var(--gold); border: 1px dashed var(--gold); border-radius: 9999px; padding: 2px 8px;
+    font-size: 0.52rem; letter-spacing: 0.1em; }
+  .sug-msg { font-size: 0.86em; color: var(--ink); line-height: 1.55; }
+  .sug-acts { display: flex; gap: 8px; margin-top: 9px; }
+  .sug-acts button { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 5px 12px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--ink); cursor: pointer; }
+  .sug-acts button.solid { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .sug-acts button:hover { border-color: var(--ink); }
+  .sug-off { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); border-top: 1px dashed var(--hairline);
+    margin-top: 10px; padding-top: 8px; }
+
+  /* ── Team view (team-status-A) ── */
+  .team-head { display: flex; align-items: baseline; gap: 14px; margin: 8px 0 6px; }
+  .team-title { font-family: var(--display); font-size: 2rem; letter-spacing: 0.03em; color: var(--ink); line-height: 1; margin: 0; }
+  .team-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); }
+  .team-refresh { margin-left: auto; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; background: transparent; cursor: pointer; }
+  .team-refresh:hover { color: var(--ink); border-color: var(--ink); }
+  .team-card { border: 1px solid var(--hairline); border-radius: 14px; background: #fff; padding: 22px 26px; margin-top: 18px; }
+  .team-table { width: 100%; border-collapse: collapse; font-family: var(--mono); }
+  .team-table th { text-align: left; font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gray); font-weight: 500; padding: 0 12px 12px 0; border-bottom: 1px solid var(--hairline); }
+  .team-table td { font-size: 0.74rem; color: var(--ink); padding: 15px 12px 15px 0; vertical-align: top;
+    border-bottom: 1px solid var(--hairline-soft); }
+  .team-table tr:last-child td { border-bottom: none; }
+  .team-table tr.is-you td { background: rgba(0,0,0,0.02); }
+  .op-name { font-weight: 500; white-space: nowrap; }
+  .op-you { font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;
+    padding: 2px 8px; border-radius: 9999px; background: var(--ink); color: var(--bg); margin-left: 8px; }
+  .st-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 12px; white-space: nowrap; }
+  .st-pill .d { width: 7px; height: 7px; border-radius: 9999px; display: inline-block; }
+  .st-pill.run { color: var(--green); border-color: var(--green); } .st-pill.run .d { background: var(--green); }
+  .st-pill.mon { color: var(--blue); border-color: var(--blue); } .st-pill.mon .d { background: var(--blue); }
+  .st-pill.idle { color: var(--gray); } .st-pill.idle .d { background: var(--gray-faint, #b8b8b6); }
+  .camp-name { font-weight: 500; }
+  .camp-mode { color: var(--gray); font-size: 0.64rem; margin-top: 3px; }
+  .acct-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 220px; }
+  .acct-chip { font-size: 0.62rem; color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px;
+    padding: 3px 10px; white-space: nowrap; }
+  .acct-chip.warn { color: var(--gold); border-color: var(--gold); }
+  .time2 { white-space: nowrap; }
+  .time2 .local { display: block; font-size: 0.6rem; color: var(--gray); margin-top: 3px; }
+  .sends { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; }
+  .conf-strip { margin-top: 20px; border-radius: 12px; padding: 15px 20px; font-family: var(--mono); font-size: 0.72rem; line-height: 1.7; }
+  .conf-strip.warn { border: 1px solid var(--gold); color: var(--ink); background: rgba(201,168,74,0.07); }
+  .conf-strip.warn b { color: var(--gold); }
+  .conf-strip .conf-head { font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
+  .conf-strip .conf-act { margin-left: 12px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; background: transparent; cursor: pointer; }
+  .conf-strip .conf-act:hover { border-color: var(--ink); }
+  .team-foot { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.7; margin-top: 18px; }
+
+  /* wizard-strip extra actions on done strips */
+  .sn-foot .mini.dup, .sn-foot .mini.debrief { border-style: dashed; }
+  .sn-foot .mini.dup:hover, .sn-foot .mini.debrief:hover { border-color: var(--ink); border-style: solid; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 120; }
+  .toast.show { opacity: 1; }
+
+  /* SKETCH-ONLY override: the real app hides .sidebar-nav on the dashboard
+     route (style.css:4667); in this combined sketch the sidebar is the way
+     to reach every view, so keep it visible on all routes. */
+  body.route-dashboard .sidebar-nav { display: block; }
+</style>
+</head>
+<body data-dashboard="v3" class="route-dashboard view-dashboard">
+<div class="sketch-bar">SKETCH — ALL FEATURES COMBINED — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="app">
+
+  <!-- ── Sidebar (real shell) — the navigation for the whole master sketch ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar">v2.132.0</span></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back" data-view="dashboard" onclick="showView('dashboard', this)"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item" data-view="wizard" onclick="showView('wizard', this); scrollToSec('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-view="wizard" onclick="showView('wizard', this); scrollToSec('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-view="wizard" onclick="showView('wizard', this); scrollToSec('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-view="wizard" onclick="showView('wizard', this); scrollToSec('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-view="wizard" onclick="showView('wizard', this); scrollToSec('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Live Status — unchanged')">Live Status</button>
+
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item" data-view="team" onclick="showView('team', this)" title="Visible only to admin operators (ADMIN_EMAILS)"><span class="nav-num">◉</span>Team status</button>
+      <button type="button" class="nav-item" onclick="toast('Connection DB — unchanged')"><span class="nav-num">◆</span>Connection DB</button>
+
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item" data-view="replies" onclick="showView('replies', this)">Replies</button>
+      <button type="button" class="nav-item" onclick="toast('Open log — unchanged')">Open log</button>
+
+      <div class="nav-section-label">Help</div>
+      <button type="button" class="nav-item nav-item-help" onclick="toast('Help — unchanged')"><span class="nav-num">?</span>Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip" onclick="toast('Operator email — unchanged')">
+        <span class="operator-chip-label">Operating as</span>
+        <strong>antonio@ortusclub.com</strong>
+      </button>
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        <span>Mon 6 Jul</span>
+      </div>
+      <button type="button" class="btn btn-sm sidebar-signout" onclick="toast('Sign out — unchanged')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span>Monday, 6 July</span> <small style="margin-left:12px; color:var(--gray)">v2.132.0</small></div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">26</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">143</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err">0</span></div>
+        <div class="header-stat"><span class="k">Passover</span>
+          <span class="v small passover-pills">
+            <span class="passover-pill closed" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" title="CC">CC</span>
+          </span>
+        </div>
+        <div class="header-stat"><span class="k">RAM</span><span class="v">62%</span></div>
+        <div class="header-stat"><span class="k">CPU</span><span class="v">31%</span></div>
+        <div class="header-stat"><span class="k">Browsers</span><span class="v">1</span></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ VIEW 1 — DASHBOARD (unified campaigns board) ═══════════════ -->
+    <div id="view-dashboard" class="mview route-view">
+      <div class="dashboard-header">
+        <div class="route-seg" role="tablist" aria-label="Campaigns or Sales Nav">
+          <button type="button" class="route-seg-btn is-active">Campaigns</button>
+          <button type="button" class="route-seg-btn" onclick="toast('Sales Nav — unchanged')">Sales Nav</button>
+        </div>
+        <div class="dashboard-new-wrap">
+          <div class="fdrop" id="campaigns-typefilter">
+            <button type="button" class="fdrop-btn" onclick="toast('Type filter — unchanged')"><span class="cur">Type: <b>All</b> · 4</span>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg></button>
+          </div>
+          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="toast('Connection DB — unchanged')">Connection DB</button>
+          <button type="button" class="btn btn-start dashboard-new-btn" onclick="newCampaign()">+ New campaign</button>
+        </div>
+      </div>
+
+      <div class="sn-qmeta" style="text-align:right;margin:0 2px 4px">1 running</div>
+
+      <div id="campaigns-board" class="sn-board">
+
+        <div class="sn-railhead">▶ Now running</div>
+
+        <!-- event header row (event-campaigns-B) -->
+        <div class="evt-head">
+          <span class="evt-name">Fintech Roundtable</span>
+          <span class="evt-meta">Singapore — 24 Jul · 18 days out</span>
+          <span class="evt-count">1 campaign</span>
+        </div>
+
+        <!-- running local strip: pacing + funnel + account chips + skipped + write-fails + follow-ups -->
+        <div class="sn-strip local run" data-cid="local-active">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · C+I</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span>
+            <span class="sn-status"><span class="dot runlocal"></span> Running</span></div>
+          <div class="sn-name">CC+IC — FinTech CTOs</div>
+          <div class="sn-flow"><b>120 leads</b> → <b>3 accounts</b> → feeds <b>CC+IC — FinTech CTOs</b> · Connect + Introduce Back</div>
+          <div class="sn-progtxt"><b>52</b> of 120 sent · runs on this machine — closing the app stops it</div>
+          <div class="sn-pacing"><span class="pace-dot"></span>Event in <b>18 days</b> · <b>57%</b> of list uncontacted — at ~60/day this list finishes <b>~6 days</b> before the event</div>
+
+          <div class="sn-switch"><div class="sn-pane on">
+
+            <!-- funnel strip (campaign-funnel-A, CC+IC stages, Pending removed) -->
+            <div class="funnel-wrap" style="border-top:none;margin-top:0;padding-top:0">
+              <div class="funnel-head">Funnel · live</div>
+              <div class="funnel">
+                <div class="funnel-stage"><div class="st-lbl">Sent</div><div class="st-num">52</div><div class="st-drop">of 120 leads</div></div>
+                <div class="funnel-stage"><div class="st-lbl">Accepted</div><div class="st-num">13</div><div class="st-drop"><b>25%</b> of sent</div></div>
+                <div class="funnel-stage"><div class="st-lbl">Intro'd</div><div class="st-num">5</div><div class="st-drop"><b>38%</b> of accepted</div></div>
+                <div class="funnel-stage"><div class="st-lbl">Replied</div><div class="st-num">2</div><div class="st-drop"><b>40%</b> of intro'd</div></div>
+              </div>
+              <div class="funnel-note">Counts come from the sheet's Stage / Intro Status columns, refreshed with the card.</div>
+            </div>
+
+            <!-- per-account state chips (429-cooldown-B) -->
+            <div class="vj-profiles-sk">
+              <div class="vj-prof-head-sk">Selected accounts</div>
+              <div class="vj-prof-row is-sending">
+                <span class="vj-prof-name">James Okafor</span>
+                <span class="vj-prof-chip">Sending</span>
+                <span class="vj-prof-today">21 sent today</span>
+              </div>
+              <div class="vj-prof-row is-cooling">
+                <span class="vj-prof-name">Marta Kowalski</span>
+                <span class="vj-prof-chip">Cooling down — 429 · retry in <b id="chip-cd">24 min</b></span>
+                <span class="vj-prof-today">18 sent today</span>
+              </div>
+              <div class="vj-prof-row is-capped">
+                <span class="vj-prof-name">Priya Nair</span>
+                <span class="vj-prof-chip">Weekly cap — parked until Monday</span>
+                <span class="vj-prof-today">13 sent today</span>
+              </div>
+            </div>
+
+            <!-- skipped-so-far collapsed line → expands to the table (skipped-leads-report-A) -->
+            <div class="skipped-mini" id="mini-line">
+              <span class="pill">Skipped so far: 3</span>
+              <a onclick="expandMini()">view</a>
+            </div>
+            <div class="skipped" id="mini-table" hidden>
+              <div class="skipped-head">⚠ Skipped so far · <span class="n">3 leads</span>
+                <button type="button" class="vj-log-act" onclick="collapseMini()">Collapse</button>
+              </div>
+              <table class="skiptab">
+                <thead><tr><th>Row #</th><th>Lead</th><th>Account</th><th>Reason</th></tr></thead>
+                <tbody>
+                  <tr><td class="rowno">87</td><td>Rajiv Menon</td><td>James Okafor</td><td class="reason"><b>Malformed URL</b> — profile slug missing</td></tr>
+                  <tr><td class="rowno">109</td><td>Elena Petrova</td><td>Marta Kowalski</td><td class="reason"><b>Identity unconfirmed</b> — skipped on doubt</td></tr>
+                  <tr><td class="rowno">110</td><td>Elena Petrova</td><td>Marta Kowalski</td><td class="reason"><b>Duplicate URL</b> — identical to row 109</td></tr>
+                </tbody>
+              </table>
+              <div class="skipped-note" style="margin-top:10px">Retry becomes available when the run finishes — skipped rows stay untouched on the sheet.</div>
+            </div>
+
+            <!-- sheet-write failures line -->
+            <div class="sn-oneline">
+              <span class="pill-warn">⚠ 2 sheet writes failed</span>
+              <a onclick="toast('Opens the failed-writes list — rows 91 and 104, Stage stamp not saved')">view</a>
+              <a onclick="toast('Retrying 2 failed sheet writes…')">retry</a>
+            </div>
+
+            <!-- follow-ups / replies line -->
+            <div class="sn-oneline">
+              <span>Follow-ups/replies: <b>2 intro follow-ups due in 01:12:44</b> · <b>2 new replies</b></span>
+              <a onclick="document.querySelector('[data-view=replies]').click()">open Replies</a>
+            </div>
+
+            <!-- manual check buttons (real vj-bulk block from index.html #active-card;
+                 CC+IC / CC+DM get BOTH — Message Only gets only the reply check,
+                 plain CC neither) -->
+            <div class="sn-checks">
+              <div class="vj-bulk">
+                <div class="vj-details-head">Bulk check connection</div>
+                <div class="vj-bulk-status">Last sweep · <b>10:05</b> · <span>3</span> newly accepted</div>
+                <button class="vj-bulk-btn" onclick="toast('Check connection status — asks scope (this campaign\'s accounts vs all senders), then sweeps pending connects via Voyager')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+                  <span>Check connection status</span>
+                </button>
+                <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
+              </div>
+              <div class="vj-bulk">
+                <div class="vj-details-head">Reply check</div>
+                <div class="vj-bulk-status">Last sweep · <b>09:40</b> · <span>2</span> new replies</div>
+                <button class="vj-bulk-btn" onclick="toast('Check replies — pauses the campaign, scans sent threads for replies, writes them to the sheet, then resumes')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+                  <span>Check replies</span>
+                </button>
+                <div class="vj-bulk-hint">Scans the messages you sent for replies and writes them to your sheet. Doesn't affect throughput.</div>
+              </div>
+            </div>
+
+            <div class="sn-logbox" style="margin-top:14px"><span class="t">10:22</span> <span class="ok">Sent</span> — Connect request → Daniel Reyes (James Okafor)<br><span class="t">10:19</span> 429 — Rate-limited, cooling down 30 min, will retry automatically (attempt 1/3) · Marta Kowalski<br><span class="t">10:18</span> <span class="ok">Intro</span> — Intro DM fired → Sofia Lindqvist<br><span class="t">10:14</span> <span class="ok">Sent</span> — Connect request → Sofia Lindqvist (Marta Kowalski)</div>
+          </div></div>
+
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('Pause — unchanged')">Pause</button>
+            <button class="mini" onclick="toast('Stop — unchanged')">Stop</button>
+            <button class="mini solid" onclick="toast('Open — reveals the local detail card, unchanged')">Open</button>
+            <div class="ovf"><button type="button" class="ovf-btn" title="More" onclick="toggleOvf(this)">⋯</button>
+              <div class="ovf-menu"><button type="button" class="ovf-item" onclick="duplicateFrom('CC+IC — FinTech CTOs')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>
+          </div></div>
+        </div>
+
+        <div class="sn-railhead">✓ Done <span class="sn-railcount">3</span><button type="button" class="sn-clear-done" onclick="toast('Clear done — unchanged')">Clear done</button></div>
+
+        <div class="evt-head">
+          <span class="evt-name">Fintech Roundtable</span>
+          <span class="evt-meta">Singapore — 24 Jul · 18 days out</span>
+          <span class="evt-count">1 campaign</span>
+        </div>
+
+        <!-- done strip: Debrief + Duplicate pills -->
+        <div class="sn-strip local done sn-collapsed" data-cid="h-1">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · C+I</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span>
+            <span class="sn-status"><span class="dot mon"></span> Done</span></div>
+          <div class="sn-name">CC+IC — FinTech CTOs — 18 Jun</div>
+          <div class="sn-flow"><b>120 leads</b> → <b>3 accounts</b> → feeds <b>CC+IC — FinTech CTOs — 18 Jun</b> · Connect + Introduce Back</div>
+          <div class="sn-switch"><div class="sn-pane on"><div class="sn-logbox">Finished 18 Jun · <span class="ok">113/120 sent</span> · 13 accepted</div></div></div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini debrief" onclick="openDebrief()">Debrief</button>
+            <button class="mini dup" onclick="duplicateFrom('CC+IC — FinTech CTOs — 18 Jun')">Duplicate</button>
+            <button class="mini solid" onclick="toast('Open — unchanged')">Open</button>
+          </div></div>
+        </div>
+
+        <div class="evt-head">
+          <span class="evt-name">CIO Dinner</span>
+          <span class="evt-meta">London — 9 Jul · 3 days out</span>
+          <span class="evt-count">1 campaign</span>
+        </div>
+
+        <div class="sn-strip done sn-collapsed" data-cid="c-2">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · DM</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span>
+            <span class="sn-status"><span class="dot mon"></span> Done</span></div>
+          <div class="sn-name">DM — June event follow-up</div>
+          <div class="sn-flow"><b>64 leads</b> → <b>2 accounts</b> → feeds <b>DM — June event follow-up</b> · Direct Messages</div>
+          <div class="sn-switch"><div class="sn-pane on"><div class="sn-logbox">Finished 12 Jun · <span class="ok">64/64 sent</span> · 9 replied</div></div></div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini debrief" onclick="toast('Debrief — same panel, this campaign\'s numbers')">Debrief</button>
+            <button class="mini dup" onclick="duplicateFrom('DM — June event follow-up')">Duplicate</button>
+            <button class="mini solid" onclick="toast('Open — jumps to the source Google Sheet, unchanged')">Open</button>
+          </div></div>
+        </div>
+
+        <div class="evt-head">
+          <span class="evt-name">No event</span>
+          <span class="evt-meta">not tied to a roundtable</span>
+          <span class="evt-count">1 campaign</span>
+        </div>
+
+        <div class="sn-strip local done stopped sn-collapsed" data-cid="h-3">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span>
+            <span class="sn-status"><span class="dot red"></span> Stopped</span></div>
+          <div class="sn-name">Connect Only — CFO list</div>
+          <div class="sn-flow"><b>95 leads</b> → <b>1 account</b> → feeds <b>Connect Only — CFO list</b> · Connect Only</div>
+          <div class="sn-switch"><div class="sn-pane on"><div class="sn-logbox">Stopped early 5 Jun · <span class="ok">80/95 sent</span></div></div></div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini debrief" onclick="toast('Debrief — same panel, this campaign\'s numbers')">Debrief</button>
+            <button class="mini dup" onclick="duplicateFrom('Connect Only — CFO list')">Duplicate</button>
+            <button class="mini solid" onclick="toast('Open — unchanged')">Open</button>
+          </div></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ═══════════════ VIEW 2 — WIZARD ═══════════════ -->
+    <div id="view-wizard" class="mview route-view">
+      <div class="wizard-back-row">
+        <button type="button" class="back-link" onclick="document.querySelector('[data-view=dashboard]').click()">← Back to dashboard</button>
+      </div>
+
+      <!-- gold prefill note — appears only after Duplicate (duplicate-campaign-B) -->
+      <div class="prefill-note" id="prefill-note" hidden><b>Prefilled from “…”</b></div>
+
+      <!-- Presets row (top of wizard) -->
+      <div class="preset-row">
+        <span class="lbl">Preset</span>
+        <div class="fdrop">
+          <button type="button" class="fdrop-btn" onclick="toast('Presets — loads saved wizard config: Standard CC+IC (SG), DM warm list, Blank')"><span class="cur">Preset: <b>Standard CC+IC (SG)</b> · 3 saved</span>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg></button>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="toast('Saved current wizard config as a preset — “Standard CC+IC (SG) v2”')">Save as preset</button>
+      </div>
+
+      <div class="section campaign-name-section" id="nav-campaign-name">
+        <h2>Campaign Name</h2>
+        <div class="campaign-name-row">
+          <input type="text" id="campaign-name-input" placeholder="e.g. TAG_CITY_I" value="CC+IC — FinTech CTOs (SG)" autocomplete="off" />
+        </div>
+        <!-- Event row (event-campaigns-B) -->
+        <div class="event-row">
+          <div class="ef">
+            <div class="ef-label">Event<span class="opt">optional</span></div>
+            <input type="text" placeholder="e.g. Fintech Roundtable" value="Fintech Roundtable" />
+          </div>
+          <div class="ef city">
+            <div class="ef-label">City</div>
+            <input type="text" placeholder="e.g. Singapore" value="Singapore" />
+          </div>
+          <div class="ef date">
+            <div class="ef-label">Event date</div>
+            <input type="text" placeholder="DD Mon YYYY" value="24 Jul 2026" />
+          </div>
+        </div>
+        <div class="event-hint">Ties this campaign to a roundtable — the board groups it under the event and shows pacing against the event date.</div>
+      </div>
+
+      <div class="section" id="nav-settings">
+        <h2>1. Campaign Type <span class="section-summary">Connect + Introduce Back</span></h2>
+        <div class="mode-grid">
+          <button type="button" class="mode-card" onclick="toast('Mode select — unchanged')">
+            <div class="mode-card-title">Connect Only</div>
+            <ul class="mode-card-bullets"><li>Connection requests only</li><li>Optional note</li></ul>
+          </button>
+          <button type="button" class="mode-card active" onclick="toast('Mode select — unchanged')">
+            <div class="mode-card-title">Connect + Introduce Back</div>
+            <ul class="mode-card-bullets"><li>Connect, then 3-way intro DM on accept</li><li>Primary person required</li></ul>
+          </button>
+          <button type="button" class="mode-card" onclick="toast('Mode select — unchanged')">
+            <div class="mode-card-title">Direct Messages</div>
+            <ul class="mode-card-bullets"><li>DM existing 1st-degree connections</li></ul>
+          </button>
+        </div>
+        <div class="wiz-vals">
+          <span class="wiz-val">Primary <b>Sam Adcock</b> · linkedin.com/in/samadcock</span>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-sheet">
+        <h2 class="section-toggle"><span class="caret">▾</span> 2. Google Sheet tab URL <span class="section-summary">tab “June leads”</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val">Sheet <b>CC+IC — FinTech CTOs</b></span>
+            <span class="wiz-val">Tab <b>June leads</b> · gid 482910</span>
+            <span class="wiz-val">LinkedIn column <b>C · “LinkedIn URL”</b></span>
+            <span class="wiz-val"><b>418</b> rows</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section III — REAL J3 account picker (1:1 with index.html #nav-accounts,
+           v2.112.10 Window C / banner-led) + warm-up states integrated into the
+           tile's left state zone. -->
+      <div class="section collapsible" id="nav-accounts">
+        <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span>3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts">3 selected</span></h2>
+        <div class="collapsible-body">
+
+        <!-- Credit-passover banner (gold-tinted) -->
+        <div class="acct-banner">
+          <div class="acct-banner-l">
+            <div class="acct-banner-h"><span class="ic">⏳</span> Credit passover</div>
+            <div class="acct-banner-sub">Accounts assigned to a person lock to them at the start of each cycle — they turn <b>blue</b> and only the assignee should use them. On <b>passover</b> day, any account not yet used frees up to <b>available</b> (green) for everyone. Weekly Connect (CC): locks <b>Monday</b>, frees on <b>Thursday</b>. Monthly (Open Profile · InMail · Sales Nav): locks the <b>1st</b>, frees on the <b>16th</b>.</div>
+          </div>
+          <div class="acct-banner-r">
+            <div class="acct-cd">
+              <div class="acct-cd-t">Monthly · OP/InMail/SN</div>
+              <div class="acct-cd-n">10d</div>
+              <div class="acct-cd-s pass-assigned">Assigned</div>
+              <div class="acct-cd-w">Frees the 16th</div>
+            </div>
+            <div class="acct-cd">
+              <div class="acct-cd-t">Weekly · Connect (CC)</div>
+              <div class="acct-cd-n">3d</div>
+              <div class="acct-cd-s pass-assigned">Assigned</div>
+              <div class="acct-cd-w">Frees Thursday</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- compact stat-pill row + Match name -->
+        <div class="acct-summary-bar acct-pills">
+          <button type="button" class="acct-sb-stat acct-pill preset" onclick="toast('Filter: Assigned to me — unchanged')">
+            <span class="acct-sb-stat-num acct-pill-num preset-count">0</span>
+            <span class="acct-sb-stat-lbl acct-pill-lbl">Assigned to me</span>
+          </button>
+          <button type="button" class="acct-sb-stat acct-pill preset" onclick="toast('Filter: Unassigned pool — unchanged')">
+            <span class="acct-sb-stat-num acct-pill-num preset-count">0</span>
+            <span class="acct-sb-stat-lbl acct-pill-lbl">Unassigned pool</span>
+          </button>
+          <button type="button" class="acct-sb-stat acct-pill preset" onclick="toast('Filter: Available now — unchanged')">
+            <span class="acct-sb-stat-num acct-pill-num preset-count">0</span>
+            <span class="acct-sb-stat-lbl acct-pill-lbl">Available now</span>
+          </button>
+          <button type="button" class="acct-sb-stat acct-pill preset active" onclick="toast('Filter: All profiles — unchanged')">
+            <span class="acct-sb-stat-num acct-pill-num preset-count">501</span>
+            <span class="acct-sb-stat-lbl acct-pill-lbl">All profiles</span>
+          </button>
+          <div class="acct-sb-match acct-pill-match my-identity-row">
+            <label class="acct-sb-match-lbl my-identity-label" for="my-identifier">
+              Match name
+              <a href="#" class="identifier-toggle-link" onclick="event.preventDefault(); toast('Override — unlocks the Match-name field for editing')">Override</a>
+            </label>
+            <input type="text" id="my-identifier" readonly placeholder="auto-derived from email" value="Antonio" />
+          </div>
+        </div>
+        <div class="acct-sb-hint">Match name is your ID in the lead sheet — it links you to your assigned LinkedIn accounts. Click Override to edit.</div>
+
+        <!-- Browse accounts card -->
+        <div class="accounts-browser browse-card collapsible" id="accounts-browser">
+          <h3 class="section-toggle browse-card-head accounts-browser-toggle" onclick="toggleSection('accounts-browser')"><span class="caret">▾</span> <span>Browse accounts</span></h3>
+          <div class="collapsible-body browse-card-body">
+            <div class="browse-toolbar">
+              <div class="browse-search">
+                <input type="text" placeholder="Search by name or email…" oninput="toast('Search filter — unchanged')" />
+              </div>
+              <div class="chip-row">
+                <button type="button" class="chip active" onclick="toast('Filter: All — unchanged')">All <span class="count">501</span></button>
+                <button type="button" class="chip" onclick="toast('Filter: Available — unchanged')">Available <span class="count">431</span></button>
+                <button type="button" class="chip" onclick="toast('Filter: In use — unchanged')">In use <span class="count">2</span></button>
+                <button type="button" class="chip" onclick="toast('Filter: Selected — unchanged')">Selected <span class="count">3</span></button>
+              </div>
+              <div class="browse-icon-row">
+                <button class="browse-icon-btn" onclick="toast('Refresh profile list — unchanged')" title="Refresh profile list" aria-label="Refresh profile list">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+                </button>
+                <button class="browse-icon-btn refresh-soo" onclick="toast('Refresh State of Operations — unchanged')" title="Re-fetch account statuses from the State of Operations sheet" aria-label="Refresh State of Operations">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+                  <span class="refresh-soo-progress"><span class="refresh-soo-bar"></span></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="browse-secondary">
+              <div class="passover-banner">
+                <span>OP / InMail / Sales Nav — <strong class="passover-closed">Passover in 10d</strong></span>
+                <span style="margin-left:16px">CC — <strong class="passover-closed">Passover in 3d</strong></span>
+              </div>
+              <div class="browse-bulk-row">
+                <button class="bulk-pill" onclick="toast('Select all visible — unchanged')">Select all visible</button>
+                <button class="bulk-pill" onclick="toast('Deselect all — unchanged')">Deselect all</button>
+              </div>
+            </div>
+
+            <!-- Local Browser tile (separate host, above the GoLogin grid) -->
+            <div class="local-browser-host">
+              <label class="profile-item local-browser local-browser-tile">
+                <input type="checkbox" class="local-cb" value="local-browser" onclick="toast('Local Browser — unchanged')" />
+                <div class="local-browser-body">
+                  <div class="name">Local Browser</div>
+                  <div class="id">Your system Chrome. If this is your first time, you will have to log in to LinkedIn when the Chrome browser pops up locally.</div>
+                </div>
+              </label>
+            </div>
+
+            <div class="profile-grid" id="profiles-grid">
+              <!-- selected accounts -->
+              <label class="profile-item jt free selected">
+                <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" checked onclick="toast('Selection — unchanged')" /><span class="jt-email">james.o@ortusclub.com</span></div>
+                  <div class="jt-sub">Anyone can use.</div>
+                </div>
+              </label>
+              <!-- WARM-UP state in the tile's left zone (integrated feature) -->
+              <label class="profile-item jt free selected">
+                <div class="jt-stat s-warmup"><span class="jt-dot"></span><span class="jt-word">WARM-UP</span><span class="jt-zsub">wk 2 · 10/day</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" checked onclick="toast('Selection — unchanged')" /><span class="jt-email">acme.outreach@ortusclub.com</span></div>
+                  <div class="jt-sub">Warm-up week 2 of 3 — capped at <b>10/day</b>, overrides the campaign limit.</div>
+                </div>
+              </label>
+              <!-- warm-up complete -->
+              <label class="profile-item jt free selected">
+                <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" checked onclick="toast('Selection — unchanged')" /><span class="jt-email">marta.k@ortusclub.com</span></div>
+                  <div class="jt-sub">Anyone can use. <b style="color:var(--green)">✓ warm-up complete</b> · 20/day since 29 Jun.</div>
+                </div>
+              </label>
+              <!-- fresh account with the Start-warm-up affordance -->
+              <label class="profile-item jt free" id="fresh-tile">
+                <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">priya.n@ortusclub.com</span></div>
+                  <div class="jt-sub">Anyone can use. Fresh account — <a class="wu-link" onclick="event.preventDefault(); toggleSched(this)" href="#">Start warm-up</a></div>
+                </div>
+              </label>
+              <label class="profile-item jt free">
+                <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">leo.tan@ortusclub.com</span></div>
+                  <div class="jt-sub">Anyone can use.</div>
+                </div>
+              </label>
+              <!-- DUP badge tile -->
+              <label class="profile-item jt free">
+                <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">dana.w@ortus.co <span class="dup-flag" title="1 other GoLogin profile shares this email — hidden here. Delete the duplicate(s) in GoLogin.">⚠ dup</span></span></div>
+                  <div class="jt-sub">Anyone can use.</div>
+                </div>
+              </label>
+              <label class="profile-item jt assigned">
+                <div class="jt-stat s-assigned"><span class="jt-dot"></span><span class="jt-word">ASSIGNED</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">sam.a@ortusclub.com</span></div>
+                  <div class="jt-sub">Assigned.</div>
+                </div>
+              </label>
+              <label class="profile-item jt assigned">
+                <div class="jt-stat s-assigned"><span class="jt-dot"></span><span class="jt-word">ASSIGNED</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">trixia.a@ortusclub.com</span></div>
+                  <div class="jt-sub">Assigned.</div>
+                </div>
+              </label>
+              <label class="profile-item jt in-use muted-soft">
+                <div class="jt-stat s-inuse"><span class="jt-dot"></span><span class="jt-word">IN USE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">marlon.j@ortusclub.com</span></div>
+                  <div class="jt-sub">In use.</div>
+                </div>
+              </label>
+              <label class="profile-item jt in-use muted-soft">
+                <div class="jt-stat s-inuse"><span class="jt-dot"></span><span class="jt-word">IN USE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">kevin.r@ortusclub.com</span></div>
+                  <div class="jt-sub">In use.</div>
+                </div>
+              </label>
+              <label class="profile-item jt free">
+                <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">grace.l@ortusclub.com</span></div>
+                  <div class="jt-sub">Anyone can use.</div>
+                </div>
+              </label>
+              <label class="profile-item jt free">
+                <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" onclick="toast('Selection — unchanged')" /><span class="jt-email">victor.m@ortusclub.com</span></div>
+                  <div class="jt-sub">Anyone can use.</div>
+                </div>
+              </label>
+              <label class="profile-item jt blocked muted is-restricted">
+                <div class="jt-stat s-stop"><span class="jt-dot"></span><span class="jt-word">BLOCKED</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" disabled /><span class="jt-email">omar.h@ortusclub.com</span></div>
+                  <div class="jt-sub">Restricted by LinkedIn.</div>
+                </div>
+              </label>
+              <label class="profile-item jt blocked muted is-restricted">
+                <div class="jt-stat s-stop"><span class="jt-dot"></span><span class="jt-word">N/A</span></div>
+                <div class="jt-det">
+                  <div class="jt-top"><input type="checkbox" disabled /><span class="jt-email">nina.p@ortusclub.com</span></div>
+                  <div class="jt-sub">No credits for this campaign.</div>
+                </div>
+              </label>
+            </div>
+
+            <!-- Warm-up schedule (revealed by the Start-warm-up link on a fresh tile) -->
+            <div class="wu-sched" id="wu-sched" hidden>
+              <div class="wu-sched-head">Warm-up schedule · priya.n@ortusclub.com · starts on first launch</div>
+              <div class="wu-steps">
+                <div class="wu-step"><div class="wk">Week 1</div><div class="cap">5 <small>/day</small></div></div>
+                <div class="wu-step"><div class="wk">Week 2</div><div class="cap">10 <small>/day</small></div></div>
+                <div class="wu-step"><div class="wk">Week 3</div><div class="cap">20 <small>/day</small></div></div>
+                <div class="wu-step"><div class="wk">After</div><div class="cap">Normal <small>campaign limit</small></div></div>
+              </div>
+              <div class="wu-sched-note">The warm-up cap <b>overrides the campaign's daily limit</b> for this account only —
+                other selected accounts keep their normal limit. Advances automatically; pausing a campaign doesn't reset the week.</div>
+            </div>
+
+            <div style="color:#8b949e; font-size:0.8rem; margin-top:8px">3 selected / 501 total</div>
+          </div>
+        </div>
+        </div><!-- /.collapsible-body -->
+      </div>
+
+      <!-- Section 5 — templates + history panel + suggested-replies settings -->
+      <div class="section template-controls" id="nav-templates">
+        <h2>5. Message Templates <span class="section-summary">note + intro</span></h2>
+
+        <div class="tpl-split">
+          <div>
+            <div class="section tpl-section" id="tpl-connect-section">
+              <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
+              <textarea id="tpl-note" maxlength="300" rows="3" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateCount()"></textarea>
+              <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
+              <div class="placeholder-tags">
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {first name} at the cursor')">{first name}</span>
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {company} at the cursor')">{company}</span>
+              </div>
+            </div>
+
+            <div class="section tpl-section">
+              <h2>Group Conversation Body</h2>
+              <textarea rows="4" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..."></textarea>
+              <div class="placeholder-tags">
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {primary name} at the cursor')">{primary name}</span>
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {primary url} at the cursor')">{primary url}</span>
+              </div>
+            </div>
+
+            <!-- Suggested replies playbook (NEW) -->
+            <div class="sr-block">
+              <div class="sr-eyebrow">Suggested replies · drafts only, never auto-sent</div>
+              <div class="sr-title">Reply playbook</div>
+              <div class="sr-sub">When a reply comes in, the Replies view shows a ready-to-review draft based on its label. You always press Send yourself.</div>
+              <div class="sr-field">
+                <div class="f-lbl">Interested → draft from template</div>
+                <textarea rows="3">Great to hear, {first name}! Here's the registration link for the {event name}: {event link}. Would love to see you there.</textarea>
+                <div class="placeholder-tags wiz-vals">
+                  <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {event link} at the cursor')">{event link}</span>
+                  <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {event name} at the cursor')">{event name}</span>
+                  <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {first name} at the cursor')">{first name}</span>
+                </div>
+              </div>
+              <div class="sr-field">
+                <div class="f-lbl">Not interested → draft from template<span class="opt">optional</span></div>
+                <textarea rows="2" placeholder="Understood, {first name} — thanks for letting me know. If timing changes, the door's open."></textarea>
+              </div>
+              <label class="sr-ai">
+                <input type="checkbox" id="ai-optin" onchange="toggleAI(this)" />
+                <span>AI-drafted replies for non-standard responses <small>uses Claude API · ~$0.001 per reply · requires API key — OFF by default</small></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Template history panel removed — feature scratched by Antonio 06.07.2026 -->
+        </div>
+      </div>
+
+      <!-- Section V — capacity forecast + launch hero -->
+      <div class="section" id="nav-launch">
+        <h2>6. Launch</h2>
+
+        <div class="fc-card">
+          <div class="fc-eyebrow">Weekly capacity forecast · from the 3 selected accounts</div>
+          <div class="fc-acc">
+            <span class="name">Acme Inc</span>
+            <div class="bar"><i style="width:30%"></i></div>
+            <span class="est">est. <b>70 invites left</b> this week · sent 30/100</span>
+          </div>
+          <div class="fc-acc">
+            <span class="name">James Okafor</span>
+            <div class="bar"><i style="width:40%"></i></div>
+            <span class="est">est. <b>60 invites left</b> this week · sent 40/100</span>
+          </div>
+          <div class="fc-acc capped">
+            <span class="name">Marta Kowalski</span>
+            <div class="bar"><i style="width:100%"></i></div>
+            <span class="est"><b>weekly cap reached</b> · resets Mon</span>
+          </div>
+          <div class="fc-total">
+            <span class="num">130</span>
+            <span class="lbl">est. <b>invites available this week</b> across selected accounts<br>(70 + 60 + 0)</span>
+          </div>
+          <div class="fc-vs">Your list: <b>418 leads</b> → est. <b>9 days at current pace</b> (20/day per active account,
+            weekly caps + warm-up caps included) · finishes <b>~15 Jul</b>.</div>
+          <div class="fc-warn">⚠ <span>List is <b>~3× this week's capacity</b> — the run will straddle two weekly resets.
+            Add an account or trim the list if timing matters.</span></div>
+          <div class="fc-note">Estimates come from each account's recent send history (7-day rolling count per account) —
+            LinkedIn doesn't expose the real counter, so treat these as estimates, not guarantees.</div>
+        </div>
+
+        <div class="launch-hero">
+          <div>
+            <div class="launch-number">418</div>
+            <div class="launch-caption">Number of accounts being used: <strong>3</strong> · <strong>418 connections</strong> · ETA <strong>~9 days</strong></div>
+          </div>
+          <div class="launch-right">
+            <div class="launch-actions launch-actions--four">
+              <button type="button" id="btn-start" class="btn btn-start" onclick="openLinter()">Start a campaign</button>
+              <button type="button" class="btn btn-secondary" onclick="toast('Queue it — unchanged')">Queue it</button>
+              <button type="button" class="btn btn-secondary" onclick="toast('Schedule it — unchanged')">Schedule it</button>
+              <button type="button" class="btn btn-secondary" onclick="toast('Save as draft — unchanged')">Save as draft</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ VIEW 3 — REPLIES ═══════════════ -->
+    <div id="view-replies" class="mview route-view">
+      <div class="replies-wrap">
+        <div class="replies-head">
+          <span class="tag"><span class="dot"></span>Replies</span>
+          <span class="mark" onclick="toast('Mark all read — unchanged')">Mark all read</span>
+        </div>
+        <div class="replies-title">Replies <span style="font-size:0.42em;vertical-align:middle;background:var(--gold,#caa24a);color:#1a1a1a;border-radius:9999px;padding:2px 10px;margin-left:8px;font-family:var(--mono);letter-spacing:0.06em">5 replies · 2 interested</span></div>
+        <div class="replies-sub">Checked automatically every hour · every reply is also written to your Google Sheet.</div>
+
+        <div class="replies-list">
+
+          <div class="reply-item interested">
+            <div class="reply-row1">
+              <strong><a href="#" onclick="return false">Sofia Lindqvist</a></strong>
+              <span class="reply-when">42 min ago</span>
+            </div>
+            <div class="reply-sub">via <strong>Marta Kowalski</strong> · CC+IC — FinTech CTOs</div>
+            <div class="reply-msg">"Thanks for the intro Sam — a fintech roundtable in Singapore sounds great. Could you send over the date and the guest list so I can check my calendar?"</div>
+            <div class="reply-foot">
+              <span class="lbl">
+                <button type="button" class="lbl-chip interested" onclick="toggleLbl(this)"><span class="ldot"></span>Interested</button>
+                <span class="lbl-menu">
+                  <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+                </span>
+              </span>
+              <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+            </div>
+            <!-- suggested reply — template-filled from the Interested playbook -->
+            <div class="sug">
+              <div class="sug-head">Suggested reply · from your Interested template</div>
+              <div class="sug-msg">Great to hear, Sofia! Here's the registration link for the Fintech Roundtable: ortusclub.com/e/fintech-sg-24jul. Would love to see you there.</div>
+              <div class="sug-acts">
+                <button class="solid" onclick="toast('Sent as Marta Kowalski → Sofia Lindqvist — stamped Replied on the sheet')">Send</button>
+                <button onclick="toast('Opens the draft in an editable box before sending')">Edit</button>
+                <button onclick="this.closest('.sug').remove(); toast('Draft dismissed')">Dismiss</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="reply-item interested">
+            <div class="reply-row1">
+              <strong><a href="#" onclick="return false">Rachel Osei</a></strong>
+              <span class="reply-when">3 h ago</span>
+            </div>
+            <div class="reply-sub">via <strong>James Okafor</strong> · CC+IC — FinTech CTOs</div>
+            <div class="reply-msg">"Yes — happy to join. Who else is confirmed so far?"</div>
+            <div class="reply-foot">
+              <span class="lbl">
+                <button type="button" class="lbl-chip interested" onclick="toggleLbl(this)"><span class="ldot"></span>Interested</button>
+                <span class="lbl-menu">
+                  <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+                </span>
+              </span>
+              <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+            </div>
+            <div class="sug">
+              <div class="sug-head">Suggested reply · from your Interested template</div>
+              <div class="sug-msg">Great to hear, Rachel! Here's the registration link for the Fintech Roundtable: ortusclub.com/e/fintech-sg-24jul. Would love to see you there.</div>
+              <div class="sug-acts">
+                <button class="solid" onclick="toast('Sent as James Okafor → Rachel Osei — stamped Replied on the sheet')">Send</button>
+                <button onclick="toast('Opens the draft in an editable box before sending')">Edit</button>
+                <button onclick="this.closest('.sug').remove(); toast('Draft dismissed')">Dismiss</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="reply-item">
+            <div class="reply-row1">
+              <strong><a href="#" onclick="return false">Daniel Reyes</a></strong>
+              <span class="reply-when">6 h ago</span>
+            </div>
+            <div class="reply-sub">via <strong>James Okafor</strong> · CC+IC — FinTech CTOs</div>
+            <div class="reply-msg">"Appreciate the connect. We're mid-audit until end of July so I'll have to pass on anything before then — happy to revisit in August."</div>
+            <div class="reply-foot">
+              <span class="lbl">
+                <button type="button" class="lbl-chip lowconf" onclick="toggleLbl(this)"><span class="ldot"></span>Not interested <span class="lbl-conf">· check</span></button>
+                <span class="lbl-menu">
+                  <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+                </span>
+              </span>
+              <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+            </div>
+          </div>
+
+          <div class="reply-item">
+            <div class="reply-row1">
+              <strong><a href="#" onclick="return false">Priya Raghavan</a></strong>
+              <span class="reply-when">yesterday</span>
+            </div>
+            <div class="reply-sub">via <strong>Priya Nair</strong> · DM — Q3 newsletter warm list</div>
+            <div class="reply-msg">"I am out of the office until 14 July with limited access to email and LinkedIn. For urgent matters please contact my EA."</div>
+            <div class="reply-foot">
+              <span class="lbl">
+                <button type="button" class="lbl-chip" onclick="toggleLbl(this)"><span class="ldot"></span>Out of office</button>
+                <span class="lbl-menu">
+                  <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+                </span>
+              </span>
+              <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+            </div>
+          </div>
+
+          <div class="reply-item seen">
+            <div class="reply-row1">
+              <strong><a href="#" onclick="return false">Marcus Webb</a></strong>
+              <span class="reply-when">yesterday</span>
+            </div>
+            <div class="reply-sub">via <strong>James Okafor</strong> · CC+IC — UK CIOs</div>
+            <div class="reply-msg">"What's the format — is this a sales pitch dinner or an actual discussion?"</div>
+            <div class="reply-foot">
+              <span class="lbl">
+                <button type="button" class="lbl-chip" onclick="toggleLbl(this)"><span class="ldot"></span>Question</button>
+                <span class="lbl-menu">
+                  <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                  <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+                </span>
+              </span>
+              <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+            </div>
+            <!-- AI draft — shown ONLY when the wizard's AI opt-in is ON -->
+            <div class="sug ai-sug" hidden>
+              <div class="sug-head">Suggested reply <span class="ai-tag">AI · review before sending</span></div>
+              <div class="sug-msg">No pitch at all, Marcus — it's a moderated peer discussion over dinner, 12–15 leaders, Chatham House rules. Happy to share the topic outline if useful.</div>
+              <div class="sug-acts">
+                <button class="solid" onclick="toast('Sent as James Okafor → Marcus Webb — stamped Replied on the sheet')">Send</button>
+                <button onclick="toast('Opens the draft in an editable box before sending')">Edit</button>
+                <button onclick="this.closest('.sug').remove(); toast('Draft dismissed')">Dismiss</button>
+              </div>
+            </div>
+            <div class="sug-off ai-off">AI drafts are off — non-standard replies get no draft. Enable in wizard Section 5 → Reply playbook.</div>
+          </div>
+
+        </div>
+
+        <div class="replies-note">Labels assigned automatically from reply text · click a label to correct it. <b style="color:var(--ink)">Suggested replies are never sent automatically</b> — you review and press Send.</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ VIEW 4 — TEAM STATUS (admin only) ═══════════════ -->
+    <div id="view-team" class="mview route-view">
+      <div class="team-head">
+        <h1 class="team-title">Team</h1>
+        <span style="border:1px solid currentColor; border-radius:9999px; padding:2px 10px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; opacity:.75">Admin only</span>
+        <span class="team-sub">3 operators · 2 active · synced 10:42 PHT</span>
+        <button class="team-refresh" onclick="toast('Re-reads the shared SoO sheet — refreshed')">↻ Refresh</button>
+      </div>
+
+      <div class="team-card">
+        <table class="team-table">
+          <thead>
+            <tr>
+              <th>Operator</th>
+              <th>Status</th>
+              <th>Campaign</th>
+              <th>Accounts in use</th>
+              <th>Started</th>
+              <th>Today's sends</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="is-you">
+              <td><span class="op-name">antonio</span><span class="op-you">You</span></td>
+              <td><span class="st-pill run"><span class="d"></span>Running</span></td>
+              <td><span class="camp-name">CC+IC — FinTech CTOs</span><div class="camp-mode">Connect + Introduce Back</div></td>
+              <td><div class="acct-chips"><span class="acct-chip">James Okafor</span><span class="acct-chip">Marta Kowalski</span><span class="acct-chip">Priya Nair</span></div></td>
+              <td class="time2">09:41 PHT<span class="local">03:41 your time (CET)</span></td>
+              <td><span class="sends">26</span></td>
+            </tr>
+            <tr>
+              <td><span class="op-name">marlon.j</span></td>
+              <td><span class="st-pill run"><span class="d"></span>Running</span></td>
+              <td><span class="camp-name">Connect Only — CFO list</span><div class="camp-mode">Connect Only</div></td>
+              <td><div class="acct-chips"><span class="acct-chip warn">Acme Inc</span><span class="acct-chip">Dana Whitfield</span></div></td>
+              <td class="time2">08:05 PHT<span class="local">02:05 your time (CET)</span></td>
+              <td><span class="sends">31</span></td>
+            </tr>
+            <tr>
+              <td><span class="op-name">trixia.aguilera</span></td>
+              <td><span class="st-pill mon"><span class="d"></span>Monitoring</span></td>
+              <td><span class="camp-name">DM — June event follow-up</span><div class="camp-mode">Direct Messages · waiting on reply sweep</div></td>
+              <td><div class="acct-chips"><span class="acct-chip">Leo Tan</span></div></td>
+              <td class="time2">Fri 16:20 PHT<span class="local">Fri 10:20 your time (CET)</span></td>
+              <td><span class="sends">0</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="conf-strip warn">
+        <div class="conf-head">⚠ Account conflicts · 1</div>
+        <b>“Acme Inc”</b> is In Use by <b>marlon.j</b> AND selected in your draft “CC — Logistics VPs”.
+        Launching would run two browsers on the same LinkedIn account.
+        <button class="conf-act" onclick="toast('Opens your draft at Section III to swap the account')">Fix my draft</button>
+      </div>
+
+      <div class="team-foot">Data syncs via the shared SoO / Apps Script sheet — each app writes its In-Use flips there and this view reads them back. Freshness = last sync, not live sockets. Timestamps shown in PH time (team standard) with your local time beneath.</div>
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<!-- ══ Pre-flight linter overlay — after Start, before any browser opens ══ -->
+<div id="pf-scrim" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+  <div class="pf-panel">
+    <div class="pf-eyebrow">Pre-flight · runs after Launch, before any browser opens</div>
+    <div class="pf-title" id="pf-title">Lead sheet check</div>
+    <div class="pf-sub">Tab <b>“June leads”</b> · <b>418</b> rows scanned · sheet <b>CC+IC — FinTech CTOs</b> · blocklist <b>4 entries</b> checked</div>
+    <div class="pf-tally">
+      <span class="t-block">❌ 2 blockers</span>
+      <span class="t-block">⛔ 4 blocklisted rows</span>
+      <span class="t-warn">⚠ 2 warnings · 14 rows</span>
+      <span class="t-pass">✓ 3 checks passed · 400 rows ready</span>
+    </div>
+
+    <!-- Blocklist blocker group (company-blocklist-A) — no launch-anyway for these -->
+    <div class="pf-group pf-blockers">
+      <div class="pf-group-head">❌ 4 rows match blocklisted company “IBM (existing client)” — excluded <span class="n">4</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">Row 44</span>
+          <span class="lead">Elena Fischer</span>
+          <span class="reason">Company column = <code>IBM</code></span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 129</span>
+          <span class="lead">Tom Ishida</span>
+          <span class="reason">Company column = <code>IBM Consulting</code></span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 240</span>
+          <span class="lead">Grace Adeyemi</span>
+          <span class="reason">Company column = <code>IBM</code></span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 371</span>
+          <span class="lead">Pieter van Dijk</span>
+          <span class="reason">Profile company = <code>IBM</code> (sheet column was empty)</span>
+        </div>
+      </div>
+      <div class="pf-group-foot">Blocklist matches are <b style="color:var(--ink)">always excluded</b> — no “launch anyway” for these rows. <a onclick="openBlocklist()">Manage blocklist</a></div>
+    </div>
+
+    <!-- Name↔URL blockers (preflight-linter-B) -->
+    <div class="pf-group pf-blockers">
+      <div class="pf-group-head">❌ Blockers <span class="n">2</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">Row 413</span>
+          <span class="lead">Lavanya Vemula</span>
+          <span class="reason">Name doesn't match URL slug <code>leonkatsnelson</code> — would message the wrong person</span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 87</span>
+          <span class="lead">Marcus Webb</span>
+          <span class="reason">Malformed URL <code>linkedin.com/in/</code> (empty slug) — navigation would land on a generic page</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Warnings -->
+    <div class="pf-group pf-warnings">
+      <div class="pf-group-head">⚠ Warnings <span class="n">2 · 14 rows</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">12 rows</span>
+          <span class="lead">various leads</span>
+          <span class="reason">Empty <code>{company}</code> — your Connection Note would render with a blank company name</span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Rows 109–110</span>
+          <span class="lead">Vito Manzari</span>
+          <span class="reason">Duplicate URL — same profile twice; only the first would be contacted</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Passed (collapsed by default) -->
+    <div class="pf-group pf-passed collapsed" id="grp-pass">
+      <div class="pf-group-head" onclick="document.getElementById('grp-pass').classList.toggle('collapsed')">
+        <span class="caret">▾</span> ✓ Passed checks <span class="n">3</span></div>
+      <div class="pf-rows">
+        <div class="pf-row"><span class="rowno">✓</span><span class="reason">Tab explicitly selected — <b>June leads</b> (no silent first-tab fallback)</span></div>
+        <div class="pf-row"><span class="rowno">✓</span><span class="reason">LinkedIn column found — column <b>C · “LinkedIn URL”</b></span></div>
+        <div class="pf-row"><span class="rowno">✓</span><span class="reason"><b>400 valid rows</b> ready to send (of 418 scanned)</span></div>
+      </div>
+    </div>
+
+    <div class="pf-actions">
+      <button class="btn btn-secondary btn-sm" onclick="toast('Opening Google Sheet at row 413…')">Fix on sheet</button>
+      <button class="btn btn-primary" onclick="closeLinter(); toast('Launching — 18 flagged rows excluded (400 leads)')">Exclude flagged rows &amp; launch</button>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="closeLinter(); toast('Launching anyway — blockers skipped at send time; blocklisted rows stay excluded')">Launch anyway</button>
+      <button class="btn btn-secondary btn-sm" onclick="closeLinter(); toast('Launch cancelled — back to the wizard')">Cancel</button>
+      <div class="pf-count-note"><b>Exclude flagged rows &amp; launch</b> skips the 4 blocklisted rows + 2 blocker rows + the 12 empty-{company} rows for this run only — nothing is deleted from the sheet. Blocklisted rows are stamped <b>Blocked — IBM (existing client)</b> in the Stage column.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Debrief overlay (campaign-debrief-A) ══ -->
+<div id="db-scrim" role="dialog" aria-modal="true" aria-labelledby="db-title">
+  <div class="db-panel">
+    <div class="db-eyebrow">Post-campaign debrief · generated when the campaign finishes</div>
+    <div class="db-title" id="db-title">CC+IC — FinTech CTOs — 18 Jun</div>
+    <div class="db-sub">Ran <b>15 Jun → 18 Jun</b> · mode <b>Connect + Introduce Back (CC+IC)</b> · <b>3 accounts</b> · sheet tab <b>“June leads”</b></div>
+
+    <div class="db-sec">
+      <div class="db-sec-head">Funnel</div>
+      <div class="funnel">
+        <div class="funnel-stage"><div class="st-lbl">Sent</div><div class="st-num">113</div><div class="st-drop">of 120 attempted</div></div>
+        <div class="funnel-stage"><div class="st-lbl">Accepted</div><div class="st-num">13</div><div class="st-drop"><b>12%</b> of sent</div></div>
+        <div class="funnel-stage"><div class="st-lbl">Intro'd</div><div class="st-num">5</div><div class="st-drop"><b>38%</b> of accepted</div></div>
+        <div class="funnel-stage"><div class="st-lbl">Replied</div><div class="st-num">2</div><div class="st-drop"><b>40%</b> of intro'd</div></div>
+      </div>
+    </div>
+
+    <div class="db-sec">
+      <div class="db-sec-head">Per-account breakdown</div>
+      <table class="db-table">
+        <thead><tr><th>Account</th><th>Sent</th><th>Accepted</th><th>Accept %</th><th>Parked / cooldowns</th></tr></thead>
+        <tbody>
+          <tr><td>James Okafor</td><td class="num">44</td><td class="num">6</td><td class="num">14%</td><td class="dim">—</td></tr>
+          <tr><td>Marta Kowalski</td><td class="num">41</td><td class="num">5</td><td class="num">12%</td><td><span class="db-park gold">429 · 2 cooldowns, recovered</span></td></tr>
+          <tr><td>Priya Nair</td><td class="num">28</td><td class="num">2</td><td class="num">7%</td><td><span class="db-park">weekly cap · parked 17 Jun</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="db-sec">
+      <div class="db-skipped"><b>7 skipped</b> <span class="why">— 3 identity unconfirmed · 2 malformed URL · 2 duplicate rows</span> · <a onclick="toast('Opens the skipped-leads report for this campaign')">view rows</a></div>
+    </div>
+
+    <div class="db-sec">
+      <div class="db-sec-head">Template used · connection note</div>
+      <div class="db-tpl" id="db-tpl" onclick="this.classList.toggle('open')">
+        <div class="tpl-first">Hi {first name}, I host closed-door dinners for fintech leaders — thought of you given your work at {company}…</div>
+        <div class="tpl-more">click to expand ▾</div>
+        <div class="tpl-full">Hi {first name}, I host closed-door dinners for fintech leaders — thought of you given your work at {company}. No pitch, just peers around a table. Open to connecting?
+
+Intro DM body: Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they lead our fintech roundtables.</div>
+      </div>
+    </div>
+
+    <div class="db-sec">
+      <div class="db-sec-head">Vs your last 5 campaigns</div>
+      <div class="db-vs">
+        <span class="vs-chip">Accept rate <b>12%</b> vs avg <b>19%</b> <span class="down">↓ −7pts</span></span>
+        <span class="vs-chip">Reply rate (of intro'd) <b>40%</b> vs avg <b>31%</b> <span class="up">↑ +9pts</span></span>
+        <span class="vs-chip">Skipped <b>7</b> vs avg <b>4</b> <span class="down">↑ higher</span></span>
+      </div>
+    </div>
+
+    <div class="db-actions">
+      <button class="btn btn-secondary btn-sm" onclick="toast('Draft created — sends to antonio@ortusclub.com (auto-send stays OFF by default)')">Email to me</button>
+      <button class="btn btn-secondary btn-sm" onclick="toast('Summary copied to clipboard')">Copy summary</button>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="closeDebrief()">Close</button>
+    </div>
+    <div class="db-foot-note">Accepted / intro'd / replied come from the sheet's Stage · Introduction Status columns after the bulk status check + reply sweep — numbers are only as fresh as the last check.</div>
+  </div>
+</div>
+
+<!-- ══ Blocklist management overlay (company-blocklist-A panel) ══ -->
+<div id="bl-scrim" role="dialog" aria-modal="true" aria-labelledby="bl-title">
+  <div class="bl-panel">
+    <div class="bl-eyebrow">Settings · shared across all operators</div>
+    <h2 class="bl-title" id="bl-title">Blocklist</h2>
+    <p class="bl-sub">Companies and email/URL domains that must <b>never</b> be contacted by any campaign. Matched against the sheet's Company column and the lead's profile company at pre-flight.</p>
+
+    <div class="bl-row head">
+      <span>Entry</span><span>Reason</span><span>Added by</span><span>Date</span><span></span>
+    </div>
+    <div class="bl-row">
+      <span class="entry">IBM<small>company</small></span>
+      <span class="reason">Existing client</span>
+      <span class="by">antonio@ortusclub.com</span>
+      <span class="date">02 Jul</span>
+      <button class="bl-remove" onclick="toast('Removed “IBM” — takes effect on next launch')">Remove</button>
+    </div>
+    <div class="bl-row">
+      <span class="entry">ortusclub.com<small>domain</small></span>
+      <span class="reason">Employees</span>
+      <span class="by">sam@ortusclub.com</span>
+      <span class="date">28 Jun</span>
+      <button class="bl-remove" onclick="toast('Removed “ortusclub.com” — takes effect on next launch')">Remove</button>
+    </div>
+    <div class="bl-row">
+      <span class="entry">Standard Chartered<small>company</small></span>
+      <span class="reason">Active deal — hands off per Sam</span>
+      <span class="by">sam@ortusclub.com</span>
+      <span class="date">19 Jun</span>
+      <button class="bl-remove" onclick="toast('Removed “Standard Chartered” — takes effect on next launch')">Remove</button>
+    </div>
+    <div class="bl-row">
+      <span class="entry">apexstrategy.co<small>domain</small></span>
+      <span class="reason">Partner — do not cold-contact</span>
+      <span class="by">antonio@ortusclub.com</span>
+      <span class="date">11 Jun</span>
+      <button class="bl-remove" onclick="toast('Removed “apexstrategy.co” — takes effect on next launch')">Remove</button>
+    </div>
+
+    <div class="bl-add">
+      <input type="text" placeholder="Company or domain…" />
+      <input type="text" placeholder="Reason (shown in the linter)…" />
+      <button class="btn btn-primary" onclick="toast('Added to blocklist — checked on every launch from now on')">Add</button>
+    </div>
+    <div class="bl-note">Matching is <b>case-insensitive</b>; company entries match whole company names, domain entries match any lead URL/email on that domain. The list lives in the shared sheet, so all 3 operators see the same entries.</div>
+    <div class="bl-actions">
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="closeBlocklist()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+
+  // ── view switching — same body-class-swap mechanism as the real router ──
+  function showView(name, btn){
+    ['dashboard','wizard','replies','team'].forEach((v) => document.body.classList.remove('view-' + v));
+    document.body.classList.add('view-' + name);
+    // correct route class per view: wizard shows the numbered nav; others behave like dashboard
+    document.body.classList.toggle('route-wizard', name === 'wizard');
+    document.body.classList.toggle('route-dashboard', name !== 'wizard');
+    document.querySelectorAll('.sidebar-nav .nav-item').forEach((b) => b.classList.remove('active'));
+    if (btn && btn.classList.contains('nav-item')) btn.classList.add('active');
+    window.scrollTo({ top: 0 });
+  }
+  function scrollToSec(id){
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  function newCampaign(){
+    document.getElementById('prefill-note').hidden = true;
+    showView('wizard');
+  }
+  function duplicateFrom(name){
+    document.querySelectorAll('.ovf.open').forEach((x) => x.classList.remove('open'));
+    const note = document.getElementById('prefill-note');
+    note.hidden = false;
+    note.innerHTML = '<b>Prefilled from “' + name + '”</b> — review Section II Data before launch: the copied sheet + tab may already contain sent rows.';
+    const ni = document.getElementById('campaign-name-input');
+    ni.value = /\bcopy\b/i.test(name) ? name : name + ' copy';
+    showView('wizard');
+    toast('Duplicated — staged as a draft, nothing runs until you Start/Queue/Schedule');
+  }
+
+  // ── board bits ──
+  function toggleOvf(btn){
+    const o = btn.closest('.ovf'); const wasOpen = o.classList.contains('open');
+    document.querySelectorAll('.ovf.open').forEach((x) => x.classList.remove('open'));
+    if (!wasOpen) o.classList.add('open');
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.ovf')) document.querySelectorAll('.ovf.open').forEach((x) => x.classList.remove('open'));
+    if (!e.target.closest('.lbl')) document.querySelectorAll('.lbl.open').forEach((x) => x.classList.remove('open'));
+  });
+  function expandMini(){ document.getElementById('mini-line').hidden = true; document.getElementById('mini-table').hidden = false; }
+  function collapseMini(){ document.getElementById('mini-line').hidden = false; document.getElementById('mini-table').hidden = true; }
+
+  // ticking 429 cooldown chip (429-cooldown-B)
+  let secs = 24 * 60;
+  setInterval(() => {
+    if (secs <= 0) return;
+    secs--;
+    const m = Math.floor(secs / 60);
+    const el = document.getElementById('chip-cd');
+    if (el) el.textContent = (m + (secs % 60 > 0 ? 1 : 0)) + ' min';
+  }, 1000);
+
+  // ── wizard bits ──
+  // real-app collapsible sections (index.html toggleSection)
+  function toggleSection(id){ document.getElementById(id).classList.toggle('collapsed'); }
+  function toggleSched(link){
+    const panel = document.getElementById('wu-sched');
+    panel.hidden = !panel.hidden;
+    toast(panel.hidden ? 'Warm-up off — account uses the normal campaign limit'
+                       : 'Warm-up armed — week 1 starts on first launch (5/day)');
+  }
+  function updateCount(){
+    const ta = document.getElementById('tpl-note');
+    document.getElementById('tpl-note-count').textContent = ta.value.length + ' / 300';
+  }
+  function useTpl(text){
+    const ta = document.getElementById('tpl-note');
+    ta.value = text; updateCount();
+    ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast(text ? 'Template filled into the Connection Note' : 'Note cleared — sending blank requests (best performer)');
+  }
+  function toggleAI(cb){
+    document.querySelectorAll('.ai-sug').forEach((el) => el.hidden = !cb.checked);
+    document.querySelectorAll('.ai-off').forEach((el) => el.hidden = cb.checked);
+    toast(cb.checked ? 'AI drafts ON — non-standard replies get a Claude-drafted suggestion (review before sending)' : 'AI drafts OFF (default)');
+  }
+
+  // ── overlays ──
+  function openLinter(){ document.getElementById('pf-scrim').classList.add('open'); }
+  function closeLinter(){ document.getElementById('pf-scrim').classList.remove('open'); }
+  function openDebrief(){ document.getElementById('db-scrim').classList.add('open'); }
+  function closeDebrief(){ document.getElementById('db-scrim').classList.remove('open'); }
+  function openBlocklist(){ document.getElementById('bl-scrim').classList.add('open'); }
+  function closeBlocklist(){ document.getElementById('bl-scrim').classList.remove('open'); }
+  ['pf-scrim','db-scrim','bl-scrim'].forEach((id) => {
+    document.getElementById(id).addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeLinter(); closeDebrief(); closeBlocklist(); }
+  });
+
+  // ── replies bits ──
+  function toggleLbl(btn){
+    const l = btn.closest('.lbl'); const wasOpen = l.classList.contains('open');
+    document.querySelectorAll('.lbl.open').forEach((x) => x.classList.remove('open'));
+    if (!wasOpen) l.classList.add('open');
+  }
+  function setLbl(item, label){
+    const l = item.closest('.lbl'); const chip = l.querySelector('.lbl-chip');
+    chip.innerHTML = '<span class="ldot"></span>' + label;
+    chip.classList.remove('lowconf');
+    chip.classList.toggle('interested', label === 'Interested');
+    l.classList.remove('open');
+    toast('Corrected to “' + label + '” — stamped to the sheet');
+  }
+</script>
+</body>
+</html>

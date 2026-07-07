@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Campaigns board — filter by type (normal) + conductor (admin)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style id="sn-board-styles">
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;}
+  .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  .sn-strip.local.run::before{background:#e35ea0;}
+  .sn-strip.queued .sn-name{font-size:20px;}.sn-strip.queued{padding-top:14px;padding-bottom:14px;}
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done .sn-flow{display:none;}
+  .sn-top{display:flex;align-items:center;gap:12px;padding-right:40px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-owner{font-size:11px;color:var(--gray);}
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}.sn-where.local{background:#fbe6f0;color:#b23372;}
+  .sn-name{font-family:var(--display);font-size:24px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .dot.run{background:var(--green);}.dot.runlocal{background:#e35ea0;}.dot.mon{background:var(--blue);}.dot.q{background:#b8b8b6;}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}.sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}.sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+
+  /* ── FILTER BAR ─────────────────────────────────────────── */
+  .flt{display:flex;align-items:center;gap:14px;margin:2px 0 4px;flex-wrap:wrap;}
+  .flt-lbl{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:#b0b0ae;}
+  .flt-chips{display:flex;gap:7px;flex-wrap:wrap;}
+  .chip{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:6px 13px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--gray);cursor:pointer;transition:.12s;}
+  .chip:hover{color:var(--ink);border-color:var(--ink);}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .chip .n{opacity:.55;margin-left:5px;}
+  .flt-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  .flt-sel{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--hairline);border-radius:9999px;padding:7px 30px 7px 13px;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.6'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer;}
+  .admin-badge{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:9999px;background:#f3e9c9;color:#8a6d1f;}
+  </style>
+  <style>
+    body{background:var(--bg);}
+    .wrap{max-width:940px;margin:0 auto;padding:26px 24px 120px;}
+    .note{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;border-left:2px solid var(--gold);padding:9px 13px;margin:0 0 22px;background:#fff;}
+    .toprow{display:flex;align-items:center;gap:10px;margin:0 0 8px;}
+    .toprow .seg{display:flex;gap:4px;background:#ececec;border-radius:9999px;padding:4px;}
+    .toprow .seg b{background:var(--ink);color:#fff;border-radius:9999px;padding:7px 18px;font-size:12px;font-family:var(--mono);letter-spacing:.06em;}
+    .toprow .seg span{padding:7px 18px;font-size:12px;font-family:var(--mono);letter-spacing:.06em;color:#666;}
+    .toprow .right{margin-left:auto;display:flex;gap:10px;}
+    .cta-new{background:var(--gold,#c9a84a);color:#111;border:none;border-radius:9999px;padding:9px 18px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;}
+    .divider{height:1px;background:var(--hairline);margin:12px 0 6px;}
+    .view-tag{font-family:'Hanken Grotesk',sans-serif;font-size:11px;color:#8a8a8a;margin:26px 0 8px;text-transform:uppercase;letter-spacing:.14em;}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+
+  <p class="note">
+    <b>Filter bar sits between the header and the board.</b> The <b>By type</b> chips (CC, CC+IC, CC+DM,
+    Message, FG) are for <b>everyone</b> — they filter the strips live, with a count on each chip. The
+    <b>Conductor</b> dropdown on the right only appears for <b>admins</b> (normal accounts don't see it and
+    only ever see their own campaigns). Below: the normal-user view, then the admin view for contrast.
+  </p>
+
+  <div class="toprow">
+    <div class="seg"><b>Campaigns</b><span>Sales Nav</span></div>
+    <div class="right"><button class="cta-new">＋ New campaign</button></div>
+  </div>
+
+  <!-- ── NORMAL USER: type filter only ─────────────────────── -->
+  <div class="view-tag" style="margin-top:6px">Normal account — sees only their own campaigns</div>
+
+  <div class="flt">
+    <span class="flt-lbl">By type</span>
+    <div class="flt-chips">
+      <button class="chip on">All <span class="n">6</span></button>
+      <button class="chip">CC <span class="n">3</span></button>
+      <button class="chip">CC+IC <span class="n">1</span></button>
+      <button class="chip">CC+DM <span class="n">1</span></button>
+      <button class="chip">Message <span class="n">1</span></button>
+      <button class="chip">FG <span class="n">0</span></button>
+    </div>
+  </div>
+
+  <div class="sn-qmeta" style="text-align:right;margin:0 2px 4px">2 running · 1 queued</div>
+
+  <div class="sn-railhead">▶ Now running</div>
+  <div class="sn-strip run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+    <div class="sn-name">APAC Founders — CC</div>
+    <div class="sn-flow"><b>65 leads</b> → <b>2 accounts</b> → feeds <b>APAC Founders</b> · Connect Only</div>
+    <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+  </div>
+  <div class="sn-strip local run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC+DM</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span><span class="sn-status"><span class="dot runlocal"></span> Running</span></div>
+    <div class="sn-name">Nordics — CC+DM</div>
+    <div class="sn-flow"><b>48 leads</b> → <b>1 account</b> → feeds <b>Nordics</b> · Connect + DM</div>
+    <div class="sn-foot"><div class="right"><button class="mini">Pause</button><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+  </div>
+
+  <div class="sn-railhead">• Up next</div>
+  <div class="sn-strip queued">
+    <div class="sn-top"><span class="sn-type">Campaign · DM</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot q"></span> Queued · #1</span></div>
+    <div class="sn-name">DACH Ops — Message Only</div>
+    <div class="sn-flow"><b>48 leads</b> → <b>1 account</b> → feeds <b>DACH Ops</b> · Direct Messages</div>
+    <div class="sn-foot"><div class="right"><button class="mini">Cancel</button><button class="mini solid">Open</button></div></div>
+  </div>
+
+  <div class="divider" style="margin-top:40px"></div>
+
+  <!-- ── ADMIN: type filter + conductor filter ─────────────── -->
+  <div class="view-tag">Admin account — sees everyone's campaigns, adds a Conductor filter</div>
+
+  <div class="flt">
+    <span class="flt-lbl">By type</span>
+    <div class="flt-chips">
+      <button class="chip on">All <span class="n">11</span></button>
+      <button class="chip">CC <span class="n">6</span></button>
+      <button class="chip">CC+IC <span class="n">2</span></button>
+      <button class="chip">CC+DM <span class="n">1</span></button>
+      <button class="chip">Message <span class="n">1</span></button>
+      <button class="chip">FG <span class="n">1</span></button>
+    </div>
+    <div class="flt-right">
+      <span class="admin-badge">Admin</span>
+      <span class="flt-lbl">Conductor</span>
+      <select class="flt-sel">
+        <option>Everyone</option>
+        <option>Antonio</option>
+        <option>Jeriannec</option>
+        <option>Milee</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="sn-qmeta" style="text-align:right;margin:0 2px 4px">4 running · 2 queued · everyone</div>
+
+  <div class="sn-railhead">▶ Now running</div>
+  <div class="sn-strip run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-owner">· Jeriannec</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+    <div class="sn-name">EMEA Buyers — CC</div>
+    <div class="sn-flow"><b>80 leads</b> → <b>1 account</b> → feeds <b>EMEA Buyers</b> · Connect Only</div>
+    <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+  </div>
+  <div class="sn-strip run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC+IC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+    <div class="sn-name">APAC Founders — CC+IC</div>
+    <div class="sn-flow"><b>65 leads</b> → <b>2 accounts</b> → feeds <b>APAC Founders</b> · Connect + Introduce</div>
+    <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+  </div>
+
+  <p class="note" style="margin-top:30px">
+    <b>How it behaves:</b> click a type chip → the board instantly shows only that type across all rails
+    (running / up next / done), and the counts update. <b>All</b> resets it. For admins, the Conductor
+    dropdown narrows to one person's campaigns and can combine with a type chip (e.g. "Jeriannec · CC").
+    Normal accounts never see other people's campaigns or the Conductor control at all.
+  </p>
+
+</div>
+</body>
+</html>

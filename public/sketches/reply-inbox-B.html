@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Replies with auto-classification (B · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+
+<style>
+  /* ── sketch-only chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+
+  /* ── Replies view — same treatment as the existing dashboard Replies card
+       (reply-item rows: hairline border, radius 10, gold left rule) ── */
+  .replies-wrap { border: 1px solid var(--hairline); border-radius: 14px; background: #fff; padding: 22px 24px; }
+  .replies-head { display: flex; align-items: baseline; gap: 14px; }
+  .replies-head .tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray);
+    display: inline-flex; align-items: center; gap: 7px; }
+  .replies-head .tag .dot { width: 7px; height: 7px; border-radius: 9999px; background: var(--gold, #caa24a); display: inline-block; }
+  .replies-head .mark { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--gray);
+    text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+  .replies-title { font-family: var(--display); font-size: 34px; line-height: 1; letter-spacing: 0.02em; margin: 10px 0 2px; }
+  .replies-sub { font-size: 12px; color: var(--gray); margin: 0 0 16px; }
+  .replies-sub b { color: var(--ink); font-weight: 600; }
+
+  .replies-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .reply-item { border: 1px solid var(--hairline); border-radius: 10px; padding: 10px 12px; background: #fff; }
+  .reply-item.interested { border-left: 3px solid var(--gold, #caa24a); }
+  .reply-row1 { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .reply-row1 strong a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .reply-when { font-size: 0.75em; color: #8b949e; white-space: nowrap; }
+  .reply-sub { font-size: 0.8em; color: #8b949e; margin: 2px 0 6px; }
+  .reply-sub strong { color: var(--ink); font-weight: 600; }
+  .reply-msg { white-space: pre-wrap; font-size: 0.92em; }
+  .reply-foot { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+  .reply-open { margin-left: auto; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 6px 12px; border-radius: 9999px; border: 1px solid var(--hairline); background: transparent; color: var(--ink); cursor: pointer; }
+  .reply-open:hover { border-color: var(--ink); }
+
+  /* auto-assigned label chip — click to correct */
+  .lbl { position: relative; display: inline-block; }
+  .lbl-chip { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 5px 12px; border-radius: 9999px; border: 1px solid var(--hairline); background: #f7f7f6;
+    color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  .lbl-chip .ldot { width: 6px; height: 6px; border-radius: 9999px; background: #b8b8b6; display: inline-block; }
+  .lbl-chip.interested { border-color: var(--gold, #caa24a); background: rgba(201,168,74,0.08); }
+  .lbl-chip.interested .ldot { background: var(--gold, #caa24a); }
+  .lbl-chip.lowconf { border-style: dashed; }
+  .lbl-chip:hover { border-color: var(--ink); }
+  .lbl-conf { font-size: 9px; color: #b8b8b6; letter-spacing: 0.08em; }
+  .lbl-menu { position: absolute; left: 0; top: calc(100% + 6px); min-width: 168px; background: #fff;
+    border: 1px solid var(--hairline); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+    padding: 6px; z-index: 35; display: none; }
+  .lbl.open .lbl-menu { display: block; }
+  .lbl-item { display: block; width: 100%; padding: 8px 11px; border-radius: 8px; cursor: pointer;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #444; background: transparent; border: none; text-align: left; }
+  .lbl-item:hover { background: #f4f4f3; color: var(--ink); }
+
+  .replies-note { font-size: 12px; color: var(--gray); margin-top: 16px; }
+
+  /* handled/read row goes quiet, exactly like seen replies today */
+  .reply-item.seen { opacity: 0.55; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3" class="route-wizard">
+<div class="sketch-bar">SKETCH — Replies with auto-classification · B appwide — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="app">
+
+  <!-- ── Sidebar (real shell) — the only addition: “Replies” under Review ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar">v2.132.0</span></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back" onclick="toast('Dashboard — unchanged')"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item" onclick="toast('Campaign Type — unchanged')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Data — unchanged')"><span class="nav-num">II.</span>Data<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('LinkedIn Accounts — unchanged')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Campaign Settings — unchanged')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Launch — unchanged')"><span class="nav-num">V.</span>Launch<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Live Status — unchanged')">Live Status</button>
+
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item" onclick="toast('Connection DB — unchanged')"><span class="nav-num">◆</span>Connection DB</button>
+
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item active" aria-current="page">Replies</button>
+      <button type="button" class="nav-item" onclick="toast('Open log — unchanged')">Open log</button>
+
+      <div class="nav-section-label">Help</div>
+      <button type="button" class="nav-item nav-item-help" onclick="toast('Help — unchanged')"><span class="nav-num">?</span>Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip" onclick="toast('Operator email — unchanged')">
+        <span class="operator-chip-label">Operating as</span>
+        <strong>antonio@ortusclub.com</strong>
+      </button>
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        <span>Mon 6 Jul</span>
+      </div>
+      <button type="button" class="btn btn-sm sidebar-signout" onclick="toast('Sign out — unchanged')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span>Monday, 6 July</span> <small style="margin-left:12px; color:var(--gray)">v2.132.0</small></div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">26</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">143</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err">0</span></div>
+        <div class="header-stat"><span class="k">Passover</span>
+          <span class="v small passover-pills">
+            <span class="passover-pill closed" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" title="CC">CC</span>
+          </span>
+        </div>
+        <div class="header-stat"><span class="k">RAM</span><span class="v">62%</span></div>
+        <div class="header-stat"><span class="k">CPU</span><span class="v">31%</span></div>
+        <div class="header-stat"><span class="k">Browsers</span><span class="v">1</span></div>
+      </div>
+    </div>
+
+    <!-- ══ Replies view — same card treatment as the dashboard Replies card (v2.72) ══ -->
+    <div class="replies-wrap">
+      <div class="replies-head">
+        <span class="tag"><span class="dot"></span>Replies</span>
+        <span class="mark" onclick="toast('Mark all read — unchanged')">Mark all read</span>
+      </div>
+      <div class="replies-title">Replies <span style="font-size:0.42em;vertical-align:middle;background:var(--gold,#caa24a);color:#1a1a1a;border-radius:9999px;padding:2px 10px;margin-left:8px;font-family:var(--mono);letter-spacing:0.06em">5 replies · 2 interested</span></div>
+      <div class="replies-sub">Checked automatically every hour · every reply is also written to your Google Sheet.</div>
+
+      <div class="replies-list">
+
+        <!-- interested replies float to the top, gold left rule (same rule unread replies use today) -->
+        <div class="reply-item interested">
+          <div class="reply-row1">
+            <strong><a href="#" onclick="return false">Sofia Lindqvist</a></strong>
+            <span class="reply-when">42 min ago</span>
+          </div>
+          <div class="reply-sub">via <strong>Marta Kowalski</strong> · CC+IC — FinTech CTOs</div>
+          <div class="reply-msg">"Thanks for the intro Sam — a fintech roundtable in Singapore sounds great. Could you send over the date and the guest list so I can check my calendar?"</div>
+          <div class="reply-foot">
+            <span class="lbl">
+              <button type="button" class="lbl-chip interested" onclick="toggleLbl(this)"><span class="ldot"></span>Interested</button>
+              <span class="lbl-menu">
+                <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+              </span>
+            </span>
+            <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+          </div>
+        </div>
+
+        <div class="reply-item interested">
+          <div class="reply-row1">
+            <strong><a href="#" onclick="return false">Rachel Osei</a></strong>
+            <span class="reply-when">3 h ago</span>
+          </div>
+          <div class="reply-sub">via <strong>James Okafor</strong> · CC+IC — FinTech CTOs</div>
+          <div class="reply-msg">"Yes — happy to join. Who else is confirmed so far?"</div>
+          <div class="reply-foot">
+            <span class="lbl">
+              <button type="button" class="lbl-chip interested" onclick="toggleLbl(this)"><span class="ldot"></span>Interested</button>
+              <span class="lbl-menu">
+                <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+              </span>
+            </span>
+            <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+          </div>
+        </div>
+
+        <!-- low-confidence label — dashed border says “check me”, click to correct -->
+        <div class="reply-item">
+          <div class="reply-row1">
+            <strong><a href="#" onclick="return false">Daniel Reyes</a></strong>
+            <span class="reply-when">6 h ago</span>
+          </div>
+          <div class="reply-sub">via <strong>James Okafor</strong> · CC+IC — FinTech CTOs</div>
+          <div class="reply-msg">"Appreciate the connect. We're mid-audit until end of July so I'll have to pass on anything before then — happy to revisit in August."</div>
+          <div class="reply-foot">
+            <span class="lbl">
+              <button type="button" class="lbl-chip lowconf" onclick="toggleLbl(this)"><span class="ldot"></span>Not interested <span class="lbl-conf">· check</span></button>
+              <span class="lbl-menu">
+                <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+              </span>
+            </span>
+            <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+          </div>
+        </div>
+
+        <div class="reply-item">
+          <div class="reply-row1">
+            <strong><a href="#" onclick="return false">Priya Raghavan</a></strong>
+            <span class="reply-when">yesterday</span>
+          </div>
+          <div class="reply-sub">via <strong>Priya Nair</strong> · DM — Q3 newsletter warm list</div>
+          <div class="reply-msg">"I am out of the office until 14 July with limited access to email and LinkedIn. For urgent matters please contact my EA."</div>
+          <div class="reply-foot">
+            <span class="lbl">
+              <button type="button" class="lbl-chip" onclick="toggleLbl(this)"><span class="ldot"></span>Out of office</button>
+              <span class="lbl-menu">
+                <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+              </span>
+            </span>
+            <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+          </div>
+        </div>
+
+        <div class="reply-item seen">
+          <div class="reply-row1">
+            <strong><a href="#" onclick="return false">Marcus Webb</a></strong>
+            <span class="reply-when">yesterday</span>
+          </div>
+          <div class="reply-sub">via <strong>James Okafor</strong> · CC+IC — UK CIOs</div>
+          <div class="reply-msg">"What's the format — is this a sales pitch dinner or an actual discussion?"</div>
+          <div class="reply-foot">
+            <span class="lbl">
+              <button type="button" class="lbl-chip" onclick="toggleLbl(this)"><span class="ldot"></span>Question</button>
+              <span class="lbl-menu">
+                <button class="lbl-item" onclick="setLbl(this,'Interested')">Interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Not interested')">Not interested</button>
+                <button class="lbl-item" onclick="setLbl(this,'Out of office')">Out of office</button>
+                <button class="lbl-item" onclick="setLbl(this,'Question')">Question</button>
+              </span>
+            </span>
+            <button class="reply-open" onclick="toast('Opens the right GoLogin profile straight to this conversation')">Open thread ↗</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="replies-note">Labels assigned automatically from reply text · click a label to correct it.</div>
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function toggleLbl(btn){
+    const l = btn.closest('.lbl'); const wasOpen = l.classList.contains('open');
+    document.querySelectorAll('.lbl.open').forEach((x) => x.classList.remove('open'));
+    if (!wasOpen) l.classList.add('open');
+  }
+  function setLbl(item, label){
+    const l = item.closest('.lbl'); const chip = l.querySelector('.lbl-chip');
+    chip.innerHTML = '<span class="ldot"></span>' + label;
+    chip.classList.remove('lowconf');
+    chip.classList.toggle('interested', label === 'Interested');
+    l.classList.remove('open');
+    toast('Corrected to “' + label + '” — stamped to the sheet');
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.lbl')) document.querySelectorAll('.lbl.open').forEach((x) => x.classList.remove('open'));
+  });
+</script>
+</body>
+</html>

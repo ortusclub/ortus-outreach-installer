@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Team status (A · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  /* ── sketch-only chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+
+  /* ══ Team panel ══ */
+  .team-head { display: flex; align-items: baseline; gap: 14px; margin: 8px 0 6px; }
+  .team-title { font-family: var(--display); font-size: 2rem; letter-spacing: 0.03em; color: var(--ink); line-height: 1; margin: 0; }
+  .team-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); }
+  .team-refresh { margin-left: auto; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; background: transparent; cursor: pointer; }
+  .team-refresh:hover { color: var(--ink); border-color: var(--ink); }
+
+  .team-card { border: 1px solid var(--hairline); border-radius: 14px; background: #fff; padding: 22px 26px; margin-top: 18px; }
+
+  .team-table { width: 100%; border-collapse: collapse; font-family: var(--mono); }
+  .team-table th { text-align: left; font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gray); font-weight: 500; padding: 0 12px 12px 0; border-bottom: 1px solid var(--hairline); }
+  .team-table td { font-size: 0.74rem; color: var(--ink); padding: 15px 12px 15px 0; vertical-align: top;
+    border-bottom: 1px solid var(--hairline-soft); }
+  .team-table tr:last-child td { border-bottom: none; }
+  .team-table tr.is-you td { background: rgba(0,0,0,0.02); }
+  .op-name { font-weight: 500; white-space: nowrap; }
+  .op-you { font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;
+    padding: 2px 8px; border-radius: 9999px; background: var(--ink); color: var(--bg); margin-left: 8px; }
+
+  .st-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 12px; white-space: nowrap; }
+  .st-pill .d { width: 7px; height: 7px; border-radius: 9999px; display: inline-block; }
+  .st-pill.run { color: var(--green); border-color: var(--green); } .st-pill.run .d { background: var(--green); }
+  .st-pill.mon { color: var(--blue); border-color: var(--blue); } .st-pill.mon .d { background: var(--blue); }
+  .st-pill.idle { color: var(--gray); } .st-pill.idle .d { background: var(--gray-faint, #b8b8b6); }
+
+  .camp-name { font-weight: 500; }
+  .camp-mode { color: var(--gray); font-size: 0.64rem; margin-top: 3px; }
+  .dim { color: var(--gray); }
+
+  .acct-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 220px; }
+  .acct-chip { font-size: 0.62rem; color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px;
+    padding: 3px 10px; white-space: nowrap; }
+  .acct-chip.warn { color: var(--gold); border-color: var(--gold); }
+
+  .time2 { white-space: nowrap; }
+  .time2 .local { display: block; font-size: 0.6rem; color: var(--gray); margin-top: 3px; }
+  .sends { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; }
+
+  /* ── conflicts strip ── */
+  .conf-strip { margin-top: 20px; border-radius: 12px; padding: 15px 20px; font-family: var(--mono); font-size: 0.72rem; line-height: 1.7; }
+  .conf-strip.ok { border: 1px solid var(--green); color: var(--green); }
+  .conf-strip.warn { border: 1px solid var(--gold); color: var(--ink); background: rgba(201,168,74,0.07); }
+  .conf-strip.warn b { color: var(--gold); }
+  .conf-strip .conf-head { font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
+  .conf-strip .conf-act { margin-left: 12px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; background: transparent; cursor: pointer; }
+  .conf-strip .conf-act:hover { border-color: var(--ink); }
+
+  .team-foot { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.7; margin-top: 18px; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 110; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3" class="route-dashboard">
+<div class="sketch-bar">SKETCH — Team status (A · appwide, sidebar → Team → Team status) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="app">
+
+  <!-- ── Sidebar (real shell) — Team section gains a "Team status" item, shown active ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · <span>v2.132.0</span></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back" onclick="toast('Back to dashboard — unchanged')"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item" onclick="toast('Campaign Type — unchanged')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Data — unchanged')"><span class="nav-num">II.</span>Data<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('LinkedIn Accounts — unchanged')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Campaign Settings — unchanged')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Launch — unchanged')"><span class="nav-num">V.</span>Launch<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Live Status — unchanged')">Live Status</button>
+
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item active" title="Visible only to admin operators (ADMIN_EMAILS)"><span class="nav-num">◉</span>Team status</button>
+      <!-- SKETCH NOTE: this sidebar item + view render ONLY for admin operators (email in ADMIN_EMAILS); regular operators never see it -->
+      <button type="button" class="nav-item" onclick="toast('Connection DB — unchanged')"><span class="nav-num">◆</span>Connection DB</button>
+
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item" onclick="toast('Open log — unchanged')">Open log</button>
+
+      <div class="nav-section-label">Help</div>
+      <button type="button" class="nav-item nav-item-help" onclick="toast('Help — unchanged')"><span class="nav-num">?</span>Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip" onclick="toast('Operator email — unchanged')">
+        <span class="operator-chip-label">Operating as</span>
+        <strong>antonio@ortusclub.com</strong>
+      </button>
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        <span>Mon 6 Jul</span>
+      </div>
+      <button type="button" class="btn btn-sm sidebar-signout" onclick="toast('Sign out — unchanged')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main: Team status view ── -->
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span>Monday, 6 July</span> <small style="margin-left:12px; color:var(--gray)">v2.132.0</small></div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">26</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">143</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err">0</span></div>
+        <div class="header-stat"><span class="k">Passover</span>
+          <span class="v small passover-pills">
+            <span class="passover-pill closed" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" title="CC">CC</span>
+          </span>
+        </div>
+        <div class="header-stat"><span class="k">RAM</span><span class="v">62%</span></div>
+        <div class="header-stat"><span class="k">CPU</span><span class="v">31%</span></div>
+        <div class="header-stat"><span class="k">Browsers</span><span class="v">1</span></div>
+      </div>
+    </div>
+
+    <div id="dashboard-view" class="route-view">
+
+      <div class="team-head">
+        <h1 class="team-title">Team</h1>
+        <span style="border:1px solid currentColor; border-radius:9999px; padding:2px 10px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; opacity:.75">Admin only</span>
+        <span class="team-sub">3 operators · 2 active · synced 10:42 PHT</span>
+        <button class="team-refresh" onclick="toast('Re-reads the shared SoO sheet — refreshed')">↻ Refresh</button>
+      </div>
+
+      <!-- ── Operators table ── -->
+      <div class="team-card">
+        <table class="team-table">
+          <thead>
+            <tr>
+              <th>Operator</th>
+              <th>Status</th>
+              <th>Campaign</th>
+              <th>Accounts in use</th>
+              <th>Started</th>
+              <th>Today's sends</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="is-you">
+              <td><span class="op-name">antonio</span><span class="op-you">You</span></td>
+              <td><span class="st-pill run"><span class="d"></span>Running</span></td>
+              <td><span class="camp-name">CC+IC — FinTech CTOs</span><div class="camp-mode">Connect + Introduce Back</div></td>
+              <td><div class="acct-chips"><span class="acct-chip">James Okafor</span><span class="acct-chip">Marta Kowalski</span><span class="acct-chip">Priya Nair</span></div></td>
+              <td class="time2">09:41 PHT<span class="local">03:41 your time (CET)</span></td>
+              <td><span class="sends">26</span></td>
+            </tr>
+            <tr>
+              <td><span class="op-name">marlon.j</span></td>
+              <td><span class="st-pill run"><span class="d"></span>Running</span></td>
+              <td><span class="camp-name">Connect Only — CFO list</span><div class="camp-mode">Connect Only</div></td>
+              <td><div class="acct-chips"><span class="acct-chip warn">Acme Inc</span><span class="acct-chip">Dana Whitfield</span></div></td>
+              <td class="time2">08:05 PHT<span class="local">02:05 your time (CET)</span></td>
+              <td><span class="sends">31</span></td>
+            </tr>
+            <tr>
+              <td><span class="op-name">trixia.aguilera</span></td>
+              <td><span class="st-pill mon"><span class="d"></span>Monitoring</span></td>
+              <td><span class="camp-name">DM — June event follow-up</span><div class="camp-mode">Direct Messages · waiting on reply sweep</div></td>
+              <td><div class="acct-chips"><span class="acct-chip">Leo Tan</span></div></td>
+              <td class="time2">Fri 16:20 PHT<span class="local">Fri 10:20 your time (CET)</span></td>
+              <td><span class="sends">0</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ── Account conflicts ── -->
+      <!-- Happy state: swap the warn strip for this ok one.
+      <div class="conf-strip ok">✓ No account conflicts — every In-Use account is held by exactly one operator.</div>
+      -->
+      <div class="conf-strip warn">
+        <div class="conf-head">⚠ Account conflicts · 1</div>
+        <b>“Acme Inc”</b> is In Use by <b>marlon.j</b> AND selected in your draft “CC — Logistics VPs”.
+        Launching would run two browsers on the same LinkedIn account.
+        <button class="conf-act" onclick="toast('Opens your draft at Section III to swap the account')">Fix my draft</button>
+      </div>
+
+      <div class="team-foot">Data syncs via the shared SoO / Apps Script sheet — each app writes its In-Use flips there and this view reads them back. Freshness = last sync, not live sockets. Timestamps shown in PH time (team standard) with your local time beneath.</div>
+
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+</script>
+</body>
+</html>

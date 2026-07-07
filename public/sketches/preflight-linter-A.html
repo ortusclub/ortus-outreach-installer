@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Pre-flight lead-sheet linter (A)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 18px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* Pre-flight linter panel — modal-card tokens, shown between Launch click and start */
+  .pf-panel { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px;
+    box-shadow: var(--card-shadow); padding: 22px 26px; }
+  .pf-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .pf-title { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.04em; color: var(--ink); margin-bottom: 4px; }
+  .pf-sub { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); margin-bottom: 18px; }
+  .pf-sub b { color: var(--ink); font-weight: 500; }
+
+  .pf-group { border-top: 1px solid var(--hairline); padding: 14px 0 6px; }
+  .pf-group-head { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; user-select: none; padding: 2px 0 10px; }
+  .pf-group-head .caret { color: var(--gray); font-size: 0.7rem; transition: transform 0.15s; display: inline-block; }
+  .pf-group.collapsed .caret { transform: rotate(-90deg); }
+  .pf-group.collapsed .pf-rows { display: none; }
+  .pf-group-head .n { margin-left: auto; color: var(--gray); letter-spacing: 0.04em; }
+  .pf-blockers .pf-group-head { color: var(--red); }
+  .pf-warnings .pf-group-head { color: var(--gold); }
+  .pf-passed .pf-group-head { color: var(--green); }
+
+  .pf-row { display: grid; grid-template-columns: 66px 1fr; gap: 12px; padding: 8px 6px; margin: 0 -6px;
+    border-radius: 4px; font-family: var(--mono); font-size: 0.72rem; align-items: start; }
+  .pf-row:hover { background: var(--hairline-soft); }
+  .pf-row .rowno { color: var(--gray); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; padding-top: 2px; }
+  .pf-row .msg { color: var(--ink); line-height: 1.5; }
+  .pf-row .msg code { background: var(--hairline-soft); padding: 1px 5px; border-radius: 4px; font-size: 0.68rem; }
+  .pf-row .why { display: block; color: var(--gray); font-size: 0.64rem; line-height: 1.5; margin-top: 3px; }
+  .pf-blockers .pf-row .rowno { color: var(--red); }
+  .pf-warnings .pf-row .rowno { color: var(--gold); }
+  .pf-passed .pf-row { grid-template-columns: 18px 1fr; }
+  .pf-passed .pf-row .rowno { color: var(--green); }
+  .pf-passed .pf-row .msg { color: var(--gray); }
+  .pf-passed .pf-row .msg b { color: var(--ink); font-weight: 500; }
+
+  .pf-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
+    margin-top: 12px; padding-top: 18px; flex-wrap: wrap; }
+  .pf-actions .spacer { flex: 1; }
+  .pf-count-note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); width: 100%; margin-top: 6px; }
+  .pf-count-note b { color: var(--ink); font-weight: 500; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Pre-flight lead-sheet linter (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap">Shown <b>between the wizard's Launch click and the actual start</b>: the app scans the selected
+    sheet tab and reports blockers / warnings / passed checks before any browser opens. Groups collapse; buttons show mock toasts.</p>
+
+  <div class="pf-panel">
+    <div class="pf-eyebrow">Pre-flight · Section II Data</div>
+    <div class="pf-title">Lead sheet check</div>
+    <div class="pf-sub">Tab <b>“June leads”</b> · <b>418</b> rows scanned · sheet <b>CC+IC — FinTech CTOs</b></div>
+
+    <!-- Blockers -->
+    <div class="pf-group pf-blockers" id="grp-block">
+      <div class="pf-group-head" onclick="toggleGrp('grp-block')"><span class="caret">▾</span> ❌ Blockers <span class="n">2</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">Row 413</span>
+          <span class="msg">First Name <code>Lavanya Vemula</code> doesn't match URL slug <code>leonkatsnelson</code>
+            <span class="why">Why flagged: the name in the sheet and the person behind the LinkedIn URL look like different people — sending would message the wrong person. Fix the URL or the name on the sheet.</span>
+          </span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 87</span>
+          <span class="msg">Malformed LinkedIn URL <code>linkedin.com/in/</code> (empty slug)
+            <span class="why">Why flagged: the URL has no profile slug, so navigation would land on a generic page. Paste the full profile URL.</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Warnings -->
+    <div class="pf-group pf-warnings" id="grp-warn">
+      <div class="pf-group-head" onclick="toggleGrp('grp-warn')"><span class="caret">▾</span> ⚠ Warnings <span class="n">2</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">12 rows</span>
+          <span class="msg">Empty <code>{company}</code> used by your Connection Note
+            <span class="why">Why flagged: your note template contains {company}; these 12 leads would receive a note with a blank where the company name should be.</span>
+          </span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Rows 109/110</span>
+          <span class="msg">2 duplicate URLs — same profile appears twice
+            <span class="why">Why flagged: byte-identical LinkedIn URLs on adjacent rows; only the first would be contacted, the duplicate would be skipped.</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Passed -->
+    <div class="pf-group pf-passed collapsed" id="grp-pass">
+      <div class="pf-group-head" onclick="toggleGrp('grp-pass')"><span class="caret">▾</span> ✓ Passed checks <span class="n">3</span></div>
+      <div class="pf-rows">
+        <div class="pf-row"><span class="rowno">✓</span><span class="msg">Tab explicitly selected — <b>June leads</b> (no silent first-tab fallback)</span></div>
+        <div class="pf-row"><span class="rowno">✓</span><span class="msg">LinkedIn column found — column <b>C · “LinkedIn URL”</b></span></div>
+        <div class="pf-row"><span class="rowno">✓</span><span class="msg"><b>404 valid rows</b> ready to send (of 418 scanned)</span></div>
+      </div>
+    </div>
+
+    <div class="pf-actions">
+      <button class="btn btn-secondary btn-sm" onclick="toast('Opening Google Sheet at row 413…')">Fix on sheet</button>
+      <button class="btn btn-primary" onclick="toast('Launching — 14 flagged rows excluded (404 leads)')">Exclude flagged rows &amp; launch</button>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="toast('Launching anyway — blockers will be skipped at send time')">Launch anyway</button>
+      <button class="btn btn-secondary btn-sm" onclick="toast('Launch cancelled — back to the wizard')">Cancel</button>
+      <div class="pf-count-note"><b>Exclude flagged rows &amp; launch</b> skips the 2 blocker rows + the 12 empty-{company} rows for this run only — nothing is deleted from the sheet.</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  function toggleGrp(id){ document.getElementById(id).classList.toggle('collapsed'); }
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+</script>
+</body>
+</html>

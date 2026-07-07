@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cloud campaigns IN the real dashboard (sketch)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style>
+    body { background: var(--bg); }
+    .sketch-wrap { max-width: 940px; margin: 0 auto; padding: 26px 24px 120px; }
+    .sketch-note{font-family:'Hanken Grotesk',sans-serif;font-size:12px;line-height:1.55;color:#5a5a5a;border-left:2px solid var(--gold,#F7BE68);padding:9px 13px;margin:0 0 22px;background:#fff;}
+    .decide{border-left-color:#a5442f;background:#fdf6f4;}
+    .decide b{color:#a5442f;}
+    .cloud-eyebrow-tag .dot{background:var(--gold,#F7BE68)!important;}
+    /* stack the active cards with a little air, like the sketch of parallel runs */
+    .active-stack .vj-card{margin-bottom:14px;}
+    .btn-view{margin-left:6px;}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="sketch-wrap">
+
+  <p class="sketch-note">
+    <b>Sketch — cloud/VM campaigns rendered through the REAL dashboard.</b> Same components, same CSS, same
+    Active → Up&nbsp;Next → Past logic that runs today. Cloud campaigns are adapted server-side into the same
+    <code>/api/campaign/status</code>, <code>/api/queue</code> and <code>/api/history</code> shapes, so the existing
+    renderers draw them with no new UI. All 5 modes shown: CC, CC+IC, CC+DM, Message&nbsp;Only, FG.
+  </p>
+
+  <p class="sketch-note decide">
+    <b>One decision to confirm.</b> Today's dashboard Active card is a <b>hard singleton</b> — exactly one running
+    campaign. The cloud runs <b>several in parallel</b> (your boss asked for that). So the ONLY place cloud must bend
+    the current logic is here: the Active region becomes a <b>stack</b> of the same card (below, 3 running at once).
+    Everything else — Up Next, Past — is unchanged. Is a stacked Active region OK, or do you want one "primary"
+    active card + the other running ones shown elsewhere?
+  </p>
+
+  <!-- ═══════════ ACTIVE (running — cloud runs several at once) ═══════════ -->
+  <div class="active-stack">
+
+    <!-- CC (connect_only) -->
+    <section class="vj-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag cloud-eyebrow-tag"><span class="dot"></span>☁︎ Running</span>
+        <span class="vj-when">started 14:52 · kyra@ortusclub.com</span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true"></div>
+      <h2 class="vj-name">APAC Founders — CC</h2>
+      <div class="vj-hbar" role="progressbar"><i style="width:42%"></i></div>
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span>42</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b>27</b> of <span>65</span> sent</span>
+            <span>Next batch in <b>00:48</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b>3</b> accounts</span>
+          <span><b>5</b> accepted</span>
+          <span>· <b>Sending</b> · <a style="text-decoration:underline;cursor:pointer">batch settings</a></span>
+        </div>
+      </div>
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill btn-view">View campaign ↗</button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <div class="dock-actions">
+            <button class="dock-btn danger" data-tip="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="vj-details" style="display:block">
+        <div>
+          <div class="vj-log-head"><span class="vj-details-head">Live log · last 6 events</span>
+            <span class="vj-log-acts"><button class="vj-log-act">Copy all</button><button class="vj-log-act">Open sheet</button></span></div>
+          <div class="vj-log">
+            <div class="vj-log-line"><span class="t">14:59:04</span> ✅ Connection request sent → <b>Mei Lin Tan</b> (kyra)</div>
+            <div class="vj-log-line"><span class="t">14:58:31</span> ✅ Connection request sent → <b>Raj Patel</b> (aiden)</div>
+            <div class="vj-log-line"><span class="t">14:58:02</span> ⏭ Skipped — already 1st degree → <b>Sofia Rossi</b></div>
+            <div class="vj-log-line"><span class="t">14:57:19</span> 🤝 Accepted (bulk check) → <b>Daniel Okafor</b></div>
+            <div class="vj-log-line"><span class="t">14:56:20</span> ✅ Connection request sent → <b>Lars Berg</b> (aiden) · ✍ sheet updated</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CC+IC (connect_and_introduce) -->
+    <section class="vj-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag cloud-eyebrow-tag"><span class="dot"></span>☁︎ Running</span>
+        <span class="vj-when">started 14:40 · milee@linkedvelocity.com</span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true"></div>
+      <h2 class="vj-name">London PE — CC+IC</h2>
+      <div class="vj-hbar" role="progressbar"><i style="width:71%"></i></div>
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span>71</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b>46</b> of <span>65</span> sent</span>
+            <span>Next batch in <b>01:57</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b>2</b> accounts</span>
+          <span><b>12</b> accepted</span>
+          <span>· <b>Sending</b> · <a style="text-decoration:underline;cursor:pointer">batch settings</a></span>
+        </div>
+      </div>
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill btn-view">View campaign ↗</button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <div class="dock-actions"><button class="dock-btn danger" data-tip="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></div>
+        </div>
+      </div>
+      <div class="vj-details" style="display:block">
+        <div>
+          <div class="vj-log-head"><span class="vj-details-head">Live log · last 6 events</span>
+            <span class="vj-log-acts"><button class="vj-log-act">Copy all</button><button class="vj-log-act">Open sheet</button></span></div>
+          <div class="vj-log">
+            <div class="vj-log-line"><span class="t">15:00:11</span> 🎯 Introduction sent → <b>Amara Nwosu</b> ↔ Sam Adcock (primary)</div>
+            <div class="vj-log-line"><span class="t">14:59:47</span> 🤝 Accepted → <b>Amara Nwosu</b> · intro auto-fired</div>
+            <div class="vj-log-line"><span class="t">14:59:02</span> ✅ Connection request sent → <b>Thomas Ellis</b> (milee)</div>
+            <div class="vj-log-line"><span class="t">14:57:03</span> ⏸ Account <b>milee</b> parked 26 min — HTTP 429 (throttle)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FG (follower_growth) — TAILORED invites/budget stat line -->
+    <section class="vj-card">
+      <div class="vj-eyebrow">
+        <span class="vj-tag cloud-eyebrow-tag"><span class="dot"></span>☁︎ Running</span>
+        <span class="vj-when">started 15:01 · kyra@ortusclub.com · Follower Growth</span>
+      </div>
+      <div class="vj-glyph-circle" aria-hidden="true"></div>
+      <h2 class="vj-name">Ortus Club page — FG</h2>
+      <div class="vj-hbar" role="progressbar"><i style="width:60%"></i></div>
+      <div class="vj-hero">
+        <div class="vj-hero-row">
+          <div class="num"><span>60</span><span class="sub">%</span></div>
+          <div class="vj-meta">
+            <span><b>18</b> of <span>30</span> invites</span>
+            <span>Next batch in <b>02:10</b></span>
+          </div>
+        </div>
+        <div class="vj-stats">
+          <span><b>1</b> account</span>
+          <span><b>12</b> credits left</span>
+          <span>· <b>Inviting</b> · <a style="text-decoration:underline;cursor:pointer">batch settings</a></span>
+        </div>
+      </div>
+      <div class="vj-controls">
+        <button class="btn-pill">Open</button>
+        <button class="btn-pill btn-view">View campaign ↗</button>
+        <div class="dock" role="toolbar">
+          <button class="dock-btn" data-tip="Pause" aria-label="Pause"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <div class="dock-actions"><button class="dock-btn danger" data-tip="Stop" aria-label="Stop"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button></div>
+        </div>
+      </div>
+      <div class="vj-details" style="display:block">
+        <div>
+          <div class="vj-log-head"><span class="vj-details-head">Live log · last 6 events</span>
+            <span class="vj-log-acts"><button class="vj-log-act">Copy all</button></span></div>
+          <div class="vj-log">
+            <div class="vj-log-line"><span class="t">15:08:22</span> ➕ Follow invite sent → <b>Elena Fischer</b></div>
+            <div class="vj-log-line"><span class="t">15:07:40</span> ➕ Follow invite sent → <b>Marco Bianchi</b></div>
+            <div class="vj-log-line"><span class="t">15:07:01</span> ⏭ Skipped — already follows the page → <b>Yara Haddad</b></div>
+            <div class="vj-log-line"><span class="t">15:06:15</span> ➕ Follow invite sent → <b>Tom Whitfield</b> · 12 credits left</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ═══════════ UP NEXT (queued cloud campaigns — real queue cards) ═══════════ -->
+  <section class="section-band is-queue" aria-labelledby="s2">
+    <div class="section-rail">
+      <h2 id="s2">Up Next <small><span>2</span> waiting</small></h2>
+      <div class="section-rail-line"></div>
+      <button class="section-rail-action">+ Add to queue</button>
+    </div>
+    <div role="grid" id="queueList">
+      <div class="vc-stack">
+        <!-- showcase: Message Only -->
+        <div class="vc-card-top" draggable="true">
+          <div class="vc-handle" title="Drag to reorder"></div>
+          <div class="vc-top-glyph">DM</div>
+          <div class="vc-top-body">
+            <div class="vc-top-eyebrow"><span class="dot"></span>Queued · Next up · ☁︎ cloud</div>
+            <div class="vc-top-name">DACH Ops — Message Only</div>
+            <div class="vc-top-preview-dense">
+              <div class="row"><span class="k">Mode</span><span class="v"><b>DM</b> · Message Only</span></div>
+              <div class="row"><span class="k">Sheet</span><span class="v">DACH-ops-leads</span></div>
+              <div class="row"><span class="k">Accounts</span><span class="v"><b>1</b></span></div>
+              <div class="row"><span class="k">Queued</span><span class="v">4 min ago</span></div>
+            </div>
+          </div>
+          <div class="dock" role="toolbar">
+            <button class="dock-btn" data-tip="Start now" aria-label="Start now"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg></button>
+            <div class="dock-actions">
+              <button class="dock-btn" data-tip="Edit" aria-label="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+              <button class="dock-btn danger" data-tip="Remove" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <!-- mini: CC+DM -->
+        <div class="vc-mini depth-2" draggable="true">
+          <div class="vc-handle" title="Drag to reorder"></div>
+          <div class="vc-mini-glyph">C+D</div>
+          <div class="vc-mini-name">Nordics — CC+DM</div>
+          <div class="vc-mini-when">Queued · 2nd</div>
+          <div class="dock" role="toolbar">
+            <button class="dock-btn" data-tip="Start now" aria-label="Start now"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg></button>
+            <div class="dock-actions"><button class="dock-btn danger" data-tip="Remove" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ PAST (finished cloud campaigns — real pa-rows) ═══════════ -->
+  <section class="section-band is-past" aria-labelledby="s3">
+    <div class="section-rail">
+      <h2 id="s3">Past <small><span>2</span> campaigns</small></h2>
+      <div class="section-rail-line"></div>
+      <button class="section-rail-action">Show all</button>
+    </div>
+    <div class="past-frame">
+      <div role="grid" id="pastList">
+        <div class="pa-row">
+          <input type="checkbox" class="pa-check" aria-label="Select" />
+          <div class="glyph">CC</div>
+          <div class="pa-name">Test CC Cloud 2</div>
+          <div class="pa-when">2 h ago</div>
+          <div class="pa-stats"><b>65</b> sent</div>
+          <div class="pa-rate">27.7<span class="pct">%</span></div>
+          <div class="pa-actions">
+            <div class="dock" role="toolbar">
+              <button class="dock-btn" data-tip="Rerun" aria-label="Rerun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              <div class="dock-actions">
+                <button class="dock-btn" data-tip="Open log" aria-label="Open log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></button>
+                <button class="dock-btn danger" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pa-row">
+          <input type="checkbox" class="pa-check" aria-label="Select" />
+          <div class="glyph">FG</div>
+          <div class="pa-name">Ortus page — FG (June)</div>
+          <div class="pa-when">yesterday</div>
+          <div class="pa-stats"><b>30</b> invites</div>
+          <div class="pa-rate">—</div>
+          <div class="pa-actions">
+            <div class="dock" role="toolbar">
+              <button class="dock-btn" data-tip="Rerun" aria-label="Rerun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              <div class="dock-actions"><button class="dock-btn danger" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="sketch-note" style="margin-top:26px">
+    <b>How it's wired (no new UI):</b> a cloud campaign adapts to the same shapes the dashboard already renders —
+    running → the Active card (<code>/api/campaign/status</code> overlay), queued → Up&nbsp;Next
+    (<code>/api/queue</code>), finished → Past (<code>/api/history</code>). Mode badges reuse <code>V3_MODE_BADGE</code>
+    (FG added). FG swaps the connect stat line for <b>invites / credits</b>. The live log fills once the engine's
+    per-lead endpoint is deployed (the piece parked for Steven); everything else renders from data we already have.
+  </p>
+
+</div>
+</body>
+</html>

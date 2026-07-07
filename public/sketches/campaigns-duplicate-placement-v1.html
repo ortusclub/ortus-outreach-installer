@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Duplicate — button placement</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <link rel="stylesheet" href="/sketches/_filter-shared.css" />
+  <style>
+    .h{font-family:'Hanken Grotesk',sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#8a8a8a;margin:30px 0 12px;}
+    /* overflow (⋯) menu */
+    .ovf{position:relative;}
+    .ovf-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;font-size:16px;line-height:1;}
+    .ovf-menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:184px;background:#fff;border:1px solid var(--hairline);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:6px;z-index:30;display:none;}
+    .ovf.open .ovf-menu{display:block;}
+    .ovf-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#444;}
+    .ovf-item:hover{background:#f4f4f3;color:var(--ink);}
+    .ovf-item svg{opacity:.7;}
+    .mini.dup{display:inline-flex;align-items:center;gap:7px;}
+    .callout{font-family:'Hanken Grotesk',sans-serif;font-size:12px;color:#7a5cff;}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+  <p class="note"><b>Where does “Duplicate” live?</b> Two options below — both open the New-campaign form pre-filled (your chosen behaviour). <b>Option A</b> keeps it in a small ⋯ overflow menu (clean foot, room for future actions like Rename/Move). <b>Option B</b> puts a ⧉ Duplicate button right in the row. The ⋯ menus are clickable.</p>
+
+  <!-- ================= OPTION A: overflow ⋯ menu ================= -->
+  <div class="h">Option A — in a ⋯ overflow menu &nbsp;·&nbsp; <span class="callout">recommended: keeps the row uncluttered</span></div>
+
+  <div class="sn-strip run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+    <div class="sn-name">APAC Founders — CC</div>
+    <div class="sn-flow"><b>65 leads</b> → <b>2 accounts</b> → feeds <b>APAC Founders</b> · Connect Only</div>
+    <div class="sn-foot"><div class="right">
+      <button class="mini">Stop</button><button class="mini solid">Open</button>
+      <div class="ovf"><button class="ovf-btn" onclick="this.parentNode.classList.toggle('open')">⋯</button>
+        <div class="ovf-menu">
+          <div class="ovf-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="sn-strip local run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC+DM</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span><span class="sn-status"><span class="dot runlocal"></span> Running</span></div>
+    <div class="sn-name">Nordics — CC+DM</div>
+    <div class="sn-flow"><b>48 leads</b> → <b>1 account</b> → feeds <b>Nordics</b> · Connect + DM</div>
+    <div class="sn-foot"><div class="right">
+      <button class="mini">Pause</button><button class="mini">Stop</button><button class="mini solid">Open</button>
+      <div class="ovf"><button class="ovf-btn" onclick="this.parentNode.classList.toggle('open')">⋯</button>
+        <div class="ovf-menu">
+          <div class="ovf-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="sn-strip done">
+    <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span><span class="sn-status"><span class="dot mon"></span> Done · yesterday</span></div>
+    <div class="sn-name">London PE — CC</div>
+    <div class="sn-foot"><div class="right">
+      <button class="mini">✕</button><button class="mini solid">Open</button>
+      <div class="ovf"><button class="ovf-btn" onclick="this.parentNode.classList.toggle('open')">⋯</button>
+        <div class="ovf-menu">
+          <div class="ovf-item"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ================= OPTION B: inline button ================= -->
+  <div class="h">Option B — inline ⧉ Duplicate button in the row</div>
+
+  <div class="sn-strip run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+    <div class="sn-name">APAC Founders — CC</div>
+    <div class="sn-flow"><b>65 leads</b> → <b>2 accounts</b> → feeds <b>APAC Founders</b> · Connect Only</div>
+    <div class="sn-foot"><div class="right">
+      <button class="mini dup"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button>
+      <button class="mini">Stop</button><button class="mini solid">Open</button>
+    </div></div>
+  </div>
+
+  <div class="sn-strip local run">
+    <div class="sn-top"><span class="sn-type">Campaign · CC+DM</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span><span class="sn-status"><span class="dot runlocal"></span> Running</span></div>
+    <div class="sn-name">Nordics — CC+DM</div>
+    <div class="sn-flow"><b>48 leads</b> → <b>1 account</b> → feeds <b>Nordics</b> · Connect + DM</div>
+    <div class="sn-foot"><div class="right">
+      <button class="mini dup"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button>
+      <button class="mini">Pause</button><button class="mini">Stop</button><button class="mini solid">Open</button>
+    </div></div>
+    <div style="font-family:'Hanken Grotesk',sans-serif;font-size:11px;color:#b06;margin-top:8px">↑ four buttons here — this is why the ⋯ menu (Option A) stays cleaner as controls grow.</div>
+  </div>
+
+  <p class="note" style="margin-top:30px"><b>Either way, Duplicate does the same thing:</b> opens ＋ New campaign pre-filled with this campaign's name (＋ “copy”), leads sheet, accounts, mode and templates — nothing runs until you press Start/Queue.</p>
+
+</div>
+<script>
+  document.addEventListener('click', (e)=>{ if(!e.target.closest('.ovf')) document.querySelectorAll('.ovf.open').forEach(o=>o.classList.remove('open')); });
+</script>
+</body>
+</html>

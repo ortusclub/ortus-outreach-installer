@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Campaign debrief (A · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+
+<!-- ── 1:1 copy of index.html's inline #sn-board-styles (board CSS lives there, not in the linked files) ── -->
+<style id="sn-board-styles">
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;transition:opacity .4s, border-color .4s;}
+  .sn-strip.local.run::before{background:#e35ea0;}
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
+  .sn-where.local{background:#fbe6f0;color:#b23372;}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-top{display:flex;align-items:center;gap:12px;padding-right:40px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-name{font-family:var(--display);font-size:28px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-board .dot.run{background:var(--green);}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.red{background:var(--red);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-strip.done.sn-collapsed .sn-foot{margin-top:10px;padding-top:0;border-top:0;}
+  .sn-expand{position:absolute;top:14px;right:16px;width:32px;height:32px;display:flex;
+    align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;
+    background:transparent;color:var(--ink);cursor:pointer;transition:transform .15s, border-color .12s;z-index:2;}
+  .sn-expand:hover{border-color:var(--ink);}
+  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);}
+</style>
+
+<style>
+  /* ── sketch-only chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+
+  /* new: Debrief action on finished strips */
+  .sn-foot .mini.debrief { border-style: dashed; }
+  .sn-foot .mini.debrief:hover { border-color: var(--ink); border-style: solid; }
+
+  /* ══ Debrief overlay ══ */
+  #db-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none;
+    align-items: flex-start; justify-content: center; z-index: 80; overflow-y: auto; padding: 44px 24px 72px; }
+  #db-scrim.open { display: flex; }
+  .db-panel { box-sizing: border-box; width: 100%; max-width: 780px; background: var(--bg, #fff);
+    border: 1px solid var(--hairline); border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.22); padding: 38px 46px 32px; }
+
+  .db-eyebrow { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 10px; }
+  .db-title { font-family: var(--display); font-size: 2.1rem; letter-spacing: 0.03em; line-height: 1;
+    color: var(--ink); margin: 0 0 10px; }
+  .db-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.7; margin-bottom: 26px; }
+  .db-sub b { color: var(--ink); font-weight: 500; }
+
+  .db-sec-head { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin: 0 0 14px; }
+  .db-sec { border-top: 1px solid var(--hairline); padding: 24px 0; }
+
+  /* funnel — same monochrome graded-fill idiom as campaign-funnel-A */
+  .funnel { display: flex; align-items: stretch; gap: 0; }
+  .funnel-stage { flex: 1 1 0; min-width: 0; border: 1px solid var(--hairline); border-left: none; padding: 14px 16px; position: relative; }
+  .funnel-stage:first-child { border-left: 1px solid var(--hairline); }
+  .funnel-stage .st-lbl { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
+  .funnel-stage .st-num { font-family: var(--display); font-size: 2rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1.1; }
+  .funnel-stage .st-drop { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 3px; }
+  .funnel-stage .st-drop b { color: var(--ink); font-weight: 500; }
+  .funnel-stage:nth-child(1) { background: rgba(0,0,0,0.05); }
+  .funnel-stage:nth-child(2) { background: rgba(0,0,0,0.035); }
+  .funnel-stage:nth-child(3) { background: rgba(0,0,0,0.02); }
+  .funnel-stage:nth-child(4) { background: transparent; }
+  .funnel-stage::after { content: "→"; position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray); background: var(--bg); z-index: 2; line-height: 1; }
+  .funnel-stage:last-child::after { content: none; }
+
+  /* per-account table */
+  .db-table { width: 100%; border-collapse: collapse; font-family: var(--mono); }
+  .db-table th { text-align: left; font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gray); font-weight: 500; padding: 0 10px 10px 0; border-bottom: 1px solid var(--hairline); }
+  .db-table td { font-size: 0.74rem; color: var(--ink); padding: 12px 10px 12px 0;
+    border-bottom: 1px solid var(--hairline-soft); }
+  .db-table td.num { font-weight: 500; }
+  .db-table td.dim { color: var(--gray); }
+  .db-table tr:last-child td { border-bottom: none; }
+  .db-park { font-size: 0.64rem; color: var(--gray); border: 1px dashed var(--hairline); border-radius: 9999px; padding: 3px 10px; white-space: nowrap; }
+  .db-park.gold { color: var(--gold); border-color: var(--gold); }
+
+  /* skipped line */
+  .db-skipped { font-family: var(--mono); font-size: 0.72rem; color: var(--ink); line-height: 1.7; }
+  .db-skipped b { font-weight: 500; }
+  .db-skipped .why { color: var(--gray); }
+  .db-skipped a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; cursor: pointer; }
+
+  /* template (collapsed, expandable) */
+  .db-tpl { border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 18px; cursor: pointer; }
+  .db-tpl .tpl-first { font-family: var(--mono); font-size: 0.72rem; color: var(--ink);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-tpl .tpl-more { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray); margin-top: 6px; }
+  .db-tpl .tpl-full { display: none; font-family: var(--mono); font-size: 0.72rem; color: var(--ink); line-height: 1.8; margin-top: 10px;
+    border-top: 1px solid var(--hairline-soft); padding-top: 12px; white-space: pre-line; }
+  .db-tpl.open .tpl-first { white-space: normal; }
+  .db-tpl.open .tpl-full { display: block; }
+
+  /* vs last 5 */
+  .db-vs { display: flex; gap: 12px; flex-wrap: wrap; }
+  .db-vs .vs-chip { font-family: var(--mono); font-size: 0.68rem; color: var(--gray);
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 8px 16px; }
+  .db-vs .vs-chip b { color: var(--ink); font-weight: 500; }
+  .db-vs .vs-chip .up { color: var(--green); }
+  .db-vs .vs-chip .down { color: var(--red); }
+
+  .db-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
+    margin-top: 4px; padding-top: 24px; }
+  .db-actions .spacer { flex: 1; }
+  .db-foot-note { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.6; margin-top: 14px; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 110; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3" class="route-dashboard">
+<div class="sketch-bar">SKETCH — Campaign debrief (A · appwide) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="app">
+
+  <!-- ── Sidebar (real shell) ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · <span>v2.132.0</span></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back" onclick="toast('Dashboard — this view')"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item" onclick="toast('Campaign Type — unchanged')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Data — unchanged')"><span class="nav-num">II.</span>Data<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('LinkedIn Accounts — unchanged')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Campaign Settings — unchanged')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Launch — unchanged')"><span class="nav-num">V.</span>Launch<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Live Status — unchanged')">Live Status</button>
+
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item" onclick="toast('Connection DB — unchanged')"><span class="nav-num">◆</span>Connection DB</button>
+
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item" onclick="toast('Open log — unchanged')">Open log</button>
+
+      <div class="nav-section-label">Help</div>
+      <button type="button" class="nav-item nav-item-help" onclick="toast('Help — unchanged')"><span class="nav-num">?</span>Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip" onclick="toast('Operator email — unchanged')">
+        <span class="operator-chip-label">Operating as</span>
+        <strong>antonio@ortusclub.com</strong>
+      </button>
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        <span>Mon 6 Jul</span>
+      </div>
+      <button type="button" class="btn btn-sm sidebar-signout" onclick="toast('Sign out — unchanged')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main: campaigns board with a finished strip carrying the Debrief action ── -->
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span>Monday, 6 July</span> <small style="margin-left:12px; color:var(--gray)">v2.132.0</small></div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">26</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">143</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err">0</span></div>
+        <div class="header-stat"><span class="k">Passover</span>
+          <span class="v small passover-pills">
+            <span class="passover-pill closed" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" title="CC">CC</span>
+          </span>
+        </div>
+        <div class="header-stat"><span class="k">RAM</span><span class="v">62%</span></div>
+        <div class="header-stat"><span class="k">CPU</span><span class="v">31%</span></div>
+        <div class="header-stat"><span class="k">Browsers</span><span class="v">0</span></div>
+      </div>
+    </div>
+
+    <div id="dashboard-view" class="route-view">
+      <div class="sn-qmeta" style="text-align:right;margin:0 2px 4px">0 running</div>
+      <div id="campaigns-board" class="sn-board">
+
+        <div class="sn-railhead">✓ Done <span class="sn-railcount">2</span></div>
+
+        <!-- finished strip — gains the Debrief action -->
+        <div class="sn-strip local done" data-cid="h-1">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · C+I</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span>
+            <span class="sn-status"><span class="dot mon"></span> Done</span></div>
+          <div class="sn-name">CC+IC — FinTech CTOs</div>
+          <div class="sn-flow"><b>120 leads</b> → <b>3 accounts</b> → feeds <b>CC+IC — FinTech CTOs</b> · Connect + Introduce Back · finished 3 Jul</div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini debrief" onclick="openDebrief()">Debrief</button>
+            <button class="mini" onclick="toast('Duplicate — unchanged')">Duplicate</button>
+            <button class="mini solid" onclick="toast('Open — unchanged')">Open</button>
+          </div></div>
+        </div>
+
+        <div class="sn-strip done sn-collapsed" data-cid="h-2">
+          <button class="sn-collapse sn-expand" title="Expand / collapse" onclick="this.closest('.sn-strip').classList.toggle('sn-collapsed')"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Campaign · DM</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span>
+            <span class="sn-status"><span class="dot mon"></span> Done</span></div>
+          <div class="sn-name">DM — June event follow-up</div>
+          <div class="sn-flow"><b>64 leads</b> → <b>2 accounts</b> → feeds <b>DM — June event follow-up</b> · Direct Messages</div>
+          <div class="sn-foot"><div class="right">
+            <button class="mini" onclick="toast('✕ dismiss — unchanged')" title="Hide">✕</button>
+            <button class="mini debrief" onclick="toast('Debrief — same panel, this campaign\'s numbers')">Debrief</button>
+            <button class="mini solid" onclick="toast('Open — unchanged')">Open</button>
+          </div></div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<!-- ══ Debrief overlay — opens from the strip's Debrief action ══ -->
+<div id="db-scrim" role="dialog" aria-modal="true" aria-labelledby="db-title">
+  <div class="db-panel">
+    <div class="db-eyebrow">Post-campaign debrief · generated when the campaign finishes</div>
+    <div class="db-title" id="db-title">CC+IC — FinTech CTOs</div>
+    <div class="db-sub">Ran <b>30 Jun → 3 Jul</b> · mode <b>Connect + Introduce Back (CC+IC)</b> · <b>3 accounts</b> · sheet tab <b>“June leads”</b></div>
+
+    <!-- Funnel -->
+    <div class="db-sec">
+      <div class="db-sec-head">Funnel</div>
+      <div class="funnel">
+        <div class="funnel-stage"><div class="st-lbl">Sent</div><div class="st-num">52</div><div class="st-drop">of 59 attempted</div></div>
+        <div class="funnel-stage"><div class="st-lbl">Accepted</div><div class="st-num">13</div><div class="st-drop"><b>25%</b> of sent</div></div>
+        <div class="funnel-stage"><div class="st-lbl">Intro'd</div><div class="st-num">5</div><div class="st-drop"><b>38%</b> of accepted</div></div>
+        <div class="funnel-stage"><div class="st-lbl">Replied</div><div class="st-num">2</div><div class="st-drop"><b>40%</b> of intro'd</div></div>
+      </div>
+    </div>
+
+    <!-- Per-account breakdown -->
+    <div class="db-sec">
+      <div class="db-sec-head">Per-account breakdown</div>
+      <table class="db-table">
+        <thead><tr><th>Account</th><th>Sent</th><th>Accepted</th><th>Accept %</th><th>Parked / cooldowns</th></tr></thead>
+        <tbody>
+          <tr><td>James Okafor</td><td class="num">21</td><td class="num">6</td><td class="num">29%</td><td class="dim">—</td></tr>
+          <tr><td>Marta Kowalski</td><td class="num">19</td><td class="num">5</td><td class="num">26%</td><td><span class="db-park gold">429 · 2 cooldowns, recovered</span></td></tr>
+          <tr><td>Priya Nair</td><td class="num">12</td><td class="num">2</td><td class="num">17%</td><td><span class="db-park">weekly cap · parked 2 Jul</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Skipped leads -->
+    <div class="db-sec">
+      <div class="db-skipped"><b>7 skipped</b> <span class="why">— 3 identity unconfirmed · 2 malformed URL · 2 duplicate rows</span> · <a onclick="toast('Opens the skipped-leads report — see skipped-leads-report-A sketch')">view rows</a></div>
+    </div>
+
+    <!-- Template used -->
+    <div class="db-sec">
+      <div class="db-sec-head">Template used · connection note</div>
+      <div class="db-tpl" id="db-tpl" onclick="this.classList.toggle('open')">
+        <div class="tpl-first">Hi {first name}, I host closed-door dinners for fintech leaders — thought of you given your work at {company}…</div>
+        <div class="tpl-more">click to expand ▾</div>
+        <div class="tpl-full">Hi {first name}, I host closed-door dinners for fintech leaders — thought of you given your work at {company}. No pitch, just peers around a table. Open to connecting?
+
+Intro DM body: Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they lead our fintech roundtables.</div>
+      </div>
+    </div>
+
+    <!-- vs last 5 campaigns -->
+    <div class="db-sec">
+      <div class="db-sec-head">Vs your last 5 campaigns</div>
+      <div class="db-vs">
+        <span class="vs-chip">Accept rate <b>25%</b> vs avg <b>19%</b> <span class="up">↑ +6pts</span></span>
+        <span class="vs-chip">Reply rate (of intro'd) <b>40%</b> vs avg <b>31%</b> <span class="up">↑ +9pts</span></span>
+        <span class="vs-chip">Skipped <b>7</b> vs avg <b>4</b> <span class="down">↑ higher</span></span>
+      </div>
+    </div>
+
+    <div class="db-actions">
+      <button class="btn btn-secondary btn-sm" onclick="toast('Draft created — sends to antonio@ortusclub.com (auto-send stays OFF by default)')">Email to me</button>
+      <button class="btn btn-secondary btn-sm" onclick="toast('Summary copied to clipboard')">Copy summary</button>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="closeDebrief()">Close</button>
+    </div>
+    <div class="db-foot-note">Accepted / intro'd / replied come from the sheet's Stage · Introduction Status columns after the bulk status check + reply sweep — numbers are only as fresh as the last check.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function openDebrief(){ document.getElementById('db-scrim').classList.add('open'); }
+  function closeDebrief(){ document.getElementById('db-scrim').classList.remove('open'); }
+  document.getElementById('db-scrim').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeDebrief();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDebrief(); });
+</script>
+</body>
+</html>

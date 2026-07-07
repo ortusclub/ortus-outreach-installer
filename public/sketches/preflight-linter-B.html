@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Pre-flight lead-sheet linter (B · appwide, in the wizard)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  /* ── sketch-only chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+
+  /* wizard sample-value chips */
+  .wiz-vals { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .wiz-val { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 6px 13px; }
+  .wiz-val b { color: var(--ink); font-weight: 500; }
+
+  /* ══ Pre-flight linter v2 — full-screen overlay, generous + legible ══ */
+  #pf-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none;
+    align-items: flex-start; justify-content: center; z-index: 80; overflow-y: auto; padding: 48px 24px 64px; }
+  #pf-scrim.open { display: flex; }
+  .pf-panel { box-sizing: border-box; width: 100%; max-width: 760px; background: var(--bg, #fff);
+    border: 1px solid var(--hairline); border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.22); padding: 36px 44px 30px; }
+
+  .pf-eyebrow { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 10px; }
+  .pf-title { font-family: var(--display); font-size: 2rem; letter-spacing: 0.03em; line-height: 1;
+    color: var(--ink); margin: 0 0 10px; }
+  .pf-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.6; margin-bottom: 8px; }
+  .pf-sub b { color: var(--ink); font-weight: 500; }
+  .pf-tally { display: flex; gap: 10px; margin: 18px 0 26px; }
+  .pf-tally span { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.06em;
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; color: var(--gray); }
+  .pf-tally .t-block { color: var(--red); border-color: var(--red); }
+  .pf-tally .t-warn { color: var(--gold); border-color: var(--gold); }
+  .pf-tally .t-pass { color: var(--green); border-color: var(--green); }
+
+  /* groups — one flat list per severity, real air between rows */
+  .pf-group { border-top: 1px solid var(--hairline); padding: 20px 0 14px; }
+  .pf-group-head { display: flex; align-items: baseline; gap: 12px; font-family: var(--mono);
+    font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
+  .pf-group-head .n { margin-left: auto; color: var(--gray); letter-spacing: 0.04em; }
+  .pf-blockers .pf-group-head { color: var(--red); }
+  .pf-warnings .pf-group-head { color: var(--gold); }
+  .pf-passed .pf-group-head { color: var(--green); cursor: pointer; user-select: none; }
+  .pf-passed .caret { display: inline-block; transition: transform 0.15s; }
+  .pf-passed.collapsed .caret { transform: rotate(-90deg); }
+  .pf-passed.collapsed .pf-rows { display: none; }
+
+  /* one clean row per finding: row-no | lead | one-line reason */
+  .pf-row { display: grid; grid-template-columns: 92px 190px 1fr; gap: 18px; align-items: baseline;
+    padding: 12px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+  .pf-rows .pf-row:last-child { border-bottom: none; }
+  .pf-row .rowno { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); }
+  .pf-blockers .pf-row .rowno { color: var(--red); }
+  .pf-warnings .pf-row .rowno { color: var(--gold); }
+  .pf-row .lead { font-size: 0.78rem; color: var(--ink); font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pf-row .reason { font-size: 0.72rem; color: var(--gray); line-height: 1.55; }
+  .pf-row .reason code { background: var(--hairline-soft); padding: 1px 6px; border-radius: 4px; font-size: 0.68rem; color: var(--ink); }
+  .pf-passed .pf-row { grid-template-columns: 24px 1fr; }
+  .pf-passed .pf-row .rowno { color: var(--green); }
+  .pf-passed .pf-row .reason b { color: var(--ink); font-weight: 500; }
+
+  /* actions */
+  .pf-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
+    margin-top: 8px; padding-top: 22px; flex-wrap: wrap; }
+  .pf-actions .spacer { flex: 1; }
+  .pf-count-note { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); line-height: 1.6;
+    width: 100%; margin-top: 12px; }
+  .pf-count-note b { color: var(--ink); font-weight: 500; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 110; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3" class="route-wizard">
+<div class="sketch-bar">SKETCH — Pre-flight linter · v2 appwide (overlay after Launch click) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="app">
+
+  <!-- ── Sidebar (real shell) ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · <span>v2.132.0</span></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back" onclick="toast('Back to dashboard — unchanged')"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item active" data-nav="nav-settings" onclick="scrollToSec('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSec('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSec('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSec('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSec('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Live Status — unchanged')">Live Status</button>
+
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item" onclick="toast('Connection DB — unchanged')"><span class="nav-num">◆</span>Connection DB</button>
+
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item" onclick="toast('Open log — unchanged')">Open log</button>
+
+      <div class="nav-section-label">Help</div>
+      <button type="button" class="nav-item nav-item-help" onclick="toast('Help — unchanged')"><span class="nav-num">?</span>Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip" onclick="toast('Operator email — unchanged')">
+        <span class="operator-chip-label">Operating as</span>
+        <strong>antonio@ortusclub.com</strong>
+      </button>
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        <span>Mon 6 Jul</span>
+      </div>
+      <button type="button" class="btn btn-sm sidebar-signout" onclick="toast('Sign out — unchanged')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main: the launch wizard, filled with sample values ── -->
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span>Monday, 6 July</span> <small style="margin-left:12px; color:var(--gray)">v2.132.0</small></div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">26</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">143</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err">0</span></div>
+        <div class="header-stat"><span class="k">Passover</span>
+          <span class="v small passover-pills">
+            <span class="passover-pill closed" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" title="CC">CC</span>
+          </span>
+        </div>
+        <div class="header-stat"><span class="k">RAM</span><span class="v">62%</span></div>
+        <div class="header-stat"><span class="k">CPU</span><span class="v">31%</span></div>
+        <div class="header-stat"><span class="k">Browsers</span><span class="v">0</span></div>
+      </div>
+    </div>
+
+    <div id="wizard-view" class="route-view">
+      <div class="wizard-back-row">
+        <button type="button" class="back-link" onclick="toast('Back to dashboard — unchanged')">← Back to dashboard</button>
+      </div>
+
+      <div class="section campaign-name-section" id="nav-campaign-name">
+        <h2>Campaign Name</h2>
+        <div class="campaign-name-row">
+          <input type="text" id="campaign-name-input" value="CC+IC — FinTech CTOs" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="section" id="nav-settings">
+        <h2>1. Campaign Type <span class="section-summary">Connect + Introduce Back</span></h2>
+        <div class="mode-grid">
+          <button type="button" class="mode-card" onclick="toast('Mode select — unchanged')">
+            <div class="mode-card-title">Connect Only</div>
+            <ul class="mode-card-bullets"><li>Connection requests only</li><li>Optional note</li></ul>
+          </button>
+          <button type="button" class="mode-card active" onclick="toast('Mode select — unchanged')">
+            <div class="mode-card-title">Connect + Introduce Back</div>
+            <ul class="mode-card-bullets"><li>Connect, then 3-way intro DM on accept</li><li>Primary person required</li></ul>
+          </button>
+          <button type="button" class="mode-card" onclick="toast('Mode select — unchanged')">
+            <div class="mode-card-title">Direct Messages</div>
+            <ul class="mode-card-bullets"><li>DM existing 1st-degree connections</li></ul>
+          </button>
+        </div>
+        <div class="wiz-vals">
+          <span class="wiz-val">Primary <b>Sam Adcock</b> · linkedin.com/in/samadcock</span>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-sheet">
+        <h2 class="section-toggle"><span class="caret">▾</span> 2. Google Sheet tab URL <span class="section-summary">tab “June leads”</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val">Sheet <b>CC+IC — FinTech CTOs</b></span>
+            <span class="wiz-val">Tab <b>June leads</b> · gid 482910</span>
+            <span class="wiz-val">LinkedIn column <b>C · “LinkedIn URL”</b></span>
+            <span class="wiz-val"><b>418</b> rows</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-accounts">
+        <h2 class="section-toggle"><span class="caret">▾</span> 3. Select GoLogin Accounts <span class="section-summary">3 accounts</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val"><b>James Okafor</b> · free</span>
+            <span class="wiz-val"><b>Marta Kowalski</b> · free</span>
+            <span class="wiz-val"><b>Priya Nair</b> · free</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-templates">
+        <h2 class="section-toggle"><span class="caret">▾</span> 5. Message Templates <span class="section-summary">note + intro set</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val">Connection note set · uses <b>{first name}</b> <b>{company}</b></span>
+            <span class="wiz-val">Intro DM body set · uses <b>{primary name}</b> <b>{primary url}</b></span>
+            <span class="wiz-val">Daily limit <b>20/day per account</b> · delay <b>30–60s</b></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-launch">
+        <h2 class="section-toggle"><span class="caret">▾</span> 6. Launch <span class="section-summary"></span></h2>
+        <div class="collapsible-body">
+          <div class="launch-hero">
+            <div>
+              <div class="launch-number">418</div>
+              <div class="launch-caption">Number of accounts being used: <strong>3</strong> · <strong>418 connections</strong> · ETA <strong>~7 days</strong></div>
+            </div>
+            <div class="launch-right">
+              <div class="launch-actions launch-actions--four">
+                <!-- ★ Clicking Start runs the linter BEFORE any browser opens -->
+                <button type="button" id="btn-start" class="btn btn-start" onclick="openLinter()">Start a campaign</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Queue it — unchanged')">Queue it</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Schedule it — unchanged')">Schedule it</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Save as draft — unchanged')">Save as draft</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<!-- ══ Pre-flight linter overlay — appears right after Launch, before any browser opens ══ -->
+<div id="pf-scrim" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+  <div class="pf-panel">
+    <div class="pf-eyebrow">Pre-flight · runs after Launch, before any browser opens</div>
+    <div class="pf-title" id="pf-title">Lead sheet check</div>
+    <div class="pf-sub">Tab <b>“June leads”</b> · <b>418</b> rows scanned · sheet <b>CC+IC — FinTech CTOs</b></div>
+    <div class="pf-tally">
+      <span class="t-block">❌ 2 blockers</span>
+      <span class="t-warn">⚠ 2 warnings · 14 rows</span>
+      <span class="t-pass">✓ 3 checks passed · 404 rows ready</span>
+    </div>
+
+    <!-- Blockers -->
+    <div class="pf-group pf-blockers">
+      <div class="pf-group-head">❌ Blockers <span class="n">2</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">Row 413</span>
+          <span class="lead">Lavanya Vemula</span>
+          <span class="reason">Name doesn't match URL slug <code>leonkatsnelson</code> — would message the wrong person</span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 87</span>
+          <span class="lead">Marcus Webb</span>
+          <span class="reason">Malformed URL <code>linkedin.com/in/</code> (empty slug) — navigation would land on a generic page</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Warnings -->
+    <div class="pf-group pf-warnings">
+      <div class="pf-group-head">⚠ Warnings <span class="n">2 · 14 rows</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">12 rows</span>
+          <span class="lead">various leads</span>
+          <span class="reason">Empty <code>{company}</code> — your Connection Note would render with a blank company name</span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Rows 109–110</span>
+          <span class="lead">Vito Manzari</span>
+          <span class="reason">Duplicate URL — same profile twice; only the first would be contacted</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Passed (collapsed by default) -->
+    <div class="pf-group pf-passed collapsed" id="grp-pass">
+      <div class="pf-group-head" onclick="document.getElementById('grp-pass').classList.toggle('collapsed')">
+        <span class="caret">▾</span> ✓ Passed checks <span class="n">3</span></div>
+      <div class="pf-rows">
+        <div class="pf-row"><span class="rowno">✓</span><span class="reason">Tab explicitly selected — <b>June leads</b> (no silent first-tab fallback)</span></div>
+        <div class="pf-row"><span class="rowno">✓</span><span class="reason">LinkedIn column found — column <b>C · “LinkedIn URL”</b></span></div>
+        <div class="pf-row"><span class="rowno">✓</span><span class="reason"><b>404 valid rows</b> ready to send (of 418 scanned)</span></div>
+      </div>
+    </div>
+
+    <div class="pf-actions">
+      <button class="btn btn-secondary btn-sm" onclick="toast('Opening Google Sheet at row 413…')">Fix on sheet</button>
+      <button class="btn btn-primary" onclick="closeLinter(); toast('Launching — 14 flagged rows excluded (404 leads)')">Exclude flagged rows &amp; launch</button>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="closeLinter(); toast('Launching anyway — blockers will be skipped at send time')">Launch anyway</button>
+      <button class="btn btn-secondary btn-sm" onclick="closeLinter(); toast('Launch cancelled — back to the wizard')">Cancel</button>
+      <div class="pf-count-note"><b>Exclude flagged rows &amp; launch</b> skips the 2 blocker rows + the 12 empty-{company} rows for this run only — nothing is deleted from the sheet.</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function scrollToSec(id){
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function openLinter(){ document.getElementById('pf-scrim').classList.add('open'); }
+  function closeLinter(){ document.getElementById('pf-scrim').classList.remove('open'); }
+  // Cancel by clicking the scrim (reveals the wizard beneath) or pressing Esc.
+  document.getElementById('pf-scrim').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) { closeLinter(); toast('Launch cancelled — back to the wizard'); }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLinter(); });
+</script>
+</body>
+</html>

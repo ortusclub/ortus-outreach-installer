@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Weekly capacity forecast at launch (A · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 22px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* forecast card, sits inside Section V above the launch hero */
+  .fc-card { border: 1px solid var(--hairline); padding: 24px 28px; margin-bottom: 22px; }
+  .fc-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 14px; }
+
+  .fc-acc { display: grid; grid-template-columns: 170px 1fr 190px; gap: 16px; align-items: center;
+    padding: 11px 0; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+  .fc-acc .name { font-size: 0.78rem; font-weight: 500; color: var(--ink); }
+  .fc-acc .bar { height: 3px; background: var(--hairline-soft); position: relative; }
+  .fc-acc .bar i { position: absolute; inset: 0 auto 0 0; background: var(--ink); }
+  .fc-acc.capped .bar i { background: var(--red); }
+  .fc-acc .est { font-size: 0.66rem; color: var(--gray); text-align: right; line-height: 1.5; }
+  .fc-acc .est b { color: var(--ink); font-weight: 500; }
+  .fc-acc.capped .est b { color: var(--red); }
+
+  .fc-total { display: flex; align-items: baseline; gap: 16px; padding: 18px 0 4px; }
+  .fc-total .num { font-family: var(--display); font-size: 2.4rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1; }
+  .fc-total .lbl { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.55; }
+  .fc-total .lbl b { color: var(--ink); font-weight: 500; }
+
+  .fc-vs { border-top: 1px solid var(--hairline); margin-top: 12px; padding-top: 16px;
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray); line-height: 1.65; }
+  .fc-vs b { color: var(--ink); font-weight: 500; }
+
+  .fc-warn { display: flex; gap: 10px; align-items: baseline; border: 1px solid var(--gold);
+    padding: 12px 16px; margin-top: 16px; font-family: var(--mono); font-size: 0.66rem; color: var(--gold); line-height: 1.6; }
+  .fc-warn b { color: var(--ink); font-weight: 500; }
+
+  .fc-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 16px; line-height: 1.6; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Weekly capacity forecast at launch (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap"><b>Wizard Section V context</b> — before Start, the app forecasts how many invites the selected
+    accounts can realistically send this week (LinkedIn's ~100/wk cap minus what each has already sent), and compares
+    that to the list size. No more "why did it stop at 30".</p>
+
+  <div class="section" id="nav-launch">
+    <h2>6. Launch</h2>
+
+    <!-- ── NEW: forecast card ── -->
+    <div class="fc-card">
+      <div class="fc-eyebrow">Weekly capacity forecast · from the 3 selected accounts</div>
+
+      <div class="fc-acc">
+        <span class="name">Acme Inc</span>
+        <div class="bar"><i style="width:30%"></i></div>
+        <span class="est">est. <b>70 invites left</b> this week · sent 30/100</span>
+      </div>
+      <div class="fc-acc">
+        <span class="name">James Okafor</span>
+        <div class="bar"><i style="width:40%"></i></div>
+        <span class="est">est. <b>60 invites left</b> this week · sent 40/100</span>
+      </div>
+      <div class="fc-acc capped">
+        <span class="name">Marta Kowalski</span>
+        <div class="bar"><i style="width:100%"></i></div>
+        <span class="est"><b>weekly cap reached</b> · resets Mon</span>
+      </div>
+
+      <div class="fc-total">
+        <span class="num">130</span>
+        <span class="lbl">est. <b>invites available this week</b> across selected accounts<br>(70 + 60 + 0)</span>
+      </div>
+
+      <div class="fc-vs">Your list: <b>400 leads</b> → est. <b>9 days at current pace</b> (20/day per active account,
+        weekly caps included) · finishes <b>~15 Jul</b>.</div>
+
+      <div class="fc-warn">⚠ <span>List is <b>~3× this week's capacity</b> — the run will straddle two weekly resets.
+        Add an account or trim the list if timing matters.</span></div>
+
+      <div class="fc-note">Estimates come from each account's recent send history (7-day rolling count per account) —
+        LinkedIn doesn't expose the real counter, so treat these as estimates, not guarantees.</div>
+    </div>
+
+    <!-- existing launch hero — unchanged -->
+    <div class="launch-hero">
+      <div>
+        <div class="launch-number">400</div>
+        <div class="launch-caption">Number of accounts being used: <strong>3</strong> · <strong>400 connections</strong> · ETA <strong>~9 days</strong></div>
+      </div>
+      <div class="launch-right">
+        <div class="launch-actions launch-actions--four">
+          <button type="button" class="btn btn-start" onclick="toast('Start — unchanged (forecast is informational)')">Start a campaign</button>
+          <button type="button" class="btn btn-secondary" onclick="toast('Queue it — unchanged')">Queue it</button>
+          <button type="button" class="btn btn-secondary" onclick="toast('Schedule it — unchanged')">Schedule it</button>
+          <button type="button" class="btn btn-secondary" onclick="toast('Save as draft — unchanged')">Save as draft</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+</script>
+</body>
+</html>

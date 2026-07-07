@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cloud campaigns ↔ Sales Nav Queue (same look + logic, side by side)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <!-- The real Sales Nav board styles (copied verbatim from index.html #sn-board-styles) -->
+  <style id="sn-board-styles">
+  .sn-boardhead{display:flex;align-items:flex-end;gap:16px;margin:0 0 6px;}
+  .sn-boardhead > div:first-child{margin-right:auto;}
+  .sn-kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .sn-boardtitle{font-family:var(--display);font-weight:400;font-size:34px;line-height:.92;margin:4px 0 0;}
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;}
+  .sn-foot .mini.sn-dismiss{padding:6px 10px;color:var(--gray);}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;}
+  .sn-strip.mine::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  .sn-strip.stopped{border-color:var(--red);}
+  .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
+  .sn-strip.stopped .sn-status{color:var(--red);}
+  .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
+  .sn-progtxt b{color:var(--ink);font-weight:600;}
+  .sn-strip.queued .sn-name{font-size:20px;}
+  .sn-strip.queued{padding-top:14px;padding-bottom:14px;}
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-strip.done.sn-collapsed .togwrap{display:none;}
+  .sn-strip.done.sn-collapsed .sn-foot{margin-top:10px;padding-top:0;border-top:0;}
+  .sn-top{display:flex;align-items:center;gap:12px;padding-right:40px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-owner{font-size:12px;color:var(--gray);}
+  .sn-name{font-family:var(--display);font-size:26px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-board .dot.run{background:var(--green);}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.q{background:var(--gray-faint,#b8b8b6);}.sn-board .dot.red{background:var(--red);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .toggle{width:42px;height:23px;border-radius:9999px;background:var(--green);position:relative;flex:none;cursor:pointer;}
+  .sn-foot .toggle.off{background:var(--gray-faint,#c9c9c7);}
+  .sn-foot .toggle i{position:absolute;top:2px;left:21px;width:19px;height:19px;border-radius:9999px;background:#fff;}
+  .sn-foot .toggle.off i{left:2px;}
+  .sn-foot .togwrap{display:flex;align-items:center;gap:9px;}
+  .sn-foot .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-strip.sn-collapsed .sn-switch{display:none;}
+  .sn-expand{position:absolute;top:14px;right:16px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;z-index:2;}
+  .sn-strip:not(.sn-collapsed) .sn-expand{transform:rotate(180deg);}
+  .sn-switch{margin:16px 0 0;border-top:1px solid var(--hairline-soft);padding-top:12px;}
+  .sn-switchtabs{display:flex;gap:20px;margin-bottom:12px;}
+  .sn-st{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);cursor:pointer;padding-bottom:5px;}
+  .sn-st.on{color:var(--ink);border-bottom:2px solid var(--gold);}
+  .sn-pane{display:none;}
+  .sn-pane.on{display:block;}
+  .sn-board .job{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--hairline-soft);}
+  .sn-board .job .jt{font-size:12.5px;color:var(--ink);font-weight:600;}
+  .sn-board .job .jstat{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:none;}
+  .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;max-height:200px;overflow:auto;}
+  .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}.sn-logbox .bl{color:#7fb2e6;}.sn-logbox .wr{color:#e0b060;}
+  </style>
+  <style>
+    body{background:var(--bg);}
+    .cmp-wrap{max-width:1180px;margin:0 auto;padding:24px 22px 120px;}
+    .cmp-intro{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;border-left:2px solid var(--gold);padding:9px 13px;margin:0 0 20px;background:#fff;}
+    .cmp-cols{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:start;}
+    .cmp-col{min-width:0;}
+    .cmp-tag{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:4px 10px;border-radius:9999px;display:inline-block;margin-bottom:2px;}
+    .cmp-tag.real{background:#eef0f3;color:#5a6472;}
+    .cmp-tag.new{background:var(--ink);color:var(--bg);}
+    @media(max-width:900px){.cmp-cols{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="cmp-wrap">
+
+  <p class="cmp-intro">
+    <b>Side by side — same look, same logic.</b> Left is the <b>Sales Nav Queue</b> exactly as it is today.
+    Right is <b>Cloud Campaigns</b> rendered with the identical board: same <code>sn-strip</code> cards, same
+    <b>Now running / Up next / Done</b> rails, same owner badge, On/Off toggle, Stop/Open, and expandable pane.
+    The board already supports <b>many running at once</b> — which is exactly what the VM needs. Only the strip's
+    contents change per domain (jobs+rows for scrapes → leads+sent for campaigns; FG shows invites/credits).
+  </p>
+
+  <div class="cmp-cols">
+
+    <!-- ══════════════ LEFT: real Sales Nav Queue ══════════════ -->
+    <div class="cmp-col">
+      <span class="cmp-tag real">Today · Sales Nav</span>
+      <div class="sn-board" style="margin-top:8px">
+        <div class="sn-boardhead"><div><div class="sn-kicker">Sales Nav</div><div class="sn-boardtitle">Sales Nav Queue</div></div><div class="sn-qmeta">1 running · 1 queued</div></div>
+
+        <div class="sn-railhead">▶ Now running</div>
+        <div class="sn-strip mine run">
+          <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span><span class="sn-you">You</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+          <div class="sn-name">TAG_LONDON_VC</div>
+          <div class="sn-flow"><b>3 searches</b> → <b>3 jobs</b> → feeds <b>London VC leads</b> · tab "Results"</div>
+          <div class="sn-progtxt"><b>1,240</b> rows so far · 2/3 jobs done · ~4m left</div>
+          <div class="sn-switch">
+            <div class="sn-switchtabs"><span class="sn-st on">Jobs</span><span class="sn-st">Logs</span></div>
+            <div class="sn-pane on">
+              <div class="job"><div class="jt">…/sales/search/people?keywords=VC…</div><div class="jstat"><span class="dot mon"></span> Done · 620 rows</div></div>
+              <div class="job"><div class="jt">…/sales/search/people?keywords=partner…</div><div class="jstat"><span class="dot run"></span> Running · 620 rows</div></div>
+              <div class="job"><div class="jt">…/sales/search/people?keywords=principal…</div><div class="jstat"><span class="dot q"></span> Queued</div></div>
+            </div>
+          </div>
+          <div class="sn-foot"><div class="togwrap"><div class="toggle"><i></i></div><span class="lbl">On</span></div><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+        </div>
+
+        <div class="sn-railhead">• Up next in the queue</div>
+        <div class="sn-strip queued">
+          <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span><span class="sn-owner">· dan@ortusclub.com</span><span class="sn-status"><span class="dot q"></span> Queued · #1 · ~6m</span></div>
+          <div class="sn-name">TAG_BERLIN_SAAS</div>
+          <div class="sn-flow"><b>2 searches</b> → <b>2 jobs</b> → feeds <b>Berlin SaaS</b> · tab "Results"</div>
+          <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini locked">Open 🔒</button></div></div>
+        </div>
+
+        <div class="sn-railhead">✓ Done <span class="sn-railcount">1</span><button class="sn-clear-done">Clear done</button></div>
+        <div class="sn-strip done sn-collapsed mine">
+          <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Sales Nav Scraper</span><span class="sn-you">You</span><span class="sn-status"><span class="dot mon"></span> Done · 22 min ago</span></div>
+          <div class="sn-name">TAG_PARIS_FINTECH</div>
+          <div class="sn-foot"><div class="right"><button class="mini sn-dismiss">✕</button><button class="mini solid">Open</button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ RIGHT: Cloud Campaigns, same board ══════════════ -->
+    <div class="cmp-col">
+      <span class="cmp-tag new">New · Cloud Campaigns</span>
+      <div class="sn-board" style="margin-top:8px">
+        <div class="sn-boardhead"><div><div class="sn-kicker">☁︎ Cloud · VM</div><div class="sn-boardtitle">Cloud Campaigns</div></div><div class="sn-qmeta">3 running · 2 queued</div></div>
+
+        <div class="sn-railhead">▶ Now running</div>
+
+        <!-- CC — expanded, live log -->
+        <div class="sn-strip mine run">
+          <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Cloud Campaign · CC</span><span class="sn-you">You</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+          <div class="sn-name">APAC Founders — CC</div>
+          <div class="sn-flow"><b>65 leads</b> → <b>3 accounts</b> → feeds <b>APAC Founders</b> · Connect Only</div>
+          <div class="sn-progtxt"><b>27</b> of 65 sent · <b>5</b> accepted · next batch 00:48</div>
+          <div class="sn-switch">
+            <div class="sn-switchtabs"><span class="sn-st on">Log</span><span class="sn-st">Leads</span></div>
+            <div class="sn-pane on">
+              <div class="sn-logbox">
+                <div><span class="t">14:59:04</span> <span class="ok">✅ Connection request sent</span> → Mei Lin Tan (kyra)</div>
+                <div><span class="t">14:58:31</span> <span class="ok">✅ Connection request sent</span> → Raj Patel (aiden)</div>
+                <div><span class="t">14:58:02</span> ⏭ Skipped — already 1st degree → Sofia Rossi</div>
+                <div><span class="t">14:57:19</span> <span class="bl">🤝 Accepted (bulk check)</span> → Daniel Okafor</div>
+                <div><span class="t">14:56:20</span> <span class="ok">✅ Connection request sent</span> → Lars Berg (aiden) · ✍ sheet updated</div>
+              </div>
+            </div>
+          </div>
+          <div class="sn-foot"><div class="togwrap"><div class="toggle"><i></i></div><span class="lbl">On</span></div><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+        </div>
+
+        <!-- CC+IC — collapsed -->
+        <div class="sn-strip run">
+          <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Cloud Campaign · CC+IC</span><span class="sn-owner">· milee@linkedvelocity.com</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+          <div class="sn-name">London PE — CC+IC</div>
+          <div class="sn-flow"><b>65 leads</b> → <b>2 accounts</b> → feeds <b>London PE</b> · Connect + Introduce</div>
+          <div class="sn-progtxt"><b>46</b> of 65 sent · <b>12</b> accepted · 3 intros fired · next batch 01:57</div>
+          <div class="sn-foot"><div class="togwrap"><div class="toggle"><i></i></div><span class="lbl">On</span></div><div class="right"><button class="mini">Stop</button><button class="mini locked">Open 🔒</button></div></div>
+        </div>
+
+        <!-- FG — tailored invites/credits -->
+        <div class="sn-strip mine run">
+          <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Cloud Campaign · FG</span><span class="sn-you">You</span><span class="sn-status"><span class="dot run"></span> Inviting</span></div>
+          <div class="sn-name">Ortus Club page — FG</div>
+          <div class="sn-flow"><b>30 invites</b> → <b>1 account</b> → Ortus Club page · Follower Growth</div>
+          <div class="sn-progtxt"><b>18</b> of 30 invites · <b>12</b> credits left · next batch 02:10</div>
+          <div class="sn-foot"><div class="togwrap"><div class="toggle"><i></i></div><span class="lbl">On</span></div><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+        </div>
+
+        <div class="sn-railhead">• Up next in the queue</div>
+        <div class="sn-strip queued">
+          <div class="sn-top"><span class="sn-type">Cloud Campaign · DM</span><span class="sn-you">You</span><span class="sn-status"><span class="dot q"></span> Queued · #1</span></div>
+          <div class="sn-name">DACH Ops — Message Only</div>
+          <div class="sn-flow"><b>48 leads</b> → <b>1 account</b> → feeds <b>DACH Ops</b> · Direct Messages</div>
+          <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+        </div>
+        <div class="sn-strip queued">
+          <div class="sn-top"><span class="sn-type">Cloud Campaign · CC+DM</span><span class="sn-owner">· dan@ortusclub.com</span><span class="sn-status"><span class="dot q"></span> Queued · #2</span></div>
+          <div class="sn-name">Nordics — CC+DM</div>
+          <div class="sn-flow"><b>52 leads</b> → <b>2 accounts</b> → feeds <b>Nordics</b> · Connect + DM</div>
+          <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini locked">Open 🔒</button></div></div>
+        </div>
+
+        <div class="sn-railhead">✓ Done <span class="sn-railcount">1</span><button class="sn-clear-done">Clear done</button></div>
+        <div class="sn-strip done sn-collapsed mine">
+          <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+          <div class="sn-top"><span class="sn-type">Cloud Campaign · CC</span><span class="sn-you">You</span><span class="sn-status"><span class="dot mon"></span> Done · 2 h ago</span></div>
+          <div class="sn-name">Test CC Cloud 2</div>
+          <div class="sn-foot"><div class="right"><button class="mini sn-dismiss">✕</button><button class="mini solid">Open</button></div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="cmp-intro" style="margin-top:26px">
+    <b>Why this fits.</b> The Sales Nav Queue already solves the exact problems cloud campaigns have — many running
+    in parallel, shared across operators with owner attribution + lock, collapsed-by-default strips, per-item Stop/Open,
+    and an expandable Jobs/Logs pane. Reusing it means cloud campaigns behave like something operators already know,
+    and the per-lead <b>Log</b> pane is where the engine's live events land once that endpoint ships.
+  </p>
+
+</div>
+</body>
+</html>

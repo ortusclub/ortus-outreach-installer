@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Company / domain blocklist (A · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 22px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* ── (a) settings-style blocklist panel ── */
+  .bl-panel { border: 1px solid var(--hairline); padding: 26px 30px; }
+  .bl-eyebrow { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-bottom: 8px; }
+  .bl-title { font-family: var(--display); font-size: 1.7rem; letter-spacing: 0.03em; color: var(--ink); margin: 0 0 8px; line-height: 1; }
+  .bl-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); line-height: 1.6; margin: 0 0 20px; }
+  .bl-sub b { color: var(--ink); font-weight: 500; }
+
+  .bl-row { display: grid; grid-template-columns: 190px 1fr 150px 92px 70px; gap: 14px; align-items: baseline;
+    padding: 12px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+  .bl-row.head { font-size: 0.54rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); border-bottom: 1px solid var(--hairline); }
+  .bl-row .entry { font-size: 0.78rem; font-weight: 500; color: var(--ink); }
+  .bl-row .entry small { display: block; font-size: 0.58rem; font-weight: 400; color: var(--gray); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+  .bl-row .reason { font-size: 0.7rem; color: var(--gray); }
+  .bl-row .by, .bl-row .date { font-size: 0.64rem; color: var(--gray); }
+  .bl-remove { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gray); background: transparent; border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 10px; cursor: pointer; }
+  .bl-remove:hover { color: var(--red); border-color: var(--red); }
+
+  .bl-add { display: grid; grid-template-columns: 190px 1fr auto; gap: 12px; margin-top: 18px; }
+  .bl-add input { box-sizing: border-box; width: 100%; background: transparent; border: 1px solid var(--hairline);
+    color: var(--ink); font-family: var(--mono); font-size: 0.72rem; padding: 9px 12px; border-radius: 0; }
+  .bl-add input:focus { outline: none; border-color: var(--ink); }
+  .bl-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 14px; line-height: 1.6; }
+  .bl-note b { color: var(--ink); font-weight: 500; }
+
+  .bl-preview-btn { margin: 26px 0 0; }
+
+  /* ── (b) pre-flight linter overlay (linter-B pattern) ── */
+  #pf-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none;
+    align-items: flex-start; justify-content: center; z-index: 80; overflow-y: auto; padding: 48px 24px 64px; }
+  #pf-scrim.open { display: flex; }
+  .pf-panel { box-sizing: border-box; width: 100%; max-width: 760px; background: var(--bg, #fff);
+    border: 1px solid var(--hairline); border-radius: 16px; box-shadow: 0 24px 60px rgba(0,0,0,0.22); padding: 36px 44px 30px; }
+  .pf-eyebrow { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); margin-bottom: 10px; }
+  .pf-title { font-family: var(--display); font-size: 2rem; letter-spacing: 0.03em; line-height: 1; color: var(--ink); margin: 0 0 10px; }
+  .pf-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.6; margin-bottom: 8px; }
+  .pf-sub b { color: var(--ink); font-weight: 500; }
+  .pf-tally { display: flex; gap: 10px; margin: 18px 0 26px; }
+  .pf-tally span { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.06em;
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; color: var(--gray); }
+  .pf-tally .t-block { color: var(--red); border-color: var(--red); }
+  .pf-tally .t-pass { color: var(--green); border-color: var(--green); }
+  .pf-group { border-top: 1px solid var(--hairline); padding: 20px 0 14px; }
+  .pf-group-head { display: flex; align-items: baseline; gap: 12px; font-family: var(--mono);
+    font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 14px; }
+  .pf-group-head .n { margin-left: auto; color: var(--gray); letter-spacing: 0.04em; }
+  .pf-blockers .pf-group-head { color: var(--red); }
+  .pf-row { display: grid; grid-template-columns: 92px 190px 1fr; gap: 18px; align-items: baseline;
+    padding: 12px 4px; border-bottom: 1px solid var(--hairline-soft); font-family: var(--mono); }
+  .pf-rows .pf-row:last-child { border-bottom: none; }
+  .pf-row .rowno { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--red); }
+  .pf-row .lead { font-size: 0.78rem; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pf-row .reason { font-size: 0.72rem; color: var(--gray); line-height: 1.55; }
+  .pf-row .reason code { background: var(--hairline-soft); padding: 1px 6px; border-radius: 4px; font-size: 0.68rem; color: var(--ink); }
+  .pf-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
+    margin-top: 8px; padding-top: 22px; flex-wrap: wrap; }
+  .pf-actions .spacer { flex: 1; }
+  .pf-count-note { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); line-height: 1.6; width: 100%; margin-top: 12px; }
+  .pf-count-note b { color: var(--ink); font-weight: 500; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 110; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Company / domain blocklist (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap"><b>Two parts</b> — (a) a shared Blocklist panel (settings), (b) how it fires in the pre-flight linter:
+    blocklisted companies become a blocker group and are excluded from launch. Never again message an existing client or our own employees.</p>
+
+  <!-- ── (a) management panel ── -->
+  <div class="bl-panel">
+    <div class="bl-eyebrow">Settings · shared across all operators</div>
+    <h2 class="bl-title">Blocklist</h2>
+    <p class="bl-sub">Companies and email/URL domains that must <b>never</b> be contacted by any campaign. Matched against the sheet's Company column and the lead's profile company at pre-flight.</p>
+
+    <div class="bl-row head">
+      <span>Entry</span><span>Reason</span><span>Added by</span><span>Date</span><span></span>
+    </div>
+    <div class="bl-row">
+      <span class="entry">IBM<small>company</small></span>
+      <span class="reason">Existing client</span>
+      <span class="by">antonio@ortusclub.com</span>
+      <span class="date">02 Jul</span>
+      <button class="bl-remove" onclick="toast('Removed “IBM” — takes effect on next launch')">Remove</button>
+    </div>
+    <div class="bl-row">
+      <span class="entry">ortusclub.com<small>domain</small></span>
+      <span class="reason">Employees</span>
+      <span class="by">sam@ortusclub.com</span>
+      <span class="date">28 Jun</span>
+      <button class="bl-remove" onclick="toast('Removed “ortusclub.com” — takes effect on next launch')">Remove</button>
+    </div>
+    <div class="bl-row">
+      <span class="entry">Standard Chartered<small>company</small></span>
+      <span class="reason">Active deal — hands off per Sam</span>
+      <span class="by">sam@ortusclub.com</span>
+      <span class="date">19 Jun</span>
+      <button class="bl-remove" onclick="toast('Removed “Standard Chartered” — takes effect on next launch')">Remove</button>
+    </div>
+    <div class="bl-row">
+      <span class="entry">apexstrategy.co<small>domain</small></span>
+      <span class="reason">Partner — do not cold-contact</span>
+      <span class="by">antonio@ortusclub.com</span>
+      <span class="date">11 Jun</span>
+      <button class="bl-remove" onclick="toast('Removed “apexstrategy.co” — takes effect on next launch')">Remove</button>
+    </div>
+
+    <div class="bl-add">
+      <input type="text" placeholder="Company or domain…" />
+      <input type="text" placeholder="Reason (shown in the linter)…" />
+      <button class="btn btn-primary" onclick="toast('Added to blocklist — checked on every launch from now on')">Add</button>
+    </div>
+    <div class="bl-note">Matching is <b>case-insensitive</b>; company entries match whole company names, domain entries match any lead URL/email on that domain. The list lives in the shared sheet, so all 3 operators see the same entries.</div>
+  </div>
+
+  <button class="btn btn-secondary bl-preview-btn" onclick="openLinter()">Preview — how it appears in the pre-flight linter →</button>
+</div>
+
+<!-- ── (b) pre-flight linter with blocklist group ── -->
+<div id="pf-scrim" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+  <div class="pf-panel">
+    <div class="pf-eyebrow">Pre-flight · runs after Launch, before any browser opens</div>
+    <div class="pf-title" id="pf-title">Lead sheet check</div>
+    <div class="pf-sub">Tab <b>“June leads”</b> · <b>418</b> rows scanned · blocklist <b>4 entries</b> checked</div>
+    <div class="pf-tally">
+      <span class="t-block">❌ 1 blocker group · 4 rows</span>
+      <span class="t-pass">✓ 414 rows ready</span>
+    </div>
+
+    <div class="pf-group pf-blockers">
+      <div class="pf-group-head">❌ 4 rows match blocklisted company “IBM (existing client)” — excluded from launch <span class="n">4</span></div>
+      <div class="pf-rows">
+        <div class="pf-row">
+          <span class="rowno">Row 44</span>
+          <span class="lead">Elena Fischer</span>
+          <span class="reason">Company column = <code>IBM</code></span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 129</span>
+          <span class="lead">Tom Ishida</span>
+          <span class="reason">Company column = <code>IBM Consulting</code></span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 240</span>
+          <span class="lead">Grace Adeyemi</span>
+          <span class="reason">Company column = <code>IBM</code></span>
+        </div>
+        <div class="pf-row">
+          <span class="rowno">Row 371</span>
+          <span class="lead">Pieter van Dijk</span>
+          <span class="reason">Profile company = <code>IBM</code> (sheet column was empty)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-actions">
+      <button class="btn btn-primary" onclick="closeLinter(); toast('Launching — 4 blocklisted rows excluded (414 leads)')">Launch without blocklisted rows</button>
+      <button class="btn btn-secondary btn-sm" onclick="toast('Would open Settings → Blocklist')">Edit blocklist</button>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" onclick="closeLinter(); toast('Launch cancelled — back to the wizard')">Cancel</button>
+      <div class="pf-count-note">Blocklist matches are <b>always excluded</b> — there is no “launch anyway” for these rows.
+        Nothing is deleted from the sheet; the rows are stamped <b>Blocked — IBM (existing client)</b> in the Stage column.</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function openLinter(){ document.getElementById('pf-scrim').classList.add('open'); }
+  function closeLinter(){ document.getElementById('pf-scrim').classList.remove('open'); }
+  document.getElementById('pf-scrim').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeLinter();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLinter(); });
+</script>
+</body>
+</html>

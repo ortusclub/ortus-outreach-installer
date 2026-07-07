@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Live per-campaign funnel (A)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 18px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  .vj-card.is-detailed .vj-details { display: grid; }
+
+  /* ── NEW: monochrome funnel — hairlines + soft fills only, no colored bars ── */
+  .funnel-wrap { grid-column: 1 / -1; border-top: 1px solid var(--hairline-soft); padding-top: 14px; }
+  .funnel-head { display: flex; align-items: center; font-family: var(--mono); font-size: 0.58rem;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); margin-bottom: 10px; }
+  .funnel-tabs { margin-left: auto; display: flex; gap: 0; border: 1px solid var(--hairline); border-radius: 9999px; overflow: hidden; }
+  .funnel-tab { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--gray); background: transparent; border: none; padding: 5px 12px; cursor: pointer; }
+  .funnel-tab.active { color: var(--bg); background: var(--ink); }
+  .funnel { display: flex; align-items: stretch; gap: 0; }
+  .funnel-stage { flex: 1 1 0; min-width: 0; max-width: 280px; border: 1px solid var(--hairline); border-left: none; padding: 12px 14px;
+    background: var(--bg-soft); position: relative; }
+  .funnel-stage:first-child { border-left: 1px solid var(--hairline); }
+  .funnel-stage .st-lbl { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
+  .funnel-stage .st-num { font-family: var(--display); font-size: 1.9rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1.1; }
+  .funnel-stage .st-drop { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); margin-top: 2px; }
+  .funnel-stage .st-drop b { color: var(--ink); font-weight: 500; }
+  /* depth = soft fill graded by position, not color */
+  .funnel-stage:nth-child(1) { background: rgba(255,255,255,0.07); }
+  .funnel-stage:nth-child(2) { background: rgba(255,255,255,0.05); }
+  .funnel-stage:nth-child(3) { background: rgba(255,255,255,0.035); }
+  .funnel-stage:nth-child(4) { background: rgba(255,255,255,0.02); }
+  .funnel-stage:nth-child(5) { background: transparent; }
+  .funnel-stage::after { content: "→"; position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+    font-family: var(--mono); font-size: 0.7rem; color: var(--gray); background: var(--bg); z-index: 2; line-height: 1; }
+  .funnel-stage:last-child::after { content: none; }
+  .funnel-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 8px; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Live per-campaign funnel (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap"><b>Additive</b> — countdown, hero and live log stay put. New: a horizontal stage funnel on the active
+    card with counts + drop-off %, monochrome (graded fills + hairlines, no colored bars). Each mode shows ONLY the stages
+    it actually tracks: <b>CC+IC</b> Sent → Accepted → Intro'd → Replied, <b>CC+DM</b> Sent → Accepted → DM'd → Replied,
+    <b>Connect Only</b> (Sent only — no status/DM check runs), <b>Direct Messages / Introduction</b> (Sent → Replied — the v2.72 reply sweep runs).</p>
+
+  <section class="vj-card is-detailed">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Connect + Introduce</span></span>
+      <span class="vj-when">Started 09:41</span>
+    </div>
+    <h2 class="vj-name"><span>CC+IC — FinTech CTOs</span></h2>
+    <div class="vj-hbar" role="progressbar" aria-valuenow="52" aria-valuemax="120"><i style="width:43%"></i></div>
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span>43</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>52</b> of <span>120</span> sent</span>
+          <span>Next batch in <b>06:12</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>13</b> accepted</span>
+        <span>· <b>Sending</b></span>
+      </div>
+    </div>
+    <div class="vj-controls">
+      <button class="btn-pill" onclick="toast('Open — unchanged')">Open</button>
+      <div class="dock" style="display:flex;gap:6px">
+        <button class="dock-btn" data-tip="Pause" aria-label="Pause" onclick="toast('Paused')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="toast('Stop')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── NEW: funnel ── -->
+    <div class="funnel-wrap">
+      <div class="funnel-head">Funnel · live
+        <div class="funnel-tabs">
+          <button class="funnel-tab active" onclick="setMode('ccic', this)">CC+IC</button>
+          <button class="funnel-tab" onclick="setMode('ccdm', this)">CC+DM</button>
+          <button class="funnel-tab" onclick="setMode('co', this)">Connect Only</button>
+          <button class="funnel-tab" onclick="setMode('dm', this)">DM / Intro</button>
+        </div>
+      </div>
+      <div class="funnel" id="funnel"></div>
+      <div class="funnel-note" id="funnel-note">Drop-off % is stage-to-stage · counts come from the sheet's Stage / Intro Status / DM Status columns, refreshed with the card.</div>
+    </div>
+
+    <!-- Existing live log — kept -->
+    <div class="vj-details">
+      <div>
+        <div class="vj-log-head">
+          <span class="vj-details-head">Live log · last 4 events</span>
+          <span class="vj-log-acts">
+            <button type="button" class="vj-log-act" onclick="toast('Copied log')">Copy all</button>
+            <button type="button" class="vj-log-act" onclick="toast('Opening Google Sheet')">Open sheet</button>
+          </span>
+        </div>
+        <div class="vj-log">
+          <div class="vj-log-line is-ok"><span class="time">10:22</span><span class="evt">Sent</span><span class="what">Connect request → Daniel Reyes (James Okafor)</span></div>
+          <div class="vj-log-line is-ok"><span class="time">10:18</span><span class="evt">Intro</span><span class="what">Intro DM fired → Sofia Lindqvist (accepted 10:15)</span></div>
+          <div class="vj-log-line is-ok"><span class="time">10:14</span><span class="evt">Sent</span><span class="what">Connect request → Sofia Lindqvist (Marta Kowalski)</span></div>
+          <div class="vj-log-line"><span class="time">09:41</span><span class="evt">Start</span><span class="what">Campaign started · 3 accounts · 120 leads</span></div>
+        </div>
+      </div>
+      <div class="vj-bulk">
+        <div class="vj-details-head">Bulk check connection</div>
+        <div class="vj-bulk-status">Last sweep · <b>09:45</b> · <span>4</span> newly accepted</div>
+        <button class="vj-bulk-btn" onclick="toast('Bulk check started')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+          <span>Run check now</span>
+        </button>
+        <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast" style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-family:var(--mono);font-size:0.7rem;padding:10px 20px;border-radius:9999px;opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:100"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.opacity = 1;
+    clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, 2200);
+  }
+  // Stage data per mode — only stages the app ACTUALLY tracks for that mode.
+  // CC+IC / CC+DM: bulk acceptance checks + v2.72 reply sweep run → full funnel.
+  // Connect Only: NO status check and NO DM/reply check runs → Sent only.
+  // Direct Messages / Introduction (message_only / introduce_back): the v2.72
+  // post-campaign reply sweep runs (see _REPLY_MODES in src/campaign.js) → Sent → Replied.
+  const MODES = {
+    ccic: [ ['Sent', 52], ['Accepted', 13], ["Intro'd", 5], ['Replied', 2] ],
+    ccdm: [ ['Sent', 52], ['Accepted', 13], ["DM'd", 11], ['Replied', 3] ],
+    co:   [ ['Sent', 52] ],
+    dm:   [ ['Sent', 52], ['Replied', 2] ]
+  };
+  const NOTES = {
+    ccic: "Drop-off % is stage-to-stage · counts come from the sheet's Stage / Intro Status / DM Status columns, refreshed with the card.",
+    ccdm: "CC+DM — bulk acceptance checks run, then the DM fires on accept; replies come from the v2.72 reply sweep.",
+    co:   'Connect Only — no connection-status or reply check runs · acceptance visible only after a manual Check Status campaign.',
+    dm:   'Direct Messages / Introduction — no connect step; replies come from the v2.72 post-campaign reply sweep.'
+  };
+  function render(mode){
+    const stages = MODES[mode];
+    document.getElementById('funnel').innerHTML = stages.map(([lbl, n], i) => {
+      let drop = '';
+      if (i > 0) {
+        const prev = stages[i - 1][1];
+        drop = '<div class="st-drop"><b>' + Math.round(100 - (n / prev) * 100) + '%</b> drop-off</div>';
+      } else {
+        drop = '<div class="st-drop">of 120 leads</div>';
+      }
+      return '<div class="funnel-stage"><div class="st-lbl">' + lbl + '</div><div class="st-num">' + n + '</div>' + drop + '</div>';
+    }).join('');
+    document.getElementById('funnel-note').textContent = NOTES[mode];
+  }
+  function setMode(mode, btn){
+    document.querySelectorAll('.funnel-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render(mode);
+  }
+  render('ccic');
+</script>
+</body>
+</html>

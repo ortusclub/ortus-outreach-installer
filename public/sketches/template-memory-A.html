@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Template memory (A · appwide, wizard Section 5)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  /* ── sketch-only chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+
+  /* wizard sample-value chips */
+  .wiz-vals { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .wiz-val { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 6px 13px; }
+  .wiz-val b { color: var(--ink); font-weight: 500; }
+
+  /* ══ Section 5 split: templates left · history panel right ══ */
+  .tpl-split { display: grid; grid-template-columns: 1fr 340px; gap: 26px; align-items: start; }
+
+  .tplh-panel { border: 1px solid var(--hairline); border-radius: 14px; background: #fff; padding: 18px 20px; position: sticky; top: 60px; }
+  .tplh-head { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray); }
+  .tplh-sub { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin: 5px 0 12px; }
+  .tplh-row { border-top: 1px solid var(--hairline-soft); padding: 13px 2px; position: relative; }
+  .tplh-row.best { border-left: 2px solid var(--gold); padding-left: 12px; margin-left: -14px; }
+  .tplh-row .best-tag { font-family: var(--mono); font-size: 0.52rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); }
+  .tplh-first { font-family: var(--mono); font-size: 0.7rem; color: var(--ink); line-height: 1.5;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 3px 0 7px; }
+  .tplh-first.none { color: var(--gray); font-style: italic; }
+  .tplh-stats { display: flex; flex-wrap: wrap; gap: 5px 12px; font-family: var(--mono); font-size: 0.6rem; color: var(--gray); align-items: center; }
+  .tplh-stats b { color: var(--ink); font-weight: 500; }
+  .tplh-use { margin-left: auto; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 11px; background: transparent; cursor: pointer; white-space: nowrap; }
+  .tplh-use:hover { border-color: var(--ink); }
+  .tplh-note { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); line-height: 1.65;
+    border-top: 1px solid var(--hairline); margin-top: 12px; padding-top: 12px; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 110; }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 1100px){ .tpl-split { grid-template-columns: 1fr; } .tplh-panel { position: static; } }
+</style>
+</head>
+<body data-dashboard="v3" class="route-wizard">
+<div class="sketch-bar">SKETCH — Template memory (A · wizard Section 5 side panel) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="app">
+
+  <!-- ── Sidebar (real shell) ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
+      <div class="sidebar-sub">LinkedIn · <span>v2.132.0</span></div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item nav-item-back" onclick="toast('Back to dashboard — unchanged')"><span class="nav-num">←</span>Dashboard</button>
+      <div class="nav-section-label">Campaign</div>
+      <button type="button" class="nav-item" onclick="toast('Campaign Type — unchanged')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Data — unchanged')"><span class="nav-num">II.</span>Data<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('LinkedIn Accounts — unchanged')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item active"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Launch — unchanged')"><span class="nav-num">V.</span>Launch<span class="nav-glyph"></span></button>
+      <button type="button" class="nav-item" onclick="toast('Live Status — unchanged')">Live Status</button>
+
+      <div class="nav-section-label">Team</div>
+      <button type="button" class="nav-item" onclick="toast('Connection DB — unchanged')"><span class="nav-num">◆</span>Connection DB</button>
+
+      <div class="nav-section-label">Review</div>
+      <button type="button" class="nav-item" onclick="toast('Open log — unchanged')">Open log</button>
+
+      <div class="nav-section-label">Help</div>
+      <button type="button" class="nav-item nav-item-help" onclick="toast('Help — unchanged')"><span class="nav-num">?</span>Help</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button type="button" class="operator-chip" onclick="toast('Operator email — unchanged')">
+        <span class="operator-chip-label">Operating as</span>
+        <strong>antonio@ortusclub.com</strong>
+      </button>
+      <div class="user-chip">
+        <strong>info@ortus.solutions</strong>
+        <span>Mon 6 Jul</span>
+      </div>
+      <button type="button" class="btn btn-sm sidebar-signout" onclick="toast('Sign out — unchanged')">Sign out</button>
+    </div>
+  </aside>
+
+  <!-- ── Main: wizard, focused on Section 5 Message Templates ── -->
+  <main class="main">
+  <div class="container">
+    <div class="page-header">
+      <div class="page-header-title">
+        <div class="greeting-wordmark">Welcome</div>
+        <div class="greeting-subtitle"><span>Monday, 6 July</span> <small style="margin-left:12px; color:var(--gray)">v2.132.0</small></div>
+      </div>
+      <div class="header-stats">
+        <div class="header-stat"><span class="k">Today (sent)</span><span class="v">26</span></div>
+        <div class="header-stat"><span class="k">7-day total</span><span class="v">143</span></div>
+        <div class="header-stat"><span class="k">Errors · 24h</span><span class="v err">0</span></div>
+        <div class="header-stat"><span class="k">Passover</span>
+          <span class="v small passover-pills">
+            <span class="passover-pill closed" title="OP · InMail · Sales Nav">OP·IM·SN</span>
+            <span class="passover-pill closed" title="CC">CC</span>
+          </span>
+        </div>
+        <div class="header-stat"><span class="k">RAM</span><span class="v">62%</span></div>
+        <div class="header-stat"><span class="k">CPU</span><span class="v">31%</span></div>
+        <div class="header-stat"><span class="k">Browsers</span><span class="v">0</span></div>
+      </div>
+    </div>
+
+    <div id="wizard-view" class="route-view">
+      <div class="wizard-back-row">
+        <button type="button" class="back-link" onclick="toast('Back to dashboard — unchanged')">← Back to dashboard</button>
+      </div>
+
+      <div class="section campaign-name-section" id="nav-campaign-name">
+        <h2>Campaign Name</h2>
+        <div class="campaign-name-row">
+          <input type="text" id="campaign-name-input" value="CC+IC — Logistics VPs" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="section" id="nav-settings">
+        <h2>1. Campaign Type <span class="section-summary">Connect + Introduce Back</span></h2>
+        <div class="wiz-vals">
+          <span class="wiz-val">Mode <b>Connect + Introduce Back</b></span>
+          <span class="wiz-val">Primary <b>Sam Adcock</b> · linkedin.com/in/samadcock</span>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-sheet">
+        <h2 class="section-toggle"><span class="caret">▾</span> 2. Google Sheet tab URL <span class="section-summary">tab “July leads”</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val">Sheet <b>CC+IC — Logistics VPs</b></span>
+            <span class="wiz-val">Tab <b>July leads</b> · gid 118204</span>
+            <span class="wiz-val">LinkedIn column <b>C · “LinkedIn URL”</b></span>
+            <span class="wiz-val"><b>210</b> rows</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-accounts">
+        <h2 class="section-toggle"><span class="caret">▾</span> 3. Select GoLogin Accounts <span class="section-summary">2 accounts</span></h2>
+        <div class="collapsible-body">
+          <div class="wiz-vals">
+            <span class="wiz-val"><b>James Okafor</b> · free</span>
+            <span class="wiz-val"><b>Marta Kowalski</b> · free</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ 5. Message Templates — the real templates section + NEW history side panel ══ -->
+      <div class="section template-controls" id="nav-templates">
+        <h2>5. Message Templates <span class="section-summary">note + intro</span></h2>
+
+        <div class="tpl-split">
+          <!-- left: the real Connection Note block -->
+          <div>
+            <div class="section tpl-section" id="tpl-connect-section">
+              <h2>Connection Note <small>(optional, max 300 chars)</small></h2>
+              <textarea id="tpl-note" maxlength="300" rows="3" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateCount()"></textarea>
+              <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
+              <div class="placeholder-tags">
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {first name} at the cursor')">{first name}</span>
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {company} at the cursor')">{company}</span>
+              </div>
+            </div>
+
+            <div class="section tpl-section">
+              <h2>Group Conversation Body</h2>
+              <textarea rows="4" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..."></textarea>
+              <div class="placeholder-tags">
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {primary name} at the cursor')">{primary name}</span>
+                <span class="wiz-val" style="cursor:pointer" onclick="toast('Inserts {primary url} at the cursor')">{primary url}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- right: NEW — template history panel -->
+          <aside class="tplh-panel">
+            <div class="tplh-head">Template history · connection notes</div>
+            <div class="tplh-sub">Sorted by accept rate · best on top</div>
+
+            <div class="tplh-row best">
+              <div class="best-tag">◆ best performer</div>
+              <div class="tplh-first" title="No connection note">no note (blank request)</div>
+              <div class="tplh-stats">
+                <span><b>6</b> campaigns</span><span><b>412</b> sent</span><span>accept <b>27%</b></span><span>reply <b>—</b></span>
+                <button class="tplh-use" onclick="useTpl('')">Use this</button>
+              </div>
+            </div>
+
+            <div class="tplh-row">
+              <div class="tplh-first">Hi {first name}, I host closed-door dinners for fintech leaders — thought of you given your…</div>
+              <div class="tplh-stats">
+                <span><b>3</b> campaigns</span><span><b>167</b> sent</span><span>accept <b>25%</b></span><span>reply <b>11%</b></span>
+                <button class="tplh-use" onclick="useTpl('Hi {first name}, I host closed-door dinners for fintech leaders — thought of you given your work at {company}. No pitch, just peers around a table. Open to connecting?')">Use this</button>
+              </div>
+            </div>
+
+            <div class="tplh-row">
+              <div class="tplh-first">Hi {first name}, we're gathering supply-chain leaders for a roundtable next month…</div>
+              <div class="tplh-stats">
+                <span><b>2</b> campaigns</span><span><b>140</b> sent</span><span>accept <b>19%</b></span><span>reply <b>8%</b></span>
+                <button class="tplh-use" onclick="useTpl('Hi {first name}, we\'re gathering supply-chain leaders for a roundtable next month — your work at {company} came up. Would love to connect.')">Use this</button>
+              </div>
+            </div>
+
+            <div class="tplh-row">
+              <div class="tplh-first">Hello {first name}, I came across your profile and was impressed by your journey at…</div>
+              <div class="tplh-stats">
+                <span><b>1</b> campaign</span><span><b>58</b> sent</span><span>accept <b>12%</b></span><span>reply <b>4%</b></span>
+                <button class="tplh-use" onclick="useTpl('Hello {first name}, I came across your profile and was impressed by your journey at {company}. Would be great to connect!')">Use this</button>
+              </div>
+            </div>
+
+            <div class="tplh-note">Stats from campaigns where a status check ran; CC-only sends excluded (no acceptance data without a check). Reply % only where the reply sweep ran.</div>
+          </aside>
+        </div>
+      </div>
+
+      <div class="section collapsible" id="nav-launch">
+        <h2 class="section-toggle"><span class="caret">▾</span> 6. Launch <span class="section-summary"></span></h2>
+        <div class="collapsible-body">
+          <div class="launch-hero">
+            <div>
+              <div class="launch-number">210</div>
+              <div class="launch-caption">Number of accounts being used: <strong>2</strong> · <strong>210 connections</strong> · ETA <strong>~5 days</strong></div>
+            </div>
+            <div class="launch-right">
+              <div class="launch-actions launch-actions--four">
+                <button type="button" class="btn btn-start" onclick="toast('Start — unchanged')">Start a campaign</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Queue it — unchanged')">Queue it</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Schedule it — unchanged')">Schedule it</button>
+                <button type="button" class="btn btn-secondary" onclick="toast('Save as draft — unchanged')">Save as draft</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function updateCount(){
+    const ta = document.getElementById('tpl-note');
+    document.getElementById('tpl-note-count').textContent = ta.value.length + ' / 300';
+  }
+  function useTpl(text){
+    const ta = document.getElementById('tpl-note');
+    ta.value = text; updateCount();
+    ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast(text ? 'Template filled into the Connection Note' : 'Note cleared — sending blank requests (best performer)');
+  }
+</script>
+</body>
+</html>

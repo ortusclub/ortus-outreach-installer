@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — New-account warm-up mode (A · appwide)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 22px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* account rows (Section III context) */
+  .acc-list { border: 1px solid var(--hairline); }
+  .acc-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 16px; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid var(--hairline-soft); }
+  .acc-row:last-child { border-bottom: none; }
+  .acc-row input[type="checkbox"] { accent-color: var(--ink); width: 15px; height: 15px; }
+  .acc-id .name { font-family: var(--mono); font-size: 0.82rem; font-weight: 500; color: var(--ink); }
+  .acc-id .email { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-top: 3px; }
+  .acc-side { display: flex; align-items: center; gap: 12px; }
+
+  .wu-tag { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; text-transform: uppercase;
+    border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 12px; color: var(--gray); }
+  .wu-tag.active { color: var(--gold); border-color: var(--gold); }
+  .wu-tag.done { color: var(--green); border-color: var(--green); }
+
+  .wu-prog { width: 92px; }
+  .wu-prog .bar { height: 3px; background: var(--hairline-soft); position: relative; }
+  .wu-prog .bar i { position: absolute; inset: 0 auto 0 0; background: var(--gold); }
+  .wu-prog .lbl { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gray); margin-top: 5px; text-align: right; }
+
+  /* fresh-account toggle + schedule preview */
+  .wu-start { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 0.64rem;
+    color: var(--ink); cursor: pointer; user-select: none; }
+  .wu-start input { accent-color: var(--ink); width: 14px; height: 14px; }
+  .wu-sched { grid-column: 2 / -1; display: none; border-top: 1px solid var(--hairline-soft); margin-top: 4px; padding-top: 14px; }
+  .acc-row.wu-open .wu-sched { display: block; }
+  .wu-sched-head { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gray); margin-bottom: 10px; }
+  .wu-steps { display: flex; align-items: stretch; }
+  .wu-step { flex: 1 1 0; max-width: 180px; border: 1px solid var(--hairline); border-left: none; padding: 10px 14px; position: relative; }
+  .wu-step:first-child { border-left: 1px solid var(--hairline); }
+  .wu-step .wk { font-family: var(--mono); font-size: 0.54rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
+  .wu-step .cap { font-family: var(--display); font-size: 1.4rem; letter-spacing: 0.02em; color: var(--ink); line-height: 1.15; }
+  .wu-step .cap small { font-family: var(--mono); font-size: 0.58rem; color: var(--gray); letter-spacing: 0.04em; }
+  .wu-step::after { content: "→"; position: absolute; right: -6px; top: 50%; transform: translateY(-50%);
+    font-family: var(--mono); font-size: 0.66rem; color: var(--gray); background: var(--bg); z-index: 2; line-height: 1; }
+  .wu-step:last-child::after { content: none; }
+  .wu-sched-note { font-family: var(--mono); font-size: 0.6rem; color: var(--gray); margin-top: 10px; line-height: 1.6; }
+  .wu-sched-note b { color: var(--ink); font-weight: 500; }
+
+  /* launch-time note */
+  .launch-note { margin-top: 30px; }
+  .launch-note h2 { font-family: var(--display); font-size: 1.3rem; letter-spacing: 0.04em; color: var(--ink); margin: 0 0 12px; }
+  .wu-launch-line { display: flex; gap: 10px; align-items: baseline; border: 1px solid var(--hairline);
+    padding: 14px 18px; font-family: var(--mono); font-size: 0.7rem; color: var(--gray); line-height: 1.6; }
+  .wu-launch-line .g { color: var(--gold); flex: none; }
+  .wu-launch-line b { color: var(--ink); font-weight: 500; }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    font-family: var(--mono); font-size: 0.7rem; padding: 10px 20px; border-radius: 9999px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — New-account warm-up mode (A) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap"><b>Wizard Section III context</b> — fresh LinkedIn accounts ramp instead of jumping straight to the
+    normal daily limit. A warm-up schedule caps the account's per-day sends for 3 weeks; the launch section shows the
+    effective cap so nobody wonders why the account "only did 10".</p>
+
+  <div class="section" id="nav-accounts">
+    <h2>3. Select GoLogin Accounts <span class="section-summary">3 selected</span></h2>
+
+    <div class="acc-list">
+
+      <!-- warming up -->
+      <div class="acc-row">
+        <input type="checkbox" checked onclick="toast('Selection — unchanged')" />
+        <div class="acc-id">
+          <div class="name">Acme Inc</div>
+          <div class="email">acme.outreach@ortusclub.com · added 12 days ago</div>
+        </div>
+        <div class="acc-side">
+          <div class="wu-prog">
+            <div class="bar"><i style="width:55%"></i></div>
+            <div class="lbl">day 4 of 7 · wk 2</div>
+          </div>
+          <span class="wu-tag active">Warm-up · week 2 of 3 · 10/day</span>
+        </div>
+      </div>
+
+      <!-- normal -->
+      <div class="acc-row">
+        <input type="checkbox" checked onclick="toast('Selection — unchanged')" />
+        <div class="acc-id">
+          <div class="name">James Okafor</div>
+          <div class="email">james.o@ortusclub.com · in rotation since Feb</div>
+        </div>
+        <div class="acc-side">
+          <span class="wu-tag">Normal · 20/day</span>
+        </div>
+      </div>
+
+      <!-- warm-up complete -->
+      <div class="acc-row">
+        <input type="checkbox" checked onclick="toast('Selection — unchanged')" />
+        <div class="acc-id">
+          <div class="name">Marta Kowalski</div>
+          <div class="email">marta.k@ortusclub.com · warm-up finished 29 Jun</div>
+        </div>
+        <div class="acc-side">
+          <span class="wu-tag done">✓ Warm-up complete · 20/day</span>
+        </div>
+      </div>
+
+      <!-- fresh account: start warm-up -->
+      <div class="acc-row" id="fresh-row">
+        <input type="checkbox" onclick="toast('Selection — unchanged')" />
+        <div class="acc-id">
+          <div class="name">Priya Nair</div>
+          <div class="email">priya.n@ortusclub.com · added yesterday · 0 invites sent</div>
+        </div>
+        <div class="acc-side">
+          <label class="wu-start">
+            <input type="checkbox" id="wu-toggle" onchange="toggleSched(this)" />
+            Start warm-up
+          </label>
+        </div>
+
+        <div class="wu-sched">
+          <div class="wu-sched-head">Warm-up schedule · starts on first launch</div>
+          <div class="wu-steps">
+            <div class="wu-step"><div class="wk">Week 1</div><div class="cap">5 <small>/day</small></div></div>
+            <div class="wu-step"><div class="wk">Week 2</div><div class="cap">10 <small>/day</small></div></div>
+            <div class="wu-step"><div class="wk">Week 3</div><div class="cap">20 <small>/day</small></div></div>
+            <div class="wu-step"><div class="wk">After</div><div class="cap">Normal <small>campaign limit</small></div></div>
+          </div>
+          <div class="wu-sched-note">The warm-up cap <b>overrides the campaign's daily limit</b> for this account only —
+            other selected accounts keep their normal limit. Advances automatically; pausing a campaign doesn't reset the week.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="launch-note">
+    <h2>At launch (Section V)</h2>
+    <div class="wu-launch-line">
+      <span class="g">⚠</span>
+      <span>Daily limit for <b>“Acme Inc”</b> capped at <b>10/day</b> by warm-up (week 2 of 3) — campaign daily limit is 20/day; the other 2 accounts are unaffected.</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+  function toggleSched(cb){
+    document.getElementById('fresh-row').classList.toggle('wu-open', cb.checked);
+    toast(cb.checked ? 'Warm-up armed — week 1 starts on first launch (5/day)' : 'Warm-up off — account uses the normal campaign limit');
+  }
+</script>
+</body>
+</html>

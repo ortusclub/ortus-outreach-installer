@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — 429 cooldown vs weekly cap (B)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 30px 22px 120px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 18px; line-height: 1.55; }
+  .sk-cap b { color: var(--ink); }
+
+  /* Force the details (live log) open in this sketch */
+  .vj-card.is-detailed .vj-details { display: grid; }
+
+  /* ── NEW: per-account cooldown states inside the Selected Accounts list.
+     Built on the real .vj-prof-row grid; only the chip content is new. ── */
+  .vj-profiles-sk { grid-column: 1 / -1; border-top: 1px solid var(--hairline-soft); padding-top: 12px; }
+  .vj-prof-head-sk { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); margin-bottom: 6px; }
+  .vj-prof-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 14px;
+    padding: 6px 0; font-family: var(--mono); font-size: 0.72rem; }
+  .vj-prof-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vj-prof-chip { font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--hairline);
+    border-radius: 9999px; padding: 3px 10px; color: var(--gray); white-space: nowrap; }
+  .vj-prof-today { color: var(--gray); font-size: 0.66rem; }
+  .vj-prof-row.is-sending .vj-prof-chip { color: var(--green); border-color: var(--green); }
+  /* Transient throttle (429) — gold, with a live countdown: it resolves ITSELF soon */
+  .vj-prof-row.is-cooling .vj-prof-chip { color: var(--gold); border-color: var(--gold); }
+  .vj-prof-row.is-cooling .vj-prof-name::after { content: " · auto-retries"; color: var(--gray); font-size: 0.62rem; }
+  /* Weekly cap — gray + dashed: parked, nothing to wait for until Monday */
+  .vj-prof-row.is-capped .vj-prof-chip { color: var(--gray); border-style: dashed; }
+  .vj-prof-row.is-capped .vj-prof-name { color: var(--gray); }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--mono); font-size: 0.62rem; color: var(--gray); margin-top: 16px; }
+  .legend .k { display: inline-flex; align-items: center; gap: 7px; }
+  .legend .sw { width: 22px; height: 10px; border-radius: 9999px; border: 1px solid var(--gold); display: inline-block; }
+  .legend .sw.cap { border-color: var(--gray); border-style: dashed; }
+  .legend .sw.ok { border-color: var(--green); }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — 429 cooldown vs weekly cap (B) — not functional app <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <p class="sk-cap"><b>Additive</b> — the existing active-card chrome (countdown, progress, pause/stop dock, live log) is
+    kept as-is. New: per-account state chips distinguishing <b>transient throttle (429, gold + live countdown, auto-retries)</b>
+    from <b>weekly cap (gray dashed, parked until Monday)</b>, plus one honest log line for the 429.</p>
+
+  <!-- ── Real active campaign card (structure copied from #active-card) ── -->
+  <section class="vj-card is-detailed" id="active-card">
+    <div class="vj-eyebrow">
+      <span class="vj-tag"><span class="dot"></span><span>Connect + Introduce</span></span>
+      <span class="vj-when">Started 09:41</span>
+    </div>
+    <h2 class="vj-name"><span>CC+IC — FinTech CTOs</span></h2>
+
+    <div class="vj-live">
+      <span class="vj-live-ico">⏳</span>
+      <span class="vj-live-txt">
+        <span class="vj-live-l1">Cooling down — LinkedIn asked us to slow down (HTTP 429)</span>
+        <span class="vj-live-l2">Marta Kowalski resumes automatically in <b id="live-cd">24:00</b> · other accounts keep sending</span>
+      </span>
+    </div>
+
+    <div class="vj-hbar" role="progressbar" aria-valuenow="52" aria-valuemax="120"><i style="width:43%"></i></div>
+
+    <div class="vj-hero">
+      <div class="vj-hero-row">
+        <div class="num"><span>43</span><span class="sub">%</span></div>
+        <div class="vj-meta">
+          <span><b>52</b> of <span>120</span> sent</span>
+          <span>Next batch in <b>06:12</b></span>
+        </div>
+      </div>
+      <div class="vj-stats">
+        <span><b>3</b> accounts</span>
+        <span><b>13</b> accepted</span>
+        <span>· <b>Sending</b></span>
+      </div>
+    </div>
+
+    <div class="vj-controls">
+      <button class="btn-pill" onclick="toast('Open — restores the live campaign view')">Open</button>
+      <div class="dock" role="toolbar" aria-label="Active campaign actions" style="display:flex;gap:6px">
+        <button class="dock-btn" data-tip="Pause" aria-label="Pause" onclick="toast('Paused — cooldown timers keep counting')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <button class="dock-btn danger" data-tip="Stop" aria-label="Stop" onclick="toast('Stop — same stop flow as today')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── NEW: Selected Accounts with cooldown states ── -->
+    <div class="vj-profiles-sk">
+      <div class="vj-prof-head-sk">Selected accounts</div>
+      <div class="vj-prof-row is-sending">
+        <span class="vj-prof-name">James Okafor</span>
+        <span class="vj-prof-chip">Sending</span>
+        <span class="vj-prof-today">21 sent today</span>
+      </div>
+      <div class="vj-prof-row is-cooling">
+        <span class="vj-prof-name">Marta Kowalski</span>
+        <span class="vj-prof-chip">Cooling down — 429 · retry in <b id="chip-cd">24 min</b></span>
+        <span class="vj-prof-today">18 sent today</span>
+      </div>
+      <div class="vj-prof-row is-capped">
+        <span class="vj-prof-name">Priya Nair</span>
+        <span class="vj-prof-chip">Weekly cap — parked until Monday</span>
+        <span class="vj-prof-today">13 sent today</span>
+      </div>
+      <div class="legend">
+        <span class="k"><span class="sw ok"></span>Active — sending normally</span>
+        <span class="k"><span class="sw"></span>429 throttle — temporary, retries by itself</span>
+        <span class="k"><span class="sw cap"></span>Weekly cap — done for the week, no countdown</span>
+      </div>
+    </div>
+
+    <!-- ── Live log (real structure) with the new 429 line ── -->
+    <div class="vj-details">
+      <div>
+        <div class="vj-log-head">
+          <span class="vj-details-head">Live log · last 6 events</span>
+          <span class="vj-log-acts">
+            <button type="button" class="vj-log-act" onclick="toast('Copied log')">Copy all</button>
+            <button type="button" class="vj-log-act" onclick="toast('Opening Google Sheet')">Open sheet</button>
+          </span>
+        </div>
+        <div class="vj-log">
+          <div class="vj-log-line is-ok"><span class="time">10:22</span><span class="evt">Sent</span><span class="what">Connect request → Daniel Reyes (James Okafor)</span></div>
+          <div class="vj-log-line is-warn"><span class="time">10:19</span><span class="evt">429</span><span class="what">Rate-limited (HTTP 429) — cooling down 30 min, will retry automatically (attempt 1/3) · Marta Kowalski</span></div>
+          <div class="vj-log-line is-ok"><span class="time">10:14</span><span class="evt">Sent</span><span class="what">Connect request → Sofia Lindqvist (Marta Kowalski)</span></div>
+          <div class="vj-log-line is-warn"><span class="time">10:02</span><span class="evt">Parked</span><span class="what">Weekly invite cap reached — Priya Nair parked until Monday (not an error)</span></div>
+          <div class="vj-log-line is-ok"><span class="time">09:58</span><span class="evt">Sent</span><span class="what">Connect request → Tomás Herrera (Priya Nair)</span></div>
+          <div class="vj-log-line"><span class="time">09:41</span><span class="evt">Start</span><span class="what">Campaign started · 3 accounts · 120 leads</span></div>
+        </div>
+      </div>
+      <div class="vj-bulk">
+        <div class="vj-details-head">Bulk check connection</div>
+        <div class="vj-bulk-status">Last sweep · <b>09:45</b> · <span>4</span> newly accepted</div>
+        <button class="vj-bulk-btn" onclick="toast('Bulk check started')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12 10.5 15 16.5 9"/></svg>
+          <span>Run check now</span>
+        </button>
+        <div class="vj-bulk-hint">Checks all pending connect requests via Voyager. Doesn't affect throughput.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast" style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-family:var(--mono);font-size:0.7rem;padding:10px 20px;border-radius:9999px;opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:100"></div>
+<script>
+  let toastT;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.opacity = 1;
+    clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, 2200);
+  }
+  // Live-ish countdown: 24:00 ticking down, mirrored in the chip (minutes only)
+  let secs = 24 * 60;
+  setInterval(() => {
+    if (secs <= 0) return;
+    secs--;
+    const m = Math.floor(secs / 60), s = String(secs % 60).padStart(2, '0');
+    document.getElementById('live-cd').textContent = m + ':' + s;
+    document.getElementById('chip-cd').textContent = (m + (secs % 60 > 0 ? 1 : 0)) + ' min';
+  }, 1000);
+</script>
+</body>
+</html>

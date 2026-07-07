@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unified campaigns board — local (pink) vs cloud/VM (green)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css" />
+  <style id="sn-board-styles">
+  .sn-boardhead{display:flex;align-items:flex-end;gap:16px;margin:0 0 6px;}
+  .sn-boardhead > div:first-child{margin-right:auto;}
+  .sn-kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);}
+  .sn-boardtitle{font-family:var(--display);font-weight:400;font-size:38px;line-height:.92;margin:4px 0 0;}
+  .sn-qmeta{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
+  .sn-empty{font-size:12px;color:var(--gray);padding:18px 0;}
+  .sn-railhead{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);margin:22px 0 10px;}
+  .sn-railcount{color:#c4c4c4;}
+  .sn-clear-done{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);background:transparent;border:1px solid var(--hairline);border-radius:9999px;padding:5px 13px;cursor:pointer;}
+  .sn-strip{position:relative;overflow:hidden;border:1px solid var(--hairline);border-radius:14px;background:#fff;margin-bottom:14px;padding:18px 22px;}
+  /* running rails — GREEN = cloud/VM, PINK = local machine */
+  .sn-strip.run::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);}
+  .sn-strip.local.run::before{background:#e35ea0;}
+  .sn-strip.stopped{border-color:var(--red);}
+  .sn-strip.stopped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);}
+  .sn-progtxt{font-size:12px;color:var(--gray);margin:8px 0 0;}
+  .sn-progtxt b{color:var(--ink);font-weight:600;}
+  .sn-strip.queued .sn-name{font-size:20px;}
+  .sn-strip.queued{padding-top:14px;padding-bottom:14px;}
+  .sn-strip.done.sn-collapsed{padding-top:13px;padding-bottom:13px;}
+  .sn-strip.done.sn-collapsed .sn-name{font-size:19px;margin-top:6px;}
+  .sn-strip.done.sn-collapsed .sn-flow{display:none;}
+  .sn-top{display:flex;align-items:center;gap:12px;padding-right:40px;}
+  .sn-type{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);}
+  .sn-owner{font-size:12px;color:var(--gray);}
+  .sn-you{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;padding:2px 8px;border-radius:9999px;background:var(--ink);color:var(--bg);}
+  /* where-it-runs pill */
+  .sn-where{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:2px 9px;border-radius:9999px;}
+  .sn-where.cloud{background:#e6f2e9;color:#2f7d47;}
+  .sn-where.local{background:#fbe6f0;color:#b23372;}
+  .sn-name{font-family:var(--display);font-size:26px;line-height:1;letter-spacing:.02em;margin:8px 0 0;}
+  .sn-status{margin-left:auto;font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
+  .sn-board .dot{width:7px;height:7px;border-radius:9999px;display:inline-block;}
+  .sn-board .dot.run{background:var(--green);}.sn-board .dot.runlocal{background:#e35ea0;}.sn-board .dot.mon{background:var(--blue);}.sn-board .dot.q{background:var(--gray-faint,#b8b8b6);}.sn-board .dot.red{background:var(--red);}
+  .sn-flow{font-size:12px;color:var(--gray);margin:10px 0 0;}
+  .sn-flow b{color:var(--ink);font-weight:600;}
+  .sn-foot{display:flex;align-items:center;gap:14px;margin:14px 0 0;}
+  .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
+  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .sn-expand{position:absolute;top:14px;right:16px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid var(--hairline);border-radius:9999px;background:transparent;color:var(--ink);cursor:pointer;z-index:2;}
+  .sn-logbox{background:#0c0c0d;color:#d6d6d6;font-family:'JetBrains Mono',var(--mono);font-size:11px;line-height:1.8;padding:14px 16px;border-radius:10px;margin-top:14px;}
+  .sn-logbox .t{color:#6a6a6a;}.sn-logbox .ok{color:#4ec36b;}.sn-logbox .bl{color:#7fb2e6;}
+  </style>
+  <style>
+    body{background:var(--bg);}
+    .wrap{max-width:940px;margin:0 auto;padding:26px 24px 120px;}
+    .note{font-family:'Hanken Grotesk',sans-serif;font-size:12.5px;line-height:1.55;color:#5a5a5a;border-left:2px solid var(--gold);padding:9px 13px;margin:0 0 22px;background:#fff;}
+    .legend{display:flex;gap:22px;align-items:center;margin:2px 0 20px;font-family:'Hanken Grotesk',sans-serif;font-size:12px;color:#5a5a5a;}
+    .legend .sw{display:inline-block;width:22px;height:6px;border-radius:9999px;vertical-align:middle;margin-right:7px;}
+  </style>
+</head>
+<body data-dashboard="v3" class="theme-light">
+<div class="wrap">
+
+  <p class="note">
+    <b>One board for every campaign — color says where it runs.</b> A single Campaigns board (Now running /
+    Up next / Done). <b style="color:#2f7d47">Green rail</b> = running on the <b>VM (cloud)</b>.
+    <b style="color:#b23372">Pink rail</b> = running on <b>your local machine</b>. Each strip also carries a
+    small pill (☁︎ VM / 💻 This machine) so it's unmistakable. No separate "No campaign running" hero — the board
+    is the source of truth, so nothing can contradict it.
+  </p>
+
+  <div class="legend">
+    <span><span class="sw" style="background:var(--green)"></span>Cloud · runs on the VM (keeps going when the app is closed)</span>
+    <span><span class="sw" style="background:#e35ea0"></span>Local · runs on this machine (stops if you close the app)</span>
+  </div>
+
+  <div class="sn-board">
+    <div class="sn-boardhead"><div><div class="sn-kicker">Campaigns</div><div class="sn-boardtitle">Campaigns</div></div><div class="sn-qmeta">2 running · 1 queued</div></div>
+
+    <div class="sn-railhead">▶ Now running</div>
+
+    <!-- CLOUD (green) -->
+    <div class="sn-strip run">
+      <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+      <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot run"></span> Running</span></div>
+      <div class="sn-name">APAC Founders — CC</div>
+      <div class="sn-flow"><b>65 leads</b> → <b>2 accounts</b> → feeds <b>APAC Founders</b> · Connect Only</div>
+      <div class="sn-progtxt"><b>6</b> of 65 sent · runs in the cloud — keeps going if you close the app</div>
+      <div class="sn-logbox"><div><span class="t">16:59:04</span> <span class="ok">✅ Connection request sent</span> → Mei Lin Tan (kyra)</div><div><span class="t">16:58:31</span> <span class="ok">✅ sent</span> → Raj Patel (aiden)</div></div>
+      <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+    </div>
+
+    <!-- LOCAL (pink) -->
+    <div class="sn-strip local run">
+      <button class="sn-expand"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>
+      <div class="sn-top"><span class="sn-type">Campaign · CC+DM</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span><span class="sn-status"><span class="dot runlocal"></span> Running</span></div>
+      <div class="sn-name">Nordics — CC+DM</div>
+      <div class="sn-flow"><b>48 leads</b> → <b>1 account</b> → feeds <b>Nordics</b> · Connect + DM</div>
+      <div class="sn-progtxt"><b>12</b> of 48 sent · runs on your machine — closing the app stops it</div>
+      <div class="sn-foot"><div class="right"><button class="mini">Pause</button><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+    </div>
+
+    <div class="sn-railhead">• Up next in the queue</div>
+    <div class="sn-strip queued">
+      <div class="sn-top"><span class="sn-type">Campaign · DM</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot q"></span> Queued · #1</span></div>
+      <div class="sn-name">DACH Ops — Message Only</div>
+      <div class="sn-flow"><b>48 leads</b> → <b>1 account</b> → feeds <b>DACH Ops</b> · Direct Messages</div>
+      <div class="sn-foot"><div class="right"><button class="mini">Stop</button><button class="mini solid">Open</button></div></div>
+    </div>
+
+    <div class="sn-railhead">✓ Done <span class="sn-railcount">2</span><button class="sn-clear-done">Clear done</button></div>
+    <div class="sn-strip done sn-collapsed">
+      <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where cloud">☁︎ VM</span><span class="sn-status"><span class="dot mon"></span> Done · 2 h ago</span></div>
+      <div class="sn-name">Test CC Cloud 2</div>
+      <div class="sn-foot"><div class="right"><button class="mini">✕</button><button class="mini solid">Open</button></div></div>
+    </div>
+    <div class="sn-strip done sn-collapsed">
+      <div class="sn-top"><span class="sn-type">Campaign · CC</span><span class="sn-you">You</span><span class="sn-where local">💻 This machine</span><span class="sn-status"><span class="dot mon"></span> Done · yesterday</span></div>
+      <div class="sn-name">London PE — CC (local)</div>
+      <div class="sn-foot"><div class="right"><button class="mini">✕</button><button class="mini solid">Open</button></div></div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:26px">
+    <b>What this settles:</b> the old "No campaign running" hero disappears — with one board there's nothing to
+    contradict. Local and cloud campaigns sit together, sorted by state, and the rail color + pill make "where does
+    this run" obvious at a glance. Local strips keep Pause (local can pause mid-run); cloud strips keep Stop/Open.
+  </p>
+
+</div>
+</body>
+</html>
