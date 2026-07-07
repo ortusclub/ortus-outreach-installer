@@ -72,6 +72,8 @@ import { saveCloudLaunchConfig, getCloudLaunchConfig } from './src/cloud-launch-
 import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
+import { lintLeads } from './src/preflight-lint.js';
+import { ackFor, decidePreflightGate } from './src/preflight-gate.js';
 import { checkDiskFree } from './src/disk-check.js';
 import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, latestDownloadUrl, latestReleaseUrl } from './src/updater.js';
 import {
@@ -1026,6 +1028,8 @@ function buildCampaignConfig(body) {
     sheetGid,
     // Fix B Task 3: pause campaign on 429/throttle detection. Default true.
     pauseOnThrottle,
+    // Pre-flight hard exclusions (blocklist URLs): set by the /api/campaign/start gate.
+    excludedUrls: Array.isArray(body._preflightExcludedUrls) ? body._preflightExcludedUrls : [],
   };
 }
 
@@ -1296,6 +1300,52 @@ app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   res.json(r);
 });
 
+// ── Pre-flight lead-sheet linter (runs on Start click, before launch) ─────
+// In-memory ack registry: token → expiry. Proves the operator saw exactly
+// these findings when /api/campaign/start later carries preflightAck.
+const _preflightAcks = new Map();
+function _registerAck(token) {
+  _preflightAcks.set(token, Date.now() + 15 * 60 * 1000); // 15-min validity
+  for (const [t, exp] of _preflightAcks) if (exp < Date.now()) _preflightAcks.delete(t);
+}
+
+app.post('/api/preflight', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const sheetUrl = String(body.sheetUrl || '');
+    if (!sheetUrl) return res.status(400).json({ ok: false, error: 'sheetUrl required' });
+
+    const rows = await fetchSheetWithRows(sheetUrl);
+
+    // Tab ambiguity: explicit gid in the URL? how many tabs?
+    const gidExplicit = /[#&?]gid=\d+/.test(sheetUrl);
+    let tabCount = 1;
+    if (!gidExplicit) {
+      try { tabCount = (await listSheetTabs(sheetUrl)).length || 1; }
+      catch { tabCount = 1; } // tabs unlistable → don't invent a blocker
+    }
+
+    const findings = lintLeads({
+      rows,
+      linkedinColumn: body.linkedinColumn || '',
+      mode: body.mode || 'connect_only',
+      templates: body.templates || {},
+      blocklist: readBlocklist(),
+      tabCount,
+      gidExplicit,
+      dailyLimit: Number(body.dailyLimit) || 0,
+      accountCount: Array.isArray(body.profileIds) ? body.profileIds.length : 0,
+    });
+
+    const ack = ackFor(findings);
+    _registerAck(ack);
+    res.json({ ok: true, findings, ack });
+  } catch (err) {
+    // Sheet unreachable/429 etc. — surfaced now instead of at campaign start.
+    res.status(502).json({ ok: false, error: `Pre-flight could not read the sheet: ${err.message}` });
+  }
+});
+
 app.post('/api/campaign/start', async (req, res) => {
   try {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
@@ -1326,6 +1376,38 @@ app.post('/api/campaign/start', async (req, res) => {
       if (body.multiTab === true && !resolvedGid) {
         return res.status(400).json({ error: 'Pick the lead tab — this workbook has multiple tabs.' });
       }
+    }
+
+    // ── Pre-flight gate (spec 2026-07-07): refuse un-acknowledged blockers;
+    // blocklisted rows are excluded server-side regardless of the client.
+    try {
+      const gateRows = await fetchSheetWithRows(String(req.body?.sheetUrl || ''));
+      const gateGidExplicit = /[#&?]gid=\d+/.test(String(req.body?.sheetUrl || ''));
+      let gateTabs = 1;
+      if (!gateGidExplicit) { try { gateTabs = (await listSheetTabs(req.body.sheetUrl)).length || 1; } catch {} }
+      const gateFindings = lintLeads({
+        rows: gateRows,
+        linkedinColumn: req.body?.linkedinColumn || '',
+        mode: req.body?.mode || 'connect_only',
+        templates: req.body?.templates || {},
+        blocklist: readBlocklist(),
+        tabCount: gateTabs,
+        gidExplicit: gateGidExplicit,
+      });
+      const expected = ackFor(gateFindings);
+      const provided = String(req.body?.preflightAck || '');
+      const ackKnown = _preflightAcks.has(provided) && provided === expected;
+      const gate = decidePreflightGate({ findings: gateFindings, ackProvided: ackKnown ? provided : '', ackExpected: expected });
+      if (!gate.allow) {
+        return res.status(409).json({ error: `Pre-flight blockers found (${gateFindings.blockers.length}) — run the pre-flight check`, preflight: true });
+      }
+      // Hard exclusion: blocklisted URLs never reach the campaign, ever.
+      if (gate.excludeRows.length) {
+        req.body._preflightExcludedUrls = gate.excludeRows.map((f) => f.url).filter(Boolean);
+      }
+    } catch (gateErr) {
+      // If the sheet cannot be read the campaign couldn't run anyway — refuse loudly.
+      return res.status(502).json({ error: `Pre-flight gate could not read the sheet: ${gateErr.message}` });
     }
 
     const config = buildCampaignConfig(body);

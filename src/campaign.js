@@ -1760,7 +1760,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
   if (campaign.running) throw new Error('Campaign already running');
 
   // #7: when 'after_connections', the primary connect/check is deferred until
@@ -2483,8 +2483,25 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
       return true;
     }; // end _isTarget
-    const targets = rows.filter(_isTarget);
-    log(`Pre-filter → ${targets.length} to process, ${rows.length - targets.length} skipped (mode: ${mode})`);
+
+    // Pre-flight hard exclusions (blocklist) — normalized-URL match.
+    const _pfExcluded = new Set((excludedUrls || []).map((u) =>
+      String(u).toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0]));
+    const _pfRows = _pfExcluded.size
+      ? (() => {
+          const before = rows.length;
+          const filtered = rows.filter((r) => {
+            const u = extractLinkedInUrl(r, linkedinColumn) || '';
+            const nu = u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0];
+            return !_pfExcluded.has(nu);
+          });
+          if (filtered.length !== before) log(`Pre-flight: ${before - filtered.length} blocklisted row(s) excluded`);
+          return filtered;
+        })()
+      : rows;
+
+    const targets = _pfRows.filter(_isTarget);
+    log(`Pre-filter → ${targets.length} to process, ${_pfRows.length - targets.length} skipped (mode: ${mode})`);
     campaign.totalTargets = targets.length;
 
     // Load profile names
