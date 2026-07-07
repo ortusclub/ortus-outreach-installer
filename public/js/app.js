@@ -28,6 +28,7 @@ import { buildLiveActivity } from '/js/live-activity.mjs';
 import { validatePrimaryUrl } from '/js/primary-url-validation.mjs';
 import { shouldShowNoteHint } from '/js/note-hint.mjs';
 import { summarizeUpdateError } from '/js/update-error.mjs';
+import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
 import { toggleDecision, fmtEta, ADMIN_EMAIL } from '/js/scrape-board.mjs';
 
@@ -4718,11 +4719,37 @@ function alphaRecalc() {
   }
 }
 
+// ── Capacity forecast (feature ⑥) ──────────────────────────────────────────
+// Quiet mono line under the daily-limit knob: target leads × capacity →
+// projected finish. Recomputed by updateCampaignSummary whenever the sheet
+// preview, account selection, or daily limit changes. Amber when the run
+// would exceed 14 days — same threshold as the list_vs_limit pre-flight lint.
+function updateCapacityForecast() {
+  const el = document.getElementById('capacity-forecast-line');
+  if (!el) return;
+  const targetCount = (typeof window.sheetTotalRows === 'number' && window.sheetTotalRows > 0)
+    ? window.sheetTotalRows : 0;
+  const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 0;
+  const accountCount = Array.isArray(selectedProfileIds) ? selectedProfileIds.length : 0;
+  const fc = forecastCapacity({ targetCount, dailyLimit, accountCount });
+  if (!fc) { el.style.display = 'none'; el.classList.remove('is-warn'); return; }
+  const dateStr = fc.finishDate.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  const acctWord = accountCount === 1 ? 'account' : 'accounts';
+  const warn = fc.days > WARN_DAYS;
+  el.innerHTML =
+    `Capacity: <b>${dailyLimit}</b>/day × <b>${accountCount}</b> ${acctWord} = <b>${fc.perDay}</b>/day → ` +
+    `~<b>${fc.days}</b> day${fc.days === 1 ? '' : 's'} for <b>${targetCount}</b> leads (done by <b>${escapeHtml(dateStr)}</b>)` +
+    (warn ? ' — over two weeks of sending' : '');
+  el.classList.toggle('is-warn', warn);
+  el.style.display = '';
+}
+
 function updateCampaignSummary() {
   // Phase 2.8.14: alpha throughput panel recalculates whenever this fires
   // (account toggle, rate/pause edit). Safe to call before alpha is ready —
   // it null-guards every element lookup.
   alphaRecalc();
+  updateCapacityForecast();
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
 
   // Keep the Sales Nav Scrape pairing summary live as accounts are toggled.
