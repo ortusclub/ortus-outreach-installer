@@ -17159,6 +17159,7 @@ window.renderActiveCard = function(status) {
     window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
     // Reset the auto-open latch so the NEXT launch re-opens the panel cleanly.
     window.__activeCardActive = false;
+    renderActiveSkips(status.skippedCount || 0);
     return;
   }
   if (!status || (!status.running && !isMonitoring)) {
@@ -17203,6 +17204,10 @@ window.renderActiveCard = function(status) {
     if (liveEl0) liveEl0.hidden = true;
     const profEl0 = document.getElementById('active-profiles');
     if (profEl0) { profEl0.hidden = true; profEl0.innerHTML = ''; }
+    // Hide skips panel when idle (new campaign start will reset state).
+    const _skEl = document.getElementById('active-skips');
+    if (_skEl) _skEl.hidden = true;
+    _stopSkipsPoller();
     return;
   }
   card.classList.remove('is-empty');
@@ -17319,7 +17324,143 @@ window.renderActiveCard = function(status) {
     }
     etaEl.textContent = etaText;
   }
+  renderActiveSkips(status.skippedCount || 0);
 };
+
+
+// ── Task 4: Skipped-leads panel ──────────────────────────────────────────────
+// Human-readable labels for skip reasons (mirrors task-4-brief.md mapping).
+const SKIP_REASON_LABELS = {
+  already_processed:    'Already processed',
+  identity_unconfirmed: 'Identity unconfirmed',
+  watchdog_timeout:     'Watchdog timeout',
+  malformed_url:        'Malformed URL',
+  duplicate_row:        'Duplicate row',
+  failed_repeatedly:    'Failed repeatedly',
+  terminal_stage:       'Terminal stage',
+  other:                'Other',
+};
+
+// Cached skip data from /api/campaign/skips; refreshed on expand + while open.
+let _skipsCache = [];
+let _skipsExpandTimer = null;
+
+/** Render the collapsed pill or the expanded table inside #active-skips. */
+function renderActiveSkips(count) {
+  const el = document.getElementById('active-skips');
+  if (!el) return;
+  if (!count || count <= 0) { el.hidden = true; return; }
+  el.hidden = false;
+
+  // Build the shell once; subsequent calls only update the count pill and
+  // table body (if already expanded), avoiding losing the open/close state.
+  if (!el.dataset.init) {
+    el.dataset.init = '1';
+    el.innerHTML = `
+      <div class="active-skips-mini" id="active-skips-mini">
+        <span class="active-skips-pill" id="active-skips-pill">Skipped so far: 0</span>
+        <button type="button" class="active-skips-view" onclick="window.activeSkipsExpand()">view</button>
+      </div>
+      <div class="active-skips-table" id="active-skips-table">
+        <div class="active-skips-head">
+          ⚠ Skipped · <span class="n" id="active-skips-n">0</span>
+          <span class="active-skips-head-acts">
+            <button type="button" class="vj-log-act" onclick="window.activeSkipsCopy()">Copy list</button>
+            <button type="button" class="vj-log-act" onclick="window.activeSkipsCollapse()">Collapse</button>
+          </span>
+        </div>
+        <table class="skiptab">
+          <thead><tr><th>Row #</th><th>Lead</th><th>Account</th><th>Reason</th></tr></thead>
+          <tbody id="active-skips-tbody"></tbody>
+        </table>
+      </div>`;
+  }
+
+  // Always keep the pill count fresh.
+  const pill = document.getElementById('active-skips-pill');
+  if (pill) pill.textContent = `Skipped so far: ${count}`;
+  const nEl = document.getElementById('active-skips-n');
+  if (nEl) nEl.textContent = String(count);
+
+  // If already expanded, refresh the table body with cached data.
+  const tableEl = document.getElementById('active-skips-table');
+  if (tableEl && tableEl.classList.contains('is-open')) _renderSkipsTable();
+}
+
+/** Expand the skips table: fetch latest data then show. */
+window.activeSkipsExpand = async function () {
+  const mini = document.getElementById('active-skips-mini');
+  const tableEl = document.getElementById('active-skips-table');
+  if (!mini || !tableEl) return;
+  mini.style.display = 'none';
+  tableEl.classList.add('is-open');
+  await _fetchAndRenderSkips();
+  // Poll while expanded (same cadence as status poll).
+  clearInterval(_skipsExpandTimer);
+  _skipsExpandTimer = setInterval(_fetchAndRenderSkips, 2000);
+};
+
+/** Collapse back to mini pill. */
+window.activeSkipsCollapse = function () {
+  clearInterval(_skipsExpandTimer);
+  _skipsExpandTimer = null;
+  const mini = document.getElementById('active-skips-mini');
+  const tableEl = document.getElementById('active-skips-table');
+  if (mini) mini.style.display = '';
+  if (tableEl) tableEl.classList.remove('is-open');
+};
+
+/** Fetch /api/campaign/skips and update the table. */
+async function _fetchAndRenderSkips() {
+  try {
+    const r = await fetch('/api/campaign/skips');
+    if (!r.ok) return;
+    const d = await r.json();
+    _skipsCache = Array.isArray(d.skips) ? d.skips : [];
+    _renderSkipsTable();
+  } catch { /* best-effort */ }
+}
+
+function _renderSkipsTable() {
+  const tbody = document.getElementById('active-skips-tbody');
+  const nEl = document.getElementById('active-skips-n');
+  if (!tbody) return;
+  if (nEl) nEl.textContent = String(_skipsCache.length);
+  if (_skipsCache.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--gray);padding:14px 8px;">No skips recorded yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _skipsCache.map(sk => {
+    const row = sk.rowNumber != null ? escHtml(String(sk.rowNumber)) : '—';
+    const lead = escHtml(sk.leadName || '—');
+    const acct = escHtml(sk.profileName || sk.profileId || '—');
+    const label = escHtml(SKIP_REASON_LABELS[sk.reason] || sk.reason || 'Other');
+    const detail = sk.detail ? ` — ${escHtml(sk.detail)}` : '';
+    return `<tr><td class="rowno">${row}</td><td>${lead}</td><td class="rowno">${acct}</td><td class="reason"><b>${label}</b>${detail}</td></tr>`;
+  }).join('');
+}
+
+/** Copy the skip list as plain text to clipboard. */
+window.activeSkipsCopy = function () {
+  if (!_skipsCache.length) return;
+  const lines = _skipsCache.map(sk => {
+    const parts = [
+      sk.rowNumber != null ? `Row ${sk.rowNumber}` : '',
+      sk.leadName || '',
+      SKIP_REASON_LABELS[sk.reason] || sk.reason || '',
+      sk.detail || '',
+    ].filter(Boolean);
+    return parts.join(' · ');
+  });
+  navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
+};
+
+// Stop refreshing when the card goes idle (panel hidden = no poller needed).
+// Called from renderActiveCard's idle branch.
+function _stopSkipsPoller() {
+  clearInterval(_skipsExpandTimer);
+  _skipsExpandTimer = null;
+}
 
 // Variant E monitoring hero: big live countdown to the next acceptance check
 // + one quiet stat line. Driven by the same 2s pollStatus tick as the rest of
