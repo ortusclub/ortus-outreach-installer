@@ -79,8 +79,9 @@ import {
   mergeLiveRead, resolveDisplayState, seedConnectedIds,
   loadPrimaryStatus, savePrimaryStatus,
 } from './primary-status-store.js';
+import { buildDebrief } from './debrief.js';
 import {
-  recordSkip, clearSkips,
+  recordSkip, clearSkips, getSkips,
   ALREADY_PROCESSED, IDENTITY_UNCONFIRMED, WATCHDOG_TIMEOUT,
   MALFORMED_URL, FAILED_REPEATEDLY, OTHER, TERMINAL_STAGE,
 } from './skip-ledger.js';
@@ -5092,6 +5093,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // entries — "Stop everything" semantically means the operator is
         // done with this campaign, not pausing it.
         fullStop: !!campaign._skipCleanup,
+        // Campaign debrief: persist a compact end-of-run snapshot (skip ledger
+        // + parked accounts + error samples + why-it-stopped notice) so the
+        // Debrief panel survives app restarts — the skip ledger itself is
+        // in-memory and cleared on the next run. Skips capped at 100.
+        debrief: buildDebrief({
+          skips: getSkips(),
+          parked: campaign.parkedProfiles || [],
+          errors: campaign.errors || [],
+          endNotice: campaign._endNotice || null,
+        }),
         // v2.11.7: settings snapshot for the "Re-run with same settings" CTA.
         // Operator already trusts this machine with the templates (they're
         // typed into the wizard), and the file is in the user-only data
