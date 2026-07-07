@@ -52,6 +52,7 @@ import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
+import { decide429 } from './throttle-policy.js';
 import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
 import { fetchSoOData } from './soo.js';
 import { getOperatorEmail } from './operator-identity.js';
@@ -1898,6 +1899,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   if (!resumeContext) campaign.logs = [];
   campaign.tally = emptyTally(); // v2.93 — per-run funnel + leak counters
   campaign.parkedProfiles = [];
+  campaign._cooldown429 = new Map(); // profileId -> { until, pName, reason }
   campaign.softWarnings = [];
   campaign.profileEndReasons = [];
   campaign.name = (typeof name === 'string' ? name : '').trim();
@@ -2968,6 +2970,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // and rotate to the next. (One 429 can be a fluke throttle; two consecutive
     // is the cap. A wrong park is one click to undo via the re-enable toggle.)
     const consecutive429s = new Map();
+    const cooldowns429 = new Map(); // profileId -> cooldown episodes served this run
     const HTTP_429_PARK_THRESHOLD = 2;
     // v2.96.0 (Phase 2) — degradation backoff. Connect campaigns ran at a FIXED
     // 15-45s pace regardless of how many leads mis-loaded; under LinkedIn
@@ -2994,6 +2997,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       weeklyLimited.delete(profileId);
       consecutiveSkips.set(profileId, 0);
       consecutive429s.set(profileId, 0);
+      cooldowns429.set(profileId, 0);
+      campaign._cooldown429.delete(profileId);
       degradationStreak.set(profileId, 0);
     };
 
@@ -3129,6 +3134,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         if (weeklyLimited.has(candidate)) continue;
         if (!skipsDailyLimit && getCampaignCount(candidate) >= campaign.dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
+        // Clear stale _cooldown429 entry once the cooldown window has passed
+        if (campaign._cooldown429.has(candidate) && now >= (campaign._cooldown429.get(candidate).until || 0)) {
+          campaign._cooldown429.delete(candidate);
+        }
         profileQueue.splice(i, 1);
         profilesBeingRun.add(candidate);
         return candidate;
@@ -4002,6 +4011,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
+            cooldowns429.set(profileId, 0);
+            campaign._cooldown429.delete(profileId);
             // v2.96.2 (Phase 2): clear the backoff only on outcomes that PROVE
             // a healthy page interaction — not cheap early-returns like
             // 'already_processed' (which can short-circuit before any real page
@@ -4263,15 +4274,29 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               const c429 = (consecutive429s.get(profileId) || 0) + 1;
               consecutive429s.set(profileId, c429);
               if (c429 >= HTTP_429_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
-                log(`  ⚠ ${pName}: ${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s — assumed weekly invitation limit. Parking account.`);
-                weeklyLimited.add(profileId);
-                recordProfileEnd(profileId, pName, `Weekly invitation limit reached (${HTTP_429_PARK_THRESHOLD}× HTTP 429)`);
-                campaign.parkedProfiles.push({
-                  profileId,
-                  pName,
-                  parkedAt: Date.now(),
-                  reason: 'weekly_limit_429',
-                });
+                const episodesSoFar = cooldowns429.get(profileId) || 0;
+                const { action, waitMs } = decide429({ consecutive429s: c429, cooldownsSoFar: episodesSoFar });
+                if (action === 'cooldown') {
+                  const newEpisodes = episodesSoFar + 1;
+                  cooldowns429.set(profileId, newEpisodes);
+                  const untilTs = Date.now() + waitMs;
+                  profileCooldownUntil.set(profileId, untilTs);
+                  campaign._cooldown429.set(profileId, { until: untilTs, pName, reason: '429' });
+                  consecutive429s.set(profileId, 0);
+                  log(`  ⏳ ${pName}: rate-limited (HTTP 429) — cooling down ${Math.round(waitMs / 60000)}min, will retry automatically (attempt ${newEpisodes}/3)`);
+                } else {
+                  // action === 'park': 3rd episode, treat as real weekly cap
+                  log(`  ⚠ ${pName}: ${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s (3rd cooldown episode) — treating as weekly invitation limit. Parking account.`);
+                  weeklyLimited.add(profileId);
+                  campaign._cooldown429.delete(profileId);
+                  recordProfileEnd(profileId, pName, `Weekly invitation limit reached (${HTTP_429_PARK_THRESHOLD}× HTTP 429)`);
+                  campaign.parkedProfiles.push({
+                    profileId,
+                    pName,
+                    parkedAt: Date.now(),
+                    reason: 'weekly_limit_429',
+                  });
+                }
               }
             } else {
               consecutive429s.set(profileId, 0);
