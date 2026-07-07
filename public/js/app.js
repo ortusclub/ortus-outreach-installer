@@ -7832,6 +7832,7 @@ function renderAccountQueue(names, currentName, status, profileIds) {
   const parked = (status && (status.parkedProfiles || status.parked)) || [];
   const warnings = (status && status.softWarnings) || [];
   const endReasons = (status && status.profileEndReasons) || [];
+  const cooldown429 = (status && status.cooldown429) || {};
   // pName is the key parkedProfiles uses; profileName / name / account cover
   // softWarnings + profileEndReasons + future shapes.
   const findIn = (arr, name) => {
@@ -7848,7 +7849,7 @@ function renderAccountQueue(names, currentName, status, profileIds) {
   // label + stateClass; visual differentiation lives in style.css. Per-lead
   // issues (email_required etc.) no longer surface here — they're just sheet
   // stamps + log lines.
-  function resolveChip({ isActive, isPastCurrent, parkedHit, warningHit, endHit }) {
+  function resolveChip({ isActive, isPastCurrent, parkedHit, cooldownHit, warningHit, endHit }) {
     if (isActive) {
       return { label: 'Sending', stateClass: 'chip-sending', detail: '' };
     }
@@ -7865,6 +7866,10 @@ function renderAccountQueue(names, currentName, status, profileIds) {
         return { label: 'Parked · too many skips', stateClass: 'chip-parked', detail: n };
       }
       return { label: 'Parked', stateClass: 'chip-parked', detail: r || '' };
+    }
+    if (cooldownHit) {
+      const m = Math.max(1, Math.ceil((cooldownHit.until - Date.now()) / 60000));
+      return { label: 'Cooling down — 429', stateClass: 'chip-cooling', detail: `retry in ${m} min` };
     }
     if (warningHit) {
       const k = warningHit.kind;
@@ -7924,12 +7929,18 @@ function renderAccountQueue(names, currentName, status, profileIds) {
     const parkedHit = findIn(parked, name);
     const warningHit = findIn(warnings, name);
     const endHit = findIn(endReasons, name);
+    // Derive cooldown hit: keyed by profileId first, then pName fallback.
+    // Guard until > Date.now() in case the poll is stale.
+    const profileId = ids[i] || '';
+    const _cd429ById = profileId && cooldown429[profileId];
+    const _cd429ByName = !_cd429ById && Object.values(cooldown429).find(x => x?.pName === name);
+    const _cd429 = _cd429ById || _cd429ByName || null;
+    const cooldownHit = (_cd429 && _cd429.until > Date.now()) ? _cd429 : null;
 
     const { label, stateClass, detail } = resolveChip({
-      isActive, isPastCurrent, parkedHit, warningHit, endHit,
+      isActive, isPastCurrent, parkedHit, cooldownHit, warningHit, endHit,
     });
 
-    const profileId = ids[i] || '';
     // Try Again only for parked rows; Open Browser is always available so
     // the operator can manually inspect a profile mid-run.
     const tryAgainBtn = (parkedHit && profileId)
@@ -7970,6 +7981,7 @@ function _renderAccountQueueLegend() {
       ['Status sweep done', 'chip-bulk-done', 'Bulk Connection-Status check finished. Informational only.'],
     ]},
     { title: 'LinkedIn put a ceiling on you', rows: [
+      ['Cooling down — 429', 'chip-cooling', 'Hit a temporary LinkedIn rate-limit. Retries automatically when the countdown ends — no action needed.'],
       ['LinkedIn cap · invites', 'chip-li-invites', 'Weekly invite cap reached (~200/wk; lower on some accounts). LinkedIn rule, not ours.'],
       ['LinkedIn cap · InMail', 'chip-li-inmail', 'Out of InMail credits. Waits for LinkedIn to top them up.'],
     ]},

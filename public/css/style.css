@@ -1596,6 +1596,7 @@ select {
 .queue-row.chip-needs-login  .queue-row-status { color: #b9770e; border-color: rgba(185, 119, 14, 0.55); }
 .queue-row.chip-rate-limited .queue-row-status { color: #b9770e; border-color: rgba(185, 119, 14, 0.55); }
 .queue-row.chip-parked    .queue-row-status { color: #c0392b; border-color: rgba(192, 57, 43, 0.5); }
+.queue-row.chip-cooling   .queue-row-status { color: var(--gold); border-color: var(--gold); }
 
 .queue-row.chip-batch .queue-row-name,
 .queue-row.chip-bulk-done .queue-row-name { color: var(--gray); text-decoration: line-through; text-decoration-thickness: 1px; }
@@ -1667,6 +1668,7 @@ select {
 .legend-chip.chip-needs-login,
 .legend-chip.chip-rate-limited { color: #b9770e; border-color: rgba(185, 119, 14, 0.55); }
 .legend-chip.chip-parked    { color: #c0392b; border-color: rgba(192, 57, 43, 0.5); }
+.legend-chip.chip-cooling   { color: var(--gold); border-color: var(--gold); }
 .legend-desc { font-size: 0.7rem; color: var(--gray); line-height: 1.4; }
 
 .queue-row-detail {

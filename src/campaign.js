@@ -54,6 +54,7 @@ import { shouldAutoFireCheck } from './monitoring-auto-checks.js';
 import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.js';
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
+import { decide429 } from './throttle-policy.js';
 import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
 import { fetchSoOData } from './soo.js';
 import { getOperatorEmail } from './operator-identity.js';
@@ -1931,6 +1932,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   if (!resumeContext) campaign.logs = [];
   campaign.tally = emptyTally(); // v2.93 — per-run funnel + leak counters
   campaign.parkedProfiles = [];
+  campaign._cooldown429 = new Map(); // profileId -> { until, pName, reason }
   campaign.softWarnings = [];
   campaign.profileEndReasons = [];
   campaign.sheetWriteFailures = 0;
@@ -3003,6 +3005,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // and rotate to the next. (One 429 can be a fluke throttle; two consecutive
     // is the cap. A wrong park is one click to undo via the re-enable toggle.)
     const consecutive429s = new Map();
+    const cooldowns429 = new Map(); // profileId -> cooldown episodes served this run
     const HTTP_429_PARK_THRESHOLD = 2;
     // v2.96.0 (Phase 2) — degradation backoff. Connect campaigns ran at a FIXED
     // 15-45s pace regardless of how many leads mis-loaded; under LinkedIn
@@ -3029,6 +3032,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       weeklyLimited.delete(profileId);
       consecutiveSkips.set(profileId, 0);
       consecutive429s.set(profileId, 0);
+      cooldowns429.set(profileId, 0);
+      campaign._cooldown429.delete(profileId);
       degradationStreak.set(profileId, 0);
     };
 
@@ -3164,6 +3169,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         if (weeklyLimited.has(candidate)) continue;
         if (!skipsDailyLimit && getCampaignCount(candidate) >= campaign.dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
+        // Clear stale _cooldown429 entry once the cooldown window has passed
+        if (campaign._cooldown429.has(candidate) && now >= (campaign._cooldown429.get(candidate).until || 0)) {
+          campaign._cooldown429.delete(candidate);
+        }
         profileQueue.splice(i, 1);
         profilesBeingRun.add(candidate);
         return candidate;
@@ -3309,6 +3318,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // (e.g. the 2nd consecutive HTTP 429 → weekly-limit park). Without this
         // guard the loop kept firing all BATCH_SIZE leads at an account that had
         // already hit its cap, so "confirming…" repeated 8× before rotating.
+        // v2.137 (final-review): cooling429 flag — set when a 429 cooldown fires
+        // mid-turn; breaks the inner loop after that lead's error handling completes
+        // so the queue rotates immediately (cooldown ≠ weeklyLimited: profile is
+        // still re-enqueued at ~4671 and re-picked after the cooldown window).
+        let cooling429 = false;
         for (let leadInBatch = 0; leadInBatch < innerLimit && shouldContinueTurn({ abort: campaign._abort, orphan: isOrphan(), weeklyLimited: weeklyLimited.has(profileId), benched: campaign._skippedProfiles?.has(profileId) }); leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause(myGen);
@@ -4033,6 +4047,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
+            cooldowns429.set(profileId, 0);
+            campaign._cooldown429.delete(profileId);
             // v2.96.2 (Phase 2): clear the backoff only on outcomes that PROVE
             // a healthy page interaction — not cheap early-returns like
             // 'already_processed' (which can short-circuit before any real page
@@ -4294,32 +4310,57 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               const c429 = (consecutive429s.get(profileId) || 0) + 1;
               consecutive429s.set(profileId, c429);
               if (c429 >= HTTP_429_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
-                log(`  ⚠ ${pName}: ${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s — assumed weekly invitation limit. Parking account.`);
-                weeklyLimited.add(profileId);
-                recordProfileEnd(profileId, pName, `Weekly invitation limit reached (${HTTP_429_PARK_THRESHOLD}× HTTP 429)`);
-                campaign.parkedProfiles.push({
-                  profileId,
-                  pName,
-                  parkedAt: Date.now(),
-                  reason: 'weekly_limit_429',
-                });
+                const episodesSoFar = cooldowns429.get(profileId) || 0;
+                const { action, waitMs } = decide429({ consecutive429s: c429, cooldownsSoFar: episodesSoFar });
+                if (action === 'cooldown') {
+                  const newEpisodes = episodesSoFar + 1;
+                  cooldowns429.set(profileId, newEpisodes);
+                  const untilTs = Date.now() + waitMs;
+                  profileCooldownUntil.set(profileId, untilTs);
+                  campaign._cooldown429.set(profileId, { until: untilTs, pName, reason: '429' });
+                  consecutive429s.set(profileId, 0);
+                  // v2.137 (final-review part 1+2): signal the inner loop to break
+                  // immediately after this lead's error handling completes — avoids
+                  // burning remaining batch slots against a cooling account.
+                  // Also reset consecutiveSkips so 429-triggered cooldowns never
+                  // accumulate toward SKIP_PARK_THRESHOLD and falsely park the profile.
+                  cooling429 = true;
+                  consecutiveSkips.set(profileId, 0);
+                  log(`  ⏳ [${pName}] rate-limited (HTTP 429) — cooling down ${Math.round(waitMs / 60000)}min, will retry automatically (attempt ${newEpisodes}/3)`);
+                } else {
+                  // action === 'park': 3rd episode, treat as real weekly cap
+                  log(`  ⚠ ${pName}: ${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s (3rd cooldown episode) — treating as weekly invitation limit. Parking account.`);
+                  weeklyLimited.add(profileId);
+                  campaign._cooldown429.delete(profileId);
+                  recordProfileEnd(profileId, pName, `Weekly invitation limit reached (${HTTP_429_PARK_THRESHOLD}× HTTP 429)`);
+                  campaign.parkedProfiles.push({
+                    profileId,
+                    pName,
+                    parkedAt: Date.now(),
+                    reason: 'weekly_limit_429',
+                  });
+                }
               }
             } else {
               consecutive429s.set(profileId, 0);
             }
-            const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
-            consecutiveSkips.set(profileId, skipCount);
-            if (skipCount >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
-              log(`  ⚠ ${pName}: ${SKIP_PARK_THRESHOLD} consecutive non-success outcomes — parking account for rest of run.`);
-              weeklyLimited.add(profileId);
-              recordProfileEnd(profileId, pName, `Parked after ${skipCount} consecutive skips`);
-              campaign.parkedProfiles.push({
-                profileId,
-                pName,
-                parkedAt: Date.now(),
-                reason: 'consecutive_skips',
-                skipCount,
-              });
+            // v2.137: don't count the cooldown-triggering 429 toward consecutiveSkips —
+            // the reset inside the cooldown branch above is overridden here without this guard.
+            if (!cooling429) {
+              const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
+              consecutiveSkips.set(profileId, skipCount);
+              if (skipCount >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ⚠ ${pName}: ${SKIP_PARK_THRESHOLD} consecutive non-success outcomes — parking account for rest of run.`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, `Parked after ${skipCount} consecutive skips`);
+                campaign.parkedProfiles.push({
+                  profileId,
+                  pName,
+                  parkedAt: Date.now(),
+                  reason: 'consecutive_skips',
+                  skipCount,
+                });
+              }
             }
 
             if (errorMsg.includes('WEEKLY_LIMIT')) {
@@ -4486,6 +4527,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               }, linkedinColumn);
             }
           }
+
+          // v2.137 (final-review): if a 429 cooldown fired for this lead, break
+          // immediately — no delay, no further leads. The profile stays off weeklyLimited
+          // so it is re-enqueued at ~4671 and re-picked by pickNextProfile once the
+          // profileCooldownUntil window expires.
+          if (cooling429) break;
 
           totalVisited++;
 
@@ -5574,6 +5621,11 @@ export function getCampaignStatus() {
     softWarnings: campaign.softWarnings.slice(),
     sheetWriteFailures: campaign.sheetWriteFailures || 0,
     profileEndReasons: campaign.profileEndReasons.slice(),
+    // v2.137: 429 cooldown surfacing — profileId -> { until, pName, reason:'429' }.
+    // Expired entries filtered so the UI never renders a stale countdown.
+    cooldown429: Object.fromEntries(
+      [...(campaign._cooldown429 || new Map())].filter(([, v]) => v && v.until > Date.now())
+    ),
     disk: { ..._diskStatusCache },
     resources: smp ? {
       ramPct:            smp.ramPct,
