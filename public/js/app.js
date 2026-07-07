@@ -16986,6 +16986,7 @@ function renderActiveProfiles(status) {
 // Called from renderActiveCard in running/monitoring and finished branches.
 // Hidden in the is-empty branch.
 let __swWarnExpanded = false;
+let __swListHtml = ''; // cached list markup; cleared when count changes or retry completes
 function renderSheetWriteWarn(status) {
   const el = document.getElementById('active-sheetwrite-warn');
   if (!el) return;
@@ -16994,10 +16995,15 @@ function renderSheetWriteWarn(status) {
     el.hidden = true;
     el.innerHTML = '';
     __swWarnExpanded = false;
+    __swListHtml = '';
     return;
   }
   el.hidden = false;
   const listId = 'sw-fail-list';
+  // On poll re-renders while expanded, restore cached list HTML instead of re-fetching.
+  const cachedList = __swWarnExpanded && __swListHtml
+    ? `<div class="sw-list" id="${listId}">${__swListHtml}</div>`
+    : `<div class="sw-list" id="${listId}" ${__swWarnExpanded ? '' : 'hidden'}></div>`;
   el.innerHTML =
     `<div class="sw-warn-line">` +
       `<em class="sw-glyph">⚠</em>` +
@@ -17005,7 +17011,7 @@ function renderSheetWriteWarn(status) {
       `<button class="sw-btn" id="sw-btn-view" type="button">${__swWarnExpanded ? 'hide' : 'view'}</button>` +
       `<button class="sw-btn" id="sw-btn-retry" type="button">retry</button>` +
     `</div>` +
-    `<div class="sw-list" id="${listId}" ${__swWarnExpanded ? '' : 'hidden'}></div>`;
+    cachedList;
 
   function fetchAndRenderList() {
     fetch('/api/campaign/sheet-write-failures')
@@ -17014,12 +17020,15 @@ function renderSheetWriteWarn(status) {
         const list = document.getElementById(listId);
         if (!list) return;
         const items = Array.isArray(d.failures) ? d.failures : [];
-        if (!items.length) { list.innerHTML = '<div class="sw-item"><span>No details available.</span></div>'; return; }
-        list.innerHTML = items.map(function(f) {
-          const nm = escHtml(f.leadName || f.url || '(unknown)');
-          const err = escHtml(f.errorMessage || '');
-          return `<div class="sw-item"><span>${nm}</span><span class="sw-item-err">${err}</span></div>`;
-        }).join('');
+        const html = !items.length
+          ? '<div class="sw-item"><span>No details available.</span></div>'
+          : items.map(function(f) {
+              const nm = escHtml(f.leadName || f.url || '(unknown)');
+              const err = escHtml(f.errorMessage || '');
+              return `<div class="sw-item"><span>${nm}</span><span class="sw-item-err">${err}</span></div>`;
+            }).join('');
+        list.innerHTML = html;
+        __swListHtml = html; // cache for poll re-renders
       })
       .catch(function(e) {
         const list = document.getElementById(listId);
@@ -17034,7 +17043,7 @@ function renderSheetWriteWarn(status) {
       const list = document.getElementById(listId);
       if (list) list.hidden = !__swWarnExpanded;
       viewBtn.textContent = __swWarnExpanded ? 'hide' : 'view';
-      if (__swWarnExpanded) fetchAndRenderList();
+      if (__swWarnExpanded) fetchAndRenderList(); // fresh fetch on explicit expand
     });
   }
 
@@ -17048,16 +17057,17 @@ function renderSheetWriteWarn(status) {
         .then(function(d) {
           // Patch the count so the next renderActiveCard call reflects reality.
           if (status) status.sheetWriteFailures = Number(d.stillFailing) || 0;
+          __swListHtml = ''; // invalidate cache so retry shows fresh results
           renderSheetWriteWarn(status);
-          if (__swWarnExpanded) fetchAndRenderList();
+          if (__swWarnExpanded) fetchAndRenderList(); // fresh fetch after retry
         })
         .catch(function() {
           if (retryBtn.isConnected) { retryBtn.disabled = false; retryBtn.textContent = 'retry'; }
         });
     });
   }
-
-  if (__swWarnExpanded) fetchAndRenderList();
+  // Do NOT call fetchAndRenderList() here — poll re-renders use __swListHtml cache above.
+  // fetchAndRenderList() is only triggered by explicit expand click or post-retry.
 }
 
 window.renderActiveCard = function(status) {
