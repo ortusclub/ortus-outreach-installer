@@ -16982,6 +16982,84 @@ function renderActiveProfiles(status) {
   el.hidden = false;
 }
 
+// Sheet-write failure warning helper (Task 4, v2.136)
+// Called from renderActiveCard in running/monitoring and finished branches.
+// Hidden in the is-empty branch.
+let __swWarnExpanded = false;
+function renderSheetWriteWarn(status) {
+  const el = document.getElementById('active-sheetwrite-warn');
+  if (!el) return;
+  const n = (status && Number(status.sheetWriteFailures)) || 0;
+  if (!n) {
+    el.hidden = true;
+    el.innerHTML = '';
+    __swWarnExpanded = false;
+    return;
+  }
+  el.hidden = false;
+  const listId = 'sw-fail-list';
+  el.innerHTML =
+    `<div class="sw-warn-line">` +
+      `<em class="sw-glyph">⚠</em>` +
+      `<span>${n} sheet write${n === 1 ? '' : 's'} failed —</span>` +
+      `<button class="sw-btn" id="sw-btn-view" type="button">${__swWarnExpanded ? 'hide' : 'view'}</button>` +
+      `<button class="sw-btn" id="sw-btn-retry" type="button">retry</button>` +
+    `</div>` +
+    `<div class="sw-list" id="${listId}" ${__swWarnExpanded ? '' : 'hidden'}></div>`;
+
+  function fetchAndRenderList() {
+    fetch('/api/campaign/sheet-write-failures')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        const list = document.getElementById(listId);
+        if (!list) return;
+        const items = Array.isArray(d.failures) ? d.failures : [];
+        if (!items.length) { list.innerHTML = '<div class="sw-item"><span>No details available.</span></div>'; return; }
+        list.innerHTML = items.map(function(f) {
+          const nm = escHtml(f.leadName || f.url || '(unknown)');
+          const err = escHtml(f.errorMessage || '');
+          return `<div class="sw-item"><span>${nm}</span><span class="sw-item-err">${err}</span></div>`;
+        }).join('');
+      })
+      .catch(function(e) {
+        const list = document.getElementById(listId);
+        if (list) list.innerHTML = `<div class="sw-item sw-item-err">${escHtml(String(e))}</div>`;
+      });
+  }
+
+  const viewBtn = document.getElementById('sw-btn-view');
+  if (viewBtn) {
+    viewBtn.addEventListener('click', function() {
+      __swWarnExpanded = !__swWarnExpanded;
+      const list = document.getElementById(listId);
+      if (list) list.hidden = !__swWarnExpanded;
+      viewBtn.textContent = __swWarnExpanded ? 'hide' : 'view';
+      if (__swWarnExpanded) fetchAndRenderList();
+    });
+  }
+
+  const retryBtn = document.getElementById('sw-btn-retry');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', function() {
+      retryBtn.disabled = true;
+      retryBtn.textContent = 'retrying…';
+      fetch('/api/campaign/sheet-write-failures/retry', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          // Patch the count so the next renderActiveCard call reflects reality.
+          if (status) status.sheetWriteFailures = Number(d.stillFailing) || 0;
+          renderSheetWriteWarn(status);
+          if (__swWarnExpanded) fetchAndRenderList();
+        })
+        .catch(function() {
+          if (retryBtn.isConnected) { retryBtn.disabled = false; retryBtn.textContent = 'retry'; }
+        });
+    });
+  }
+
+  if (__swWarnExpanded) fetchAndRenderList();
+}
+
 window.renderActiveCard = function(status) {
   const card = document.getElementById('active-card');
   if (!card) return;
@@ -17033,11 +17111,14 @@ window.renderActiveCard = function(status) {
     window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
     // Reset the auto-open latch so the NEXT launch re-opens the panel cleanly.
     window.__activeCardActive = false;
+    renderSheetWriteWarn(status);
     return;
   }
   if (!status || (!status.running && !isMonitoring)) {
     card.classList.add('is-empty');
     card.classList.remove('is-monitor');
+    // Sheet-write warn: hide when idle.
+    renderSheetWriteWarn(null);
     // Check DMs reply-check strip: hide + clear when the card goes idle.
     const _rs = document.getElementById('active-replystrip');
     if (_rs) { _rs.hidden = true; const l = document.getElementById('active-rs-list'); if (l) l.innerHTML = ''; }
@@ -17180,6 +17261,7 @@ window.renderActiveCard = function(status) {
   // Stash the FULL log (not just the 6 rendered) so the "Copy all" button can
   // copy everything the campaign has emitted (in-memory log, capped ~500).
   window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
+  renderSheetWriteWarn(status);
   // Batch ETA — best-effort from nextCheckAt or currentAction.endsAt
   const etaEl = document.getElementById('batchEta');
   if (etaEl) {
