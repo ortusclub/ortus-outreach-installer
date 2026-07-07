@@ -228,3 +228,24 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
     targetCount: actionableTargets.length,
   };
 }
+
+/**
+ * Pure helper: given plain row objects (not already wrapped as {rowNumber,row}),
+ * return the set of LinkedIn URLs that should be hard-excluded because they
+ * match the blocklist. Only operates on cold modes where connection is sent.
+ *
+ * Wraps rows as { rowNumber: i+2, row } before calling lintLeads so the caller
+ * does not need to know the internal shape.
+ *
+ * @param {object[]} rows           - plain row objects from fetchSheetWithRows
+ * @param {{ linkedinColumn: string, mode: string, blocklist: object[] }} opts
+ * @returns {string[]}              - array of URLs to exclude
+ */
+export function blocklistExcludedUrls(rows, { linkedinColumn, mode, blocklist }) {
+  if (!COLD_MODES.has(mode)) return [];
+  const wrapped = (rows || []).map((row, i) => ({ rowNumber: i + 2, row }));
+  const findings = lintLeads({ rows: wrapped, linkedinColumn, mode, blocklist });
+  return findings.blockers
+    .filter((f) => f.check === 'blocklist_match' && f.url)
+    .map((f) => f.url);
+}

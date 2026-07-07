@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lintLeads, vanitySlug, nameMatchesSlug } from '../src/preflight-lint.js';
+import { lintLeads, vanitySlug, nameMatchesSlug, blocklistExcludedUrls } from '../src/preflight-lint.js';
 
 const R = (rowNumber, row) => ({ rowNumber, row });
 const BASE = { linkedinColumn: 'LinkedIn URL', mode: 'connect_only', templates: {}, blocklist: [], tabCount: 1, gidExplicit: true };
@@ -150,4 +150,29 @@ test('passed list confirms column + target count on a clean run', () => {
   ]});
   assert.ok(out.passed.find(p => p.check === 'column_found'));
   assert.ok(out.passed.find(p => p.check === 'targets_found' && /1/.test(p.detail)));
+});
+
+// ── blocklistExcludedUrls helper ─────────────────────────────────────────────
+
+const IBM_BLOCKLIST = [{ kind: 'company', value: 'IBM' }];
+const IBM_ROW = { 'First Name': 'Alice', 'Last Name': 'Smith', 'LinkedIn URL': 'https://www.linkedin.com/in/alicesmith/', Company: 'IBM' };
+const OTHER_ROW = { 'First Name': 'Bob', 'Last Name': 'Jones', 'LinkedIn URL': 'https://www.linkedin.com/in/bobjones/', Company: 'Acme' };
+
+test('blocklistExcludedUrls: cold mode excludes IBM row', () => {
+  const urls = blocklistExcludedUrls([IBM_ROW, OTHER_ROW], {
+    linkedinColumn: 'LinkedIn URL',
+    mode: 'connect_only',
+    blocklist: IBM_BLOCKLIST,
+  });
+  assert.equal(urls.length, 1);
+  assert.ok(urls[0].includes('alicesmith'));
+});
+
+test('blocklistExcludedUrls: message_only excludes nothing (warm mode)', () => {
+  const urls = blocklistExcludedUrls([IBM_ROW, OTHER_ROW], {
+    linkedinColumn: 'LinkedIn URL',
+    mode: 'message_only',
+    blocklist: IBM_BLOCKLIST,
+  });
+  assert.deepEqual(urls, []);
 });

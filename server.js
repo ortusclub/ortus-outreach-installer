@@ -1309,6 +1309,54 @@ function _registerAck(token) {
   for (const [t, exp] of _preflightAcks) if (exp < Date.now()) _preflightAcks.delete(t);
 }
 
+/**
+ * Shared interactive pre-flight gate used by /api/campaign/start and
+ * /api/campaign/queue-only. Returns false (and has already written the error
+ * response) when the request should be rejected; returns true when the caller
+ * may proceed. On allow, populates req.body._preflightExcludedUrls with the
+ * URLs of blocklist rows that must be excluded from the campaign.
+ *
+ * @param {import('express').Request}  req
+ * @param {import('express').Response} res
+ * @returns {Promise<boolean>}
+ */
+async function runPreflightGate(req, res) {
+  try {
+    const gateRows = await fetchSheetWithRows(String(req.body?.sheetUrl || ''));
+    const gateGidExplicit = /[#&?]gid=\d+/.test(String(req.body?.sheetUrl || ''));
+    let gateTabs = 1;
+    if (!gateGidExplicit) {
+      try { gateTabs = (await listSheetTabs(req.body.sheetUrl)).length || 1; } catch { /* non-fatal */ }
+    }
+    const gateFindings = lintLeads({
+      rows: gateRows,
+      linkedinColumn: req.body?.linkedinColumn || '',
+      mode: req.body?.mode || 'connect_only',
+      templates: req.body?.templates || {},
+      blocklist: readBlocklist(),
+      tabCount: gateTabs,
+      gidExplicit: gateGidExplicit,
+    });
+    const expected = ackFor(gateFindings);
+    const provided = String(req.body?.preflightAck || '');
+    const ackKnown = _preflightAcks.has(provided) && provided === expected;
+    const gate = decidePreflightGate({ findings: gateFindings, ackProvided: ackKnown ? provided : '', ackExpected: expected });
+    if (!gate.allow) {
+      res.status(409).json({ error: `Pre-flight blockers found (${gateFindings.blockers.length}) — run the pre-flight check`, preflight: true });
+      return false;
+    }
+    // Hard exclusion: blocklisted URLs never reach the campaign, ever.
+    if (gate.excludeRows.length) {
+      req.body._preflightExcludedUrls = gate.excludeRows.map((f) => f.url).filter(Boolean);
+    }
+    return true;
+  } catch (gateErr) {
+    // If the sheet cannot be read the campaign couldn't run anyway — refuse loudly.
+    res.status(502).json({ error: `Pre-flight gate could not read the sheet: ${gateErr.message}` });
+    return false;
+  }
+}
+
 app.post('/api/preflight', async (req, res) => {
   try {
     const body = req.body || {};
@@ -1380,35 +1428,8 @@ app.post('/api/campaign/start', async (req, res) => {
 
     // ── Pre-flight gate (spec 2026-07-07): refuse un-acknowledged blockers;
     // blocklisted rows are excluded server-side regardless of the client.
-    try {
-      const gateRows = await fetchSheetWithRows(String(req.body?.sheetUrl || ''));
-      const gateGidExplicit = /[#&?]gid=\d+/.test(String(req.body?.sheetUrl || ''));
-      let gateTabs = 1;
-      if (!gateGidExplicit) { try { gateTabs = (await listSheetTabs(req.body.sheetUrl)).length || 1; } catch {} }
-      const gateFindings = lintLeads({
-        rows: gateRows,
-        linkedinColumn: req.body?.linkedinColumn || '',
-        mode: req.body?.mode || 'connect_only',
-        templates: req.body?.templates || {},
-        blocklist: readBlocklist(),
-        tabCount: gateTabs,
-        gidExplicit: gateGidExplicit,
-      });
-      const expected = ackFor(gateFindings);
-      const provided = String(req.body?.preflightAck || '');
-      const ackKnown = _preflightAcks.has(provided) && provided === expected;
-      const gate = decidePreflightGate({ findings: gateFindings, ackProvided: ackKnown ? provided : '', ackExpected: expected });
-      if (!gate.allow) {
-        return res.status(409).json({ error: `Pre-flight blockers found (${gateFindings.blockers.length}) — run the pre-flight check`, preflight: true });
-      }
-      // Hard exclusion: blocklisted URLs never reach the campaign, ever.
-      if (gate.excludeRows.length) {
-        req.body._preflightExcludedUrls = gate.excludeRows.map((f) => f.url).filter(Boolean);
-      }
-    } catch (gateErr) {
-      // If the sheet cannot be read the campaign couldn't run anyway — refuse loudly.
-      return res.status(502).json({ error: `Pre-flight gate could not read the sheet: ${gateErr.message}` });
-    }
+    // Shared with /api/campaign/queue-only via runPreflightGate().
+    if (!await runPreflightGate(req, res)) return;
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
@@ -2281,6 +2302,12 @@ app.post('/api/campaign/queue-only', async (req, res) => {
         return res.status(400).json({ error: 'Pick the lead tab — this workbook has multiple tabs.' });
       }
     }
+
+    // ── Pre-flight gate: same ack check as /api/campaign/start — blocklist
+    // rows get a 409 until the operator acknowledges; blocklisted URLs are
+    // always hard-excluded regardless of ack (via _preflightExcludedUrls →
+    // buildCampaignConfig → excludedUrls → startCampaign central guard).
+    if (!await runPreflightGate(req, res)) return;
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
@@ -4481,6 +4508,8 @@ function registerSchedule(schedule) {
         createdBy: schedule.createdBy || null,
         // Fix B Task 3: schedules default to pausing on throttle.
         pauseOnThrottle: schedule.pauseOnThrottle === false ? false : true,
+        // Blocklist hard-exclusion: no interactive gate here (unattended).
+        // startCampaign's central guard (blocklistExcludedUrls) covers this path.
       });
       const all = await loadSchedules();
       const s = all.find(x => x.id === schedule.id);
@@ -4783,6 +4812,8 @@ app.patch('/api/history/:idx/name', async (req, res) => {
 // is a pure HTTP translator (result code → status code). Returns 422 when
 // the history entry pre-dates the settings-capture change and has no
 // rerunnable config.
+// Blocklist hard-exclusion: no interactive gate here (unattended queue path).
+// startCampaign's central guard (blocklistExcludedUrls) covers this path.
 app.post('/api/history/:idx/relaunch', async (req, res) => {
   try {
     const idx = Number(req.params.idx);

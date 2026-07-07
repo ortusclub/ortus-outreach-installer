@@ -57,6 +57,8 @@ import { fetchSoOData } from './soo.js';
 import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
 import { readLastRun, writeLastRun } from './last-run-store.js';
+import { readBlocklist } from './blocklist.js';
+import { blocklistExcludedUrls } from './preflight-lint.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import {
@@ -1789,6 +1791,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
     senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled,
+    // Persist excludedUrls so restoreCampaign re-applies the same hard exclusions.
+    excludedUrls: Array.isArray(excludedUrls) ? excludedUrls.slice() : [],
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.slice() : [],
   };
 
@@ -2485,7 +2489,21 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     }; // end _isTarget
 
     // Pre-flight hard exclusions (blocklist) — normalized-URL match.
-    const _pfExcluded = new Set((excludedUrls || []).map((u) =>
+    // Central guard: unconditionally apply blocklist to ALL launch paths
+    // (start, queue-only, relaunch, scheduler, restore). Runs independently of
+    // any ack token so blocklisted rows can never reach the campaign.
+    let _centralBlocklistUrls = [];
+    try {
+      _centralBlocklistUrls = blocklistExcludedUrls(rows, { linkedinColumn, mode, blocklist: readBlocklist() });
+      if (_centralBlocklistUrls.length) {
+        log(`Pre-flight: ${_centralBlocklistUrls.length} blocklisted row(s) excluded (central guard)`);
+      }
+    } catch (guardErr) {
+      log(`[warn] Pre-flight central guard failed (non-blocking): ${guardErr.message}`);
+      pushSoftWarning(campaign, { profileId: '', pName: '', kind: 'preflight_guard_error', message: `Central blocklist guard error: ${guardErr.message}` });
+    }
+    const _allExcludedUrls = [...new Set([...(excludedUrls || []), ..._centralBlocklistUrls])];
+    const _pfExcluded = new Set(_allExcludedUrls.map((u) =>
       String(u).toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0]));
     const _pfRows = _pfExcluded.size
       ? (() => {
@@ -2495,7 +2513,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             const nu = u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').split('?')[0];
             return !_pfExcluded.has(nu);
           });
-          if (filtered.length !== before) log(`Pre-flight: ${before - filtered.length} blocklisted row(s) excluded`);
+          if (filtered.length !== before) log(`Pre-flight: ${before - filtered.length} row(s) excluded total`);
           return filtered;
         })()
       : rows;
