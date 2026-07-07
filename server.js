@@ -58,6 +58,7 @@ import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
 import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
 import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
+import { getSkips } from './src/skip-ledger.js';
 
 // Surface a repeated Operations Log write failure instead of letting it die
 // silently (the 2026-06-10 → 06-11 blackout). Routed to the fatal-error log
@@ -2920,11 +2921,16 @@ app.get('/api/campaign/status', async (_req, res) => {
       totalTargets: postAmp.total,
       profileNames: [],
       errors: postAmp.errors.slice(-20).map(e => ({ message: e })),
+      skippedCount: getSkips().length,
     });
   }
   let followUp = null;
   try { followUp = await _activeFollowUpSummary(base); } catch { /* non-fatal — countdown just hides */ }
-  res.json({ ...base, followUp });
+  res.json({ ...base, followUp, skippedCount: getSkips().length });
+});
+
+app.get('/api/campaign/skips', (_req, res) => {
+  res.json({ skips: getSkips() });
 });
 
 // v2.83: live settings snapshot for the dashboard "Open" button. Returns the
