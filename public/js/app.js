@@ -6031,6 +6031,12 @@ function _stopSkipPoll() {
   if (_skipPollTimer) { clearInterval(_skipPollTimer); _skipPollTimer = null; }
 }
 
+// Stop both skip-panel pollers (campaigns-board strip + active-card).
+function _stopAllSkipPollers() {
+  _stopSkipPoll();
+  _stopSkipsPoller();
+}
+
 async function _fetchSkipsAndRefresh() {
   await _fetchSkips();
   _renderSkipPanelInPlace();
@@ -17207,7 +17213,7 @@ window.renderActiveCard = function(status) {
     // Hide skips panel when idle (new campaign start will reset state).
     const _skEl = document.getElementById('active-skips');
     if (_skEl) _skEl.hidden = true;
-    _stopSkipsPoller();
+    _stopAllSkipPollers();
     return;
   }
   card.classList.remove('is-empty');
