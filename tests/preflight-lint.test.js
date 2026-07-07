@@ -184,3 +184,17 @@ test('normalizeProfileUrl strips protocol, www, trailing slash, and query string
   assert.equal(normalizeProfileUrl(''), '');
   assert.equal(normalizeProfileUrl(null), '');
 });
+
+test('previously stamped rows surface as a passed note, not silence', () => {
+  const out = lintLeads({ ...BASE, rows: [
+    R(5, { 'First Name': 'Cindy', 'Last Name': 'Siapno', Stage: 'Skipped: blocklist — IBM',
+           'LinkedIn URL': 'https://www.linkedin.com/in/cindy-siapno-678b13313/' }),
+    R(2, { 'First Name': 'Leon', 'Last Name': 'Katsnelson', 'LinkedIn URL': 'https://www.linkedin.com/in/leonkatsnelson/' }),
+  ]});
+  const note = out.passed.find((p) => p.check === 'previously_excluded');
+  assert.ok(note);
+  assert.match(note.detail, /1 row/);
+  assert.match(note.detail, /5/);
+  assert.equal(out.blockers.length, 0);
+  assert.equal(out.targetCount, 1);
+});

@@ -93,6 +93,17 @@ export function lintLeads({ rows, linkedinColumn, mode, templates = {}, blocklis
   // Only rows the campaign would process: blank Stage (cold) / non-terminal.
   const targets = (rows || []).filter(({ row }) => !stageOf(row));
 
+  // Surface previously-stamped exclusions explicitly — a row stamped
+  // "Skipped: …" by an earlier pre-flight is ignored silently otherwise,
+  // which reads as "the blocker disappeared" to the operator.
+  const priorSkips = (rows || []).filter(({ row }) => /^skipped:/i.test(stageOf(row)));
+  if (priorSkips.length) {
+    passed.push({
+      check: 'previously_excluded',
+      detail: `${priorSkips.length} row(s) already excluded by an earlier pre-flight (rows ${priorSkips.map((r) => r.rowNumber).slice(0, 10).join(', ')}${priorSkips.length > 10 ? ', …' : ''} — see their Stage column) — ignored`,
+    });
+  }
+
   const seenUrls = new Map(); // normalized url → [rowNumbers]
   const actionableTargets = []; // rows with a non-empty URL cell (for targetCount + template check)
   for (const { rowNumber, row } of targets) {
