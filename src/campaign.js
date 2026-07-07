@@ -4263,8 +4263,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // ⑫ warm-up-aware: a warming account "completes" at its capped limit.
             const _limitNow = profileDailyLimit(profileId);
             if (!skipsDailyLimit && getCampaignCount(profileId) >= _limitNow) {
-              const _wuNote = _limitNow < campaign.dailyLimit ? ' — warm-up cap' : '';
-              recordProfileEnd(profileId, pName, `Reached campaign limit (${_limitNow}${_wuNote})`);
+              const _wuCapped = _limitNow < campaign.dailyLimit;
+              recordProfileEnd(profileId, pName, `Reached campaign limit (${_limitNow}${_wuCapped ? ' — warm-up cap' : ''})`);
+              // ⑫ A warm-up cap (e.g. 5/day) is smaller than BATCH_SIZE, so
+              // without this break the turn would keep sending until the batch
+              // is drained and overshoot the ramp. Only break for the warm-up
+              // case — the pre-existing turn behaviour for the normal campaign
+              // limit is left exactly as it was.
+              if (_wuCapped) break;
             }
           } else {
             const errorMsg = result.error || result.action || '';
