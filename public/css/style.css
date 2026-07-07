@@ -594,6 +594,15 @@ body[data-show-right-pane="true"] .app { grid-template-columns: var(--sidebar-w)
   z-index: 1000;
 }
 body.theme-light .preset-popover { box-shadow: 0 -8px 28px rgba(0,0,0,0.12); }
+/* Inline variant — pill sits next to the campaign name input (top of the
+   wizard), so the popover opens DOWNWARD and hangs off the pill's left edge. */
+.preset-pill--inline .preset-popover {
+  bottom: auto; top: calc(100% + 10px);
+  right: auto; left: 0;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+}
+body.theme-light .preset-pill--inline .preset-popover { box-shadow: 0 8px 28px rgba(0,0,0,0.12); }
+.preset-pill--inline .preset-pill-btn { white-space: nowrap; }
 .preset-pop-label {
   padding: 10px 20px 6px;
   font-family: var(--mono); font-size: 0.54rem;

@@ -703,6 +703,32 @@
         <h2 data-edit="h2-campaign-name">Campaign Name</h2>
         <div class="campaign-name-row">
           <input type="text" id="campaign-name-input" placeholder="e.g. TAG_CITY_I" autocomplete="off" />
+          <!-- Presets — save the whole wizard config under a name / reload one.
+               Lives next to the campaign name per the approved duplicate+presets
+               sketch (duplicate-campaign-A.html); popover opens downward here. -->
+          <div class="preset-pill preset-pill--inline" id="preset-pill">
+            <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, campaign limit per account).">
+              <span>Presets</span>
+              <span class="preset-pill-count" id="preset-pill-count">0</span>
+              <span class="preset-pill-caret">▾</span>
+            </button>
+            <div class="preset-popover" id="preset-popover" hidden>
+              <div class="preset-pop-label" id="preset-pop-pinned-label">Pinned</div>
+              <div class="preset-pop-item preset-pop-last" id="preset-pop-last" onclick="loadLastUsedPreset(); closePresetPopover()">
+                <span><span class="preset-pop-dot"></span>Last Used</span>
+                <span class="preset-pop-tag" id="preset-pop-last-tag">—</span>
+              </div>
+              <div class="preset-pop-divider"></div>
+              <div class="preset-pop-label">Saved</div>
+              <div id="preset-pop-list">
+                <div class="preset-pop-empty">No saved presets yet</div>
+              </div>
+              <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
+                <span>+ Save current as preset…</span>
+                <span class="preset-pop-caret">→</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2586,31 +2612,6 @@
             <button type="button" id="btn-restore-rb" class="btn btn-sm btn-restore" onclick="confirmRestoreCampaign()" title="Force-restart the campaign engine. Use when Stop / Pause aren't responding."><span class="ico-restore" aria-hidden="true">↻</span> Force restart</button>
           </div>
 
-          <div class="runbar-group runbar-group--last">
-            <div class="preset-pill" id="preset-pill">
-              <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, campaign limit per account).">
-                <span>Saved configs</span>
-                <span class="preset-pill-count" id="preset-pill-count">0</span>
-                <span class="preset-pill-caret">▾</span>
-              </button>
-              <div class="preset-popover" id="preset-popover" hidden>
-                <div class="preset-pop-label" id="preset-pop-pinned-label">Pinned</div>
-                <div class="preset-pop-item preset-pop-last" id="preset-pop-last" onclick="loadLastUsedPreset(); closePresetPopover()">
-                  <span><span class="preset-pop-dot"></span>Last Used</span>
-                  <span class="preset-pop-tag" id="preset-pop-last-tag">—</span>
-                </div>
-                <div class="preset-pop-divider"></div>
-                <div class="preset-pop-label">Saved</div>
-                <div id="preset-pop-list">
-                  <div class="preset-pop-empty">No saved configs yet</div>
-                </div>
-                <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
-                  <span>+ Save current as…</span>
-                  <span class="preset-pop-caret">→</span>
-                </div>
-              </div>
-            </div>
-          </div><!-- /.runbar-group--last -->
         </div>
       </div>
       </div>
