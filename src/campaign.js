@@ -27,6 +27,7 @@ import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
+import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
@@ -1069,6 +1070,33 @@ async function appendWarningLog(entry) {
   }
 }
 
+// Wire sheet-write-tracker's warning logger so persistent write failures are
+// surfaced in the operator warning log as well as the in-memory ledger.
+configureSheetWriteTracker({
+  warningLogger: (entry) => appendWarningLog({ ts: new Date().toISOString(), kind: 'sheet_write_failed', ...entry }).catch(() => {}),
+});
+
+/**
+ * Second-level safety net for sheet write-backs. updateSheetRow already
+ * retries transient errors internally (sheets-writer withWriteRetry, 3×/1s);
+ * this wrapper retries ONCE more after 30s and, if still failing, records
+ * the failure to the sheet-write-tracker ledger so the operator can see and
+ * manually retry it (dashboard warning + /api/campaign/sheet-write-failures).
+ * Never throws — a failed write must not stop the campaign loop.
+ */
+async function trackedSheetWrite(sheetUrl, url, leadName, sheetData, linkedinColumn) {
+  await writeSheetWithRetry(
+    () => updateSheetRow(sheetUrl, url, sheetData, linkedinColumn),
+    {
+      url,
+      leadName,
+      column: linkedinColumn || '',
+      payload: JSON.stringify(sheetData),
+    },
+  );
+  campaign.sheetWriteFailures = getFailures().length;
+}
+
 function pushError(err) {
   const entry = { at: new Date().toISOString(), message: err.message, profileName: campaign.currentProfile };
   campaign.errors.push({ time: entry.at, message: entry.message });
@@ -1900,6 +1928,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign.parkedProfiles = [];
   campaign.softWarnings = [];
   campaign.profileEndReasons = [];
+  campaign.sheetWriteFailures = 0;
+  clearFailures();
   campaign.name = (typeof name === 'string' ? name : '').trim();
   // v2.13.14: stash the wizard inputs on the campaign object so the
   // monitoring path (runMonitoringCheck → runAutoIntros) can read them
@@ -3540,19 +3570,17 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   account: pName, leadUrl: url, phase: 'Connect', outcome: 'skipped',
                   reason: 'profile_not_found_404 (page does not exist / linkedin.com/404)',
                 });
-                try {
-                  // v2.112.27: stamp the VISIBLE columns (Stage + the mode's
-                  // status column) via buildSkipSheetData — the audit-only write
-                  // landed in a column most sheets don't show, so the 404 looked
-                  // un-marked (William/Philip rows stayed blank). This also makes
-                  // the row terminal: next run's pre-filter skips a row whose
-                  // status is set, so a dead URL is never re-attempted.
-                  await updateSheetRow(sheetUrl, url, {
-                    ...buildSkipSheetData(mode, 'Skipped: Profile not found (404)', pName),
-                    dateLastAction: formatLocalDate(new Date()),
-                    auditAction: 'Skipped: Profile not found (404)',
-                  }, linkedinColumn);
-                } catch { /* best-effort */ }
+                // v2.112.27: stamp the VISIBLE columns (Stage + the mode's
+                // status column) via buildSkipSheetData — the audit-only write
+                // landed in a column most sheets don't show, so the 404 looked
+                // un-marked (William/Philip rows stayed blank). This also makes
+                // the row terminal: next run's pre-filter skips a row whose
+                // status is set, so a dead URL is never re-attempted.
+                await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
+                  ...buildSkipSheetData(mode, 'Skipped: Profile not found (404)', pName),
+                  dateLastAction: formatLocalDate(new Date()),
+                  auditAction: 'Skipped: Profile not found (404)',
+                }, linkedinColumn);
                 delete state.processed[url];
                 await saveState(state);
                 // Normal inter-lead pacing (NOT the escalated degradation
@@ -3581,11 +3609,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               // Audit breadcrumb only (NOT a terminal Stage): the row stays
               // eligible so a future, non-degraded run can retry a genuine lead
               // whose page merely failed to load this time.
-              try {
-                await updateSheetRow(sheetUrl, url, {
-                  auditAction: `Skipped: Identity unverified (${MAX_IDENTITY_ATTEMPTS}×) — loaded "${_gate.loaded.name || '?'}"`,
-                }, linkedinColumn);
-              } catch { /* best-effort */ }
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
+                auditAction: `Skipped: Identity unverified (${MAX_IDENTITY_ATTEMPTS}×) — loaded "${_gate.loaded.name || '?'}"`,
+              }, linkedinColumn);
               // Phase 2: an unverified profile is a degradation signal — escalate
               // the inter-lead backoff, and park the account if it never recovers
               // (this path bypasses the generic consecutive-skip park below).
@@ -3997,7 +4023,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               sheetData.auditAction = 'Not confirmed connected';
             }
             // status_unknown: no connected field — leave CC text alone
-            await updateSheetRow(sheetUrl, url, sheetData, linkedinColumn).catch(() => {});
+            await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), sheetData, linkedinColumn);
 
             log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
             consecutiveSkips.set(profileId, 0);
@@ -4301,11 +4327,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 kind: 'weekly_limit',
                 message: 'Weekly invitation limit reached',
               });
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason('Weekly invitation limit reached'), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Weekly invitation limit reached'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('NOTE_LIMIT_REACHED')) {
               // v2.112.32 — account is out of FREE custom notes (monthly cap on
               // personalized invites). Distinct from the weekly invite cap: the
@@ -4326,9 +4352,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               // eligible for another account/run — mirrors the identity-skip path.
               delete state.processed[url];
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 auditAction: 'Skipped: Account out of free notes',
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('NOTE_TOO_LONG')) {
               // v2.112.x — the note exceeds LinkedIn's free 200-char custom-note
               // cap and this account isn't Premium, so it can NEVER send this (or
@@ -4352,9 +4378,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               // eligible for another account/run — mirrors the note-limit path.
               delete state.processed[url];
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 auditAction: 'Skipped: Profile not premium, custom notes limit',
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('INMAIL_NO_CREDITS_NOT_OP')) {
               // v2.11.3: dual-fact signal — account is out of InMail credits
               // (eject for run) AND lead is confirmed non-OP (mark in sheet).
@@ -4365,20 +4391,20 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               recordProfileEnd(profileId, pName, 'No InMail credits left');
               state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason('Not Open Profile'), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not Open Profile'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('INMAIL_NO_CREDITS')) {
               log(`  ⚠ InMail credits exhausted for ${pName}. Removing from rotation.`);
               weeklyLimited.add(profileId);
               recordProfileEnd(profileId, pName, 'InMail credits exhausted');
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason('InMail credits exhausted'), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('InMail credits exhausted'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('EMAIL_REQUIRED')) {
               // Per-lead skip — LinkedIn asked for the recipient's email.
               // Not an account-level issue, so no soft-warning chip; the log
@@ -4386,47 +4412,47 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               log(`  ⚠ Email required for ${data.firstName || '?'}. Skipping lead, moving on.`);
               state.processed[url] = { profileId, profileName: pName, action: 'email_required', date: now };
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason('Email required to connect'), pName),
                 cc: 'Unreachable',
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Email required to connect'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('Not yet connected')) {
               log('  ↷ Not yet connected — will retry after acceptance.');
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 status: normalizeSkipReason('Not yet connected'),
                 sender: pName,
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not yet connected'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('SEND_NOT_CONFIRMED')) {
               log(`  ⚠ Send clicked but Pending NOT confirmed for ${data.firstName || '?'}. LinkedIn may have silently dropped it.`);
               delete state.processed[url];
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason('Send not confirmed'), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Send not confirmed'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('LINKEDIN_ERROR_TOAST')) {
               log(`  ⚠ LinkedIn showed an error toast for ${data.firstName || '?'}.`);
               delete state.processed[url];
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason('LinkedIn error toast'), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('LinkedIn error toast'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('NOT_OPEN_PROFILE')) {
               log('  ✗ Not an Open Profile — will skip in future runs.');
               state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason('Not Open Profile'), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not Open Profile'),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else if (errorMsg.includes('rate_limited')) {
               pushSoftWarning(campaign, {
                 profileId,
@@ -4438,21 +4464,21 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               pushError(new Error(`${url}: ${errorMsg}`));
               delete state.processed[url];
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason(errorMsg), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason(errorMsg),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             } else {
               log('  ✗ Retry next run.');
               pushError(new Error(`${url}: ${errorMsg}`));
               delete state.processed[url];
               await saveState(state);
-              await updateSheetRow(sheetUrl, url, {
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
                 ...buildSkipSheetData(mode, normalizeSkipReason(errorMsg), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason(errorMsg),
-              }, linkedinColumn).catch(() => {});
+              }, linkedinColumn);
             }
           }
 
@@ -5541,6 +5567,7 @@ export function getCampaignStatus() {
     // Local-browser re-login recovery: drives the "log into LinkedIn" popup.
     awaitingLogin: campaign.awaitingLogin || null,
     softWarnings: campaign.softWarnings.slice(),
+    sheetWriteFailures: campaign.sheetWriteFailures || 0,
     profileEndReasons: campaign.profileEndReasons.slice(),
     disk: { ..._diskStatusCache },
     resources: smp ? {
