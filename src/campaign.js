@@ -4283,7 +4283,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   profileCooldownUntil.set(profileId, untilTs);
                   campaign._cooldown429.set(profileId, { until: untilTs, pName, reason: '429' });
                   consecutive429s.set(profileId, 0);
-                  log(`  ⏳ ${pName}: rate-limited (HTTP 429) — cooling down ${Math.round(waitMs / 60000)}min, will retry automatically (attempt ${newEpisodes}/3)`);
+                  log(`  ⏳ [${pName}] rate-limited (HTTP 429) — cooling down ${Math.round(waitMs / 60000)}min, will retry automatically (attempt ${newEpisodes}/3)`);
                 } else {
                   // action === 'park': 3rd episode, treat as real weekly cap
                   log(`  ⚠ ${pName}: ${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s (3rd cooldown episode) — treating as weekly invitation limit. Parking account.`);
