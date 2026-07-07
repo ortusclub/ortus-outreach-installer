@@ -75,6 +75,7 @@ import { fetchSoOData } from './src/soo.js';
 import { dataPath } from './src/paths.js';
 import { readBlocklist, addEntry as addBlocklistEntry, removeEntry as removeBlocklistEntry } from './src/blocklist.js';
 import { listPresets, getPreset, savePreset, deletePreset, getLastUsed as getLastUsedPreset, saveLastUsed as saveLastUsedPreset } from './src/presets.js';
+import { readWarmup, setWarmup } from './src/warmup-store.js';
 import { lintLeads, blocklistExcludedUrls, normalizeProfileUrl } from './src/preflight-lint.js';
 import { ackFor, decidePreflightGate } from './src/preflight-gate.js';
 import { checkDiskFree } from './src/disk-check.js';
@@ -4651,6 +4652,24 @@ app.post('/api/blocklist', (req, res) => {
 
 app.delete('/api/blocklist', (req, res) => {
   res.json({ ok: removeBlocklistEntry(req.body?.value) });
+});
+
+// ---------------------------------------------------------------------------
+// ⑫ Account warm-up mode — per-profile ramp state (data/warmup.json).
+// The Section-3 picker tiles read the map; the tile link posts enable/disable.
+// Enforcement happens in src/campaign.js via effectiveDailyLimit().
+// ---------------------------------------------------------------------------
+app.get('/api/warmup', (req, res) => {
+  res.json({ warmup: readWarmup() });
+});
+
+app.post('/api/warmup/:profileId', (req, res) => {
+  try {
+    const entry = setWarmup(req.params.profileId, Boolean(req.body?.enabled));
+    res.json({ ok: true, entry });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -591,6 +591,61 @@ let _lcWriteCache = {};
 let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
+
+// ⑫ Account warm-up mode — { profileId: { enabled, startedAt } } from
+// GET /api/warmup. Client-side mirror of the schedule in src/warmup.js
+// (no bundler, so the pure module can't be imported here — keep in sync).
+let warmupData = {};
+let wuSchedOpenFor = null; // profileId whose schedule panel is open under the grid
+const WU_SCHEDULE = [5, 10, 20]; // per-day caps, weeks 1..3
+const WU_WEEKS = WU_SCHEDULE.length;
+function wuStatus(entry, now = new Date()) {
+  const none = { active: false, complete: false, week: null, cap: null };
+  if (!entry?.enabled || !entry.startedAt) return none;
+  const start = new Date(entry.startedAt).getTime();
+  if (!Number.isFinite(start)) return none;
+  const week = now.getTime() < start ? 1 : Math.floor((now.getTime() - start) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  if (week > WU_WEEKS) return { active: false, complete: true, week, cap: null };
+  return { active: true, complete: false, week, cap: WU_SCHEDULE[week - 1] };
+}
+async function loadWarmup() {
+  try {
+    const res = await fetch('/api/warmup');
+    const data = await res.json();
+    warmupData = data?.warmup && typeof data.warmup === 'object' ? data.warmup : {};
+  } catch { /* tolerate — tiles just render without warm-up badges */ }
+}
+async function setProfileWarmup(profileId, enabled) {
+  try {
+    const res = await fetch(`/api/warmup/${encodeURIComponent(profileId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await res.json();
+    if (data?.ok) warmupData[profileId] = data.entry;
+  } catch { /* leave state as-is on network error */ }
+  wuSchedOpenFor = enabled ? profileId : (wuSchedOpenFor === profileId ? null : wuSchedOpenFor);
+  renderProfiles(allProfilesData);
+}
+// Schedule panel below the tile grid (master-all-features.html placement):
+// revealed when warm-up is started on a fresh tile, so the operator sees
+// exactly what was armed. Steps mirror WU_SCHEDULE + "After → normal limit".
+function renderWarmupSched() {
+  const host = document.getElementById('wu-sched');
+  if (!host) return;
+  const p = wuSchedOpenFor ? allProfilesData.find((x) => x.id === wuSchedOpenFor) : null;
+  if (!p) { host.hidden = true; host.innerHTML = ''; return; }
+  const steps = WU_SCHEDULE.map((cap, i) =>
+    `<div class="wu-step"><div class="wk">Week ${i + 1}</div><div class="cap">${cap} <small>/day</small></div></div>`
+  ).join('') + `<div class="wu-step"><div class="wk">After</div><div class="cap">Normal <small>campaign limit</small></div></div>`;
+  host.innerHTML = `
+    <div class="wu-sched-head">Warm-up schedule · ${escHtml(p.name)}</div>
+    <div class="wu-steps">${steps}</div>
+    <div class="wu-sched-note">The warm-up cap <b>overrides the campaign's daily limit</b> for this account only —
+      other selected accounts keep their normal limit. Advances automatically; pausing a campaign doesn't reset the week.</div>`;
+  host.hidden = false;
+}
 // v2.78: accounts pre-benched in the wizard — selected but start the campaign
 // out of the rotation (translated to campaign._skippedProfiles on launch).
 let benchedProfileIds = new Set();
@@ -1488,6 +1543,7 @@ async function loadProfiles() {
     loading.classList.add('hidden');
     grid.classList.remove('hidden');
     await loadPrimaryStatusForPicker();
+    await loadWarmup(); // ⑫ warm-up badges on the tiles
     renderProfiles(allProfilesData);
     renderPassoverBanner();
     updateChipCounts();
@@ -1690,15 +1746,39 @@ function renderProfiles(profiles) {
         else if (_reason === 'unavailable') _sub = _label ? `Not available — <b>${_label}</b>.` : 'Not available for this campaign.';
         else _sub = 'Restricted by LinkedIn.';
       } else _sub = 'Anyone can use.';
+      // ⑫ Warm-up (master-all-features sketch, 1:1): active warm-up takes over
+      // the FREE tile's stat zone (WARM-UP + "wk N · cap/day") and the sub line;
+      // complete warm-up keeps the FREE zone with a green "✓ warm-up complete"
+      // note; a plain FREE tile gets the "Start warm-up" affordance.
+      const _wuEntry = warmupData[p.id];
+      const _wu = wuStatus(_wuEntry);
+      let _statZone = `
+      <div class="jt-stat s-${_sm.cls}">
+        <span class="jt-dot"></span>
+        <span class="jt-word">${_word}</span>
+      </div>`;
+      if (_state.state === 'free' && !_locked) {
+        if (_wu.active) {
+          _statZone = `
+      <div class="jt-stat s-warmup">
+        <span class="jt-dot"></span>
+        <span class="jt-word">WARM-UP</span>
+        <span class="jt-zsub">wk ${_wu.week} · ${_wu.cap}/day</span>
+      </div>`;
+          _sub = `Warm-up week ${_wu.week} of ${WU_WEEKS} — capped at <b>${_wu.cap}/day</b>, overrides the campaign limit.`
+            + ` <a class="wu-link" href="#" data-wu-enable="0">Stop warm-up</a>`;
+        } else if (_wu.complete) {
+          _sub = `Anyone can use. <b style="color:var(--green)">✓ warm-up complete</b>`
+            + ` <a class="wu-link" href="#" data-wu-enable="0">Stop warm-up</a>`;
+        } else {
+          _sub = `Anyone can use. <a class="wu-link" href="#" data-wu-enable="1">Start warm-up</a>`;
+        }
+      }
       _classes = 'profile-item jt ' + _state.state
         + (_checked ? ' selected' : '')
         + (_state.state === 'in-use' ? ' muted-soft' : '')
         + (_locked ? ' muted is-restricted' : '');
-      _inner = `
-      <div class="jt-stat s-${_sm.cls}">
-        <span class="jt-dot"></span>
-        <span class="jt-word">${_word}</span>
-      </div>
+      _inner = `${_statZone}
       <div class="jt-det">
         <div class="jt-top">
           <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
@@ -1712,6 +1792,17 @@ function renderProfiles(profiles) {
     item.className = _classes;
     item.dataset.profileId = p.id;
     item.innerHTML = _inner;
+    // ⑫ warm-up toggle — app.js is type=module, so listeners are attached here
+    // (no bare inline onclick). preventDefault/stopPropagation so clicking the
+    // link inside the <label> doesn't also toggle the selection checkbox.
+    const wuLink = item.querySelector('.wu-link');
+    if (wuLink) {
+      wuLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setProfileWarmup(p.id, wuLink.dataset.wuEnable === '1');
+      });
+    }
     const cb = item.querySelector('input');
     cb.addEventListener('change', () => {
       if (_locked) { cb.checked = false; return; } // blocked / NA — never selectable
@@ -1731,6 +1822,7 @@ function renderProfiles(profiles) {
     });
     grid.appendChild(item);
   });
+  renderWarmupSched(); // ⑫ schedule panel below the grid (open account only)
   renderSelectedPanel();
   updateCampaignSummary();
 }

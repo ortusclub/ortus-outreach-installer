@@ -30,6 +30,8 @@ import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, 
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
+import { effectiveDailyLimit, warmupStatus, WARMUP_WEEKS } from './warmup.js';
+import { readWarmup } from './warmup-store.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
 import { emptyTally, applyOutcome } from './campaign-tally.js';
@@ -3109,6 +3111,32 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
     const skipsDailyLimit = NO_DAILY_LIMIT.has(mode);
 
+    // ⑫ Account warm-up mode — per-profile daily-limit cap for fresh/cold
+    // accounts (src/warmup.js). Read once per run (fresh start AND
+    // monitoring-resume relaunch both pass through here, so every send path
+    // gets the cap); the effective limit is recomputed per call so a week
+    // rollover mid-run raises the cap without a restart, and live
+    // daily-limit edits (campaign.dailyLimit) still take effect. Minimal
+    // change by design: the three existing check sites below call
+    // profileDailyLimit(id) instead of reading campaign.dailyLimit directly.
+    const _warmupMap = readWarmup();
+    const _warmupCapLogged = new Set(); // log the cap once per profile, not per lead
+    function profileDailyLimit(profileId) {
+      const entry = _warmupMap[profileId];
+      if (!entry?.enabled) return campaign.dailyLimit;
+      const eff = effectiveDailyLimit({
+        configuredLimit: campaign.dailyLimit,
+        warmupStartedAt: entry.startedAt,
+        now: new Date(),
+      });
+      if (eff < campaign.dailyLimit && !_warmupCapLogged.has(profileId)) {
+        _warmupCapLogged.add(profileId);
+        const st = warmupStatus({ enabled: true, startedAt: entry.startedAt });
+        log(`⚠ ${profileNameCache[profileId] || profileId}: warm-up week ${st.week} of ${WARMUP_WEEKS} — capped at ${eff}/day (campaign daily limit ${campaign.dailyLimit}/day).`);
+      }
+      return eff;
+    }
+
     // ═════════════════════════════════════════════════════════════════════
     // 2.9.9 — Rotating-batch worker pool (replaces strict round-robin).
     //
@@ -3173,7 +3201,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // v2.78: operator benched this account for the rest of the run.
         if (campaign._skippedProfiles && campaign._skippedProfiles.has(candidate)) continue;
         if (weeklyLimited.has(candidate)) continue;
-        if (!skipsDailyLimit && getCampaignCount(candidate) >= campaign.dailyLimit) continue;
+        if (!skipsDailyLimit && getCampaignCount(candidate) >= profileDailyLimit(candidate)) continue; // ⑫ warm-up-aware
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
         // Clear stale _cooldown429 entry once the cooldown window has passed
         if (campaign._cooldown429.has(candidate) && now >= (campaign._cooldown429.get(candidate).until || 0)) {
@@ -3194,7 +3222,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       if (profileQueue.length === 0) return true;
       return profileQueue.every(id =>
         weeklyLimited.has(id) ||
-        (!skipsDailyLimit && getCampaignCount(id) >= campaign.dailyLimit)
+        (!skipsDailyLimit && getCampaignCount(id) >= profileDailyLimit(id)) // ⑫ warm-up-aware
       );
     }
 
@@ -4111,7 +4139,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // status_unknown: no connected field — leave CC text alone
             await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), sheetData, linkedinColumn);
 
-            log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${campaign.dailyLimit})`);
+            log(`  ✓ [${pName}] (${getCampaignCount(profileId)}/${profileDailyLimit(profileId)})`); // ⑫ shows the warm-up cap while it applies
             consecutiveSkips.set(profileId, 0);
             consecutive429s.set(profileId, 0);
             cooldowns429.set(profileId, 0);
@@ -4232,8 +4260,17 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // The candidate filter at line ~1289 will silently exclude it
             // from the next round; this gives operators a visible "why" on
             // the dashboard's Done row.
-            if (!skipsDailyLimit && getCampaignCount(profileId) >= campaign.dailyLimit) {
-              recordProfileEnd(profileId, pName, `Reached campaign limit (${campaign.dailyLimit})`);
+            // ⑫ warm-up-aware: a warming account "completes" at its capped limit.
+            const _limitNow = profileDailyLimit(profileId);
+            if (!skipsDailyLimit && getCampaignCount(profileId) >= _limitNow) {
+              const _wuCapped = _limitNow < campaign.dailyLimit;
+              recordProfileEnd(profileId, pName, `Reached campaign limit (${_limitNow}${_wuCapped ? ' — warm-up cap' : ''})`);
+              // ⑫ A warm-up cap (e.g. 5/day) is smaller than BATCH_SIZE, so
+              // without this break the turn would keep sending until the batch
+              // is drained and overshoot the ramp. Only break for the warm-up
+              // case — the pre-existing turn behaviour for the normal campaign
+              // limit is left exactly as it was.
+              if (_wuCapped) break;
             }
           } else {
             const errorMsg = result.error || result.action || '';
