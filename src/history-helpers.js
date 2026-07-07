@@ -85,8 +85,8 @@ export async function readCampaignLog(idx, { limit = 500 } = {}) {
   if (idx >= history.length) {
     return { ok: false, code: 'out_of_range' };
   }
-  const name = history[idx].name || '';
-  if (!name) return { ok: true, name, lines: [], total: 0 };
+  const entry = history[idx];
+  const name = entry.name || '';
   const logFile = dataPath('campaign.log');
   let text;
   try {
@@ -95,7 +95,42 @@ export async function readCampaignLog(idx, { limit = 500 } = {}) {
     return { ok: true, name, lines: [], total: 0 };
   }
   const all = text.split('\n');
+  // Primary: slice by the campaign's time window — entry.date is the END
+  // timestamp and entry.duration the run length in seconds. Per-lead log
+  // lines never contain the campaign name, so the legacy name filter
+  // returned nothing for most campaigns.
+  const windowLines = sliceLogByWindow(all, entry);
+  if (windowLines.length) {
+    return { ok: true, name, lines: windowLines.slice(-limit), total: windowLines.length };
+  }
+  // Fallback: legacy case-sensitive name-substring match.
+  if (!name) return { ok: true, name, lines: [], total: 0 };
   const filtered = all.filter((l) => l.includes(name));
-  const last = filtered.slice(-limit);
-  return { ok: true, name, lines: last, total: filtered.length };
+  return { ok: true, name, lines: filtered.slice(-limit), total: filtered.length };
+}
+
+// Pure: lines whose leading "[ISO]" timestamp falls inside the campaign's
+// run window [end - duration - grace, end + grace]. Untimestamped lines
+// inside the window (continuations) are kept; anything before the window's
+// first hit or after its last is dropped. Exported for unit tests.
+export function sliceLogByWindow(lines, entry, { graceMs = 60_000 } = {}) {
+  const end = Date.parse(entry?.date || '');
+  const durationMs = (Number(entry?.duration) || 0) * 1000;
+  if (!Number.isFinite(end) || durationMs <= 0) return [];
+  const from = end - durationMs - graceMs;
+  const to = end + graceMs;
+  const out = [];
+  let inWindow = false;
+  for (const line of lines) {
+    const m = line.match(/^\[([^\]]+)\]/);
+    if (m) {
+      const ts = Date.parse(m[1]);
+      if (Number.isFinite(ts)) {
+        if (ts > to) break;
+        inWindow = ts >= from;
+      }
+    }
+    if (inWindow && line.trim()) out.push(line);
+  }
+  return out;
 }

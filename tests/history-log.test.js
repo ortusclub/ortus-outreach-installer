@@ -91,3 +91,55 @@ describe('readCampaignLog', { concurrency: 1 }, () => {
     assert.deepEqual(res.lines, []);
   });
 });
+
+// Time-window slicing — the primary path since v2.139.1. Per-lead log lines
+// never contain the campaign name, so readCampaignLog now slices by the
+// entry's [end - duration, end] window (with grace) before falling back to
+// the legacy name filter.
+const { sliceLogByWindow } = await import('../src/history-helpers.js');
+
+describe('sliceLogByWindow', { concurrency: 1 }, () => {
+  // Run: 10:00:00 → 10:05:00 (duration 300s), end date = 10:05:00Z.
+  const entry = { date: '2026-07-07T10:05:00.000Z', duration: 300 };
+  const L = (t, msg) => `[2026-07-07T${t}Z] ${msg}`;
+
+  test('keeps lines inside the run window, drops lines outside', () => {
+    const lines = [
+      L('09:00:00.000', 'old campaign noise'),
+      L('10:00:10.000', '=== Campaign starting ==='),
+      L('10:02:00.000', 'sent to Alice'),
+      L('10:05:00.000', '=== Campaign ended ==='),
+      L('12:00:00.000', 'later campaign noise'),
+    ];
+    const out = sliceLogByWindow(lines, entry);
+    assert.deepEqual(out, [lines[1], lines[2], lines[3]]);
+  });
+
+  test('keeps untimestamped continuation lines inside the window', () => {
+    const lines = [
+      L('10:01:00.000', 'multi-line message:'),
+      '  continuation without timestamp',
+      L('12:00:00.000', 'outside'),
+    ];
+    const out = sliceLogByWindow(lines, entry);
+    assert.deepEqual(out, [lines[0], lines[1]]);
+  });
+
+  test('returns [] when entry has no parseable date or zero duration', () => {
+    assert.deepEqual(sliceLogByWindow([L('10:01:00.000', 'x')], { date: 'Jul 7th', duration: 300 }), []);
+    assert.deepEqual(sliceLogByWindow([L('10:01:00.000', 'x')], { date: '2026-07-07T10:05:00Z', duration: 0 }), []);
+  });
+
+  test('readCampaignLog prefers the time window over the name filter', async () => {
+    writeHistory([{ name: 'WindowedRun', mode: 'CC', date: '2026-07-07T10:05:00.000Z', duration: 300 }]);
+    writeLog([
+      '[2026-07-07T10:00:10.000Z] === Campaign starting ===',
+      '[2026-07-07T10:02:00.000Z] sent to Alice',   // no campaign name in line
+      '[2026-07-07T12:00:00.000Z] unrelated later',
+    ]);
+    const res = await readCampaignLog(0);
+    assert.equal(res.ok, true);
+    assert.equal(res.lines.length, 2);
+    assert.match(res.lines[1], /Alice/);
+  });
+});
