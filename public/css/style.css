@@ -5873,7 +5873,8 @@ body.route-salesnav .sidebar-nav { display: none; }
 .queue-run-next:disabled { opacity: 0.35; cursor: not-allowed; }
 .campaign-row.past-section .campaign-row--with-edit,
 .campaign-row--with-edit.campaign-row-clickable {
-  grid-template-columns: auto 2fr 1.4fr 1.4fr auto auto auto;
+  /* 8 cols: checkbox, name, type, progress, status, Edit, Duplicate, delete-X */
+  grid-template-columns: auto 2fr 1.4fr 1.4fr auto auto auto auto;
 }
 .campaign-row-edit {
   background: transparent;
