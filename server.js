@@ -57,6 +57,7 @@ import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
 import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
+import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
 
 // Surface a repeated Operations Log write failure instead of letting it die
 // silently (the 2026-06-10 → 06-11 blackout). Routed to the fatal-error log
@@ -2938,6 +2939,31 @@ app.get('/api/campaign/active-settings', (_req, res) => {
     res.json({ ok: true, settings });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── Sheet-write failure ledger ────────────────────────────────────────────────
+
+app.get('/api/campaign/sheet-write-failures', (_req, res) => {
+  res.json({ failures: getFailures() });
+});
+
+app.post('/api/campaign/sheet-write-failures/retry', async (_req, res) => {
+  try {
+    const { updateSheetRow } = await import('./src/sheets-writer.js');
+    const result = await retryFailures(async (failure) => {
+      let payload;
+      try {
+        payload = JSON.parse(failure.payload);
+      } catch {
+        return { error: 'payload unrecoverable — cannot retry' };
+      }
+      return updateSheetRow(campaign.sheetUrl, failure.url, payload, failure.column || undefined);
+    });
+    campaign.sheetWriteFailures = getFailures().length;
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
