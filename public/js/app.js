@@ -5835,8 +5835,18 @@ async function duplicateCampaign(id) {
     } else if (it.bucket === 'done' && it.srcSettings) {
       config = _configFromSettings(it.mode, it.srcSettings);
     } else if (it.id === 'local-active') {
-      const r = await fetch('/api/presets/_last_used');
-      if (r.ok) { const e = await r.json(); config = e.config || (e.entry && e.entry.config) || null; }
+      // Running local campaign: prefer its live settings snapshot (v2.83
+      // /api/campaign/active-settings — the exact config it launched with),
+      // falling back to the operator's last-used preset.
+      const r = await fetch('/api/campaign/active-settings');
+      if (r.ok) {
+        const d = await r.json();
+        if (d && d.ok && d.settings) config = _configFromSettings(it.mode || d.settings.mode, d.settings);
+      }
+      if (!config) {
+        const r2 = await fetch('/api/presets/_last_used');
+        if (r2.ok) { const e = await r2.json(); config = e.config || (e.entry && e.entry.config) || null; }
+      }
     }
   } catch (_) { /* fall through to the guard below */ }
   if (!config || typeof config !== 'object') {
@@ -5846,6 +5856,19 @@ async function duplicateCampaign(id) {
   _openDuplicateDraft(srcName, config);
 }
 window.duplicateCampaign = duplicateCampaign;
+
+// Duplicate a past-campaign row (history entry) into a fresh pre-filled draft.
+// Reads from pastCampaignsCache (same source as the details modal / resume).
+function duplicatePastCampaign(idx) {
+  const entry = (pastCampaignsCache || []).find((e) => e.idx === idx);
+  const c = entry && entry.c;
+  if (!c || !c.settings) {
+    alert("This campaign predates settings snapshots — it can't be duplicated.\nOpen ＋ New campaign and set it up manually.");
+    return;
+  }
+  _openDuplicateDraft(c.name || 'Campaign', _configFromSettings(c.mode, c.settings));
+}
+window.duplicatePastCampaign = duplicatePastCampaign;
 
 // Stage the config as a fresh draft and open the wizard pre-filled with a
 // "… copy" name. Nothing runs until the operator picks Start/Queue/Schedule.
@@ -13453,6 +13476,7 @@ function buildPastRowHtml({ idx, c }) {
       <span class="campaign-row-status ${statusClasses}" ${statusAttrs}>${reasonLabel}</span>
       ${monitoringChipHtml(idx, c)}
       <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); goCreateCampaign()" title="Open the campaign page">Edit</button>
+      <button type="button" class="campaign-row-edit" onclick="event.stopPropagation(); duplicatePastCampaign(${idx})" title="Copy this campaign's full setup into a fresh draft — nothing runs until you launch it">Duplicate</button>
       <button type="button" class="past-row-delete" aria-label="Delete campaign" onclick="event.stopPropagation(); singleDeletePast(${idx})">&times;</button>
     </div>
   `;
