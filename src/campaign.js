@@ -5567,6 +5567,11 @@ export function getCampaignStatus() {
     awaitingLogin: campaign.awaitingLogin || null,
     softWarnings: campaign.softWarnings.slice(),
     profileEndReasons: campaign.profileEndReasons.slice(),
+    // v2.137: 429 cooldown surfacing — profileId -> { until, pName, reason:'429' }.
+    // Expired entries filtered so the UI never renders a stale countdown.
+    cooldown429: Object.fromEntries(
+      [...(campaign._cooldown429 || new Map())].filter(([, v]) => v && v.until > Date.now())
+    ),
     disk: { ..._diskStatusCache },
     resources: smp ? {
       ramPct:            smp.ramPct,
