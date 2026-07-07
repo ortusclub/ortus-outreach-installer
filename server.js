@@ -1133,7 +1133,7 @@ app.post('/api/campaign/start-cloud', async (req, res) => {
     // Hard-exclude blocklisted + client-pre-flight-excluded URLs (cold modes only;
     // blocklistExcludedUrls is a no-op for warm modes). This mirrors the central
     // guard in campaign.js (startCampaign) that covers the local path.
-    const blExcluded = new Set(blocklistExcludedUrls(rows, { linkedinColumn, mode, blocklist: readBlocklist() }));
+    const blExcluded = new Set(blocklistExcludedUrls(rows, { linkedinColumn, mode, blocklist: readBlocklist() }).map((u) => normalizeProfileUrl(u)));
     const clientExcluded = new Set((req.body._preflightExcludedUrls || []).map((u) => normalizeProfileUrl(u)));
     const totalExcluded = blExcluded.size + clientExcluded.size;
     if (totalExcluded) {
