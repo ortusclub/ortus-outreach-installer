@@ -5525,6 +5525,16 @@ async function startCampaign(opts = {}) {
         return;
       }
       body.preflightAck = pf.ack; // clean run — attach ack and continue
+      // A clean pre-flight used to launch silently, which reads as "the check
+      // didn't run" — especially when rows stamped "Skipped: …" by an earlier
+      // pre-flight are being excluded invisibly. Say what happened.
+      const _pfPrev = (pf.findings.passed || []).find((p) => p.check === 'previously_excluded');
+      const _pfPrevN = _pfPrev ? parseInt(_pfPrev.detail, 10) : 0;
+      showCampaignToast(
+        `Pre-flight ✓ — ${pf.findings.targetCount} target(s) clean`
+        + (_pfPrevN ? ` · ${_pfPrevN} row(s) already excluded by an earlier pre-flight (see their Stage column)` : ''),
+        _pfPrevN ? 9000 : 5000,
+      );
     } catch (err) {
       showCampaignToast(`Pre-flight failed: ${err.message}`, 7000);
       return;
@@ -6107,7 +6117,12 @@ function _buildSkippedSection(it) {
       <a class="skip-view-link" onclick="toggleSkipPanel()">view</a>
     </div>`;
   }
-  // Expanded — render from cached _skipData.
+  // Expanded — render from cached _skipData. The expanded flag persists across
+  // campaign runs while the pollers get stopped on idle, so re-arm the fetch +
+  // poll here: without this, a panel left open before a run renders "No skips
+  // recorded yet" forever even as skippedCount climbs.
+  _startSkipPoll();
+  if (!_skipData.length && n > 0) _fetchSkipsAndRefresh();
   const tableHtml = _buildSkipTableHtml();
   return `<div class="skipped">
     <div class="skipped-head">
@@ -6175,9 +6190,22 @@ function renderUnifiedStrip(it) {
 
   const expandBtn = queued ? ''
     : `<button class="sn-collapse sn-expand" title="Expand / collapse"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button>`;
-  const logHtml = cloud
-    ? `<div class="sn-logbox">Per-lead live log lands here once the engine's per-lead endpoint is deployed. Status: <span class="ok">${it.sent || 0}/${it.total || 0} ${it.isFG ? 'invites' : 'sent'}</span>.</div>`
-    : `<div class="sn-logbox">${(it.logs && it.logs.length) ? it.logs.slice(-8).map((l) => escHtml(l)).join('<br>') : 'Live log appears here while this local campaign runs.'}</div>`;
+  let logHtml;
+  if (cloud) {
+    logHtml = `<div class="sn-logbox">Per-lead live log lands here once the engine's per-lead endpoint is deployed. Status: <span class="ok">${it.sent || 0}/${it.total || 0} ${it.isFG ? 'invites' : 'sent'}</span>.</div>`;
+  } else if (it.logs && it.logs.length) {
+    logHtml = `<div class="sn-logbox">${it.logs.slice(-8).map((l) => escHtml(l)).join('<br>')}</div>`;
+  } else if (done && it.histIdx != null) {
+    // Done strip from history — the live log is gone from memory; pull the
+    // persisted campaign.log lines lazily (cache-first; fetch fills the box
+    // in place, next board render inlines from cache).
+    const cached = _histLogCache.get(it.histIdx);
+    logHtml = cached != null
+      ? `<div class="sn-logbox">${cached}</div>`
+      : `<div class="sn-logbox" data-histlog="${it.histIdx}">Loading log…</div>`;
+  } else {
+    logHtml = `<div class="sn-logbox">Live log appears here while this local campaign runs.</div>`;
+  }
   const switchBlock = queued ? '' : `<div class="sn-switch"><div class="sn-pane on">${logHtml}</div></div>`;
 
   // Controls — local: Pause/Stop/Open(detail); cloud: Stop/Open(sheet). Done: ✕/Open.
@@ -6242,8 +6270,16 @@ async function renderCampaignsBoard() {
   const items = [];
 
   // 1) Local running campaign (0 or 1) — from /api/campaign/status.
+  // A campaign that ENDED this session still holds its full log in the status
+  // payload (in-memory, until the next run or an app restart) — stash it so
+  // step 4 can attach it to the matching done strip instead of the
+  // "Live log appears here…" placeholder.
+  let _endedLogs = null, _endedName = '';
   try {
     const s = await (await fetch('/api/campaign/status')).json();
+    if (s && !s.running && s.state !== 'monitoring' && Array.isArray(s.logs) && s.logs.length) {
+      _endedLogs = s.logs; _endedName = s.name || '';
+    }
     if (s && (s.running || s.state === 'monitoring')) {
       items.push({
         where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
@@ -6297,14 +6333,20 @@ async function renderCampaignsBoard() {
   try {
     const h = await (await fetch('/api/history')).json();
     const hist = Array.isArray(h) ? h : (h.history || []);
-    for (const p of hist.slice(-8).reverse()) {
+    for (const { p, histIdx } of hist.map((p, i) => ({ p, histIdx: i })).slice(-8).reverse()) {
       const stopped = p.endReason === 'stopped' || p.fullStop;
       const hid = 'h-' + (p.date || p.name);
       if (_localDismissed.has(hid)) continue;
+      // Attach the in-memory log of the campaign that just ended this session
+      // (matched by name, most-recent entry only) so the strip keeps showing
+      // its log after the running → done transition.
+      const endedLogs = (_endedLogs && _endedName && p.name === _endedName) ? _endedLogs : null;
+      if (endedLogs) _endedLogs = null; // only the newest matching strip gets it
       items.push({ where: 'local', id: hid, name: p.name, mode: p.mode,
         isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
         total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
-        bad: stopped, badLabel: 'Stopped', srcSettings: p.settings || null });
+        bad: stopped, badLabel: 'Stopped', srcSettings: p.settings || null, histIdx,
+        logs: endedLogs });
     }
   } catch (_) { /* */ }
 
@@ -6351,6 +6393,35 @@ async function renderCampaignsBoard() {
   let html = rail('▶ Now running', running) + rail('• Up next', queued)
     + rail('✓ Done', done, doneExtra);
   board.innerHTML = html || _campaignsEmptyState();
+  _fillHistLogBoxes(board);
+}
+
+// Lazy-fill done-strip log boxes from the persisted campaign log. Cached per
+// history index so the 5s board re-render doesn't refetch; in-flight guard so
+// overlapping renders don't double-fetch.
+const _histLogCache = new Map();
+const _histLogInFlight = new Set();
+function _fillHistLogBoxes(board) {
+  board.querySelectorAll('[data-histlog]').forEach(async (box) => {
+    const idx = Number(box.dataset.histlog);
+    if (!Number.isInteger(idx) || _histLogInFlight.has(idx)) return;
+    _histLogInFlight.add(idx);
+    try {
+      const d = await (await fetch(`/api/history/${idx}/log`)).json();
+      const lines = Array.isArray(d.lines) ? d.lines.slice(-8) : [];
+      const html = lines.length
+        ? lines.map((l) => escHtml(l)).join('<br>')
+        : 'No stored log lines for this campaign.';
+      _histLogCache.set(idx, html);
+      // Fill in place if the box is still on screen (board may have re-rendered).
+      const live = board.querySelector(`[data-histlog="${idx}"]`);
+      if (live) { live.innerHTML = html; live.removeAttribute('data-histlog'); }
+    } catch {
+      _histLogCache.set(idx, 'Log unavailable.');
+    } finally {
+      _histLogInFlight.delete(idx);
+    }
+  });
 }
 
 // Bulk-dismiss every Done strip on the campaigns board (local → _localDismissed,
@@ -9327,7 +9398,7 @@ function initRunBarMirror() {
       if (onNewCampaignView) {
         rpStatusSub.textContent = 'No activity for this campaign';
       } else if (running) {
-        rpStatusSub.textContent = `${mode} · ${profile} · ${today}/${total}`;
+        rpStatusSub.textContent = `${mode} · ${__cockpit.pName || '—'} · ${today}/${total}`;
       } else if (monitoring) {
         if (__cockpit.monitoringCheckInProgress) {
           rpStatusSub.textContent = 'checking now…';

@@ -3399,7 +3399,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               // ALREADY_PROCESSED skip — record with original action+date from the state entry
               const _prev = state.processed[candidateUrl];
               const _prevAction = _prev?.action || 'unknown';
-              const _prevDate = _prev?.date ? (() => { try { return new Date(_prev.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); } catch { return _prev.date; } })() : 'unknown date';
+              // state.processed dates are human strings ("Jul 7th, 15:27"), which
+              // new Date() can't parse — it stringifies to "Invalid Date" without
+              // throwing. Only reformat when the date actually parses; otherwise
+              // show the stored string as-is (it's already human-readable).
+              const _prevD = new Date(_prev?.date);
+              const _prevDate = !isNaN(_prevD.getTime())
+                ? _prevD.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                : (_prev?.date || 'an earlier run');
               const _cName = `${candidate['First Name'] || candidate['firstName'] || ''} ${candidate['Last Name'] || candidate['lastName'] || ''}`.trim() || '(no name)';
               recordSkip({ url: candidateUrl, leadName: _cName, reason: ALREADY_PROCESSED, profileId, profileName: pName, detail: `${_prevAction} on ${_prevDate}` });
               continue;

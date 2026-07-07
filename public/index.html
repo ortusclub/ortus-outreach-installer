@@ -1342,7 +1342,7 @@
   .sn-foot .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);}
   .sn-foot .lock{font-size:11px;color:var(--gray-faint,#b8b8b6);}
   .sn-foot .right{margin-left:auto;display:flex;gap:8px;}
-  .sn-foot .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
+  .sn-foot .mini,.skipped-actions .mini{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-radius:9999px;border:1px solid var(--hairline);background:transparent;color:var(--ink);cursor:pointer;}
   .sn-foot .mini.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);}
   .sn-foot .mini.locked{opacity:.4;cursor:not-allowed;}
   .sn-strip.sn-collapsed .sn-switch{display:none;}
@@ -3211,7 +3211,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.139.0"></script>
+  <script type="module" src="/js/app.js?v=2.139.1"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
