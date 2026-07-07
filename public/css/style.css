@@ -7782,7 +7782,9 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .bl-note b { color: var(--ink); font-weight: 500; }
 
 /* ── Inline wizard blocklist (Section 2, under the sheet URL) ── */
-.wiz-blocklist { margin-top: 18px; border-top: 1px solid var(--hairline-soft); padding-top: 14px; }
+.wiz-blocklist { margin-top: 18px; border-top: 1px solid var(--hairline-soft);
+  /* match .sheet-hero-top's inner padding so the block aligns with the URL field above */
+  padding: 16px 24px 20px; }
 .wiz-blocklist-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--gray); margin-bottom: 10px; }
 .wiz-blocklist-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
