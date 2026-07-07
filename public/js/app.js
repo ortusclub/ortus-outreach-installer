@@ -4962,7 +4962,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (pfAnyway) pfAnyway.onclick = async () => {
     // Blocklisted rows are always stamped+excluded even on "launch anyway".
     const bl = (_pfState?.findings?.blockers || []).filter((f) => f.check === 'blocklist_match');
-    if (bl.length) await stampExcluded(bl);
+    if (bl.length) {
+      const res = await stampExcluded(bl);
+      if (!res.ok) showCampaignToast(`${res.failed.length} of ${bl.length} blocklist stamps failed — rows may reappear next launch`, 7000);
+    }
     closePreflight();
     _launchWithAck();
   };
@@ -4992,7 +4995,7 @@ async function openBlocklistPanel() {
   const r = await fetch('/api/blocklist').then((x) => x.json()).catch(() => ({ entries: [] }));
   const list = document.getElementById('bl-list');
   list.innerHTML = (r.entries || []).map((e) =>
-    `<div class="bl-row"><span class="bl-entry">${escapeHtml(e.value)}</span><span class="bl-reason-cell">${escapeHtml(e.reason || '')}</span><span class="bl-meta">${escapeHtml(e.addedBy || '')} · ${(e.addedAt || '').slice(0, 10)}</span><button class="bl-remove" data-v="${escapeHtml(e.value)}">Remove</button></div>`
+    `<div class="bl-row"><span class="bl-entry">${escapeHtml(e.value)}</span><span class="bl-reason-cell">${escapeHtml(e.reason || '')}</span><span class="bl-meta">${escapeHtml(e.addedBy || '')} · ${escapeHtml((e.addedAt || '').slice(0, 10))}</span><button class="bl-remove" data-v="${escapeHtml(e.value)}">Remove</button></div>`
   ).join('') || '<div style="font-family:var(--mono);font-size:0.72rem;color:var(--gray);padding:12px 4px">No entries yet</div>';
   list.querySelectorAll('.bl-remove').forEach((btn) => btn.onclick = async () => {
     await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
