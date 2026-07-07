@@ -2958,7 +2958,9 @@ app.post('/api/campaign/sheet-write-failures/retry', async (_req, res) => {
       } catch {
         return { error: 'payload unrecoverable — cannot retry' };
       }
-      return updateSheetRow(campaign.sheetUrl, failure.url, payload, failure.column || undefined);
+      const ok = await updateSheetRow(campaign.sheetUrl, failure.url, payload, failure.column || undefined);
+      if (!ok) return { error: 'sheet write failed' };
+      return {};
     });
     campaign.sheetWriteFailures = getFailures().length;
     res.json(result);

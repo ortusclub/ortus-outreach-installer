@@ -27,6 +27,7 @@ import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab } from './sheets-writer.js';
+import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
 import { getPrefs as getOperatorPrefs } from './operator-prefs.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
@@ -1085,8 +1086,12 @@ configureSheetWriteTracker({
  * Never throws — a failed write must not stop the campaign loop.
  */
 async function trackedSheetWrite(sheetUrl, url, leadName, sheetData, linkedinColumn) {
+  // updateSheetRow returns a boolean (true=ok, false=failed) — never throws.
+  // When no webapp is configured, false is a no-op (nothing to track or retry).
+  if (!SHEETS_WEBAPP_URL) return;
   await writeSheetWithRetry(
-    () => updateSheetRow(sheetUrl, url, sheetData, linkedinColumn),
+    () => updateSheetRow(sheetUrl, url, sheetData, linkedinColumn)
+        .then((ok) => (ok ? {} : { error: 'sheet write failed (updateSheetRow returned false)' })),
     {
       url,
       leadName,
