@@ -2307,7 +2307,6 @@
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
             <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveAsDraft()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="openBlocklistPanel()" title="View and edit the company/domain blocklist">Blocklist</button>
           </div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
                the GKE engine instead of running locally — the campaign keeps
@@ -3193,7 +3192,7 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=2.134.0"></script>
+  <script type="module" src="/js/app.js?v=2.135.3"></script>
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
@@ -3349,7 +3348,7 @@
     <div class="bl-add">
       <input type="text" id="bl-value" placeholder="Company or domain…" />
       <input type="text" id="bl-reason" placeholder="Reason (shown in the linter)…" />
-      <button class="btn btn-primary" id="bl-add">Add</button>
+      <button class="btn btn-secondary" id="bl-add">Add</button>
     </div>
     <div class="bl-note">Matching is <b>case-insensitive</b>. Company entries match whole company names; domain entries match any lead URL/email on that domain.</div>
     <div style="margin-top:20px;border-top:1px solid var(--hairline);padding-top:16px;display:flex;justify-content:flex-end">
