@@ -76,6 +76,11 @@ import {
   mergeLiveRead, resolveDisplayState, seedConnectedIds,
   loadPrimaryStatus, savePrimaryStatus,
 } from './primary-status-store.js';
+import {
+  recordSkip, clearSkips,
+  ALREADY_PROCESSED, IDENTITY_UNCONFIRMED, WATCHDOG_TIMEOUT,
+  MALFORMED_URL, FAILED_REPEATEDLY,
+} from './skip-ledger.js';
 
 const STATE_FILE = dataPath('state.json');
 const HISTORY_PATH = dataPath('history.json');
@@ -1823,6 +1828,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   campaign._abort = false;
   campaign._stoppedManually = false;
   campaign._skipCleanup = false;
+  clearSkips(); // reset skip ledger for this run
   // v2.78: seed the rotation benches from any accounts pre-benched in the wizard.
   campaign._skippedProfiles = new Set(Array.isArray(benchedProfileIds) ? benchedProfileIds : []);
   campaign._primaryConn = new Map();      // v2.78: fresh per-run primary-connection status
@@ -3314,7 +3320,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             const candidate = slice[cursor];
             const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
             cursor++;
-            if (!candidateUrl) continue;
+            if (!candidateUrl) {
+              const _cName = `${candidate['First Name'] || candidate['firstName'] || ''} ${candidate['Last Name'] || candidate['lastName'] || ''}`.trim() || '(no name)';
+              recordSkip({ url: '', leadName: _cName, reason: MALFORMED_URL, profileId, profileName: pName, detail: 'No LinkedIn URL found in row — skipping lead' });
+              continue;
+            }
             row = candidate;
             break;
           }
@@ -3324,7 +3334,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             const candidate = targets[leadIndex];
             const candidateUrl = extractLinkedInUrl(candidate, linkedinColumn);
             leadIndex++;
-            if (!candidateUrl) continue;
+            if (!candidateUrl) {
+              const _cName = `${candidate['First Name'] || candidate['firstName'] || ''} ${candidate['Last Name'] || candidate['lastName'] || ''}`.trim() || '(no name)';
+              recordSkip({ url: '', leadName: _cName, reason: MALFORMED_URL, profileId, profileName: pName, detail: 'No LinkedIn URL found in row — skipping lead' });
+              continue;
+            }
             // Skip URLs already touched by THIS installation's local state,
             // EXCEPT for modes where re-touching is intentional (message_only
             // sends DMs after acceptance; open_profile_only is fire-and-forget;
@@ -3332,7 +3346,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // connect_and_introduce / connect_and_message trust the sheet as
             // source of truth so a cleared row gets re-processed even if the
             // local state remembers it).
-            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && mode !== 'connect_and_introduce' && mode !== 'connect_and_message' && state.processed[candidateUrl]) continue;
+            if (mode !== 'message_only' && mode !== 'introduce_back' && mode !== 'open_profile_only' && mode !== 'connect_and_introduce' && mode !== 'connect_and_message' && state.processed[candidateUrl]) {
+              // ALREADY_PROCESSED skip — record with original action+date from the state entry
+              const _prev = state.processed[candidateUrl];
+              const _prevAction = _prev?.action || 'unknown';
+              const _prevDate = _prev?.date ? (() => { try { return new Date(_prev.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); } catch { return _prev.date; } })() : 'unknown date';
+              const _cName = `${candidate['First Name'] || candidate['firstName'] || ''} ${candidate['Last Name'] || candidate['lastName'] || ''}`.trim() || '(no name)';
+              recordSkip({ url: candidateUrl, leadName: _cName, reason: ALREADY_PROCESSED, profileId, profileName: pName, detail: `${_prevAction} on ${_prevDate}` });
+              continue;
+            }
             const sheetStatus = (candidate['Connection Status'] || candidate['connection status'] || candidate['Status'] || candidate['status'] || '').toLowerCase();
             if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
               if (sheetStatus) continue;
@@ -3389,6 +3411,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // to the legacy logic, unchanged.
         const _stage = (row['Stage'] || row['stage'] || '').toString().trim();
         const _hasStageHere = _stage.length > 0 || ('Stage' in row) || ('stage' in row);
+        // Helper for in-loop re-validation skips (concurrent-stamp or terminal state).
+        const _leadNameForSkip = `${row['First Name'] || row['firstName'] || ''} ${row['Last Name'] || row['lastName'] || ''}`.trim() || '(no name)';
 
         if (mode === 'check_status') {
           // 2.8.29: criterion is Sender filled, not CC=Sent.
@@ -3411,7 +3435,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             row['Introduction Status'] || row['introduction status'] ||
             row['Introduction status'] || row['introStatus'] || ''
           ).toString().trim();
-          if (_introStatusNow !== '') { delete state.processed[url]; continue; }
+          if (_introStatusNow !== '') {
+            recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Intro Status already set to "${_introStatusNow}" — skipping` });
+            delete state.processed[url]; continue;
+          }
         } else if (mode === 'message_only') {
           // v2.61: DM mirrors IC — read only from DM Status. Pre-filter
           // passed blank dmStatus; if a concurrent operator or worker
@@ -3420,25 +3447,37 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             row['DM Status'] || row['dm status'] || row['DM status'] ||
             row['Direct Message Status'] || row['dmStatus'] || ''
           ).toString().trim();
-          if (_dmStatusNow !== '') { delete state.processed[url]; continue; }
+          if (_dmStatusNow !== '') {
+            recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: DM Status already set to "${_dmStatusNow}" — skipping` });
+            delete state.processed[url]; continue;
+          }
         } else if (mode === 'open_profile_only' || mode === 'inmail_only') {
           if (_hasStageHere) {
             // New schema: pre-filter required Stage in {'', 'Send Connect'}.
             // If a concurrent run flipped it to anything else, skip.
             if (_stage !== '' && _stage !== 'Send Connect') {
+              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Stage is "${_stage}" (not eligible for ${mode}) — skipping` });
               delete state.processed[url]; continue;
             }
           } else {
-            if (status === 'done') { delete state.processed[url]; continue; }
+            if (status === 'done') {
+              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Connection Status is "done" — skipping` });
+              delete state.processed[url]; continue;
+            }
             if (mode === 'open_profile_only' && msgSent) {
+              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Message already sent — skipping` });
               delete state.processed[url]; continue;
             }
             if (mode === 'inmail_only' && inmailCell === 'sent') {
+              recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: InMail already sent — skipping` });
               delete state.processed[url]; continue;
             }
           }
         } else {
-          if (status === 'done') { delete state.processed[url]; continue; }
+          if (status === 'done') {
+            recordSkip({ url, leadName: _leadNameForSkip, reason: 'terminal_stage', profileId, profileName: pName, detail: `In-loop re-validation: Connection Status is "done" — skipping` });
+            delete state.processed[url]; continue;
+          }
         }
 
         // Build template data
@@ -3568,6 +3607,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               const _intended = `${_srcName || '?'} / ${readSourceMemberId(row) || 'no-member#'}`;
               const _got = `${_gate.loaded.name || '?'} / ${_gate.loaded.memberNumber || 'no-member#'}`;
               log(`  ✗ [${pName}] IDENTITY UNVERIFIED after ${MAX_IDENTITY_ATTEMPTS} tries — NOT sending. Intended: ${_intended} · Loaded: ${_got} · ${_gate.reason}`);
+              recordSkip({ url, leadName: _srcName || '(no name)', reason: IDENTITY_UNCONFIRMED, profileId, profileName: pName, detail: `IDENTITY UNVERIFIED after ${MAX_IDENTITY_ATTEMPTS} tries — intended=[${_intended}] loaded=[${_got}] (${_gate.reason})` });
               // Fold everything into `reason`: the Ops Log bridge writes
               // `reason || details` to one column, so keep it all here and make
               // it greppable for "identity_unverified".
@@ -3788,6 +3828,26 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           // log too, so the operator sees the same wording the Audit Log uses.
           if (result.action === 'skipped' && result.error) {
             log(`  ${normalizeSkipReason(result.error)}`);
+            // Record in skip ledger so the post-campaign report can surface it.
+            {
+              const _errStr = String(result.error).toLowerCase();
+              let _skipReason;
+              if (_errStr.includes('lead_timeout_watchdog') || _errStr.includes('lead timeout')) {
+                _skipReason = WATCHDOG_TIMEOUT;
+              } else if (_errStr.includes('identity_unverified') || _errStr.includes('identity-unverified')) {
+                _skipReason = IDENTITY_UNCONFIRMED;
+              } else {
+                _skipReason = result.error; // will be stored as a raw string (OTHER-ish)
+              }
+              recordSkip({
+                url,
+                leadName: `${data.firstName || ''} ${data.lastName || ''}`.trim() || '(no name)',
+                reason: _skipReason,
+                profileId,
+                profileName: pName,
+                detail: normalizeSkipReason(result.error),
+              });
+            }
           } else {
             log(`  ${result.action}${result.error ? ' — ' + result.error : ''}`);
           }
@@ -4282,6 +4342,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               log(`  ⚠ ${pName}: ${SKIP_PARK_THRESHOLD} consecutive non-success outcomes — parking account for rest of run.`);
               weeklyLimited.add(profileId);
               recordProfileEnd(profileId, pName, `Parked after ${skipCount} consecutive skips`);
+              recordSkip({ url, leadName: `${data.firstName || ''} ${data.lastName || ''}`.trim() || '(no name)', reason: FAILED_REPEATEDLY, profileId, profileName: pName, detail: `Account parked after ${skipCount} consecutive non-success outcomes — this lead was the trigger` });
               campaign.parkedProfiles.push({
                 profileId,
                 pName,
