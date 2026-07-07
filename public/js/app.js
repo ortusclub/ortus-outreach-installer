@@ -4880,6 +4880,127 @@ function stepInput(inputId, delta) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// ── Pre-flight linter (spec 2026-07-07) ────────────────────────────────────
+let _pfState = null; // { findings, ack, payload, opts }
+
+async function runPreflight(payload) {
+  const r = await fetch('/api/preflight', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+function renderPreflight({ findings }) {
+  const fill = (id, list, isFinding) => {
+    const el = document.getElementById(id);
+    el.innerHTML = list.map((f) => isFinding
+      ? `<div class="pf-row"><span class="rowno">${escapeHtml(String(f.rowIndex ?? '—'))}</span><span class="lead">${escapeHtml(f.leadName || '')}</span><span class="reason">${escapeHtml(f.detail)}</span></div>`
+      : `<div class="pf-row pf-pass"><span class="rowno">✓</span><span class="reason">${escapeHtml(f.detail)}</span></div>`
+    ).join('') || '<div class="pf-row" style="color:var(--gray);font-size:0.72rem">none</div>';
+  };
+  fill('pf-blockers', findings.blockers, true);
+  fill('pf-warnings', findings.warnings, true);
+  fill('pf-passed', findings.passed, false);
+  document.getElementById('pf-count-blockers').textContent = findings.blockers.length;
+  document.getElementById('pf-count-warnings').textContent = findings.warnings.length;
+  document.getElementById('pf-count-passed').textContent = findings.passed.length;
+  document.getElementById('pf-blockers-n').textContent = findings.blockers.length;
+  document.getElementById('pf-warnings-n').textContent = findings.warnings.length;
+  document.getElementById('pf-passed-n').textContent = findings.passed.length;
+  // Blocklist findings are never overridable — adapt button label accordingly.
+  const hasBl = findings.blockers.some((f) => f.check === 'blocklist_match');
+  const anyway = document.getElementById('pf-anyway');
+  anyway.textContent = hasBl ? 'Exclude blocklisted & launch anyway' : 'Launch anyway';
+  anyway.style.display = findings.blockers.length || findings.warnings.length ? '' : 'none';
+  // Show/hide warning tally chip
+  const warnChip = document.getElementById('pf-tally-warnings');
+  if (warnChip) warnChip.style.display = findings.warnings.length ? '' : 'none';
+  document.getElementById('pf-scrim').style.display = 'flex';
+}
+
+function closePreflight() { document.getElementById('pf-scrim').style.display = 'none'; }
+
+async function stampExcluded(stampables) {
+  if (!stampables.length) return { ok: true, stamped: 0, failed: [] };
+  const r = await fetch('/api/preflight/stamp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sheetUrl: _pfState.payload.sheetUrl,
+      linkedinColumn: _pfState.payload.linkedinColumn,
+      stamps: stampables.map((f) => ({ url: f.url, stampText: f.stampText })),
+    }),
+  });
+  return r.json().catch(() => ({ ok: false, stamped: 0, failed: [] }));
+}
+
+function _launchWithAck() {
+  startCampaign({ ..._pfState.opts, _preflightAck: _pfState.ack, _skipPreflight: true });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Pre-flight overlay buttons
+  const pfCancel = document.getElementById('pf-cancel');
+  const pfFix = document.getElementById('pf-fix');
+  const pfExclude = document.getElementById('pf-exclude');
+  const pfAnyway = document.getElementById('pf-anyway');
+  const pfManageBl = document.getElementById('pf-manage-bl');
+  const pfPassToggle = document.getElementById('pf-pass-toggle');
+  if (pfCancel) pfCancel.onclick = closePreflight;
+  if (pfFix) pfFix.onclick = () => {
+    if (_pfState?.payload?.sheetUrl) window.open(_pfState.payload.sheetUrl, '_blank');
+  };
+  if (pfExclude) pfExclude.onclick = async () => {
+    const stampables = (_pfState?.findings?.blockers || []).filter((f) => f.url && f.stampText);
+    const res = await stampExcluded(stampables);
+    if (!res.ok) showCampaignToast(`${res.failed.length} of ${stampables.length} stamps failed — those rows may reappear next launch`, 7000);
+    closePreflight();
+    _launchWithAck();
+  };
+  if (pfAnyway) pfAnyway.onclick = async () => {
+    // Blocklisted rows are always stamped+excluded even on "launch anyway".
+    const bl = (_pfState?.findings?.blockers || []).filter((f) => f.check === 'blocklist_match');
+    if (bl.length) await stampExcluded(bl);
+    closePreflight();
+    _launchWithAck();
+  };
+  if (pfManageBl) pfManageBl.onclick = openBlocklistPanel;
+  if (pfPassToggle) pfPassToggle.onclick = () => {
+    document.getElementById('grp-pass')?.classList.toggle('collapsed');
+  };
+
+  // Blocklist panel buttons
+  const blAdd = document.getElementById('bl-add');
+  const blClose = document.getElementById('bl-close');
+  if (blAdd) blAdd.onclick = async () => {
+    const value = document.getElementById('bl-value').value.trim();
+    if (!value) return;
+    await fetch('/api/blocklist', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value, reason: document.getElementById('bl-reason').value.trim(), addedBy: (window.operatorEmail || '') }),
+    });
+    document.getElementById('bl-value').value = '';
+    document.getElementById('bl-reason').value = '';
+    openBlocklistPanel();
+  };
+  if (blClose) blClose.onclick = () => { document.getElementById('bl-scrim').style.display = 'none'; };
+});
+
+async function openBlocklistPanel() {
+  const r = await fetch('/api/blocklist').then((x) => x.json()).catch(() => ({ entries: [] }));
+  const list = document.getElementById('bl-list');
+  list.innerHTML = (r.entries || []).map((e) =>
+    `<div class="bl-row"><span class="bl-entry">${escapeHtml(e.value)}</span><span class="bl-reason-cell">${escapeHtml(e.reason || '')}</span><span class="bl-meta">${escapeHtml(e.addedBy || '')} · ${(e.addedAt || '').slice(0, 10)}</span><button class="bl-remove" data-v="${escapeHtml(e.value)}">Remove</button></div>`
+  ).join('') || '<div style="font-family:var(--mono);font-size:0.72rem;color:var(--gray);padding:12px 4px">No entries yet</div>';
+  list.querySelectorAll('.bl-remove').forEach((btn) => btn.onclick = async () => {
+    await fetch('/api/blocklist', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: btn.dataset.v }) });
+    openBlocklistPanel();
+  });
+  document.getElementById('bl-scrim').style.display = 'flex';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Campaign control
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5300,6 +5421,29 @@ async function startCampaign(opts = {}) {
   }
   // Rerun context consumed — clear so a subsequent fresh launch isn't treated as a rerun.
   window._savedSheetGid = '';
+
+  // ── Pre-flight gate (spec 2026-07-07) ──────────────────────────────────────
+  if (!opts._skipPreflight) {
+    try {
+      const pf = await runPreflight({
+        sheetUrl: body.sheetUrl, linkedinColumn: body.linkedinColumn,
+        mode: body.mode, templates: body.templates,
+        dailyLimit: body.dailyLimit, profileIds: body.profileIds,
+      });
+      _pfState = { findings: pf.findings, ack: pf.ack, payload: body, opts };
+      if (pf.findings.blockers.length || pf.findings.warnings.length) {
+        renderPreflight(pf);   // overlay takes over; its buttons re-enter with _skipPreflight
+        return;
+      }
+      body.preflightAck = pf.ack; // clean run — attach ack and continue
+    } catch (err) {
+      showCampaignToast(`Pre-flight failed: ${err.message}`, 7000);
+      return;
+    }
+  } else if (opts._preflightAck) {
+    body.preflightAck = opts._preflightAck;
+  }
+  // ── End pre-flight gate ───────────────────────────────────────────────────
 
   // Cloud dispatch: only for an immediate "Start" (not Queue/Schedule/Draft) and
   // only for engine-supported modes. Gated on the mode so a non-cloud mode NEVER
@@ -6246,6 +6390,12 @@ async function submitStartCampaign(body, opts = {}) {
       // when this machine's operator email isn't set; show the modal, not a raw alert.
       if (res.status === 409 && txt.includes('OPERATOR_EMAIL_REQUIRED')) {
         openOperatorEmailModal({ mandatory: true });
+        return;
+      }
+      // Pre-flight gate: findings changed between preflight and launch (race). Ask operator to retry.
+      let _parsed409; try { _parsed409 = JSON.parse(txt); } catch { _parsed409 = {}; }
+      if (res.status === 409 && _parsed409.preflight) {
+        showCampaignToast('Lead sheet changed since pre-flight check — press Start again to re-run the check.', 8000);
         return;
       }
       alert(`Could not ${opts.queueOnly ? 'queue' : 'start'} campaign:\n\n${txt}`);

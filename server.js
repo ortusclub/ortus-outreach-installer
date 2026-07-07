@@ -1394,6 +1394,21 @@ app.post('/api/preflight', async (req, res) => {
   }
 });
 
+// Task 5 (2026-07-07): stamp excluded rows in the sheet after preflight
+app.post('/api/preflight/stamp', async (req, res) => {
+  const { sheetUrl, linkedinColumn, stamps } = req.body || {};
+  if (!sheetUrl || !Array.isArray(stamps)) return res.status(400).json({ ok: false, error: 'sheetUrl and stamps required' });
+  let stamped = 0; const failed = [];
+  const { updateSheetRow } = await import('./src/sheets-writer.js');
+  for (const s of stamps) {
+    try {
+      const ok = await updateSheetRow(sheetUrl, s.url, { stage: s.stampText }, linkedinColumn || '');
+      if (ok) stamped++; else failed.push(s.url);
+    } catch { failed.push(s.url); }
+  }
+  res.json({ ok: failed.length === 0, stamped, failed });
+});
+
 app.post('/api/campaign/start', async (req, res) => {
   try {
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.

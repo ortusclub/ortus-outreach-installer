@@ -3282,5 +3282,66 @@
     <div class="snm-row"><button class="snm-btn" id="snm-cancel">Cancel</button><button class="snm-btn solid" id="snm-ok">Yes, toggle it</button></div>
   </div>
 </div>
+
+<!-- ══ Pre-flight linter overlay (spec 2026-07-07) ══ -->
+<div id="pf-scrim" role="dialog" aria-modal="true" aria-labelledby="pf-title" style="display:none">
+  <div class="pf-panel">
+    <div class="pf-eyebrow">Pre-flight · runs after Launch, before any browser opens</div>
+    <div class="pf-title" id="pf-title">Lead sheet check</div>
+    <div class="pf-sub" id="pf-sub"></div>
+    <div class="pf-tally">
+      <span class="t-block" id="pf-tally-blockers">❌ <span id="pf-count-blockers">0</span> blockers</span>
+      <span class="t-warn" id="pf-tally-warnings">⚠ <span id="pf-count-warnings">0</span> warnings</span>
+      <span class="t-pass" id="pf-tally-passed">✓ <span id="pf-count-passed">0</span> passed</span>
+    </div>
+
+    <div class="pf-group pf-blockers">
+      <div class="pf-group-head">❌ Blockers <span class="n" id="pf-blockers-n"></span></div>
+      <div class="pf-rows" id="pf-blockers"></div>
+    </div>
+
+    <div class="pf-group pf-warnings">
+      <div class="pf-group-head">⚠ Warnings <span class="n" id="pf-warnings-n"></span></div>
+      <div class="pf-rows" id="pf-warnings"></div>
+    </div>
+
+    <div class="pf-group pf-passed collapsed" id="grp-pass">
+      <div class="pf-group-head" id="pf-pass-toggle">
+        <span class="caret">▾</span> ✓ Passed checks
+        <span class="n" id="pf-passed-n"></span>
+        <span style="margin-left:auto;font-size:0.62rem;letter-spacing:0.06em;color:var(--gray);cursor:pointer" id="pf-manage-bl">Manage blocklist →</span>
+      </div>
+      <div class="pf-rows" id="pf-passed"></div>
+    </div>
+
+    <div class="pf-actions">
+      <button class="btn btn-secondary btn-sm" id="pf-fix">Fix on sheet</button>
+      <button class="btn btn-primary" id="pf-exclude">Exclude flagged rows &amp; launch</button>
+      <span class="spacer"></span>
+      <button class="btn btn-secondary btn-sm" id="pf-anyway">Launch anyway</button>
+      <button class="btn btn-secondary btn-sm" id="pf-cancel">Cancel</button>
+      <div class="pf-count-note"><b>Exclude flagged rows &amp; launch</b> stamps blocker rows in the Stage column and skips them for this run. Nothing is deleted from the sheet.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Blocklist management panel (spec 2026-07-07) ══ -->
+<div id="bl-scrim" role="dialog" aria-modal="true" aria-labelledby="bl-title" style="display:none">
+  <div class="bl-panel">
+    <div class="bl-eyebrow">Settings · shared across all operators</div>
+    <h2 class="bl-title" id="bl-title">Blocklist</h2>
+    <p class="bl-sub">Companies and email/URL domains that must <b>never</b> be contacted by any campaign. Matched against the sheet's Company column at pre-flight.</p>
+    <div id="bl-list"></div>
+    <div class="bl-add">
+      <input type="text" id="bl-value" placeholder="Company or domain…" />
+      <input type="text" id="bl-reason" placeholder="Reason (shown in the linter)…" />
+      <button class="btn btn-primary" id="bl-add">Add</button>
+    </div>
+    <div class="bl-note">Matching is <b>case-insensitive</b>. Company entries match whole company names; domain entries match any lead URL/email on that domain.</div>
+    <div style="margin-top:20px;border-top:1px solid var(--hairline);padding-top:16px;display:flex;justify-content:flex-end">
+      <button class="btn btn-secondary btn-sm" id="bl-close">Close</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
