@@ -968,6 +968,9 @@
                 <span class="alpha-knob-suffix">invites / day</span>
               </div>
               <div class="alpha-knob-help">LinkedIn caps invites at ~100/account/week. <b>50</b> is a safe daily default — runs back-to-back for 2 days before LinkedIn starts throttling.</div>
+              <!-- Capacity forecast (feature ⑥) — filled by updateCapacityForecast()
+                   in app.js once the sheet is previewed and accounts are selected. -->
+              <div class="capacity-forecast" id="capacity-forecast-line" style="display:none"></div>
             </div>
 
             <!-- Right column — parallel accounts. Visibility/disabled state

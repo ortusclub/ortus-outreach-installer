@@ -4386,6 +4386,21 @@ body.theme-light .help-pop-item:hover { background: rgba(247, 190, 104, 0.12); }
   margin-top: 10px;
   line-height: 1.5;
 }
+/* Capacity forecast line (feature ⑥) — quiet mono metadata under the daily-limit
+   knob. Amber (gold, the existing warn accent) when the projected run exceeds
+   14 days, matching the list_vs_limit pre-flight lint threshold. */
+.capacity-forecast {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.7rem;
+  color: var(--gray);
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline-soft);
+  line-height: 1.5;
+}
+.capacity-forecast b { color: var(--ink); font-weight: 500; }
+.capacity-forecast.is-warn { color: var(--gold); }
+.capacity-forecast.is-warn b { color: var(--gold); font-weight: 600; }
 /* Phase 2.8.15: campaign-hero restyled when nested inside the throughput panel.
    Flows as the panel's bottom forecast row instead of a standalone boxed grid. */
 .alpha-throughput .campaign-hero.alpha-forecast {
