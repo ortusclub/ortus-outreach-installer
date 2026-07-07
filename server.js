@@ -2920,6 +2920,7 @@ app.get('/api/campaign/status', async (_req, res) => {
       totalTargets: postAmp.total,
       profileNames: [],
       errors: postAmp.errors.slice(-20).map(e => ({ message: e })),
+      skippedCount: getSkips().length,
     });
   }
   let followUp = null;
