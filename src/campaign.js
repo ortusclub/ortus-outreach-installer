@@ -4313,19 +4313,23 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             } else {
               consecutive429s.set(profileId, 0);
             }
-            const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
-            consecutiveSkips.set(profileId, skipCount);
-            if (skipCount >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
-              log(`  ⚠ ${pName}: ${SKIP_PARK_THRESHOLD} consecutive non-success outcomes — parking account for rest of run.`);
-              weeklyLimited.add(profileId);
-              recordProfileEnd(profileId, pName, `Parked after ${skipCount} consecutive skips`);
-              campaign.parkedProfiles.push({
-                profileId,
-                pName,
-                parkedAt: Date.now(),
-                reason: 'consecutive_skips',
-                skipCount,
-              });
+            // v2.137: don't count the cooldown-triggering 429 toward consecutiveSkips —
+            // the reset inside the cooldown branch above is overridden here without this guard.
+            if (!cooling429) {
+              const skipCount = (consecutiveSkips.get(profileId) || 0) + 1;
+              consecutiveSkips.set(profileId, skipCount);
+              if (skipCount >= SKIP_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ⚠ ${pName}: ${SKIP_PARK_THRESHOLD} consecutive non-success outcomes — parking account for rest of run.`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, `Parked after ${skipCount} consecutive skips`);
+                campaign.parkedProfiles.push({
+                  profileId,
+                  pName,
+                  parkedAt: Date.now(),
+                  reason: 'consecutive_skips',
+                  skipCount,
+                });
+              }
             }
 
             if (errorMsg.includes('WEEKLY_LIMIT')) {
