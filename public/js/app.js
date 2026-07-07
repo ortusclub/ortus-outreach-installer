@@ -5993,6 +5993,130 @@ function _wireConductorFilter() {
   });
 }
 
+// ── Skipped-leads panel state ──────────────────────────────────────────────
+// Shared across the board; the panel is only shown for the one local-active strip.
+let _skipPanelExpanded = false;
+let _skipData = []; // array of skip objects from /api/campaign/skips
+let _skipPollTimer = null;
+
+const _SKIP_REASON_LABELS = {
+  already_processed:   'Already processed',
+  identity_unconfirmed:'Identity unconfirmed',
+  watchdog_timeout:    'Watchdog timeout',
+  malformed_url:       'Malformed URL',
+  duplicate_row:       'Duplicate row',
+  failed_repeatedly:   'Failed repeatedly',
+  terminal_stage:      'Terminal stage',
+  other:               'Other',
+};
+
+function _skipReasonLabel(r) {
+  return _SKIP_REASON_LABELS[r] || r || 'Other';
+}
+
+async function _fetchSkips() {
+  try {
+    const r = await fetch('/api/campaign/skips');
+    const d = await r.json();
+    _skipData = Array.isArray(d.skips) ? d.skips : [];
+  } catch { /* best-effort */ }
+}
+
+function _startSkipPoll() {
+  if (_skipPollTimer) return;
+  _skipPollTimer = setInterval(_fetchSkipsAndRefresh, 5000);
+}
+
+function _stopSkipPoll() {
+  if (_skipPollTimer) { clearInterval(_skipPollTimer); _skipPollTimer = null; }
+}
+
+async function _fetchSkipsAndRefresh() {
+  await _fetchSkips();
+  _renderSkipPanelInPlace();
+}
+
+function _renderSkipPanelInPlace() {
+  const panel = document.getElementById('skip-panel-body');
+  if (!panel) return;
+  panel.innerHTML = _buildSkipTableHtml();
+}
+
+function _buildSkipTableHtml() {
+  if (!_skipData.length) return '<p class="skip-empty">No skips recorded yet.</p>';
+  const rows = _skipData.map((sk) => {
+    const lead = escHtml(sk.leadName || sk.url || '—');
+    const account = escHtml(sk.profileName || '—');
+    const reason = escHtml(_skipReasonLabel(sk.reason));
+    const detail = escHtml(sk.detail || '');
+    return `<tr>
+      <td class="skip-rowno">${escHtml(String(sk.rowNumber || '—'))}</td>
+      <td>${lead}</td>
+      <td>${account}</td>
+      <td class="skip-reason"><b>${reason}</b>${detail ? ' — ' + detail : ''}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="skiptab">
+    <thead><tr><th>Row</th><th>Lead</th><th>Account</th><th>Reason</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+window.toggleSkipPanel = async function toggleSkipPanel() {
+  _skipPanelExpanded = !_skipPanelExpanded;
+  if (_skipPanelExpanded) {
+    await _fetchSkips();
+    _startSkipPoll();
+  } else {
+    _stopSkipPoll();
+  }
+  // Re-render the board so the toggle takes effect immediately.
+  // renderCampaignsBoard is async and will pick up _skipPanelExpanded.
+  renderCampaignsBoard();
+};
+
+window.copySkipList = function copySkipList() {
+  if (!_skipData.length) return;
+  const lines = _skipData.map((sk) =>
+    [sk.rowNumber || '—', sk.leadName || sk.url || '—', _skipReasonLabel(sk.reason), sk.detail || ''].join('\t')
+  );
+  navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
+};
+
+// Reset skip state when a new campaign starts (called on campaign end detection).
+function _clearSkipPanel() {
+  _skipPanelExpanded = false;
+  _skipData = [];
+  _stopSkipPoll();
+}
+
+// Build the skipped block HTML for the strip.
+function _buildSkippedSection(it) {
+  if (!it || it.where !== 'local') return '';
+  const n = it.skippedCount || 0;
+  if (!n) return '';
+  if (!_skipPanelExpanded) {
+    return `<div class="skipped-mini">
+      <span class="skip-pill">Skipped so far: ${n}</span>
+      <a class="skip-view-link" onclick="toggleSkipPanel()">view</a>
+    </div>`;
+  }
+  // Expanded — render from cached _skipData.
+  const tableHtml = _buildSkipTableHtml();
+  return `<div class="skipped">
+    <div class="skipped-head">
+      Skipped · <span class="skip-n">${n} leads</span>
+      <a class="skip-view-link skip-collapse" onclick="toggleSkipPanel()">Collapse</a>
+    </div>
+    <div id="skip-panel-body">${tableHtml}</div>
+    <div class="skipped-actions">
+      <button type="button" class="mini" onclick="copySkipList()">Copy list</button>
+      <span class="skipped-note">Skipped rows remain untouched on the sheet.</span>
+    </div>
+  </div>`;
+}
+// ── End skipped-leads panel ────────────────────────────────────────────────
+
 // Render one normalized item as an sn-strip. Item shape:
 //   { where:'cloud'|'local', id, name, mode, isFG, bucket:'running'|'queued'|'done',
 //     sent, total, accounts, mine, owner, bad, paused, sheetUrl }
@@ -6090,6 +6214,7 @@ function renderUnifiedStrip(it) {
     <div class="sn-flow">${flow}</div>
     ${progLine}
     ${switchBlock}
+    ${_buildSkippedSection(it)}
     <div class="sn-foot"><div class="right">${foot}${_stripOverflow()}</div></div>
   </div>`;
 }
@@ -6119,6 +6244,7 @@ async function renderCampaignsBoard() {
         bucket: 'running', sent: s.totalProcessed || 0, total: s.totalTargets || 0,
         accounts: (s.profileIds || []).length, mine: true, paused: !!(s.paused || s._paused),
         logs: Array.isArray(s.logs) ? s.logs : [],
+        skippedCount: s.skippedCount || 0,
       });
     }
   } catch (_) { /* local status best-effort */ }
