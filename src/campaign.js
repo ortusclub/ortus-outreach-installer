@@ -3283,6 +3283,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // (e.g. the 2nd consecutive HTTP 429 → weekly-limit park). Without this
         // guard the loop kept firing all BATCH_SIZE leads at an account that had
         // already hit its cap, so "confirming…" repeated 8× before rotating.
+        // v2.137 (final-review): cooling429 flag — set when a 429 cooldown fires
+        // mid-turn; breaks the inner loop after that lead's error handling completes
+        // so the queue rotates immediately (cooldown ≠ weeklyLimited: profile is
+        // still re-enqueued at ~4671 and re-picked after the cooldown window).
+        let cooling429 = false;
         for (let leadInBatch = 0; leadInBatch < innerLimit && shouldContinueTurn({ abort: campaign._abort, orphan: isOrphan(), weeklyLimited: weeklyLimited.has(profileId), benched: campaign._skippedProfiles?.has(profileId) }); leadInBatch++) {
         // Phase 2.8.9: pause check at the lead boundary — never mid-lead.
         await awaitUnpause(myGen);
@@ -4283,6 +4288,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   profileCooldownUntil.set(profileId, untilTs);
                   campaign._cooldown429.set(profileId, { until: untilTs, pName, reason: '429' });
                   consecutive429s.set(profileId, 0);
+                  // v2.137 (final-review part 1+2): signal the inner loop to break
+                  // immediately after this lead's error handling completes — avoids
+                  // burning remaining batch slots against a cooling account.
+                  // Also reset consecutiveSkips so 429-triggered cooldowns never
+                  // accumulate toward SKIP_PARK_THRESHOLD and falsely park the profile.
+                  cooling429 = true;
+                  consecutiveSkips.set(profileId, 0);
                   log(`  ⏳ [${pName}] rate-limited (HTTP 429) — cooling down ${Math.round(waitMs / 60000)}min, will retry automatically (attempt ${newEpisodes}/3)`);
                 } else {
                   // action === 'park': 3rd episode, treat as real weekly cap
@@ -4480,6 +4492,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               }, linkedinColumn).catch(() => {});
             }
           }
+
+          // v2.137 (final-review): if a 429 cooldown fired for this lead, break
+          // immediately — no delay, no further leads. The profile stays off weeklyLimited
+          // so it is re-enqueued at ~4671 and re-picked by pickNextProfile once the
+          // profileCooldownUntil window expires.
+          if (cooling429) break;
 
           totalVisited++;
 
