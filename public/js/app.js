@@ -6315,7 +6315,15 @@ function renderUnifiedStrip(it) {
     : scheduled ? '<span class="dot gold"></span>'
     : queued ? '<span class="dot q"></span>'
     : '<span class="dot mon"></span>';
+  // #17: a cloud campaign sits `queued` from dispatch until a worker picks it up
+  // (~2–3 min cold start). Show "warming up" for that window so operators aren't
+  // staring at a dead-looking "Queued". After 3 min, fall back to plain "Queued"
+  // (a genuinely-stuck queue shouldn't claim it's warming up forever). Reuses the
+  // existing queued dot — no new colour (mono design system).
+  const warming = cloud && queued && it.createdAt
+    && (Date.now() - new Date(it.createdAt).getTime()) < 3 * 60 * 1000;
   const statusTxt = scheduled ? whenTxt
+    : warming ? '⏳ Warming up (~2 min)'
     : queued ? 'Queued'
     : running ? (it.paused ? 'Paused' : (it.isFG ? 'Inviting' : 'Running'))
     : it.bad ? (it.badLabel || 'Stopped')
@@ -6467,6 +6475,7 @@ async function renderCampaignsBoard() {
         accounts: (c.profile_ids || []).length, mine,
         owner: c.owner || '', bad: c.status === 'error' || c.status === 'cancelled',
         badLabel: c.status === 'cancelled' ? 'Cancelled' : 'Error',
+        createdAt: c.created_at, // #17: drives the "warming up (~2 min)" window
       });
     }
   } catch (_) { /* cloud best-effort */ }
