@@ -102,11 +102,29 @@ const FIRST_HOUR_BLACKOUT_MS = 60 * 60 * 1000;
 // counted as the first-hour gate, this keeps them in sync.
 const IDLE_CAMPAIGN_MIN_DURATION_MS = 60 * 60 * 1000;
 // Per-(profileId, sheetId) timestamp of the last bulk Connection Status
-// check. Used to gate the bulk-check to once every BULK_CHECK_INTERVAL_MS
-// per profile per sheet, avoiding redundant Voyager hits.
+// check. Used to gate the bulk-check per profile per sheet, avoiding
+// redundant Voyager hits. In-campaign gates use the operator cadence
+// (campaign.checkIntervalMinutes) directly; BULK_CHECK_INTERVAL_MS is the
+// FALLBACK sweep interval when no cadence is configured (see
+// resolveBulkCheckIntervalMs, used by the post-campaign sweep scheduler).
 const BULK_CHECK_FILE = dataPath('bulk-check-cooldown.json');
 const PRIMARY_STATUS_FILE = dataPath('primary-status.json');
 const BULK_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * Derive the bulk acceptance-check sweep interval from the operator's
+ * per-campaign cadence. Pure — unit-tested in tests/bulk-check-interval.test.js.
+ *
+ * @param {number|string|null|undefined} checkIntervalMinutes - operator cadence
+ *   in minutes (campaign.checkIntervalMinutes). Non-finite / <= 0 → unset.
+ * @param {number} [fallbackMs] - interval when the cadence is unset
+ *   (defaults to the historical 6h BULK_CHECK_INTERVAL_MS).
+ * @returns {number} interval in ms.
+ */
+export function resolveBulkCheckIntervalMs(checkIntervalMinutes, fallbackMs = BULK_CHECK_INTERVAL_MS) {
+  const min = Number(checkIntervalMinutes);
+  return Number.isFinite(min) && min > 0 ? min * 60_000 : fallbackMs;
+}
 const SUCCESS_ACTIONS = new Set(['connection_sent', 'message_sent', 'inmail_sent', 'op_message_sent', 'already_processed', 'status_accepted', 'status_pending', 'status_declined', 'already_connected']);
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5293,6 +5311,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             followUpBody: (templates && templates.followUpBody) || '',
             followUpDelayMinutes: (templates && templates.followUpDelayMinutes) || 10,
             primarySource: (templates && templates.primarySource) || 'local-browser',
+            // v2.148 cleanup: sweep at the operator-configured cadence instead
+            // of the hardcoded 6h. Entries without this field (old builds /
+            // unset cadence) keep the scheduler's 6h SWEEP_COOLDOWN_MS fallback.
+            sweepIntervalMs: Number(campaign.checkIntervalMinutes) > 0
+              ? resolveBulkCheckIntervalMs(campaign.checkIntervalMinutes)
+              : null,
           });
         }
       }

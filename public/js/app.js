@@ -17469,7 +17469,7 @@ window.renderActiveCard = function(status) {
     _setActiveDetails(true);
     const logEl = document.getElementById('active-log');
     if (logEl && Array.isArray(status.logs)) {
-      const lastN = status.logs.slice(-100);
+      const lastN = status.logs.slice(-200);
       logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
       const head = card.querySelector('.vj-log-head .vj-details-head');
       if (head) head.textContent = `Live log · ${lastN.length} events (finished)`;
@@ -17611,14 +17611,14 @@ window.renderActiveCard = function(status) {
     pauseBtn.setAttribute('data-tip', isPaused ? 'Resume' : 'Pause');
     pauseBtn.setAttribute('aria-label', isPaused ? 'Resume' : 'Pause');
   }
-  // Live log lines — 6 on the compact dashboard card, 15 when the card is
+  // Live log lines — 12 on the compact dashboard card, 15 when the card is
   // relocated into the wizard Live Status (v2.59.22: more real estate there).
   const logEl = document.getElementById('active-log');
   if (logEl && Array.isArray(status.logs)) {
     const inWizard = card.classList.contains('in-wizard');
     const expanded = !!window.__wizLogExpanded;
-    const defaultN = inWizard ? 15 : 6;
-    const limit = expanded ? 100 : defaultN;
+    const defaultN = inWizard ? 15 : 12;
+    const limit = expanded ? 200 : defaultN;
     const lastN = status.logs.slice(-limit);
     logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
     const head = card.querySelector('.vj-log-head .vj-details-head');
@@ -17631,7 +17631,7 @@ window.renderActiveCard = function(status) {
     }
     card.classList.toggle('is-log-expanded', expanded);
   }
-  // Stash the FULL log (not just the 6 rendered) so the "Copy all" button can
+  // Stash the FULL log (not just the 12 rendered) so the "Copy all" button can
   // copy everything the campaign has emitted (in-memory log, capped ~500).
   window.__activeFullLogs = Array.isArray(status.logs) ? status.logs.slice() : [];
   renderSheetWriteWarn(status);
