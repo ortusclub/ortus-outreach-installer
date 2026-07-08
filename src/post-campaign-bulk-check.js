@@ -100,7 +100,8 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
                                           primaryUrl = '', introTitle = '', ccDmBody = '',
                                           autoAcceptPrimary = false, followUpEnabled = false,
                                           followUpBody = '', followUpDelayMinutes = 10,
-                                          primarySource = 'local-browser' }) {
+                                          primarySource = 'local-browser',
+                                          sweepIntervalMs = null }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
   const k = key(sheetId, profileId);
@@ -130,6 +131,9 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     followUpBody: followUpBody || '',
     followUpDelayMinutes: Number(followUpDelayMinutes) > 0 ? Number(followUpDelayMinutes) : 10,
     primarySource: (primarySource && primarySource !== 'local-browser') ? primarySource : 'local-browser',
+    // v2.148: per-entry sweep interval derived from the campaign's operator
+    // cadence (checkIntervalMinutes). null → scheduler's 6h SWEEP_COOLDOWN_MS.
+    sweepIntervalMs: Number(sweepIntervalMs) > 0 ? Number(sweepIntervalMs) : null,
     registeredAt: (sched[k]?.registeredAt) || now,
     expiresAt: now + days * 86400000,
     // The campaign's own bulk-check just ran, so no need to immediately
@@ -210,7 +214,11 @@ async function tick() {
       console.log(`[post-campaign] Schedule expired for ${entry.profileName} on sheet ${entry.sheetId}`);
       continue;
     }
-    if (now < (entry.lastCheckedAt || 0) + SWEEP_COOLDOWN_MS) continue;
+    // v2.148: honor the campaign's operator cadence when it was registered
+    // with one; entries without it (unset cadence / pre-2.148 builds) keep the
+    // 6h fallback. Effective floor is TICK_INTERVAL_MS (the 30-min tick).
+    const cooldownMs = Number(entry.sweepIntervalMs) > 0 ? Number(entry.sweepIntervalMs) : SWEEP_COOLDOWN_MS;
+    if (now < (entry.lastCheckedAt || 0) + cooldownMs) continue;
     dueKeys.push(k);
   }
 
