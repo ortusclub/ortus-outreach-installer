@@ -5,6 +5,7 @@
 // Every function referenced from an inline onclick handler in index.html is
 // re-exposed on `window` at the bottom of this file.
 import { renderRepliesPanel } from '/js/replies-panel.mjs';
+import { initRepliesInbox } from '/js/replies-inbox.mjs';
 import {
   getTipsForMode,
   renderModalTipsHtml,
@@ -12120,10 +12121,15 @@ function applyRoute() {
   const isWizard = hash.startsWith('#/new');
   const isConnections = hash.startsWith('#/connections');
   const isSalesNav = hash.startsWith('#/salesnav');
+  const isReplies = hash.startsWith('#/replies');
   document.body.classList.toggle('route-connections', isConnections);
   document.body.classList.toggle('route-salesnav', isSalesNav);
-  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav);
-  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav);
+  document.body.classList.toggle('route-replies', isReplies);
+  document.body.classList.toggle('route-wizard', isWizard && !isConnections && !isSalesNav && !isReplies);
+  document.body.classList.toggle('route-dashboard', !isWizard && !isConnections && !isSalesNav && !isReplies);
+  // Highlight the Replies nav-item when its route is active.
+  const _replBtn = document.getElementById('nav-replies-btn');
+  if (_replBtn) _replBtn.classList.toggle('active', isReplies);
   // Leaving the board with the inline scrape setup open: move the relocated
   // wizard sections back so the campaign wizard is intact for other modes.
   if (!isSalesNav && _snSetupOpen && typeof closeScrapeSetup === 'function') closeScrapeSetup();
@@ -12142,6 +12148,17 @@ function applyRoute() {
     stopDashboardPolling();
     stopWizardPolling();
     if (typeof initConnectionsView === 'function') initConnectionsView();
+    try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
+    return;
+  }
+  if (isReplies) {
+    // Replies inbox — its own route-view. Stop the other routes' pollers and
+    // render the inbox from /api/replies (one-shot fetch, no polling loop).
+    stopDashboardPolling();
+    stopWizardPolling();
+    if (typeof stopConnectionsPolling === 'function') stopConnectionsPolling();
+    const mount = document.getElementById('replies-view');
+    if (mount) { try { initRepliesInbox(mount); } catch (_) { /* */ } }
     try { if (typeof syncLiveStatusVisibility === 'function') syncLiveStatusVisibility(); } catch (_) { /* */ }
     return;
   }
@@ -12223,6 +12240,8 @@ window.updateWizardQueueState = updateWizardQueueState;
 function goCreateCampaign() { window.location.hash = '#/new'; }
 function goDashboard()      { window.location.hash = '#/'; }
 function goConnections()    { window.location.hash = '#/connections'; }
+function goReplies()        { window.location.hash = '#/replies'; }
+window.goReplies = goReplies;
 
 async function refreshDashboard() {
   await Promise.all([refreshActiveCampaign(), refreshDashboardQueue(), refreshDashboardSchedules(), refreshDashboardDrafts(), refreshPastCampaigns()]);

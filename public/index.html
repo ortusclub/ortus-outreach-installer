@@ -44,6 +44,7 @@
         <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
 
         <div class="nav-section-label">Review</div>
+        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
         <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
 
         <div class="nav-section-label">Help</div>
@@ -662,6 +663,10 @@
       <div id="sn-handover" class="sn-handover"><span class="spin"></span><span class="txt" id="sn-handover-txt"></span></div>
       <div id="sn-board" class="sn-board"></div>
     </div>
+
+    <!-- ── Replies inbox view (route #/replies) — sidebar → Review → Replies.
+         Rendered by public/js/replies-inbox.mjs from GET /api/replies. ── -->
+    <div id="replies-view" class="route-view"></div>
 
     <!-- ── Wizard view (route #/new) ── -->
     <div id="wizard-view" class="route-view">
