@@ -5809,7 +5809,16 @@ function _hideLegacyDashboardSections() {
   // #active-card: revealed (pink) only while a local detail is open.
   const card = document.getElementById('active-card');
   if (card) {
-    if (_localDetailOpen) { card.style.display = ''; card.classList.add('is-local'); }
+    // v2.146: #active-card is a SINGLE shared element. On the wizard route,
+    // placeLiveCard() relocates it into #wiz-live-slot and owns its
+    // visibility. This board renderer runs on every poll REGARDLESS of route,
+    // so without this guard it slammed the wizard-hosted card back to
+    // display:none every ~5s — the "Live Status card never opens on a local
+    // run" bug. When the card is in the wizard, leave its display untouched.
+    const inWizard = card.classList.contains('in-wizard')
+      || (card.parentElement && card.parentElement.id === 'wiz-live-slot');
+    if (inWizard) { /* wizard owns visibility — do not hide */ }
+    else if (_localDetailOpen) { card.style.display = ''; card.classList.add('is-local'); }
     else { card.style.display = 'none'; }
   }
 }
@@ -8867,6 +8876,11 @@ function placeLiveCard() {
       // not every poll, so a manual collapse afterwards still sticks.
       if (sec) sec.classList.remove('collapsed');
     }
+    // v2.146: the dashboard board renderer (_hideLegacyDashboardSections) may
+    // have set an inline display:none on this shared element while it lived on
+    // the dashboard. Clear it now that the wizard owns the card, else it stays
+    // invisible in the slot even though it's correctly placed and populated.
+    if (card.style.display === 'none') card.style.display = '';
     card.classList.add('in-wizard', 'is-detailed');
     if (sec) sec.classList.add('is-card-live');
   } else {
