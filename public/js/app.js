@@ -8714,13 +8714,13 @@ function placeLiveCard() {
   if (!_activeCardHome && card.parentElement && card.parentElement.id !== 'wiz-live-slot') {
     _activeCardHome = { parent: card.parentElement, next: card.nextElementSibling };
   }
-  const onWizard = document.body.classList.contains('route-wizard');
   const liveVisible = !!sec && sec.style.display !== 'none';
-  // v2.86.1 (port): follow the section's visibility even when the card is empty.
-  // When "Open log" forces the section open while idle, the dashboard card's
-  // "No campaign running" empty state is exactly what should show — instead of
-  // falling back to the legacy cockpit panel. (Was: && !is-empty.)
-  const wantWizard = onWizard && liveVisible;
+  // v2.142: the Live Status section's own visibility is the single source of
+  // truth for whether the card belongs in the wizard slot. Previously this
+  // also required document.body.route-wizard, which disagreed with the
+  // hash-based test in syncLiveStatusVisibility() on a local/native run —
+  // the header showed but #active-card was never relocated (empty box).
+  const wantWizard = liveVisible && !!slot;
   if (wantWizard && slot) {
     if (card.parentElement !== slot) {
       slot.appendChild(card);
