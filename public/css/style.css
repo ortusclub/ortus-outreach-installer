@@ -7819,9 +7819,14 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 /* Sheet-level findings (rowIndex null) — "Sheet" label spans the row#+lead columns */
 .pf-row.pf-sheet-level { grid-template-columns: 230px 1fr; }
 .pf-row.pf-sheet-level .lead { display: none; }
-.pf-actions { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--hairline);
-  margin-top: 8px; padding-top: 22px; flex-wrap: wrap; }
-.pf-actions .spacer { flex: 1; }
+.pf-actions { display: flex; gap: 10px 12px; align-items: center; flex-wrap: wrap;
+  border-top: 1px solid var(--hairline); margin-top: 8px; padding-top: 22px; }
+/* Every action sizes to its content and never shrinks into a neighbour; the
+   long "Keep flagged…" button is allowed to take its own full row. */
+.pf-actions > .btn { flex: 0 0 auto; white-space: nowrap; }
+.pf-actions #pf-anyway { flex: 1 1 100%; }   /* long label → own row, full width */
+.pf-actions .spacer { display: none; }        /* spacer no longer needed */
+.pf-count-note { flex: 1 1 100%; }
 .pf-count-note { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.6;
   width: 100%; margin-top: 12px; }
 .pf-count-note b { color: var(--ink); font-weight: 500; }
