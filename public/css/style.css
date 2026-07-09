@@ -8049,4 +8049,23 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .team-table .st-pill.idle { color: var(--gray); }
 .team-table .st-pill.idle .d { background: var(--gray); }
 .team-table .sends { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; }
+.team-table .camp-name { font-weight: 500; }
+.team-table .camp-mode { color: var(--gray); font-size: 0.64rem; margin-top: 3px; }
+.team-table .dim { color: var(--gray); }
+.team-table .acct-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 220px; }
+.team-table .acct-chip { font-size: 0.62rem; color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px;
+  padding: 3px 10px; white-space: nowrap; }
+.team-table .acct-chip.warn { color: var(--gold); border-color: var(--gold); }
+.team-table .time2 { white-space: nowrap; }
+.team-table .time2 .local { display: block; font-size: 0.6rem; color: var(--gray); margin-top: 3px; }
 .team-foot { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.7; margin-top: 18px; }
+
+/* ── Account conflicts strip (sketch team-status-A, ported 1:1) ── */
+.conf-strip { margin-top: 20px; border-radius: 12px; padding: 15px 20px; font-family: var(--mono); font-size: 0.72rem; line-height: 1.7; }
+.conf-strip.ok { border: 1px solid var(--green); color: var(--green); }
+.conf-strip.warn { border: 1px solid var(--gold); color: var(--ink); background: rgba(201,168,74,0.07); }
+.conf-strip.warn b { color: var(--gold); }
+.conf-strip .conf-head { font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
+.conf-strip .conf-act { margin-left: 12px; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink); border: 1px solid var(--hairline); border-radius: 9999px; padding: 4px 12px; background: transparent; cursor: pointer; }
+.conf-strip .conf-act:hover { border-color: var(--ink); }

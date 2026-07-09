@@ -1339,10 +1339,22 @@ app.get('/api/team-status', async (req, res) => {
       }));
       for (const d of details) {
         const c = d.campaign || {};
+        // Cloud campaign object (engine campaign-api.js) uses snake_case field
+        // names (mirrors renderCampaignsBoard()'s usage of c.profile_ids /
+        // c.created_at). It does NOT carry account display names — only raw
+        // GoLogin profile ids — so accountNames stays unset here; the client
+        // labels ids via its own allProfilesData (shared GoLogin team) lookup.
         entries.push({
           owner: c.owner || '',
           bucket: bucketForCloudStatus(c.status),
           sent: Number((d.leadCounts || {}).sent || 0),
+          campaignName: c.name || '',
+          mode: c.mode || '',
+          accounts: Array.isArray(c.profile_ids) ? c.profile_ids : [],
+          // c.created_at is the closest available timestamp — the engine does
+          // not expose a separate "started running" time on the campaign
+          // object, so this doubles as startedAt. null when absent.
+          startedAt: c.created_at || null,
         });
       }
     }
@@ -1353,7 +1365,22 @@ app.get('/api/team-status', async (req, res) => {
   try {
     const s = getCampaignStatus();
     if (s && (s.running || s.state === 'monitoring')) {
-      entries.push({ owner: localOwner, bucket: 'running', sent: s.totalProcessed || 0 });
+      // Local campaign status DOES carry parallel profileIds/profileNames
+      // arrays, so a real id→name map is available here (unlike cloud).
+      const accountNames = {};
+      const ids = Array.isArray(s.profileIds) ? s.profileIds : [];
+      const names = Array.isArray(s.profileNames) ? s.profileNames : [];
+      ids.forEach((id, i) => { if (id && names[i]) accountNames[id] = names[i]; });
+      entries.push({
+        owner: localOwner,
+        bucket: 'running',
+        sent: s.totalProcessed || 0,
+        campaignName: s.name || '',
+        mode: s.mode || '',
+        accounts: ids,
+        accountNames,
+        startedAt: s.startedAt || null,
+      });
     }
   } catch { /* local status best-effort */ }
   try {

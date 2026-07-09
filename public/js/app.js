@@ -11842,6 +11842,18 @@ let _dashboardPollTimer = null;
 // window.__cloudSummaryAt) so the engine isn't hammered.
 const TEAM_STATUS_POLL_MS = 30 * 1000;
 let _teamStatusInFlight = false;
+// Cloud campaign entries only carry raw GoLogin profile ids (no name map —
+// see server.js /api/team-status). Label them from allProfilesData, the
+// same shared-GoLogin-team profile list the account picker already loads;
+// this is a lookup against real data, not an invented name. Falls back to
+// the row's own accountNames (populated for THIS machine's local campaign)
+// and finally to the raw id when nothing resolves.
+function _teamAccountLabel(row, id) {
+  const fromRow = row?.accountNames?.[id];
+  if (fromRow) return fromRow;
+  const p = (Array.isArray(allProfilesData) ? allProfilesData : []).find((x) => x.id === id);
+  return (p && p.name) || id;
+}
 async function renderTeamStatus(force = false) {
   const sec = document.getElementById('team-status-section');
   if (!sec) return;
@@ -11858,8 +11870,27 @@ async function renderTeamStatus(force = false) {
     const rows = Array.isArray(d?.rows) ? d.rows : [];
     const body = document.getElementById('team-status-body');
     const sub = document.getElementById('team-status-sub');
+    const confEl = document.getElementById('team-conf-strip');
     if (!body) return;
     const you = String(snCurrentEmail || _viewerEmail || '').toLowerCase();
+
+    // Inline mirror of detectAccountConflicts() in src/team-status.js (the
+    // client can't import from src/, so this ~5-line comparison is kept in
+    // sync by hand — same rule: an account in MY draft selection that's In
+    // Use on another owner's running row is a conflict; my own rows never
+    // conflict with my own draft).
+    const myAccounts = new Set((Array.isArray(selectedProfileIds) ? selectedProfileIds : []).filter(Boolean));
+    const conflictAccountIds = new Set();
+    const conflicts = [];
+    for (const row of rows) {
+      if (!row.owner || row.owner === you) continue;
+      for (const acc of (Array.isArray(row.accounts) ? row.accounts : [])) {
+        if (!myAccounts.has(acc) || conflictAccountIds.has(acc)) continue;
+        conflictAccountIds.add(acc);
+        conflicts.push({ account: acc, accountName: _teamAccountLabel(row, acc), heldBy: row.owner });
+      }
+    }
+
     body.innerHTML = rows.length ? rows.map((row) => {
       const isYou = you && row.owner === you;
       const pill = row.running > 0
@@ -11867,12 +11898,29 @@ async function renderTeamStatus(force = false) {
         : row.queued > 0
           ? '<span class="st-pill mon"><span class="d"></span>Queued</span>'
           : '<span class="st-pill idle"><span class="d"></span>Idle</span>';
+      const campaignCell = row.campaignName
+        ? `<span class="camp-name">${escHtml(row.campaignName)}</span><div class="camp-mode">${escHtml(_cloudModeLabel(row.mode))}</div>`
+        : '<span class="dim">—</span>';
+      const accounts = Array.isArray(row.accounts) ? row.accounts : [];
+      const acctCell = accounts.length
+        ? `<div class="acct-chips">${accounts.map((id) => {
+            const warn = conflictAccountIds.has(id) ? ' warn' : '';
+            return `<span class="acct-chip${warn}">${escHtml(_teamAccountLabel(row, id))}</span>`;
+          }).join('')}</div>`
+        : '<span class="dim">—</span>';
+      const startedCell = row.startedAt
+        ? (() => {
+            const t = new Date(row.startedAt);
+            return Number.isNaN(t.getTime()) ? '<span class="dim">—</span>'
+              : escHtml(t.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
+          })()
+        : '<span class="dim">—</span>';
       return `<tr${isYou ? ' class="is-you"' : ''}>
         <td><span class="op-name">${escHtml(row.owner)}</span>${isYou ? '<span class="op-you">You</span>' : ''}</td>
         <td>${pill}</td>
-        <td>${row.running}</td>
-        <td>${row.queued}</td>
-        <td>${row.done}</td>
+        <td>${campaignCell}</td>
+        <td>${acctCell}</td>
+        <td class="time2">${startedCell}</td>
         <td><span class="sends">${row.sent}</span></td>
       </tr>`;
     }).join('') : '<tr><td colspan="6" style="color:var(--gray)">No campaigns found — cloud engine returned no activity.</td></tr>';
@@ -11881,6 +11929,14 @@ async function renderTeamStatus(force = false) {
       const when = d?.generatedAt ? new Date(d.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
       sub.textContent = `${rows.length} operator${rows.length === 1 ? '' : 's'} · ${active} active · synced ${when}`
         + (d?.cloudError ? ' · ⚠ cloud engine unreachable (local only)' : '');
+    }
+    if (confEl) {
+      confEl.innerHTML = conflicts.length
+        ? `<div class="conf-strip warn">
+            <div class="conf-head">⚠ Account conflicts · ${conflicts.length}</div>
+            ${conflicts.map((c) => `<b>${escHtml(c.accountName)}</b> is In Use by <b>${escHtml(c.heldBy)}</b> and selected in your draft.`).join('<br>')}
+          </div>`
+        : `<div class="conf-strip ok">✓ No account conflicts — every In-Use account is held by exactly one operator.</div>`;
     }
     sec.hidden = false; // reveal only after an authorized, rendered payload
   } catch { /* best-effort — keep the last rendered table */ }

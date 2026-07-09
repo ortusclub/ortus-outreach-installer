@@ -5723,6 +5723,9 @@ export function getCampaignStatus() {
     mode: campaign.mode || '',
     name: campaign.name || '',
     sheetUrl: campaign.sheetUrl || '',
+    // Feature ⑩ Team status: real start timestamp (set in the run loop),
+    // surfaced here so the admin table can show "Started" instead of "—".
+    startedAt: campaign.startedAt || null,
     // v2.72: one-shot end-of-run notice (no more rows) for the dashboard popup.
     endNotice: campaign._endNotice || null,
     profileNames: campaign.profileNames || [],
