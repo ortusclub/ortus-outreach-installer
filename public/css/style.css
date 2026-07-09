@@ -7875,6 +7875,14 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .db-table tr:last-child td { border-bottom: none; }
 .db-park { font-size: 0.64rem; color: var(--gray); border: 1px dashed var(--hairline); border-radius: 9999px; padding: 3px 10px; white-space: nowrap; }
 .db-park.gold { color: var(--gold); border-color: var(--gold); }
+/* per-account table (Sent + end reason only — no invented accept/reply data) */
+.db-table td.db-acc { color: var(--ink); }
+.db-table td.db-num { font-weight: 500; text-align: right; width: 60px; }
+.db-table td.db-reason { color: var(--gray); }
+/* vs-your-last-N comparison — factual sent-count delta, monochrome (no green/red) */
+.db-compare { font-family: var(--mono); font-size: 0.72rem; color: var(--ink); line-height: 1.7; }
+.db-compare b { font-weight: 500; }
+.db-delta { color: var(--gray); margin-left: 4px; }
 /* skipped line + expandable rows */
 .db-skipped { font-family: var(--mono); font-size: 0.72rem; color: var(--ink); line-height: 1.7; }
 .db-skipped b { font-weight: 500; }

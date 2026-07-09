@@ -78,3 +78,25 @@ test('snapshot is JSON-round-trippable (goes into history.json)', () => {
   });
   assert.deepEqual(JSON.parse(JSON.stringify(d)), d);
 });
+
+test('perAccount rows carry name/sent/endReason through', () => {
+  const perAccount = [
+    { profileId: 'p1', name: 'James', sent: 12, endReason: 'Reached campaign limit (12)' },
+    { profileId: 'p2', name: 'Marta', sent: 4, endReason: '' },
+  ];
+  const d = buildDebrief({ perAccount });
+  assert.deepEqual(d.perAccount, perAccount);
+});
+
+test('perAccount normalizes missing fields — sent defaults to 0, strings default to empty', () => {
+  const d = buildDebrief({ perAccount: [{ profileId: 'p1' }, {}] });
+  assert.deepEqual(d.perAccount, [
+    { profileId: 'p1', name: '', sent: 0, endReason: '' },
+    { profileId: '', name: '', sent: 0, endReason: '' },
+  ]);
+});
+
+test('perAccount omitted → empty array', () => {
+  const d = buildDebrief();
+  assert.deepEqual(d.perAccount, []);
+});

@@ -5120,6 +5120,19 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
           parked: campaign.parkedProfiles || [],
           errors: campaign.errors || [],
           endNotice: campaign._endNotice || null,
+          // Per-account Sent + end reason — no invented accept/reply data.
+          perAccount: (() => {
+            const ids = new Set([
+              ...Object.keys(campaignCounts),
+              ...(campaign.profileEndReasons || []).map((e) => e.profileId),
+            ]);
+            return [...ids].filter(Boolean).map((pid) => ({
+              profileId: pid,
+              name: profileNameCache[pid] || (pid === 'local-browser' ? 'You' : pid),
+              sent: getCampaignCount(pid),
+              endReason: (campaign.profileEndReasons || []).find((e) => e.profileId === pid)?.reason || '',
+            }));
+          })(),
         }),
         // v2.11.7: settings snapshot for the "Re-run with same settings" CTA.
         // Operator already trusts this machine with the templates (they're

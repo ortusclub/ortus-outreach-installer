@@ -5150,6 +5150,22 @@ app.get('/api/notifications/recent', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Debrief email endpoint — MANUAL operator click ("Email to me" in the
+// debrief overlay). No automatic/background sending — the operator must
+// explicitly click the button each time. Complies with the auto-send-OFF rule.
+// ---------------------------------------------------------------------------
+app.post('/api/debrief/email', async (req, res) => {
+  try {
+    const { subject, body } = req.body || {};
+    if (!subject || !body) return res.status(400).json({ ok: false, error: 'subject and body required' });
+    await notifyAll({ title: String(subject), body: String(body) });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Notification test endpoint — sends a test email to configured recipients
 // ---------------------------------------------------------------------------
 app.post('/api/notify/test', async (req, res) => {

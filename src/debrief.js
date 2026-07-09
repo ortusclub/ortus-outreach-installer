@@ -23,9 +23,13 @@ export const MAX_ERROR_SAMPLES = 5;
  *   campaign.errors at end of run.
  * @param {{reason?:string, detail?:string}|null} [opts.endNotice]
  *   campaign._endNotice (why-it-stopped notice), if one was built.
- * @returns {{skipTotal:number, skipReasons:Object<string,number>, skips:Array, parked:Array, errors:{count:number, samples:Array}, endNotice:{reason:string, detail:string}|null}}
+ * @param {Array<{profileId?:string, name?:string, sent?:number, endReason?:string}>} [opts.perAccount]
+ *   One row per profile that participated in the run — Sent count + end
+ *   reason only. We do NOT track per-lead Accepted/Replied for a normal
+ *   run, so nothing beyond Sent/endReason is invented here.
+ * @returns {{skipTotal:number, skipReasons:Object<string,number>, skips:Array, parked:Array, errors:{count:number, samples:Array}, endNotice:{reason:string, detail:string}|null, perAccount:Array}}
  */
-export function buildDebrief({ skips = [], parked = [], errors = [], endNotice = null } = {}) {
+export function buildDebrief({ skips = [], parked = [], errors = [], endNotice = null, perAccount = [] } = {}) {
   const skipReasons = {};
   for (const s of skips) {
     const r = (s && s.reason) || 'other';
@@ -59,5 +63,11 @@ export function buildDebrief({ skips = [], parked = [], errors = [], endNotice =
     endNotice: endNotice
       ? { reason: endNotice.reason || '', detail: endNotice.detail || '' }
       : null,
+    perAccount: (perAccount || []).map((a) => ({
+      profileId: (a && a.profileId) || '',
+      name: (a && a.name) || '',
+      sent: a && Number.isFinite(a.sent) ? a.sent : 0,
+      endReason: (a && a.endReason) || '',
+    })),
   };
 }

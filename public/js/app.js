@@ -6353,7 +6353,7 @@ function _dbDate(iso) {
 }
 let _dbCopyText = '';
 
-window.openDebrief = function openDebrief(stripId) {
+window.openDebrief = async function openDebrief(stripId) {
   const it = _boardItemsById.get(stripId);
   const h = it && it.hist;
   const scrim = document.getElementById('db-scrim');
@@ -6379,6 +6379,42 @@ window.openDebrief = function openDebrief(stripId) {
     + `<div class="funnel-stage"><div class="st-lbl">Errors</div><div class="st-num">${h.errorCount || 0}</div><div class="st-drop">during the run</div></div>`
     + `<div class="funnel-stage"><div class="st-lbl">Duration</div><div class="st-num">${escHtml(_dbDuration(h.duration))}</div><div class="st-drop">${escHtml(endLbl || '')}</div></div>`
     + `</div></div>`;
+
+  // Per-account — Sent + end reason only. We do NOT track per-lead
+  // accepted/replied for a normal run, so nothing else is shown here.
+  if (db && Array.isArray(db.perAccount) && db.perAccount.length) {
+    const rows = db.perAccount.map((a) =>
+      `<tr><td class="db-acc">${escHtml(a.name || a.profileId)}</td>`
+      + `<td class="db-num">${a.sent}</td>`
+      + `<td class="db-reason">${escHtml(a.endReason || '—')}</td></tr>`).join('');
+    body += `<div class="db-sec"><div class="db-sec-head">Per account</div>`
+      + `<table class="db-table"><thead><tr><th>Account</th><th>Sent</th><th>Ended</th></tr></thead>`
+      + `<tbody>${rows}</tbody></table></div>`;
+  }
+
+  // vs your last 5 — factual SENT counts only, no accept/reply comparison.
+  let _dbPriorsLine = '';
+  try {
+    const raw = await (await fetch('/api/history')).json();
+    const hist = Array.isArray(raw) ? raw : (raw.history || []);
+    const currentHistIdx = it && Number.isFinite(it.histIdx) ? it.histIdx : -1;
+    const others = hist
+      .map((p, i) => ({ p, i }))
+      .filter(({ i }) => i !== currentHistIdx)
+      .sort((a, b) => new Date(b.p.date).getTime() - new Date(a.p.date).getTime())
+      .slice(0, 5)
+      .map(({ p }) => p);
+    if (others.length) {
+      const avg = Math.round(others.reduce((s, e) => s + (e.successCount || 0), 0) / others.length);
+      const mine = h.successCount || 0;
+      const delta = mine - avg;
+      const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '·');
+      body += `<div class="db-sec"><div class="db-sec-head">vs your last ${others.length}</div>`
+        + `<div class="db-compare">This run sent <b>${mine}</b> — your last ${others.length} averaged <b>${avg}</b> `
+        + `<span class="db-delta">${arrow} ${Math.abs(delta)}</span></div></div>`;
+      _dbPriorsLine = `vs last ${others.length}: sent ${mine} (avg ${avg}, ${arrow}${Math.abs(delta)})`;
+    }
+  } catch (_) { /* history fetch best-effort — comparison section just omitted */ }
 
   // Why it ended — from the persisted endNotice.
   if (db && db.endNotice && (db.endNotice.reason || db.endNotice.detail)) {
@@ -6455,6 +6491,10 @@ window.openDebrief = function openDebrief(stripId) {
     db && db.endNotice ? `Ended: ${db.endNotice.reason}${db.endNotice.detail ? ' — ' + db.endNotice.detail : ''}` : '',
     db && db.skipTotal > 0 ? `Skips: ${Object.entries(db.skipReasons || {}).map(([r, n]) => `${n} ${_skipReasonLabel(r)}`).join(', ')}` : '',
     db && (db.parked || []).length ? `Parked: ${db.parked.map((p) => `${p.pName || p.profileId} (${_dbParkLabel(p.reason)})`).join(', ')}` : '',
+    db && Array.isArray(db.perAccount) && db.perAccount.length
+      ? `Per account: ${db.perAccount.map((a) => `${a.name || a.profileId} — ${a.sent} sent${a.endReason ? ' (' + a.endReason + ')' : ''}`).join('; ')}`
+      : '',
+    _dbPriorsLine,
   ].filter(Boolean).join('\n');
 
   scrim.style.display = 'flex';
@@ -6481,6 +6521,28 @@ window.closeDebrief = function closeDebrief() {
       copyBtn.textContent = 'Copied ✓';
       setTimeout(() => { copyBtn.textContent = 'Copy summary'; }, 1600);
     } catch (_) { /* clipboard best-effort */ }
+  });
+  // Email to me — MANUAL operator click only. No automatic/background send;
+  // this fires exclusively in response to the click handler below.
+  const emailBtn = document.getElementById('db-email');
+  if (emailBtn) emailBtn.addEventListener('click', async () => {
+    const titleEl = document.getElementById('db-title');
+    const subject = `Debrief — ${(titleEl && titleEl.textContent) || 'campaign'}`;
+    try {
+      const res = await fetch('/api/debrief/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, body: _dbCopyText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        if (typeof showCampaignToast === 'function') showCampaignToast('Debrief emailed.');
+      } else {
+        if (typeof showCampaignToast === 'function') showCampaignToast(`Email failed: ${data.error || res.statusText}`);
+      }
+    } catch (err) {
+      if (typeof showCampaignToast === 'function') showCampaignToast(`Email failed: ${err.message}`);
+    }
   });
 })();
 // ── End campaign debrief overlay ───────────────────────────────────────────
