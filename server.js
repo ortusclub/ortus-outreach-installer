@@ -5158,8 +5158,10 @@ app.post('/api/debrief/email', async (req, res) => {
   try {
     const { subject, body } = req.body || {};
     if (!subject || !body) return res.status(400).json({ ok: false, error: 'subject and body required' });
-    await notifyAll({ title: String(subject), body: String(body) });
-    res.json({ ok: true });
+    // "Email to me" — send only to the operator who clicked, not the whole
+    // NOTIFY_EMAILS list (mirror POST /api/notify/test, which uses req.user).
+    const result = await notifyEmail(req.user, { title: String(subject), body: String(body) });
+    res.json({ ok: true, recipient: req.user, ...result });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
