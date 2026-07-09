@@ -232,9 +232,12 @@ function wire() {
     btn.addEventListener('click', () => suggest(btn));
   });
 
-  // close menus on outside click (bound once per render via the module handler)
-  document.addEventListener('click', closeAllMenus);
+  // close menus on outside click — bound ONCE for the module's lifetime, not
+  // per render (render() re-runs after every label edit / toggle / mark-read,
+  // so binding here each time would leak a duplicate document listener).
+  if (!_docClickBound) { document.addEventListener('click', closeAllMenus); _docClickBound = true; }
 }
+let _docClickBound = false;
 
 function closeAllMenus() {
   if (!_mount) return;
