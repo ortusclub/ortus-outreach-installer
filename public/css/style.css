@@ -7804,3 +7804,36 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .wiz-blocklist-add input:focus { outline: none; border-color: var(--ink); }
 .wiz-blocklist-hint { font-family: var(--mono); font-size: 0.72rem; color: var(--gray);
   margin-top: 10px; line-height: 1.6; }
+
+/* ── Team status (feature ⑩ — ADMIN-ONLY dashboard section, sketch team-status-A) ── */
+#team-status-section { margin-top: 34px; }
+.team-head { display: flex; align-items: baseline; gap: 14px; margin: 8px 0 6px; }
+.team-title { font-family: var(--display); font-size: 2rem; letter-spacing: 0.03em; color: var(--ink); line-height: 1; margin: 0; }
+.team-admin-badge { border: 1px solid currentColor; border-radius: 9999px; padding: 2px 10px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gray); }
+.team-sub { font-family: var(--mono); font-size: 0.66rem; color: var(--gray); }
+.team-refresh { margin-left: auto; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--gray); border: 1px solid var(--hairline); border-radius: 9999px; padding: 6px 14px; background: transparent; cursor: pointer; }
+.team-refresh:hover { color: var(--ink); border-color: var(--ink); }
+.team-card { border: 1px solid var(--hairline); border-radius: 14px; background: var(--bg); padding: 22px 26px; margin-top: 18px; }
+.team-table { width: 100%; border-collapse: collapse; font-family: var(--mono); }
+.team-table th { text-align: left; font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gray); font-weight: 500; padding: 0 12px 12px 0; border-bottom: 1px solid var(--hairline); }
+.team-table td { font-size: 0.74rem; color: var(--ink); padding: 15px 12px 15px 0; vertical-align: top;
+  border-bottom: 1px solid var(--hairline-soft); }
+.team-table tr:last-child td { border-bottom: none; }
+.team-table tr.is-you td { background: rgba(127, 127, 127, 0.06); }
+.team-table .op-name { font-weight: 500; white-space: nowrap; }
+.team-table .op-you { font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;
+  padding: 2px 8px; border-radius: 9999px; background: var(--ink); color: var(--bg); margin-left: 8px; }
+.team-table .st-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+  border: 1px solid var(--hairline); border-radius: 9999px; padding: 5px 12px; white-space: nowrap; }
+.team-table .st-pill .d { width: 7px; height: 7px; border-radius: 9999px; display: inline-block; }
+.team-table .st-pill.run { color: var(--green); border-color: var(--green); }
+.team-table .st-pill.run .d { background: var(--green); }
+.team-table .st-pill.mon { color: var(--blue); border-color: var(--blue); }
+.team-table .st-pill.mon .d { background: var(--blue); }
+.team-table .st-pill.idle { color: var(--gray); }
+.team-table .st-pill.idle .d { background: var(--gray); }
+.team-table .sends { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; }
+.team-foot { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.7; margin-top: 18px; }

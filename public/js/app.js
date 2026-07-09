@@ -11543,6 +11543,62 @@ function dashboardFormatDate(iso) {
 // the route changes to the wizard so we don't hit /api/campaign/status from
 // inside the campaign page (which already polls separately).
 let _dashboardPollTimer = null;
+// ── Team status (feature ⑩ — ADMIN-ONLY) ────────────────────────────────
+// Per-operator table over /api/team-status (admin-gated 403 server-side).
+// Double gate: the section is [hidden] in the markup and only ever revealed
+// when _viewerIsAdmin AND the route returns rows — non-admins never see it,
+// not even a flash. Polled from the 5s dashboard loop but fetched at most
+// every 30s (window.__teamStatusAt, same throttle pattern as
+// window.__cloudSummaryAt) so the engine isn't hammered.
+const TEAM_STATUS_POLL_MS = 30 * 1000;
+let _teamStatusInFlight = false;
+async function renderTeamStatus(force = false) {
+  const sec = document.getElementById('team-status-section');
+  if (!sec) return;
+  if (!_viewerIsAdmin) { sec.hidden = true; return; } // UI gate (server 403s too)
+  const now = Date.now();
+  if (!force && now - (window.__teamStatusAt || 0) < TEAM_STATUS_POLL_MS) return;
+  if (_teamStatusInFlight) return;
+  _teamStatusInFlight = true;
+  window.__teamStatusAt = now;
+  try {
+    const r = await fetch('/api/team-status');
+    if (r.status === 403) { sec.hidden = true; return; } // belt-and-braces
+    const d = await r.json();
+    const rows = Array.isArray(d?.rows) ? d.rows : [];
+    const body = document.getElementById('team-status-body');
+    const sub = document.getElementById('team-status-sub');
+    if (!body) return;
+    const you = String(snCurrentEmail || _viewerEmail || '').toLowerCase();
+    body.innerHTML = rows.length ? rows.map((row) => {
+      const isYou = you && row.owner === you;
+      const pill = row.running > 0
+        ? '<span class="st-pill run"><span class="d"></span>Running</span>'
+        : row.queued > 0
+          ? '<span class="st-pill mon"><span class="d"></span>Queued</span>'
+          : '<span class="st-pill idle"><span class="d"></span>Idle</span>';
+      return `<tr${isYou ? ' class="is-you"' : ''}>
+        <td><span class="op-name">${escHtml(row.owner)}</span>${isYou ? '<span class="op-you">You</span>' : ''}</td>
+        <td>${pill}</td>
+        <td>${row.running}</td>
+        <td>${row.queued}</td>
+        <td>${row.done}</td>
+        <td><span class="sends">${row.sent}</span></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="6" style="color:var(--gray)">No campaigns found — cloud engine returned no activity.</td></tr>';
+    if (sub) {
+      const active = rows.filter((x) => x.running > 0).length;
+      const when = d?.generatedAt ? new Date(d.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+      sub.textContent = `${rows.length} operator${rows.length === 1 ? '' : 's'} · ${active} active · synced ${when}`
+        + (d?.cloudError ? ' · ⚠ cloud engine unreachable (local only)' : '');
+    }
+    sec.hidden = false; // reveal only after an authorized, rendered payload
+  } catch { /* best-effort — keep the last rendered table */ }
+  finally { _teamStatusInFlight = false; }
+}
+function refreshTeamStatus() { renderTeamStatus(true); }
+window.refreshTeamStatus = refreshTeamStatus;
+
 function startDashboardPolling() {
   if (_dashboardPollTimer) return;
   _dashboardPollTimer = setInterval(async () => {
@@ -11566,6 +11622,8 @@ function startDashboardPolling() {
       if (typeof window.renderPastSection === 'function') window.renderPastSection();
       if (typeof window.renderCalendarGrid === 'function') window.renderCalendarGrid();
       if (typeof window.renderReplies === 'function') window.renderReplies();
+      // Feature ⑩: admin-only team table — throttled to 30s inside.
+      renderTeamStatus();
     } else {
       stopDashboardPolling();
     }
@@ -11866,6 +11924,9 @@ function applyRoute() {
     liveStatusForcedOpen = false;
     refreshDashboard();
     startDashboardPolling();
+    // Feature ⑩: paint the admin team table on route entry (no-op for
+    // non-admins; the 5s poll only refetches every 30s).
+    renderTeamStatus();
     stopWizardPolling();
   } else {
     stopDashboardPolling();
