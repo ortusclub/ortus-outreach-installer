@@ -6296,7 +6296,11 @@ function renderUnifiedStrip(it) {
     const open = cloud
       ? `<button class="mini solid" onclick="viewCloudCampaign('${escHtml(it.id)}')">Open</button>`
       : `<button class="mini solid" onclick="openLocalCampaignDetail()">Open</button>`;
-    foot = dismiss + open;
+    // Debrief — local done strips only (the snapshot lives on the history entry).
+    const debriefBtn = (!cloud && it.hist)
+      ? `<button class="mini debrief" onclick="window.openDebrief('${escHtml(it.id)}')">Debrief</button>`
+      : '';
+    foot = dismiss + debriefBtn + open;
   }
 
   return `
@@ -6319,6 +6323,167 @@ function _stripOverflow() {
     + `<div class="ovf-menu"><button type="button" class="ovf-item" data-act="duplicate">`
     + `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V4a1 1 0 0 1 1-1h7"/></svg> Duplicate</button></div></div>`;
 }
+
+// ── Campaign debrief overlay ───────────────────────────────────────────────
+// Opens from the Debrief pill on local done strips. Data = the history entry
+// (incl. the persisted `debrief` snapshot taken at campaign end). Only fields
+// that exist on the entry are rendered — no invented stats.
+
+const _DB_PARK_LABELS = { // mirrors prettyParkReason in src/campaign.js
+  session_expired:   'logged out / session expired',
+  weekly_limit_429:  'weekly invite limit reached',
+  consecutive_skips: 'too many consecutive skips / failures',
+  challenge:         'LinkedIn checkpoint — needs a human',
+  throttle_paused:   'throttled (429) — paused',
+};
+const _DB_END_LABELS = {
+  completed: 'Completed', stopped: 'Stopped by operator', errored: 'Stopped by error',
+};
+function _dbParkLabel(r) { return _DB_PARK_LABELS[r] || r || 'parked'; }
+function _dbDuration(sec) {
+  const s = Number(sec) || 0;
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return h ? `${h}h ${m % 60}m` : `${m}m ${s % 60}s`;
+}
+function _dbDate(iso) {
+  const d = new Date(iso || 0);
+  return Number.isFinite(d.getTime()) && d.getTime() > 0
+    ? d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
+}
+let _dbCopyText = '';
+
+window.openDebrief = function openDebrief(stripId) {
+  const it = _boardItemsById.get(stripId);
+  const h = it && it.hist;
+  const scrim = document.getElementById('db-scrim');
+  if (!h || !scrim) return;
+  const db = h.debrief || null;
+  const tpl = (h.settings && h.settings.templates) || {};
+
+  document.getElementById('db-title').textContent = h.name || '(unnamed)';
+  const endLbl = _DB_END_LABELS[h.endReason] || h.endReason || '';
+  document.getElementById('db-sub').innerHTML =
+    `Ran <b>${escHtml(_dbDate(h.date) || '—')}</b> · mode <b>${escHtml(_cloudModeLabel(h.mode))}</b>`
+    + ` · <b>${(h.profiles || []).length} account${(h.profiles || []).length === 1 ? '' : 's'}</b>`
+    + ` · duration <b>${escHtml(_dbDuration(h.duration))}</b>`
+    + (endLbl ? ` · <b>${escHtml(endLbl)}</b>` : '');
+
+  let body = '';
+
+  // Totals — sent / processed / errors / skipped (all real history fields).
+  const skipTotal = db ? db.skipTotal : null;
+  body += `<div class="db-sec"><div class="db-sec-head">Totals</div><div class="db-funnel">`
+    + `<div class="funnel-stage"><div class="st-lbl">Sent</div><div class="st-num">${h.successCount || 0}</div><div class="st-drop">of <b>${h.totalProcessed || 0}</b> processed</div></div>`
+    + `<div class="funnel-stage"><div class="st-lbl">Skipped</div><div class="st-num">${skipTotal != null ? skipTotal : '—'}</div><div class="st-drop">${skipTotal != null ? 'left untouched on the sheet' : 'no snapshot for this run'}</div></div>`
+    + `<div class="funnel-stage"><div class="st-lbl">Errors</div><div class="st-num">${h.errorCount || 0}</div><div class="st-drop">during the run</div></div>`
+    + `<div class="funnel-stage"><div class="st-lbl">Duration</div><div class="st-num">${escHtml(_dbDuration(h.duration))}</div><div class="st-drop">${escHtml(endLbl || '')}</div></div>`
+    + `</div></div>`;
+
+  // Why it ended — from the persisted endNotice.
+  if (db && db.endNotice && (db.endNotice.reason || db.endNotice.detail)) {
+    body += `<div class="db-sec"><div class="db-sec-head">Why it ended</div>`
+      + `<div class="db-skipped"><b>${escHtml(db.endNotice.reason || '')}</b>`
+      + (db.endNotice.detail ? ` <span class="why">— ${escHtml(db.endNotice.detail)}</span>` : '')
+      + `</div></div>`;
+  }
+
+  // Skipped leads — reason tallies + expandable capped row list.
+  if (db && db.skipTotal > 0) {
+    const reasons = Object.entries(db.skipReasons || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([r, n]) => `${n} ${_skipReasonLabel(r).toLowerCase()}`).join(' · ');
+    const rows = (db.skips || []).map((s) =>
+      `<tr><td>${s.rowNumber != null ? 'Row ' + s.rowNumber : ''}</td>`
+      + `<td>${escHtml(s.leadName || '(no name)')}</td>`
+      + `<td>${escHtml(_skipReasonLabel(s.reason))}</td>`
+      + `<td class="dim">${escHtml(s.detail || '')}</td></tr>`).join('');
+    const capNote = db.skipTotal > (db.skips || []).length
+      ? `<div class="db-empty" style="margin-top:8px">Showing first ${(db.skips || []).length} of ${db.skipTotal}.</div>` : '';
+    body += `<div class="db-sec"><div class="db-skipped"><b>${db.skipTotal} skipped</b>`
+      + (reasons ? ` <span class="why">— ${escHtml(reasons)}</span>` : '')
+      + ` · <a onclick="this.closest('.db-sec').querySelector('.db-skip-rows').classList.toggle('open')">view rows</a></div>`
+      + `<div class="db-skip-rows"><table class="db-table"><thead><tr><th>Row</th><th>Lead</th><th>Reason</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>${capNote}</div></div>`;
+  } else if (db) {
+    body += `<div class="db-sec"><div class="db-skipped"><b>0 skipped</b></div></div>`;
+  }
+
+  // Parked accounts.
+  if (db && (db.parked || []).length) {
+    const rows = db.parked.map((p) =>
+      `<tr><td>${escHtml(p.pName || p.profileId || 'Account')}</td>`
+      + `<td><span class="db-park${p.reason === 'weekly_limit_429' || p.reason === 'throttle_paused' ? ' gold' : ''}">${escHtml(_dbParkLabel(p.reason))}${p.parkedAt ? ' · ' + escHtml(_dbDate(p.parkedAt)) : ''}</span></td></tr>`).join('');
+    body += `<div class="db-sec"><div class="db-sec-head">Parked accounts</div>`
+      + `<table class="db-table"><thead><tr><th>Account</th><th>Parked</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  // Errors — count + last samples from the snapshot.
+  if (db && db.errors && db.errors.count > 0) {
+    const lines = (db.errors.samples || []).map((e) => `<div class="e-msg">· ${escHtml(e.message)}</div>`).join('');
+    body += `<div class="db-sec"><div class="db-sec-head">Errors · ${db.errors.count}</div><div class="db-errs">${lines || '<span class="db-empty">No samples recorded.</span>'}</div></div>`;
+  }
+
+  // Template used — real strings from the settings snapshot.
+  const tplParts = [];
+  if (tpl.connectionNote) tplParts.push(['Connection note', tpl.connectionNote]);
+  if (tpl.followUpMessage) tplParts.push(['Follow-up message', tpl.followUpMessage]);
+  if (tpl.primaryIntroBody) tplParts.push(['Intro DM body', tpl.primaryIntroBody]);
+  if (tpl.inmailBody) tplParts.push(['InMail', (tpl.inmailSubject ? tpl.inmailSubject + '\n' : '') + tpl.inmailBody]);
+  if (tpl.openProfileBody) tplParts.push(['Open-profile message', (tpl.openProfileSubject ? tpl.openProfileSubject + '\n' : '') + tpl.openProfileBody]);
+  if (tplParts.length) {
+    const first = tplParts[0][1].split('\n')[0];
+    const full = tplParts.map(([k, v]) => `${k}: ${v}`).join('\n\n');
+    body += `<div class="db-sec"><div class="db-sec-head">Template used · ${escHtml(tplParts[0][0].toLowerCase())}</div>`
+      + `<div class="db-tpl" onclick="this.classList.toggle('open')">`
+      + `<div class="tpl-first">${escHtml(first)}</div>`
+      + `<div class="tpl-more">click to expand ▾</div>`
+      + `<div class="tpl-full">${escHtml(full)}</div></div></div>`;
+  }
+
+  if (!db) {
+    body += `<div class="db-sec"><div class="db-empty">No debrief snapshot was recorded for this run — snapshots are saved for campaigns finished on v2.135+.</div></div>`;
+  }
+
+  document.getElementById('db-body').innerHTML = body;
+
+  // Plain-text summary for the Copy button.
+  _dbCopyText = [
+    `${h.name || '(unnamed)'} — debrief`,
+    `Ran ${_dbDate(h.date)} · ${_cloudModeLabel(h.mode)} · ${(h.profiles || []).length} accounts · ${_dbDuration(h.duration)} · ${endLbl}`,
+    `Sent ${h.successCount || 0} of ${h.totalProcessed || 0} processed · ${h.errorCount || 0} errors`
+      + (db ? ` · ${db.skipTotal} skipped` : ''),
+    db && db.endNotice ? `Ended: ${db.endNotice.reason}${db.endNotice.detail ? ' — ' + db.endNotice.detail : ''}` : '',
+    db && db.skipTotal > 0 ? `Skips: ${Object.entries(db.skipReasons || {}).map(([r, n]) => `${n} ${_skipReasonLabel(r)}`).join(', ')}` : '',
+    db && (db.parked || []).length ? `Parked: ${db.parked.map((p) => `${p.pName || p.profileId} (${_dbParkLabel(p.reason)})`).join(', ')}` : '',
+  ].filter(Boolean).join('\n');
+
+  scrim.style.display = 'flex';
+};
+
+window.closeDebrief = function closeDebrief() {
+  const scrim = document.getElementById('db-scrim');
+  if (scrim) scrim.style.display = 'none';
+};
+
+(function _wireDebriefOverlay() {
+  const scrim = document.getElementById('db-scrim');
+  if (!scrim) return;
+  scrim.addEventListener('click', (e) => { if (e.target === scrim) window.closeDebrief(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && scrim.style.display !== 'none') window.closeDebrief();
+  });
+  const closeBtn = document.getElementById('db-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => window.closeDebrief());
+  const copyBtn = document.getElementById('db-copy');
+  if (copyBtn) copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(_dbCopyText);
+      copyBtn.textContent = 'Copied ✓';
+      setTimeout(() => { copyBtn.textContent = 'Copy summary'; }, 1600);
+    } catch (_) { /* clipboard best-effort */ }
+  });
+})();
+// ── End campaign debrief overlay ───────────────────────────────────────────
 
 let _campaignsBoardTimer = null;
 // Fetch local (status/queue/history) + cloud campaigns, normalize, render.
@@ -6407,6 +6572,7 @@ async function renderCampaignsBoard() {
         isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
         total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
         bad: stopped, badLabel: 'Stopped', srcSettings: p.settings || null, histIdx,
+        hist: p,
         logs: endedLogs });
     }
   } catch (_) { /* */ }
