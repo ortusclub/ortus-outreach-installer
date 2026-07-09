@@ -47,6 +47,7 @@ import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSal
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, stopCloudCampaign } from './src/campaigns-client.js';
+import { aggregateTeamStatus, bucketForCloudStatus } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile } from './src/gologin-launcher.js';
@@ -1310,6 +1311,64 @@ app.get('/api/campaign/cloud/:id', async (req, res) => {
   if (r.error) return res.status(502).json(r);
   res.json(r);
 });
+// ── Team status (feature ⑩ — ADMIN-ONLY) ─────────────────────────────────
+// Per-operator aggregate over the engine cloud list + this machine's local
+// campaign/queue. HARD-GATED: only viewers whose login email is in
+// ADMIN_EMAILS get data — everyone else gets a 403, same admin source as
+// /api/me. Cached for 30s so the dashboard poll never hammers the engine.
+let _teamStatusCache = { at: 0, payload: null };
+const TEAM_STATUS_CACHE_MS = 30 * 1000;
+app.get('/api/team-status', async (req, res) => {
+  if (!isAdminEmail(req.user)) return res.status(403).json({ error: 'Admin only' });
+  if (_teamStatusCache.payload && Date.now() - _teamStatusCache.at < TEAM_STATUS_CACHE_MS) {
+    return res.json(_teamStatusCache.payload);
+  }
+  const entries = [];
+  let cloudError = null;
+  try {
+    const r = await listCloudCampaigns(); // no owner filter — team-wide
+    if (r && r.error) {
+      cloudError = r.error;
+    } else {
+      const cloudCamps = (r && r.campaigns) || [];
+      // Per-campaign detail only to read leadCounts.sent; capped so a long
+      // engine history can't turn one poll into hundreds of round-trips.
+      const details = await Promise.all(cloudCamps.slice(0, 60).map(async (c) => {
+        try { const d = await getCloudCampaign(c.id); return d && !d.error ? d : { campaign: c, leadCounts: {} }; }
+        catch { return { campaign: c, leadCounts: {} }; }
+      }));
+      for (const d of details) {
+        const c = d.campaign || {};
+        entries.push({
+          owner: c.owner || '',
+          bucket: bucketForCloudStatus(c.status),
+          sent: Number((d.leadCounts || {}).sent || 0),
+        });
+      }
+    }
+  } catch (e) { cloudError = e.message; }
+  // This machine's local activity (other operators' local campaigns are not
+  // visible here — cloud is the only cross-machine source).
+  const localOwner = getOperatorEmail() || req.user || '';
+  try {
+    const s = getCampaignStatus();
+    if (s && (s.running || s.state === 'monitoring')) {
+      entries.push({ owner: localOwner, bucket: 'running', sent: s.totalProcessed || 0 });
+    }
+  } catch { /* local status best-effort */ }
+  try {
+    for (const _q of await getQueue()) entries.push({ owner: localOwner, bucket: 'queued', sent: 0 });
+  } catch { /* queue best-effort */ }
+  const payload = {
+    ok: true,
+    rows: aggregateTeamStatus(entries),
+    cloudError,               // surfaced, not fatal — local rows still render
+    generatedAt: Date.now(),
+  };
+  _teamStatusCache = { at: Date.now(), payload };
+  res.json(payload);
+});
+
 // The wizard config snapshotted at dispatch — used to Duplicate a cloud campaign.
 app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
   const rec = await getCloudLaunchConfig(req.params.id);

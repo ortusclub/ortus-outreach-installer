@@ -244,6 +244,38 @@
       <div class="sn-qmeta" id="campaigns-qmeta" style="text-align:right;margin:0 2px 4px">—</div>
       <div id="campaigns-board" class="sn-board"><div class="sn-empty">Loading campaigns…</div></div>
 
+      <!-- ── TEAM STATUS (feature ⑩ — ADMIN-ONLY, sketch team-status-A) ──
+           Hidden by default and NEVER revealed for non-admins: the section
+           stays [hidden] until /api/me confirms admin AND /api/team-status
+           (itself 403 for non-admins) returns rows. Rendered by
+           renderTeamStatus() on the 5s dashboard poll, refetched every 30s. -->
+      <section id="team-status-section" class="dashboard-section" hidden>
+        <div class="team-head">
+          <h2 class="team-title">Team</h2>
+          <span class="team-admin-badge">Admin only</span>
+          <span class="team-sub" id="team-status-sub">—</span>
+          <button type="button" class="team-refresh" onclick="refreshTeamStatus()">↻ Refresh</button>
+        </div>
+        <div class="team-card">
+          <table class="team-table">
+            <thead>
+              <tr>
+                <th>Operator</th>
+                <th>Status</th>
+                <th>Running</th>
+                <th>Queued</th>
+                <th>Done</th>
+                <th>Total sends</th>
+              </tr>
+            </thead>
+            <tbody id="team-status-body"></tbody>
+          </table>
+        </div>
+        <div class="team-foot">Cloud campaigns per owner (engine list) + this machine's local activity.
+          Other operators' LOCAL campaigns are not visible from here — cloud is the only cross-machine source.
+          Synced every 30s.</div>
+      </section>
+
       <!-- ── ACTIVE (Variant J) ──────────────────────────────────── -->
       <section class="vj-card" id="active-card" aria-labelledby="sect-active">
         <div class="vj-eyebrow">
