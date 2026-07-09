@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warm-up entry-point — variants</title>
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/dashboard-v0.3.css">
+<style>
+  /* Sketch chrome only — nothing here ships. Everything inside .browse-card
+     reuses the REAL app classes from style.css so this reads 1:1. */
+  body { background: var(--bg, #fff); color: var(--ink); font-family: var(--body, sans-serif);
+         margin: 0; padding: 40px 32px 120px; }
+  .sk-wrap { max-width: 720px; margin: 0 auto; }
+  .sk-h1 { font-family: var(--display); font-size: 2rem; letter-spacing: 0.04em; margin: 0 0 6px; }
+  .sk-lead { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); line-height: 1.7;
+             letter-spacing: 0.04em; margin: 0 0 40px; }
+  .sk-variant { margin: 0 0 56px; }
+  .sk-tag { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase;
+            color: var(--gold); margin: 0 0 4px; }
+  .sk-name { font-family: var(--display); font-size: 1.35rem; letter-spacing: 0.03em; margin: 0 0 6px; }
+  .sk-note { font-family: var(--mono); font-size: 0.68rem; color: var(--gray); line-height: 1.7;
+             margin: 0 0 18px; }
+  .sk-pro  { color: var(--green); } .sk-con { color: var(--red); }
+  .sk-stage { border: 1px solid var(--hairline); border-radius: 14px; padding: 22px 24px; background: var(--bg,#fff); }
+  /* fake 2-col mini grid so a couple of real tiles sit side by side */
+  .sk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  /* Variant A — the warm-up pill in its "on" state */
+  .bulk-pill.wu-on { border-color: var(--gold); color: var(--gold); background: rgba(247,190,104,0.10); }
+  /* Warm-up "?" chip */
+  .wu-help { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px;
+             border:1px solid var(--hairline); border-radius:50%; font-family:var(--mono); font-size:0.6rem;
+             color:var(--gray); margin-left:6px; cursor:help; }
+  /* Explainer callout */
+  .wu-explain { border:1px solid var(--hairline); border-left:3px solid var(--gold); border-radius:10px;
+                padding:12px 16px; margin-top:12px; font-family:var(--mono); font-size:0.68rem;
+                color:var(--gray); line-height:1.7; }
+  .wu-explain b { color: var(--ink); font-weight:500; }
+  .wu-explain .wk { color: var(--gold); }
+  /* Variant B — in-tile toggle made obvious (proper control, always-visible Stop) */
+  .wu-toggle { display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:0.6rem;
+               letter-spacing:0.1em; text-transform:uppercase; border:1px solid var(--hairline);
+               border-radius:9999px; padding:3px 10px; cursor:pointer; color:var(--ink); background:transparent; }
+  .wu-toggle.on { border-color:var(--gold); color:var(--gold); background:rgba(247,190,104,0.12); }
+  /* Variant B tile sub area */
+  .sk-tilesub { font-family:var(--mono); font-size:0.64rem; color:var(--gray); line-height:1.6; margin-top:8px; }
+  .sk-check { display:inline-block; width:36px; }
+</style>
+</head>
+<body>
+<div class="sk-wrap">
+  <div class="sk-h1">Warm-up · entry-point variants</div>
+  <p class="sk-lead">
+    Three ways to arm account warm-up in the account picker. Goal: make it obvious what a warm-up
+    session is, and make it <b style="color:var(--ink)">always reversible</b>. Rendered with the real
+    <code>style.css</code> tile/pill classes. Pick a direction — we don't commit yet.
+  </p>
+
+  <!-- ─────────────────── VARIANT A — pill next to Deselect all ─────────────────── -->
+  <div class="sk-variant">
+    <div class="sk-tag">Variant A</div>
+    <div class="sk-name">Warm-up mode pill (next to “Deselect all”)</div>
+    <p class="sk-note">
+      A pill sits in the bulk row. Turning it <b style="color:var(--ink)">on</b> reveals the explainer + puts
+      a small “Warm up?” toggle on each free tile. Turning it off hides them.
+      <span class="sk-pro">+ discoverable, one obvious place, easy to explain.</span>
+      <span class="sk-con">— warm-up is per-account, so the pill only reveals per-tile controls (it doesn't warm all).</span>
+    </p>
+    <div class="sk-stage">
+      <div class="browse-secondary">
+        <div class="browse-bulk-row">
+          <button class="bulk-pill">Select all visible</button>
+          <button class="bulk-pill">Deselect all</button>
+          <button class="bulk-pill wu-on">Warm-up mode<span class="wu-help">?</span></button>
+        </div>
+      </div>
+      <div class="wu-explain">
+        <b>What is warm-up?</b> A fresh LinkedIn account can't send at full volume without risk. Warm-up
+        ramps it: <span class="wk">week 1 → 5/day</span> · <span class="wk">week 2 → 10/day</span> ·
+        <span class="wk">week 3 → 20/day</span> · then normal limit. Turn it on per account below —
+        toggle it off anytime.
+      </div>
+      <div class="browse-card">
+        <div class="profile-grid sk-grid">
+          <label class="profile-item jt free">
+            <div class="jt-stat s-warmup"><span class="jt-dot"></span><span class="jt-word">WARM-UP</span><span class="jt-zsub">wk 1 · 5/day</span></div>
+            <div class="jt-det"><div class="jt-top"><input type="checkbox" checked><span class="jt-email">alex.new@ortus</span></div>
+              <div class="jt-sub">Ramping — <b>5/day</b> this week. <a class="wu-link" href="#">Stop warm-up</a></div></div>
+          </label>
+          <label class="profile-item jt free">
+            <div class="jt-stat s-free"><span class="jt-dot"></span><span class="jt-word">FREE</span></div>
+            <div class="jt-det"><div class="jt-top"><input type="checkbox"><span class="jt-email">sam.k@ortus</span></div>
+              <div class="jt-sub">Anyone can use. <a class="wu-link" href="#">Warm up?</a></div></div>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────── VARIANT B — in-tile toggle, made obvious + always reversible ─────────────────── -->
+  <div class="sk-variant">
+    <div class="sk-tag">Variant B</div>
+    <div class="sk-name">In-tile toggle (fixes the revert bug head-on)</div>
+    <p class="sk-note">
+      Keeps warm-up on the tile where the account lives, but as a real <b style="color:var(--ink)">on/off toggle</b>
+      that stays visible in EVERY tile state — so it can never get stranded “on”. A “?” opens the explainer inline.
+      <span class="sk-pro">+ smallest change, directly kills the “can't revert” bug (the Stop control never disappears).</span>
+      <span class="sk-con">— toggle repeats on every tile; more visual noise across a long grid.</span>
+    </p>
+    <div class="sk-stage">
+      <div class="browse-card">
+        <div class="profile-grid sk-grid">
+          <label class="profile-item jt free">
+            <div class="jt-stat s-warmup"><span class="jt-dot"></span><span class="jt-word">WARM-UP</span><span class="jt-zsub">wk 2 · 10/day</span></div>
+            <div class="jt-det"><div class="jt-top"><input type="checkbox" checked><span class="jt-email">alex.new@ortus</span></div>
+              <div class="sk-tilesub"><span class="wu-toggle on">◉ Warm-up ON</span> <span class="wu-help">?</span></div></div>
+          </label>
+          <label class="profile-item jt in-use">
+            <div class="jt-stat s-inuse"><span class="jt-dot"></span><span class="jt-word">IN USE</span></div>
+            <div class="jt-det"><div class="jt-top"><input type="checkbox" checked><span class="jt-email">jo.d@ortus</span></div>
+              <div class="sk-tilesub"><span class="wu-toggle on">◉ Warm-up ON</span> <span class="wu-help">?</span> &nbsp;<span style="color:var(--gray)">still reversible while selected</span></div></div>
+          </label>
+        </div>
+      </div>
+      <div class="wu-explain">
+        <b>?</b> → <b>Warm-up</b> ramps a fresh account: <span class="wk">wk1 5/day</span> ·
+        <span class="wk">wk2 10/day</span> · <span class="wk">wk3 20/day</span> · then normal. The cap only ever
+        <i>lowers</i> the campaign's daily limit, for this account only.
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────── VARIANT C — dedicated warm-up drawer ─────────────────── -->
+  <div class="sk-variant">
+    <div class="sk-tag">Variant C</div>
+    <div class="sk-name">“New account?” drawer (dedicated panel)</div>
+    <p class="sk-note">
+      A single pill opens a drawer that lists every account currently warming up, with a one-tap Stop each,
+      plus an “add account to warm-up” picker. Tiles stay clean; warm-up lives in one managed place.
+      <span class="sk-pro">+ cleanest grid, one roster to review/revert, best for many accounts.</span>
+      <span class="sk-con">— most build; another panel to maintain.</span>
+    </p>
+    <div class="sk-stage">
+      <div class="browse-secondary">
+        <div class="browse-bulk-row">
+          <button class="bulk-pill">Select all visible</button>
+          <button class="bulk-pill">Deselect all</button>
+          <button class="bulk-pill wu-on">Warm-up (2)<span class="wu-help">?</span></button>
+        </div>
+      </div>
+      <div class="wu-explain" style="border-left-color:var(--ink)">
+        <b>Accounts warming up · 2</b>
+        <div style="margin-top:10px; display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--hairline);">
+          <span><b>alex.new@ortus</b> — <span class="wk">wk 1 · 5/day</span></span><a class="wu-link" href="#">Stop</a></div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--hairline);">
+          <span><b>jo.d@ortus</b> — <span class="wk">wk 3 · 20/day</span></span><a class="wu-link" href="#">Stop</a></div>
+        <div style="margin-top:10px;"><button class="bulk-pill">+ Add account to warm-up</button></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
