@@ -11,7 +11,8 @@
  * Persistent state: data/replies-log.json (newest appended last, capped).
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { dataPath } from './paths.js';
 
 const FILE = dataPath('replies-log.json');
@@ -51,7 +52,14 @@ export async function readRepliesLog() {
 }
 
 async function write(log) {
-  try { await writeFile(FILE, JSON.stringify(log, null, 2)); }
+  // Atomic .tmp + rename (blocklist.js pattern) so a crash mid-write can't
+  // truncate the inbox.
+  try {
+    await mkdir(dirname(FILE), { recursive: true });
+    const tmp = FILE + '.tmp';
+    await writeFile(tmp, JSON.stringify(log, null, 2));
+    await rename(tmp, FILE);
+  }
   catch (err) { console.warn(`[replies-log] write failed: ${err.message}`); }
 }
 
@@ -68,6 +76,9 @@ export async function appendReplies(entries, nowMs = Date.now()) {
     linkedinUrl: e.linkedinUrl || '',
     leadName: e.leadName || '',
     text: String(e.text || ''),
+    // v2.135+ (replies inbox): which campaign this reply belongs to, when the
+    // capturing sweep knows it. Display-only context for the inbox subline.
+    campaign: e.campaign || '',
     repliedAt: e.repliedAt || null,
     // v2.72: true when the name matched >1 lead (same-name) — surfaced as a
     // "suspected reply" the operator should verify manually.
@@ -101,4 +112,19 @@ export async function markAllSeen() {
   for (const r of log) { if (!r.seen) { r.seen = true; changed = true; } }
   if (changed) await write(log);
   return log.length;
+}
+
+/**
+ * Replies-inbox: store a manual label correction on one reply, addressed by
+ * its stable content key (replyKey). A manual label always wins over the
+ * heuristic auto-label computed at read time. Returns true if a row matched.
+ */
+export async function setReplyLabel(key, label) {
+  const log = await readRepliesLog();
+  let changed = false;
+  for (const r of log) {
+    if (replyKey(r) === key) { r.label = label; changed = true; }
+  }
+  if (changed) await write(log);
+  return changed;
 }

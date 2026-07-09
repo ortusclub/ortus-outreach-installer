@@ -15,6 +15,10 @@ const DEFAULTS = Object.freeze({
   // v2.72: desktop + email alerts when the hourly reply-check finds new
   // inbound replies. Off by default (operator opts in) per the auto-send rule.
   replyAlerts: false,
+  // Replies inbox: AI-drafted reply suggestions (Claude API). OFF by default
+  // per the auto-send rule — the operator opts in from the inbox header, and
+  // even when on, drafts are copy-only and never sent automatically.
+  aiReplySuggestions: false,
 });
 
 async function readAll() {

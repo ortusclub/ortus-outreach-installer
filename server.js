@@ -3043,14 +3043,77 @@ app.get('/api/post-campaign-tracking', async (_req, res) => {
 // v2.72: Replies panel — inbound replies found by the hourly reply-check (and
 // the manual Check DMs flow), newest first, plus the active reply-tracking
 // windows. The dashboard polls this to show who replied + the message text.
-app.get('/api/replies', async (_req, res) => {
+app.get('/api/replies', async (req, res) => {
   try {
     const [replies, unseen, windows] = await Promise.all([
       listReplies({ limit: 100 }),
       unseenReplyCount(),
       listReplyCheckSchedule(),
     ]);
-    res.json({ replies, unseen, windows });
+    // Replies inbox: attach the heuristic auto-label (pure, offline) to every
+    // reply at read time. A manual correction (r.label) always wins and is
+    // reported at high confidence.
+    const { classifyReply } = await import('./src/reply-classify.js');
+    const { replyKey } = await import('./src/replies-log.js');
+    const decorated = replies.map((r) => {
+      const auto = classifyReply(r.text);
+      return {
+        ...r,
+        key: replyKey(r),
+        label: r.label || auto.label,
+        labelConfidence: r.label ? 'high' : auto.confidence,
+        labelSource: r.label ? 'manual' : 'auto',
+      };
+    });
+    // Tell the UI whether the "Suggest reply" action can work right now.
+    const prefs = await getNotificationPrefs(req.user);
+    const aiOptIn = !!prefs.aiReplySuggestions;
+    const aiKeyPresent = !!process.env.ANTHROPIC_API_KEY;
+    res.json({ replies: decorated, unseen, windows, ai: { optIn: aiOptIn, keyPresent: aiKeyPresent } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Replies inbox: manual label correction. Body: { key, label }.
+app.post('/api/replies/label', async (req, res) => {
+  try {
+    const { key, label } = req.body || {};
+    const { isValidLabel } = await import('./src/reply-classify.js');
+    if (!key) return res.status(400).json({ error: 'key required' });
+    if (!isValidLabel(label)) return res.status(400).json({ error: `Invalid label: ${label}` });
+    const { setReplyLabel } = await import('./src/replies-log.js');
+    const ok = await setReplyLabel(String(key), label);
+    if (!ok) return res.status(404).json({ error: 'Reply not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Replies inbox: AI-suggested reply draft (opt-in, OFF by default). The draft
+// is returned to the UI for the operator to COPY manually — there is no code
+// path from here to any LinkedIn send function, by design. Gated on the
+// per-operator aiReplySuggestions pref AND ANTHROPIC_API_KEY being set.
+app.post('/api/replies/suggest', async (req, res) => {
+  try {
+    const prefs = await getNotificationPrefs(req.user);
+    if (!prefs.aiReplySuggestions) {
+      return res.status(400).json({ error: 'AI reply suggestions are off. Turn on the toggle in the Replies inbox header first.' });
+    }
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(400).json({ error: 'ANTHROPIC_API_KEY is not set in your .env — add it and restart the app to use AI suggestions.' });
+    }
+    const { key } = req.body || {};
+    if (!key) return res.status(400).json({ error: 'key required' });
+    const { readRepliesLog } = await import('./src/replies-log.js');
+    const { replyKey } = await import('./src/replies-log.js');
+    const log = await readRepliesLog();
+    const reply = log.find((r) => replyKey(r) === String(key));
+    if (!reply) return res.status(404).json({ error: 'Reply not found' });
+    const { suggestReply } = await import('./src/reply-suggest.js');
+    const suggestion = await suggestReply(reply, { apiKey: process.env.ANTHROPIC_API_KEY });
+    res.json({ ok: true, suggestion });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3661,7 +3724,9 @@ app.post('/api/reply-check-now', async (req, res) => {
             campaignLog(`⚠ [${pName}] reply scan: ${result.errors.join('; ')}`);
           }
           totalReplies += result.inboundCount;
-          await appendReplies(result.logEntries || []);
+          // Replies inbox: stamp the campaign name onto each captured reply so
+          // the inbox subline can show "via <account> · <campaign>".
+          await appendReplies((result.logEntries || []).map((e) => ({ ...e, campaign: campaign.name || '' })));
           // v2.72: dump inbound 1:1 replies to the shared "Recent Messages" tab.
           try { await writeRecentMessagesTab(sheetUrl, pName, result.recentMessages || [], []); }
           catch (e) { campaignLog(`⚠ [${pName}] Recent Messages write failed: ${e.message}`); }
@@ -4032,6 +4097,30 @@ app.post('/api/check-dms/start', async (req, res) => {
           byProfile[profileId] = result.replies || [];
           // Inbound count drives the headline metric the operator sees.
           checkDms.repliesFound += (result.replies || []).filter(r => r.inbound).length;
+          // Replies inbox: persist inbound replies to the local replies log so
+          // they show in the Replies view (capture at the CALL SITE — the
+          // scraper itself stays untouched). Best-effort; the sheet write-back
+          // inside checkProfileDmsPerLead remains the source of truth.
+          try {
+            const { appendReplies } = await import('./src/replies-log.js');
+            const profileName = Object.keys(nameToId).find((n) => nameToId[n] === profileId && n !== 'local-browser') || profileId;
+            const entries = (result.replies || []).filter((r) => r.inbound).map((r) => {
+              const row = r.match || {};
+              const lastMsg = Array.isArray(r.messages) && r.messages.length ? r.messages[r.messages.length - 1] : null;
+              return {
+                profileId, profileName,
+                linkedinUrl: r.leadUrl || row['Linkedin URL'] || '',
+                leadName: r.name || `${row['First Name'] || row.firstName || ''} ${row['Last Name'] || row.lastName || ''}`.trim(),
+                text: r.snippet || (lastMsg && lastMsg.body) || '',
+                campaign: '',
+                repliedAt: r.timestamp || (lastMsg && lastMsg.time) || null,
+                suspected: false,
+              };
+            });
+            if (entries.length) await appendReplies(entries);
+          } catch (logErr) {
+            console.warn(`[check-dms] replies-log append failed: ${logErr.message}`);
+          }
           if (Array.isArray(result.ambiguous)) ambiguous.push(...result.ambiguous.map(a => ({ ...a, profileId })));
           if (Array.isArray(result.errors) && result.errors.length) {
             checkDms.errors.push(...result.errors.map(e => `[${profileId}] ${e}`));
