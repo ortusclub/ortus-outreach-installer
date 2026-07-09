@@ -262,6 +262,19 @@ app.get('/api/me', (req, res) => {
   res.json({ email: req.user, admin: isAdminEmail(req.user) });
 });
 
+// The SPA entry document must NEVER be cached. index.html carries the
+// `app.js?v=<version>` cache-buster, so if the browser 304-revalidates and
+// keeps a stale index.html, the renderer stays pinned to the OLD app.js build
+// no matter how many times we bump the version — the operator sees the same
+// old code after a normal reload (this is exactly the "app is still at 2.145"
+// symptom). Serving it no-store means every reload fetches a fresh 200 with
+// the current cache-buster, and app.js?v=<version> handles app.js caching.
+// Placed after the session gate so it still requires auth.
+app.get(['/', '/index.html'], (_req, res) => {
+  res.set('Cache-Control', 'no-store, must-revalidate');
+  res.sendFile(resolve(__dirname, 'public', 'index.html'));
+});
+
 app.use(express.static(resolve(__dirname, 'public')));
 
 // ---------------------------------------------------------------------------
