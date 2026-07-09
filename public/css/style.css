@@ -8050,4 +8050,3 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
 .team-table .st-pill.idle .d { background: var(--gray); }
 .team-table .sends { font-family: var(--display); font-size: 1.5rem; letter-spacing: 0.02em; line-height: 1; }
 .team-foot { font-family: var(--mono); font-size: 0.62rem; color: var(--gray); line-height: 1.7; margin-top: 18px; }
->>>>>>> team-status-2145
