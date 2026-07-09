@@ -1,14 +1,14 @@
-# v2.140 fixes + warm-up rework — Implementation Plan
+# v2.140 fixes + warm-up removal — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix three v2.140 defects (warm-up can't be reverted, Live Status empty on local runs, pre-flight buttons overlap) and rework the warm-up entry point into an always-reversible in-tile toggle with an optional SoO-driven suggestion.
+**Goal:** Fix two v2.140 defects (Live Status empty on local runs, pre-flight buttons overlap) and REMOVE the warm-up feature entirely (operator decided it's not needed).
 
-**Architecture:** Frontend-only vanilla JS/CSS changes in `public/`, plus one pure helper in `public/js/account-guardrails.mjs` (node-testable). No backend/route/schedule-math changes — `src/warmup.js`, `src/warmup-store.js`, and `/api/warmup` are already correct. UI verified manually via `npm run dev:app` (repo has no UI test suite); the one pure helper gets a `node --test` unit test.
+**Architecture:** Task 1 (done) and Task 2 are surgical frontend fixes in `public/`. Tasks 3–4 rip out the warm-up feature: backend (`src/warmup.js`, `src/warmup-store.js`, `/api/warmup`, the daily-limit cap in `src/campaign.js`, `tests/warmup.test.js`) and frontend (all warm-up UI in `app.js`, `index.html`, `style.css`, plus the exploratory sketch). Removing warm-up means every profile simply uses `campaign.dailyLimit` — the prior default before warm-up existed.
 
 **Tech Stack:** Vanilla JS (ES modules, no bundler), Express 4, `node --test`, Electron dev shell.
 
-**Spec:** `docs/superpowers/specs/2026-07-09-warmup-livestatus-preflight-design.md`
+**Spec:** `docs/superpowers/specs/2026-07-09-warmup-livestatus-preflight-design.md` (warm-up rework sections now superseded by removal — see this plan's Tasks 3–4).
 
 ## Global Constraints
 
@@ -17,59 +17,14 @@
 - **Off-limits files** — never touch `src/linkedin/outreach.js` / `src/linkedin/actions.js`.
 - Patch-bump `package.json` version before relaunching so the operator can confirm the build (`2.141.0` → `2.142.0`).
 - After a commit touching runtime code, relaunch dev:app: `pkill -f "npm.*dev:app" 2>/dev/null; pkill -f "Electron.*ortus" 2>/dev/null; npm run dev:app > /tmp/dev-app.log 2>&1 &`
-- SoO column name for the "new account" flag is not final (working name "Immature"); read a candidate set, and show NO suggestion when unmatched (safe default).
-- Preserve the warm-up link's `preventDefault`/`stopPropagation` so clicking it never toggles the tile's selection checkbox.
+- Removing warm-up must not change any non-warm-up behavior: with no account armed, `profileDailyLimit(id)` already returned `campaign.dailyLimit`, so replacing it is behavior-preserving for every existing run.
+- The full test suite must pass after backend removal: `node --test`.
 
 ---
 
-### Task 1: Live Status shows on a local/native run
+### Task 1: Live Status shows on a local/native run  ✅ COMPLETE (commit 63c393b)
 
-**Files:**
-- Modify: `public/js/app.js` — `placeLiveCard()` (~8709-8747)
-
-**Interfaces:**
-- Consumes: existing `syncLiveStatusVisibility()` which sets `#nav-status` `display` from `location.hash === '#/new'` and cockpit running/monitoring/finished state.
-- Produces: no new exports. `placeLiveCard()` relocates `#active-card` into `#wiz-live-slot` whenever the Live Status section is visible.
-
-**Root cause:** `syncLiveStatusVisibility()` reveals the section on `location.hash === '#/new'`, but `placeLiveCard()` gates the card relocation on `document.body.classList.contains('route-wizard')`. On a local run those disagree → header shows, card never moves in → empty box.
-
-- [ ] **Step 1: Change the relocation gate to follow the section's own visibility**
-
-In `placeLiveCard()`, the current lines read:
-
-```js
-  const onWizard = document.body.classList.contains('route-wizard');
-  const liveVisible = !!sec && sec.style.display !== 'none';
-  // v2.86.1 (port): follow the section's visibility even when the card is empty.
-  // When "Open log" forces the section open while idle, the dashboard card's
-  // "No campaign running" empty state is exactly what should show — instead of
-  // falling back to the legacy cockpit panel. (Was: && !is-empty.)
-  const wantWizard = onWizard && liveVisible;
-```
-
-Replace with (single source of truth — the section's visibility, which `syncLiveStatusVisibility` already computed):
-
-```js
-  const liveVisible = !!sec && sec.style.display !== 'none';
-  // v2.142: the Live Status section's own visibility is the single source of
-  // truth for whether the card belongs in the wizard slot. Previously this
-  // also required document.body.route-wizard, which disagreed with the
-  // hash-based test in syncLiveStatusVisibility() on a local/native run —
-  // the header showed but #active-card was never relocated (empty box).
-  const wantWizard = liveVisible && !!slot;
-```
-
-- [ ] **Step 2: Manual verification — local run**
-
-Run: `pkill -f "npm.*dev:app" 2>/dev/null; pkill -f "Electron.*ortus" 2>/dev/null; npm run dev:app > /tmp/dev-app.log 2>&1 &` then in the app: New Campaign → configure a tiny run → leave "Running in cloud" UNticked → Start.
-Expected: the **Live Status** section on the wizard shows the populated `#active-card` (same card as the dashboard, with the live log), not an empty box.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add public/js/app.js
-git commit -m "fix: Live Status card empty on local run — gate card relocation on section visibility"
-```
+Done and reviewed clean. `placeLiveCard()` now gates card relocation on `#nav-status` visibility (single source of truth), fixing the empty Live Status box on local runs.
 
 ---
 
@@ -77,10 +32,9 @@ git commit -m "fix: Live Status card empty on local run — gate card relocation
 
 **Files:**
 - Modify: `public/css/style.css` — `.pf-actions` (~7822-7825)
-- Modify: `public/index.html` — `.pf-actions` block (~3356-3363) only if a wrapper row is needed
 
 **Interfaces:**
-- Consumes: existing button ids `#pf-fix`, `#pf-exclude`, `#pf-anyway`, `#pf-cancel` and `.pf-count-note`. No JS/handler changes.
+- Consumes: existing button ids `#pf-fix`, `#pf-exclude`, `#pf-anyway`, `#pf-cancel` and `.pf-count-note`. No JS/handler/markup changes.
 - Produces: a layout where no button overlaps another at any width ≥ 360px.
 
 **Root cause:** `.pf-actions` is `display:flex; flex-wrap:wrap` with a `flex:1` spacer; the long "Keep flagged, launch anyway (blocklisted still excluded)" label + the primary button overflow and the spacer math collapses them.
@@ -110,8 +64,8 @@ Replace with:
 
 - [ ] **Step 2: Manual verification — blockers present**
 
-Run the app (dev:app already running from Task 1), start a campaign whose sheet has a blocklisted/flagged lead so the pre-flight overlay opens with the "Keep flagged, launch anyway (blocklisted still excluded)" label active.
-Expected: all four buttons (`Fix on sheet`, `Exclude all flagged & launch`, `Keep flagged, launch anyway…`, `Cancel`) are fully readable and none overlap; the explainer note sits on its own line.
+Start a campaign whose sheet has a blocklisted/flagged lead so the pre-flight overlay opens with the "Keep flagged, launch anyway (blocklisted still excluded)" label active.
+Expected: all four buttons are fully readable and none overlap; the explainer note sits on its own line.
 
 - [ ] **Step 3: Commit**
 
@@ -122,159 +76,141 @@ git commit -m "fix: pre-flight action buttons overlap — content-sized wrap, lo
 
 ---
 
-### Task 3: SoO warm-up suggestion helper (pure, tested)
+### Task 3: Remove warm-up — backend + campaign loop
 
 **Files:**
-- Modify: `public/js/account-guardrails.mjs` — add `warmupSuggestedFromSoo`
-- Test: `tests/account-guardrails.test.js` — add cases
+- Delete: `src/warmup.js`, `src/warmup-store.js`, `tests/warmup.test.js`
+- Modify: `src/campaign.js` — remove imports (33-34) + the `profileDailyLimit` block (~3132-3157) + its 3 call sites
+- Modify: `server.js` — remove the `/api/warmup` route(s)
 
 **Interfaces:**
-- Produces: `export function warmupSuggestedFromSoo(soo): boolean` — true when the SoO row marks the account as new/immature. Reads a candidate set of column names case-insensitively; truthy values are `TRUE`, `true`, `yes`, `y`, `1`, `new`, `immature` (trimmed, lower-cased). Absent column or any other value → `false`.
-- Consumed by: Task 4 (tile render).
+- Produces: no warm-up module, no `/api/warmup` endpoint. `src/campaign.js` uses `campaign.dailyLimit` directly for every profile's per-run quota.
 
-- [ ] **Step 1: Write the failing test**
+**Behavior note:** `profileDailyLimit(id)` returned `campaign.dailyLimit` whenever the profile had no enabled warm-up entry — which, post-removal, is always. So substituting `campaign.dailyLimit` is exactly the pre-warm-up behavior.
 
-Append to `tests/account-guardrails.test.js`:
+- [ ] **Step 1: Remove the campaign.js warm-up imports**
 
-```js
-import { warmupSuggestedFromSoo } from '../public/js/account-guardrails.mjs';
-
-test('warmupSuggestedFromSoo: flags TRUE/yes/new/immature in a candidate column', () => {
-  assert.equal(warmupSuggestedFromSoo({ Immature: 'TRUE' }), true);
-  assert.equal(warmupSuggestedFromSoo({ Immature: 'yes' }), true);
-  assert.equal(warmupSuggestedFromSoo({ Maturity: 'immature' }), true);
-  assert.equal(warmupSuggestedFromSoo({ 'New Account': 'new' }), true);
-});
-
-test('warmupSuggestedFromSoo: false when column absent or value not a flag', () => {
-  assert.equal(warmupSuggestedFromSoo({ Status: 'Available' }), false);
-  assert.equal(warmupSuggestedFromSoo({ Immature: '' }), false);
-  assert.equal(warmupSuggestedFromSoo({ Immature: 'mature' }), false);
-  assert.equal(warmupSuggestedFromSoo({}), false);
-  assert.equal(warmupSuggestedFromSoo(null), false);
-});
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `node --test tests/account-guardrails.test.js`
-Expected: FAIL — `warmupSuggestedFromSoo` is not exported.
-
-- [ ] **Step 3: Implement the helper**
-
-Add to `public/js/account-guardrails.mjs`:
+`src/campaign.js` lines 33-34 are:
 
 ```js
-// ⑫ Warm-up suggestion — the SoO sheet may (future) carry a column flagging
-// new/"immature" accounts that should warm up before running at full volume.
-// The column name is not final (working name "Immature"); read a small
-// candidate set case-insensitively. Absent column → no suggestion (safe).
-const WARMUP_FLAG_COLUMNS = ['immature', 'maturity', 'new account', 'newaccount'];
-const WARMUP_FLAG_TRUTHY = new Set(['true', 'yes', 'y', '1', 'new', 'immature']);
-export function warmupSuggestedFromSoo(soo) {
-  if (!soo || typeof soo !== 'object') return false;
-  for (const key of Object.keys(soo)) {
-    if (!WARMUP_FLAG_COLUMNS.includes(key.trim().toLowerCase())) continue;
-    const val = String(soo[key] ?? '').trim().toLowerCase();
-    if (WARMUP_FLAG_TRUTHY.has(val)) return true;
-  }
-  return false;
-}
+import { effectiveDailyLimit, warmupStatus, WARMUP_WEEKS } from './warmup.js';
+import { readWarmup } from './warmup-store.js';
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+Delete both lines.
 
-Run: `node --test tests/account-guardrails.test.js`
-Expected: PASS (all cases).
+- [ ] **Step 2: Delete the `profileDailyLimit` block**
 
-- [ ] **Step 5: Commit**
+Delete the whole block (currently ~3132-3157) — the `⑫ Account warm-up mode` comment, `const _warmupMap = readWarmup();`, `const _warmupCapLogged = new Set();`, and the entire `function profileDailyLimit(profileId) { … }`.
+
+- [ ] **Step 3: Replace the 3 call sites with `campaign.dailyLimit`**
+
+Site A (~3222):
+```js
+        if (!skipsDailyLimit && getCampaignCount(candidate) >= profileDailyLimit(candidate)) continue; // ⑫ warm-up-aware
+```
+→
+```js
+        if (!skipsDailyLimit && getCampaignCount(candidate) >= campaign.dailyLimit) continue;
+```
+
+Site B (~3243):
+```js
+        (!skipsDailyLimit && getCampaignCount(id) >= profileDailyLimit(id)) // ⑫ warm-up-aware
+```
+→
+```js
+        (!skipsDailyLimit && getCampaignCount(id) >= campaign.dailyLimit)
+```
+
+Site C (~4281-4292) — the whole warm-up-aware completion block:
+```js
+            // ⑫ warm-up-aware: a warming account "completes" at its capped limit.
+            const _limitNow = profileDailyLimit(profileId);
+            if (!skipsDailyLimit && getCampaignCount(profileId) >= _limitNow) {
+              const _wuCapped = _limitNow < campaign.dailyLimit;
+              recordProfileEnd(profileId, pName, `Reached campaign limit (${_limitNow}${_wuCapped ? ' — warm-up cap' : ''})`);
+              // ⑫ A warm-up cap (e.g. 5/day) is smaller than BATCH_SIZE, so
+              // without this break the turn would keep sending until the batch
+              // is drained and overshoot the ramp. Only break for the warm-up
+              // case — the pre-existing turn behaviour for the normal campaign
+              // limit is left exactly as it was.
+              if (_wuCapped) break;
+            }
+```
+→
+```js
+            if (!skipsDailyLimit && getCampaignCount(profileId) >= campaign.dailyLimit) {
+              recordProfileEnd(profileId, pName, `Reached campaign limit (${campaign.dailyLimit})`);
+            }
+```
+
+- [ ] **Step 4: Remove the `/api/warmup` routes in server.js**
+
+Find the warm-up route handlers (`grep -n "warmup\|/api/warmup" server.js`) and delete the GET `/api/warmup` and POST `/api/warmup/:profileId` handlers in full, including any import of `warmup-store`/`warmup` at the top of `server.js`.
+
+- [ ] **Step 5: Delete the warm-up files and its test**
 
 ```bash
-git add public/js/account-guardrails.mjs tests/account-guardrails.test.js
-git commit -m "feat: warmupSuggestedFromSoo — tolerant SoO 'new account' flag read"
+git rm src/warmup.js src/warmup-store.js tests/warmup.test.js
+```
+
+- [ ] **Step 6: Run the full suite — no dangling references**
+
+Run: `node --test`
+Expected: PASS, 0 failures. If any test or module still imports `./warmup.js` / `warmup-store.js`, that's a dangling reference — fix it. Also run `grep -rn "warmup\|effectiveDailyLimit\|profileDailyLimit\|readWarmup" src server.js` and confirm zero hits.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "refactor: remove warm-up feature — backend + campaign daily-limit cap (operator: not needed)"
 ```
 
 ---
 
-### Task 4: Warm-up in-tile toggle — always reversible + SoO suggestion
+### Task 4: Remove warm-up — frontend + sketch
 
 **Files:**
-- Modify: `public/js/app.js` — import list (line 32), warm-up render branch (~1752-1776), listener wiring is unchanged (~1798-1806)
-- Modify: `public/css/style.css` — add `.wu-suggest` accent (near `.wu-link`)
+- Modify: `public/js/app.js` — imports (32), `loadWarmup`/`setProfileWarmup`/`wuStatus`/`renderWarmupSched` + `WU_SCHEDULE`/`WU_WEEKS`/`warmupData`/`wuSchedOpenFor` (~586-660), the warm-up tile render branch (~1752-1776), the `.wu-link` listener wiring (~1798-1806), the `loadWarmup()` call (~1546), `renderWarmupSched()` call (~1825), and any `window.*` warm-up bindings
+- Modify: `public/index.html` — remove `#wu-sched` element (~1716) and any warm-up copy
+- Modify: `public/css/style.css` — remove `.s-warmup`, `.wu-link`, `.wu-sched*`, `.wu-step*` rules
+- Delete: `public/sketches/warmup-entry-variants.html` + its card in `public/sketches/index.html`
+- Modify: `public/help.html` — remove the warm-up mention
 
 **Interfaces:**
-- Consumes: `warmupSuggestedFromSoo` (Task 3), existing `wuStatus()`, `warmupData`, `setProfileWarmup()`, and the per-tile `soo` object already in scope in `renderProfiles()`.
-- Produces: warm-up affordance rendered for every NON-locked tile: `Turn off` shows whenever warm-up is active or complete (any tile state — this is the revert fix); `Warm up?` shows on free tiles only, styled as a suggestion when SoO-flagged.
+- Consumes: nothing new. Produces: an account picker tile that renders its normal state (`FREE` / `ASSIGNED` / `IN USE` / `BLOCKED`) with NO warm-up affordance anywhere.
 
-**Root cause of the revert bug:** the warm-up sub-line (incl. "Stop warm-up") is built only inside `if (_state.state === 'free' && !_locked)`. Selecting an account moves it out of `free`, so the Stop affordance disappears.
+- [ ] **Step 1: Remove the tile render branch**
 
-- [ ] **Step 1: Add the helper to the app.js import**
+In `renderProfiles()`, delete the entire warm-up block: the `const _wuEntry = warmupData[p.id];` / `const _wu = wuStatus(_wuEntry);` lines and the `if (_state.state === 'free' && !_locked) { … warm-up … }` sub-branch that sets the WARM-UP stat zone and the `Start warm-up`/`Stop warm-up` sub-line. The base `_statZone` (FREE/ASSIGNED/etc.) and the plain `_sub` strings ("Anyone can use." etc.) must remain intact.
 
-Line 32 currently imports from `/js/account-guardrails.mjs`. Add `warmupSuggestedFromSoo` to that import list:
+- [ ] **Step 2: Remove the `.wu-link` listener wiring**
 
-```js
-import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee, warmupSuggestedFromSoo } from '/js/account-guardrails.mjs';
-```
+Delete the `const wuLink = item.querySelector('.wu-link'); if (wuLink) { … addEventListener … setProfileWarmup … }` block (~1798-1806). Leave the checkbox (`const cb = …`) wiring immediately after it untouched.
 
-- [ ] **Step 2: Replace the free-only warm-up branch with an any-state affordance**
+- [ ] **Step 3: Remove the warm-up functions + state + calls**
 
-Replace the block that currently starts at `if (_state.state === 'free' && !_locked) {` (the WARM-UP stat-zone takeover + `_sub` affordance, ending at its closing `}` before `_classes =`) with:
+Delete `loadWarmup()`, `setProfileWarmup()`, `wuStatus()`, `renderWarmupSched()`, and the module-level `warmupData`, `wuSchedOpenFor`, `WU_SCHEDULE`, `WU_WEEKS` declarations. Remove the `await loadWarmup();` call (~1546) and the `renderWarmupSched();` call (~1825). Remove `warmupSuggestedFromSoo` from the `account-guardrails.mjs` import line only if present (it was never added — verify).
 
-```js
-      // ⑫ Warm-up (v2.142): the badge still takes over the FREE stat zone, but
-      // the toggle affordance renders for ANY non-locked tile so an armed
-      // account can always be turned back off — even after it's selected and
-      // shows IN USE (the v2.140 "can't revert" bug). Suggestion to START only
-      // appears on a free tile; SoO may flag it as a new/immature account.
-      if (!_locked) {
-        if (_wu.active) {
-          if (_state.state === 'free') {
-            _statZone = `
-      <div class="jt-stat s-warmup">
-        <span class="jt-dot"></span>
-        <span class="jt-word">WARM-UP</span>
-        <span class="jt-zsub">wk ${_wu.week} · ${_wu.cap}/day</span>
-      </div>`;
-          }
-          _sub += ` · <b>Warm-up wk ${_wu.week} of ${WU_WEEKS} — ${_wu.cap}/day</b>`
-            + ` <a class="wu-link" href="#" data-wu-enable="0">Turn off</a>`;
-        } else if (_wu.complete) {
-          _sub += ` · <b style="color:var(--green)">✓ warm-up complete</b>`
-            + ` <a class="wu-link" href="#" data-wu-enable="0">Clear</a>`;
-        } else if (_state.state === 'free') {
-          _sub += warmupSuggestedFromSoo(soo)
-            ? ` <a class="wu-link wu-suggest" href="#" data-wu-enable="1">Warm up? — flagged new in SoO</a>`
-            : ` <a class="wu-link" href="#" data-wu-enable="1">Warm up?</a>`;
-        }
-      }
-```
+- [ ] **Step 4: Remove markup, CSS, sketch, help copy**
 
-Note: `soo` is the per-tile SoO object already resolved earlier in the loop (used by `classifyAccountState(soo, …)`); confirm the in-scope variable name at implementation time and match it.
+- `public/index.html`: delete the `<div id="wu-sched" …>` element and its comment.
+- `public/css/style.css`: delete the `.s-warmup`, `.wu-link`, `.wu-sched`, `.wu-steps`, `.wu-step`, `.wu-sched-head`, `.wu-sched-note` rules (grep them out).
+- `git rm public/sketches/warmup-entry-variants.html` and delete its `<a class="card" href="warmup-entry-variants.html" …>…</a>` block from `public/sketches/index.html`.
+- `public/help.html`: remove the warm-up line.
 
-- [ ] **Step 3: Add the suggestion accent CSS**
+- [ ] **Step 5: Verify no dangling references + manual render check**
 
-Near the existing `.wu-link` rule in `public/css/style.css`, add:
+Run: `grep -rn "warmup\|warm-up\|wu-sched\|wu-link\|wuStatus\|s-warmup\|WU_SCHEDULE\|WU_WEEKS\|renderWarmupSched\|setProfileWarmup\|loadWarmup" public/js/app.js public/index.html public/css/style.css public/help.html`
+Expected: zero hits.
+Then load the app (dev:app): open the account picker → tiles render normally in every state with no warm-up link, no console errors.
 
-```css
-/* SoO-flagged new account — a nudge to warm up, gold to match the WARM-UP badge. */
-.wu-link.wu-suggest { color: var(--gold); font-weight: 600; }
-```
-
-- [ ] **Step 4: Manual verification — revert from every state**
-
-dev:app running. In the account picker:
-1. On a FREE tile click **Warm up?** → tile shows WARM-UP badge + "Turn off".
-2. Select that account (check it) so it becomes selected/IN USE → confirm **Turn off** is STILL visible in the sub-line.
-3. Click **Turn off** → warm-up clears from the IN USE state; tile returns to normal.
-4. If a SoO row is flagged (e.g. a test sheet with an `Immature` column = TRUE), its free tile shows the gold "Warm up? — flagged new in SoO" nudge; it does NOT auto-arm.
-
-Expected: warm-up is reversible from any tile state; suggestion only nudges.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add public/js/app.js public/css/style.css
-git commit -m "feat: warm-up in-tile toggle reversible from any state + SoO suggestion (fixes v2.140 revert bug)"
+git add -A
+git commit -m "refactor: remove warm-up UI, styles, and exploratory sketch (operator: not needed)"
 ```
 
 ---
@@ -297,20 +233,19 @@ Expected: the app's version indicator reads **2.142.0**.
 
 ```bash
 git add package.json
-git commit -m "chore: bump to v2.142.0 (warm-up revert + live-status + preflight overlap fixes)"
+git commit -m "chore: bump to v2.142.0 (live-status + preflight fixes, warm-up removed)"
 ```
 
 ---
 
 ## Self-Review
 
-**Spec coverage:**
-- ① warm-up revert → Task 4 (toggle renders for any non-locked tile; `Turn off` in all states). ✓
-- ② Live Status empty on local run → Task 1 (single visibility source of truth). ✓
-- ③ pre-flight overlap → Task 2 (content-sized wrap). ✓
-- ④ warm-up entry-point rework (Variant B, SoO-suggested/operator-confirmed, tolerant of missing column) → Tasks 3 + 4. ✓
-- Out-of-scope "6. LAUNCH BLOCKED" chip — correctly not touched. ✓
+**Spec coverage (as amended by the operator's remove-warm-up decision):**
+- Live Status empty on local run → Task 1 ✅ (done).
+- Pre-flight overlap → Task 2.
+- Warm-up: the spec's ①/④ rework is superseded — operator chose full removal → Tasks 3 (backend + campaign loop) + 4 (frontend + sketch).
+- Out-of-scope "6. LAUNCH BLOCKED" chip — not touched. ✓
 
-**Placeholder scan:** All code steps contain real code; the one deferred item (final SoO column name) is handled by a candidate-set read with a safe default, not a placeholder. The only implementation-time check is confirming the in-scope `soo` variable name in Task 4 Step 2 — noted explicitly.
+**Placeholder scan:** Task 3/4 name exact files, line ranges, before/after code, and a grep gate proving no dangling references. The one search-driven step (server.js `/api/warmup` handler bounds) is explicit about what to delete and is verified by Step 6's grep + full suite.
 
-**Type consistency:** `warmupSuggestedFromSoo(soo): boolean` defined in Task 3, imported and called in Task 4 with the same signature. `wuStatus()`, `warmupData`, `setProfileWarmup()`, `WU_WEEKS` all reused as they exist today.
+**Behavior preservation:** `profileDailyLimit(id)` ≡ `campaign.dailyLimit` for any profile without an enabled warm-up entry (which is all of them once the store is gone), so Task 3 is behavior-preserving for every real run. The full `node --test` suite is the gate.
