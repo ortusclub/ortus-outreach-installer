@@ -6,8 +6,9 @@
  * sender invitations it fired at the primary. This machine's local browser
  * accepts them (reusing the primary-task-runner), then signals the engine to
  * resume. Pure mappers here turn the engine's senders[] into the accept-task
- * shape; the tiny disk store makes the 4s board poll fire the accept + the modal
- * exactly once per campaign. See docs/cloud-engine-primary-handshake-spec.md.
+ * shape; the tiny disk store makes the 4s board poll fire the accept exactly
+ * once per campaign (the one-time modal is deduped client-side per session in
+ * app.js's _hsModalShown Set). See docs/cloud-engine-primary-handshake-spec.md.
  */
 import fs from 'fs/promises';
 import { dataPath } from './paths.js';
@@ -64,7 +65,7 @@ async function persist() {
   await fs.rename(tmp, FILE);
 }
 function rec(id) {
-  return cache.campaigns[id] || (cache.campaigns[id] = { signaled: false, modalShown: false, ts: 0 });
+  return cache.campaigns[id] || (cache.campaigns[id] = { signaled: false, ts: 0 });
 }
 function prune() {
   const ids = Object.keys(cache.campaigns);
@@ -76,5 +77,3 @@ function prune() {
 
 export async function hasSignaled(id) { await load(); return !!cache.campaigns[id]?.signaled; }
 export async function markSignaled(id) { await load(); const r = rec(id); r.signaled = true; r.ts = Date.now(); prune(); await persist(); }
-export async function hasShownModal(id) { await load(); return !!cache.campaigns[id]?.modalShown; }
-export async function markShownModal(id) { await load(); const r = rec(id); r.modalShown = true; r.ts = Date.now(); prune(); await persist(); }
