@@ -5739,6 +5739,7 @@ function refreshRunTarget() {
     `<span class="rt-fact"><span class="i">${f.ok ? '✓' : '—'}</span><span>${escHtml(f.text)}</span></span>`).join('');
   if (typeof renderModeSelector === 'function') renderModeSelector();
   if (typeof renderManifest === 'function') renderManifest();
+  refreshCloudToggle();
   refreshLaunchForRunTarget();
   if (typeof refreshAccountPickerForRunTarget === 'function') refreshAccountPickerForRunTarget();
 }
@@ -5756,6 +5757,18 @@ function refreshLaunchForRunTarget() {
   if (note) note.textContent = cloud
     ? 'Starts on the VM — close the laptop whenever. Watch it live with 👁 Show on the board.'
     : 'Runs on this Mac while the app is open — pause & resume anytime.';
+}
+function refreshAccountPickerForRunTarget() {
+  const cloud = getRunTarget() === 'cloud';
+  const localHost = document.getElementById('local-browser-host');
+  // A cloud VM has no local browser — the "Local Browser" sender can't run there.
+  if (localHost) localHost.style.display = cloud ? 'none' : '';
+  if (cloud && selectedProfileIds.includes('local-browser')) {
+    selectedProfileIds = selectedProfileIds.filter((id) => id !== 'local-browser');
+    delete selectedProfileNames['local-browser'];
+    if (typeof renderSelectedPanel === 'function') renderSelectedPanel();
+    if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
+  }
 }
 if (typeof window !== 'undefined') { window.setRunTarget = setRunTarget; window.getRunTarget = getRunTarget; }
 document.addEventListener('DOMContentLoaded', () => { if (typeof setRunTarget === 'function') setRunTarget(DEFAULT_RUN_TARGET); });
