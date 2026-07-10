@@ -33,7 +33,7 @@ import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
 import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
-import { CLOUD_MODES as RT_CLOUD_MODES, modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
+import { modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -594,6 +594,7 @@ async function _snLoadLogs(box) {
 // resets the expanded-state localStorage flag (see Task 7).
 let _lcPrevRunning = false;
 let _lcWriteCache = {};
+let _engineConfigured = true; // cloud engine reachable? set from /api/health; default true so the VM tab isn't disabled before the check resolves
 let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
@@ -4121,7 +4122,7 @@ function renderModeSelector() {
     // Run-target gating (Task 2.3): cloud-incompatible modes grey out under
     // ☁︎ Cloud VM. Deliberately NOT folded into the activeIdx fallback above —
     // block, don't silently switch (see renderModeSelector's controller notes).
-    const rtBlocked = !modeAvailability(m.value, getRunTarget()).available;
+    const rtBlocked = !modeAvailability(m.value, getRunTarget(), { engineConfigured: _engineConfigured }).available;
     const bullets = m.bullets
       .map((b) => `<li>${escHtml(b)}</li>`)
       .join('');
@@ -4171,7 +4172,7 @@ async function setModeByIndex(i) {
   }
   const select = document.getElementById('campaign-mode');
   if (!select) return;
-  const _rtAvail = modeAvailability(mode.value, getRunTarget());
+  const _rtAvail = modeAvailability(mode.value, getRunTarget(), { engineConfigured: _engineConfigured });
   if (!_rtAvail.available) { showCampaignToast(_rtAvail.reason, 3500); return; }
   select.value = mode.value;
   onModeChange();
@@ -5726,6 +5727,7 @@ function getRunTarget() {
 function setRunTarget(t) {
   const root = document.getElementById('run-target');
   if (!root) return;
+  if (t === 'cloud' && !_engineConfigured) t = 'local'; // engine unconfigured → cloud unavailable
   root.dataset.target = t;
   root.querySelectorAll('.rt-tab').forEach((b) => b.classList.toggle('on', b.dataset.rt === t));
   const cb = document.getElementById('cloud-run-checkbox');
@@ -5770,8 +5772,27 @@ function refreshAccountPickerForRunTarget() {
     if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
   }
 }
+// Disable the ☁︎ Cloud VM tab when the engine isn't configured (no SCRAPER_ENGINE_URL);
+// a disabled <button> can't be clicked, and we coerce any programmatic cloud selection to local.
+function refreshVmTabAvailability() {
+  const cloudTab = document.querySelector('#run-target .rt-tab[data-rt="cloud"]');
+  if (!cloudTab) return;
+  cloudTab.disabled = !_engineConfigured;
+  cloudTab.classList.toggle('rt-tab-disabled', !_engineConfigured);
+  cloudTab.title = _engineConfigured ? '' : 'Cloud engine not configured';
+  if (!_engineConfigured && getRunTarget() === 'cloud') setRunTarget('local');
+}
+async function refreshEngineConfigured() {
+  try {
+    const r = await fetch('/api/health');
+    const h = await r.json();
+    _engineConfigured = !!h.scraperConfigured;
+  } catch (_) { /* keep default (true) — don't disable on a transient fetch error */ }
+  refreshVmTabAvailability();
+}
 if (typeof window !== 'undefined') { window.setRunTarget = setRunTarget; window.getRunTarget = getRunTarget; }
 document.addEventListener('DOMContentLoaded', () => { if (typeof setRunTarget === 'function') setRunTarget(DEFAULT_RUN_TARGET); });
+document.addEventListener('DOMContentLoaded', () => { refreshEngineConfigured(); });
 
 // ─── Cloud Campaigns panel ──────────────────────────────────────────────────
 let _cloudPollTimer = null;

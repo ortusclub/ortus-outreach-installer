@@ -2902,6 +2902,7 @@ body.theme-light .refresh-soo-bar { background: var(--ink); }
 .rt-tab.on { background:var(--ink); }
 .rt-tab.on .t { color:var(--bg); }
 .rt-tab.on .s { color:rgba(255,255,255,.65); }
+.rt-tab:disabled, .rt-tab.rt-tab-disabled { opacity:.4; cursor:not-allowed; }
 .rt-facts { display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; padding:0 6px; }
 .rt-fact { font-size:11px; color:var(--gray); display:flex; gap:6px; align-items:baseline; }
 .rt-fact b { color:var(--ink); font-weight:600; }
