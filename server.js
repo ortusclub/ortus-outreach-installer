@@ -46,7 +46,7 @@ import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dm
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
-import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, openCampaignViewStream } from './src/campaigns-client.js';
+import { startCloudCampaign, isCloudMode, listCloudCampaigns, getCloudCampaign, getCloudCampaignLeads, stopCloudCampaign, openCampaignViewStream, signalPrimaryAcceptDone } from './src/campaigns-client.js';
 import { aggregateTeamStatus, bucketForCloudStatus } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
@@ -1508,6 +1508,14 @@ app.get('/api/campaign/cloud/:id/launch-config', async (req, res) => {
 app.post('/api/campaign/cloud/:id/stop', async (req, res) => {
   const r = await stopCloudCampaign(req.params.id, { pause: !!req.query.pause });
   if (r.error) return res.status(502).json(r);
+  res.json(r);
+});
+// Cloud primary-handshake: the local app POSTs which senders its local primary
+// browser accepted; forwarded to the engine which re-verifies + resumes.
+app.post('/api/campaign/cloud/:id/primary-accept-done', async (req, res) => {
+  const ids = Array.isArray(req.body?.accepted) ? req.body.accepted : [];
+  const r = await signalPrimaryAcceptDone(req.params.id, ids);
+  if (r.error) return res.status(r.status || 502).json(r);
   res.json(r);
 });
 // Live "Show campaign happening" — proxies the engine's MJPEG screencast of the

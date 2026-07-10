@@ -174,6 +174,21 @@ export function getCloudCampaignLeads(id) {
   return requestWithRetry('GET', `/api/campaign/${encodeURIComponent(id)}/leads`);
 }
 
+/**
+ * Signal the engine that the local primary browser has accepted the campaign's
+ * pending sender invitations (cloud primary-handshake, local-only primary).
+ * Single attempt (mirrors startCloudCampaign) — a duplicate returns a terminal
+ * 409 that requestOnce encodes as { error, status:409 }. See
+ * docs/cloud-engine-primary-handshake-spec.md.
+ * @param {string}   id           cloud campaign id
+ * @param {string[]} acceptedIds  sender profileIds accepted
+ */
+export function signalPrimaryAcceptDone(id, acceptedIds) {
+  return requestOnce('POST', `/api/campaign/${encodeURIComponent(id)}/primary-accept-done`, {
+    accepted: Array.isArray(acceptedIds) ? acceptedIds : [],
+  });
+}
+
 /** Stop (cancel) a cloud campaign; pass { pause: true } to pause instead. */
 export function stopCloudCampaign(id, { pause = false } = {}) {
   return requestWithRetry('POST', `/api/campaign/${encodeURIComponent(id)}/stop${pause ? '?pause=1' : ''}`);
