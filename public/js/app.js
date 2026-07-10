@@ -2446,6 +2446,17 @@ function onModeChange() {
   // hidden by primaryBlock's own display:none.
   const introRow = document.getElementById('intro-config-row');
   if (introRow) introRow.style.display = (usesMonitoringCadence(mode) || _showPrimaryCol) ? '' : 'none';
+  // Manifest container visibility per mode (zones inside are toggled above):
+  //   CC+IC  → whole panel: eyebrow + identity + readback/drawer
+  //   ICB    → eyebrow + identity only (no auto-box: no accept/cadence/follow-up)
+  //   CC+DM  → auto-box only (cadence); no "Primary person" eyebrow/identity — CC+DM has no primary
+  //   others → panel hidden entirely
+  const manifestPanel = document.getElementById('primary-manifest');
+  if (manifestPanel) manifestPanel.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back' || mode === 'connect_and_message') ? '' : 'none';
+  const manifestTopEyebrow = document.getElementById('manifest-top-eyebrow');
+  if (manifestTopEyebrow) manifestTopEyebrow.style.display = (mode === 'connect_and_introduce' || mode === 'introduce_back') ? '' : 'none';
+  const manifestAutoBox = document.getElementById('manifest-auto-box');
+  if (manifestAutoBox) manifestAutoBox.style.display = (mode === 'connect_and_introduce' || mode === 'connect_and_message') ? '' : 'none';
   // v2.154.1 (Manifest, Task 1.3): re-render the readback for the new mode —
   // full lines for CC+IC, cadence-only for CC+DM, no lines (identity-only) for
   // introduce_back/others. Guard matches the refreshAutoAcceptGate/
