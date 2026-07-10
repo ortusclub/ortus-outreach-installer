@@ -6876,6 +6876,7 @@ let _hsModalCurrentId = null;
 function maybeOpenHandshakeModal(items) {
   const scrim = document.getElementById('hs-scrim');
   if (!scrim) return;
+  if (scrim.classList.contains('open')) return; // don't hijack an already-open modal for a different campaign
   const it = (items || []).find((x) => x && x.where === 'cloud'
     && x.state === 'awaiting_primary_accept' && Array.isArray(x.senders) && !_hsModalShown.has(x.id));
   if (!it) return;
