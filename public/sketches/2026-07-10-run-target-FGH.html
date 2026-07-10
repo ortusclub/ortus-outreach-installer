@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Where it runs: local vs VM at the top (F / G / H)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  .sketch-bar { position: sticky; top: 0; z-index: 70; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 30px 22px 140px; }
+  .sk-h1 { font-family: var(--display); font-weight: 400; font-size: 34px; letter-spacing:.02em; margin: 0 0 10px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.7rem; color: var(--gray); margin: 0 0 8px; line-height: 1.6; }
+  .sk-cap b { color: var(--ink); }
+  .sk-varlabel { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray);
+    margin: 46px 0 6px; display:flex; align-items:baseline; gap:10px; }
+  .sk-varlabel b { color: var(--ink); font-size: 0.72rem; }
+  .sk-vardesc { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); line-height:1.6; margin: 0 0 16px; }
+  .sk-vardesc b { color: var(--ink); font-weight:500; }
+
+  /* ── the wizard-in-miniature every variant drives ── */
+  .demo { border:1px dashed var(--hairline); border-radius:16px; padding:20px 24px; margin-top:14px; }
+  .demo-eyebrow { font-family:var(--mono); font-size:0.54rem; letter-spacing:.16em; text-transform:uppercase; color:var(--gray-faint,#b8b8b6); margin:18px 0 10px; }
+  .demo-eyebrow:first-child { margin-top:0; }
+  .demo .mode-grid { grid-template-columns:repeat(3,1fr); gap:12px; }
+  .demo .mode-card { padding:14px 16px; min-height:0; }
+  .demo .mode-card-title { font-size:15px; }
+  .demo .mode-card-bullets { font-size:10.5px; }
+  .demo .mode-card .locktag { display:none; font-family:var(--mono); font-size:0.5rem; letter-spacing:.12em; text-transform:uppercase;
+    border:1px solid var(--hairline); border-radius:9999px; padding:2px 8px; color:var(--gray); float:right; }
+  .demo.vm .mode-card.localonly { opacity:.38; pointer-events:none; }
+  .demo.vm .mode-card.localonly .locktag { display:inline-block; }
+  /* manifest readback mini */
+  .mani { border:1px solid var(--hairline); border-radius:12px; padding:14px 18px; }
+  .mani .al { display:flex; gap:9px; align-items:baseline; font-size:12.5px; color:var(--ink); line-height:1.55; padding:2px 0; }
+  .mani .al .tick { font-family:var(--mono); color:var(--green); width:12px; flex:none; }
+  .mani .al.off { color:var(--gray); }
+  .mani .al.off .tick { color:var(--gray-faint,#b8b8b6); }
+  .mani .al.hand { display:none; color:#8a6d1f; }
+  .mani .al.hand .tick { color:var(--gold); }
+  .demo.vm .mani .al.fu { display:none; }
+  .demo.vm .mani .al.hand { display:flex; }
+  /* launch mini */
+  .launchrow { display:flex; align-items:center; gap:10px; }
+  .launchrow .go { background:var(--ink); color:var(--gold); border:none; border-radius:9999px; padding:11px 26px;
+    font-family:var(--mono); font-size:0.66rem; letter-spacing:.14em; text-transform:uppercase; font-weight:700; cursor:pointer; }
+  .launchrow .sec { background:transparent; color:var(--ink); border:1px solid var(--hairline); border-radius:9999px; padding:10px 18px;
+    font-family:var(--mono); font-size:0.6rem; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; }
+  .launchrow .note { font-size:11px; color:var(--gray); margin-left:6px; line-height:1.5; }
+  .launchrow .note b { color:var(--ink); }
+  .demo.vm .local-only-btn { display:none; }
+  .demo:not(.vm) .vm-note { display:none; }
+  .demo.vm .local-note { display:none; }
+
+  /* ═══ F · COMMAND TABS ═══ */
+  .rt-tabs { display:flex; border:1px solid var(--hairline); border-radius:9999px; padding:4px; gap:4px; }
+  .rt-tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 18px; border-radius:9999px;
+    border:none; background:transparent; cursor:pointer; transition:background .15s, color .15s; }
+  .rt-tab .t { font-family:var(--mono); font-size:0.72rem; letter-spacing:.14em; text-transform:uppercase; font-weight:700; color:var(--gray); }
+  .rt-tab .s { font-size:10.5px; color:var(--gray); }
+  .rt-tab.on { background:var(--ink); }
+  .rt-tab.on .t { color:var(--bg); }
+  .rt-tab.on .s { color:rgba(255,255,255,.65); }
+  .rt-facts { display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; padding:0 6px; }
+  .rt-fact { font-size:11px; color:var(--gray); display:flex; gap:6px; align-items:baseline; }
+  .rt-fact b { color:var(--ink); font-weight:600; }
+  .rt-fact .i { font-family:var(--mono); }
+
+  /* ═══ G · TWIN CARDS ═══ */
+  .rt-cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .rt-card { border:1px solid var(--hairline); border-radius:14px; background:var(--card-bg,#fff); padding:18px 20px; cursor:pointer;
+    transition:border-color .15s, background .15s; position:relative; }
+  .rt-card:hover { border-color:var(--ink); }
+  .rt-card.on { border-color:var(--gold); background:var(--gold-tint-bg,#fdf8ec); box-shadow:0 0 0 1px var(--gold); }
+  .rt-card .h { display:flex; align-items:center; gap:10px; }
+  .rt-card .h .ttl { font-family:var(--display); font-size:21px; letter-spacing:.02em; }
+  .rt-card.on .h .ttl { color:var(--gold); }
+  .rt-card .h input { accent-color:var(--ink); width:15px; height:15px; margin-left:auto; }
+  .rt-card ul { list-style:none; margin:10px 0 0; padding:0; }
+  .rt-card li { font-size:11.5px; color:var(--gray); line-height:1.5; padding:3px 0 3px 18px; position:relative; }
+  .rt-card li::before { content:"✓"; position:absolute; left:0; font-family:var(--mono); color:var(--green); font-size:10px; }
+  .rt-card li.no { color:var(--gray); }
+  .rt-card li.no::before { content:"—"; color:var(--gray-faint,#b8b8b6); }
+  .rt-card li b { color:var(--ink); font-weight:600; }
+
+  /* ═══ H · AMBIENT RAIL ═══ */
+  .rt-rail { position:sticky; top:34px; z-index:65; display:flex; align-items:center; gap:14px; background:var(--ink); color:var(--bg);
+    border-radius:9999px; padding:9px 10px 9px 20px; }
+  .rt-rail .lab { font-family:var(--mono); font-size:0.58rem; letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.55); }
+  .rt-rail .cur { font-family:var(--mono); font-size:0.7rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }
+  .rt-rail .chips { display:flex; gap:14px; margin-left:8px; overflow:hidden; }
+  .rt-rail .chip { font-size:10.5px; color:rgba(255,255,255,.6); white-space:nowrap; }
+  .rt-rail .chip b { color:var(--bg); font-weight:600; }
+  .rt-rail .swap { margin-left:auto; background:var(--bg); color:var(--ink); border:none; border-radius:9999px; padding:8px 16px;
+    font-family:var(--mono); font-size:0.58rem; letter-spacing:.12em; text-transform:uppercase; font-weight:700; cursor:pointer; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — WHERE IT RUNS · local vs VM chosen at the TOP (F / G / H) <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <h1 class="sk-h1">Pick the machine first, shape the wizard after</h1>
+  <p class="sk-cap">Today "Running in cloud" is a checkbox buried in <b>6 · Launch</b>. It moves to the <b>top of the wizard</b> as a real
+    choice — and everything downstream aligns: local-only modes gray out, the Manifest drops the follow-up (handshake line replaces it),
+    launch buttons + notes change. Each variant below is switchable — <b>flip it and watch the mini-wizard underneath react.</b></p>
+
+  <!-- ═══════════ F · COMMAND TABS ═══════════ -->
+  <div class="sk-varlabel"><b>F · Command Tabs</b> — a section 0 above Campaign Type</div>
+  <p class="sk-vardesc">Two big tabs — the first decision of the wizard, in the same segmented style as Campaigns | Sales Nav. A slim
+    <b>facts row</b> under the tabs states the consequences up front; sections below just comply.</p>
+
+  <div data-rt="local" id="vF">
+    <div class="rt-tabs">
+      <button class="rt-tab on" onclick="rtSet('vF','local',this)"><span class="t">💻 This machine</span><span class="s">Runs while the app is open — pause &amp; resume anytime</span></button>
+      <button class="rt-tab" onclick="rtSet('vF','vm',this)"><span class="t">☁︎ Cloud VM</span><span class="s">Keeps going after you close the laptop</span></button>
+    </div>
+    <div class="rt-facts" data-facts-local>
+      <span class="rt-fact"><span class="i">✓</span><span><b>Full control</b> — pause, resume, edit mid-run</span></span>
+      <span class="rt-fact"><span class="i">✓</span><span>Every mode available</span></span>
+      <span class="rt-fact"><span class="i">—</span><span>Stops if the app closes or the Mac sleeps</span></span>
+    </div>
+    <div class="rt-facts" data-facts-vm style="display:none">
+      <span class="rt-fact"><span class="i">✓</span><span><b>Survives closing the laptop</b></span></span>
+      <span class="rt-fact"><span class="i">✓</span><span>Watch it live with <b>👁 Show</b> on the board</span></span>
+      <span class="rt-fact"><span class="i">—</span><span><b>Stop only</b> — no pause/resume</span></span>
+      <span class="rt-fact"><span class="i">—</span><span>~2-3 min warm-up</span></span>
+      <span class="rt-fact"><span class="i">—</span><span>Senders must be <b>GoLogin</b> accounts</span></span>
+      <span class="rt-fact"><span class="i">—</span><span>No automated follow-up (local primary)</span></span>
+    </div>
+    <div class="demo" data-demo>
+      <div class="demo-eyebrow">1 · Campaign type — reacts to the choice</div>
+      <div class="mode-grid">
+        <div class="mode-card active"><span class="locktag">💻 local only</span><div class="mode-card-title">Connect + Introduce Back</div><div class="mode-card-bullets">Cold-lead → intro pipeline</div></div>
+        <div class="mode-card"><span class="locktag">💻 local only</span><div class="mode-card-title">Connect Only</div><div class="mode-card-bullets">Highest-volume top-of-funnel</div></div>
+        <div class="mode-card localonly"><span class="locktag">💻 local only</span><div class="mode-card-title">Check DMs</div><div class="mode-card-bullets">Scan inboxes for replies</div></div>
+      </div>
+      <div class="demo-eyebrow">3 · Primary person — the Manifest reacts</div>
+      <div class="mani">
+        <div class="al"><span class="tick">✓</span><span>After connections, each sender requests <b>Antonio Varlese</b> — <b>Antonio's local browser</b> accepts automatically</span></div>
+        <div class="al"><span class="tick">✓</span><span>Acceptances checked <b>every 1 hour</b>; intros fire as they land</span></div>
+        <div class="al fu"><span class="tick">✓</span><span>First follow-up <b>10 minutes</b> after the last intro</span></div>
+        <div class="al hand"><span class="tick">☁︎</span><span><b>Your Mac accepts once</b> (locked first step), then everything runs on the VM — follow-up off for this run</span></div>
+      </div>
+      <div class="demo-eyebrow">6 · Launch — buttons &amp; note react</div>
+      <div class="launchrow">
+        <button class="go">Start campaign</button>
+        <button class="sec local-only-btn">Queue it</button>
+        <button class="sec local-only-btn">Schedule it</button>
+        <button class="sec">Save as draft</button>
+        <span class="note local-note">Runs here — keep the app open.</span>
+        <span class="note vm-note">Starts on the <b>VM</b> — close the laptop whenever. Watch it with <b>👁 Show</b>.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ G · TWIN CARDS ═══════════ -->
+  <div class="sk-varlabel"><b>G · Twin Cards</b> — the choice speaks the wizard's own language</div>
+  <p class="sk-vardesc">Two selectable cards in the exact <b>mode-card style of Section 1</b> (gold selected state), each carrying its
+    ✓/— capability list — the trade-offs are ON the choice itself, no separate facts row needed.</p>
+
+  <div data-rt="local" id="vG">
+    <div class="rt-cards">
+      <div class="rt-card on" onclick="rtSet('vG','local',this)">
+        <div class="h"><span class="ttl">💻 This machine</span><input type="radio" name="g-rt" checked></div>
+        <ul>
+          <li><b>Pause, resume, edit</b> mid-run</li>
+          <li>Every campaign mode available</li>
+          <li>Local-browser senders OK</li>
+          <li class="no">Stops if the app closes or the Mac sleeps</li>
+        </ul>
+      </div>
+      <div class="rt-card" onclick="rtSet('vG','vm',this)">
+        <div class="h"><span class="ttl">☁︎ Cloud VM</span><input type="radio" name="g-rt"></div>
+        <ul>
+          <li><b>Keeps going</b> after you close the laptop</li>
+          <li>Watch it live with <b>👁 Show</b>; per-lead log on the board</li>
+          <li class="no"><b>Stop only</b> — no pause/resume · ~2-3 min warm-up</li>
+          <li class="no">GoLogin senders only · no automated follow-up (local primary)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="demo" data-demo>
+      <div class="demo-eyebrow">1 · Campaign type</div>
+      <div class="mode-grid">
+        <div class="mode-card active"><span class="locktag">💻 local only</span><div class="mode-card-title">Connect + Introduce Back</div><div class="mode-card-bullets">Cold-lead → intro pipeline</div></div>
+        <div class="mode-card"><span class="locktag">💻 local only</span><div class="mode-card-title">Connect Only</div><div class="mode-card-bullets">Highest-volume top-of-funnel</div></div>
+        <div class="mode-card localonly"><span class="locktag">💻 local only</span><div class="mode-card-title">Check DMs</div><div class="mode-card-bullets">Scan inboxes for replies</div></div>
+      </div>
+      <div class="demo-eyebrow">3 · Primary person</div>
+      <div class="mani">
+        <div class="al"><span class="tick">✓</span><span>After connections, each sender requests <b>Antonio Varlese</b> — <b>Antonio's local browser</b> accepts automatically</span></div>
+        <div class="al"><span class="tick">✓</span><span>Acceptances checked <b>every 1 hour</b>; intros fire as they land</span></div>
+        <div class="al fu"><span class="tick">✓</span><span>First follow-up <b>10 minutes</b> after the last intro</span></div>
+        <div class="al hand"><span class="tick">☁︎</span><span><b>Your Mac accepts once</b> (locked first step), then everything runs on the VM — follow-up off for this run</span></div>
+      </div>
+      <div class="demo-eyebrow">6 · Launch</div>
+      <div class="launchrow">
+        <button class="go">Start campaign</button>
+        <button class="sec local-only-btn">Queue it</button>
+        <button class="sec local-only-btn">Schedule it</button>
+        <button class="sec">Save as draft</button>
+        <span class="note local-note">Runs here — keep the app open.</span>
+        <span class="note vm-note">Starts on the <b>VM</b> — close the laptop whenever. Watch it with <b>👁 Show</b>.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ H · AMBIENT RAIL ═══════════ -->
+  <div class="sk-varlabel"><b>H · Ambient Rail</b> — a sticky environment bar that follows you</div>
+  <p class="sk-vardesc">A slim <b>ink rail pinned above the wizard</b> (sticks while you scroll all 6 sections): current target + its
+    consequence chips + a Switch button. Zero vertical cost inside the sections; the context never scrolls away.</p>
+
+  <div data-rt="local" id="vH">
+    <div class="rt-rail">
+      <span class="lab">Runs on</span>
+      <span class="cur" data-cur>💻 This machine</span>
+      <span class="chips" data-chips>
+        <span class="chip"><b>Pause/resume</b> available</span>
+        <span class="chip">All modes</span>
+        <span class="chip">Stops if the app closes</span>
+      </span>
+      <button class="swap" onclick="rtSet('vH', document.getElementById('vH').dataset.rt==='vm'?'local':'vm', this)">⇄ Switch</button>
+    </div>
+    <div class="demo" data-demo>
+      <div class="demo-eyebrow">1 · Campaign type</div>
+      <div class="mode-grid">
+        <div class="mode-card active"><span class="locktag">💻 local only</span><div class="mode-card-title">Connect + Introduce Back</div><div class="mode-card-bullets">Cold-lead → intro pipeline</div></div>
+        <div class="mode-card"><span class="locktag">💻 local only</span><div class="mode-card-title">Connect Only</div><div class="mode-card-bullets">Highest-volume top-of-funnel</div></div>
+        <div class="mode-card localonly"><span class="locktag">💻 local only</span><div class="mode-card-title">Check DMs</div><div class="mode-card-bullets">Scan inboxes for replies</div></div>
+      </div>
+      <div class="demo-eyebrow">3 · Primary person</div>
+      <div class="mani">
+        <div class="al"><span class="tick">✓</span><span>After connections, each sender requests <b>Antonio Varlese</b> — <b>Antonio's local browser</b> accepts automatically</span></div>
+        <div class="al"><span class="tick">✓</span><span>Acceptances checked <b>every 1 hour</b>; intros fire as they land</span></div>
+        <div class="al fu"><span class="tick">✓</span><span>First follow-up <b>10 minutes</b> after the last intro</span></div>
+        <div class="al hand"><span class="tick">☁︎</span><span><b>Your Mac accepts once</b> (locked first step), then everything runs on the VM — follow-up off for this run</span></div>
+      </div>
+      <div class="demo-eyebrow">6 · Launch</div>
+      <div class="launchrow">
+        <button class="go">Start campaign</button>
+        <button class="sec local-only-btn">Queue it</button>
+        <button class="sec local-only-btn">Schedule it</button>
+        <button class="sec">Save as draft</button>
+        <span class="note local-note">Runs here — keep the app open.</span>
+        <span class="note vm-note">Starts on the <b>VM</b> — close the laptop whenever. Watch it with <b>👁 Show</b>.</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="sk-cap" style="margin-top:44px">All three replace the Launch-section checkbox entirely. Downstream reactions are identical in
+    each — the variants differ only in <b>how the choice is presented</b>: F announces it, G explains it, H accompanies you.</p>
+</div>
+
+<script>
+  const RAIL = {
+    local: { cur: '💻 This machine', chips: '<span class="chip"><b>Pause/resume</b> available</span><span class="chip">All modes</span><span class="chip">Stops if the app closes</span>' },
+    vm:    { cur: '☁︎ Cloud VM',    chips: '<span class="chip"><b>Survives</b> closing the laptop</span><span class="chip"><b>Stop only</b></span><span class="chip">GoLogin senders</span><span class="chip">No follow-up</span><span class="chip">~2-3 min warm-up</span>' },
+  };
+  function rtSet(id, target, el) {
+    const v = document.getElementById(id);
+    v.dataset.rt = target;
+    v.querySelector('[data-demo]').classList.toggle('vm', target === 'vm');
+    // F: tab active state + facts swap
+    if (id === 'vF') {
+      v.querySelectorAll('.rt-tab').forEach(t => t.classList.remove('on'));
+      el.classList.add('on');
+      v.querySelector('[data-facts-local]').style.display = target === 'local' ? '' : 'none';
+      v.querySelector('[data-facts-vm]').style.display = target === 'vm' ? '' : 'none';
+    }
+    // G: card selected state
+    if (id === 'vG') {
+      v.querySelectorAll('.rt-card').forEach(c => c.classList.remove('on'));
+      el.closest('.rt-card').classList.add('on');
+      el.closest('.rt-card').querySelector('input').checked = true;
+    }
+    // H: rail text + chips
+    if (id === 'vH') {
+      v.querySelector('[data-cur]').textContent = RAIL[target].cur;
+      v.querySelector('[data-chips]').innerHTML = RAIL[target].chips;
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sketch — Primary-person config redesign (A / B / C)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/style.css" />
+<link rel="stylesheet" href="../css/dashboard-v0.3.css" />
+<style>
+  /* ── sketch chrome ── */
+  .sketch-bar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; border-bottom: 1px solid var(--hairline); background: var(--bg);
+    font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gray); }
+  .sketch-bar a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 30px 22px 140px; }
+  .sk-h1 { font-family: var(--display); font-weight: 400; font-size: 34px; letter-spacing:.02em; margin: 0 0 10px; }
+  .sk-cap { font-family: var(--mono); font-size: 0.72rem; color: var(--gray); margin: 0 0 26px; line-height: 1.6; max-width: 760px; }
+  .sk-cap b { color: var(--ink); }
+  .sk-varlabel { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gray);
+    margin: 44px 0 6px; display:flex; align-items:baseline; gap:10px; }
+  .sk-varlabel b { color: var(--ink); font-size: 0.72rem; }
+  .sk-vardesc { font-family: var(--mono); font-size: 0.64rem; color: var(--gray); line-height:1.6; margin: 0 0 16px; max-width: 760px; }
+  .sk-vardesc b { color: var(--ink); font-weight:500; }
+
+  .simbar { position: sticky; top: 34px; z-index: 55; display:flex; align-items:center; gap:14px; background:var(--bg);
+    border:1px solid var(--hairline); border-radius:9999px; padding:8px 18px; margin: 0 0 8px; }
+  .simbar .lbl { font-family:var(--mono); font-size:0.64rem; letter-spacing:.1em; text-transform:uppercase; color:var(--gray); }
+  .simbar .lbl b { color:var(--ink); }
+  .simbar .grp { display:flex; align-items:center; gap:9px; margin-left:auto; }
+
+  /* ── shared pc- scaffolding (new layout bones; all inner controls are the real classes) ── */
+  .pc-panel { border:1px solid var(--hairline); border-radius:14px; background:var(--card-bg,#fff); padding:24px 28px; }
+  .pc-eyebrow { font-family:var(--mono); font-size:0.58rem; letter-spacing:.16em; text-transform:uppercase; color:var(--gray); margin:0 0 18px; }
+  .pc-eyebrow b { color:var(--ink); }
+
+  /* live identity chip — the shared "acts as" motif */
+  .pc-chip { display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:0.6rem; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ink); border:1px solid var(--hairline); border-radius:9999px; padding:4px 12px; background:var(--hairline-soft); white-space:nowrap; }
+  .pc-chip .dot { width:6px; height:6px; border-radius:9999px; background:var(--green); flex:none; }
+  .pc-chip b { font-weight:600; }
+
+  /* cloud notice (shared) */
+  .pc-cloud { display:none; gap:9px; align-items:flex-start; margin:14px 0 0; padding:11px 14px; border:1px solid var(--hairline);
+    border-left:3px solid var(--gold); border-radius:10px; background:var(--hairline-soft); font-size:12.5px; line-height:1.55; color:var(--gray); }
+  .pc-cloud b { color:var(--ink); }
+  body.sim-cloud .pc-cloud { display:flex; }
+  body.sim-cloud .pc-fu-dim { opacity:.38; pointer-events:none; }
+
+  /* ═══ A · THE DOSSIER ═══ */
+  .pcA .pc-idgrid { display:grid; grid-template-columns:1fr 1fr; gap:8px 34px; }
+  .pcA .pc-divider { display:flex; align-items:center; gap:14px; margin:26px 0 8px; }
+  .pcA .pc-divider .line { flex:1; height:1px; background:var(--hairline); }
+  .pcA .pc-divider .t { font-family:var(--mono); font-size:0.58rem; letter-spacing:.16em; text-transform:uppercase; color:var(--gray); white-space:nowrap; }
+  .pcA .pc-act { display:grid; grid-template-columns:44px 1fr auto; gap:0 16px; padding:17px 0 15px; border-bottom:1px solid var(--hairline-soft); align-items:start; }
+  .pcA .pc-act:last-of-type { border-bottom:0; padding-bottom:4px; }
+  .pcA .pc-act .sw { padding-top:2px; }
+  .pcA .pc-act .t { font-size:14.5px; font-weight:600; color:var(--ink); }
+  .pcA .pc-act .t .intro-config-newtag { margin-left:8px; }
+  .pcA .pc-act .d { font-size:12px; color:var(--gray); line-height:1.55; margin-top:4px; max-width:640px; }
+  .pcA .pc-act .d b { color:var(--ink); }
+  .pcA .pc-act .detail { grid-column:2 / -1; margin-top:12px; }
+  .pcA .pc-subrow { display:flex; align-items:center; gap:12px; margin-top:12px; padding:10px 13px; border:1px dashed var(--hairline); border-radius:10px; }
+  .pcA .pc-subrow .k { font-size:12.5px; color:var(--ink); flex:1; }
+  .pcA .pc-subrow .warn { font-size:11px; color:var(--gray); line-height:1.5; }
+  .pcA .pc-inline { display:flex; align-items:center; gap:10px; }
+
+  /* ═══ B · THE HINGE ═══ */
+  .pcB { display:grid; grid-template-columns: 360px 44px 1fr; align-items:stretch; }
+  .pcB .pc-id { border:1px solid var(--hairline); border-radius:14px; background:var(--card-bg,#fff); padding:22px 24px; position:relative; z-index:2; }
+  .pcB .pc-wire { position:relative; }
+  .pcB .pc-wire::before { content:""; position:absolute; left:0; right:50%; top:50%; height:1px; background:var(--ink); }
+  .pcB .pc-wire::after { content:""; position:absolute; left:50%; top:12%; bottom:12%; width:1px; background:var(--ink); }
+  .pcB .pc-wire .tag { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(-90deg); transform-origin:center;
+    font-family:var(--mono); font-size:0.52rem; letter-spacing:.2em; text-transform:uppercase; color:var(--ink); background:var(--bg); padding:2px 8px; white-space:nowrap; }
+  .pcB .pc-acts { display:flex; flex-direction:column; gap:12px; }
+  .pcB .pc-actcard { position:relative; border:1px solid var(--hairline); border-radius:14px; background:var(--card-bg,#fff); padding:16px 20px 16px 24px; }
+  .pcB .pc-actcard::before { content:""; position:absolute; left:-22px; top:50%; width:22px; height:1px; background:var(--ink); }
+  .pcB .pc-actcard .head { display:flex; align-items:center; gap:12px; }
+  .pcB .pc-actcard .head .t { font-size:14px; font-weight:600; color:var(--ink); flex:1; }
+  .pcB .pc-actcard .d { font-size:11.5px; color:var(--gray); line-height:1.5; margin-top:6px; }
+  .pcB .pc-actcard .d b { color:var(--ink); }
+  .pcB .pc-actcard .detail { margin-top:10px; }
+  .pcB .pc-persona { margin-top:16px; padding-top:16px; border-top:1px solid var(--hairline-soft); }
+  .pcB .pc-persona .who { font-family:var(--display); font-size:22px; letter-spacing:.02em; line-height:1; margin-top:2px; }
+  .pcB .pc-persona .as { font-family:var(--mono); font-size:0.56rem; letter-spacing:.14em; text-transform:uppercase; color:var(--gray); margin-top:8px; }
+  @media(max-width:900px){ .pcB{grid-template-columns:1fr;} .pcB .pc-wire{display:none;} .pcB .pc-actcard::before{display:none;} }
+
+  /* ═══ C · THE SEQUENCE ═══ */
+  .pcC { border:1px solid var(--hairline); border-radius:14px; background:var(--card-bg,#fff); padding:10px 0; }
+  .pcC .pc-step { display:grid; grid-template-columns:64px 1fr; padding:20px 28px 20px 20px; border-bottom:1px solid var(--hairline-soft); position:relative; }
+  .pcC .pc-step:last-child { border-bottom:0; }
+  .pcC .pc-num { width:30px; height:30px; border-radius:9999px; border:1px solid var(--hairline); display:flex; align-items:center; justify-content:center;
+    font-family:var(--display); font-size:16px; color:var(--gray); background:var(--card-bg,#fff); position:relative; z-index:2; }
+  .pcC .pc-step.on .pc-num { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .pcC .pc-step::before { content:""; position:absolute; left:35px; top:0; bottom:0; width:1px; background:var(--hairline-soft); }
+  .pcC .pc-step:first-child::before { top:24px; }
+  .pcC .pc-step:last-child::before { bottom:auto; height:24px; }
+  .pcC .pc-sh { font-family:var(--mono); font-size:0.58rem; letter-spacing:.16em; text-transform:uppercase; color:var(--gray); }
+  .pcC .pc-st { font-size:15px; font-weight:600; color:var(--ink); margin-top:3px; }
+  .pcC .pc-sum { font-size:12px; color:var(--gray); margin-top:3px; }
+  .pcC .pc-sum b { color:var(--ink); }
+  .pcC .pc-body { margin-top:14px; }
+  .pcC .pc-step.locked { opacity:.45; }
+  .pcC .pc-step.locked .pc-lockline { display:flex; gap:8px; align-items:center; margin-top:10px; font-size:12px; color:var(--gray); }
+  .pcC .pc-step:not(.locked) .pc-lockline { display:none; }
+  .pcC .pc-arow { display:flex; align-items:flex-start; gap:14px; padding:13px 0; border-top:1px solid var(--hairline-soft); }
+  .pcC .pc-arow:first-of-type { border-top:0; padding-top:4px; }
+  .pcC .pc-arow .b { flex:1; }
+  .pcC .pc-arow .t { font-size:13.5px; font-weight:600; color:var(--ink); }
+  .pcC .pc-arow .d { font-size:11.5px; color:var(--gray); line-height:1.5; margin-top:3px; max-width:560px; }
+  .pcC .pc-arow .d b { color:var(--ink); }
+  .pcC .pc-arow .detail { margin-top:10px; }
+  .pcC .pc-idgrid { display:grid; grid-template-columns:1fr 1fr; gap:8px 30px; }
+
+  /* shared small bits */
+  .pc-2up { display:flex; align-items:center; gap:10px; }
+  .pc-mini-sel { max-width:220px; }
+</style>
+</head>
+<body data-dashboard="v3">
+<div class="sketch-bar">SKETCH — Primary-person config redesign (A / B / C) — real app CSS, clickable <a href="index.html" style="margin-left:auto">← back to index</a></div>
+
+<div class="wrap">
+  <h1 class="sk-h1">One person, four panels → one model</h1>
+  <p class="sk-cap">The current Section 3 block scatters the <b>primary person</b> across four sibling cards, hiding the hinge: the
+    <b>"logged in via"</b> choice drives every primary-side action (auto-accept + follow-up run <b>as that browser</b>).
+    Three reorganizations below — every control kept, all clickable. Flip the radio in any variant and watch the identity
+    propagate. The ☁︎ switch previews the cloud-handshake notice.</p>
+
+  <div class="simbar">
+    <span class="lbl">Demo controls</span>
+    <div class="grp">
+      <span class="lbl">Simulate: run in cloud ☁︎</span>
+      <label class="notif-pref-toggle"><input type="checkbox" id="sim-cloud" onchange="document.body.classList.toggle('sim-cloud', this.checked)"><span class="notif-pref-slider"></span></label>
+    </div>
+  </div>
+
+  <!-- ═══════════════ A · THE DOSSIER ═══════════════ -->
+  <div class="sk-varlabel"><b>A · The Dossier</b> — one panel, identity above, actions listed beneath</div>
+  <p class="sk-vardesc">One person = <b>one panel</b>. The identity zone sits on top; a labeled divider — <b>"done as this primary"</b> with the
+    live identity chip — introduces the three actions as slim hairline <b>rows</b>, not competing cards. Least chrome, most scannable.</p>
+
+  <div class="pc-panel pcA" data-variant="A">
+    <div class="pc-eyebrow">Primary person · <b>who the lead gets introduced to</b></div>
+
+    <div class="pc-idgrid">
+      <div class="intro-config-field">
+        <label class="intro-config-label">Full name</label>
+        <input type="text" class="intro-config-input pc-name" value="Antonio Varlese" oninput="pcSync()">
+        <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
+      </div>
+      <div class="intro-config-field">
+        <label class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
+        <input type="text" class="intro-config-input pc-url" value="https://www.linkedin.com/in/antoniovarlese/" oninput="pcSync()">
+        <div class="intro-config-hint">Used to check each account is connected to them, and for <code>{primary url}</code>.</div>
+      </div>
+    </div>
+
+    <div class="pc-idgrid" style="margin-top:14px">
+      <div class="intro-config-field">
+        <label class="intro-config-label">Logged in via</label>
+        <div class="aa-src-cards">
+          <div class="aa-src-card">
+            <label class="aa-src-head">
+              <input type="radio" name="pcA-src" value="local-browser" checked onchange="pcSync()">
+              <span class="aa-src-title">My local browser</span>
+            </label>
+            <div class="aa-src-desc">The primary is logged into LinkedIn in your own Chrome.</div>
+          </div>
+          <div class="aa-src-card">
+            <label class="aa-src-head">
+              <input type="radio" name="pcA-src" value="gologin" onchange="pcSync()">
+              <span class="aa-src-title">A GoLogin profile</span>
+            </label>
+            <div class="aa-src-desc">The primary is one of your GoLogin profiles — pick which one.</div>
+            <div class="pc-picker" style="display:none;">
+              <input type="text" class="aa-acct-search" placeholder="Search by name or email…">
+              <div class="aa-acct-grid">
+                <label class="aa-acct-row sel"><input type="radio" name="pcA-gl" checked><span class="body"><span class="name">alex.sheeraz@ortus.solutions</span><span class="id">gl_7f21…</span></span></label>
+                <label class="aa-acct-row"><input type="radio" name="pcA-gl"><span class="body"><span class="name">marco.rossi@ortus.solutions</span><span class="id">gl_a904…</span></span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="intro-config-hint">One identity for <b>every</b> action below — it must be logged into LinkedIn as the primary.</div>
+      </div>
+      <div class="intro-config-field">
+        <label class="intro-config-label">Primary check timing</label>
+        <select class="intro-config-select-wide">
+          <option>Immediately (at start)</option>
+          <option selected>After connections complete</option>
+        </select>
+        <div class="intro-config-hint">"After connections complete" starts sending right away and does the primary step once every account has finished its requests for the day.</div>
+      </div>
+    </div>
+
+    <div class="pc-divider">
+      <span class="t">Done as this primary</span>
+      <span class="pc-chip"><span class="dot"></span>acts as — <b class="pc-actor">your local browser</b></span>
+      <span class="line"></span>
+    </div>
+
+    <!-- action 1: auto-accept -->
+    <div class="pc-act">
+      <div class="sw"><label class="notif-pref-toggle"><input type="checkbox" checked onchange="this.closest('.pc-act').querySelector('.detail').style.display=this.checked?'':'none'"><span class="notif-pref-slider"></span></label></div>
+      <div>
+        <div class="t">Auto-accept the invitation <span class="intro-config-newtag">NEW</span></div>
+        <div class="d">When an account isn't connected to your primary, it requests them — and this browser accepts that one invitation automatically. No manual step before the intro.</div>
+      </div>
+      <span class="pc-chip"><span class="dot"></span><b class="pc-actor">your local browser</b></span>
+      <div class="detail">
+        <div class="pc-subrow">
+          <span class="k">Also accept <b>all other</b> pending invitations</span>
+          <label class="notif-pref-toggle"><input type="checkbox"><span class="notif-pref-slider"></span></label>
+        </div>
+        <div class="intro-config-hint" style="margin-top:8px">⚠️ With this on, your primary also accepts <b>every</b> pending invite in its inbox during pre-flight — including strangers and real prospects, not just this campaign's senders.</div>
+      </div>
+    </div>
+
+    <!-- action 2: cadence -->
+    <div class="pc-act">
+      <div class="sw"><label class="notif-pref-toggle"><input type="checkbox" checked><span class="notif-pref-slider"></span></label></div>
+      <div>
+        <div class="t">Check &amp; fire intros automatically</div>
+        <div class="d">How often each account is checked for new acceptances (the follow-up fires on the same beat) — during sending and after. First check ~1 hour in. Off: run it yourself with ⚡ Check now on the live card.</div>
+      </div>
+      <div class="pc-inline">
+        <span class="intro-config-prefix" style="font-size:.85rem">Every</span>
+        <select class="intro-config-select-wide pc-mini-sel"><option selected>1 hour</option><option>2 hours</option><option>4 hours</option><option>6 hours</option><option>12 hours</option></select>
+      </div>
+    </div>
+
+    <!-- action 3: follow-up -->
+    <div class="pc-act pc-fu-dim">
+      <div class="sw"><label class="notif-pref-toggle"><input type="checkbox" checked onchange="this.closest('.pc-act').querySelector('.detail').style.display=this.checked?'':'none'"><span class="notif-pref-slider"></span></label></div>
+      <div>
+        <div class="t">Send a first follow-up <span class="intro-config-newtag">NEW</span></div>
+        <div class="d">Batched after the last intro. Write the message in <b>Section 5 → First Follow-up Message</b> — it unlocks while this is on.</div>
+      </div>
+      <div class="pc-inline">
+        <select class="intro-config-select-wide pc-mini-sel"><option selected>10 minutes</option><option>20 minutes</option><option>30 minutes</option><option>45 minutes</option><option>1 hour</option><option>2 hours</option></select>
+        <span class="intro-config-prefix" style="font-size:.85rem; white-space:nowrap">after the last intro</span>
+      </div>
+      <div class="detail"></div>
+    </div>
+
+    <div class="pc-cloud">☁︎ <span><b>Running in the cloud:</b> your Mac does the primary accept once (hard-locked Phase 0), then it's all VM — the follow-up is off for this setup because it must send from your local browser.</span></div>
+  </div>
+
+  <!-- ═══════════════ B · THE HINGE ═══════════════ -->
+  <div class="sk-varlabel"><b>B · The Hinge</b> — identity left, actions right, the wire makes it visible</div>
+  <p class="sk-vardesc">The layout <b>draws the relationship</b>: the identity card ends in a literal wire labeled <b>ACTS AS</b>, fanning
+    into the three action cards. The persona footer restates who + which browser. Most explicit mental model; slightly more chrome.</p>
+
+  <div class="pcB" data-variant="B">
+    <div class="pc-id">
+      <div class="pc-eyebrow">Primary person</div>
+      <div class="intro-config-field">
+        <label class="intro-config-label">Full name</label>
+        <input type="text" class="intro-config-input pc-name" value="Antonio Varlese" oninput="pcSync()">
+      </div>
+      <div class="intro-config-field">
+        <label class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
+        <input type="text" class="intro-config-input pc-url" value="https://www.linkedin.com/in/antoniovarlese/" oninput="pcSync()">
+      </div>
+      <div class="intro-config-field">
+        <label class="intro-config-label">Logged in via</label>
+        <div class="aa-src-cards">
+          <div class="aa-src-card">
+            <label class="aa-src-head"><input type="radio" name="pcB-src" value="local-browser" checked onchange="pcSync()"><span class="aa-src-title">My local browser</span></label>
+          </div>
+          <div class="aa-src-card">
+            <label class="aa-src-head"><input type="radio" name="pcB-src" value="gologin" onchange="pcSync()"><span class="aa-src-title">A GoLogin profile</span></label>
+            <div class="pc-picker" style="display:none;">
+              <input type="text" class="aa-acct-search" placeholder="Search by name or email…">
+              <div class="aa-acct-grid" style="grid-template-columns:1fr">
+                <label class="aa-acct-row sel"><input type="radio" name="pcB-gl" checked><span class="body"><span class="name">alex.sheeraz@ortus.solutions</span><span class="id">gl_7f21…</span></span></label>
+                <label class="aa-acct-row"><input type="radio" name="pcB-gl"><span class="body"><span class="name">marco.rossi@ortus.solutions</span><span class="id">gl_a904…</span></span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="intro-config-field">
+        <label class="intro-config-label">Primary check timing</label>
+        <select class="intro-config-select-wide"><option>Immediately (at start)</option><option selected>After connections complete</option></select>
+      </div>
+      <div class="pc-persona">
+        <div class="pc-eyebrow" style="margin-bottom:0">This identity performs every action →</div>
+        <div class="who pc-name-echo">Antonio Varlese</div>
+        <div class="as">via <span class="pc-actor">your local browser</span></div>
+      </div>
+    </div>
+
+    <div class="pc-wire"><span class="tag">acts as</span></div>
+
+    <div class="pc-acts">
+      <div class="pc-actcard">
+        <div class="head">
+          <span class="t">Auto-accept the invitation <span class="intro-config-newtag">NEW</span></span>
+          <label class="notif-pref-toggle"><input type="checkbox" checked onchange="this.closest('.pc-actcard').querySelector('.detail').style.display=this.checked?'':'none'"><span class="notif-pref-slider"></span></label>
+        </div>
+        <div class="d">An account that isn't connected requests the primary; this browser accepts that one invitation automatically — no manual step before the intro.</div>
+        <div class="detail">
+          <div class="intro-config-toggle-row" style="margin:8px 0 4px">
+            <span class="intro-config-toggle-key" style="font-size:12.5px">Also accept <b>all other</b> pending invitations</span>
+            <label class="notif-pref-toggle"><input type="checkbox"><span class="notif-pref-slider"></span></label>
+          </div>
+          <div class="intro-config-hint">⚠️ Accepts <b>every</b> pending invite during pre-flight — strangers included. Leave off to accept only your senders.</div>
+        </div>
+      </div>
+
+      <div class="pc-actcard">
+        <div class="head">
+          <span class="t">Check &amp; intro cadence</span>
+          <div class="pc-2up">
+            <span class="intro-config-prefix" style="font-size:.8rem">Every</span>
+            <select class="intro-config-select-wide pc-mini-sel" style="max-width:130px"><option selected>1 hour</option><option>2 hours</option><option>4 hours</option><option>6 hours</option><option>12 hours</option></select>
+          </div>
+        </div>
+        <div class="d">Checks each account for new acceptances and fires due intros/follow-ups — during sending and after. First check ~1 hour in.</div>
+        <div class="intro-config-toggle-row" style="margin:10px 0 0">
+          <span class="intro-config-toggle-key" style="font-size:12.5px">Run checks automatically</span>
+          <label class="notif-pref-toggle"><input type="checkbox" checked><span class="notif-pref-slider"></span></label>
+        </div>
+      </div>
+
+      <div class="pc-actcard pc-fu-dim">
+        <div class="head">
+          <span class="t">First follow-up <span class="intro-config-newtag">NEW</span></span>
+          <label class="notif-pref-toggle"><input type="checkbox" checked onchange="this.closest('.pc-actcard').querySelector('.detail').style.display=this.checked?'':'none'"><span class="notif-pref-slider"></span></label>
+        </div>
+        <div class="d">Batched after the last intro. Message lives in <b>Section 5 → First Follow-up Message</b>.</div>
+        <div class="detail">
+          <div class="pc-2up" style="margin-top:8px">
+            <span class="intro-config-prefix" style="font-size:.8rem">Send</span>
+            <select class="intro-config-select-wide pc-mini-sel" style="max-width:140px"><option selected>10 minutes</option><option>20 minutes</option><option>30 minutes</option><option>45 minutes</option><option>1 hour</option><option>2 hours</option></select>
+            <span class="intro-config-prefix" style="font-size:.8rem">after the last intro</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pc-cloud" style="margin-top:0">☁︎ <span><b>Running in the cloud:</b> your Mac does the primary accept once, then it's all VM — follow-up is off for this setup.</span></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ C · THE SEQUENCE ═══════════════ -->
+  <div class="sk-varlabel"><b>C · The Sequence</b> — who → where → what happens automatically</div>
+  <p class="sk-vardesc">The form <b>teaches the model by ordering</b>: ① who the primary is, ② where they're logged in, ③ the automatics —
+    and step ③ stays <b>locked until ① is complete</b> (the app already gates auto-accept on the URL; this makes the gate structural).
+    Clear the URL in ① to see the lock. Best for first-time operators; more vertical.</p>
+
+  <div class="pcC" data-variant="C">
+    <div class="pc-step on">
+      <div><div class="pc-num">1</div></div>
+      <div>
+        <div class="pc-sh">Step one</div>
+        <div class="pc-st">Who is the primary?</div>
+        <div class="pc-body pc-idgrid">
+          <div class="intro-config-field">
+            <label class="intro-config-label">Full name</label>
+            <input type="text" class="intro-config-input pc-name" value="Antonio Varlese" oninput="pcSync()">
+          </div>
+          <div class="intro-config-field">
+            <label class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
+            <input type="text" class="intro-config-input pc-url pc-url-gate" value="https://www.linkedin.com/in/antoniovarlese/" oninput="pcSync()">
+            <div class="intro-config-hint">Try clearing this — step ③ locks.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pc-step on">
+      <div><div class="pc-num">2</div></div>
+      <div>
+        <div class="pc-sh">Step two</div>
+        <div class="pc-st">Where are they logged in?</div>
+        <div class="pc-sum">This one browser performs <b>every</b> automatic action in step ③.</div>
+        <div class="pc-body pc-idgrid">
+          <div>
+            <div class="aa-src-cards" style="margin-top:0">
+              <div class="aa-src-card">
+                <label class="aa-src-head"><input type="radio" name="pcC-src" value="local-browser" checked onchange="pcSync()"><span class="aa-src-title">My local browser</span></label>
+                <div class="aa-src-desc">Logged into LinkedIn in your own Chrome.</div>
+              </div>
+              <div class="aa-src-card">
+                <label class="aa-src-head"><input type="radio" name="pcC-src" value="gologin" onchange="pcSync()"><span class="aa-src-title">A GoLogin profile</span></label>
+                <div class="pc-picker" style="display:none;">
+                  <input type="text" class="aa-acct-search" placeholder="Search by name or email…">
+                  <div class="aa-acct-grid" style="grid-template-columns:1fr">
+                    <label class="aa-acct-row sel"><input type="radio" name="pcC-gl" checked><span class="body"><span class="name">alex.sheeraz@ortus.solutions</span><span class="id">gl_7f21…</span></span></label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="intro-config-field">
+            <label class="intro-config-label">Primary check timing</label>
+            <select class="intro-config-select-wide"><option>Immediately (at start)</option><option selected>After connections complete</option></select>
+            <div class="intro-config-hint">"After connections complete" runs the primary step once every account has finished its requests for the day.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pc-step on pc-step-auto">
+      <div><div class="pc-num">3</div></div>
+      <div>
+        <div class="pc-sh">Step three</div>
+        <div class="pc-st">What happens automatically — <span style="font-weight:400">as</span> <span class="pc-name-echo">Antonio Varlese</span> <span style="font-weight:400">via</span> <span class="pc-actor">your local browser</span></div>
+        <div class="pc-lockline">🔒 Add the primary's LinkedIn URL in step ① first — without it there's nothing to accept from.</div>
+        <div class="pc-body">
+
+          <div class="pc-arow">
+            <label class="notif-pref-toggle" style="margin-top:2px"><input type="checkbox" checked onchange="this.closest('.pc-arow').querySelector('.detail').style.display=this.checked?'':'none'"><span class="notif-pref-slider"></span></label>
+            <div class="b">
+              <div class="t">Auto-accept the invitation <span class="intro-config-newtag">NEW</span></div>
+              <div class="d">Accounts not yet connected request the primary; this browser accepts each one automatically.</div>
+              <div class="detail">
+                <div class="intro-config-toggle-row" style="margin:6px 0 2px; max-width:560px">
+                  <span class="intro-config-toggle-key" style="font-size:12.5px">Also accept <b>all other</b> pending invitations</span>
+                  <label class="notif-pref-toggle"><input type="checkbox"><span class="notif-pref-slider"></span></label>
+                </div>
+                <div class="intro-config-hint" style="max-width:560px">⚠️ Accepts <b>every</b> pending invite during pre-flight — strangers included.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pc-arow">
+            <label class="notif-pref-toggle" style="margin-top:2px"><input type="checkbox" checked><span class="notif-pref-slider"></span></label>
+            <div class="b">
+              <div class="t">Check for acceptances &amp; fire intros</div>
+              <div class="d">During sending and after; first check ~1 hour in. Off = run manually with ⚡ Check now.</div>
+            </div>
+            <div class="pc-2up">
+              <span class="intro-config-prefix" style="font-size:.8rem">Every</span>
+              <select class="intro-config-select-wide pc-mini-sel" style="max-width:130px"><option selected>1 hour</option><option>2 hours</option><option>4 hours</option><option>6 hours</option><option>12 hours</option></select>
+            </div>
+          </div>
+
+          <div class="pc-arow pc-fu-dim">
+            <label class="notif-pref-toggle" style="margin-top:2px"><input type="checkbox" checked onchange="this.closest('.pc-arow').querySelector('.detail').style.display=this.checked?'':'none'"><span class="notif-pref-slider"></span></label>
+            <div class="b">
+              <div class="t">Send a first follow-up <span class="intro-config-newtag">NEW</span></div>
+              <div class="d">Batched after the last intro; message in <b>Section 5 → First Follow-up Message</b>.</div>
+              <div class="detail pc-2up" style="margin-top:8px">
+                <select class="intro-config-select-wide pc-mini-sel" style="max-width:140px"><option selected>10 minutes</option><option>20 minutes</option><option>30 minutes</option><option>45 minutes</option><option>1 hour</option><option>2 hours</option></select>
+                <span class="intro-config-prefix" style="font-size:.8rem">after the last intro</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pc-cloud">☁︎ <span><b>Running in the cloud:</b> your Mac does the primary accept once, then it's all VM — follow-up is off for this setup.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="sk-cap" style="margin-top:44px">All three keep every control: name · URL · logged-in-via (+GoLogin picker) · check timing ·
+    auto-accept (+accept-all&nbsp;warning) · cadence (+auto-run toggle) · follow-up (+delay). The shared motif is the live
+    <b>identity chip</b> — flip any "Logged in via" radio and every "acts as" label updates at once.</p>
+</div>
+
+<script>
+  // One source of truth per variant: name + logged-in-via radio → propagate to
+  // every .pc-actor / .pc-name-echo inside that variant. Also gates C's step 3
+  // on the URL (mirrors the app's real refreshAutoAcceptGate behavior).
+  function pcSync() {
+    document.querySelectorAll('[data-variant]').forEach(v => {
+      const src = v.querySelector('input[type=radio][value="gologin"]');
+      const isGl = src && src.checked;
+      const glName = v.querySelector('.aa-acct-row.sel .name');
+      const actor = isGl ? ('GoLogin · ' + ((glName && glName.textContent.split('@')[0]) || 'profile')) : 'your local browser';
+      v.querySelectorAll('.pc-actor').forEach(el => el.textContent = actor);
+      const nm = v.querySelector('.pc-name');
+      if (nm) v.querySelectorAll('.pc-name-echo').forEach(el => el.textContent = nm.value || '(unnamed)');
+      v.querySelectorAll('.pc-picker').forEach(p => p.style.display = isGl ? '' : 'none');
+      // C: lock step 3 without a URL
+      if (v.dataset.variant === 'C') {
+        const url = v.querySelector('.pc-url-gate');
+        const step3 = v.querySelector('.pc-step-auto');
+        const locked = !(url && url.value.trim());
+        step3.classList.toggle('locked', locked);
+        step3.classList.toggle('on', !locked);
+        step3.querySelectorAll('input,select').forEach(el => { if (!el.classList.contains('pc-url-gate')) el.disabled = locked; });
+      }
+    });
+  }
+  // picker row selection (visual only)
+  document.querySelectorAll('.aa-acct-row input[type=radio]').forEach(r => r.addEventListener('change', () => {
+    const grid = r.closest('.aa-acct-grid');
+    grid.querySelectorAll('.aa-acct-row').forEach(row => row.classList.remove('sel'));
+    r.closest('.aa-acct-row').classList.add('sel');
+    pcSync();
+  }));
+  pcSync();
+</script>
+</body>
+</html>
