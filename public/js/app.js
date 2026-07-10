@@ -10720,10 +10720,6 @@ function applyPresetConfig(config) {
   }
   if (typeof toggleFollowUpFields === 'function') toggleFollowUpFields();
   if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate();
-  // v2.154.1 (Manifest, Task 1.3): re-render after a preset/Re-run/duplicate
-  // restores the primary fields above, so the readback reflects the loaded
-  // config instead of whatever the wizard showed before the restore.
-  if (typeof renderManifest === 'function') renderManifest();
 
   // v2.62: CC+DM post-acceptance body — symmetric with the primary-intro-body
   // restore above. Without it, Re-run dropped the DM body and relaunched a
@@ -10754,6 +10750,11 @@ function applyPresetConfig(config) {
   // Manifest surfaces this value in its first readback line, the gap is visible —
   // fix it the same way checkIntervalMinutes/autoChecksEnabled are restored above.
   setV('primary-timing-select', t.primaryCheckTiming || 'immediately');
+  // v2.154.2 (Manifest, Task 1.3 review fix): render once here, after ALL
+  // restore fields above (including primaryCheckTiming just above) are set —
+  // moved from right after refreshAutoAcceptGate() so the readback doesn't
+  // render before the timing value it displays has been restored.
+  if (typeof renderManifest === 'function') renderManifest();
 
   // v2.14.x: concurrency restore. concurrency=1 means single-worker
   // (toggle off); >1 means parallel mode (toggle on + count set).
@@ -11886,6 +11887,12 @@ if (typeof window !== 'undefined') window.renderManifest = renderManifest;
     });
   }
 }
+
+// Manifest readback also depends on these controls, which don't route through
+// the 6 render-wired functions — re-render on their change so it never goes stale.
+['check-cadence-select', 'auto-checks-toggle', 'auto-accept-all-toggle', 'cloud-run-checkbox'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('change', () => { if (typeof renderManifest === 'function') renderManifest(); });
+});
 
 // Connect + Introduce Back fields (mode-specific to connect_and_introduce).
 // Persisted to localStorage so the wizard repopulates after navigation.
