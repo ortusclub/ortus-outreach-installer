@@ -3008,8 +3008,8 @@ function openCloudCampaignView(id, label) {
       '<span id="cloud-cv-status" style="color:#9aa;font-size:12px">connecting…</span>' +
       '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeCloudCampaignView()">✕ Close</button>' +
     '</div>' +
-    '<div style="max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
-      '<img id="cloud-cv-img" alt="live campaign browser" style="max-width:100%;max-height:78vh;display:block" />' +
+    '<div id="cloud-cv-stage" style="max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
+      '<img id="cloud-cv-img" alt="" style="max-width:100%;max-height:78vh;display:block" />' +
     '</div>';
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeCloudCampaignView(); });
   document.body.appendChild(overlay);
@@ -3018,13 +3018,26 @@ function openCloudCampaignView(id, label) {
   const status = document.getElementById('cloud-cv-status');
   img.onload = () => { if (status) status.textContent = ''; };
   img.onerror = async () => {
-    // The <img> can't render a JSON error / SPA HTML — read the proxy's message
-    // so the operator sees WHY (engine doesn't stream yet vs stream ended).
+    // No screencast (engine returns JSON / SPA-HTML, not an image) — a bare <img>
+    // renders an ugly broken-image glyph in the black box. Hide it and show a
+    // clean placeholder with the reason instead. The engine doesn't stream
+    // campaign browsers yet; this lights up automatically once it does.
+    let msg = 'Live browser view isn’t available yet — the cloud engine doesn’t stream campaign browsers. Watch progress in the per-lead log on the campaign card.';
     try {
       const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(id)}/view`);
       const j = await r.json().catch(() => ({}));
-      if (status) status.textContent = j.error || 'Stream ended — the campaign may have finished.';
-    } catch { if (status) status.textContent = 'Live view unavailable.'; }
+      if (j && j.error) msg = j.error;
+    } catch { /* keep the default reason */ }
+    img.style.display = 'none';
+    if (status) status.textContent = 'not streaming';
+    const stage = document.getElementById('cloud-cv-stage');
+    if (stage) {
+      stage.innerHTML =
+        '<div style="padding:52px 34px;text-align:center;max-width:540px">' +
+          '<div style="font-size:34px;opacity:.45;margin-bottom:14px">👁</div>' +
+          '<div style="font-size:14px;line-height:1.55;color:#ccd">' + escHtml(msg) + '</div>' +
+        '</div>';
+    }
   };
   img.src = `/api/campaign/cloud/${encodeURIComponent(id)}/view`;
 }
