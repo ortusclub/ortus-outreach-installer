@@ -1433,17 +1433,22 @@ async function reconcilePrimaryHandshake(id, detail) {
     const me = getOperatorEmail();
     if (!me || String(camp.owner || '') !== String(me)) return;
 
-    const wanted = sendersToAcceptTasks(detail); // [{account:{name,profileUrl}, profileId}]
-    if (!wanted.length) return;
+    const wanted = sendersToAcceptTasks(detail); // senders still needing a local accept
+    const alreadyAcceptedIds = ((camp.senders) || [])
+      .filter((s) => s && s.accepted).map((s) => s.profileId);
 
+    // Match our tasks by the `${id}:` prefix. Engine campaign ids are opaque
+    // `cmp_…` tokens that are never a prefix of one another, so this can't
+    // cross-match a different campaign's accept tasks.
     const tag = `${id}:`;
     const mine = (await loadTasks()).filter(
       (t) => t && t.type === 'accept' && String(t.campaignProfileId).startsWith(tag),
     );
 
-    if (mine.length === 0) {
-      // First engagement: queue the accepts. The boot-started primary-task runner
-      // (60s, idle-gated) drains them; we signal on a later poll once they finish.
+    // First engagement WITH senders that still need accepting: queue one local
+    // accept per sender; the boot-started 60s idle-gated runner drains them, and
+    // we signal on a later poll once they finish.
+    if (wanted.length && mine.length === 0) {
       for (const w of wanted) {
         await enqueuePrimaryTask(buildAcceptTask({
           campaignProfileId: `${id}:${w.profileId}`,
@@ -1454,22 +1459,26 @@ async function reconcilePrimaryHandshake(id, detail) {
         }));
       }
       cloudLog(`[cloud] primary-handshake: queued ${wanted.length} local accept(s) for ${id}.`);
-      return;
+      return; // signal on a later poll once they finish
     }
 
-    // Already queued — wait until EVERY tagged accept is terminal, then signal once.
+    // If we queued accepts, wait until EVERY one is terminal before signaling.
     const terminal = (s) => s === 'done' || s === 'skipped' || s === 'failed';
-    if (!mine.every((t) => terminal(t.status))) return; // still draining; next poll retries
+    if (mine.length && !mine.every((t) => terminal(t.status))) return;
 
-    const results = mine.map((t) => ({
+    // Ready to signal. Accepted = the senders the engine already had accepted PLUS
+    // the ones our local browser just accepted. This also covers the all-already-
+    // accepted case (wanted empty, mine empty) so the campaign never stalls in
+    // awaiting_primary_accept. Signal exactly once (hasSignaled guards re-entry).
+    const freshResults = mine.map((t) => ({
       profileId: String(t.campaignProfileId).slice(tag.length),
       accepted: t.status === 'done',
     }));
-    const acceptedIds = computeAcceptedIds(detail, results);
+    const acceptedIds = [...new Set([...alreadyAcceptedIds, ...computeAcceptedIds(detail, freshResults)])];
     const r = await signalPrimaryAcceptDone(id, acceptedIds);
     if (!r || !r.error) {
       await markSignaled(id);
-      cloudLog(`[cloud] primary-handshake: signaled engine — ${acceptedIds.length}/${mine.length} accepted for ${id}.`);
+      cloudLog(`[cloud] primary-handshake: signaled engine — ${acceptedIds.length} accepted for ${id}.`);
     } else {
       cloudLog(`[cloud] primary-handshake: signal failed for ${id}: ${r.error} (will retry next poll).`);
     }
