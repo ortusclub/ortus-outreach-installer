@@ -38,6 +38,8 @@ import { startScheduler as startPostCampaignScheduler, listSchedule as listPostC
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
 import { loadTasks as loadPrimaryTasks, summarizeFollowUps } from './src/primary-tasks.js';
+import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
+import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
@@ -1338,6 +1340,7 @@ app.get('/api/campaign/cloud/:id', async (req, res) => {
   const r = await getCloudCampaign(req.params.id);
   if (r.error) return res.status(502).json(r);
   res.json(r);
+  reconcilePrimaryHandshake(req.params.id, r).catch(() => {}); // after response — never blocks
 });
 // ── Cloud sheet reconcile (parity fix #1) ─────────────────────────────────
 // The engine writes SENT rows back to the source sheet, but leaves ERROR /
@@ -1401,6 +1404,78 @@ async function reconcileCloud(id, leads) {
       });
     } catch (e) { cloudLog(`[cloud] SoO connections reconcile skipped for ${id}: ${e.message}`); }
   } catch (e) { cloudLog(`[cloud] reconcile skipped for ${id}: ${e.message}`); }
+}
+
+// ── Cloud primary-handshake (parity: local-only primary auto-accept) ──────────
+// When a cloud CC+IC / CC+DM campaign's primary lives only in the local browser,
+// the engine pauses in state:'awaiting_primary_accept' and lists the sender
+// invitations it fired at the primary. THIS machine (the campaign's owner) accepts
+// them with its local browser, then signals the engine to resume. We reuse the
+// primary-task runner WITHOUT editing it: enqueue one local-browser accept per
+// sender (tagged `${id}:${senderProfileId}` so dedupeKey stays unique per sender),
+// let the already-running 60s idle-gated runner drain them, then — once every
+// tagged accept is terminal — read the statuses back and signal the engine ONCE
+// (hasSignaled guard). Targeted accepts only: safer than blanket-accepting the
+// primary's whole pending-invite inbox, and the reused runner does exactly this.
+// Inert until the engine ships state:'awaiting_primary_accept' (isAwaitingAccept
+// early-returns). Never throws into the request path.
+async function reconcilePrimaryHandshake(id, detail) {
+  try {
+    if (!isAwaitingAccept(detail)) return;
+    if (await hasSignaled(id)) return;
+    const camp = (detail && detail.campaign) || {};
+    const cfg = camp.config || {};
+    // Only a cloud campaign whose primary is the LOCAL browser + auto-accept on.
+    if (!(cfg.autoAcceptPrimary && cfg.primarySource === 'local-browser')) return;
+    // Owner gate: only the machine that launched it drives ITS local browser.
+    // Require a non-empty operator identity that matches the owner (so a missing
+    // owner can never accidentally match a machine with no operator set).
+    const me = getOperatorEmail();
+    if (!me || String(camp.owner || '') !== String(me)) return;
+
+    const wanted = sendersToAcceptTasks(detail); // [{account:{name,profileUrl}, profileId}]
+    if (!wanted.length) return;
+
+    const tag = `${id}:`;
+    const mine = (await loadTasks()).filter(
+      (t) => t && t.type === 'accept' && String(t.campaignProfileId).startsWith(tag),
+    );
+
+    if (mine.length === 0) {
+      // First engagement: queue the accepts. The boot-started primary-task runner
+      // (60s, idle-gated) drains them; we signal on a later poll once they finish.
+      for (const w of wanted) {
+        await enqueuePrimaryTask(buildAcceptTask({
+          campaignProfileId: `${id}:${w.profileId}`,
+          campaignProfileName: (w.account && w.account.name) || '',
+          account: w.account,
+          primaryUrl: (camp.primary && camp.primary.url) || '',
+          sender: 'local-browser',
+        }));
+      }
+      cloudLog(`[cloud] primary-handshake: queued ${wanted.length} local accept(s) for ${id}.`);
+      return;
+    }
+
+    // Already queued — wait until EVERY tagged accept is terminal, then signal once.
+    const terminal = (s) => s === 'done' || s === 'skipped' || s === 'failed';
+    if (!mine.every((t) => terminal(t.status))) return; // still draining; next poll retries
+
+    const results = mine.map((t) => ({
+      profileId: String(t.campaignProfileId).slice(tag.length),
+      accepted: t.status === 'done',
+    }));
+    const acceptedIds = computeAcceptedIds(detail, results);
+    const r = await signalPrimaryAcceptDone(id, acceptedIds);
+    if (!r || !r.error) {
+      await markSignaled(id);
+      cloudLog(`[cloud] primary-handshake: signaled engine — ${acceptedIds.length}/${mine.length} accepted for ${id}.`);
+    } else {
+      cloudLog(`[cloud] primary-handshake: signal failed for ${id}: ${r.error} (will retry next poll).`);
+    }
+  } catch (e) {
+    cloudLog(`[cloud] primary-handshake reconcile skipped for ${id}: ${e.message}`);
+  }
 }
 
 // Per-lead status rows for one cloud campaign — powers the strip's live log
