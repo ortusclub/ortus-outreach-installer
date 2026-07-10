@@ -33,6 +33,7 @@ import { forecastCapacity, WARN_DAYS } from '/js/capacity-forecast.mjs';
 import { classifyAccountFlag, summarizeSelection, classifyAccountState, isRestrictedStatus, isHiddenSection, lookupSoO, isBreakdownMode, classifyAccountChannels, breakdownAssignee } from '/js/account-guardrails.mjs';
 import { toggleDecision, fmtEta, ADMIN_EMAIL, isAdminEmail as _isAdminEmail } from '/js/scrape-board.mjs';
 import { buildManifestReadback } from '/js/manifest-readback.mjs';
+import { CLOUD_MODES as RT_CLOUD_MODES, modeAvailability, runTargetFacts, DEFAULT_RUN_TARGET } from '/js/run-target.mjs';
 
 // ── Sales Nav Board ──────────────────────────────────────────────────────────
 let snCurrentEmail = '';
@@ -2375,6 +2376,7 @@ async function refreshCheckDmsPreview() {
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   try { refreshCloudToggle(); } catch { /* toggle is optional */ }
+  if (typeof refreshRunTarget === 'function') refreshRunTarget();
   const connect = document.getElementById('tpl-connect-section');
   const message = document.getElementById('tpl-message-section');
   const inmail = document.getElementById('tpl-inmail-section');
@@ -4116,16 +4118,21 @@ function renderModeSelector() {
   grid.innerHTML = displayOrder.map((i) => {
     const m = MODE_LIST[i];
     const locked = modeIsLocked(m);
+    // Run-target gating (Task 2.3): cloud-incompatible modes grey out under
+    // ☁︎ Cloud VM. Deliberately NOT folded into the activeIdx fallback above —
+    // block, don't silently switch (see renderModeSelector's controller notes).
+    const rtBlocked = !modeAvailability(m.value, getRunTarget()).available;
     const bullets = m.bullets
       .map((b) => `<li>${escHtml(b)}</li>`)
       .join('');
-    const isActive = i === activeIdx && !m.comingSoon && !m.disabled && !locked;
+    const isActive = i === activeIdx && !m.comingSoon && !m.disabled && !locked && !rtBlocked;
     // Locked cards look like a normal available card (NOT greyed) — only the
     // 🔒 badge distinguishes them. They stay clickable to prompt for the password.
-    const stateClass = (m.comingSoon || m.disabled) ? 'is-coming-soon' : (isActive ? 'active' : '');
+    const stateClass = (m.comingSoon || m.disabled || rtBlocked) ? 'is-coming-soon' : (isActive ? 'active' : '');
     const badge = m.comingSoon ? '<span class="mode-card-badge">Coming soon</span>'
       : (m.disabled ? `<span class="mode-card-badge">${m.maintenance ? 'Under maintenance' : 'Unavailable'}</span>`
-      : (locked ? '<span class="mode-card-badge">🔒 Locked</span>' : ''));
+      : (locked ? '<span class="mode-card-badge">🔒 Locked</span>'
+      : (rtBlocked ? '<span class="mode-card-badge">💻 LOCAL ONLY</span>' : '')));
     return `
       <button type="button"
         class="mode-card ${stateClass}"
@@ -4164,6 +4171,8 @@ async function setModeByIndex(i) {
   }
   const select = document.getElementById('campaign-mode');
   if (!select) return;
+  const _rtAvail = modeAvailability(mode.value, getRunTarget());
+  if (!_rtAvail.available) { showCampaignToast(_rtAvail.reason, 3500); return; }
   select.value = mode.value;
   onModeChange();
   renderModeSelector();
@@ -5652,8 +5661,8 @@ async function startCampaign(opts = {}) {
 
   // Cloud dispatch: only for an immediate "Start" (not Queue/Schedule/Draft) and
   // only for engine-supported modes. Gated on the mode so a non-cloud mode NEVER
-  // routes to cloud even if the (hidden) checkbox is left checked. Default is ON
-  // (cloud-first) — operators untick to run locally.
+  // routes to cloud even if the (hidden) checkbox is checked. The checkbox mirrors
+  // the run-target tabs (setRunTarget); default is 💻 This machine (unchecked → local).
   const _cloudModeNow = new Set(['connect_only', 'message_only', 'introduce_back',
     'connect_and_introduce', 'connect_and_message', 'follower_growth',
     'inmail_only', 'open_profile_only', 'check_status']).has(document.getElementById('campaign-mode')?.value);
@@ -5692,9 +5701,9 @@ function refreshCloudToggle() {
   const show = CLOUD_MODES.has(mode);
   wrap.style.display = show ? '' : 'none';
   const cb = document.getElementById('cloud-run-checkbox');
-  // Don't force the checkbox here — default-on comes from the HTML `checked`
-  // attribute, and launch-time gating (_cloudModeNow) ignores it for non-cloud
-  // modes. Forcing it would fight the operator's manual untick (onchange calls us).
+  // Don't force the checkbox here — the run-target tabs (setRunTarget) own its
+  // state (default 💻 This machine = unchecked). Forcing it would fight the tab
+  // selection + the operator's manual choice (onchange calls us).
   // FG extras: visible only for follower_growth while the cloud toggle is on.
   const fg = document.getElementById('cloud-fg-extras');
   if (fg) fg.style.display = (show && mode === 'follower_growth' && cb?.checked) ? '' : 'none';
@@ -5703,6 +5712,53 @@ function refreshCloudToggle() {
   const panel = document.getElementById('cloud-campaigns-section');
   if (panel && show) panel.style.display = '';
 }
+
+// ─── Run-target tabs (💻 This machine / ☁︎ Cloud VM) ────────────────────────
+// Task 2.3: wires up the tabs markup + CSS shipped inert in Task 2.2.
+// getRunTarget() is the single read path (backed by #run-target's
+// data-target); setRunTarget() is the only write path and keeps
+// #cloud-run-checkbox.checked in sync so the launch-time cloud dispatch gate
+// above (untouched) needs no changes — cloud tab → checked → cloud dispatch
+// for cloud-supported modes, local tab → unchecked → local dispatch.
+function getRunTarget() {
+  return document.getElementById('run-target')?.dataset.target || DEFAULT_RUN_TARGET;
+}
+function setRunTarget(t) {
+  const root = document.getElementById('run-target');
+  if (!root) return;
+  root.dataset.target = t;
+  root.querySelectorAll('.rt-tab').forEach((b) => b.classList.toggle('on', b.dataset.rt === t));
+  const cb = document.getElementById('cloud-run-checkbox');
+  if (cb) cb.checked = (t === 'cloud');   // keep the launch source-of-truth in sync
+  refreshRunTarget();
+}
+function refreshRunTarget() {
+  const t = getRunTarget();
+  const facts = document.getElementById('run-target-facts');
+  if (facts) facts.innerHTML = runTargetFacts(t).map((f) =>
+    `<span class="rt-fact"><span class="i">${f.ok ? '✓' : '—'}</span><span>${escHtml(f.text)}</span></span>`).join('');
+  if (typeof renderModeSelector === 'function') renderModeSelector();
+  if (typeof renderManifest === 'function') renderManifest();
+  refreshLaunchForRunTarget();
+  if (typeof refreshAccountPickerForRunTarget === 'function') refreshAccountPickerForRunTarget();
+}
+// #btn-queue / #btn-schedule are local-only launch paths (Queue →
+// addToQueueCampaign, Schedule → /api/schedules — neither dispatches cloud);
+// hide them under the VM tab and swap the copy under the launch buttons.
+// #launch-run-note was added (empty) to the launch card in Task 2.2.
+function refreshLaunchForRunTarget() {
+  const cloud = getRunTarget() === 'cloud';
+  const q = document.getElementById('btn-queue');
+  const s = document.getElementById('btn-schedule');
+  if (q) q.style.display = cloud ? 'none' : '';
+  if (s) s.style.display = cloud ? 'none' : '';
+  const note = document.getElementById('launch-run-note');
+  if (note) note.textContent = cloud
+    ? 'Starts on the VM — close the laptop whenever. Watch it live with 👁 Show on the board.'
+    : 'Runs on this Mac while the app is open — pause & resume anytime.';
+}
+if (typeof window !== 'undefined') { window.setRunTarget = setRunTarget; window.getRunTarget = getRunTarget; }
+document.addEventListener('DOMContentLoaded', () => { if (typeof setRunTarget === 'function') setRunTarget(DEFAULT_RUN_TARGET); });
 
 // ─── Cloud Campaigns panel ──────────────────────────────────────────────────
 let _cloudPollTimer = null;
@@ -11844,9 +11900,10 @@ document.addEventListener('DOMContentLoaded', restoreIntroState);
 // any number of times.
 // ─────────────────────────────────────────────────────────────────────────
 
-// Phase 2 replaces the body to read the run-target tabs. Until then, local.
+// Task 2.3: reads the run-target tabs (single source of truth is #run-target;
+// getRunTarget() also keeps #cloud-run-checkbox in sync — see setRunTarget).
 function getManifestRunTarget() {
-  return (document.getElementById('cloud-run-checkbox')?.checked) ? 'cloud' : 'local';
+  return getRunTarget();
 }
 
 function renderManifest() {
